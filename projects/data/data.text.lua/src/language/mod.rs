@@ -1,0 +1,30 @@
+#![doc = include_str!("readme.md")]
+
+use data_text_core::{Language, LanguageCategory};
+
+/// Lua language definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct LuaLanguage {}
+
+impl Language for LuaLanguage {
+    const NAME: &'static str = "lua";
+    const CATEGORY: LanguageCategory = LanguageCategory::Programming;
+
+    type TokenType = crate::lexer::token_type::LuaTokenType;
+    type ElementType = crate::parser::element_type::LuaElementType;
+    type TypedRoot = crate::ast::LuaRoot;
+}
+
+impl LuaLanguage {
+    /// Creates a new Lua language instance.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Default for LuaLanguage {
+    fn default() -> Self {
+        Self {}
+    }
+}

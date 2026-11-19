@@ -1,0 +1,39 @@
+[package]
+name = "data-text-rhombus"
+version.workspace = true
+authors.workspace = true
+description = "Rhombus programming language parser with support for macro-extensible syntax."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-rhombus"
+categories = ["parsing"]
+keywords = ["parser", "rhombus", "racket", "macro"]
+
+[dependencies]
+data-text-core = { workspace = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true, features = ["io-std"] }
+serde = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std", "dep:tokio"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

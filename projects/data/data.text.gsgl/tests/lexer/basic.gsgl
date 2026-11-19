@@ -1,0 +1,55 @@
+shader vertex main {
+    in vec3 position;
+    in vec2 texCoord;
+    out vec2 v_texCoord;
+    uniform mat4 modelViewProjection;
+
+    void main() {
+        gl_Position = modelViewProjection * vec4(position, 1.0);
+        v_texCoord = texCoord;
+    }
+}
+
+shader fragment main {
+    in vec2 v_texCoord;
+    out vec4 fragColor;
+    uniform sampler2D texture;
+
+    void main() {
+        vec4 color = texture(texture, v_texCoord);
+        if (color.a < 0.1) {
+            discard;
+        }
+        fragColor = color;
+    }
+}
+
+struct Light {
+    vec3 position;
+    vec3 color;
+    float intensity;
+};
+
+uniform Light light;
+
+// Control flow test
+void lighting() {
+    vec3 normal = vec3(0.0, 1.0, 0.0);
+    float diff = max(dot(normal, light.position), 0.0);
+    
+    if (diff > 0.5) {
+        return;
+    } else {
+        continue; // Not valid here but testing keyword
+    }
+
+    for (int i = 0; i < 10; i++) {
+        break;
+    }
+
+    while (true) {
+        do {
+            // something
+        } while(false);
+    }
+}

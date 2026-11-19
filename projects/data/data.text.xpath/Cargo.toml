@@ -1,0 +1,27 @@
+[package]
+name = "data-text-xpath"
+version.workspace = true
+authors.workspace = true
+description = "XPath subset DSL parser and AST for the Oak ecosystem."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-xpath"
+categories = ["parsing"]
+keywords = ["xpath", "xml", "selector", "query"]
+
+[dependencies]
+boost-harness = { workspace = true, default-features = false, features = ["std", "serde"] }
+data-text-core = { workspace = true, features = ["serde"] }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+
+[package.metadata.docs.rs]
+all-features = true

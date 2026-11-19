@@ -1,0 +1,32 @@
+[package]
+name = "data-text-matlab"
+version.workspace = true
+authors.workspace = true
+description = "MATLAB numerical computing language parser with support for scientific computing, data analysis, and visualization."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-matlab"
+categories = ["parsing"]
+keywords = ["parser", "matlab", "scientific", "computing"]
+
+[dependencies]
+data-text-core = { workspace = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true, features = ["io-std"] }
+serde = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std"]
+
+[package.metadata.docs.rs]
+all-features = true

@@ -1,0 +1,4219 @@
+{
+    "success": true,
+    "count": 702,
+    "tokens": [
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 0,
+            "end": 1
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 6,
+            "end": 7
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 7,
+            "end": 8
+        },
+        {
+            "kind": "Error",
+            "text": "C",
+            "start": 9,
+            "end": 10
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 10,
+            "end": 11
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 11,
+            "end": 12
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 12,
+            "end": 13
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 13,
+            "end": 14
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 16,
+            "end": 17
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 18,
+            "end": 19
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 19,
+            "end": 20
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 20,
+            "end": 21
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 22,
+            "end": 23
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 23,
+            "end": 24
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 24,
+            "end": 25
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 25,
+            "end": 26
+        },
+        {
+            "kind": "Error",
+            "text": "w",
+            "start": 26,
+            "end": 27
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 27,
+            "end": 28
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 28,
+            "end": 29
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 30,
+            "end": 31
+        },
+        {
+            "kind": "Error",
+            "text": "J",
+            "start": 33,
+            "end": 34
+        },
+        {
+            "kind": "Error",
+            "text": "S",
+            "start": 34,
+            "end": 35
+        },
+        {
+            "kind": "Error",
+            "text": "O",
+            "start": 35,
+            "end": 36
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 36,
+            "end": 37
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "5",
+            "start": 37,
+            "end": 38
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 43,
+            "end": 44
+        },
+        {
+            "kind": "Error",
+            "text": "*",
+            "start": 44,
+            "end": 45
+        },
+        {
+            "kind": "Error",
+            "text": "M",
+            "start": 46,
+            "end": 47
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 47,
+            "end": 48
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 48,
+            "end": 49
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 50,
+            "end": 51
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 52,
+            "end": 53
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 53,
+            "end": 54
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 55,
+            "end": 56
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 57,
+            "end": 58
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 58,
+            "end": 59
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 59,
+            "end": 60
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 60,
+            "end": 61
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 61,
+            "end": 62
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 64,
+            "end": 65
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 67,
+            "end": 68
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 68,
+            "end": 69
+        },
+        {
+            "kind": "Error",
+            "text": "*",
+            "start": 70,
+            "end": 71
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 71,
+            "end": 72
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 82,
+            "end": 83
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 83,
+            "end": 84
+        },
+        {
+            "kind": "Error",
+            "text": "U",
+            "start": 85,
+            "end": 86
+        },
+        {
+            "kind": "Error",
+            "text": "q",
+            "start": 87,
+            "end": 88
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 88,
+            "end": 89
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 89,
+            "end": 90
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 91,
+            "end": 92
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 92,
+            "end": 93
+        },
+        {
+            "kind": "Error",
+            "text": "k",
+            "start": 94,
+            "end": 95
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 95,
+            "end": 96
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 96,
+            "end": 97
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 97,
+            "end": 98
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 103,
+            "end": 104
+        },
+        {
+            "kind": "Error",
+            "text": "q",
+            "start": 105,
+            "end": 106
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 106,
+            "end": 107
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 107,
+            "end": 108
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 109,
+            "end": 110
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 110,
+            "end": 111
+        },
+        {
+            "kind": "Error",
+            "text": "K",
+            "start": 111,
+            "end": 112
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 112,
+            "end": 113
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 113,
+            "end": 114
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 114,
+            "end": 115
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"value\"",
+            "start": 116,
+            "end": 123
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 123,
+            "end": 124
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 134,
+            "end": 135
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 135,
+            "end": 136
+        },
+        {
+            "kind": "Error",
+            "text": "S",
+            "start": 137,
+            "end": 138
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 138,
+            "end": 139
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 140,
+            "end": 141
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 141,
+            "end": 142
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 142,
+            "end": 143
+        },
+        {
+            "kind": "Error",
+            "text": "q",
+            "start": 144,
+            "end": 145
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 145,
+            "end": 146
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 146,
+            "end": 147
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 148,
+            "end": 149
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 149,
+            "end": 150
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 155,
+            "end": 156
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 156,
+            "end": 157
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 157,
+            "end": 158
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 159,
+            "end": 160
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 160,
+            "end": 161
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 161,
+            "end": 162
+        },
+        {
+            "kind": "Error",
+            "text": "Q",
+            "start": 162,
+            "end": 163
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 163,
+            "end": 164
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 164,
+            "end": 165
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 166,
+            "end": 167
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 167,
+            "end": 168
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 168,
+            "end": 169
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 169,
+            "end": 170
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 171,
+            "end": 172
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 172,
+            "end": 173
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 173,
+            "end": 174
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 174,
+            "end": 175
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 176,
+            "end": 177
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 177,
+            "end": 178
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 178,
+            "end": 179
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 179,
+            "end": 180
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 180,
+            "end": 181
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 181,
+            "end": 182
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 183,
+            "end": 184
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 184,
+            "end": 185
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 185,
+            "end": 186
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 186,
+            "end": 187
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 197,
+            "end": 198
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 198,
+            "end": 199
+        },
+        {
+            "kind": "Error",
+            "text": "T",
+            "start": 200,
+            "end": 201
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 201,
+            "end": 202
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 202,
+            "end": 203
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 203,
+            "end": 204
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 204,
+            "end": 205
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 205,
+            "end": 206
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 207,
+            "end": 208
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 209,
+            "end": 210
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 210,
+            "end": 211
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 211,
+            "end": 212
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 212,
+            "end": 213
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 213,
+            "end": 214
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 214,
+            "end": 215
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"trailingComma\"",
+            "start": 220,
+            "end": 235
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 235,
+            "end": 236
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 237,
+            "end": 238
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1",
+            "start": 247,
+            "end": 248
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 248,
+            "end": 249
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "2",
+            "start": 258,
+            "end": 259
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 259,
+            "end": 260
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "3",
+            "start": 269,
+            "end": 270
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 270,
+            "end": 271
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 276,
+            "end": 277
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 277,
+            "end": 278
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"objectTrailingComma\"",
+            "start": 288,
+            "end": 309
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 309,
+            "end": 310
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 311,
+            "end": 312
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"a\"",
+            "start": 321,
+            "end": 324
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 324,
+            "end": 325
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1",
+            "start": 326,
+            "end": 327
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 327,
+            "end": 328
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"b\"",
+            "start": 337,
+            "end": 340
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 340,
+            "end": 341
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "2",
+            "start": 342,
+            "end": 343
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 343,
+            "end": 344
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 349,
+            "end": 350
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 350,
+            "end": 351
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 357,
+            "end": 358
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 358,
+            "end": 359
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 360,
+            "end": 361
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 361,
+            "end": 362
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 362,
+            "end": 363
+        },
+        {
+            "kind": "Error",
+            "text": "b",
+            "start": 363,
+            "end": 364
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 364,
+            "end": 365
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 365,
+            "end": 366
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 366,
+            "end": 367
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"hexadecimal\"",
+            "start": 372,
+            "end": 385
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 385,
+            "end": 386
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "0",
+            "start": 387,
+            "end": 388
+        },
+        {
+            "kind": "Error",
+            "text": "x",
+            "start": 388,
+            "end": 389
+        },
+        {
+            "kind": "Error",
+            "text": "D",
+            "start": 389,
+            "end": 390
+        },
+        {
+            "kind": "Error",
+            "text": "E",
+            "start": 390,
+            "end": 391
+        },
+        {
+            "kind": "Error",
+            "text": "A",
+            "start": 391,
+            "end": 392
+        },
+        {
+            "kind": "Error",
+            "text": "D",
+            "start": 392,
+            "end": 393
+        },
+        {
+            "kind": "Error",
+            "text": "B",
+            "start": 393,
+            "end": 394
+        },
+        {
+            "kind": "Error",
+            "text": "E",
+            "start": 394,
+            "end": 395
+        },
+        {
+            "kind": "Error",
+            "text": "E",
+            "start": 395,
+            "end": 396
+        },
+        {
+            "kind": "Error",
+            "text": "F",
+            "start": 396,
+            "end": 397
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 397,
+            "end": 398
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"leadingDecimalPoint\"",
+            "start": 403,
+            "end": 424
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 424,
+            "end": 425
+        },
+        {
+            "kind": "Error",
+            "text": ".",
+            "start": 426,
+            "end": 427
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "8675309",
+            "start": 427,
+            "end": 434
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 434,
+            "end": 435
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"trailingDecimalPoint\"",
+            "start": 440,
+            "end": 462
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 462,
+            "end": 463
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "8675309.",
+            "start": 464,
+            "end": 472
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 472,
+            "end": 473
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"positiveSign\"",
+            "start": 478,
+            "end": 492
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 492,
+            "end": 493
+        },
+        {
+            "kind": "Error",
+            "text": "+",
+            "start": 494,
+            "end": 495
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1",
+            "start": 495,
+            "end": 496
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 496,
+            "end": 497
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"explicitPlus\"",
+            "start": 502,
+            "end": 516
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 516,
+            "end": 517
+        },
+        {
+            "kind": "Error",
+            "text": "+",
+            "start": 518,
+            "end": 519
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1.23",
+            "start": 519,
+            "end": 523
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 523,
+            "end": 524
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"infinity\"",
+            "start": 529,
+            "end": 539
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 539,
+            "end": 540
+        },
+        {
+            "kind": "Error",
+            "text": "I",
+            "start": 541,
+            "end": 542
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 544,
+            "end": 545
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 546,
+            "end": 547
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 548,
+            "end": 549
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 549,
+            "end": 550
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"negativeInfinity\"",
+            "start": 555,
+            "end": 573
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 573,
+            "end": 574
+        },
+        {
+            "kind": "Error",
+            "text": "I",
+            "start": 576,
+            "end": 577
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 579,
+            "end": 580
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 581,
+            "end": 582
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 583,
+            "end": 584
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 584,
+            "end": 585
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"nan\"",
+            "start": 590,
+            "end": 595
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 595,
+            "end": 596
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 597,
+            "end": 598
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 598,
+            "end": 599
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 599,
+            "end": 600
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 600,
+            "end": 601
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"negativeNan\"",
+            "start": 606,
+            "end": 619
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 619,
+            "end": 620
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 622,
+            "end": 623
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 623,
+            "end": 624
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 624,
+            "end": 625
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 625,
+            "end": 626
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 632,
+            "end": 633
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 633,
+            "end": 634
+        },
+        {
+            "kind": "Error",
+            "text": "S",
+            "start": 635,
+            "end": 636
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 637,
+            "end": 638
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 638,
+            "end": 639
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 640,
+            "end": 641
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 641,
+            "end": 642
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"lineContinuation\"",
+            "start": 647,
+            "end": 665
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 665,
+            "end": 666
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"This string \\\ncontinues on the next line\"",
+            "start": 667,
+            "end": 709
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 709,
+            "end": 710
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"escapes\"",
+            "start": 715,
+            "end": 724
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 724,
+            "end": 725
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"\\0 \\x12\"",
+            "start": 726,
+            "end": 735
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 735,
+            "end": 736
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 746,
+            "end": 747
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 747,
+            "end": 748
+        },
+        {
+            "kind": "Error",
+            "text": "S",
+            "start": 749,
+            "end": 750
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 751,
+            "end": 752
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 753,
+            "end": 754
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 754,
+            "end": 755
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 755,
+            "end": 756
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 756,
+            "end": 757
+        },
+        {
+            "kind": "Error",
+            "text": "J",
+            "start": 758,
+            "end": 759
+        },
+        {
+            "kind": "Error",
+            "text": "S",
+            "start": 759,
+            "end": 760
+        },
+        {
+            "kind": "Error",
+            "text": "O",
+            "start": 760,
+            "end": 761
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 761,
+            "end": 762
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 764,
+            "end": 765
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 765,
+            "end": 766
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 767,
+            "end": 768
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 768,
+            "end": 769
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 769,
+            "end": 770
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 770,
+            "end": 771
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 772,
+            "end": 773
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 774,
+            "end": 775
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 775,
+            "end": 776
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 776,
+            "end": 777
+        },
+        {
+            "kind": "Error",
+            "text": "w",
+            "start": 778,
+            "end": 779
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 779,
+            "end": 780
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 780,
+            "end": 781
+        },
+        {
+            "kind": "Error",
+            "text": "k",
+            "start": 781,
+            "end": 782
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"standard\"",
+            "start": 787,
+            "end": 797
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 797,
+            "end": 798
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 799,
+            "end": 800
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"bool\"",
+            "start": 809,
+            "end": 815
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 815,
+            "end": 816
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "true",
+            "start": 817,
+            "end": 821
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 821,
+            "end": 822
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"null\"",
+            "start": 831,
+            "end": 837
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 837,
+            "end": 838
+        },
+        {
+            "kind": "NullLiteral",
+            "text": "null",
+            "start": 839,
+            "end": 843
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 843,
+            "end": 844
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"float\"",
+            "start": 853,
+            "end": 860
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 860,
+            "end": 861
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "3.14159e+10",
+            "start": 862,
+            "end": 873
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 878,
+            "end": 879
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 879,
+            "end": 880
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"mixedArray\"",
+            "start": 886,
+            "end": 898
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 898,
+            "end": 899
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 900,
+            "end": 901
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"string\"",
+            "start": 910,
+            "end": 918
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 918,
+            "end": 919
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "123",
+            "start": 928,
+            "end": 931
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 931,
+            "end": 932
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "true",
+            "start": 941,
+            "end": 945
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 945,
+            "end": 946
+        },
+        {
+            "kind": "NullLiteral",
+            "text": "null",
+            "start": 955,
+            "end": 959
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 959,
+            "end": 960
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 969,
+            "end": 970
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 972,
+            "end": 973
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 973,
+            "end": 974
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 975,
+            "end": 976
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 976,
+            "end": 977
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 977,
+            "end": 978
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"obj\"",
+            "start": 979,
+            "end": 984
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 985,
+            "end": 986
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 986,
+            "end": 987
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 996,
+            "end": 997
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"nested\"",
+            "start": 998,
+            "end": 1006
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1006,
+            "end": 1007
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"array\"",
+            "start": 1008,
+            "end": 1015
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 1016,
+            "end": 1017
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1017,
+            "end": 1018
+        },
+        {
+            "kind": "Error",
+            "text": "I",
+            "start": 1027,
+            "end": 1028
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1030,
+            "end": 1031
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1032,
+            "end": 1033
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 1034,
+            "end": 1035
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1035,
+            "end": 1036
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 1045,
+            "end": 1046
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1046,
+            "end": 1047
+        },
+        {
+            "kind": "Error",
+            "text": "N",
+            "start": 1047,
+            "end": 1048
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1048,
+            "end": 1049
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 1054,
+            "end": 1055
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1055,
+            "end": 1056
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 1062,
+            "end": 1063
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 1063,
+            "end": 1064
+        },
+        {
+            "kind": "Error",
+            "text": "M",
+            "start": 1065,
+            "end": 1066
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1066,
+            "end": 1067
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1067,
+            "end": 1068
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1068,
+            "end": 1069
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1070,
+            "end": 1071
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1071,
+            "end": 1072
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1072,
+            "end": 1073
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 1073,
+            "end": 1074
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 1074,
+            "end": 1075
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1075,
+            "end": 1076
+        },
+        {
+            "kind": "Error",
+            "text": "x",
+            "start": 1076,
+            "end": 1077
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1079,
+            "end": 1080
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1080,
+            "end": 1081
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1082,
+            "end": 1083
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1083,
+            "end": 1084
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1085,
+            "end": 1086
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1087,
+            "end": 1088
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 1088,
+            "end": 1089
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1089,
+            "end": 1090
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 1091,
+            "end": 1092
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1092,
+            "end": 1093
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1093,
+            "end": 1094
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1094,
+            "end": 1095
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"complex\"",
+            "start": 1100,
+            "end": 1109
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1109,
+            "end": 1110
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1111,
+            "end": 1112
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"users\"",
+            "start": 1121,
+            "end": 1128
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1128,
+            "end": 1129
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 1130,
+            "end": 1131
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1144,
+            "end": 1145
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1162,
+            "end": 1163
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1163,
+            "end": 1164
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1164,
+            "end": 1165
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1",
+            "start": 1166,
+            "end": 1167
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1167,
+            "end": 1168
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1186,
+            "end": 1187
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1187,
+            "end": 1188
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1188,
+            "end": 1189
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1189,
+            "end": 1190
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Alice\"",
+            "start": 1191,
+            "end": 1198
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1198,
+            "end": 1199
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1216,
+            "end": 1217
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1217,
+            "end": 1218
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 1218,
+            "end": 1219
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1219,
+            "end": 1220
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1220,
+            "end": 1221
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1221,
+            "end": 1222
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 1223,
+            "end": 1224
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"admin\"",
+            "start": 1224,
+            "end": 1231
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1231,
+            "end": 1232
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"editor\"",
+            "start": 1233,
+            "end": 1241
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 1241,
+            "end": 1242
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1242,
+            "end": 1243
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1260,
+            "end": 1261
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1261,
+            "end": 1262
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1263,
+            "end": 1264
+        },
+        {
+            "kind": "Error",
+            "text": "v",
+            "start": 1264,
+            "end": 1265
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1265,
+            "end": 1266
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1266,
+            "end": 1267
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "true",
+            "start": 1268,
+            "end": 1272
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1272,
+            "end": 1273
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1290,
+            "end": 1291
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1291,
+            "end": 1292
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1293,
+            "end": 1294
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1294,
+            "end": 1295
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1295,
+            "end": 1296
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1297,
+            "end": 1298
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1298,
+            "end": 1299
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1300,
+            "end": 1301
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 1322,
+            "end": 1323
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1323,
+            "end": 1324
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1324,
+            "end": 1325
+        },
+        {
+            "kind": "Error",
+            "text": "L",
+            "start": 1326,
+            "end": 1327
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1327,
+            "end": 1328
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 1328,
+            "end": 1329
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1329,
+            "end": 1330
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1331,
+            "end": 1332
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"2023-01-01T12:00:00Z\"",
+            "start": 1333,
+            "end": 1355
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1355,
+            "end": 1356
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 1377,
+            "end": 1378
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1378,
+            "end": 1379
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1379,
+            "end": 1380
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1381,
+            "end": 1382
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1382,
+            "end": 1383
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1383,
+            "end": 1384
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1385,
+            "end": 1386
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1386,
+            "end": 1387
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1387,
+            "end": 1388
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1388,
+            "end": 1389
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1390,
+            "end": 1391
+        },
+        {
+            "kind": "Error",
+            "text": "h",
+            "start": 1417,
+            "end": 1418
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1418,
+            "end": 1419
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1419,
+            "end": 1420
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1420,
+            "end": 1421
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1421,
+            "end": 1422
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"dark\"",
+            "start": 1423,
+            "end": 1429
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1429,
+            "end": 1430
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1456,
+            "end": 1457
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1458,
+            "end": 1459
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1460,
+            "end": 1461
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1461,
+            "end": 1462
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1462,
+            "end": 1463
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1464,
+            "end": 1465
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1465,
+            "end": 1466
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1467,
+            "end": 1468
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1468,
+            "end": 1469
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "true",
+            "start": 1470,
+            "end": 1474
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1495,
+            "end": 1496
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1513,
+            "end": 1514
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1527,
+            "end": 1528
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1528,
+            "end": 1529
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1542,
+            "end": 1543
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1560,
+            "end": 1561
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1561,
+            "end": 1562
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1562,
+            "end": 1563
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "2",
+            "start": 1564,
+            "end": 1565
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1565,
+            "end": 1566
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1584,
+            "end": 1585
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1585,
+            "end": 1586
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1586,
+            "end": 1587
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1587,
+            "end": 1588
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 1589,
+            "end": 1590
+        },
+        {
+            "kind": "Error",
+            "text": "B",
+            "start": 1590,
+            "end": 1591
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1591,
+            "end": 1592
+        },
+        {
+            "kind": "Error",
+            "text": "b",
+            "start": 1592,
+            "end": 1593
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 1593,
+            "end": 1594
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1594,
+            "end": 1595
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1612,
+            "end": 1613
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1613,
+            "end": 1614
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 1614,
+            "end": 1615
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1615,
+            "end": 1616
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1616,
+            "end": 1617
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1617,
+            "end": 1618
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 1619,
+            "end": 1620
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 1620,
+            "end": 1621
+        },
+        {
+            "kind": "Error",
+            "text": "v",
+            "start": 1621,
+            "end": 1622
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1622,
+            "end": 1623
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1623,
+            "end": 1624
+        },
+        {
+            "kind": "Error",
+            "text": "w",
+            "start": 1624,
+            "end": 1625
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1625,
+            "end": 1626
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1626,
+            "end": 1627
+        },
+        {
+            "kind": "Error",
+            "text": "'",
+            "start": 1627,
+            "end": 1628
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 1628,
+            "end": 1629
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1629,
+            "end": 1630
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1647,
+            "end": 1648
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1648,
+            "end": 1649
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1650,
+            "end": 1651
+        },
+        {
+            "kind": "Error",
+            "text": "v",
+            "start": 1651,
+            "end": 1652
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1652,
+            "end": 1653
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1653,
+            "end": 1654
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "false",
+            "start": 1655,
+            "end": 1660
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1660,
+            "end": 1661
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1678,
+            "end": 1679
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1679,
+            "end": 1680
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1681,
+            "end": 1682
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1682,
+            "end": 1683
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1683,
+            "end": 1684
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1685,
+            "end": 1686
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1686,
+            "end": 1687
+        },
+        {
+            "kind": "NullLiteral",
+            "text": "null",
+            "start": 1688,
+            "end": 1692
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1705,
+            "end": 1706
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 1715,
+            "end": 1716
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1716,
+            "end": 1717
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"settings\"",
+            "start": 1726,
+            "end": 1736
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1736,
+            "end": 1737
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1738,
+            "end": 1739
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1752,
+            "end": 1753
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1753,
+            "end": 1754
+        },
+        {
+            "kind": "Error",
+            "text": "b",
+            "start": 1754,
+            "end": 1755
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 1755,
+            "end": 1756
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 1756,
+            "end": 1757
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1757,
+            "end": 1758
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "true",
+            "start": 1759,
+            "end": 1763
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1763,
+            "end": 1764
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1777,
+            "end": 1778
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1778,
+            "end": 1779
+        },
+        {
+            "kind": "Error",
+            "text": "x",
+            "start": 1779,
+            "end": 1780
+        },
+        {
+            "kind": "Error",
+            "text": "R",
+            "start": 1780,
+            "end": 1781
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1781,
+            "end": 1782
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1783,
+            "end": 1784
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1784,
+            "end": 1785
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1785,
+            "end": 1786
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1786,
+            "end": 1787
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1787,
+            "end": 1788
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "5",
+            "start": 1789,
+            "end": 1790
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1790,
+            "end": 1791
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1805,
+            "end": 1806
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 1806,
+            "end": 1807
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1807,
+            "end": 1808
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 1808,
+            "end": 1809
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 1809,
+            "end": 1810
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1811,
+            "end": 1812
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "30.5",
+            "start": 1813,
+            "end": 1817
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1817,
+            "end": 1818
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1832,
+            "end": 1833
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1833,
+            "end": 1834
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 1835,
+            "end": 1836
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1836,
+            "end": 1837
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1837,
+            "end": 1838
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1838,
+            "end": 1839
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1839,
+            "end": 1840
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 1841,
+            "end": 1842
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1860,
+            "end": 1861
+        },
+        {
+            "kind": "Error",
+            "text": "w",
+            "start": 1861,
+            "end": 1862
+        },
+        {
+            "kind": "Error",
+            "text": "U",
+            "start": 1862,
+            "end": 1863
+        },
+        {
+            "kind": "Error",
+            "text": "I",
+            "start": 1863,
+            "end": 1864
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1864,
+            "end": 1865
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "true",
+            "start": 1866,
+            "end": 1870
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1870,
+            "end": 1871
+        },
+        {
+            "kind": "Error",
+            "text": "b",
+            "start": 1888,
+            "end": 1889
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1889,
+            "end": 1890
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1891,
+            "end": 1892
+        },
+        {
+            "kind": "Error",
+            "text": "A",
+            "start": 1892,
+            "end": 1893
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1893,
+            "end": 1894
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1894,
+            "end": 1895
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1895,
+            "end": 1896
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1896,
+            "end": 1897
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1897,
+            "end": 1898
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1898,
+            "end": 1899
+        },
+        {
+            "kind": "BooleanLiteral",
+            "text": "false",
+            "start": 1900,
+            "end": 1905
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1918,
+            "end": 1919
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1928,
+            "end": 1929
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 1934,
+            "end": 1935
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 1935,
+            "end": 1936
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 1942,
+            "end": 1943
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 1943,
+            "end": 1944
+        },
+        {
+            "kind": "Error",
+            "text": "E",
+            "start": 1945,
+            "end": 1946
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1946,
+            "end": 1947
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 1947,
+            "end": 1948
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1948,
+            "end": 1949
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 1950,
+            "end": 1951
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1951,
+            "end": 1952
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1952,
+            "end": 1953
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1953,
+            "end": 1954
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1954,
+            "end": 1955
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 1956,
+            "end": 1957
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 1958,
+            "end": 1959
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1960,
+            "end": 1961
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 1962,
+            "end": 1963
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1963,
+            "end": 1964
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1964,
+            "end": 1965
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1965,
+            "end": 1966
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 1968,
+            "end": 1969
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 1969,
+            "end": 1970
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 1971,
+            "end": 1972
+        },
+        {
+            "kind": "Error",
+            "text": "g",
+            "start": 1973,
+            "end": 1974
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"stress\"",
+            "start": 1979,
+            "end": 1987
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 1987,
+            "end": 1988
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 1989,
+            "end": 1990
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 1999,
+            "end": 2000
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2000,
+            "end": 2001
+        },
+        {
+            "kind": "Error",
+            "text": "E",
+            "start": 2002,
+            "end": 2003
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 2003,
+            "end": 2004
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 2004,
+            "end": 2005
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 2006,
+            "end": 2007
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 2008,
+            "end": 2009
+        },
+        {
+            "kind": "Error",
+            "text": "b",
+            "start": 2009,
+            "end": 2010
+        },
+        {
+            "kind": "Error",
+            "text": "j",
+            "start": 2010,
+            "end": 2011
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2011,
+            "end": 2012
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 2012,
+            "end": 2013
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 2023,
+            "end": 2024
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 2024,
+            "end": 2025
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2025,
+            "end": 2026
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2035,
+            "end": 2036
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2036,
+            "end": 2037
+        },
+        {
+            "kind": "Error",
+            "text": "E",
+            "start": 2038,
+            "end": 2039
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 2039,
+            "end": 2040
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 2040,
+            "end": 2041
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 2042,
+            "end": 2043
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2044,
+            "end": 2045
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 2045,
+            "end": 2046
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 2046,
+            "end": 2047
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2047,
+            "end": 2048
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 2048,
+            "end": 2049
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2058,
+            "end": 2059
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2059,
+            "end": 2060
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2060,
+            "end": 2061
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2070,
+            "end": 2071
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2071,
+            "end": 2072
+        },
+        {
+            "kind": "Error",
+            "text": "D",
+            "start": 2073,
+            "end": 2074
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2074,
+            "end": 2075
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2075,
+            "end": 2076
+        },
+        {
+            "kind": "Error",
+            "text": "p",
+            "start": 2076,
+            "end": 2077
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 2077,
+            "end": 2078
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 2078,
+            "end": 2079
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2081,
+            "end": 2082
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 2082,
+            "end": 2083
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2084,
+            "end": 2085
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 2085,
+            "end": 2086
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2095,
+            "end": 2096
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2096,
+            "end": 2097
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2097,
+            "end": 2098
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2098,
+            "end": 2099
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2099,
+            "end": 2100
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"deep\"",
+            "start": 2100,
+            "end": 2106
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2106,
+            "end": 2107
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2107,
+            "end": 2108
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2108,
+            "end": 2109
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2109,
+            "end": 2110
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2110,
+            "end": 2111
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2111,
+            "end": 2112
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2121,
+            "end": 2122
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2122,
+            "end": 2123
+        },
+        {
+            "kind": "Error",
+            "text": "U",
+            "start": 2124,
+            "end": 2125
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 2126,
+            "end": 2127
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 2127,
+            "end": 2128
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 2128,
+            "end": 2129
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 2129,
+            "end": 2130
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2130,
+            "end": 2131
+        },
+        {
+            "kind": "Error",
+            "text": "k",
+            "start": 2132,
+            "end": 2133
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2133,
+            "end": 2134
+        },
+        {
+            "kind": "Error",
+            "text": "y",
+            "start": 2134,
+            "end": 2135
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 2135,
+            "end": 2136
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2137,
+            "end": 2138
+        },
+        {
+            "kind": "Error",
+            "text": "d",
+            "start": 2139,
+            "end": 2140
+        },
+        {
+            "kind": "Error",
+            "text": "v",
+            "start": 2141,
+            "end": 2142
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2142,
+            "end": 2143
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 2143,
+            "end": 2144
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 2144,
+            "end": 2145
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2145,
+            "end": 2146
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 2146,
+            "end": 2147
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 2156,
+            "end": 2157
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"中文键\"",
+            "start": 2170,
+            "end": 2181
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 2181,
+            "end": 2182
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"中文值\"",
+            "start": 2183,
+            "end": 2194
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2194,
+            "end": 2195
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"emoji\"",
+            "start": 2208,
+            "end": 2215
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 2215,
+            "end": 2216
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"🚀\"",
+            "start": 2217,
+            "end": 2223
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2223,
+            "end": 2224
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"escapedUnicode\"",
+            "start": 2237,
+            "end": 2253
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 2253,
+            "end": 2254
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"\\u00A9\"",
+            "start": 2255,
+            "end": 2263
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 2272,
+            "end": 2273
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2273,
+            "end": 2274
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2283,
+            "end": 2284
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2284,
+            "end": 2285
+        },
+        {
+            "kind": "Error",
+            "text": "V",
+            "start": 2286,
+            "end": 2287
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2287,
+            "end": 2288
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 2288,
+            "end": 2289
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 2289,
+            "end": 2290
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 2290,
+            "end": 2291
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 2291,
+            "end": 2292
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 2292,
+            "end": 2293
+        },
+        {
+            "kind": "Error",
+            "text": "u",
+            "start": 2295,
+            "end": 2296
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 2296,
+            "end": 2297
+        },
+        {
+            "kind": "Error",
+            "text": "b",
+            "start": 2297,
+            "end": 2298
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2298,
+            "end": 2299
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 2299,
+            "end": 2300
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 2302,
+            "end": 2303
+        },
+        {
+            "kind": "Error",
+            "text": "r",
+            "start": 2303,
+            "end": 2304
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 2304,
+            "end": 2305
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2305,
+            "end": 2306
+        },
+        {
+            "kind": "Error",
+            "text": "s",
+            "start": 2307,
+            "end": 2308
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2317,
+            "end": 2318
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "0",
+            "start": 2331,
+            "end": 2332
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2332,
+            "end": 2333
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "-0",
+            "start": 2346,
+            "end": 2348
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2348,
+            "end": 2349
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1",
+            "start": 2362,
+            "end": 2363
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2363,
+            "end": 2364
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "-1",
+            "start": 2377,
+            "end": 2379
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2379,
+            "end": 2380
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1.5",
+            "start": 2393,
+            "end": 2396
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2396,
+            "end": 2397
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "-1.5",
+            "start": 2410,
+            "end": 2414
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2414,
+            "end": 2415
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1.5e3",
+            "start": 2428,
+            "end": 2433
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2433,
+            "end": 2434
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "-1.5e3",
+            "start": 2447,
+            "end": 2453
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2453,
+            "end": 2454
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1.5e-3",
+            "start": 2467,
+            "end": 2473
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2473,
+            "end": 2474
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "-1.5E-3",
+            "start": 2487,
+            "end": 2494
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2503,
+            "end": 2504
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2509,
+            "end": 2510
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 2510,
+            "end": 2511
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2517,
+            "end": 2518
+        },
+        {
+            "kind": "Error",
+            "text": "/",
+            "start": 2518,
+            "end": 2519
+        },
+        {
+            "kind": "Error",
+            "text": "F",
+            "start": 2520,
+            "end": 2521
+        },
+        {
+            "kind": "Error",
+            "text": "i",
+            "start": 2521,
+            "end": 2522
+        },
+        {
+            "kind": "Error",
+            "text": "a",
+            "start": 2523,
+            "end": 2524
+        },
+        {
+            "kind": "Error",
+            "text": "l",
+            "start": 2524,
+            "end": 2525
+        },
+        {
+            "kind": "Error",
+            "text": "c",
+            "start": 2526,
+            "end": 2527
+        },
+        {
+            "kind": "Error",
+            "text": "o",
+            "start": 2527,
+            "end": 2528
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 2528,
+            "end": 2529
+        },
+        {
+            "kind": "Error",
+            "text": "m",
+            "start": 2529,
+            "end": 2530
+        },
+        {
+            "kind": "Error",
+            "text": "e",
+            "start": 2530,
+            "end": 2531
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"footer\"",
+            "start": 2538,
+            "end": 2546
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 2546,
+            "end": 2547
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"End of test\"",
+            "start": 2548,
+            "end": 2561
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 2562,
+            "end": 2563
+        },
+        {
+            "kind": "Eof",
+            "text": "",
+            "start": 2564,
+            "end": 2564
+        }
+    ],
+    "errors": []
+}

@@ -1,0 +1,141 @@
+mod lexer;
+mod serde;
+
+use data_text_core::{Lexer, SourceText};
+use data_text_toml::{TomlLanguage, TomlLexer, TomlParser, TomlSyntaxKind};
+
+#[test]
+fn test_lexer_basic() {
+    let language = TomlLanguage::new();
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new(r#"key = "value""#);
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = lexer.lex(&source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tokens = result.result.unwrap();
+    assert!(!tokens.is_empty());
+    println!("Lexed {} tokens", tokens.len())
+}
+
+#[test]
+fn test_parser_basic() {
+    let language = TomlLanguage::new();
+    let parser = TomlParser::new(&language);
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new(r#"key = "value""#);
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tree = result.result.unwrap();
+    assert!(!tree.children.is_empty());
+    println!("Parsed tree with {} children", tree.children.len())
+}
+
+#[test]
+fn test_lexer_string() {
+    let language = TomlLanguage::new();
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new(r#""hello world""#);
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = lexer.lex(&source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tokens = result.result.unwrap();
+    assert!(!tokens.is_empty());
+
+    // Check if string kind exists.
+    let has_string = tokens.iter().any(|t| matches!(t.kind, TomlSyntaxKind::BasicString));
+    assert!(has_string, "Should contain a string token")
+}
+
+#[test]
+fn test_lexer_number() {
+    let language = TomlLanguage::new();
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new("123");
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = lexer.lex(&source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tokens = result.result.unwrap();
+    assert!(!tokens.is_empty());
+
+    // Check if number token exists.
+    let has_number = tokens.iter().any(|t| matches!(t.kind, TomlSyntaxKind::Integer | TomlSyntaxKind::Float));
+    assert!(has_number, "Should contain a number token")
+}
+
+#[test]
+fn test_lexer_boolean() {
+    let language = TomlLanguage::new();
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new("true");
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = lexer.lex(&source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tokens = result.result.unwrap();
+    assert!(!tokens.is_empty());
+
+    // Check if boolean token exists.
+    let has_boolean = tokens.iter().any(|t| matches!(t.kind, TomlSyntaxKind::Boolean));
+    assert!(has_boolean, "Should contain a boolean token")
+}
+
+#[test]
+fn test_parser_key_value() {
+    let language = TomlLanguage::new();
+    let parser = TomlParser::new(&language);
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new(r#"name = "John""#);
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tree = result.result.unwrap();
+    assert!(!tree.children.is_empty(), "Parsed tree should have children")
+}
+
+#[test]
+fn test_parser_table() {
+    let language = TomlLanguage::new();
+    let parser = TomlParser::new(&language);
+    let lexer = TomlLexer::new(&language);
+    let source = SourceText::new(
+        r#"[section]
+name = "value"
+"#,
+    );
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    let result = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
+    assert!(result.result.is_ok());
+
+    let tree = result.result.unwrap();
+    assert!(!tree.children.is_empty(), "Parsed tree should have children")
+}
+
+#[test]
+fn test_empty_input() {
+    let language = TomlLanguage::new();
+    let lexer = TomlLexer::new(&language);
+    let parser = TomlParser::new(&language);
+    let source = SourceText::new("");
+    let mut cache = data_text_core::ParseSession::<TomlLanguage>::default();
+
+    // Test lexing of empty input
+    let lex_result = lexer.lex(&source, &[], &mut cache);
+    assert!(lex_result.result.is_ok());
+
+    // Test parsing of empty input
+    let parse_result = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
+    assert!(parse_result.result.is_ok())
+}

@@ -1,0 +1,17 @@
+#![doc = include_str!("readme.md")]
+use crate::language::StylusLanguage;
+use data_text_core::{RedNode, TextEdit};
+
+pub struct StylusFormatter;
+
+impl StylusFormatter {
+    pub fn new(config: &StylusLanguage) -> Self {
+        Self
+    }
+}
+
+impl StylusFormatter {
+    pub fn format(&self, _root: &RedNode<StylusLanguage>) -> Vec<TextEdit> {
+        vec![]
+    }
+}

@@ -1,0 +1,1033 @@
+{
+    "success": true,
+    "count": 171,
+    "tokens": [
+        {
+            "kind": "Comment",
+            "text": "{{! Comprehensive Handlebars Lexer Test }}",
+            "start": 0,
+            "end": 42
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n\n",
+            "start": 42,
+            "end": 44
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- Basic Expressions --- }}",
+            "start": 44,
+            "end": 76
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 76,
+            "end": 77
+        },
+        {
+            "kind": "Content",
+            "text": "<h1>",
+            "start": 77,
+            "end": 81
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 81,
+            "end": 83
+        },
+        {
+            "kind": "Identifier",
+            "text": "title",
+            "start": 83,
+            "end": 88
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 88,
+            "end": 90
+        },
+        {
+            "kind": "Content",
+            "text": "</h1>\n<p>",
+            "start": 90,
+            "end": 99
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 99,
+            "end": 101
+        },
+        {
+            "kind": "Identifier",
+            "text": "body",
+            "start": 101,
+            "end": 105
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 105,
+            "end": 107
+        },
+        {
+            "kind": "Content",
+            "text": "</p>\n\n",
+            "start": 107,
+            "end": 113
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- HTML Escaping --- }}",
+            "start": 113,
+            "end": 141
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 141,
+            "end": 142
+        },
+        {
+            "kind": "Identifier",
+            "text": "I",
+            "start": 142,
+            "end": 143
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 143,
+            "end": 144
+        },
+        {
+            "kind": "Identifier",
+            "text": "want",
+            "start": 144,
+            "end": 148
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 148,
+            "end": 149
+        },
+        {
+            "kind": "Identifier",
+            "text": "to",
+            "start": 149,
+            "end": 151
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 151,
+            "end": 152
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 152,
+            "end": 156
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 156,
+            "end": 157
+        },
+        {
+            "kind": "Identifier",
+            "text": "some",
+            "start": 157,
+            "end": 161
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 161,
+            "end": 162
+        },
+        {
+            "kind": "Identifier",
+            "text": "HTML",
+            "start": 162,
+            "end": 166
+        },
+        {
+            "kind": "Content",
+            "text": ": ",
+            "start": 166,
+            "end": 168
+        },
+        {
+            "kind": "OpenUnescaped",
+            "text": "{{{",
+            "start": 168,
+            "end": 171
+        },
+        {
+            "kind": "Identifier",
+            "text": "htmlContent",
+            "start": 171,
+            "end": 182
+        },
+        {
+            "kind": "CloseUnescaped",
+            "text": "}}}",
+            "start": 182,
+            "end": 185
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 185,
+            "end": 186
+        },
+        {
+            "kind": "Identifier",
+            "text": "Or",
+            "start": 186,
+            "end": 188
+        },
+        {
+            "kind": "Content",
+            "text": ": ",
+            "start": 188,
+            "end": 190
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 190,
+            "end": 192
+        },
+        {
+            "kind": "Content",
+            "text": "&htmlContent}}\n\n",
+            "start": 192,
+            "end": 208
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- Comments --- }}",
+            "start": 208,
+            "end": 231
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 231,
+            "end": 232
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! This is a comment }}",
+            "start": 232,
+            "end": 256
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 256,
+            "end": 257
+        },
+        {
+            "kind": "Comment",
+            "text": "{{!-- This is a block comment \n            that can contain }} braces --}}",
+            "start": 257,
+            "end": 331
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n\n",
+            "start": 331,
+            "end": 333
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- Block Helpers --- }}",
+            "start": 333,
+            "end": 361
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 361,
+            "end": 362
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 362,
+            "end": 364
+        },
+        {
+            "kind": "Hash",
+            "text": "#",
+            "start": 364,
+            "end": 365
+        },
+        {
+            "kind": "Identifier",
+            "text": "if",
+            "start": 365,
+            "end": 367
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 367,
+            "end": 368
+        },
+        {
+            "kind": "Identifier",
+            "text": "isActive",
+            "start": 368,
+            "end": 376
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 376,
+            "end": 378
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n    ",
+            "start": 378,
+            "end": 383
+        },
+        {
+            "kind": "Content",
+            "text": "<div class=\"active\">Active</div>\n",
+            "start": 383,
+            "end": 416
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 416,
+            "end": 418
+        },
+        {
+            "kind": "Else",
+            "text": "else",
+            "start": 418,
+            "end": 422
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 422,
+            "end": 423
+        },
+        {
+            "kind": "Identifier",
+            "text": "if",
+            "start": 423,
+            "end": 425
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 425,
+            "end": 426
+        },
+        {
+            "kind": "Identifier",
+            "text": "isPending",
+            "start": 426,
+            "end": 435
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 435,
+            "end": 437
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n    ",
+            "start": 437,
+            "end": 442
+        },
+        {
+            "kind": "Content",
+            "text": "<div class=\"pending\">Pending</div>\n",
+            "start": 442,
+            "end": 477
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 477,
+            "end": 479
+        },
+        {
+            "kind": "Else",
+            "text": "else",
+            "start": 479,
+            "end": 483
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 483,
+            "end": 485
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n    ",
+            "start": 485,
+            "end": 490
+        },
+        {
+            "kind": "Content",
+            "text": "<div class=\"inactive\">Inactive</div>\n",
+            "start": 490,
+            "end": 527
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 527,
+            "end": 529
+        },
+        {
+            "kind": "Slash",
+            "text": "/",
+            "start": 529,
+            "end": 530
+        },
+        {
+            "kind": "Identifier",
+            "text": "if",
+            "start": 530,
+            "end": 532
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 532,
+            "end": 534
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n\n",
+            "start": 534,
+            "end": 536
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 536,
+            "end": 538
+        },
+        {
+            "kind": "Hash",
+            "text": "#",
+            "start": 538,
+            "end": 539
+        },
+        {
+            "kind": "Identifier",
+            "text": "unless",
+            "start": 539,
+            "end": 545
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 545,
+            "end": 546
+        },
+        {
+            "kind": "Identifier",
+            "text": "isAuthorized",
+            "start": 546,
+            "end": 558
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 558,
+            "end": 560
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n    ",
+            "start": 560,
+            "end": 565
+        },
+        {
+            "kind": "Content",
+            "text": "<p>Please log in.</p>\n",
+            "start": 565,
+            "end": 587
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 587,
+            "end": 589
+        },
+        {
+            "kind": "Slash",
+            "text": "/",
+            "start": 589,
+            "end": 590
+        },
+        {
+            "kind": "Identifier",
+            "text": "unless",
+            "start": 590,
+            "end": 596
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 596,
+            "end": 598
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n\n",
+            "start": 598,
+            "end": 600
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- Iteration --- }}",
+            "start": 600,
+            "end": 624
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 624,
+            "end": 625
+        },
+        {
+            "kind": "Content",
+            "text": "<ul>\n    ",
+            "start": 625,
+            "end": 634
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 634,
+            "end": 636
+        },
+        {
+            "kind": "Hash",
+            "text": "#",
+            "start": 636,
+            "end": 637
+        },
+        {
+            "kind": "Identifier",
+            "text": "each",
+            "start": 637,
+            "end": 641
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 641,
+            "end": 642
+        },
+        {
+            "kind": "Identifier",
+            "text": "items",
+            "start": 642,
+            "end": 647
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 647,
+            "end": 649
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n        ",
+            "start": 649,
+            "end": 658
+        },
+        {
+            "kind": "Content",
+            "text": "<li>",
+            "start": 658,
+            "end": 662
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 662,
+            "end": 664
+        },
+        {
+            "kind": "Identifier",
+            "text": "this",
+            "start": 664,
+            "end": 668
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 668,
+            "end": 670
+        },
+        {
+            "kind": "Content",
+            "text": "</li>\n    ",
+            "start": 670,
+            "end": 680
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 680,
+            "end": 682
+        },
+        {
+            "kind": "Slash",
+            "text": "/",
+            "start": 682,
+            "end": 683
+        },
+        {
+            "kind": "Identifier",
+            "text": "each",
+            "start": 683,
+            "end": 687
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 687,
+            "end": 689
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 689,
+            "end": 690
+        },
+        {
+            "kind": "Content",
+            "text": "</ul>\n\n",
+            "start": 690,
+            "end": 697
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 697,
+            "end": 699
+        },
+        {
+            "kind": "Hash",
+            "text": "#",
+            "start": 699,
+            "end": 700
+        },
+        {
+            "kind": "Identifier",
+            "text": "each",
+            "start": 700,
+            "end": 704
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 704,
+            "end": 705
+        },
+        {
+            "kind": "Identifier",
+            "text": "users",
+            "start": 705,
+            "end": 710
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 710,
+            "end": 711
+        },
+        {
+            "kind": "Identifier",
+            "text": "as",
+            "start": 711,
+            "end": 713
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 713,
+            "end": 714
+        },
+        {
+            "kind": "Pipe",
+            "text": "|",
+            "start": 714,
+            "end": 715
+        },
+        {
+            "kind": "Identifier",
+            "text": "user",
+            "start": 715,
+            "end": 719
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 719,
+            "end": 720
+        },
+        {
+            "kind": "Identifier",
+            "text": "userId",
+            "start": 720,
+            "end": 726
+        },
+        {
+            "kind": "Pipe",
+            "text": "|",
+            "start": 726,
+            "end": 727
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 727,
+            "end": 729
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n    ",
+            "start": 729,
+            "end": 734
+        },
+        {
+            "kind": "Content",
+            "text": "<div id=\"user-",
+            "start": 734,
+            "end": 748
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 748,
+            "end": 750
+        },
+        {
+            "kind": "Identifier",
+            "text": "userId",
+            "start": 750,
+            "end": 756
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 756,
+            "end": 758
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\">\n        {{user.name}} - {{@index}} - {{@key}}\n        {{#if @first}} (First) {{/if}}\n        {{#if @last}} (Last) {{/if}}\n    </div>\n{{else}}\n    <p>No users found.</p>\n{{/each}}\n\n{{! --- With Helper --- }}\n{{#with author}}\n    <h2>By {{firstName}} {{lastName}}</h2>\n    <p>Email: {{email}}</p>\n{{/with}}\n\n{{#with city as |city|}}\n    {{#with city.location as |loc|}}\n        {{city.name}}: {{loc.north}} {{loc.east}}\n    {{/with}}\n{{/with}}\n\n{{! --- Path Navigation --- }}\n{{./name}}\n{{../title}}\n{{../../section/header}}\n\n{{! --- Helpers with Arguments --- }}\n{{link \"",
+            "start": 758,
+            "end": 1331
+        },
+        {
+            "kind": "Identifier",
+            "text": "See",
+            "start": 1331,
+            "end": 1334
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 1334,
+            "end": 1335
+        },
+        {
+            "kind": "Identifier",
+            "text": "more...",
+            "start": 1335,
+            "end": 1342
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\" href=story.url class=\"",
+            "start": 1342,
+            "end": 1366
+        },
+        {
+            "kind": "Identifier",
+            "text": "story",
+            "start": 1366,
+            "end": 1371
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"}}\n\n{{! --- Subexpressions --- }}\n{{outer-helper (inner-helper 'abc') 'def'}}\n\n{{! --- Partials --- }}\n{{> myPartial }}\n{{> myPartial name=firstName age=30 }}\n{{> (dynamicPartial) }}\n\n{{! --- Inline Partials --- }}\n{{#*inline \"",
+            "start": 1371,
+            "end": 1599
+        },
+        {
+            "kind": "Identifier",
+            "text": "myInlinePartial",
+            "start": 1599,
+            "end": 1614
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"}}\n    <div class=\"",
+            "start": 1614,
+            "end": 1634
+        },
+        {
+            "kind": "Identifier",
+            "text": "inline",
+            "start": 1634,
+            "end": 1640
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\">\n        {{content}}\n    </div>\n{{/inline}}\n\n{{> myInlinePartial content=\"",
+            "start": 1640,
+            "end": 1716
+        },
+        {
+            "kind": "Identifier",
+            "text": "Hello",
+            "start": 1716,
+            "end": 1721
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 1721,
+            "end": 1722
+        },
+        {
+            "kind": "Identifier",
+            "text": "Inline",
+            "start": 1722,
+            "end": 1728
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\" }}\n\n{{! --- Raw Blocks --- }}\n{{{{raw-helper}}}}\n    {{bar}}\n{{{{/raw-helper}}}}\n\n{{! --- Log Helper --- }}\n{{log \"",
+            "start": 1728,
+            "end": 1845
+        },
+        {
+            "kind": "Identifier",
+            "text": "Look",
+            "start": 1845,
+            "end": 1849
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 1849,
+            "end": 1850
+        },
+        {
+            "kind": "Identifier",
+            "text": "at",
+            "start": 1850,
+            "end": 1852
+        },
+        {
+            "kind": "Whitespace",
+            "text": " ",
+            "start": 1852,
+            "end": 1853
+        },
+        {
+            "kind": "Identifier",
+            "text": "me",
+            "start": 1853,
+            "end": 1855
+        },
+        {
+            "kind": "Content",
+            "text": "!\" level=\"error\"}}\n\n",
+            "start": 1855,
+            "end": 1875
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- Custom Delimiters (if supported, though rare in standard handlebars) --- }}",
+            "start": 1875,
+            "end": 1958
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 1958,
+            "end": 1959
+        },
+        {
+            "kind": "Comment",
+            "text": "{{!-- Not typically supported in basic syntax highlighting but good to test --}}",
+            "start": 1959,
+            "end": 2039
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n\n",
+            "start": 2039,
+            "end": 2041
+        },
+        {
+            "kind": "Comment",
+            "text": "{{! --- Complex Data --- }}",
+            "start": 2041,
+            "end": 2068
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 2068,
+            "end": 2069
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 2069,
+            "end": 2071
+        },
+        {
+            "kind": "Identifier",
+            "text": "object.value",
+            "start": 2071,
+            "end": 2083
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 2083,
+            "end": 2085
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 2085,
+            "end": 2086
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 2086,
+            "end": 2088
+        },
+        {
+            "kind": "Identifier",
+            "text": "array.",
+            "start": 2088,
+            "end": 2094
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2094,
+            "end": 2095
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "0",
+            "start": 2095,
+            "end": 2096
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2096,
+            "end": 2097
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 2097,
+            "end": 2099
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 2099,
+            "end": 2100
+        },
+        {
+            "kind": "Open",
+            "text": "{{",
+            "start": 2100,
+            "end": 2102
+        },
+        {
+            "kind": "Identifier",
+            "text": "array.",
+            "start": 2102,
+            "end": 2108
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 2108,
+            "end": 2109
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "10",
+            "start": 2109,
+            "end": 2111
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 2111,
+            "end": 2112
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 2112,
+            "end": 2113
+        },
+        {
+            "kind": "Identifier",
+            "text": "name",
+            "start": 2113,
+            "end": 2117
+        },
+        {
+            "kind": "Close",
+            "text": "}}",
+            "start": 2117,
+            "end": 2119
+        },
+        {
+            "kind": "Whitespace",
+            "text": "\n",
+            "start": 2119,
+            "end": 2120
+        },
+        {
+            "kind": "Error",
+            "text": "",
+            "start": 2120,
+            "end": 2120
+        }
+    ],
+    "errors": []
+}

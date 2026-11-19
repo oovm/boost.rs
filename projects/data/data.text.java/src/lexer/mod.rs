@@ -1,0 +1,623 @@
+#![doc = include_str!("readme.md")]
+
+/// Java token types.
+pub mod token_type;
+
+use crate::{language::JavaLanguage, lexer::token_type::JavaTokenType};
+use data_text_core::{Lexer, LexerCache, LexerState, OakError, lexer::LexOutput, source::Source};
+
+pub(crate) type State<'a, S> = LexerState<'a, S, JavaLanguage>;
+
+/// Java lexer.
+#[derive(Clone, Debug)]
+pub struct JavaLexer<'config> {
+    config: &'config JavaLanguage,
+}
+
+impl<'config> Lexer<JavaLanguage> for JavaLexer<'config> {
+    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<JavaLanguage>) -> LexOutput<JavaLanguage> {
+        let mut state = State::new(source);
+        let result = self.run(&mut state);
+        if result.is_ok() {
+            state.add_eof();
+        }
+        state.finish_with_cache(result, cache)
+    }
+}
+
+impl<'config> JavaLexer<'config> {
+    /// Create a new Java lexer.
+    pub fn new(config: &'config JavaLanguage) -> Self {
+        Self { config }
+    }
+
+    /// Main lexing loop
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+        while state.not_at_end() {
+            let safe_point = state.get_position();
+
+            if self.skip_whitespace(state) {
+                continue;
+            }
+
+            if self.lex_newline(state) {
+                continue;
+            }
+
+            if self.skip_comment(state) {
+                continue;
+            }
+
+            if self.lex_string_literal(state) {
+                continue;
+            }
+
+            if self.lex_char_literal(state) {
+                continue;
+            }
+
+            if self.lex_number_literal(state) {
+                continue;
+            }
+
+            if self.lex_identifier_or_keyword(state) {
+                continue;
+            }
+
+            if self.lex_operator_or_delimiter(state) {
+                continue;
+            }
+
+            // If no rule matches, advance one character and mark as error
+            let start_pos = state.get_position();
+            if let Some(ch) = state.peek() {
+                state.advance(ch.len_utf8());
+                state.add_token(JavaTokenType::Error, start_pos, state.get_position());
+            }
+
+            state.advance_if_dead_lock(safe_point);
+        }
+
+        Ok(())
+    }
+
+    /// Skip whitespace characters (excluding newlines)
+    fn skip_whitespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        while let Some(ch) = state.peek() {
+            if ch == ' ' || ch == '\t' || ch == '\r' {
+                state.advance(ch.len_utf8());
+            }
+            else {
+                break;
+            }
+        }
+
+        if state.get_position() > start {
+            state.add_token(JavaTokenType::Whitespace, start, state.get_position());
+            return true;
+        }
+        false
+    }
+
+    /// Handle newline
+    fn lex_newline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some('\n') = state.peek() {
+            state.advance(1);
+            state.add_token(JavaTokenType::Whitespace, start, state.get_position());
+            true
+        }
+        else {
+            false
+        }
+    }
+
+    /// Skip comments
+    fn skip_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        // Single-line comment //
+        if state.peek() == Some('/') && state.peek_next_n(1) == Some('/') {
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '\n' {
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(JavaTokenType::LineComment, start, state.get_position());
+            return true;
+        }
+
+        // Multi-line comment /* */
+        if state.peek() == Some('/') && state.peek_next_n(1) == Some('*') {
+            let start = state.get_position();
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '*' && state.peek_next_n(1) == Some('/') {
+                    state.advance(2);
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(JavaTokenType::BlockComment, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    /// Handle string literal
+    fn lex_string_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some('"') = state.peek() {
+            state.advance(1);
+
+            while let Some(ch) = state.peek() {
+                if ch == '"' {
+                    state.advance(1);
+                    break;
+                }
+                else if ch == '\\' {
+                    state.advance(1);
+                    if let Some(escaped) = state.peek() {
+                        state.advance(escaped.len_utf8());
+                    }
+                }
+                else if ch == '\n' {
+                    // Unclosed string
+                    break;
+                }
+                else {
+                    state.advance(ch.len_utf8());
+                }
+            }
+
+            state.add_token(JavaTokenType::StringLiteral, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    /// Handle character literal
+    fn lex_char_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some('\'') = state.peek() {
+            state.advance(1);
+
+            if let Some(ch) = state.peek() {
+                if ch == '\\' {
+                    state.advance(1);
+                    if let Some(escaped) = state.peek() {
+                        state.advance(escaped.len_utf8());
+                    }
+                }
+                else if ch != '\'' && ch != '\n' {
+                    state.advance(ch.len_utf8());
+                }
+            }
+
+            if let Some('\'') = state.peek() {
+                state.advance(1);
+            }
+
+            state.add_token(JavaTokenType::CharacterLiteral, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    /// Handle number literal
+    fn lex_number_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(ch) = state.peek() {
+            if ch.is_ascii_digit() {
+                // Handle integer part
+                while let Some(ch) = state.peek() {
+                    if ch.is_ascii_digit() {
+                        state.advance(ch.len_utf8());
+                    }
+                    else {
+                        break;
+                    }
+                }
+
+                // Handle fractional part
+                if state.peek() == Some('.') && state.peek_next_n(1).map_or(false, |c| c.is_ascii_digit()) {
+                    state.advance(1); // '.'
+                    while let Some(ch) = state.peek() {
+                        if ch.is_ascii_digit() {
+                            state.advance(ch.len_utf8());
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                }
+
+                // Handle exponent part
+                if let Some(ch) = state.peek() {
+                    if ch == 'e' || ch == 'E' {
+                        state.advance(1);
+                        if let Some(sign) = state.peek() {
+                            if sign == '+' || sign == '-' {
+                                state.advance(1);
+                            }
+                        }
+                        while let Some(ch) = state.peek() {
+                            if ch.is_ascii_digit() {
+                                state.advance(ch.len_utf8());
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Handle suffix
+                if let Some(suffix) = state.peek() {
+                    if suffix == 'f' || suffix == 'F' || suffix == 'd' || suffix == 'D' || suffix == 'l' || suffix == 'L' {
+                        state.advance(1);
+                    }
+                }
+
+                let text = state.get_text_in((start..state.get_position()).into());
+                let kind = if text.contains('.') || text.contains('e') || text.contains('E') || text.ends_with('f') || text.ends_with('F') || text.ends_with('d') || text.ends_with('D') {
+                    JavaTokenType::FloatingPointLiteral
+                }
+                else {
+                    JavaTokenType::IntegerLiteral
+                };
+
+                eprintln!("DEBUG: Lexer classified '{}' as {:?} at {}..{}", text, kind, start, state.get_position());
+                state.add_token(kind, start, state.get_position());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Handle identifier or keyword
+    fn lex_identifier_or_keyword<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(ch) = state.peek() {
+            if ch.is_ascii_alphabetic() || ch == '_' || ch == '$' {
+                state.advance(ch.len_utf8());
+
+                while let Some(ch) = state.peek() {
+                    if ch.is_ascii_alphanumeric() || ch == '_' || ch == '$' {
+                        state.advance(ch.len_utf8());
+                    }
+                    else {
+                        break;
+                    }
+                }
+
+                let text = state.get_text_in((start..state.get_position()).into());
+                let token_kind = self.classify_identifier(text.as_ref());
+
+                eprintln!("DEBUG: Lexer classified '{}' as {:?} at {}..{}", text, token_kind, start, state.get_position());
+                state.add_token(token_kind, start, state.get_position());
+                true
+            }
+            else {
+                false
+            }
+        }
+        else {
+            false
+        }
+    }
+
+    /// Classify identifier as keyword or plain identifier
+    fn classify_identifier(&self, text: &str) -> JavaTokenType {
+        match text {
+            "abstract" => JavaTokenType::Abstract,
+            "assert" => JavaTokenType::Assert,
+            "boolean" => JavaTokenType::Boolean,
+            "break" => JavaTokenType::Break,
+            "byte" => JavaTokenType::Byte,
+            "case" => JavaTokenType::Case,
+            "catch" => JavaTokenType::Catch,
+            "char" => JavaTokenType::Char,
+            "class" => JavaTokenType::Class,
+            "const" => JavaTokenType::Const,
+            "continue" => JavaTokenType::Continue,
+            "default" => JavaTokenType::Default,
+            "do" => JavaTokenType::Do,
+            "double" => JavaTokenType::Double,
+            "else" => JavaTokenType::Else,
+            "enum" => JavaTokenType::Enum,
+            "extends" => JavaTokenType::Extends,
+            "final" => JavaTokenType::Final,
+            "finally" => JavaTokenType::Finally,
+            "float" => JavaTokenType::Float,
+            "for" => JavaTokenType::For,
+            "goto" => JavaTokenType::Goto,
+            "if" => JavaTokenType::If,
+            "implements" => JavaTokenType::Implements,
+            "import" => JavaTokenType::Import,
+            "instanceof" => JavaTokenType::Instanceof,
+            "int" => JavaTokenType::Int,
+            "interface" => JavaTokenType::Interface,
+            "long" => JavaTokenType::Long,
+            "native" => JavaTokenType::Native,
+            "new" => JavaTokenType::New,
+            "package" => JavaTokenType::Package,
+            "private" => JavaTokenType::Private,
+            "protected" => JavaTokenType::Protected,
+            "public" => JavaTokenType::Public,
+            "record" => JavaTokenType::Record,
+            "return" => JavaTokenType::Return,
+            "short" => JavaTokenType::Short,
+            "static" => JavaTokenType::Static,
+            "strictfp" => JavaTokenType::Strictfp,
+            "struct" => JavaTokenType::Struct,
+            "super" => JavaTokenType::Super,
+            "switch" => JavaTokenType::Switch,
+            "synchronized" => JavaTokenType::Synchronized,
+            "this" => JavaTokenType::This,
+            "throw" => JavaTokenType::Throw,
+            "throws" => JavaTokenType::Throws,
+            "transient" => JavaTokenType::Transient,
+            "try" => JavaTokenType::Try,
+            "void" => JavaTokenType::Void,
+            "volatile" => JavaTokenType::Volatile,
+            "while" => JavaTokenType::While,
+            "true" | "false" => JavaTokenType::BooleanLiteral,
+            "null" => JavaTokenType::NullLiteral,
+            _ => JavaTokenType::Identifier,
+        }
+    }
+
+    /// Handle operator and delimiter
+    fn lex_operator_or_delimiter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(ch) = state.peek() {
+            let token_kind = match ch {
+                '+' => {
+                    state.advance(1);
+                    if state.peek() == Some('+') {
+                        state.advance(1);
+                        JavaTokenType::PlusPlus
+                    }
+                    else if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::PlusEquals
+                    }
+                    else {
+                        JavaTokenType::Plus
+                    }
+                }
+                '-' => {
+                    state.advance(1);
+                    if state.peek() == Some('-') {
+                        state.advance(1);
+                        JavaTokenType::MinusMinus
+                    }
+                    else if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::MinusEquals
+                    }
+                    else {
+                        JavaTokenType::Minus
+                    }
+                }
+                '*' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::AsteriskEquals
+                    }
+                    else {
+                        JavaTokenType::Asterisk
+                    }
+                }
+                '/' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::SlashEquals
+                    }
+                    else {
+                        JavaTokenType::Slash
+                    }
+                }
+                '%' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::PercentEquals
+                    }
+                    else {
+                        JavaTokenType::Percent
+                    }
+                }
+                '=' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::Equals
+                    }
+                    else {
+                        JavaTokenType::Assign
+                    }
+                }
+                '!' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::BangEquals
+                    }
+                    else {
+                        JavaTokenType::Bang
+                    }
+                }
+                '<' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::LessThanEquals
+                    }
+                    else if state.peek() == Some('<') {
+                        state.advance(1);
+                        if state.peek() == Some('=') {
+                            state.advance(1);
+                            JavaTokenType::LeftShiftEquals
+                        }
+                        else {
+                            JavaTokenType::LeftShift
+                        }
+                    }
+                    else {
+                        JavaTokenType::LessThan
+                    }
+                }
+                '>' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::GreaterThanEquals
+                    }
+                    else if state.peek() == Some('>') {
+                        state.advance(1);
+                        if state.peek() == Some('>') {
+                            state.advance(1);
+                            if state.peek() == Some('=') {
+                                state.advance(1);
+                                JavaTokenType::UnsignedRightShiftEquals
+                            }
+                            else {
+                                JavaTokenType::UnsignedRightShift
+                            }
+                        }
+                        else if state.peek() == Some('=') {
+                            state.advance(1);
+                            JavaTokenType::RightShiftEquals
+                        }
+                        else {
+                            JavaTokenType::RightShift
+                        }
+                    }
+                    else {
+                        JavaTokenType::GreaterThan
+                    }
+                }
+                '&' => {
+                    state.advance(1);
+                    if state.peek() == Some('&') {
+                        state.advance(1);
+                        JavaTokenType::AmpersandAmpersand
+                    }
+                    else if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::AmpersandEquals
+                    }
+                    else {
+                        JavaTokenType::Ampersand
+                    }
+                }
+                '|' => {
+                    state.advance(1);
+                    if state.peek() == Some('|') {
+                        state.advance(1);
+                        JavaTokenType::PipePipe
+                    }
+                    else if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::PipeEquals
+                    }
+                    else {
+                        JavaTokenType::Pipe
+                    }
+                }
+                '^' => {
+                    state.advance(1);
+                    if state.peek() == Some('=') {
+                        state.advance(1);
+                        JavaTokenType::CaretEquals
+                    }
+                    else {
+                        JavaTokenType::Caret
+                    }
+                }
+                '~' => {
+                    state.advance(1);
+                    JavaTokenType::Tilde
+                }
+                '?' => {
+                    state.advance(1);
+                    JavaTokenType::Question
+                }
+                ':' => {
+                    state.advance(1);
+                    JavaTokenType::Colon
+                }
+                ';' => {
+                    state.advance(1);
+                    JavaTokenType::Semicolon
+                }
+                ',' => {
+                    state.advance(1);
+                    JavaTokenType::Comma
+                }
+                '.' => {
+                    state.advance(1);
+                    if state.peek() == Some('.') && state.peek_next_n(1) == Some('.') {
+                        state.advance(2);
+                        JavaTokenType::Ellipsis
+                    }
+                    else {
+                        JavaTokenType::Dot
+                    }
+                }
+                '(' => {
+                    state.advance(1);
+                    JavaTokenType::LeftParen
+                }
+                ')' => {
+                    state.advance(1);
+                    JavaTokenType::RightParen
+                }
+                '{' => {
+                    state.advance(1);
+                    JavaTokenType::LeftBrace
+                }
+                '}' => {
+                    state.advance(1);
+                    JavaTokenType::RightBrace
+                }
+                '[' => {
+                    state.advance(1);
+                    JavaTokenType::LeftBracket
+                }
+                ']' => {
+                    state.advance(1);
+                    JavaTokenType::RightBracket
+                }
+                '@' => {
+                    state.advance(1);
+                    JavaTokenType::At
+                }
+                _ => return false,
+            };
+
+            state.add_token(token_kind, start, state.get_position());
+            true
+        }
+        else {
+            false
+        }
+    }
+}

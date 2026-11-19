@@ -1,0 +1,20 @@
+[package]
+name = "data-text-kotlin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+description = "Kotlin language support for Oak"
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+
+[features]
+serde = ["data-text-core/serde", "dep:serde"]
+
+[[test]]
+name = "main"
+required-features = ["serde"]

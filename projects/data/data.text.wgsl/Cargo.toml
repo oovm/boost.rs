@@ -1,0 +1,38 @@
+[package]
+name = "data-text-wgsl"
+version.workspace = true
+authors.workspace = true
+description = "WGSL language parser with support for modern shader programming and WebGPU features."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-wgsl"
+categories = ["parsing"]
+keywords = ["parser", "wgsl", "shader", "webgpu"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

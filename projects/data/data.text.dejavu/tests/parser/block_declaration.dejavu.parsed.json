@@ -1,0 +1,103 @@
+{
+    "success": true,
+    "node_count": 15,
+    "ast_structure": {
+        "kind": "Root",
+        "children": [
+            {
+                "kind": "TemplateText",
+                "children": [
+                    {
+                        "kind": "Leaves(1)",
+                        "children": [],
+                        "text_length": 26,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 26,
+                "is_leaf": false
+            },
+            {
+                "kind": "TemplateControl",
+                "children": [
+                    {
+                        "kind": "Leaves(7)",
+                        "children": [],
+                        "text_length": 20,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 20,
+                "is_leaf": false
+            },
+            {
+                "kind": "TemplateText",
+                "children": [
+                    {
+                        "kind": "Leaves(1)",
+                        "children": [],
+                        "text_length": 84,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 84,
+                "is_leaf": false
+            },
+            {
+                "kind": "TemplateControl",
+                "children": [
+                    {
+                        "kind": "Leaves(5)",
+                        "children": [],
+                        "text_length": 18,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 18,
+                "is_leaf": false
+            },
+            {
+                "kind": "TemplateText",
+                "children": [
+                    {
+                        "kind": "Leaves(1)",
+                        "children": [],
+                        "text_length": 37,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 37,
+                "is_leaf": false
+            },
+            {
+                "kind": "TemplateControl",
+                "children": [
+                    {
+                        "kind": "Leaves(7)",
+                        "children": [],
+                        "text_length": 25,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 25,
+                "is_leaf": false
+            },
+            {
+                "kind": "TemplateText",
+                "children": [
+                    {
+                        "kind": "Leaves(1)",
+                        "children": [],
+                        "text_length": 59,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 59,
+                "is_leaf": false
+            }
+        ],
+        "text_length": 269,
+        "is_leaf": false
+    },
+    "errors": []
+}

@@ -1,0 +1,19 @@
+[package]
+name = "data-text-resolver"
+version.workspace = true
+authors.workspace = true
+description = "Module resolution and global symbol management for the Oaks framework."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+[dependencies]
+data-text-core = { workspace = true }
+data-text-symbols = { workspace = true }
+serde = { workspace = true, optional = true }
+dashmap = { workspace = true }
+url = { workspace = true }
+
+[features]
+serde = ["dep:serde", "data-text-core/serde"]
+default = ["serde"]

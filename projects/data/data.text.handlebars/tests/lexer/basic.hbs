@@ -1,0 +1,97 @@
+{{! Comprehensive Handlebars Lexer Test }}
+
+{{! --- Basic Expressions --- }}
+<h1>{{title}}</h1>
+<p>{{body}}</p>
+
+{{! --- HTML Escaping --- }}
+I want to show some HTML: {{{htmlContent}}}
+Or: {{&htmlContent}}
+
+{{! --- Comments --- }}
+{{! This is a comment }}
+{{!-- This is a block comment 
+            that can contain }} braces --}}
+
+{{! --- Block Helpers --- }}
+{{#if isActive}}
+    <div class="active">Active</div>
+{{else if isPending}}
+    <div class="pending">Pending</div>
+{{else}}
+    <div class="inactive">Inactive</div>
+{{/if}}
+
+{{#unless isAuthorized}}
+    <p>Please log in.</p>
+{{/unless}}
+
+{{! --- Iteration --- }}
+<ul>
+    {{#each items}}
+        <li>{{this}}</li>
+    {{/each}}
+</ul>
+
+{{#each users as |user userId|}}
+    <div id="user-{{userId}}">
+        {{user.name}} - {{@index}} - {{@key}}
+        {{#if @first}} (First) {{/if}}
+        {{#if @last}} (Last) {{/if}}
+    </div>
+{{else}}
+    <p>No users found.</p>
+{{/each}}
+
+{{! --- With Helper --- }}
+{{#with author}}
+    <h2>By {{firstName}} {{lastName}}</h2>
+    <p>Email: {{email}}</p>
+{{/with}}
+
+{{#with city as |city|}}
+    {{#with city.location as |loc|}}
+        {{city.name}}: {{loc.north}} {{loc.east}}
+    {{/with}}
+{{/with}}
+
+{{! --- Path Navigation --- }}
+{{./name}}
+{{../title}}
+{{../../section/header}}
+
+{{! --- Helpers with Arguments --- }}
+{{link "See more..." href=story.url class="story"}}
+
+{{! --- Subexpressions --- }}
+{{outer-helper (inner-helper 'abc') 'def'}}
+
+{{! --- Partials --- }}
+{{> myPartial }}
+{{> myPartial name=firstName age=30 }}
+{{> (dynamicPartial) }}
+
+{{! --- Inline Partials --- }}
+{{#*inline "myInlinePartial"}}
+    <div class="inline">
+        {{content}}
+    </div>
+{{/inline}}
+
+{{> myInlinePartial content="Hello Inline" }}
+
+{{! --- Raw Blocks --- }}
+{{{{raw-helper}}}}
+    {{bar}}
+{{{{/raw-helper}}}}
+
+{{! --- Log Helper --- }}
+{{log "Look at me!" level="error"}}
+
+{{! --- Custom Delimiters (if supported, though rare in standard handlebars) --- }}
+{{!-- Not typically supported in basic syntax highlighting but good to test --}}
+
+{{! --- Complex Data --- }}
+{{object.value}}
+{{array.[0]}}
+{{array.[10].name}}

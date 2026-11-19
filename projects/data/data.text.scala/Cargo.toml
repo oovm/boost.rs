@@ -1,0 +1,39 @@
+[package]
+name = "data-text-scala"
+version.workspace = true
+authors.workspace = true
+description = "High-performance incremental Scala parser for the oak ecosystem with flexible configuration, supporting functional programming and JVM ecosystem integration."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-scala"
+categories = ["parsing"]
+keywords = ["parser", "scala", "functional", "language"]
+
+[dependencies]
+data-text-core = { workspace = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

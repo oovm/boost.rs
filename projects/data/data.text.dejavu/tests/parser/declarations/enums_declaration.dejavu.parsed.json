@@ -1,0 +1,25 @@
+{
+    "success": true,
+    "node_count": 3,
+    "ast_structure": {
+        "kind": "Root",
+        "children": [
+            {
+                "kind": "TemplateText",
+                "children": [
+                    {
+                        "kind": "Leaves(1)",
+                        "children": [],
+                        "text_length": 61,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 61,
+                "is_leaf": false
+            }
+        ],
+        "text_length": 61,
+        "is_leaf": false
+    },
+    "errors": []
+}

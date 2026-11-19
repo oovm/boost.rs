@@ -1,0 +1,341 @@
+#![doc = include_str!("readme.md")]
+pub mod token_type;
+
+pub use crate::lexer::token_type::VerilogKind as VerilogTokenType;
+use crate::{language::VerilogLanguage, lexer::token_type::VerilogKind};
+use data_text_core::{
+    Lexer, LexerCache, LexerState, OakError,
+    lexer::{LexOutput, WhitespaceConfig},
+    source::Source,
+};
+
+use std::sync::LazyLock;
+
+pub(crate) type State<'a, S> = LexerState<'a, S, VerilogLanguage>;
+
+static VL_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
+
+#[derive(Clone, Debug)]
+/// Lexer for Verilog source code.
+pub struct VerilogLexer<'config> {
+    config: &'config VerilogLanguage,
+}
+
+impl<'config> Lexer<VerilogLanguage> for VerilogLexer<'config> {
+    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<VerilogLanguage>) -> LexOutput<VerilogLanguage> {
+        let mut state = LexerState::new(source);
+        let result = self.run(&mut state);
+        state.finish_with_cache(result, cache)
+    }
+}
+
+impl<'config> VerilogLexer<'config> {
+    /// Creates a new VerilogLexer with the given configuration.
+    /// Creates a new VerilogLexer with the given language configuration.
+    pub fn new(config: &'config VerilogLanguage) -> Self {
+        Self { config }
+    }
+
+    /// Main lexical analysis loop
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+        while state.not_at_end() {
+            let safe_point = state.get_position();
+
+            if self.skip_whitespace(state) {
+                continue;
+            }
+
+            if self.skip_comment(state) {
+                continue;
+            }
+
+            if self.lex_string_literal(state) {
+                continue;
+            }
+
+            if self.lex_number_literal(state) {
+                continue;
+            }
+
+            if self.lex_identifier_or_keyword(state) {
+                continue;
+            }
+
+            if self.lex_operators(state) {
+                continue;
+            }
+
+            if self.lex_single_char_tokens(state) {
+                continue;
+            }
+
+            state.advance_if_dead_lock(safe_point);
+        }
+
+        // Add EOF token
+        let eof_pos = state.get_position();
+        state.add_token(VerilogKind::Eof, eof_pos, eof_pos);
+        Ok(())
+    }
+
+    /// Skips whitespace
+    fn skip_whitespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        VL_WHITESPACE.scan(state, VerilogKind::Whitespace)
+    }
+
+    /// Skips comments
+    fn skip_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let rest = state.rest();
+
+        // Line comment: // ... until newline
+        if rest.starts_with("//") {
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(VerilogKind::Comment, start, state.get_position());
+            return true;
+        }
+
+        // Block comment: /* ... */
+        if rest.starts_with("/*") {
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '*' && state.peek_next_n(1) == Some('/') {
+                    state.advance(2);
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(VerilogKind::Comment, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    /// Handles string literals
+    fn lex_string_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if state.current() == Some('"') {
+            state.advance(1);
+            let mut escaped = false;
+            while let Some(ch) = state.peek() {
+                if ch == '"' && !escaped {
+                    state.advance(1); // consume closing quote
+                    break;
+                }
+                state.advance(ch.len_utf8());
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+            }
+            state.add_token(VerilogKind::String, start, state.get_position());
+            return true;
+        }
+        false
+    }
+
+    /// Handles number literals
+    fn lex_number_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let first = match state.current() {
+            Some(c) => c,
+            None => return false,
+        };
+
+        if !first.is_ascii_digit() {
+            return false;
+        }
+
+        // Basic number parsing
+        state.advance(1);
+        while let Some(c) = state.peek() {
+            if c.is_ascii_digit() || c == '_' {
+                state.advance(1);
+            }
+            else {
+                break;
+            }
+        }
+
+        // Check for base prefix (e.g., 'b, 'h, 'o, 'd)
+        if state.peek() == Some('\'') {
+            state.advance(1);
+            if let Some(base_char) = state.peek() {
+                if matches!(base_char, 'b' | 'B' | 'h' | 'H' | 'o' | 'O' | 'd' | 'D') {
+                    state.advance(1);
+                    while let Some(c) = state.peek() {
+                        if c.is_ascii_alphanumeric() || c == '_' {
+                            state.advance(1);
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        state.add_token(VerilogKind::Number, start, state.get_position());
+        true
+    }
+
+    /// Handles identifiers and keywords
+    fn lex_identifier_or_keyword<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let ch = match state.current() {
+            Some(c) => c,
+            None => return false,
+        };
+
+        if !(ch.is_ascii_alphabetic() || ch == '_') {
+            return false;
+        }
+
+        state.advance(1);
+        while let Some(c) = state.current() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                state.advance(1);
+            }
+            else {
+                break;
+            }
+        }
+
+        let end = state.get_position();
+        let text = state.get_text_in((start..end).into());
+        let kind = match text.as_ref() {
+            "module" => VerilogKind::ModuleKw,
+            "endmodule" => VerilogKind::EndmoduleKw,
+            "wire" => VerilogKind::WireKw,
+            "reg" => VerilogKind::RegKw,
+            "input" => VerilogKind::InputKw,
+            "output" => VerilogKind::OutputKw,
+            "always" => VerilogKind::AlwaysKw,
+            "begin" => VerilogKind::BeginKw,
+            "end" => VerilogKind::EndKw,
+            "if" => VerilogKind::IfKw,
+            "else" => VerilogKind::ElseKw,
+            "assign" => VerilogKind::AssignKw,
+            "posedge" => VerilogKind::PosedgeKw,
+            "negedge" => VerilogKind::NegedgeKw,
+            "case" => VerilogKind::CaseKw,
+            "endcase" => VerilogKind::EndcaseKw,
+            "default" => VerilogKind::DefaultKw,
+            "initial" => VerilogKind::InitialKw,
+            "inout" => VerilogKind::InoutKw,
+            "parameter" => VerilogKind::ParameterKw,
+            _ => VerilogKind::Identifier,
+        };
+
+        state.add_token(kind, start, state.get_position());
+        true
+    }
+
+    /// Handles operators
+    fn lex_operators<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let rest = state.rest();
+
+        // Match longer operators first
+        let patterns: &[(&str, VerilogKind)] = &[
+            ("==", VerilogKind::EqualEqual),
+            ("!=", VerilogKind::NotEqual),
+            ("<=", VerilogKind::LessEqual),
+            (">=", VerilogKind::GreaterEqual),
+            ("<<", VerilogKind::LeftShift),
+            (">>", VerilogKind::RightShift),
+            ("&&", VerilogKind::AndAnd),
+            ("||", VerilogKind::OrOr),
+        ];
+
+        for (pat, kind) in patterns {
+            if rest.starts_with(pat) {
+                state.advance(pat.len());
+                state.add_token(*kind, start, state.get_position());
+                return true;
+            }
+        }
+
+        if let Some(ch) = state.current() {
+            let kind = match ch {
+                '+' => Some(VerilogKind::Plus),
+                '-' => Some(VerilogKind::Minus),
+                '*' => Some(VerilogKind::Star),
+                '/' => Some(VerilogKind::Slash),
+                '%' => Some(VerilogKind::Percent),
+                '=' => Some(VerilogKind::Equal),
+                '!' => Some(VerilogKind::Bang),
+                '<' => Some(VerilogKind::Less),
+                '>' => Some(VerilogKind::Greater),
+                '&' => Some(VerilogKind::Ampersand),
+                '|' => Some(VerilogKind::Pipe),
+                '^' => Some(VerilogKind::Caret),
+                '~' => Some(VerilogKind::Tilde),
+                _ => None,
+            };
+
+            if let Some(k) = kind {
+                state.advance(ch.len_utf8());
+                state.add_token(k, start, state.get_position());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Handles single-character tokens
+    fn lex_single_char_tokens<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(ch) = state.current() {
+            let kind = match ch {
+                '(' => VerilogKind::LeftParen,
+                ')' => VerilogKind::RightParen,
+                '{' => VerilogKind::LeftBrace,
+                '}' => VerilogKind::RightBrace,
+                '[' => VerilogKind::LeftBracket,
+                ']' => VerilogKind::RightBracket,
+                ',' => VerilogKind::Comma,
+                ';' => VerilogKind::Semicolon,
+                '.' => VerilogKind::Dot,
+                ':' => VerilogKind::Colon,
+                '#' => VerilogKind::Hash,
+                '@' => VerilogKind::At,
+                '=' => VerilogKind::Equal,
+                '+' => VerilogKind::Plus,
+                '-' => VerilogKind::Minus,
+                '*' => VerilogKind::Star,
+                '/' => VerilogKind::Slash,
+                '%' => VerilogKind::Percent,
+                '<' => VerilogKind::Less,
+                '>' => VerilogKind::Greater,
+                '!' => VerilogKind::Bang,
+                '&' => VerilogKind::Ampersand,
+                '|' => VerilogKind::Pipe,
+                '^' => VerilogKind::Caret,
+                '~' => VerilogKind::Tilde,
+                '?' => VerilogKind::Question,
+                _ => return false,
+            };
+            state.advance(ch.len_utf8());
+            state.add_token(kind, start, state.get_position());
+            return true;
+        }
+        false
+    }
+}

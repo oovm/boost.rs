@@ -1,0 +1,574 @@
+//! TypeScript CST token-gap adapter.
+
+use core::range::Range;
+use data_text_core::{Lexer, ParseSession, SourceText};
+use oak_formatter::{TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
+
+use super::FormatOptions;
+use crate::{
+    language::TypeScriptLanguage,
+    lexer::{TypeScriptLexer, token_type::TypeScriptTokenType},
+};
+
+pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<String, data_text_core::OakError> {
+    if source.is_empty() {
+        return Ok(String::new());
+    }
+
+    let text = SourceText::new(source);
+    let language = TypeScriptLanguage::default();
+    let lexer = TypeScriptLexer::new(&language);
+    let mut session = ParseSession::default();
+    let output = lexer.lex(&text, &[], &mut session);
+    let tokens = match output.result {
+        Ok(tokens) => tokens,
+        Err(error) => return Err(error),
+    };
+    if let Some(error) = output.diagnostics.into_iter().next() {
+        return Err(error);
+    }
+    let significant: Vec<_> = tokens.iter().filter(|token| !is_layout(token.kind)).collect();
+    validate_delimiters(source, &significant)?;
+    // A `?` is either a postfix optional marker (`name?: T`, `name?()`), which
+    // binds to the name, or the ternary operator, which separates. Decide once
+    // per token so the gap before, the gap after, and the return-type colon all
+    // agree.
+    let optional_marker: Vec<bool> = (0..significant.len()).map(|index| is_optional_marker(&significant, index, source)).collect();
+    let mut gaps = Vec::new();
+    for (index, pair) in significant.windows(2).enumerate() {
+        let left = &pair[0];
+        let right = &pair[1];
+        let span = Range { start: left.span.end, end: right.span.start };
+        let gap = source.get(span.clone()).ok_or_else(|| data_text_core::OakError::format_error("lexer token span is outside source"))?;
+        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("left token span is outside source"))?;
+        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::OakError::format_error("right token span is outside source"))?;
+        let mut constraint = conservative_constraint(left_text, gap, right_text);
+        if left_text == ">" && is_jsx_attribute_gap(&significant, index, source) {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        if right_text.starts_with(['\'', '"', '`']) && left_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        if right_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        if left_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        if right_text.starts_with(['\'', '"', '`']) && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())) == Some("=") && is_jsx_attribute_gap(&significant, index, source) {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        // `?` is ambiguous in a token pair. In `name?: Type` and `name?()` it
+        // binds to the member or parameter name, while in
+        // `condition ? value : fallback` it is a ternary operator.
+        if right_text == "?" {
+            constraint = if optional_marker[index + 1] { oak_formatter::GapConstraint::NoSpace } else { oak_formatter::GapConstraint::RequiredSpace };
+        }
+        if left_text == "?" && matches!(right_text, "(" | "<") && optional_marker[index] {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        if right_text == ":" {
+            let mut ternary = false;
+            if left_text != "?" {
+                let mut nesting = match left_text {
+                    ")" | "]" | "}" => 1,
+                    _ => 0,
+                };
+                for (position, token) in significant[..index].iter().enumerate().rev().take(64) {
+                    match source.get(token.span.clone()) {
+                        Some("?") if token.kind == TypeScriptTokenType::Question && nesting == 0 && !optional_marker[position] => {
+                            ternary = true;
+                            break;
+                        }
+                        Some("}") => nesting += 1,
+                        Some(")" | "]") => nesting += 1,
+                        Some("(" | "[" | "{") if nesting > 0 => nesting -= 1,
+                        Some("(" | "[" | "{") => break,
+                        Some(";" | ",") if nesting == 0 => break,
+                        _ => {}
+                    }
+                }
+            }
+            constraint = if ternary { oak_formatter::GapConstraint::RequiredSpace } else { oak_formatter::GapConstraint::NoSpace };
+        }
+        if right_text == "<" || right_text == ">" {
+            let next = significant.get(index + 2).and_then(|token| source.get(token.span.clone()));
+            if right_text == "<" && next == Some("/") {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+            else if right_text == "<" && looks_like_type_arguments(&significant, index + 1, source) {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+            else if right_text == ">" && is_type_argument_close(&significant, index + 1, source) {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+            else if right_text == ">" && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())).is_some_and(|text| text == "<" || text == "/") {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+            else if left_text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']')) {
+                constraint = oak_formatter::GapConstraint::RequiredSpace;
+            }
+        }
+
+        if matches!(left_text, "<" | ">" | ">>" | ">>>") {
+            let generic_angle = (left_text == "<" && looks_like_type_arguments(&significant, index, source)) || (matches!(left_text, ">" | ">>" | ">>>") && is_type_argument_close(&significant, index, source));
+            // A `<` after an operand is a comparison. A postfix `++`/`--`
+            // also ends the left operand, so `guard++ < 64` keeps its spaces.
+            let comparison = !generic_angle
+                && significant
+                    .get(index.wrapping_sub(1))
+                    .and_then(|token| source.get(token.span.clone()))
+                    .is_some_and(|text| matches!(text, "++" | "--") || text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']')));
+            if !right_text.is_empty() && comparison && right_text != "/" && !matches!(right_text, ";" | "," | ")" | "]" | "." | "?") {
+                constraint = oak_formatter::GapConstraint::RequiredSpace;
+            }
+            if generic_angle && left_text == ">" && right_text == "{" {
+                constraint = oak_formatter::GapConstraint::RequiredSpace;
+            }
+            else if generic_angle && (left_text == "<" || matches!(right_text, "(" | ")" | "," | ";" | ">" | ">>" | "[")) {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+        }
+        // `<<`, `>>` and `>>>` are shifts everywhere except where `>>` closes
+        // nested type arguments, which must stay tight.
+        if matches!(right_text, "<<" | ">>" | ">>>") {
+            let type_close = matches!(right_text, ">>" | ">>>") && is_type_argument_close(&significant, index + 1, source);
+            constraint = if type_close { oak_formatter::GapConstraint::NoSpace } else { oak_formatter::GapConstraint::RequiredSpace };
+        }
+        // Shift assignment is one operator, but the lexer emits `>>>=` as
+        // `>>>` + `=`, so that compound gap stays closed. A `>>>` that closes
+        // nested type arguments still separates from the assignment.
+        if left_text == ">>>" && right_text == "=" && !is_type_argument_close(&significant, index, source) {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        // `!` is the logical not operator here, so a regex literal after it binds
+        // tight: `!/^\d+$/.test(value)`, not `! /^\d+$/.test(value)`.
+        if right.kind == TypeScriptTokenType::RegexLiteral && matches!(left_text, "!" | "~") {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        if matches!(left_text, "+" | "-") {
+            let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+            // `<` and `>` are comparison operators unless they delimit type
+            // arguments, so `length < -1` keeps the sign attached to its operand
+            // while `Box<T> - 1` stays a subtraction.
+            let prefix_operand = match previous {
+                None => true,
+                // After `<` a sign always belongs to a literal: `a < -1` and
+                // `Box<-1>` are both prefix uses.
+                Some("<") => true,
+                Some(">" | ">>" | ">>>") => !is_type_argument_close(&significant, index - 1, source),
+                Some(previous) => matches!(
+                    previous,
+                    "(" | "["
+                        | "{"
+                        | "="
+                        | ","
+                        | ":"
+                        | "?"
+                        | "return"
+                        | "throw"
+                        | "=>"
+                        | "!"
+                        | "+"
+                        | "-"
+                        | "*"
+                        | "/"
+                        | "%"
+                        | "??"
+                        | "&&"
+                        | "||"
+                        | "=="
+                        | "==="
+                        | "!="
+                        | "!=="
+                        | "<="
+                        | ">="
+                        | "<<"
+                        | "&"
+                        | "|"
+                        | "^"
+                        | "case"
+                        | "in"
+                        | "of"
+                        | "typeof"
+                        | "void"
+                        | "delete"
+                        | "await"
+                        | "new"
+                ),
+            };
+            if prefix_operand {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+        }
+        // `++`/`--` spacing is fully handled by `needs_space`: a prefix `++`
+        // after an operand word keeps its space (`x + ++i`), prefix after a
+        // bracket or operator stays tight (`[++i]`, `= ++i`), and postfix
+        // binds to its operand (`i++`). No extra override needed here.
+        if (left_text == "async" && right_text == "(")
+            || (matches!(left_text, "const" | "let" | "var") && right_text == "[")
+            || (left_text == "]" && right_text == "of")
+            || (left_text == ")" && right_text.chars().next().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$')))
+        {
+            constraint = oak_formatter::GapConstraint::RequiredSpace;
+        }
+        // A reserved word used as a property or member name is not a keyword, so
+        // `obj.catch(arg)` and `class A { delete(arg) { … } }` must not gain a
+        // space before the parameter list. Property position is decided by the
+        // preceding `.`/`?.`, member position by the enclosing declaration body
+        // (`class`, `interface`, type literal and object literal members).
+        if right_text == "(" && is_reserved_word(left_text) {
+            let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+            let property = matches!(previous, Some("." | "?."));
+            if property || is_member_name_position(&significant, index, source) {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+        }
+        // Generator markers stay attached to their keyword: `function*`,
+        // `yield*` and `async*`.
+        if right_text == "*" && matches!(left_text, "function" | "yield" | "async") {
+            constraint = oak_formatter::GapConstraint::NoSpace;
+        }
+        // A member call named `of` stays attached, while the `for … of`
+        // keyword keeps its space before a parenthesized iterable.
+        if right_text == "(" && left_text == "of" {
+            let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+            if matches!(previous, Some("." | "?.")) {
+                constraint = oak_formatter::GapConstraint::NoSpace;
+            }
+        }
+        // `readonly` is a type operator in `readonly [a, b]`, not a member name.
+        if matches!(right_text, "[" | "{" | "(") && left_text == "readonly" {
+            let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+            if !matches!(previous, Some("." | "?.")) {
+                constraint = oak_formatter::GapConstraint::RequiredSpace;
+            }
+        }
+        // A statement body that starts with `(` after a control-flow header
+        // needs the space that keeps `if (a)(b)` from reading as a call.
+        if right_text == "(" && left_text == ")" {
+            let mut nesting = 0usize;
+            for position in (0..=index).rev() {
+                match source.get(significant[position].span.clone()) {
+                    Some(")") => nesting += 1,
+                    Some("(") => {
+                        nesting = nesting.saturating_sub(1);
+                        if nesting == 0 {
+                            let keyword = position.checked_sub(1).and_then(|before| significant.get(before)).and_then(|token| source.get(token.span.clone()));
+                            if matches!(keyword, Some("if" | "for" | "while" | "switch" | "catch" | "with")) {
+                                constraint = oak_formatter::GapConstraint::RequiredSpace;
+                            }
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // `< / div >` closes a JSX tag and binds tightly. Every other `/ name`
+        // pair is division and needs the space on both sides.
+        if left_text == "/" && right_text.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+            let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+            if previous != Some("<") {
+                constraint = oak_formatter::GapConstraint::RequiredSpace;
+            }
+        }
+        if gap.contains('\n') || left_text.starts_with("//") || left_text.starts_with("/*") || right_text.starts_with("//") || right_text.starts_with("/*") || (source.starts_with("#!") && left.span.start < source.find('\n').unwrap_or(source.len())) {
+            constraint = oak_formatter::GapConstraint::Preserve;
+        }
+        gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
+    }
+    let edits = edits_for_gaps(gaps)?;
+    let formatted = apply_edits(source, &edits)?;
+    let _ = options;
+    Ok(formatted)
+}
+
+fn is_reserved_word(text: &str) -> bool {
+    matches!(text, "if" | "for" | "while" | "switch" | "catch" | "with" | "function" | "return" | "throw" | "new" | "typeof" | "void" | "delete" | "await" | "yield" | "as" | "in" | "instanceof")
+}
+/// A postfix `?` marks an optional property, parameter or method. `name?: T`
+/// is unambiguous, while `name?(` and `name?<` are only optional markers when
+/// the name starts a declaration member, not a ternary operand.
+fn is_optional_marker(significant: &[&data_text_core::Token<TypeScriptTokenType>], index: usize, source: &str) -> bool {
+    if significant.get(index).and_then(|token| token_text(token, source)) != Some("?") {
+        return false;
+    }
+    match significant.get(index + 1).and_then(|token| token_text(token, source)) {
+        Some(":") => true,
+        Some("(" | "<") => index.checked_sub(1).is_some_and(|name| is_member_name_position(significant, name, source)),
+        _ => false,
+    }
+}
+/// Decide whether the token at `index` is a class, interface, type literal or
+/// object literal member name. Member modifiers are skipped first, then the
+/// preceding separator must sit inside a declaration body rather than a
+/// statement block, so `delete (obj.key)` and `return (value)` keep their space.
+fn is_member_name_position(significant: &[&data_text_core::Token<TypeScriptTokenType>], index: usize, source: &str) -> bool {
+    let mut cursor = index;
+    let mut modifier = false;
+    while let Some(previous) = cursor.checked_sub(1) {
+        let Some(token) = significant.get(previous)
+        else {
+            return false;
+        };
+        // A comment between members is trivia, so `/** doc */ delete(key)` is
+        // still a member declaration rather than a `delete` operator call.
+        if matches!(token.kind, TypeScriptTokenType::LineComment | TypeScriptTokenType::BlockComment) {
+            cursor = previous;
+            continue;
+        }
+        let Some(text) = token_text(token, source)
+        else {
+            return false;
+        };
+        if matches!(text, "static" | "public" | "private" | "protected" | "readonly" | "abstract" | "override" | "declare" | "accessor" | "async" | "get" | "set" | "*") {
+            cursor = previous;
+            modifier = true;
+            continue;
+        }
+        return match text {
+            "{" => brace_opens_member_body(significant, previous, source),
+            ";" | "," | "}" => enclosing_brace_opens_member_body(significant, previous, source),
+            _ => false,
+        };
+    }
+    // A snippet may start at the member modifier (`async delete(k) { … }`),
+    // which is still member position even without the enclosing body.
+    modifier
+}
+/// Find the innermost unmatched `{` before `from` and classify it.
+fn enclosing_brace_opens_member_body(significant: &[&data_text_core::Token<TypeScriptTokenType>], from: usize, source: &str) -> bool {
+    let mut nesting = 0usize;
+    for index in (0..=from).rev() {
+        match significant.get(index).and_then(|token| token_text(token, source)) {
+            Some("}") => nesting += 1,
+            Some("{") if nesting == 0 => return brace_opens_member_body(significant, index, source),
+            Some("{") => nesting -= 1,
+            _ => {}
+        }
+    }
+    false
+}
+/// A `{` opens a member body when its header is a class, interface, enum, type
+/// literal or object literal. Function bodies, control-flow blocks and nested
+/// statement blocks are not member bodies.
+fn brace_opens_member_body(significant: &[&data_text_core::Token<TypeScriptTokenType>], open: usize, source: &str) -> bool {
+    let token = |index: usize| significant.get(index).and_then(|token| token_text(token, source));
+    // A brace directly after `:` is an object or type literal body, as in
+    // `type X = { … }`, `const o = { a: { … } }` and `function f(): { … }`.
+    // The one exception is a `case`/`default` label, whose block is a statement
+    // body: `case 1: { if (x) … }` must keep keyword spacing inside.
+    if open.checked_sub(1).and_then(token) == Some(":") {
+        return !is_case_clause_colon(significant, open - 1, source);
+    }
+    let mut cursor = open;
+    // Scanning back through a return type meets its type arguments first. A `>`
+    // opens one nested argument list, `>>` and `>>>` close several at once, and
+    // a `<` closes one. Commas inside those angles separate type arguments, so
+    // they cannot be object or type literal member separators.
+    let mut angles = 0usize;
+    while let Some(previous) = cursor.checked_sub(1) {
+        let Some(text) = token(previous)
+        else {
+            return false;
+        };
+        match text {
+            ">" => angles += 1,
+            ">>" => angles += 2,
+            ">>>" => angles += 3,
+            "<" if angles > 0 => angles -= 1,
+            "," if angles > 0 => {}
+            "class" | "interface" | "enum" => return true,
+            "=" | "(" | "[" | "," | "return" => return true,
+            // A `:` reached from the brace itself annotates the declaration, so
+            // the brace opens its body. When the colon follows a parameter list
+            // that annotation is a return type and the body is a function body.
+            ":" => return previous.checked_sub(1).and_then(token) != Some(")"),
+            "function" | "if" | "for" | "while" | "switch" | "catch" | "with" | "try" | "else" | "do" | "finally" | "=>" | "namespace" | "module" | "type" | ")" | "]" | "}" | "{" => return false,
+            _ => {}
+        }
+        cursor = previous;
+    }
+    false
+}
+fn token_text<'a>(token: &data_text_core::Token<TypeScriptTokenType>, source: &'a str) -> Option<&'a str> {
+    source.get(token.span.clone())
+}
+/// A `:` ends a `case`/`default` label when its clause keyword starts the
+/// statement. A property named `case` or `default` sits inside an object literal
+/// and is preceded by `{`, `,` or another `:`, so it stays an object body.
+fn is_case_clause_colon(significant: &[&data_text_core::Token<TypeScriptTokenType>], colon: usize, source: &str) -> bool {
+    let mut nesting = 0usize;
+    for index in (0..colon).rev() {
+        let Some(text) = significant.get(index).and_then(|token| token_text(token, source))
+        else {
+            return false;
+        };
+        match text {
+            ")" | "]" => nesting += 1,
+            "(" | "[" if nesting > 0 => nesting -= 1,
+            "case" | "default" if nesting == 0 => {
+                let before = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| token_text(token, source));
+                return before.is_none_or(|text| matches!(text, "{" | "}" | ";" | ":"));
+            }
+            "{" | "}" | ";" | ":" if nesting == 0 => return false,
+            _ => {}
+        }
+    }
+    false
+}
+fn is_jsx_attribute_gap(significant: &[&data_text_core::Token<TypeScriptTokenType>], index: usize, source: &str) -> bool {
+    let mut nesting = 0usize;
+    for (token_index, token) in significant[..=index].iter().enumerate().rev() {
+        let text = match source.get(token.span.clone()) {
+            Some(text) => text,
+            None => return false,
+        };
+        match text {
+            ">" => nesting += 1,
+            // `A<B<C>>` emits one `>>` token, so a reverse scan must close two
+            // levels at once or it mistakes the generic for an open JSX tag.
+            ">>" => nesting += 2,
+            ">>>" => nesting += 3,
+            "<" if nesting == 0 => {
+                let previous = token_index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+                return matches!(previous, Some("=" | "return" | "=>" | "(" | "[" | "{" | "," | ":" | ">"));
+            }
+            "<" if nesting > 0 => {
+                nesting -= 1;
+                if nesting == 0 {
+                    let previous = token_index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+                    return matches!(previous, Some("=" | "return" | "=>" | "(" | "["));
+                }
+            }
+            ";" | "{" | "}" if nesting == 0 => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn looks_like_type_arguments(significant: &[&data_text_core::Token<TypeScriptTokenType>], index: usize, source: &str) -> bool {
+    let mut depth = 0usize;
+    let mut delimiters = 0usize;
+    let mut previous: Option<&str> = None;
+    // A space between a value-like operand and `<` reads as a comparison. Type
+    // arguments follow their callee or type name without a gap.
+    if let (Some(open), Some(left)) = (significant.get(index), index.checked_sub(1).and_then(|before| significant.get(before))) {
+        let gap = source.get(Range { start: left.span.end, end: open.span.start });
+        let operand = source.get(left.span.clone()).is_some_and(|text| text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']' | '}')));
+        if operand && gap.is_some_and(|gap| !gap.is_empty()) {
+            return false;
+        }
+    }
+    for token in significant.iter().skip(index + 1) {
+        let text = match source.get(token.span.clone()) {
+            Some(text) => text,
+            None => return false,
+        };
+        // Binary and logical operators have no top-level place in a type
+        // argument list, so `parsed < minimum || parsed > max` is a comparison.
+        // A `+`/`-` in value position is arithmetic, while `<T = unknown>` and
+        // `Foo<-1>` stay type syntax.
+        if depth == 0 && delimiters == 0 {
+            let expression_operator = match text {
+                "||" | "&&" | "==" | "===" | "!=" | "!==" | "*" | "%" | "/" | ";" | "??" | "?" | ":" => true,
+                "+" | "-" => previous.is_some_and(|left| left.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']' | '}'))),
+                _ => false,
+            };
+            if expression_operator {
+                return false;
+            }
+        }
+        previous = Some(text);
+        match text {
+            "{" | "(" | "[" => delimiters += 1,
+            "}" | ")" | "]" if delimiters > 0 => delimiters -= 1,
+            // JSX self-close or tag close: `<br />` / `</div>` — has a standalone `/`
+            // that isn't a division operator (never follows an operand in type context).
+            "/" => return false,
+            "<" => depth += 1,
+            ">" if depth == 0 && delimiters == 0 => {
+                let after = significant.iter().skip_while(|candidate| candidate.span.start <= token.span.start).find_map(|candidate| source.get(candidate.span.clone()));
+                return after.is_none_or(|next| next.is_empty() || matches!(next, "=" | "," | ";" | ")" | "]" | "[" | "}" | "." | "(" | "{" | ">" | "|" | "&" | "=>" | "?" | ":" | "-" | "+" | "*" | "%" | "==" | "===" | "!=" | "!==" | "&&" | "||"));
+            }
+            ">" if depth == 0 => return false,
+            ">" => depth -= 1,
+            ">>>" if depth <= 2 && delimiters == 0 => {
+                let after = significant.iter().skip_while(|candidate| candidate.span.start <= token.span.start).find_map(|candidate| source.get(candidate.span.clone()));
+                return after.is_none_or(|next| next.is_empty() || matches!(next, "=" | "," | ";" | ")" | "]" | "[" | "}" | "." | "(" | "{" | "|" | "&" | "=>" | "?" | ":" | "-" | "+" | "*" | "%" | "==" | "===" | "!=" | "!==" | "&&" | "||"));
+            }
+            ">>>" if depth < 3 => return false,
+            ">>>" => depth -= 3,
+            ">>" if depth <= 2 && delimiters == 0 => {
+                let after = significant.iter().skip_while(|candidate| candidate.span.start <= token.span.start).find_map(|candidate| source.get(candidate.span.clone()));
+                return after.is_none_or(|next| next.is_empty() || matches!(next, "=" | "," | ";" | ")" | "]" | "[" | "}" | "." | "(" | "{" | "|" | "&" | "=>" | "?" | ":" | "-" | "+" | "*" | "%" | "==" | "===" | "!=" | "!==" | "&&" | "||"));
+            }
+            ">>" if depth < 2 => return false,
+            ">>" => depth -= 2,
+            ";" | "?" | ":" if depth == 0 && delimiters == 0 => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn is_type_argument_close(significant: &[&data_text_core::Token<TypeScriptTokenType>], close_index: usize, source: &str) -> bool {
+    let mut depth = 0usize;
+    let mut delimiters = 0usize;
+    for index in (0..close_index).rev() {
+        let text = match source.get(significant[index].span.clone()) {
+            Some(text) => text,
+            None => return false,
+        };
+        match text {
+            ">>>" => depth += 3,
+            ">>" => depth += 2,
+            ">" => depth += 1,
+            "<" if depth == 0 => return looks_like_type_arguments(significant, index, source),
+            "<" => depth -= 1,
+            // Scanning backwards, a closing delimiter opens a nested region.
+            "}" | ")" | "]" => delimiters += 1,
+            "{" | "(" | "[" if delimiters > 0 => delimiters -= 1,
+            ";" | "?" | ":" if depth == 0 && delimiters == 0 => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn is_layout(kind: TypeScriptTokenType) -> bool {
+    matches!(kind, TypeScriptTokenType::Whitespace | TypeScriptTokenType::Newline)
+}
+
+fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<TypeScriptTokenType>]) -> Result<(), data_text_core::OakError> {
+    let mut stack = Vec::new();
+    for token in tokens {
+        if matches!(token.kind, TypeScriptTokenType::StringLiteral | TypeScriptTokenType::TemplateString | TypeScriptTokenType::RegexLiteral | TypeScriptTokenType::LineComment | TypeScriptTokenType::BlockComment) {
+            continue;
+        }
+        match token.kind {
+            TypeScriptTokenType::LeftBrace => stack.push('{'),
+            TypeScriptTokenType::LeftParen => stack.push('('),
+            TypeScriptTokenType::LeftBracket => stack.push('['),
+            TypeScriptTokenType::RightBrace => {
+                if stack.pop() != Some('{') {
+                    return Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters"));
+                }
+            }
+            TypeScriptTokenType::RightParen => {
+                if stack.pop() != Some('(') {
+                    return Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters"));
+                }
+            }
+            TypeScriptTokenType::RightBracket => {
+                if stack.pop() != Some('[') {
+                    return Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters"));
+                }
+            }
+            _ => {}
+        }
+    }
+    if stack.is_empty() { Ok(()) } else { Err(data_text_core::OakError::format_error("formatter input has unbalanced delimiters")) }
+}

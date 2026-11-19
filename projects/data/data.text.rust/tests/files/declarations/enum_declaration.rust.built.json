@@ -1,0 +1,28 @@
+{
+    "success": true,
+    "typed_root": {
+        "type_name": "oak_rust::ast::RustRoot",
+        "content": {
+            "items": [
+                {
+                    "Enum": {
+                        "generics": null,
+                        "name": {
+                            "name": "",
+                            "span": {
+                                "end": 0,
+                                "start": 0
+                            }
+                        },
+                        "span": {
+                            "end": 44,
+                            "start": 0
+                        },
+                        "variants": []
+                    }
+                }
+            ]
+        }
+    },
+    "errors": []
+}

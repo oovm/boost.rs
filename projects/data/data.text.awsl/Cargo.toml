@@ -1,0 +1,25 @@
+[package]
+name = "data-text-awsl"
+version.workspace = true
+authors.workspace = true
+description = "Asgard AWSL template parser and formatter for the oak ecosystem."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing"]
+keywords = ["parser", "awsl", "asgard", "template"]
+
+[dependencies]
+data-text-core = { workspace = true }
+language-format = { workspace = true }
+data-text-valkyrie = { workspace = true }
+
+[features]
+default = []
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[[test]]
+name = "main"

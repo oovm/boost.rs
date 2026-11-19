@@ -1,0 +1,32 @@
+#![doc = include_str!("readme.md")]
+use crate::ast::ScalaRoot;
+use data_text_core::{Language, LanguageCategory};
+
+/// Scala language implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ScalaLanguage {
+    // Scala language-specific configuration, currently empty.
+}
+
+impl ScalaLanguage {
+    /// Creates a Scala language instance.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Default for ScalaLanguage {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
+impl Language for ScalaLanguage {
+    const NAME: &'static str = "scala";
+    const CATEGORY: LanguageCategory = LanguageCategory::Programming;
+
+    type TokenType = crate::lexer::token_type::ScalaTokenType;
+    type ElementType = crate::parser::element_type::ScalaElementType;
+    type TypedRoot = ScalaRoot;
+}

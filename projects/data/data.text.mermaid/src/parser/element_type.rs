@@ -1,0 +1,151 @@
+use data_text_core::{ElementType, UniversalElementRole};
+
+/// Element types for the Mermaid AST.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum MermaidElementType {
+    /// Whitespace characters.
+    Whitespace,
+    /// Newline character.
+    Newline,
+    /// Comment.
+    Comment,
+
+    /// `graph` keyword.
+    Graph,
+    /// Direction (e.g., LR, TD).
+    Direction,
+    /// Identifier.
+    Id,
+    /// Node label.
+    Label,
+    /// Connection arrow (e.g., `-->`).
+    Arrow,
+    /// Opening brace of a composite state, class body or ER entity block.
+    LeftBrace,
+    /// Closing brace of a composite state, class body or ER entity block.
+    RightBrace,
+    /// Colon separating a statement head from its label.
+    Colon,
+    /// A single pipe inside an ER cardinality symbol.
+    Pipe,
+
+    /// Lexing or parsing error.
+    Error,
+
+    /// End of stream.
+    ///
+    /// 与 [`crate::lexer::token_type::MermaidTokenType::Eof`] 保持 u8 对齐，
+    /// 因此 `From<MermaidTokenType>` 可以直接按位转换。
+    Eof,
+
+    /// Root node of the diagram.
+    Root,
+    /// Node in the diagram.
+    Node,
+    /// Edge between nodes.
+    Edge,
+    /// `subgraph ... end` block.
+    Subgraph,
+    /// `sequenceDiagram` block.
+    SequenceDiagram,
+    /// Participant or actor declaration in a sequence diagram.
+    Participant,
+    /// Message exchanged between sequence diagram participants.
+    Message,
+    /// `classDiagram` block.
+    ClassDiagram,
+    /// `class ... { ... }` declaration.
+    ClassDeclaration,
+    /// A property or method line inside a class body.
+    ClassMember,
+    /// A relation between two classes.
+    Relation,
+    /// `stateDiagram` / `stateDiagram-v2` block.
+    StateDiagram,
+    /// `state ...` declaration, including composite state bodies.
+    StateDeclaration,
+    /// A transition between two states.
+    StateTransition,
+    /// One concurrent region inside a composite state.
+    StateRegion,
+    /// `erDiagram` block.
+    ErDiagram,
+    /// An ER entity, optionally containing attribute lines.
+    ErEntity,
+    /// One attribute line inside an ER entity.
+    ErAttribute,
+    /// A relationship between two ER entities.
+    ErRelation,
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for MermaidElementType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for MermaidElementType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        Ok(unsafe { std::mem::transmute(value) })
+    }
+}
+
+impl MermaidElementType {
+    /// Returns `true` if this element type represents a token.
+    pub fn is_token(&self) -> bool {
+        (*self as u8) <= (Self::Eof as u8) && !self.is_element()
+    }
+
+    /// Returns `true` if this element type represents a composite element.
+    pub fn is_element(&self) -> bool {
+        matches!(
+            self,
+            Self::Root
+                | Self::Node
+                | Self::Edge
+                | Self::Subgraph
+                | Self::SequenceDiagram
+                | Self::Participant
+                | Self::Message
+                | Self::ClassDiagram
+                | Self::ClassDeclaration
+                | Self::ClassMember
+                | Self::Relation
+                | Self::StateDiagram
+                | Self::StateDeclaration
+                | Self::StateTransition
+                | Self::StateRegion
+                | Self::ErDiagram
+                | Self::ErEntity
+                | Self::ErAttribute
+                | Self::ErRelation
+        )
+    }
+}
+
+impl ElementType for MermaidElementType {
+    type Role = UniversalElementRole;
+
+    fn role(&self) -> Self::Role {
+        match self {
+            Self::Root => UniversalElementRole::Root,
+            _ => UniversalElementRole::None,
+        }
+    }
+}
+
+impl From<crate::lexer::token_type::MermaidTokenType> for MermaidElementType {
+    fn from(token: crate::lexer::token_type::MermaidTokenType) -> Self {
+        unsafe { std::mem::transmute(token) }
+    }
+}

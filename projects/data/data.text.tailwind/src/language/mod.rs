@@ -1,0 +1,53 @@
+#![doc = include_str!("readme.md")]
+use crate::{ast::TailwindRoot, lexer::TailwindLexer, parser::TailwindParser};
+use data_text_core::{Language, LanguageCategory};
+
+/// Tailwind engine configuration modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum TailwindMode {
+    /// Template mode (e.g., HTML with Tailwind classes).
+    #[default]
+    Template,
+    /// Expression mode (e.g., inside a template tag).
+    Expression,
+}
+
+/// Tailwind language definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TailwindLanguage {
+    /// The current mode of the engine.
+    pub mode: TailwindMode,
+}
+
+impl Language for TailwindLanguage {
+    const NAME: &'static str = "tailwind";
+    const CATEGORY: LanguageCategory = LanguageCategory::StyleSheet;
+
+    type TokenType = crate::lexer::token_type::TailwindTokenType;
+    type ElementType = crate::parser::element_type::TailwindElementType;
+    type TypedRoot = TailwindRoot;
+}
+
+impl TailwindLanguage {
+    /// Creates a new `TailwindLanguage` with standard settings.
+    pub fn new() -> Self {
+        Self::standard()
+    }
+
+    /// Creates a new `TailwindLanguage` with standard settings.
+    pub fn standard() -> Self {
+        Self { mode: TailwindMode::Template }
+    }
+
+    /// Creates a new lexer for this language configuration.
+    pub fn lexer(&self) -> TailwindLexer {
+        TailwindLexer::new(*self)
+    }
+
+    /// Creates a new parser for this language configuration.
+    pub fn parser(&self) -> TailwindParser {
+        TailwindParser::new(*self)
+    }
+}

@@ -1,0 +1,79 @@
+{
+    "success": true,
+    "count": 12,
+    "tokens": [
+        {
+            "kind": "Fn",
+            "text": "fn",
+            "start": 0,
+            "end": 2
+        },
+        {
+            "kind": "Identifier",
+            "text": "main",
+            "start": 3,
+            "end": 7
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 7,
+            "end": 8
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 8,
+            "end": 9
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 10,
+            "end": 11
+        },
+        {
+            "kind": "Identifier",
+            "text": "println",
+            "start": 16,
+            "end": 23
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 23,
+            "end": 24
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Hello\"",
+            "start": 24,
+            "end": 31
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 31,
+            "end": 32
+        },
+        {
+            "kind": "Semicolon",
+            "text": ";",
+            "start": 32,
+            "end": 33
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 34,
+            "end": 35
+        },
+        {
+            "kind": "Eof",
+            "text": "",
+            "start": 35,
+            "end": 35
+        }
+    ],
+    "errors": []
+}

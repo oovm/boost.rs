@@ -1,0 +1,26 @@
+[package]
+name = "data-text-racket"
+version.workspace = true
+authors.workspace = true
+description = "Hand-written Racket frontend"
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["compilers", "development-tools"]
+keywords = ["frontend", "language", "racket"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+
+[features]
+default = ["serde"]
+serde = ["data-text-core/serde", "dep:serde"]
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[[test]]
+name = "main"
+required-features = ["serde"]

@@ -1,0 +1,34 @@
+use crate::language::RbqLanguage;
+use data_text_core::{Builder, BuilderCache, Lexer, Parser, TextEdit, source::Source, tree::RedNode};
+
+/// RBQ syntax tree builder.
+#[derive(Clone)]
+pub struct RbqBuilder<'config> {
+    config: &'config RbqLanguage,
+}
+
+impl<'config> RbqBuilder<'config> {
+    /// Creates a new RBQ builder.
+    pub fn new(config: &'config RbqLanguage) -> Self {
+        Self { config }
+    }
+}
+
+impl<'config> Builder<RbqLanguage> for RbqBuilder<'config> {
+    /// Builds the RBQ AST from the source text and edits.
+    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RbqLanguage>) -> data_text_core::builder::BuildOutput<RbqLanguage> {
+        let parser = crate::parser::RbqParser::new(self.config);
+        let lexer = crate::lexer::RbqLexer::new(&self.config);
+        let mut parse_cache = data_text_core::parser::session::ParseSession::<RbqLanguage>::default();
+        lexer.lex(source, edits, &mut parse_cache);
+        let parse_result = parser.parse(source, edits, &mut parse_cache);
+
+        let source_text = source.get_text_in((0..source.length()).into());
+        let result = parse_result.result.map(|green| {
+            let red = RedNode::new(green, 0);
+            crate::ast::RbqRoot::lower(red, &source_text)
+        });
+
+        data_text_core::errors::OakDiagnostics { result, diagnostics: parse_result.diagnostics }
+    }
+}

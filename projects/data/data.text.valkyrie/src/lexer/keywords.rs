@@ -1,0 +1,346 @@
+/// Keywords or soft keywords for the Valkyrie language.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ValkyrieKeywords {
+    /// Declare a namespace in Valkyrie.
+    ///
+    /// ```v
+    /// namespace path { ... }
+    /// ```
+    Namespace,
+    /// Import a declaration from another namespace.
+    ///
+    /// ```v
+    /// using package::module::path;
+    /// ```
+    Using,
+    /// Declare a class.
+    ///
+    /// ```v
+    /// class Point { x: f64, y: f64 }
+    /// ```
+    Class,
+    /// Declare a structure (deprecated, use `structure` instead).
+    ///
+    /// ```v
+    /// struct Point { x: f64, y: f64 }
+    /// ```
+    Struct,
+    /// Declare a value type (immutable structure).
+    ///
+    /// ```v
+    /// structure Point { x: f64, y: f64 }
+    /// ```
+    Structure,
+    /// Declare a singleton.
+    ///
+    /// ```v
+    /// singleton GlobalConfig { ... }
+    /// ```
+    Singleton,
+    /// Declare a trait.
+    ///
+    /// ```v
+    /// trait Show { micro show(self) }
+    /// ```
+    Trait,
+    /// Declare an inherent or trait implementation block.
+    ///
+    /// ```v
+    /// imply Owner { micro answer(self) -> i32 { return 1 } }
+    /// ```
+    Imply,
+    /// Declare flags.
+    ///
+    /// ```v
+    /// flags Permissions { Read, Write, Execute }
+    /// ```
+    Flags,
+    /// Declare an enum (deprecated, use `unity` instead).
+    ///
+    /// ```v
+    /// enum Priority { High, Normal, Low }
+    /// ```
+    Enum,
+    /// Declare enums.
+    ///
+    /// ```v
+    /// enums Priority { High = 3, Normal = 2, Low = 1 }
+    /// ```
+    Enums,
+    /// Declare a named union.
+    ///
+    /// ```v
+    /// union Integer { lamb1: i64, lamb2: [i64; 2], buffer: [i64] }
+    /// ```
+    Union,
+    /// Declare a unite (preferred alternative to enum).
+    ///
+    /// ```v
+    /// unite Option<T> { Some(T), None }
+    /// ```
+    Unity,
+    /// Declare a micro function.
+    ///
+    /// ```v
+    /// micro add(x: i32, y: i32) -> i32 { x + y }
+    /// ```
+    Micro,
+    /// Declare a mezzo function.
+    ///
+    /// ```v
+    /// mezzo add(x: i32, y: i32) -> i32 { x + y }
+    /// ```
+    Mezzo,
+    /// Declare a macro.
+    ///
+    /// ```v
+    /// macro log(msg: string) { ... }
+    /// ```
+    Macro,
+    /// Declare a widget.
+    ///
+    /// ```v
+    /// widget Button { ... }
+    /// ```
+    Widget,
+    /// Declare a variable.
+    ///
+    /// ```v
+    /// let x = 42;
+    /// ```
+    Let,
+    /// If expression.
+    ///
+    /// ```v
+    /// if condition { ... } else { ... }
+    /// ```
+    If,
+    /// Else clause.
+    Else,
+    /// Match expression.
+    ///
+    /// ```v
+    /// match x { 1 => 2, _ => 0 }
+    /// ```
+    Match,
+    /// Match case.
+    Case,
+    /// Match guard.
+    ///
+    /// ```v
+    /// match x { y when y > 0 => y }
+    /// ```
+    When,
+    /// Try expression.
+    ///
+    /// ```v
+    /// try expression catch { pattern => expression }
+    /// ```
+    Try,
+    /// Lambda expression.
+    ///
+    /// ```v
+    /// lambda(x) { x + 1 }
+    /// ```
+    Lambda,
+    /// Catch clause.
+    Catch,
+    /// While loop.
+    ///
+    /// ```v
+    /// while true { ... }
+    /// ```
+    While,
+    /// Loop.
+    ///
+    /// ```v
+    /// loop { ... }
+    /// loop i in list { ... }
+    /// ```
+    Loop,
+    /// For loop.
+    ///
+    /// ```v
+    /// for i in 0..10 { ... }
+    /// ```
+    For,
+    /// Return from function.
+    ///
+    /// ```v
+    /// return x;
+    /// ```
+    Return,
+    /// Break from loop.
+    ///
+    /// ```v
+    /// break @label value;
+    /// ```
+    Break,
+    /// Continue to next iteration.
+    ///
+    /// ```v
+    /// continue @label;
+    /// ```
+    Continue,
+    /// Boolean true.
+    True,
+    /// Boolean false.
+    False,
+    /// Null value.
+    Null,
+    /// Yield value from generator.
+    ///
+    /// ```v
+    /// yield x;
+    /// ```
+    Yield,
+    /// In clause for loops.
+    ///
+    /// ```v
+    /// for i in 0..10 { ... };
+    /// ```
+    In,
+    /// Raise an error.
+    ///
+    /// ```v
+    /// raise error;
+    /// ```
+    Raise,
+    /// Effect declaration.
+    ///
+    /// ```v
+    /// effect Console { micro log(msg: string) }
+    /// ```
+    Effect,
+    /// Resume from an effect operation.
+    ///
+    /// ```v
+    /// resume value;
+    /// ```
+    Resume,
+    /// Type check.
+    ///
+    /// ```v
+    /// if x is T { ... }
+    /// ```
+    Is,
+    /// Type pattern in match.
+    ///
+    /// ```v
+    /// match x { type T => ... }
+    /// ```
+    ///
+    /// ```v
+    /// match x { type T => ... }
+    /// ```
+    Type,
+    /// Type casting.
+    ///
+    /// ```v
+    /// x as T
+    /// ```
+    As,
+    /// Self type reference.
+    ///
+    /// Used in trait implementations and associated type paths.
+    ///
+    /// ```v
+    /// trait Iterator {
+    ///     type Item
+    ///     micro next(self) -> Self::Item?
+    /// }
+    /// ```
+    SelfType,
+    /// Type alias declaration.
+    ///
+    /// ```v
+    /// type Point = (f64, f64)
+    /// ```
+    TypeAlias,
+    /// Implement a trait for a type.
+    ///
+    /// ```v
+    /// impl Show for Point { ... }
+    /// ```
+    Impl,
+    /// Where clause for generic constraints.
+    ///
+    /// ```v
+    /// micro foo<T>(x: T) where T: Clone { ... }
+    /// ```
+    Where,
+    /// Super reference for parent class constructor calls.
+    ///
+    /// ```v
+    /// class Derived(Base) {
+    ///     initiate(mut self, x: i32) {
+    ///         super.initiate(x)  // Call parent constructor
+    ///     }
+    /// }
+    /// ```
+    Super,
+    /// Initiate constructor method.
+    ///
+    /// ```v
+    /// class Point {
+    ///     initiate(mut self, x: f64, y: f64) {
+    ///         self.x = x
+    ///         self.y = y
+    ///     }
+    /// }
+    /// ```
+    Initiate,
+    /// Declare a shader.
+    ///
+    /// ```gs
+    /// shader StandardShader by PBR {
+    ///     // shader definition
+    /// }
+    /// ```
+    Shader,
+    /// By keyword for shader definition.
+    ///
+    /// ```gs
+    /// shader StandardShader by PBR {
+    ///     // shader definition
+    /// }
+    /// ```
+    By,
+    /// Declare a component for ECS (Entity Component System).
+    ///
+    /// ```valkyrie
+    /// component Position {
+    ///     x: f32,
+    ///     y: f32
+    /// }
+    /// ```
+    Component,
+    /// Declare a system for ECS (Entity Component System).
+    ///
+    /// ```valkyrie
+    /// system MovementSystem {
+    ///     micro execute(world: World): Result<()> {
+    ///         // system logic
+    ///     }
+    /// }
+    /// ```
+    System,
+    /// Declare events within a component.
+    ///
+    /// ```valkyrie
+    /// component Player {
+    ///     events on_health_change: micro(current: i32, max: i32) -> (),
+    ///     events on_death: micro() -> ()
+    /// }
+    /// ```
+    Events,
+    /// TGrammar 块结束（仅在 `<% ... %>` 指令内作为关键词词法化）。
+    ///
+    /// ```text
+    /// <% end %>
+    /// <% end if %>
+    /// <% end loop %>
+    /// ```
+    End,
+}

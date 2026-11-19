@@ -1,0 +1,1047 @@
+use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
+use core::range::Range;
+use data_text_core::{OakError, RedNode, RedTree, Source, SourceText};
+
+/// Builds a [`ModuleSpecifier`] from the span of a string literal token.
+///
+/// The span is kept as written (quotes included); `value` drops the quotes.
+/// A missing or malformed literal yields an empty `value` at the token's
+/// (possibly zero-width) span, mirroring the parser's error recovery node.
+fn module_specifier_at(span: Range<usize>, source: &SourceText) -> ModuleSpecifier {
+    let text = source.get_text_in(span.clone());
+    let value = if text.len() >= 2 { text[1..text.len() - 1].to_string() } else { String::new() };
+    ModuleSpecifier { value, span }
+}
+
+impl<'config> TypeScriptBuilder<'config> {
+    pub(crate) fn build_statement(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<Statement>, OakError> {
+        let kind = node.green.kind;
+        let span = node.span();
+
+        match kind {
+            TypeScriptElementType::SourceFile | TypeScriptElementType::Root => {
+                for child in node.children() {
+                    if let RedTree::Node(child_node) = child {
+                        if let Some(stmt) = self.build_statement(&child_node, source)? {
+                            return Ok(Some(stmt));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            TypeScriptElementType::VariableDeclaration => {
+                let mut declarators: Vec<VariableDeclarator> = Vec::new();
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut declaration_kind = VariableKind::Const;
+                let mut current: Option<VariableDeclarator> = None;
+                let mut in_initializer = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_span: Range<usize> = child_node.span().into();
+                            let child_kind = child_node.green.kind;
+                            if in_initializer {
+                                if let Some(declarator) = current.as_mut() {
+                                    if declarator.value.is_none() {
+                                        if let Some(expr) = self.build_expression(&child_node, source)? {
+                                            declarator.value = Some(expr);
+                                            declarator.span.end = child_span.end;
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                            match child_kind {
+                                TypeScriptElementType::BindingPattern => {
+                                    let mut declarator = current.take().unwrap_or(VariableDeclarator { binding_names: Vec::new(), binding_spans: Vec::new(), binding_pattern_keys: Vec::new(), pattern_text: None, ty: None, value: None, span: child_span });
+                                    for (name, name_span, is_pattern_key) in crate::builder::build_binding::binding_pattern_names(&child_node, source) {
+                                        declarator.binding_names.push(name);
+                                        declarator.binding_spans.push(name_span);
+                                        declarator.binding_pattern_keys.push(is_pattern_key);
+                                    }
+                                    declarator.pattern_text = Some(source.get_text_in(child_span.clone()).trim().to_string());
+                                    declarator.span.end = child_span.end;
+                                    current = Some(declarator);
+                                }
+                                TypeScriptElementType::TypeAnnotation => {
+                                    if !self.erase_types {
+                                        if let Some(declarator) = current.as_mut() {
+                                            declarator.ty = self.build_type_annotation(&child_node, source)?;
+                                            declarator.span.end = child_span.end;
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::IdentifierName => {
+                                    let (name, name_span) = crate::builder::build_binding::binding_identifier_text(&child_node, source);
+                                    let mut declarator =
+                                        current.take().unwrap_or(VariableDeclarator { binding_names: Vec::new(), binding_spans: Vec::new(), binding_pattern_keys: Vec::new(), pattern_text: None, ty: None, value: None, span: child_span.clone() });
+                                    declarator.binding_names.push(name);
+                                    declarator.binding_spans.push(name_span);
+                                    declarator.binding_pattern_keys.push(false);
+                                    declarator.span.end = child_span.end;
+                                    current = Some(declarator);
+                                }
+                                _ => {}
+                            }
+                        }
+                        RedTree::Leaf(leaf) => match leaf.kind {
+                            TypeScriptTokenType::Declare => modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span)),
+                            TypeScriptTokenType::Let => declaration_kind = VariableKind::Let,
+                            TypeScriptTokenType::Var => declaration_kind = VariableKind::Var,
+                            TypeScriptTokenType::Const => declaration_kind = VariableKind::Const,
+                            TypeScriptTokenType::Equal => in_initializer = true,
+                            TypeScriptTokenType::Comma => {
+                                in_initializer = false;
+                                if let Some(declarator) = current.take() {
+                                    declarators.push(declarator);
+                                }
+                            }
+                            TypeScriptTokenType::IdentifierName => {
+                                let span: Range<usize> = leaf.span.into();
+                                let name = source.get_text_in(span.clone()).trim().to_string();
+                                let mut declarator = current.take().unwrap_or(VariableDeclarator { binding_names: Vec::new(), binding_spans: Vec::new(), binding_pattern_keys: Vec::new(), pattern_text: None, ty: None, value: None, span: span.clone() });
+                                declarator.binding_names.push(name);
+                                declarator.binding_spans.push(span.clone());
+                                declarator.binding_pattern_keys.push(false);
+                                declarator.span.end = span.end;
+                                current = Some(declarator);
+                            }
+                            _ => {}
+                        },
+                    }
+                }
+                if let Some(declarator) = current.take() {
+                    declarators.push(declarator);
+                }
+                Ok(Some(Statement::VariableDeclaration(VariableDeclaration { decorators: Vec::new(), modifiers, kind: declaration_kind, declarators, span: span.into() })))
+            }
+            TypeScriptElementType::FunctionDeclaration => {
+                let mut name = String::new();
+                let mut name_span: Option<Range<usize>> = None;
+                let mut type_params = Vec::new();
+                let mut params = Vec::new();
+                let mut return_type = None;
+                let mut body = Vec::new();
+                let mut decorators = Vec::new();
+                let mut modifiers: Vec<Modifier> = Vec::new();
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::IdentifierName => {
+                                    if name.is_empty() {
+                                        for c in child_node.children() {
+                                            if let RedTree::Leaf(l) = c {
+                                                if l.kind == TypeScriptTokenType::IdentifierName {
+                                                    name = source.get_text_in(l.span.into()).trim().to_string();
+                                                    name_span = Some(l.span.into());
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if name.is_empty() {
+                                            name = source.get_text_in(child_node.span().into()).trim().to_string();
+                                            name_span = Some(child_node.span().into());
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::TypeParameter => {
+                                    if !self.erase_types {
+                                        if let Some(tp) = self.build_type_parameter(&child_node, source)? {
+                                            type_params.push(tp)
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::Parameter => {
+                                    if let Some(p) = self.build_parameter(&child_node, source)? {
+                                        params.push(p)
+                                    }
+                                }
+                                TypeScriptElementType::TypeAnnotation => {
+                                    if !self.erase_types {
+                                        return_type = self.build_type_annotation(&child_node, source)?
+                                    }
+                                }
+                                TypeScriptElementType::BlockStatement => {
+                                    if let Some(Statement::BlockStatement(block)) = self.build_statement(&child_node, source)? {
+                                        body = block.statements
+                                    }
+                                }
+                                TypeScriptElementType::Decorator => {
+                                    if let Some(d) = self.build_decorator(&child_node, source)? {
+                                        decorators.push(d)
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        RedTree::Leaf(leaf) => match leaf.kind {
+                            TypeScriptTokenType::IdentifierName => {
+                                if name.is_empty() {
+                                    name = source.get_text_in(leaf.span.into()).to_string();
+                                    name_span = Some(leaf.span.into());
+                                }
+                            }
+                            TypeScriptTokenType::Declare => modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span)),
+                            _ => {}
+                        },
+                    }
+                }
+                let name_span = name_span.unwrap_or_else(|| Range { start: span.start, end: span.start });
+                Ok(Some(Statement::FunctionDeclaration(FunctionDeclaration { decorators, modifiers, name, name_span, type_params, params, return_type, body, span: span.into() })))
+            }
+            TypeScriptElementType::ClassDeclaration => {
+                let mut name = String::new();
+                let mut name_span: Option<Range<usize>> = None;
+                let mut type_params = Vec::new();
+                let mut extends = None;
+                let mut implements = Vec::new();
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut body = Vec::new();
+                let mut decorators = Vec::new();
+                let mut seen_implements = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::IdentifierName => {
+                                    if name.is_empty() {
+                                        name = source.get_text_in(child_node.span().into()).to_string();
+                                        name_span = Some(child_node.span().into());
+                                    }
+                                }
+                                TypeScriptElementType::TypeParameter => {
+                                    if !self.erase_types {
+                                        if let Some(tp) = self.build_type_parameter(&child_node, source)? {
+                                            type_params.push(tp)
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::ClassBody => {
+                                    for member_child in child_node.children() {
+                                        if let RedTree::Node(member_node) = member_child {
+                                            if let Some(member) = self.build_class_member(&member_node, source)? {
+                                                body.push(member)
+                                            }
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::HeritageClause => {
+                                    let mut is_implements = false;
+                                    for heritage_child in child_node.children() {
+                                        match heritage_child {
+                                            RedTree::Leaf(leaf) => {
+                                                if leaf.kind == TypeScriptTokenType::Implements {
+                                                    is_implements = true
+                                                }
+                                            }
+                                            RedTree::Node(heritage_node) => {
+                                                if heritage_node.green.kind == TypeScriptElementType::TypeReference {
+                                                    if let Some(ty) = self.build_type_annotation(&heritage_node, source)? {
+                                                        if is_implements {
+                                                            if !self.erase_types {
+                                                                implements.push(ty)
+                                                            }
+                                                        }
+                                                        else {
+                                                            extends = Some(ty)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                // The parser keeps `extends`/`implements` heritage flat under the
+                                // declaration: `TypeReference` children follow the `extends` keyword
+                                // until an `implements` leaf appears. Mirror the class-expression path.
+                                TypeScriptElementType::TypeReference => {
+                                    let heritage_name = source.get_text_in(child_node.span().into()).trim().to_string();
+                                    let ty = TypeAnnotation::Reference { name: heritage_name, args: Vec::new() };
+                                    if seen_implements {
+                                        if !self.erase_types {
+                                            implements.push(ty)
+                                        }
+                                    }
+                                    else {
+                                        extends = Some(ty)
+                                    }
+                                }
+                                TypeScriptElementType::Decorator => {
+                                    if let Some(d) = self.build_decorator(&child_node, source)? {
+                                        decorators.push(d)
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        RedTree::Leaf(leaf) => match leaf.kind {
+                            TypeScriptTokenType::IdentifierName => {
+                                if name.is_empty() {
+                                    name = source.get_text_in(leaf.span.into()).to_string();
+                                    name_span = Some(leaf.span.into());
+                                }
+                            }
+                            TypeScriptTokenType::Abstract => modifiers.push(Modifier::new(ModifierKind::Abstract, leaf.span)),
+                            TypeScriptTokenType::Declare => modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span)),
+                            TypeScriptTokenType::Implements => seen_implements = true,
+                            _ => {}
+                        },
+                    }
+                }
+                let name_span = name_span.unwrap_or_else(|| Range { start: span.start, end: span.start });
+                Ok(Some(Statement::ClassDeclaration(ClassDeclaration { decorators, modifiers, name, name_span, type_params, extends, implements, body, span: span.into() })))
+            }
+            TypeScriptElementType::InterfaceDeclaration => {
+                if self.erase_types {
+                    return Ok(None);
+                }
+                let mut name = String::new();
+                let mut type_params = Vec::new();
+                let mut extends = Vec::new();
+                let mut body = Vec::new();
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut decorators = Vec::new();
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::IdentifierName => {
+                                    if name.is_empty() {
+                                        name = source.get_text_in(child_node.span().into()).to_string()
+                                    }
+                                }
+                                TypeScriptElementType::TypeParameter => {
+                                    if let Some(tp) = self.build_type_parameter(&child_node, source)? {
+                                        type_params.push(tp)
+                                    }
+                                }
+                                TypeScriptElementType::TypeLiteral => {
+                                    // Extract members from object type
+                                    for member_child in child_node.children() {
+                                        if let RedTree::Node(member_node) = member_child {
+                                            if let Some(member) = self.build_class_member(&member_node, source)? {
+                                                body.push(member)
+                                            }
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::HeritageClause => {
+                                    for heritage_child in child_node.children() {
+                                        if let RedTree::Node(heritage_node) = heritage_child {
+                                            if heritage_node.green.kind == TypeScriptElementType::TypeReference {
+                                                if let Some(ty) = self.build_type_annotation(&heritage_node, source)? {
+                                                    extends.push(ty)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::Decorator => {
+                                    if let Some(d) = self.build_decorator(&child_node, source)? {
+                                        decorators.push(d)
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::Declare {
+                                modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span))
+                            }
+                            else if leaf.kind == TypeScriptTokenType::IdentifierName && name.is_empty() {
+                                name = source.get_text_in(leaf.span.into()).to_string();
+                            }
+                        }
+                    }
+                }
+                Ok(Some(Statement::Interface(InterfaceDeclaration { decorators, modifiers, name, type_params, extends, body, span: span.into() })))
+            }
+            TypeScriptElementType::TypeAliasDeclaration => {
+                if self.erase_types {
+                    return Ok(None);
+                }
+                let mut name = String::new();
+                let mut type_params = Vec::new();
+                let mut ty = None;
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut decorators = Vec::new();
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::IdentifierName => {
+                                    if name.is_empty() {
+                                        name = source.get_text_in(child_node.span().into()).to_string()
+                                    }
+                                }
+                                TypeScriptElementType::TypeParameter => {
+                                    if let Some(tp) = self.build_type_parameter(&child_node, source)? {
+                                        type_params.push(tp)
+                                    }
+                                }
+                                TypeScriptElementType::Decorator => {
+                                    if let Some(d) = self.build_decorator(&child_node, source)? {
+                                        decorators.push(d)
+                                    }
+                                }
+                                _ => {
+                                    if let Some(t) = self.build_type_annotation(&child_node, source)? {
+                                        ty = Some(t)
+                                    }
+                                }
+                            }
+                        }
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::Declare {
+                                modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span))
+                            }
+                            else if leaf.kind == TypeScriptTokenType::IdentifierName && name.is_empty() {
+                                name = source.get_text_in(leaf.span.into()).to_string();
+                            }
+                        }
+                    }
+                }
+                if let Some(ty) = ty { Ok(Some(Statement::TypeAlias(TypeAliasDeclaration { decorators, modifiers, name, type_params, ty, span: span.into() }))) } else { Ok(None) }
+            }
+            TypeScriptElementType::EnumDeclaration => {
+                let mut name = String::new();
+                let mut name_span: Option<Range<usize>> = None;
+                let mut members = Vec::new();
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut decorators = Vec::new();
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::IdentifierName => {
+                                    if name.is_empty() {
+                                        name = source.get_text_in(child_node.span().into()).to_string();
+                                        name_span = Some(child_node.span().into());
+                                    }
+                                }
+                                TypeScriptElementType::EnumMember => {
+                                    if let Some(member) = self.build_enum_member(&child_node, source)? {
+                                        members.push(member)
+                                    }
+                                }
+                                TypeScriptElementType::Decorator => {
+                                    if let Some(d) = self.build_decorator(&child_node, source)? {
+                                        decorators.push(d)
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::Declare {
+                                modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span))
+                            }
+                        }
+                    }
+                }
+                let name_span = name_span.unwrap_or_else(|| Range { start: span.start, end: span.start });
+                Ok(Some(Statement::Enum(EnumDeclaration { decorators, modifiers, name, name_span, members, span: span.into() })))
+            }
+            TypeScriptElementType::BlockStatement => {
+                let mut statements = Vec::new();
+                for child in node.children() {
+                    if let RedTree::Node(child_node) = child {
+                        if let Some(stmt) = self.build_statement(&child_node, source)? {
+                            statements.push(stmt)
+                        }
+                    }
+                }
+                Ok(Some(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements, span: span.into() })))
+            }
+            TypeScriptElementType::ExpressionStatement => {
+                let mut expression = None;
+                for child in node.children() {
+                    if let RedTree::Node(child_node) = child {
+                        expression = self.build_expression(&child_node, source)?
+                    }
+                }
+                if let Some(expr) = expression { Ok(Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: span.into() }))) } else { Ok(None) }
+            }
+            TypeScriptElementType::IfStatement => {
+                let mut test = None;
+                let mut consequent = None;
+                let mut alternate = None;
+
+                for child in node.children() {
+                    if let RedTree::Node(child_node) = child {
+                        if test.is_none() {
+                            if let Some(expr) = self.build_expression(&child_node, source)? {
+                                test = Some(expr);
+                                continue;
+                            }
+                        }
+
+                        if consequent.is_none() {
+                            if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                consequent = Some(stmt);
+                                continue;
+                            }
+                        }
+                        else if alternate.is_none() {
+                            if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                alternate = Some(stmt);
+                            }
+                        }
+                    }
+                }
+
+                if let (Some(t), Some(c)) = (test, consequent) { Ok(Some(Statement::IfStatement(IfStatement { decorators: Vec::new(), test: t, consequent: Box::new(c), alternate: alternate.map(Box::new), span: span.into() }))) } else { Ok(None) }
+            }
+            TypeScriptElementType::ReturnStatement => {
+                let mut argument = None;
+                for child in node.children() {
+                    if let RedTree::Node(child_node) = child {
+                        argument = self.build_expression(&child_node, source)?
+                    }
+                }
+                Ok(Some(Statement::ReturnStatement(ReturnStatement { decorators: Vec::new(), argument, span: span.into() })))
+            }
+            TypeScriptElementType::ForStatement => {
+                let mut initializer = None;
+                let mut test = None;
+                let mut incrementor = None;
+                let mut body = Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
+
+                #[derive(PartialEq)]
+                enum ForState {
+                    Init,
+                    Test,
+                    Update,
+                    Body,
+                }
+                let mut state = ForState::Init;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::Semicolon {
+                                if state == ForState::Init {
+                                    state = ForState::Test;
+                                }
+                                else if state == ForState::Test {
+                                    state = ForState::Update;
+                                }
+                            }
+                            else if leaf.kind == TypeScriptTokenType::RightParen {
+                                state = ForState::Body;
+                            }
+                        }
+                        RedTree::Node(child_node) => match state {
+                            ForState::Init => {
+                                if child_node.green.kind == TypeScriptElementType::VariableDeclaration {
+                                    if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                        initializer = Some(Box::new(stmt));
+                                    }
+                                    state = ForState::Test;
+                                }
+                                else {
+                                    if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                        initializer = Some(Box::new(stmt));
+                                    }
+                                }
+                            }
+                            ForState::Test => {
+                                if let Some(expr) = self.build_expression(&child_node, source)? {
+                                    test = Some(expr);
+                                }
+                            }
+                            ForState::Update => {
+                                if let Some(expr) = self.build_expression(&child_node, source)? {
+                                    incrementor = Some(expr);
+                                }
+                            }
+                            ForState::Body => {
+                                if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                    body = Box::new(stmt);
+                                }
+                            }
+                        },
+                    }
+                }
+                Ok(Some(Statement::ForStatement(ForStatement { decorators: Vec::new(), initializer, test, incrementor, body, span: span.into() })))
+            }
+            TypeScriptElementType::WhileStatement => {
+                let mut test = Expression { span: (0..0).into(), kind: Box::new(ExpressionKind::BooleanLiteral(true)) };
+                let mut body = Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
+                let mut past_paren = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::RightParen {
+                                past_paren = true;
+                            }
+                        }
+                        RedTree::Node(child_node) => {
+                            if past_paren {
+                                if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                    body = Box::new(stmt);
+                                }
+                            }
+                            else {
+                                if let Some(expr) = self.build_expression(&child_node, source)? {
+                                    test = expr;
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(Some(Statement::WhileStatement(WhileStatement { decorators: Vec::new(), test, body, span: span.into() })))
+            }
+            TypeScriptElementType::DoWhileStatement => {
+                let mut test = Expression { span: (0..0).into(), kind: Box::new(ExpressionKind::BooleanLiteral(true)) };
+                let mut body = Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
+                let mut seen_while = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::While {
+                                seen_while = true;
+                            }
+                        }
+                        RedTree::Node(child_node) => {
+                            if seen_while {
+                                if let Some(expr) = self.build_expression(&child_node, source)? {
+                                    test = expr;
+                                }
+                            }
+                            else {
+                                if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                    body = Box::new(stmt);
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(Some(Statement::DoWhileStatement(DoWhileStatement { decorators: Vec::new(), test, body, span: span.into() })))
+            }
+            TypeScriptElementType::SwitchStatement => {
+                let mut discriminant = None;
+                let mut cases = Vec::new();
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::CaseClause => {
+                                    let mut test = None;
+                                    let mut consequent = Vec::new();
+
+                                    for case_child in child_node.children() {
+                                        if let RedTree::Node(case_node) = case_child {
+                                            if test.is_none() {
+                                                if let Some(expr) = self.build_expression(&case_node, source)? {
+                                                    test = Some(expr);
+                                                }
+                                            }
+                                            else {
+                                                if let Some(stmt) = self.build_statement(&case_node, source)? {
+                                                    consequent.push(stmt);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if let Some(test) = test {
+                                        cases.push(SwitchCase { test: Some(test), consequent, span: child_node.span().into() });
+                                    }
+                                }
+                                TypeScriptElementType::DefaultClause => {
+                                    let mut consequent = Vec::new();
+
+                                    for default_child in child_node.children() {
+                                        if let RedTree::Node(default_node) = default_child {
+                                            if let Some(stmt) = self.build_statement(&default_node, source)? {
+                                                consequent.push(stmt);
+                                            }
+                                        }
+                                    }
+
+                                    cases.push(SwitchCase { test: None, consequent, span: child_node.span().into() });
+                                }
+                                _ => {
+                                    if discriminant.is_none() {
+                                        if let Some(expr) = self.build_expression(&child_node, source)? {
+                                            discriminant = Some(expr);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some(discriminant) = discriminant { Ok(Some(Statement::SwitchStatement(SwitchStatement { decorators: Vec::new(), discriminant, cases, span: span.into() }))) } else { Ok(None) }
+            }
+            TypeScriptElementType::TryStatement => {
+                let mut block = Vec::new();
+                let mut handler = None;
+                let mut finalizer = None;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::BlockStatement => {
+                                    if block.is_empty() {
+                                        for block_child in child_node.children() {
+                                            if let RedTree::Node(block_node) = block_child {
+                                                if let Some(stmt) = self.build_statement(&block_node, source)? {
+                                                    block.push(stmt);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::FinallyClause => {
+                                    let mut finalizer_block = Vec::new();
+                                    for finalizer_child in child_node.children() {
+                                        if let RedTree::Node(finalizer_node) = finalizer_child {
+                                            if finalizer_node.green.kind == TypeScriptElementType::BlockStatement {
+                                                for block_child in finalizer_node.children() {
+                                                    if let RedTree::Node(block_node) = block_child {
+                                                        if let Some(stmt) = self.build_statement(&block_node, source)? {
+                                                            finalizer_block.push(stmt);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    finalizer = Some(finalizer_block);
+                                }
+                                TypeScriptElementType::CatchClause => {
+                                    let mut param = None;
+                                    let mut body = Vec::new();
+                                    let mut in_body = false;
+
+                                    for catch_child in child_node.children() {
+                                        match catch_child {
+                                            RedTree::Node(catch_node) => {
+                                                let child_kind = catch_node.green.kind;
+                                                if !in_body && child_kind != TypeScriptElementType::BlockStatement {
+                                                    // This is likely the parameter
+                                                    param = Some(source.get_text_in(catch_node.span().into()).trim().to_string());
+                                                }
+                                                else if child_kind == TypeScriptElementType::BlockStatement {
+                                                    // This is the body block
+                                                    in_body = true;
+                                                    for block_child in catch_node.children() {
+                                                        if let RedTree::Node(block_node) = block_child {
+                                                            if let Some(stmt) = self.build_statement(&block_node, source)? {
+                                                                body.push(stmt);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+
+                                    // Even if body is empty, set the handler if we found a catch clause
+                                    handler = Some(CatchClause { param, body, span: child_node.span().into() });
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if !block.is_empty() { Ok(Some(Statement::TryStatement(TryStatement { decorators: Vec::new(), block, handler, finalizer, span: span.into() }))) } else { Ok(None) }
+            }
+            TypeScriptElementType::ImportDeclaration => {
+                let mut specifiers = Vec::new();
+                let mut module_specifier = None;
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut attributes = None;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::ImportAttributes => attributes = Some(source.get_text_in(child_node.span().into()).trim().to_string()),
+                                TypeScriptElementType::ImportClause => {
+                                    for clause_child in child_node.children() {
+                                        if let RedTree::Node(clause_node) = clause_child {
+                                            let clause_span = clause_node.span();
+                                            match clause_node.green.kind {
+                                                TypeScriptElementType::IdentifierName => specifiers.push(ImportSpecifier::Default { local: source.get_text_in(clause_span.clone()).trim().to_string(), span: clause_span }),
+                                                TypeScriptElementType::NamespaceImport => {
+                                                    let mut local = String::new();
+                                                    let mut local_span: Option<Range<usize>> = None;
+                                                    for ns_child in clause_node.children() {
+                                                        if let RedTree::Node(ns_node) = ns_child {
+                                                            if ns_node.green.kind == TypeScriptElementType::IdentifierName {
+                                                                local = source.get_text_in(ns_node.span().into()).trim().to_string();
+                                                                local_span = Some(ns_node.span().into());
+                                                            }
+                                                        }
+                                                    }
+                                                    let local_span = local_span.unwrap_or_else(|| Range { start: clause_span.start, end: clause_span.start });
+                                                    specifiers.push(ImportSpecifier::Namespace { local, local_span, span: clause_span })
+                                                }
+                                                TypeScriptElementType::NamedImports => {
+                                                    for named_child in clause_node.children() {
+                                                        if let RedTree::Node(named_node) = named_child {
+                                                            if named_node.green.kind == TypeScriptElementType::ImportSpecifier {
+                                                                let spec_span = named_node.span();
+                                                                let mut local = String::new();
+                                                                let mut imported = String::new();
+                                                                let mut local_span: Option<Range<usize>> = None;
+                                                                let mut imported_span: Option<Range<usize>> = None;
+                                                                let mut type_modifier = None;
+                                                                for spec_child in named_node.children() {
+                                                                    if let RedTree::Node(spec_node) = spec_child {
+                                                                        if spec_node.green.kind == TypeScriptElementType::IdentifierName {
+                                                                            let name_span = spec_node.span().into();
+                                                                            let name = source.get_text_in(spec_node.span().into()).trim().to_string();
+                                                                            if imported.is_empty() {
+                                                                                imported = name;
+                                                                                imported_span = Some(name_span);
+                                                                            }
+                                                                            else {
+                                                                                local = name;
+                                                                                local_span = Some(name_span);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    else if let RedTree::Leaf(leaf) = spec_child {
+                                                                        if leaf.kind == TypeScriptTokenType::Type {
+                                                                            type_modifier = Some(Modifier::new(ModifierKind::Type, leaf.span));
+                                                                        }
+                                                                    }
+                                                                }
+                                                                if local.is_empty() {
+                                                                    local = imported.clone()
+                                                                }
+                                                                let local_span = local_span.unwrap_or_else(|| imported_span.unwrap_or_else(|| Range { start: spec_span.start, end: spec_span.start }));
+                                                                specifiers.push(ImportSpecifier::Named { local, local_span, imported, type_modifier, span: spec_span })
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::StringLiteral => module_specifier = Some(module_specifier_at(child_node.span(), source)),
+                                _ => {}
+                            }
+                        }
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::Type {
+                                modifiers.push(Modifier::new(ModifierKind::Type, leaf.span))
+                            }
+                            else if leaf.kind == TypeScriptTokenType::StringLiteral && module_specifier.is_none() {
+                                module_specifier = Some(module_specifier_at(leaf.span, source));
+                            }
+                        }
+                    }
+                }
+                let module_specifier = module_specifier.unwrap_or_else(|| ModuleSpecifier { value: String::new(), span: Range { start: span.start, end: span.start } });
+                Ok(Some(Statement::ImportDeclaration(ImportDeclaration { specifiers, module_specifier, modifiers, attributes, span: span.into() })))
+            }
+            TypeScriptElementType::ExportDeclaration => {
+                let mut declaration = None;
+                let mut specifiers = Vec::new();
+                let mut module_specifier = None;
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                let mut attributes = None;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            let child_kind = child_node.green.kind;
+                            match child_kind {
+                                TypeScriptElementType::NamedExports => {
+                                    for named_child in child_node.children() {
+                                        if let RedTree::Node(named_node) = named_child {
+                                            if named_node.green.kind == TypeScriptElementType::ExportSpecifier {
+                                                let spec_span = named_node.span();
+                                                let mut local = String::new();
+                                                let mut exported = String::new();
+                                                let mut local_span: Option<Range<usize>> = None;
+                                                let mut type_modifier = None;
+                                                for spec_child in named_node.children() {
+                                                    if let RedTree::Node(spec_node) = spec_child {
+                                                        if spec_node.green.kind == TypeScriptElementType::IdentifierName {
+                                                            let name_span = spec_node.span().into();
+                                                            let name = source.get_text_in(spec_node.span().into()).trim().to_string();
+                                                            if local.is_empty() {
+                                                                local = name;
+                                                                local_span = Some(name_span);
+                                                            }
+                                                            else {
+                                                                exported = name
+                                                            }
+                                                        }
+                                                    }
+                                                    else if let RedTree::Leaf(leaf) = spec_child {
+                                                        if leaf.kind == TypeScriptTokenType::Type {
+                                                            type_modifier = Some(Modifier::new(ModifierKind::Type, leaf.span));
+                                                        }
+                                                    }
+                                                }
+                                                if exported.is_empty() {
+                                                    exported = local.clone()
+                                                }
+                                                let local_span = local_span.unwrap_or_else(|| Range { start: spec_span.start, end: spec_span.start });
+                                                specifiers.push(ExportSpecifier::Named { local, local_span, exported, type_modifier, span: spec_span })
+                                            }
+                                        }
+                                    }
+                                }
+                                TypeScriptElementType::NamespaceImport => {
+                                    let clause_span = child_node.span();
+                                    let mut exported = None;
+                                    let mut star_span = None;
+                                    for ns_child in child_node.children() {
+                                        match ns_child {
+                                            RedTree::Node(ns_node) => {
+                                                if ns_node.green.kind == TypeScriptElementType::IdentifierName {
+                                                    exported = Some(source.get_text_in(ns_node.span().into()).trim().to_string())
+                                                }
+                                            }
+                                            RedTree::Leaf(leaf) => {
+                                                if leaf.kind == TypeScriptTokenType::Star {
+                                                    star_span = Some(leaf.span)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    match exported {
+                                        Some(exported) => specifiers.push(ExportSpecifier::Namespace { exported, span: clause_span }),
+                                        None => specifiers.push(ExportSpecifier::All { span: star_span.unwrap_or(clause_span) }),
+                                    }
+                                }
+                                TypeScriptElementType::StringLiteral => module_specifier = Some(module_specifier_at(child_node.span(), source)),
+                                TypeScriptElementType::ImportAttributes => attributes = Some(source.get_text_in(child_node.span().into()).trim().to_string()),
+                                _ => declaration = self.build_statement(&child_node, source)?,
+                            }
+                        }
+                        RedTree::Leaf(leaf) => match leaf.kind {
+                            TypeScriptTokenType::Default => modifiers.push(Modifier::new(ModifierKind::Default, leaf.span)),
+                            TypeScriptTokenType::Type => modifiers.push(Modifier::new(ModifierKind::Type, leaf.span)),
+                            TypeScriptTokenType::StringLiteral if module_specifier.is_none() => {
+                                module_specifier = Some(module_specifier_at(leaf.span, source));
+                            }
+                            _ => {}
+                        },
+                    }
+                }
+                Ok(Some(Statement::ExportDeclaration(ExportDeclaration { declaration: declaration.map(Box::new), specifiers, source: module_specifier, modifiers, attributes, span: span.into() })))
+            }
+            TypeScriptElementType::ForOfStatement => {
+                let mut left: Option<Statement> = None;
+                let mut right: Option<Expression> = None;
+                let mut body: Option<Statement> = None;
+                let mut await_marker: Option<Modifier> = None;
+                let mut past_of = false;
+                let mut past_paren = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Leaf(leaf) => match leaf.kind {
+                            TypeScriptTokenType::Await => await_marker = Some(Modifier::new(ModifierKind::Await, leaf.span)),
+                            TypeScriptTokenType::Of => past_of = true,
+                            TypeScriptTokenType::RightParen => past_paren = true,
+                            _ => {}
+                        },
+                        RedTree::Node(child_node) => {
+                            if past_paren {
+                                if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                    body = Some(stmt);
+                                }
+                            }
+                            else if past_of {
+                                if let Some(expr) = self.build_expression(&child_node, source)? {
+                                    right = Some(expr);
+                                }
+                            }
+                            else if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                left = Some(stmt);
+                            }
+                            else if let Some(expr) = self.build_expression(&child_node, source)? {
+                                left = Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: child_node.span().into() }));
+                            }
+                        }
+                    }
+                }
+
+                let left = Box::new(left.unwrap_or_else(|| Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()), span: (0..0).into() })));
+                let right = right.unwrap_or_else(|| Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()));
+                let body = Box::new(body.unwrap_or_else(|| Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() })));
+                Ok(Some(Statement::ForOfStatement(ForOfStatement { decorators: Vec::new(), await_marker, left, right, body, span: span.into() })))
+            }
+            TypeScriptElementType::ForInStatement => {
+                let mut left: Option<Statement> = None;
+                let mut right: Option<Expression> = None;
+                let mut body: Option<Statement> = None;
+                let mut past_in = false;
+                let mut past_paren = false;
+
+                for child in node.children() {
+                    match child {
+                        RedTree::Leaf(leaf) => match leaf.kind {
+                            TypeScriptTokenType::In => past_in = true,
+                            TypeScriptTokenType::RightParen => past_paren = true,
+                            _ => {}
+                        },
+                        RedTree::Node(child_node) => {
+                            if past_paren {
+                                if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                    body = Some(stmt);
+                                }
+                            }
+                            else if past_in {
+                                if let Some(expr) = self.build_expression(&child_node, source)? {
+                                    right = Some(expr);
+                                }
+                            }
+                            else if let Some(stmt) = self.build_statement(&child_node, source)? {
+                                left = Some(stmt);
+                            }
+                            else if let Some(expr) = self.build_expression(&child_node, source)? {
+                                left = Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: child_node.span().into() }));
+                            }
+                        }
+                    }
+                }
+
+                let left = Box::new(left.unwrap_or_else(|| Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()), span: (0..0).into() })));
+                let right = right.unwrap_or_else(|| Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()));
+                let body = Box::new(body.unwrap_or_else(|| Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() })));
+                Ok(Some(Statement::ForInStatement(ForInStatement { decorators: Vec::new(), left, right, body, span: span.into() })))
+            }
+            _ => {
+                // Try building as expression statement if not a recognized statement kind
+                if let Some(expr) = self.build_expression(node, source)? { Ok(Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: span.into() }))) } else { Ok(None) }
+            }
+        }
+    }
+}

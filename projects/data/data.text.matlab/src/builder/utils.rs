@@ -1,0 +1,28 @@
+use crate::{MatlabLanguage, lexer::token_type::MatlabTokenType, parser::element_type::MatlabElementType};
+use data_text_core::{RedTree, TokenType};
+
+/// Skip whitespace / comments.
+pub(crate) fn is_trivia(node: &RedTree<'_, MatlabLanguage>) -> bool {
+    match node {
+        RedTree::Leaf(t) => t.kind().is_ignored(),
+        RedTree::Node(_) => false,
+    }
+}
+
+pub(crate) fn is_expr_kind(kind: MatlabElementType) -> bool {
+    matches!(
+        kind,
+        MatlabElementType::Expression
+            | MatlabElementType::Symbol
+            | MatlabElementType::Literal
+            | MatlabElementType::Array
+            | MatlabElementType::CellArray
+            | MatlabElementType::Call
+            | MatlabElementType::MemberAccess
+            | MatlabElementType::BinaryExpr
+            | MatlabElementType::PrefixExpr
+            | MatlabElementType::PostfixExpr
+            | MatlabElementType::AnonymousFunction
+            | MatlabElementType::FunctionHandle
+    )
+}

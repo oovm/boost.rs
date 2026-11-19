@@ -1,0 +1,54 @@
+{
+    "success": true,
+    "node_count": 7,
+    "ast_structure": {
+        "kind": "Root",
+        "children": [
+            {
+                "kind": "Object",
+                "children": [
+                    {
+                        "kind": "ObjectEntry",
+                        "children": [
+                            {
+                                "kind": "Number",
+                                "children": [
+                                    {
+                                        "kind": "Leaves(2)",
+                                        "children": [],
+                                        "text_length": 6,
+                                        "is_leaf": true
+                                    }
+                                ],
+                                "text_length": 6,
+                                "is_leaf": false
+                            },
+                            {
+                                "kind": "Leaves(3)",
+                                "children": [],
+                                "text_length": 5,
+                                "is_leaf": true
+                            }
+                        ],
+                        "text_length": 11,
+                        "is_leaf": false
+                    },
+                    {
+                        "kind": "Leaves(2)",
+                        "children": [],
+                        "text_length": 6,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 17,
+                "is_leaf": false
+            }
+        ],
+        "text_length": 17,
+        "is_leaf": false
+    },
+    "errors": [
+        "ExpectedToken { expected: \",\", offset: 17, source_id: None }",
+        "ExpectedToken { expected: \"}\", offset: 17, source_id: None }"
+    ]
+}

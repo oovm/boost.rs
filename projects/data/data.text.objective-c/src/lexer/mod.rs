@@ -1,0 +1,449 @@
+#![doc = include_str!("readme.md")]
+/// Token type definitions.
+pub mod token_type;
+
+use crate::{language::ObjectiveCLanguage, lexer::token_type::ObjectiveCTokenType};
+use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+
+pub(crate) type State<'a, S> = LexerState<'a, S, ObjectiveCLanguage>;
+
+/// Objective-C lexer.
+#[derive(Clone)]
+pub struct ObjectiveCLexer<'config> {
+    #[allow(dead_code)]
+    config: &'config ObjectiveCLanguage,
+}
+
+impl<'config> Lexer<ObjectiveCLanguage> for ObjectiveCLexer<'config> {
+    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ObjectiveCLanguage>) -> LexOutput<ObjectiveCLanguage> {
+        let mut state = State::new(source);
+        let result = self.run(&mut state);
+        if result.is_ok() {
+            state.add_eof();
+        }
+        state.finish_with_cache(result, cache)
+    }
+}
+
+impl<'config> ObjectiveCLexer<'config> {
+    /// Creates a new Objective-C lexer.
+    pub fn new(config: &'config ObjectiveCLanguage) -> Self {
+        Self { config }
+    }
+
+    /// Main lexing loop.
+    fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+        while state.not_at_end() {
+            let safe_point = state.get_position();
+
+            if self.skip_whitespace(state) {
+                continue;
+            }
+
+            if self.skip_comment(state) {
+                continue;
+            }
+
+            if self.lex_string_literal(state) {
+                continue;
+            }
+
+            if self.lex_char_literal(state) {
+                continue;
+            }
+
+            if self.lex_number_literal(state) {
+                continue;
+            }
+
+            if self.lex_identifier_or_keyword(state) {
+                continue;
+            }
+
+            if self.lex_operators(state) {
+                continue;
+            }
+
+            if self.lex_single_char_tokens(state) {
+                continue;
+            }
+
+            // If no pattern matches, add an error token and advance.
+            let start_pos = state.get_position();
+            if let Some(ch) = state.peek() {
+                state.advance(ch.len_utf8());
+                state.add_token(ObjectiveCTokenType::Error, start_pos, state.get_position());
+            }
+
+            state.advance_if_dead_lock(safe_point);
+        }
+
+        Ok(())
+    }
+
+    /// Skips whitespace.
+    fn skip_whitespace<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        while let Some(ch) = state.peek() {
+            if ch.is_whitespace() {
+                state.advance(ch.len_utf8());
+            }
+            else {
+                break;
+            }
+        }
+        if state.get_position() > start {
+            state.add_token(ObjectiveCTokenType::Whitespace, start, state.get_position());
+            true
+        }
+        else {
+            false
+        }
+    }
+
+    fn skip_comment<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        let rest = state.rest();
+        // line comment: // ... until newline
+        if rest.starts_with("//") {
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(ObjectiveCTokenType::CommentToken, start, state.get_position());
+            return true;
+        }
+        // block comment: /* ... */ with nesting support
+        if rest.starts_with("/*") {
+            state.advance(2);
+            let mut depth = 1usize;
+            while let Some(ch) = state.peek() {
+                if ch == '/' && state.peek_next_n(1) == Some('*') {
+                    state.advance(2);
+                    depth += 1;
+                    continue;
+                }
+                if ch == '*' && state.peek_next_n(1) == Some('/') {
+                    state.advance(2);
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                    continue;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(ObjectiveCTokenType::CommentToken, start, state.get_position());
+            return true;
+        }
+        false
+    }
+
+    fn lex_string_literal<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+
+        // Objective-C string literal: @"..."
+        if state.peek() == Some('@') && state.peek_next_n(1) == Some('"') {
+            state.advance(2); // consume @"
+            let mut escaped = false;
+            while let Some(ch) = state.peek() {
+                if ch == '"' && !escaped {
+                    state.advance(1); // consume closing quote
+                    break;
+                }
+                state.advance(ch.len_utf8());
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+            }
+            state.add_token(ObjectiveCTokenType::String, start, state.get_position());
+            return true;
+        }
+
+        // normal string: "..."
+        if state.peek() == Some('"') {
+            state.advance(1);
+            let mut escaped = false;
+            while let Some(ch) = state.peek() {
+                if ch == '"' && !escaped {
+                    state.advance(1); // consume closing quote
+                    break;
+                }
+                state.advance(ch.len_utf8());
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+            }
+            state.add_token(ObjectiveCTokenType::String, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    fn lex_char_literal<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        if state.peek() != Some('\'') {
+            return false;
+        }
+
+        state.advance(1); // opening '
+        if let Some('\\') = state.peek() {
+            state.advance(1);
+            if let Some(c) = state.peek() {
+                state.advance(c.len_utf8());
+            }
+        }
+        else if let Some(c) = state.peek() {
+            state.advance(c.len_utf8());
+        }
+        else {
+            state.set_position(start);
+            return false;
+        }
+
+        if state.peek() == Some('\'') {
+            state.advance(1);
+            state.add_token(ObjectiveCTokenType::Character, start, state.get_position());
+            return true;
+        }
+
+        state.set_position(start);
+        false
+    }
+
+    fn lex_number_literal<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        let first = match state.peek() {
+            Some(c) => c,
+            None => return false,
+        };
+
+        if !first.is_ascii_digit() {
+            return false;
+        }
+
+        let mut is_float = false;
+
+        // consume digits
+        state.advance(1);
+        while let Some(c) = state.peek() {
+            if c.is_ascii_digit() {
+                state.advance(1);
+            }
+            else {
+                break;
+            }
+        }
+
+        // fractional part
+        if state.peek() == Some('.') {
+            let n1 = state.peek_next_n(1);
+            if n1.map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                is_float = true;
+                state.advance(1); // consume '.'
+                while let Some(c) = state.peek() {
+                    if c.is_ascii_digit() {
+                        state.advance(1);
+                    }
+                    else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // exponent
+        if let Some(c) = state.peek() {
+            if c == 'e' || c == 'E' {
+                let n1 = state.peek_next_n(1);
+                if n1 == Some('+') || n1 == Some('-') || n1.map(|d| d.is_ascii_digit()).unwrap_or(false) {
+                    is_float = true;
+                    state.advance(1);
+                    if let Some(sign) = state.peek() {
+                        if sign == '+' || sign == '-' {
+                            state.advance(1);
+                        }
+                    }
+                    while let Some(d) = state.peek() {
+                        if d.is_ascii_digit() {
+                            state.advance(1);
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // suffix letters (e.g., f, l, u)
+        while let Some(c) = state.peek() {
+            if c.is_ascii_alphabetic() {
+                state.advance(1);
+            }
+            else {
+                break;
+            }
+        }
+
+        let end = state.get_position();
+        state.add_token(if is_float { ObjectiveCTokenType::FloatLiteral } else { ObjectiveCTokenType::IntegerLiteral }, start, end);
+        true
+    }
+
+    fn lex_identifier_or_keyword<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        let ch = match state.peek() {
+            Some(c) => c,
+            None => return false,
+        };
+
+        if !(ch.is_ascii_alphabetic() || ch == '_' || ch == '@' || ch == '#') {
+            return false;
+        }
+
+        state.advance(1);
+        while let Some(c) = state.peek() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                state.advance(1);
+            }
+            else {
+                break;
+            }
+        }
+
+        let end = state.get_position();
+        let text = state.get_text_in(data_text_core::Range { start, end });
+        let kind = match text.as_ref() {
+            // Objective-C keywords
+            "@interface" => ObjectiveCTokenType::InterfaceKeyword,
+            "@implementation" => ObjectiveCTokenType::ImplementationKeyword,
+            "@end" => ObjectiveCTokenType::EndKeyword,
+            "@property" => ObjectiveCTokenType::PropertyKeyword,
+            "@synthesize" => ObjectiveCTokenType::SynthesizeKeyword,
+            "@dynamic" => ObjectiveCTokenType::DynamicKeyword,
+            "@protocol" => ObjectiveCTokenType::ProtocolKeyword,
+            "@import" => ObjectiveCTokenType::ImportKeyword,
+            "#import" => ObjectiveCTokenType::ImportKeyword,
+            "#include" => ObjectiveCTokenType::IncludeKeyword,
+
+            // C keywords
+            "if" => ObjectiveCTokenType::IfKeyword,
+            "else" => ObjectiveCTokenType::ElseKeyword,
+            "for" => ObjectiveCTokenType::ForKeyword,
+            "while" => ObjectiveCTokenType::WhileKeyword,
+            "do" => ObjectiveCTokenType::DoKeyword,
+            "switch" => ObjectiveCTokenType::SwitchKeyword,
+            "case" => ObjectiveCTokenType::CaseKeyword,
+            "default" => ObjectiveCTokenType::DefaultKeyword,
+            "break" => ObjectiveCTokenType::BreakKeyword,
+            "continue" => ObjectiveCTokenType::ContinueKeyword,
+            "return" => ObjectiveCTokenType::ReturnKeyword,
+            "void" => ObjectiveCTokenType::VoidKeyword,
+            "int" => ObjectiveCTokenType::IntKeyword,
+            "float" => ObjectiveCTokenType::FloatKeyword,
+            "double" => ObjectiveCTokenType::DoubleKeyword,
+            "char" => ObjectiveCTokenType::CharKeyword,
+            "BOOL" => ObjectiveCTokenType::BoolKeyword,
+            "id" => ObjectiveCTokenType::IdKeyword,
+            "self" => ObjectiveCTokenType::SelfKeyword,
+            "super" => ObjectiveCTokenType::SuperKeyword,
+            "nil" => ObjectiveCTokenType::NilKeyword,
+            "YES" => ObjectiveCTokenType::YesKeyword,
+            "NO" => ObjectiveCTokenType::NoKeyword,
+
+            _ => ObjectiveCTokenType::Identifier,
+        };
+
+        state.add_token(kind, start, state.get_position());
+        true
+    }
+
+    fn lex_operators<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        let rest = state.rest();
+
+        // prefer longest matches first
+        let patterns: &[(&str, ObjectiveCTokenType)] =
+            &[("==", ObjectiveCTokenType::EqualEqual), ("!=", ObjectiveCTokenType::NotEqual), (">=", ObjectiveCTokenType::GreaterEqual), ("<=", ObjectiveCTokenType::LessEqual), ("&&", ObjectiveCTokenType::And), ("||", ObjectiveCTokenType::Or)];
+
+        for (pat, kind) in patterns {
+            if rest.starts_with(pat) {
+                state.advance(pat.len());
+                state.add_token(*kind, start, state.get_position());
+                return true;
+            }
+        }
+
+        if let Some(ch) = state.peek() {
+            let kind = match ch {
+                '+' => Some(ObjectiveCTokenType::Plus),
+                '-' => Some(ObjectiveCTokenType::Minus),
+                '*' => Some(ObjectiveCTokenType::Star),
+                '/' => Some(ObjectiveCTokenType::Slash),
+                '%' => Some(ObjectiveCTokenType::Percent),
+                '=' => Some(ObjectiveCTokenType::Equal),
+                '>' => Some(ObjectiveCTokenType::Greater),
+                '<' => Some(ObjectiveCTokenType::Less),
+                '!' => Some(ObjectiveCTokenType::Not),
+                '?' => Some(ObjectiveCTokenType::Question),
+                ':' => Some(ObjectiveCTokenType::Colon),
+                '.' => Some(ObjectiveCTokenType::Dot),
+                _ => None,
+            };
+
+            if let Some(k) = kind {
+                state.advance(ch.len_utf8());
+                state.add_token(k, start, state.get_position());
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn lex_single_char_tokens<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        if let Some(ch) = state.peek() {
+            let kind = match ch {
+                '(' => ObjectiveCTokenType::LeftParen,
+                ')' => ObjectiveCTokenType::RightParen,
+                '[' => ObjectiveCTokenType::LeftBracket,
+                ']' => ObjectiveCTokenType::RightBracket,
+                '{' => ObjectiveCTokenType::LeftBrace,
+                '}' => ObjectiveCTokenType::RightBrace,
+                ',' => ObjectiveCTokenType::Comma,
+                ';' => ObjectiveCTokenType::Semicolon,
+                '@' => ObjectiveCTokenType::At,
+                _ => return false,
+            };
+
+            state.advance(ch.len_utf8());
+            state.add_token(kind, start, state.get_position());
+            true
+        }
+        else {
+            false
+        }
+    }
+}

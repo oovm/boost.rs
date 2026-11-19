@@ -1,0 +1,28 @@
+{
+    "success": true,
+    "typed_root": {
+        "type_name": "oak_rust::ast::RustRoot",
+        "content": {
+            "items": [
+                {
+                    "Struct": {
+                        "fields": [],
+                        "generics": null,
+                        "name": {
+                            "name": "",
+                            "span": {
+                                "end": 0,
+                                "start": 0
+                            }
+                        },
+                        "span": {
+                            "end": 40,
+                            "start": 0
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    "errors": []
+}

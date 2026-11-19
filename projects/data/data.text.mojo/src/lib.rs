@@ -1,0 +1,29 @@
+#![feature(new_range_api)]
+#![warn(missing_docs)]
+#![doc = include_str!("readme.md")]
+
+/// AST module.
+pub mod ast;
+/// Builder module.
+pub mod builder;
+/// Lexer module.
+pub mod lexer;
+/// Parser module.
+pub mod parser;
+
+pub use lexer::token_type::MojoTokenType as TokenType;
+pub use parser::element_type::MojoElementType as ElementType;
+
+use data_text_core::Language;
+
+/// Mojo language definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct MojoLanguage;
+
+impl Language for MojoLanguage {
+    const NAME: &'static str = "mojo";
+    type TokenType = lexer::token_type::MojoTokenType;
+    type ElementType = parser::element_type::MojoElementType;
+    type TypedRoot = Vec<ast::MojoStatement>;
+}

@@ -1,0 +1,26 @@
+[package]
+name = "data-text-abc"
+version.workspace = true
+authors.workspace = true
+description = "ABC music notation parser for the oak ecosystem."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing"]
+keywords = ["parser", "abc", "music", "notation"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

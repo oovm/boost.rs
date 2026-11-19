@@ -1,0 +1,702 @@
+use crate::{
+    ValkyrieLanguage,
+    lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
+};
+use data_text_core::{
+    LexerState, OakError,
+    lexer::{CommentConfig, WhitespaceConfig},
+    source::Source,
+};
+use std::sync::LazyLock;
+use unicode_ident::{is_xid_continue, is_xid_start};
+
+pub(crate) type State<'a, S> = LexerState<'a, S, ValkyrieLanguage>;
+
+static VK_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
+// Valkyrie：行注释 `#`，块注释 `<# … #>`。不支持 `//` / `///` / `/* */`。
+static VK_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "<#", block_end: "#>", nested_blocks: true });
+
+impl crate::lexer::ValkyrieLexer<'_> {
+    /// Runs the lexer on the given state.
+    pub(crate) fn run<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+        let mut template_mode = crate::lexer::lex_tgrammar::TemplateLexMode::default();
+        while state.not_at_end() {
+            if self.lex_tgrammar_fragment(state, &mut template_mode) {
+                continue;
+            }
+
+            self.run_programming_once(state, false)?;
+        }
+
+        Ok(())
+    }
+
+    /// 普通 Valkyrie 词法（子区间全量扫描，供 `<% ... %>` 指令内等场景）。
+    pub(crate) fn run_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+        self.run_programming_inner(state, false)
+    }
+
+    /// `<% ... %>` 指令内部词法（`end` 等 TGrammar 关键词仅在此上下文生效）。
+    pub(crate) fn run_template_directive_programming<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> Result<(), OakError> {
+        self.run_programming_inner(state, true)
+    }
+
+    /// 主词法循环用：每次仅前进一个 programming token，以便与 TGrammar 交错。
+    fn run_programming_once<S: Source + ?Sized>(&self, state: &mut State<'_, S>, template_directive: bool) -> Result<(), OakError> {
+        let end = state.get_length();
+        while state.get_position() < end {
+            let start_pos = state.get_position();
+
+            // 空白/注释单独成 token 后交还主循环，避免同一轮内吞掉紧随的 `<%`。
+            if self.lex_whitespace(state) || self.lex_comments(state) {
+                return Ok(());
+            }
+
+            let matched = self.lex_string_literal(state)
+                || self.lex_label(state)
+                || self.lex_char_literal(state)
+                || self.lex_number_literal(state)
+                || self.lex_backtick_identifier(state)
+                || self.lex_identifier_or_keyword(state, template_directive)
+                || self.lex_operators(state)
+                || self.lex_single_char_tokens(state);
+
+            if !matched {
+                if let Some(c) = state.current() {
+                    let char_len = c.len_utf8();
+                    state.add_token(ValkyrieTokenType::Error, start_pos, start_pos + char_len);
+                    state.advance(char_len);
+                }
+            }
+
+            return Ok(());
+        }
+
+        Ok(())
+    }
+
+    fn run_programming_inner<S: Source + ?Sized>(&self, state: &mut State<'_, S>, template_directive: bool) -> Result<(), OakError> {
+        let end = state.get_length();
+        while state.get_position() < end {
+            self.run_programming_once(state, template_directive)?;
+        }
+
+        Ok(())
+    }
+
+    fn lex_whitespace<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        let start = state.get_position();
+        // UTF-8 BOM（U+FEFF）只可能出现在文件开头；按 trivia 处理，不进入语法。
+        if start == 0 && state.current() == Some('\u{feff}') {
+            state.advance('\u{feff}'.len_utf8());
+            state.add_token(ValkyrieTokenType::Whitespace, start, state.get_position());
+            return true;
+        }
+        let range = if VK_WHITESPACE.unicode_whitespace { state.take_while(|c| c.is_whitespace()) } else { state.skip_ascii_whitespace() };
+
+        if range.end > start {
+            state.add_token(ValkyrieTokenType::Whitespace, start, range.end);
+            true
+        }
+        else {
+            false
+        }
+    }
+
+    /// raw id：`` `any` `` / `` `==` `` 等反引号引用（保留字或运算符作声明名）。
+    fn lex_backtick_identifier<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        if state.current() != Some('`') {
+            return false;
+        }
+        let start = state.get_position();
+        state.advance('`'.len_utf8());
+        let inner_start = state.get_position();
+        while let Some(ch) = state.current() {
+            if ch == '`' {
+                state.advance('`'.len_utf8());
+                if inner_start == state.get_position() - '`'.len_utf8() {
+                    state.add_token(ValkyrieTokenType::Error, start, state.get_position());
+                }
+                else {
+                    // span 须含两侧反引号，否则 green tree 按 bump 累计长度对齐源码时会落在开引号字节上。
+                    state.add_token(ValkyrieTokenType::Identifier, start, state.get_position());
+                }
+                return true;
+            }
+            state.advance(ch.len_utf8());
+        }
+        state.add_token(ValkyrieTokenType::Error, start, state.get_position());
+        true
+    }
+
+    fn lex_comments<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        if VK_COMMENT.scan(state, ValkyrieTokenType::LineComment, ValkyrieTokenType::BlockComment) {
+            return true;
+        }
+        // ⍝ (U+235D) 文档行注释：stdlib / core 源码广泛使用，须与 `#` 同等视为行注释。
+        const DOC_LINE: &str = "\u{235d}";
+        if state.starts_with(DOC_LINE) {
+            let start = state.get_position();
+            state.advance(DOC_LINE.len());
+            state.skip_until(b'\n');
+            state.add_token(ValkyrieTokenType::LineComment, start, state.get_position());
+            return true;
+        }
+        false
+    }
+
+    /// 引号字面量只做捕获：不向前探测 `r`/`b` 等前缀标识符，前缀由后续编译阶段解释。
+    fn lex_string_literal<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        self.lex_quote_capture(state, '"', ValkyrieTokenType::StringLiteral)
+    }
+
+    /// `'outer` 循环标签；`'a'` 仍按字符字面量处理。
+    fn lex_label<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        if state.current() != Some('\'') {
+            return false;
+        }
+        let start = state.get_position();
+        state.advance('\''.len_utf8());
+        let mut chars = 0usize;
+        if let Some(ch) = state.current()
+            && (ch == '_' || is_xid_start(ch))
+        {
+            state.advance(ch.len_utf8());
+            chars += 1;
+            while let Some(next) = state.current() {
+                if !is_xid_continue(next) {
+                    break;
+                }
+                state.advance(next.len_utf8());
+                chars += 1;
+            }
+        }
+        let end = state.get_position();
+        // 紧跟闭合引号的 `'name'` 是引号捕获（如 `'ab'`），不是标签；标签没有闭合引号。
+        if chars == 0 || state.current() == Some('\'') {
+            state.set_position(start);
+            return false;
+        }
+        // `'hello\n'` 这类"标识符段后还有内容、且在空白/EOF 之前遇到闭合引号"的形态
+        // 也是引号捕获而不是标签：从名字段末端向前扫描，先见引号则退让给捕获。
+        if state.current().is_some_and(|c| !c.is_whitespace()) {
+            let tail = state.get_text_in((end..state.get_length()).into());
+            let mut closed_before_trivia = false;
+            for c in tail.chars() {
+                if c == '\'' {
+                    closed_before_trivia = true;
+                    break;
+                }
+                if c.is_whitespace() {
+                    break;
+                }
+            }
+            if closed_before_trivia {
+                state.set_position(start);
+                return false;
+            }
+        }
+        state.add_token(ValkyrieTokenType::Label, start, end);
+        true
+    }
+
+    /// 引号是否紧跟 raw 前缀 `r`（`r'…'` / `r"…"`）。
+    ///
+    /// 前缀必须与引号紧邻，且 `r` 前面不是标识符延续字符（`bar'…'` 的前缀是 `bar`，
+    /// 不是 raw）。捕获阶段的 `\` 保护只对 cooked 字面量生效，raw 字面量按逐字闭合。
+    fn quote_follows_raw_prefix<S: Source + ?Sized>(&self, state: &State<'_, S>, start: usize) -> bool {
+        if start == 0 {
+            return false;
+        }
+        if !state.get_text_in((start - 1..start).into()).eq_ignore_ascii_case("r") {
+            return false;
+        }
+        if start == 1 {
+            return true;
+        }
+        !state.get_text_in((start - 2..start - 1).into()).chars().next().is_some_and(|c| c == '_' || is_xid_continue(c))
+    }
+
+    /// 字符字面量 `'c'` / `'\''` / `'\u{27}'`。
+    ///
+    /// 与字符串捕获不同，单引号字面量必须能表达单引号本身；捕获阶段对 `\`
+    /// 只做“跳过下一字符”的定界保护，不解释转义值。`\` 后无字符时按未闭合失败。
+    /// 空字面量 `''` 保持既有空 token 形态，内容合法性仍由后续阶段拒绝。
+    fn lex_char_literal<S: Source + ?Sized>(&self, state: &mut State<'_, S>) -> bool {
+        if state.current() != Some('\'') {
+            return false;
+        }
+        // 连续引号 `''` / `'''…'''` 与 raw 前缀保持既有等量引号串捕获语义
+        // （空字面量、引号捕获与 raw 逐字闭合）；其余单引号字面量按“反斜杠保护定界符”扫描。
+        if state.peek_next() == Some('\'') || self.quote_follows_raw_prefix(state, state.get_position()) {
+            return self.lex_quote_capture(state, '\'', ValkyrieTokenType::CharLiteral);
+        }
+        let start = state.get_position();
+        state.advance('\''.len_utf8());
+        while let Some(c) = state.current() {
+            if c == '\\' {
+                state.advance('\\'.len_utf8());
+                if let Some(next) = state.current() {
+                    state.advance(next.len_utf8());
+                }
+                continue;
+            }
+            if c == '\'' {
+                state.advance('\''.len_utf8());
+                state.add_token(ValkyrieTokenType::CharLiteral, start, state.get_position());
+                return true;
+            }
+            state.advance(c.len_utf8());
+        }
+        state.add_token(ValkyrieTokenType::Error, start, state.get_position());
+        state.add_error(data_text_core::OakError::syntax_error("unterminated quoted literal: opening run of 1 `'` requires a closing run of 1".to_string(), start, None));
+        true
+    }
+
+    /// 按"等量引号串"配对捕获被引号包住的原始文本：
+    ///
+    /// - 开头连续 `N` 个引号必须由连续 `N` 个引号闭合；`""` / `''` 特判为空字面量。
+    /// - 单引号串（`N == 1`）里 `\` 保护下一个字符，使 `"\""` / `'\''` 可捕获；
+    ///   多引号串不解释转义，按逐字内容闭合。
+    /// - 捕获阶段不解释转义值：内容里的转义在后续编译阶段按结构化错误拒绝或解码。
+    /// - 找不到等量闭合串时产出 `Error` token 并附精确诊断（未闭合），
+    ///   与"捕获成功但内容非法"的后续错误区分。
+    fn lex_quote_capture<S: Source + ?Sized>(&self, state: &mut State<'_, S>, quote: char, kind: ValkyrieTokenType) -> bool {
+        let start = state.get_position();
+
+        let mut quote_count = 0usize;
+
+        while let Some(c) = state.current() {
+            if c == quote {
+                quote_count += 1;
+                state.advance(c.len_utf8());
+            }
+            else {
+                break;
+            }
+        }
+
+        if quote_count == 0 {
+            state.set_position(start);
+            return false;
+        }
+
+        if quote_count == 2 {
+            state.add_token(kind, start, state.get_position());
+            return true;
+        }
+
+        let mut current_consecutive = 0usize;
+        // raw 前缀由 lexer 就地识别：raw 字面量不解释 `\`，按逐字内容寻找闭合引号。
+        let escape_aware = !self.quote_follows_raw_prefix(state, start);
+
+        while let Some(c) = state.current() {
+            // cooked 单引号串允许 `\` 保护下一个字符（`'\''`、`"\""`、`"\\"`）：
+            // 捕获阶段不解释转义值，只保证转义字符不会提前闭合定界符。
+            // 多引号串（`"""…"""`）保持既有逐字捕获语义。
+            if c == '\\' && quote_count == 1 && escape_aware {
+                state.advance('\\'.len_utf8());
+                if let Some(next) = state.current() {
+                    state.advance(next.len_utf8());
+                }
+                current_consecutive = 0;
+                continue;
+            }
+            if c == quote {
+                current_consecutive += 1;
+                state.advance(c.len_utf8());
+                if current_consecutive == quote_count {
+                    let end = state.get_position();
+                    state.add_token(kind, start, end);
+                    return true;
+                }
+            }
+            else {
+                current_consecutive = 0;
+                state.advance(c.len_utf8());
+            }
+        }
+
+        state.add_token(ValkyrieTokenType::Error, start, state.get_position());
+        state.add_error(data_text_core::OakError::syntax_error(format!("unterminated quoted literal: opening run of {quote_count} `{quote}` requires a closing run of {quote_count}"), start, None));
+        true
+    }
+
+    fn lex_number_literal<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> bool {
+        let start = state.get_position();
+        if let Some(ch) = state.current() {
+            if ch.is_ascii_digit() {
+                let radix = if ch == '0' {
+                    match state.peek_next() {
+                        Some('x' | 'X') => Some(16),
+                        Some('b' | 'B') => Some(2),
+                        Some('o' | 'O') => Some(8),
+                        _ => None,
+                    }
+                }
+                else {
+                    None
+                };
+                if let Some(radix) = radix {
+                    state.advance(2);
+                    let mut has_digit = false;
+                    while let Some(ch) = state.current() {
+                        if ch.is_digit(radix) {
+                            has_digit = true;
+                            state.advance(ch.len_utf8());
+                        }
+                        else if ch == '_' {
+                            state.advance(ch.len_utf8());
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                    state.add_token(if has_digit { ValkyrieTokenType::IntegerLiteral } else { ValkyrieTokenType::Error }, start, state.get_position());
+                    return true;
+                }
+                state.advance(ch.len_utf8());
+
+                let mut has_fraction = false;
+                while let Some(ch) = state.current() {
+                    if ch == '.' && !has_fraction && state.peek_next().is_some_and(|next| next.is_ascii_digit()) {
+                        has_fraction = true;
+                        state.advance(1);
+                        continue;
+                    }
+                    if ch.is_ascii_digit() || ch == '_' { state.advance(ch.len_utf8()) } else { break }
+                }
+
+                // 指数部分：`e`/`E` 后接可选符号与至少一位数字，必须整体属于字面量。
+                // 旧实现只扫尾数，`1e300` 会被拆成 `1` + 标识符 `e300` 并静默取尾数。
+                let mut has_exponent = false;
+                if matches!(state.current(), Some('e' | 'E')) {
+                    state.advance(1);
+                    if matches!(state.current(), Some('+' | '-')) {
+                        state.advance(1);
+                    }
+
+                    let mut has_exponent_digit = false;
+                    while let Some(ch) = state.current() {
+                        if ch.is_ascii_digit() {
+                            has_exponent_digit = true;
+                            state.advance(ch.len_utf8());
+                        }
+                        else if ch == '_' {
+                            state.advance(ch.len_utf8());
+                        }
+                        else {
+                            break;
+                        }
+                    }
+
+                    if has_exponent_digit {
+                        has_exponent = true;
+                    }
+                    else {
+                        state.add_token(ValkyrieTokenType::Error, start, state.get_position());
+                        state.add_error(data_text_core::OakError::syntax_error("float literal exponent requires at least one digit", start, None));
+                        return true;
+                    }
+                }
+
+                let kind = if has_fraction || has_exponent { ValkyrieTokenType::FloatLiteral } else { ValkyrieTokenType::IntegerLiteral };
+                // 数字类型后缀与数字同属一个 token：浮点只接受 `f64`、整数只接受 `i64`
+                // （当前字面量载体只有这两种）。后缀后若仍是标识符继续字符，则不属于
+                // 后缀，按旧行为留给后续 token。
+                let suffix: Option<&str> = match kind {
+                    ValkyrieTokenType::FloatLiteral => Some("f64"),
+                    ValkyrieTokenType::IntegerLiteral => Some("i64"),
+                    _ => None,
+                };
+                if let Some(suffix) = suffix {
+                    let matches_suffix = suffix.chars().enumerate().all(|(offset, expected)| state.peek_next_n(offset).is_some_and(|ch| ch.eq_ignore_ascii_case(&expected))) && state.peek_next_n(suffix.len()).map_or(true, |ch| !is_xid_continue(ch));
+                    if matches_suffix {
+                        state.advance(suffix.len());
+                    }
+                }
+                state.add_token(kind, start, state.get_position());
+                return true;
+            }
+        }
+        false
+    }
+
+    fn lex_identifier_or_keyword<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>, template_directive: bool) -> bool {
+        let start = state.get_position();
+        if let Some(ch) = state.current() {
+            if ch == '_' || is_xid_start(ch) {
+                state.advance(ch.len_utf8());
+
+                while let Some(ch) = state.current() {
+                    if is_xid_continue(ch) { state.advance(ch.len_utf8()) } else { break }
+                }
+
+                let end = state.get_position();
+                let text = state.get_text_in((start..end).into());
+                let token_kind = match &*text {
+                    "namespace" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Namespace),
+                    "using" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Using),
+                    "class" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Class),
+                    "struct" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Struct),
+                    "structure" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Structure),
+                    "singleton" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Singleton),
+                    "trait" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Trait),
+                    "imply" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Imply),
+                    "flags" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Flags),
+                    "enums" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Enums),
+                    "enum" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Enum),
+                    "unite" | "unity" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Unity),
+                    "union" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Union),
+                    "micro" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Micro),
+                    "mezzo" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Mezzo),
+                    "macro" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Macro),
+                    "widget" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Widget),
+                    "let" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Let),
+                    "if" => ValkyrieTokenType::Keyword(ValkyrieKeywords::If),
+                    "else" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Else),
+                    "match" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Match),
+                    "case" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Case),
+                    "when" => ValkyrieTokenType::Keyword(ValkyrieKeywords::When),
+                    "try" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Try),
+                    "lambda" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Lambda),
+                    "catch" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Catch),
+                    "while" => ValkyrieTokenType::Keyword(ValkyrieKeywords::While),
+                    "loop" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Loop),
+                    "end" if template_directive => ValkyrieTokenType::Keyword(ValkyrieKeywords::End),
+                    "for" => ValkyrieTokenType::Keyword(ValkyrieKeywords::For),
+                    "in" => ValkyrieTokenType::Keyword(ValkyrieKeywords::In),
+                    "return" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Return),
+                    "break" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Break),
+                    "continue" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Continue),
+                    "true" => ValkyrieTokenType::BoolLiteral,
+                    "false" => ValkyrieTokenType::BoolLiteral,
+                    "null" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Null),
+                    "is" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Is),
+                    "type" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Type),
+                    "yield" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Yield),
+                    "raise" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Raise),
+                    "effect" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Effect),
+                    "resume" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Resume),
+                    "as" => ValkyrieTokenType::Keyword(ValkyrieKeywords::As),
+                    "Self" => ValkyrieTokenType::Keyword(ValkyrieKeywords::SelfType),
+                    "impl" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Impl),
+                    "where" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Where),
+                    "super" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Super),
+                    "initiate" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Initiate),
+                    "shader" => ValkyrieTokenType::Keyword(ValkyrieKeywords::Shader),
+                    "by" => ValkyrieTokenType::Keyword(ValkyrieKeywords::By),
+                    "component" if self.config.support_ecs_extension => ValkyrieTokenType::Keyword(ValkyrieKeywords::Component),
+                    "system" if self.config.support_ecs_extension => ValkyrieTokenType::Keyword(ValkyrieKeywords::System),
+                    "events" if self.config.support_ecs_extension => ValkyrieTokenType::Keyword(ValkyrieKeywords::Events),
+                    "_" => ValkyrieTokenType::Underscore,
+                    _ => ValkyrieTokenType::Identifier,
+                };
+
+                state.add_token(token_kind, start, state.get_position());
+                return true;
+            }
+        }
+        false
+    }
+
+    fn lex_operators<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> bool {
+        let start = state.get_position();
+        if let Some(ch) = state.current() {
+            let kind = match ch {
+                '+' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('+') = state.current() {
+                        state.advance('+'.len_utf8());
+                        ValkyrieTokenType::PlusPlus
+                    }
+                    else {
+                        ValkyrieTokenType::Plus
+                    }
+                }
+                '-' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('>') = state.current() {
+                        state.advance('>'.len_utf8());
+                        ValkyrieTokenType::Arrow
+                    }
+                    else {
+                        ValkyrieTokenType::Minus
+                    }
+                }
+                '*' => {
+                    state.advance(ch.len_utf8());
+                    ValkyrieTokenType::Star
+                }
+                '/' => {
+                    state.advance(ch.len_utf8());
+                    ValkyrieTokenType::Slash
+                }
+                '%' => {
+                    state.advance(ch.len_utf8());
+                    ValkyrieTokenType::Percent
+                }
+                '=' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('=') = state.current() {
+                        state.advance('='.len_utf8());
+                        ValkyrieTokenType::EqEq
+                    }
+                    else {
+                        ValkyrieTokenType::Eq
+                    }
+                }
+                '!' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('=') = state.current() {
+                        state.advance('='.len_utf8());
+                        ValkyrieTokenType::NotEq
+                    }
+                    else {
+                        ValkyrieTokenType::Bang
+                    }
+                }
+                '<' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('=') = state.current() {
+                        state.advance('='.len_utf8());
+                        // 三字符算子须按最长匹配整体成 token：`<=>` 不可被切成 `<=` + `>`。
+                        if let Some('>') = state.current() {
+                            state.advance('>'.len_utf8());
+                            ValkyrieTokenType::LessEqGreater
+                        }
+                        else {
+                            ValkyrieTokenType::LessEq
+                        }
+                    }
+                    else if let Some('<') = state.current() {
+                        state.advance('<'.len_utf8());
+                        ValkyrieTokenType::LeftShift
+                    }
+                    else {
+                        ValkyrieTokenType::LessThan
+                    }
+                }
+                '>' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('=') = state.current() {
+                        state.advance('='.len_utf8());
+                        ValkyrieTokenType::GreaterEq
+                    }
+                    else {
+                        // 嵌套泛型 `Option<Option<T>>` 须词法化为两个 `>`，不可合并为 `>>`。
+                        ValkyrieTokenType::GreaterThan
+                    }
+                }
+                '&' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('&') = state.current() {
+                        state.advance('&'.len_utf8());
+                        ValkyrieTokenType::AndAnd
+                    }
+                    else {
+                        ValkyrieTokenType::Ampersand
+                    }
+                }
+                '|' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('|') = state.current() {
+                        state.advance('|'.len_utf8());
+                        ValkyrieTokenType::OrOr
+                    }
+                    else {
+                        ValkyrieTokenType::Pipe
+                    }
+                }
+                '^' => {
+                    state.advance(ch.len_utf8());
+                    ValkyrieTokenType::Caret
+                }
+                '~' => {
+                    state.advance(ch.len_utf8());
+                    ValkyrieTokenType::Tilde
+                }
+                '.' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some('.') = state.current() {
+                        state.advance('.'.len_utf8());
+                        // `..=` 只有紧邻 `=` 才合并；`..` 与 `=` 之间留空白仍是 `DotDot` + `Eq`。
+                        if let Some('=') = state.current() {
+                            state.advance('='.len_utf8());
+                            ValkyrieTokenType::DotDotEq
+                        }
+                        else {
+                            ValkyrieTokenType::DotDot
+                        }
+                    }
+                    else {
+                        ValkyrieTokenType::Dot
+                    }
+                }
+                ':' => {
+                    let ch_len = ch.len_utf8();
+                    state.advance(ch_len);
+                    if let Some(':') = state.current() {
+                        state.advance(':'.len_utf8());
+                        ValkyrieTokenType::ColonColon
+                    }
+                    else if let Some('=') = state.current() {
+                        state.advance('='.len_utf8());
+                        ValkyrieTokenType::ColonEq
+                    }
+                    else {
+                        ValkyrieTokenType::Colon
+                    }
+                }
+                _ => return false,
+            };
+            state.add_token(kind, start, state.get_position());
+            return true;
+        }
+        false
+    }
+
+    fn lex_single_char_tokens<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> bool {
+        let start = state.get_position();
+        if let Some(ch) = state.current() {
+            match ch {
+                '@' => {
+                    state.advance(ch.len_utf8());
+                    state.add_token(ValkyrieTokenType::At, start, state.get_position());
+                    return true;
+                }
+                _ => {}
+            }
+            let kind = match ch {
+                '(' => ValkyrieTokenType::ParenthesisL,
+                ')' => ValkyrieTokenType::ParenthesisR,
+                '{' => ValkyrieTokenType::BraceL,
+                '}' => ValkyrieTokenType::BraceR,
+                '[' => ValkyrieTokenType::BracketL,
+                ']' => ValkyrieTokenType::BracketR,
+                ',' => ValkyrieTokenType::Comma,
+                ';' => ValkyrieTokenType::Semicolon,
+                '$' => ValkyrieTokenType::Dollar,
+                '?' => ValkyrieTokenType::Question,
+                '⟨' => ValkyrieTokenType::AngleL,
+                '⟩' => ValkyrieTokenType::AngleR,
+                '⁅' => ValkyrieTokenType::OffsetL,
+                '⁆' => ValkyrieTokenType::OffsetR,
+                _ => return false,
+            };
+            state.advance(ch.len_utf8());
+            state.add_token(kind, start, state.get_position());
+            return true;
+        }
+        false
+    }
+}

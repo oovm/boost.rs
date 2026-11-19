@@ -1,0 +1,15 @@
+#![doc = include_str!("readme.md")]
+use data_text_core::{Language, LanguageCategory};
+
+/// Implementation of the GraphQL language.
+#[derive(Debug, Clone, Default)]
+pub struct GraphQLLanguage {}
+
+impl Language for GraphQLLanguage {
+    const NAME: &'static str = "graphql";
+    const CATEGORY: LanguageCategory = LanguageCategory::Dsl;
+
+    type TokenType = crate::lexer::token_type::GraphQLTokenType;
+    type ElementType = crate::parser::element_type::GraphQLElementType;
+    type TypedRoot = crate::ast::GraphQLRoot;
+}

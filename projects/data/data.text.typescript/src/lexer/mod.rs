@@ -1,0 +1,667 @@
+#![doc = include_str!("readme.md")]
+/// Token types for the TypeScript language.
+pub mod token_type;
+
+pub use self::token_type::TypeScriptTokenType;
+use crate::language::TypeScriptLanguage;
+use data_text_core::{Lexer, LexerCache, LexerState, OakError, TextEdit, lexer::LexOutput, source::Source};
+
+/// Lexer for the TypeScript language.
+#[derive(Clone, Debug)]
+pub struct TypeScriptLexer<'config> {
+    config: &'config TypeScriptLanguage,
+}
+
+pub(crate) type State<'a, S> = LexerState<'a, S, TypeScriptLanguage>;
+
+impl<'config> TypeScriptLexer<'config> {
+    /// Creates a new `TypeScriptLexer` with the given language configuration.
+    pub fn new(config: &'config TypeScriptLanguage) -> Self {
+        Self { config }
+    }
+}
+
+impl<'config> Lexer<TypeScriptLanguage> for TypeScriptLexer<'config> {
+    fn lex<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl LexerCache<TypeScriptLanguage>) -> LexOutput<TypeScriptLanguage> {
+        let relex_from = edits.iter().map(|e| e.span.start).min().unwrap_or(0);
+        let mut state: State<'_, S> = LexerState::new_with_cache(text, relex_from, cache);
+
+        let result = self.run(&mut state);
+        if result.is_ok() {
+            state.add_eof()
+        }
+        state.finish_with_cache(result, cache)
+    }
+}
+
+impl<'config> TypeScriptLexer<'config> {
+    fn run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), OakError> {
+        while state.not_at_end() {
+            let safe_point = state.get_position();
+
+            if self.skip_whitespace(state) {
+                continue;
+            }
+
+            if self.lex_newline(state) {
+                continue;
+            }
+
+            if self.skip_comment(state) {
+                continue;
+            }
+
+            if self.lex_string_literal(state) {
+                continue;
+            }
+
+            if self.lex_template_literal(state) {
+                continue;
+            }
+
+            if self.lex_numeric_literal(state) {
+                continue;
+            }
+
+            if self.lex_identifier_or_keyword(state) {
+                continue;
+            }
+
+            if self.lex_regex_literal(state) {
+                continue;
+            }
+
+            if self.lex_operator_or_punctuation(state) {
+                continue;
+            }
+
+            // If all rules do not match, skip current character and mark as error
+            let start_pos = state.get_position();
+            if let Some(ch) = state.peek() {
+                state.advance(ch.len_utf8());
+                state.add_token(TypeScriptTokenType::Error, start_pos, state.get_position());
+            }
+
+            state.advance_if_dead_lock(safe_point);
+        }
+
+        Ok(())
+    }
+
+    fn skip_whitespace<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let mut found = false;
+
+        while let Some(ch) = state.peek() {
+            if ch == ' ' || ch == '\t' {
+                state.advance(ch.len_utf8());
+                found = true;
+            }
+            else {
+                break;
+            }
+        }
+
+        if found {
+            state.add_token(TypeScriptTokenType::Whitespace, start, state.get_position());
+        }
+
+        found
+    }
+
+    fn lex_newline<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(ch) = state.peek() {
+            if ch == '\n' {
+                state.advance(1);
+                state.add_token(TypeScriptTokenType::Newline, start, state.get_position());
+                return true;
+            }
+            else if ch == '\r' {
+                state.advance(1);
+                if state.peek() == Some('\n') {
+                    state.advance(1);
+                }
+                state.add_token(TypeScriptTokenType::Newline, start, state.get_position());
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn skip_comment<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let rest = state.rest();
+
+        // Line comment: // ...
+        if rest.starts_with("//") {
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '\n' || ch == '\r' {
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(TypeScriptTokenType::LineComment, start, state.get_position());
+            return true;
+        }
+
+        // Block comment: /* ... */
+        if rest.starts_with("/*") {
+            state.advance(2);
+            while let Some(ch) = state.peek() {
+                if ch == '*' && state.peek_next_n(1) == Some('/') {
+                    state.advance(2);
+                    break;
+                }
+                state.advance(ch.len_utf8());
+            }
+            state.add_token(TypeScriptTokenType::BlockComment, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    fn lex_string_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(quote) = state.peek() {
+            if quote == '"' || quote == '\'' {
+                state.advance(1);
+
+                while let Some(ch) = state.peek() {
+                    if ch == quote {
+                        state.advance(1);
+                        break;
+                    }
+                    else if ch == '\\' {
+                        state.advance(1);
+                        if let Some(_) = state.peek() {
+                            state.advance(1);
+                        }
+                    }
+                    else {
+                        state.advance(ch.len_utf8());
+                    }
+                }
+
+                state.add_token(TypeScriptTokenType::StringLiteral, start, state.get_position());
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn lex_template_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if state.peek() != Some('`') {
+            return false;
+        }
+
+        consume_template(state);
+        state.add_token(TypeScriptTokenType::TemplateString, start, state.get_position());
+        true
+    }
+
+    fn lex_numeric_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        let Some(first) = state.peek()
+        else {
+            return false;
+        };
+        if !first.is_ascii_digit() {
+            return false;
+        }
+
+        // Radix prefixes consume their own marker before the digit loop, and
+        // each radix keeps accepting `_` separators between its own digits.
+        let radix: Option<fn(char) -> bool> = if first == '0' {
+            match state.peek_next_n(1) {
+                Some('x' | 'X') => Some(|ch: char| ch.is_ascii_hexdigit()),
+                Some('b' | 'B') => Some(|ch: char| matches!(ch, '0' | '1')),
+                Some('o' | 'O') => Some(|ch: char| matches!(ch, '0'..='7')),
+                _ => None,
+            }
+        }
+        else {
+            None
+        };
+
+        match radix {
+            Some(is_digit) => {
+                state.advance(2);
+                consume_digits(state, is_digit);
+            }
+            None => {
+                consume_digits(state, |ch: char| ch.is_ascii_digit());
+                if state.peek() == Some('.') && state.peek_next_n(1).is_some_and(|ch| ch.is_ascii_digit()) {
+                    state.advance(1);
+                    consume_digits(state, |ch: char| ch.is_ascii_digit());
+                }
+                if matches!(state.peek(), Some('e' | 'E')) {
+                    let sign = matches!(state.peek_next_n(1), Some('+' | '-'));
+                    let digit_offset = if sign { 2 } else { 1 };
+                    if state.peek_next_n(digit_offset).is_some_and(|ch| ch.is_ascii_digit()) {
+                        state.advance(1 + digit_offset as usize);
+                        consume_digits(state, |ch: char| ch.is_ascii_digit());
+                    }
+                }
+            }
+        }
+
+        // Check BigInt suffix
+        if state.peek() == Some('n') {
+            state.advance(1);
+            state.add_token(TypeScriptTokenType::BigIntLiteral, start, state.get_position());
+        }
+        else {
+            state.add_token(TypeScriptTokenType::NumericLiteral, start, state.get_position());
+        }
+
+        true
+    }
+
+    fn lex_identifier_or_keyword<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+
+        if let Some(ch) = state.peek() {
+            // Private identifiers (`#load`) as a single IdentifierName token including `#`.
+            let private = ch == '#';
+            if private {
+                state.advance(1);
+                let Some(next) = state.peek()
+                else {
+                    return false;
+                };
+                if !(next.is_alphabetic() || next == '_' || next == '$') {
+                    // Lone `#` is not an identifier; back out so other lexers can try.
+                    state.set_position(start);
+                    return false;
+                }
+            }
+            else if !(ch.is_alphabetic() || ch == '_' || ch == '$') {
+                return false;
+            }
+
+            if !private {
+                state.advance(ch.len_utf8());
+            }
+            else {
+                // Consume the first identifier char after `#`.
+                if let Some(next) = state.peek() {
+                    state.advance(next.len_utf8());
+                }
+            }
+
+            while let Some(ch) = state.peek() {
+                if ch.is_alphanumeric() || ch == '_' || ch == '$' {
+                    state.advance(ch.len_utf8());
+                }
+                else {
+                    break;
+                }
+            }
+
+            // Get identifier text and check if it's a keyword (private names stay IdentifierName).
+            let end = state.get_position();
+            let text = state.get_text_in(data_text_core::Range { start, end });
+            let kind = if private { TypeScriptTokenType::IdentifierName } else { self.keyword_or_identifier(&text) };
+
+            state.add_token(kind, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+
+    fn keyword_or_identifier(&self, text: &str) -> TypeScriptTokenType {
+        TypeScriptTokenType::from_keyword(text).unwrap_or(TypeScriptTokenType::IdentifierName)
+    }
+
+    fn lex_regex_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        if state.peek() != Some('/') || !regex_can_start_after(state.get_tokens()) {
+            return false;
+        }
+        let start = state.get_position();
+        state.advance(1);
+        let mut in_class = false;
+        let mut closed = false;
+        while let Some(ch) = state.peek() {
+            if ch == '\\' {
+                state.advance(1);
+                if let Some(escaped) = state.peek() {
+                    state.advance(escaped.len_utf8());
+                }
+                continue;
+            }
+            if ch == '[' {
+                in_class = true;
+            }
+            else if ch == ']' {
+                in_class = false;
+            }
+            else if ch == '/' && !in_class {
+                state.advance(1);
+                closed = true;
+                break;
+            }
+            else if ch == '\n' || ch == '\r' {
+                break;
+            }
+            state.advance(ch.len_utf8());
+        }
+        if !closed {
+            state.set_position(start);
+            return false;
+        }
+        while let Some(ch) = state.peek() {
+            if ch.is_alphabetic() {
+                state.advance(ch.len_utf8());
+            }
+            else {
+                break;
+            }
+        }
+        state.add_token(TypeScriptTokenType::RegexLiteral, start, state.get_position());
+        true
+    }
+
+    fn lex_operator_or_punctuation<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        let start = state.get_position();
+        let rest = state.rest();
+
+        let ops = [
+            ("===", TypeScriptTokenType::EqualEqualEqual),
+            ("!==", TypeScriptTokenType::NotEqualEqual),
+            (">>>", TypeScriptTokenType::UnsignedRightShift),
+            ("...", TypeScriptTokenType::DotDotDot),
+            ("**=", TypeScriptTokenType::StarStarEqual),
+            ("<<=", TypeScriptTokenType::LeftShiftEqual),
+            (">>=", TypeScriptTokenType::RightShiftEqual),
+            ("&&=", TypeScriptTokenType::AmpersandAmpersandEqual),
+            ("||=", TypeScriptTokenType::PipePipeEqual),
+            ("??=", TypeScriptTokenType::QuestionQuestionEqual),
+            ("**", TypeScriptTokenType::StarStar),
+            ("<=", TypeScriptTokenType::LessEqual),
+            (">=", TypeScriptTokenType::GreaterEqual),
+            ("==", TypeScriptTokenType::EqualEqual),
+            ("!=", TypeScriptTokenType::NotEqual),
+            ("&&", TypeScriptTokenType::AmpersandAmpersand),
+            ("||", TypeScriptTokenType::PipePipe),
+            ("<<", TypeScriptTokenType::LeftShift),
+            (">>", TypeScriptTokenType::RightShift),
+            ("++", TypeScriptTokenType::PlusPlus),
+            ("--", TypeScriptTokenType::MinusMinus),
+            ("=>", TypeScriptTokenType::Arrow),
+            ("?.", TypeScriptTokenType::QuestionDot),
+            ("??", TypeScriptTokenType::QuestionQuestion),
+            ("+=", TypeScriptTokenType::PlusEqual),
+            ("-=", TypeScriptTokenType::MinusEqual),
+            ("*=", TypeScriptTokenType::StarEqual),
+            ("/=", TypeScriptTokenType::SlashEqual),
+            ("%=", TypeScriptTokenType::PercentEqual),
+            ("&=", TypeScriptTokenType::AmpersandEqual),
+            ("|=", TypeScriptTokenType::PipeEqual),
+            ("^=", TypeScriptTokenType::CaretEqual),
+        ];
+
+        for (op, kind) in ops {
+            if rest.starts_with(op) {
+                state.advance(op.len());
+                state.add_token(kind, start, state.get_position());
+                return true;
+            }
+        }
+
+        if let Some(ch) = state.peek() {
+            let kind = match ch {
+                '+' => TypeScriptTokenType::Plus,
+                '-' => TypeScriptTokenType::Minus,
+                '*' => TypeScriptTokenType::Star,
+                '/' => TypeScriptTokenType::Slash,
+                '%' => TypeScriptTokenType::Percent,
+                '<' => TypeScriptTokenType::Less,
+                '>' => TypeScriptTokenType::Greater,
+                '!' => TypeScriptTokenType::Exclamation,
+                '&' => TypeScriptTokenType::Ampersand,
+                '|' => TypeScriptTokenType::Pipe,
+                '^' => TypeScriptTokenType::Caret,
+                '~' => TypeScriptTokenType::Tilde,
+                '=' => TypeScriptTokenType::Equal,
+                '?' => TypeScriptTokenType::Question,
+                '(' => TypeScriptTokenType::LeftParen,
+                ')' => TypeScriptTokenType::RightParen,
+                '{' => TypeScriptTokenType::LeftBrace,
+                '}' => TypeScriptTokenType::RightBrace,
+                '[' => TypeScriptTokenType::LeftBracket,
+                ']' => TypeScriptTokenType::RightBracket,
+                ';' => TypeScriptTokenType::Semicolon,
+                ',' => TypeScriptTokenType::Comma,
+                '.' => TypeScriptTokenType::Dot,
+                ':' => TypeScriptTokenType::Colon,
+                '@' => TypeScriptTokenType::At,
+                _ => return false,
+            };
+
+            state.advance(1);
+            state.add_token(kind, start, state.get_position());
+            return true;
+        }
+
+        false
+    }
+}
+
+/// Consume a run of digits in `is_digit`, allowing `_` only between two digits.
+fn consume_digits<S: Source + ?Sized>(state: &mut State<'_, S>, is_digit: fn(char) -> bool) {
+    let mut consumed = false;
+    loop {
+        match state.peek() {
+            Some('_') if consumed && state.peek_next_n(1).is_some_and(is_digit) => state.advance(1),
+            Some(ch) if is_digit(ch) => {
+                state.advance(1);
+                consumed = true;
+            }
+            _ => break,
+        }
+    }
+}
+
+/// Consume a template literal from its opening backtick through its closing
+/// backtick, treating `${ ... }` interpolations (including nested templates and
+/// strings) as part of the same token.
+fn consume_template<S: Source + ?Sized>(state: &mut State<'_, S>) {
+    state.advance(1);
+    while let Some(ch) = state.peek() {
+        match ch {
+            '\\' => {
+                state.advance(1);
+                if let Some(escaped) = state.peek() {
+                    state.advance(escaped.len_utf8());
+                }
+            }
+            '`' => {
+                state.advance(1);
+                return;
+            }
+            '$' if state.peek_next_n(1) == Some('{') => {
+                state.advance(2);
+                consume_template_expression(state);
+            }
+            _ => state.advance(ch.len_utf8()),
+        }
+    }
+}
+
+/// Consume an interpolation body up to and including its closing `}`.
+fn consume_template_expression<S: Source + ?Sized>(state: &mut State<'_, S>) {
+    let mut depth = 0usize;
+    let mut previous: Option<char> = None;
+    while let Some(ch) = state.peek() {
+        match ch {
+            '\'' | '"' => {
+                consume_quoted(state, ch);
+                previous = Some(ch);
+            }
+            '`' => {
+                consume_template(state);
+                previous = Some('`');
+            }
+            '/' if state.peek_next_n(1) == Some('/') => {
+                state.advance(2);
+                while let Some(ch) = state.peek() {
+                    if ch == '\n' || ch == '\r' {
+                        break;
+                    }
+                    state.advance(ch.len_utf8());
+                }
+            }
+            '/' if state.peek_next_n(1) == Some('*') => {
+                state.advance(2);
+                while let Some(ch) = state.peek() {
+                    if ch == '*' && state.peek_next_n(1) == Some('/') {
+                        state.advance(2);
+                        break;
+                    }
+                    state.advance(ch.len_utf8());
+                }
+            }
+            '/' if template_regex_can_start(previous) => consume_regex(state),
+            '{' => {
+                state.advance(1);
+                depth += 1;
+                previous = Some('{');
+            }
+            '}' => {
+                state.advance(1);
+                if depth == 0 {
+                    return;
+                }
+                depth -= 1;
+                previous = Some('}');
+            }
+            ch => {
+                state.advance(ch.len_utf8());
+                if !ch.is_whitespace() {
+                    previous = Some(ch);
+                }
+            }
+        }
+    }
+}
+
+/// A `/` inside `${ ... }` starts a regex literal only after an operator or an
+/// opening delimiter, mirroring `regex_can_start_after`.
+fn template_regex_can_start(previous: Option<char>) -> bool {
+    match previous {
+        None => true,
+        Some(ch) => matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '=' | '!' | '&' | '|' | '?' | '+' | '-' | '*' | '%' | '<' | '>' | '~' | '^'),
+    }
+}
+
+/// Consume a regex literal including escapes, character classes and flags.
+fn consume_regex<S: Source + ?Sized>(state: &mut State<'_, S>) {
+    let start = state.get_position();
+    state.advance(1);
+    let mut in_class = false;
+    let mut closed = false;
+    while let Some(ch) = state.peek() {
+        match ch {
+            '\\' => {
+                state.advance(1);
+                if let Some(escaped) = state.peek() {
+                    state.advance(escaped.len_utf8());
+                }
+            }
+            '[' => {
+                in_class = true;
+                state.advance(1);
+            }
+            ']' => {
+                in_class = false;
+                state.advance(1);
+            }
+            '/' if !in_class => {
+                state.advance(1);
+                closed = true;
+                break;
+            }
+            '\n' | '\r' => break,
+            _ => state.advance(ch.len_utf8()),
+        }
+    }
+    if !closed {
+        state.set_position(start);
+        return;
+    }
+    while let Some(ch) = state.peek() {
+        if ch.is_alphabetic() {
+            state.advance(ch.len_utf8());
+        }
+        else {
+            break;
+        }
+    }
+}
+
+/// Consume a single- or double-quoted string, including escapes.
+fn consume_quoted<S: Source + ?Sized>(state: &mut State<'_, S>, quote: char) {
+    state.advance(1);
+    while let Some(ch) = state.peek() {
+        if ch == '\\' {
+            state.advance(1);
+            if state.peek().is_some() {
+                state.advance(1);
+            }
+        }
+        else if ch == quote {
+            state.advance(1);
+            return;
+        }
+        else {
+            state.advance(ch.len_utf8());
+        }
+    }
+}
+
+fn regex_can_start_after(tokens: &[data_text_core::Token<TypeScriptTokenType>]) -> bool {
+    let previous = tokens.iter().rev().find(|token| !matches!(token.kind, TypeScriptTokenType::Whitespace | TypeScriptTokenType::Newline | TypeScriptTokenType::LineComment | TypeScriptTokenType::BlockComment));
+    let Some(previous) = previous
+    else {
+        return true;
+    };
+    matches!(
+        previous.kind,
+        TypeScriptTokenType::Equal
+            | TypeScriptTokenType::LeftParen
+            | TypeScriptTokenType::LeftBracket
+            | TypeScriptTokenType::LeftBrace
+            | TypeScriptTokenType::Comma
+            | TypeScriptTokenType::Colon
+            | TypeScriptTokenType::Semicolon
+            | TypeScriptTokenType::Question
+            | TypeScriptTokenType::Exclamation
+            | TypeScriptTokenType::Arrow
+            | TypeScriptTokenType::AmpersandAmpersand
+            | TypeScriptTokenType::PipePipe
+            | TypeScriptTokenType::QuestionQuestion
+            | TypeScriptTokenType::Return
+            | TypeScriptTokenType::Throw
+            | TypeScriptTokenType::Default
+            | TypeScriptTokenType::Case
+            | TypeScriptTokenType::Delete
+            | TypeScriptTokenType::Void
+            | TypeScriptTokenType::Typeof
+            | TypeScriptTokenType::New
+            | TypeScriptTokenType::In
+            | TypeScriptTokenType::Of
+            | TypeScriptTokenType::Else
+            | TypeScriptTokenType::Do
+    )
+}

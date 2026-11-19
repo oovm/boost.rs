@@ -1,0 +1,535 @@
+use crate::{
+    lexer::token_type::TypeScriptTokenType,
+    parser::{State, TypeScriptParser},
+};
+use data_text_core::{
+    GreenNode,
+    parser::pratt::{Associativity, PrattParser, binary},
+    source::Source,
+};
+
+impl<'config> TypeScriptParser<'config> {
+    pub(crate) fn primary<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, crate::language::TypeScriptLanguage> {
+        use crate::lexer::token_type::TypeScriptTokenType::*;
+        let kind = self.peek_kind(state);
+        let cp = state.checkpoint();
+        match kind {
+            Some(Function) => {
+                self.parse_function_declaration_content(state).ok();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::FunctionExpression)
+            }
+            Some(Class) => {
+                self.parse_class_expression_content(state).ok();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ClassExpression)
+            }
+            Some(Import) => {
+                state.bump();
+                if self.eat(state, Dot) {
+                    self.expect(state, IdentifierName).ok();
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::MetaProperty)
+                }
+                else if self.at(state, LeftParen) {
+                    self.parse_import_expression_arguments(state);
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ImportExpression)
+                }
+                else {
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::IdentifierName)
+                }
+            }
+            Some(IdentifierName) | Some(Undefined) => {
+                if self.at(state, IdentifierName) {
+                    state.bump();
+                }
+                else {
+                    state.bump();
+                }
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::IdentifierName)
+            }
+            // Contextual keywords are valid identifiers in expression position:
+            // `require('./m')`, `const type = ...`, `obj.get`.
+            Some(kind) if kind.is_contextual_keyword() => {
+                state.bump();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::IdentifierName)
+            }
+            // Keywords that are valid primary expressions (not Error leaves).
+            Some(This) => {
+                self.expect(state, This).ok();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::This)
+            }
+            Some(Super) => {
+                self.expect(state, Super).ok();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::Super)
+            }
+            Some(NumericLiteral) | Some(StringLiteral) | Some(BigIntLiteral) | Some(TemplateString) | Some(True) | Some(False) | Some(Null) | Some(RegexLiteral) => {
+                let kind = state.peek_kind().unwrap();
+                state.bump();
+                let elem = match kind {
+                    NumericLiteral => crate::parser::element_type::TypeScriptElementType::NumericLiteral,
+                    StringLiteral => crate::parser::element_type::TypeScriptElementType::StringLiteral,
+                    BigIntLiteral => crate::parser::element_type::TypeScriptElementType::BigIntLiteral,
+                    TemplateString => crate::parser::element_type::TypeScriptElementType::TemplateString,
+                    True | False => crate::parser::element_type::TypeScriptElementType::BooleanLiteral,
+                    Null => crate::parser::element_type::TypeScriptElementType::Null,
+                    RegexLiteral => crate::parser::element_type::TypeScriptElementType::RegexLiteral,
+                    _ => crate::parser::element_type::TypeScriptElementType::Error,
+                };
+                state.finish_at(cp, elem)
+            }
+            Some(LeftParen) => {
+                // A paren group whose matching `)` is followed by `=>` is an arrow
+                // parameter list; parse it through `parse_parameters` so rest and
+                // default parameters build real `Parameter` nodes.
+                if self.paren_group_ends_at_arrow(state) {
+                    self.parse_parameters(state).ok();
+                    if self.eat(state, Colon) {
+                        self.parse_return_type_annotation(state).ok();
+                    }
+                    self.expect(state, Arrow).ok();
+                    self.parse_statement(state).ok();
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ArrowFunction)
+                }
+                else {
+                    state.bump();
+                    if !self.at(state, RightParen) {
+                        PrattParser::parse(state, 0, self);
+                        if self.eat(state, Colon) {
+                            self.parse_type_annotation(state).ok();
+                        }
+                        while self.eat(state, Comma) {
+                            PrattParser::parse(state, 0, self);
+                            if self.eat(state, Colon) {
+                                self.parse_type_annotation(state).ok();
+                            }
+                        }
+                    }
+                    self.expect(state, RightParen).ok();
+                    if self.eat(state, Arrow) {
+                        self.parse_statement(state).ok();
+                        state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ArrowFunction)
+                    }
+                    else if self.at(state, Colon) {
+                        let colon_cp = state.checkpoint();
+                        state.bump();
+                        self.parse_return_type_annotation(state).ok();
+                        if self.eat(state, Arrow) {
+                            self.parse_statement(state).ok();
+                            state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ArrowFunction)
+                        }
+                        else {
+                            state.restore(colon_cp);
+                            state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::OpenParen)
+                        }
+                    }
+                    else {
+                        state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::OpenParen)
+                    }
+                }
+            }
+            Some(Less) if self.config.jsx => self.parse_jsx_element(state),
+            Some(Less) => {
+                // Generic arrow function: `<T>(x: T) => x` / `<T extends object>() => {}`.
+                // Any other `<T>…` shape at expression start is a prefix type
+                // assertion `<T>expr` (JSX only reaches the arm above).
+                let params_cp = state.checkpoint();
+                self.parse_type_parameters(state).ok();
+                if self.at(state, LeftParen) {
+                    self.parse_parameters(state).ok();
+                    if self.eat(state, Colon) {
+                        self.parse_return_type_annotation(state).ok();
+                    }
+                    if self.eat(state, Arrow) {
+                        self.parse_statement(state).ok();
+                        return state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ArrowFunction);
+                    }
+                }
+                state.restore(params_cp);
+                if self.parse_prefix_assertion_content(state) {
+                    PrattParser::parse(state, 15, self);
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::TypeAssertionExpression)
+                }
+                else {
+                    state.restore(params_cp);
+                    state.bump();
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::Error)
+                }
+            }
+            Some(LeftBracket) => {
+                state.bump();
+                while state.not_at_end() && !self.at(state, RightBracket) {
+                    let before = state.checkpoint();
+                    PrattParser::parse(state, 0, self);
+                    self.eat(state, Comma);
+                    if state.checkpoint().0 == before.0 && state.not_at_end() {
+                        state.bump();
+                    }
+                }
+                self.expect(state, RightBracket).ok();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ArrayExpression)
+            }
+            Some(LeftBrace) => {
+                state.bump();
+                while state.not_at_end() && !self.at(state, RightBrace) {
+                    let pcp = state.checkpoint();
+                    if self.eat(state, DotDotDot) {
+                        PrattParser::parse(state, 0, self);
+                        state.finish_at(pcp, crate::parser::element_type::TypeScriptElementType::SpreadElement);
+                    }
+                    else {
+                        // `async`, `get`, `set` and `*` are method prefixes only when a
+                        // member name follows; otherwise they are ordinary property names
+                        // (`{ get: 1 }`, `{ async }`, `{ get() {} }`).
+                        if self.at(state, Async) && self.at_object_member_name(state, 1) {
+                            state.bump();
+                        }
+                        if self.at(state, Get) && self.at_object_member_name(state, 1) {
+                            state.bump();
+                        }
+                        else if self.at(state, Set) && self.at_object_member_name(state, 1) {
+                            state.bump();
+                        }
+                        if self.at(state, Star) {
+                            state.bump();
+                        }
+                        // Reserved words are valid property names, so they belong to the
+                        // member instead of being reported as an unexpected token.
+                        let reserved_name = state.peek_text().is_some_and(|text| TypeScriptTokenType::from_keyword(&text).is_some());
+                        let name_cp = state.checkpoint();
+                        let mut keyword_name = false;
+                        match self.peek_kind(state) {
+                            Some(IdentifierName) => {
+                                self.expect(state, IdentifierName).ok();
+                            }
+                            Some(StringLiteral) | Some(NumericLiteral) => {
+                                state.bump();
+                            }
+                            Some(LeftBracket) => {
+                                state.bump();
+                                PrattParser::parse(state, 0, self);
+                                self.expect(state, RightBracket).ok();
+                            }
+                            Some(_) if reserved_name => {
+                                state.bump();
+                                keyword_name = true;
+                            }
+                            _ => {
+                                state.bump();
+                                state.finish_at(pcp, crate::parser::element_type::TypeScriptElementType::Error);
+                                continue;
+                            }
+                        }
+                        if self.at(state, LeftParen) {
+                            // A keyword used as a method name (`{ get() {} }`) is wrapped
+                            // so the builder can tell it apart from an accessor prefix.
+                            if keyword_name {
+                                state.finish_at(name_cp, crate::parser::element_type::TypeScriptElementType::IdentifierName);
+                            }
+                            self.parse_parameters(state).ok();
+                            if self.eat(state, Colon) {
+                                self.parse_return_type_annotation(state).ok();
+                            }
+                            if self.at(state, LeftBrace) {
+                                self.parse_block(state).ok();
+                            }
+                            else {
+                                self.expect(state, LeftBrace).ok();
+                            }
+                            state.finish_at(pcp, crate::parser::element_type::TypeScriptElementType::ObjectMethod);
+                        }
+                        else if self.eat(state, Colon) {
+                            PrattParser::parse(state, 0, self);
+                            state.finish_at(pcp, crate::parser::element_type::TypeScriptElementType::PropertyAssignment);
+                        }
+                        else {
+                            state.finish_at(pcp, crate::parser::element_type::TypeScriptElementType::ShorthandPropertyAssignment);
+                        }
+                    }
+                    self.eat(state, Comma);
+                    if state.checkpoint().0 == pcp.0 && state.not_at_end() {
+                        state.bump();
+                    }
+                }
+                self.expect(state, RightBrace).ok();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ObjectExpression)
+            }
+            _ => {
+                state.bump();
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::Error)
+            }
+        }
+    }
+
+    /// Returns `true` when the current token is a `(` whose matching `)` is
+    /// immediately followed by `=>`, marking a parenthesized arrow parameter
+    /// list rather than a grouped expression.
+    fn paren_group_ends_at_arrow<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
+        use crate::lexer::token_type::TypeScriptTokenType::*;
+        use data_text_core::TokenType;
+        let mut depth = 0usize;
+        let mut offset = 0usize;
+        while let Some(token) = state.peek_at(offset) {
+            if token.kind.is_ignored() {
+                offset += 1;
+                continue;
+            }
+            match token.kind {
+                LeftParen => depth += 1,
+                RightParen => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let mut next = offset + 1;
+                        while let Some(candidate) = state.peek_at(next) {
+                            if candidate.kind.is_ignored() {
+                                next += 1;
+                                continue;
+                            }
+                            return candidate.kind == Arrow;
+                        }
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+            offset += 1;
+        }
+        false
+    }
+
+    /// Returns `true` when the Nth non-trivia token can start an object member
+    /// name. `async`/`get`/`set` are method prefixes only when this holds;
+    /// otherwise the keyword itself is the property name.
+    pub(crate) fn at_object_member_name<'a, S: Source + ?Sized>(&self, state: &State<'a, S>, n: usize) -> bool {
+        use crate::lexer::token_type::TypeScriptTokenType::*;
+        match state.peek_non_trivia_kind_at(n) {
+            Some(IdentifierName) | Some(StringLiteral) | Some(NumericLiteral) | Some(LeftBracket) | Some(Star) => true,
+            Some(kind) => kind.is_contextual_keyword(),
+            None => false,
+        }
+    }
+
+    pub(crate) fn prefix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, crate::language::TypeScriptLanguage> {
+        use crate::lexer::token_type::TypeScriptTokenType::*;
+        let kind = self.peek_kind(state);
+        let cp = state.checkpoint();
+        match kind {
+            Some(PlusPlus) | Some(MinusMinus) => {
+                state.bump();
+                PrattParser::parse(state, 15, self);
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::UpdateExpression.into())
+            }
+            Some(Plus) | Some(Minus) | Some(Exclamation) | Some(Tilde) | Some(Typeof) | Some(Void) | Some(Delete) => {
+                state.bump();
+                PrattParser::parse(state, 15, self); // High precedence for prefix
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::UnaryExpression.into())
+            }
+            Some(Await) => {
+                state.bump();
+                PrattParser::parse(state, 15, self);
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::AwaitExpression)
+            }
+            Some(Import) => {
+                if state.peek_non_trivia_kind_at(1) == Some(Dot) {
+                    // Meta property: `import.meta` (member access continues through the infix loop).
+                    state.bump(); // import
+                    self.eat(state, Dot);
+                    self.expect(state, IdentifierName).ok();
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::MetaProperty)
+                }
+                else {
+                    state.bump();
+                    self.parse_import_expression_arguments(state);
+                    state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ImportExpression)
+                }
+            }
+            Some(New) => {
+                state.bump();
+                PrattParser::parse(state, 17, self); // Higher precedence than call
+                if self.eat(state, LeftParen) {
+                    while state.not_at_end() && !self.at(state, RightParen) {
+                        let acp = state.checkpoint();
+                        PrattParser::parse(state, 0, self);
+                        state.finish_at(acp, crate::parser::element_type::TypeScriptElementType::CallArgument);
+                        self.eat(state, Comma);
+                    }
+                    self.expect(state, RightParen).ok();
+                }
+                state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::NewExpression.into())
+            }
+            _ => self.primary(state),
+        }
+    }
+
+    /// Parse the argument list of `import(…)`.
+    ///
+    /// The AST keeps the module specifier only. An optional second argument
+    /// (import attributes) is consumed so the expression stays well formed.
+    fn parse_import_expression_arguments<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
+        use crate::lexer::token_type::TypeScriptTokenType::*;
+        self.expect(state, LeftParen).ok();
+        while state.not_at_end() && !self.at(state, RightParen) {
+            PrattParser::parse(state, 0, self);
+            if !self.eat(state, Comma) {
+                break;
+            }
+        }
+        self.expect(state, RightParen).ok();
+    }
+
+    pub(crate) fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, crate::language::TypeScriptLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, crate::language::TypeScriptLanguage>> {
+        use crate::lexer::token_type::TypeScriptTokenType::*;
+        let kind = self.peek_kind(state)?;
+
+        let (prec, assoc) = match kind {
+            Equal
+            | PlusEqual
+            | MinusEqual
+            | StarEqual
+            | SlashEqual
+            | PercentEqual
+            | StarStarEqual
+            | LeftShiftEqual
+            | RightShiftEqual
+            | UnsignedRightShiftEqual
+            | AmpersandEqual
+            | PipeEqual
+            | CaretEqual
+            | AmpersandAmpersandEqual
+            | PipePipeEqual
+            | QuestionQuestionEqual => (1, Associativity::Right),
+            Question => (2, Associativity::Right),
+            PipePipe => (3, Associativity::Left),
+            QuestionQuestion => (3, Associativity::Left),
+            AmpersandAmpersand => (4, Associativity::Left),
+            Pipe => (5, Associativity::Left),
+            Caret => (6, Associativity::Left),
+            Ampersand => (7, Associativity::Left),
+            EqualEqual | NotEqual | EqualEqualEqual | NotEqualEqual => (8, Associativity::Left),
+            Less | Greater | LessEqual | GreaterEqual | Instanceof | In => (9, Associativity::Left),
+            LeftShift | RightShift | UnsignedRightShift => (10, Associativity::Left),
+            Plus | Minus => (11, Associativity::Left),
+            Star | Slash | Percent => (12, Associativity::Left),
+            StarStar => (13, Associativity::Right),
+            As => (14, Associativity::Left),
+            // `satisfies` lexes as a plain identifier and is only an operator
+            // when it follows a complete expression (the infix position here).
+            IdentifierName if state.peek_text().is_some_and(|text| text == "satisfies") => (14, Associativity::Left),
+            Arrow => (15, Associativity::Right),
+            LeftParen | Dot | LeftBracket | QuestionDot | TemplateString => (16, Associativity::Left),
+            // Postfix ++ / -- bind tighter than call/member so `this.count++` is UpdateExpression.
+            PlusPlus | MinusMinus => (17, Associativity::Left),
+            _ => return None,
+        };
+
+        if prec < min_precedence {
+            return None;
+        }
+
+        match kind {
+            PlusPlus | MinusMinus => {
+                let cp = state.checkpoint_before(left);
+                state.bump();
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::UpdateExpression.into()))
+            }
+            LeftParen => {
+                let cp = state.checkpoint_before(left);
+                self.expect(state, LeftParen).ok();
+                while state.not_at_end() && !self.at(state, RightParen) {
+                    self.skip_trivia(state);
+                    let acp = state.checkpoint();
+                    PrattParser::parse(state, 0, self);
+                    state.finish_at(acp, crate::parser::element_type::TypeScriptElementType::CallArgument);
+                    if state.checkpoint().0 == acp.0 {
+                        state.bump();
+                        break;
+                    }
+                    self.eat(state, Comma);
+                }
+                self.expect(state, RightParen).ok();
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::CallExpression.into()))
+            }
+            Dot | QuestionDot => {
+                let cp = state.checkpoint_before(left);
+                let op = if kind == Dot { Dot } else { QuestionDot };
+                self.expect(state, op).ok();
+                if kind == QuestionDot && self.at(state, LeftParen) {
+                    self.expect(state, LeftParen).ok();
+                    while state.not_at_end() && !self.at(state, RightParen) {
+                        let acp = state.checkpoint();
+                        PrattParser::parse(state, 0, self);
+                        state.finish_at(acp, crate::parser::element_type::TypeScriptElementType::CallArgument);
+                        if !self.eat(state, Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(state, RightParen).ok();
+                    return Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::CallExpression.into()));
+                }
+                // Optional computed member: `obj?.[index]`. An empty index keeps
+                // the same `T[]` tolerance as the plain `LeftBracket` branch below.
+                if kind == QuestionDot && self.at(state, LeftBracket) {
+                    self.expect(state, LeftBracket).ok();
+                    if !self.at(state, RightBracket) {
+                        PrattParser::parse(state, 0, self);
+                    }
+                    self.expect(state, RightBracket).ok();
+                    return Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::MemberExpression.into()));
+                }
+                if self.at(state, IdentifierName) || state.peek_text().is_some_and(|text| TypeScriptTokenType::from_keyword(&text).is_some()) {
+                    state.bump();
+                }
+                else {
+                    self.expect(state, IdentifierName).ok();
+                }
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::MemberExpression.into()))
+            }
+            LeftBracket => {
+                let cp = state.checkpoint_before(left);
+                self.expect(state, LeftBracket).ok();
+                // Empty index (`T[]` array type reached through the expression path) has no
+                // expression to parse; parsing it would consume `]` as a primary Error node.
+                if !self.at(state, RightBracket) {
+                    PrattParser::parse(state, 0, self);
+                }
+                self.expect(state, RightBracket).ok();
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::MemberExpression.into()))
+            }
+            As => {
+                let cp = state.checkpoint_before(left);
+                self.expect(state, As).ok();
+                self.parse_assertion_type(state);
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::AsExpression.into()))
+            }
+            IdentifierName => {
+                // Reachable only for the contextual `satisfies` operator (the
+                // precedence match above rejects every other identifier).
+                let cp = state.checkpoint_before(left);
+                state.bump();
+                self.parse_assertion_type(state);
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::SatisfiesExpression.into()))
+            }
+            Arrow => {
+                let cp = state.checkpoint_before(left);
+                self.expect(state, Arrow).ok();
+                self.parse_statement(state).ok();
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ArrowFunction.into()))
+            }
+            Question => {
+                let cp = state.checkpoint_before(left);
+                self.expect(state, Question).ok();
+                PrattParser::parse(state, 0, self);
+                self.expect(state, Colon).ok();
+                PrattParser::parse(state, 0, self);
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::ConditionalExpression.into()))
+            }
+            // Tagged template: `tag`raw`` or `tag`a${x}b``. The template token is
+            // wrapped like a primary so the builder sees tag and template nodes.
+            TemplateString => {
+                let cp = state.checkpoint_before(left);
+                let tcp = state.checkpoint();
+                state.bump();
+                state.finish_at(tcp, crate::parser::element_type::TypeScriptElementType::TemplateString);
+                Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::TaggedTemplateExpression.into()))
+            }
+            _ => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::TypeScriptElementType::BinaryExpression, |s, p| PrattParser::parse(s, p, self))),
+        }
+    }
+}

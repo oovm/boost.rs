@@ -1,0 +1,217 @@
+{
+    "success": true,
+    "count": 35,
+    "tokens": [
+        {
+            "kind": "Fn",
+            "text": "fn",
+            "start": 0,
+            "end": 2
+        },
+        {
+            "kind": "Identifier",
+            "text": "main",
+            "start": 3,
+            "end": 7
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 7,
+            "end": 8
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 8,
+            "end": 9
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 10,
+            "end": 11
+        },
+        {
+            "kind": "Let",
+            "text": "let",
+            "start": 16,
+            "end": 19
+        },
+        {
+            "kind": "Identifier",
+            "text": "a",
+            "start": 20,
+            "end": 21
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 21,
+            "end": 22
+        },
+        {
+            "kind": "Identifier",
+            "text": "i32",
+            "start": 23,
+            "end": 26
+        },
+        {
+            "kind": "Eq",
+            "text": "=",
+            "start": 27,
+            "end": 28
+        },
+        {
+            "kind": "IntegerLiteral",
+            "text": "1",
+            "start": 29,
+            "end": 30
+        },
+        {
+            "kind": "Semicolon",
+            "text": ";",
+            "start": 30,
+            "end": 31
+        },
+        {
+            "kind": "Let",
+            "text": "let",
+            "start": 36,
+            "end": 39
+        },
+        {
+            "kind": "Identifier",
+            "text": "b",
+            "start": 40,
+            "end": 41
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 41,
+            "end": 42
+        },
+        {
+            "kind": "Identifier",
+            "text": "f64",
+            "start": 43,
+            "end": 46
+        },
+        {
+            "kind": "Eq",
+            "text": "=",
+            "start": 47,
+            "end": 48
+        },
+        {
+            "kind": "IntegerLiteral",
+            "text": "3.14",
+            "start": 49,
+            "end": 53
+        },
+        {
+            "kind": "Semicolon",
+            "text": ";",
+            "start": 53,
+            "end": 54
+        },
+        {
+            "kind": "Let",
+            "text": "let",
+            "start": 59,
+            "end": 62
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 63,
+            "end": 64
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 64,
+            "end": 65
+        },
+        {
+            "kind": "Identifier",
+            "text": "bool",
+            "start": 66,
+            "end": 70
+        },
+        {
+            "kind": "Eq",
+            "text": "=",
+            "start": 71,
+            "end": 72
+        },
+        {
+            "kind": "True",
+            "text": "true",
+            "start": 73,
+            "end": 77
+        },
+        {
+            "kind": "Semicolon",
+            "text": ";",
+            "start": 77,
+            "end": 78
+        },
+        {
+            "kind": "Let",
+            "text": "let",
+            "start": 83,
+            "end": 86
+        },
+        {
+            "kind": "Identifier",
+            "text": "d",
+            "start": 87,
+            "end": 88
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 88,
+            "end": 89
+        },
+        {
+            "kind": "Identifier",
+            "text": "char",
+            "start": 90,
+            "end": 94
+        },
+        {
+            "kind": "Eq",
+            "text": "=",
+            "start": 95,
+            "end": 96
+        },
+        {
+            "kind": "CharLiteral",
+            "text": "'A'",
+            "start": 97,
+            "end": 100
+        },
+        {
+            "kind": "Semicolon",
+            "text": ";",
+            "start": 100,
+            "end": 101
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 102,
+            "end": 103
+        },
+        {
+            "kind": "Eof",
+            "text": "",
+            "start": 103,
+            "end": 103
+        }
+    ],
+    "errors": []
+}

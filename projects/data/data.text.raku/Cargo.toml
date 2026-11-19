@@ -1,0 +1,39 @@
+[package]
+name = "data-text-raku"
+version.workspace = true
+authors.workspace = true
+description = "Raku (formerly Perl 6) language parser with support for advanced concurrency, grammar, and multi-paradigm programming."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-raku"
+categories = ["parsing"]
+keywords = ["parser", "raku", "perl6", "scripting"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["full"] }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std", "dep:tokio"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

@@ -1,0 +1,40 @@
+[package]
+name = "data-text-css"
+version.workspace = true
+authors.workspace = true
+description = "CSS stylesheet language parser with support for web styling and layout processing."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-css"
+categories = ["parsing"]
+keywords = ["parser", "css", "streaming", "validation"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std", "dep:tokio"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

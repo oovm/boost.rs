@@ -1,0 +1,561 @@
+#![doc = include_str!("readme.md")]
+/// Erlang token types.
+pub mod token_type;
+pub use token_type::ErlangTokenType;
+
+use crate::language::ErlangLanguage;
+use data_text_core::{
+    errors::OakError,
+    lexer::{LexOutput, Lexer, LexerCache, LexerState},
+    source::{Source, TextEdit},
+};
+use std::{collections::HashSet, sync::LazyLock};
+
+/// Erlang lexer.
+#[derive(Clone)]
+pub struct ErlangLexer<'config> {
+    config: &'config ErlangLanguage,
+}
+
+impl<'config> Lexer<ErlangLanguage> for ErlangLexer<'config> {
+    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ErlangLanguage>) -> LexOutput<ErlangLanguage> {
+        let mut state = LexerState::new(text);
+        let result = self.run(&mut state);
+        if result.is_ok() {
+            state.add_eof();
+        }
+        state.finish_with_cache(result, cache)
+    }
+}
+
+impl<'config> ErlangLexer<'config> {
+    /// Creates a new `ErlangLexer` with the given configuration.
+    /// Creates a new ErlangLexer with the given language configuration.
+    pub fn new(config: &'config ErlangLanguage) -> Self {
+        Self { config }
+    }
+
+    /// Main lexer run method.
+    pub fn run<'a, S: Source + ?Sized>(&self, state: &mut LexerState<'a, S, ErlangLanguage>) -> Result<(), OakError> {
+        while state.not_at_end() {
+            // Safety check to prevent infinite loops
+            let start_pos = state.get_position();
+
+            // Skip whitespace and comments
+            if self.skip_whitespace_and_comments(state) {
+                continue;
+            }
+
+            // Lex various tokens
+            if self.lex_string_literal(state) {
+                continue;
+            }
+
+            if self.lex_character_literal(state) {
+                continue;
+            }
+
+            if self.lex_number(state) {
+                continue;
+            }
+
+            if self.lex_identifier_atom_or_keyword(state) {
+                continue;
+            }
+
+            if self.lex_operator(state) {
+                continue;
+            }
+
+            if self.lex_single_char_token(state) {
+                continue;
+            }
+
+            // Safety check
+            if state.get_position() == start_pos {
+                // If position hasn't advanced, skip one character to avoid infinite loop
+                if let Some(ch) = state.current() {
+                    state.advance(ch.len_utf8());
+                    let end = state.get_position();
+                    state.add_token(ErlangTokenType::Error, start_pos, end);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Skips whitespace and comments.
+    fn skip_whitespace_and_comments<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        let mut skipped = false;
+
+        // Skip whitespace
+        while let Some(ch) = state.current() {
+            if WHITESPACE.contains(&ch) {
+                let start = state.get_position();
+                if ch == '\n' {
+                    state.advance(1);
+                    state.add_token(ErlangTokenType::Newline, start, state.get_position());
+                }
+                else {
+                    // Skip consecutive whitespace
+                    while let Some(ch) = state.current() {
+                        if WHITESPACE.contains(&ch) && ch != '\n' {
+                            state.advance(ch.len_utf8());
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                    state.add_token(ErlangTokenType::Whitespace, start, state.get_position());
+                }
+                skipped = true;
+            }
+            else if ch == '%' {
+                // Line comment
+                let start = state.get_position();
+                state.advance(1); // Skip '%'
+
+                // Read until end of line
+                while let Some(ch) = state.current() {
+                    if ch == '\n' {
+                        break;
+                    }
+                    state.advance(ch.len_utf8());
+                }
+
+                state.add_token(ErlangTokenType::Comment, start, state.get_position());
+                skipped = true;
+            }
+            else {
+                break;
+            }
+        }
+
+        skipped
+    }
+
+    /// Lexes a string literal.
+    fn lex_string_literal<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        if let Some('"') = state.current() {
+            let start = state.get_position();
+            state.advance(1); // Skip starting '"'
+
+            while let Some(ch) = state.current() {
+                if ch == '"' {
+                    state.advance(1); // Skip ending '"'
+                    let end = state.get_position();
+                    state.add_token(ErlangTokenType::String, start, end);
+                    return true;
+                }
+                else if ch == '\\' {
+                    state.advance(1); // Skip escape character
+                    if let Some(ch) = state.current() {
+                        state.advance(ch.len_utf8());
+                    }
+                }
+                else {
+                    state.advance(ch.len_utf8());
+                }
+            }
+
+            // Unclosed string
+            let end = state.get_position();
+            state.add_token(ErlangTokenType::String, start, end);
+            true
+        }
+        else {
+            false
+        }
+    }
+
+    /// Lexes a character literal.
+    fn lex_character_literal<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        if let Some('$') = state.current() {
+            let start = state.get_position();
+            state.advance(1); // Skip '$'
+
+            if let Some(ch) = state.current() {
+                if ch == '\\' {
+                    state.advance(1);
+                    // Simple escape or octal escape
+                    if let Some(next) = state.current() {
+                        if next.is_ascii_digit() {
+                            // Octal
+                            let mut count = 0;
+                            while let Some(ch) = state.current() {
+                                if ch.is_ascii_digit() && count < 3 {
+                                    state.advance(1);
+                                    count += 1;
+                                }
+                                else {
+                                    break;
+                                }
+                            }
+                        }
+                        else {
+                            state.advance(next.len_utf8());
+                        }
+                    }
+                }
+                else {
+                    state.advance(ch.len_utf8());
+                }
+                state.add_token(ErlangTokenType::Character, start, state.get_position());
+                return true;
+            }
+            else {
+                // Only $ without character
+                state.add_token(ErlangTokenType::Error, start, state.get_position());
+                return true;
+            }
+        }
+        else {
+            false
+        }
+    }
+
+    /// Lexes a number.
+    fn lex_number<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        if let Some(ch) = state.current() {
+            if ch.is_ascii_digit() {
+                let start = state.get_position();
+
+                // Read integer part
+                while let Some(ch) = state.current() {
+                    if ch.is_ascii_digit() {
+                        state.advance(1);
+                    }
+                    else {
+                        break;
+                    }
+                }
+
+                // Check for decimal point
+                if let Some('.') = state.current() {
+                    if let Some(next_ch) = state.peek() {
+                        if next_ch.is_ascii_digit() {
+                            state.advance(1); // Skip '.'
+
+                            // Read fractional part
+                            while let Some(ch) = state.current() {
+                                if ch.is_ascii_digit() {
+                                    state.advance(1);
+                                }
+                                else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check for scientific notation
+                if let Some(ch) = state.current() {
+                    if ch == 'e' || ch == 'E' {
+                        state.advance(1);
+
+                        // Optional sign
+                        if let Some(ch) = state.current() {
+                            if ch == '+' || ch == '-' {
+                                state.advance(1);
+                            }
+                        }
+
+                        // Exponent part
+                        while let Some(ch) = state.current() {
+                            if ch.is_ascii_digit() {
+                                state.advance(1);
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                state.add_token(ErlangTokenType::Number, start, state.get_position());
+                true
+            }
+            else {
+                false
+            }
+        }
+        else {
+            false
+        }
+    }
+
+    /// Lexes an identifier, atom, or keyword.
+    fn lex_identifier_atom_or_keyword<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        if let Some(ch) = state.current() {
+            let start = state.get_position();
+
+            // Variable (starts with uppercase or underscore)
+            if ch.is_ascii_uppercase() || ch == '_' {
+                state.advance(1);
+                while let Some(ch) = state.current() {
+                    if ch.is_ascii_alphanumeric() || ch == '_' || ch == '@' {
+                        state.advance(1);
+                    }
+                    else {
+                        break;
+                    }
+                }
+                state.add_token(ErlangTokenType::Variable, start, state.get_position());
+                return true;
+            }
+
+            // Atom (starts with lowercase)
+            if ch.is_ascii_lowercase() {
+                state.advance(1);
+                while let Some(ch) = state.current() {
+                    if ch.is_ascii_alphanumeric() || ch == '_' || ch == '@' {
+                        state.advance(1);
+                    }
+                    else {
+                        break;
+                    }
+                }
+                let end = state.get_position();
+                let text = state.source().get_text_in(data_text_core::Range { start, end });
+
+                // Check if it's a keyword
+                if KEYWORDS.contains(text.as_ref()) {
+                    let kind = match text.as_ref() {
+                        "after" => ErlangTokenType::After,
+                        "and" => ErlangTokenType::And,
+                        "andalso" => ErlangTokenType::Andalso,
+                        "band" => ErlangTokenType::Band,
+                        "begin" => ErlangTokenType::Begin,
+                        "bnot" => ErlangTokenType::Bnot,
+                        "bor" => ErlangTokenType::Bor,
+                        "bsl" => ErlangTokenType::Bsl,
+                        "bsr" => ErlangTokenType::Bsr,
+                        "bxor" => ErlangTokenType::Bxor,
+                        "case" => ErlangTokenType::Case,
+                        "catch" => ErlangTokenType::Catch,
+                        "cond" => ErlangTokenType::Cond,
+                        "div" => ErlangTokenType::Div,
+                        "end" => ErlangTokenType::End,
+                        "fun" => ErlangTokenType::Fun,
+                        "if" => ErlangTokenType::If,
+                        "let" => ErlangTokenType::Let,
+                        "not" => ErlangTokenType::Not,
+                        "of" => ErlangTokenType::Of,
+                        "or" => ErlangTokenType::Or,
+                        "orelse" => ErlangTokenType::Orelse,
+                        "query" => ErlangTokenType::Query,
+                        "receive" => ErlangTokenType::Receive,
+                        "rem" => ErlangTokenType::Rem,
+                        "try" => ErlangTokenType::Try,
+                        "when" => ErlangTokenType::When,
+                        "xor" => ErlangTokenType::Xor,
+                        _ => ErlangTokenType::Atom,
+                    };
+                    state.add_token(kind, start, end);
+                }
+                else {
+                    state.add_token(ErlangTokenType::Atom, start, end);
+                }
+                return true;
+            }
+
+            // Quoted atom ('atom')
+            if ch == '\'' {
+                state.advance(1);
+                while let Some(ch) = state.current() {
+                    if ch == '\'' {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::Atom, start, state.get_position());
+                        return true;
+                    }
+                    else if ch == '\\' {
+                        state.advance(1);
+                        if let Some(next) = state.current() {
+                            state.advance(next.len_utf8());
+                        }
+                    }
+                    else {
+                        state.advance(ch.len_utf8());
+                    }
+                }
+                state.add_token(ErlangTokenType::Atom, start, state.get_position());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Lexes an operator.
+    fn lex_operator<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        if let Some(ch) = state.current() {
+            let start = state.get_position();
+
+            match ch {
+                '+' => {
+                    state.advance(1);
+                    if let Some('+') = state.current() {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::PlusPlus, start, state.get_position());
+                    }
+                    else {
+                        state.add_token(ErlangTokenType::Plus, start, state.get_position());
+                    }
+                    true
+                }
+                '-' => {
+                    state.advance(1);
+                    if let Some('-') = state.current() {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::MinusMinus, start, state.get_position());
+                    }
+                    else if let Some('>') = state.current() {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::Arrow, start, state.get_position());
+                    }
+                    else {
+                        state.add_token(ErlangTokenType::Minus, start, state.get_position());
+                    }
+                    true
+                }
+                '*' => {
+                    state.advance(1);
+                    state.add_token(ErlangTokenType::Star, start, state.get_position());
+                    true
+                }
+                '/' => {
+                    state.advance(1);
+                    if let Some('=') = state.current() {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::SlashEqual, start, state.get_position());
+                    }
+                    else {
+                        state.add_token(ErlangTokenType::Slash, start, state.get_position());
+                    }
+                    true
+                }
+                '=' => {
+                    state.advance(1);
+                    match state.current() {
+                        Some('=') => {
+                            state.advance(1);
+                            state.add_token(ErlangTokenType::EqualEqual, start, state.get_position());
+                        }
+                        Some(':') => {
+                            state.advance(1);
+                            if let Some('=') = state.current() {
+                                state.advance(1);
+                                state.add_token(ErlangTokenType::EqualColonEqual, start, state.get_position());
+                            }
+                            else {
+                                // Backtrack
+                                state.set_position(start + 1);
+                                state.add_token(ErlangTokenType::Equal, start, state.get_position());
+                            }
+                        }
+                        Some('/') => {
+                            state.advance(1);
+                            if let Some('=') = state.current() {
+                                state.advance(1);
+                                state.add_token(ErlangTokenType::EqualSlashEqual, start, state.get_position());
+                            }
+                            else {
+                                // Backtrack
+                                state.set_position(start + 1);
+                                state.add_token(ErlangTokenType::Equal, start, state.get_position());
+                            }
+                        }
+                        Some('<') => {
+                            state.advance(1);
+                            state.add_token(ErlangTokenType::LessEqual, start, state.get_position());
+                        }
+                        _ => {
+                            state.add_token(ErlangTokenType::Equal, start, state.get_position());
+                        }
+                    }
+                    true
+                }
+                '<' => {
+                    state.advance(1);
+                    state.add_token(ErlangTokenType::Less, start, state.get_position());
+                    true
+                }
+                '>' => {
+                    state.advance(1);
+                    if let Some('=') = state.current() {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::GreaterEqual, start, state.get_position());
+                    }
+                    else {
+                        state.add_token(ErlangTokenType::Greater, start, state.get_position());
+                    }
+                    true
+                }
+                '!' => {
+                    state.advance(1);
+                    state.add_token(ErlangTokenType::Exclamation, start, state.get_position());
+                    true
+                }
+                '?' => {
+                    state.advance(1);
+                    state.add_token(ErlangTokenType::Question, start, state.get_position());
+                    true
+                }
+                '|' => {
+                    state.advance(1);
+                    if let Some('|') = state.current() {
+                        state.advance(1);
+                        state.add_token(ErlangTokenType::PipePipe, start, state.get_position());
+                    }
+                    else {
+                        state.add_token(ErlangTokenType::Pipe, start, state.get_position());
+                    }
+                    true
+                }
+                '#' => {
+                    state.advance(1);
+                    state.add_token(ErlangTokenType::Hash, start, state.get_position());
+                    true
+                }
+                _ => false,
+            }
+        }
+        else {
+            false
+        }
+    }
+
+    /// Lexes a single character token.
+    fn lex_single_char_token<S: Source + ?Sized>(&self, state: &mut LexerState<S, ErlangLanguage>) -> bool {
+        if let Some(ch) = state.current() {
+            let start = state.get_position();
+            let kind = match ch {
+                '(' => Some(ErlangTokenType::LeftParen),
+                ')' => Some(ErlangTokenType::RightParen),
+                '{' => Some(ErlangTokenType::LeftBrace),
+                '}' => Some(ErlangTokenType::RightBrace),
+                '[' => Some(ErlangTokenType::LeftBracket),
+                ']' => Some(ErlangTokenType::RightBracket),
+                ',' => Some(ErlangTokenType::Comma),
+                ';' => Some(ErlangTokenType::Semicolon),
+                '.' => Some(ErlangTokenType::Dot),
+                ':' => Some(ErlangTokenType::Colon),
+                _ => None,
+            };
+
+            if let Some(kind) = kind {
+                state.advance(ch.len_utf8());
+                state.add_token(kind, start, state.get_position());
+                return true;
+            }
+        }
+        false
+    }
+}
+
+// Static configuration
+static WHITESPACE: LazyLock<HashSet<char>> = LazyLock::new(|| [' ', '\t', '\r', '\n'].into_iter().collect());
+
+static KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    ["after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor", "case", "catch", "cond", "div", "end", "fun", "if", "let", "not", "of", "or", "orelse", "query", "receive", "rem", "try", "when", "xor"].into_iter().collect()
+});

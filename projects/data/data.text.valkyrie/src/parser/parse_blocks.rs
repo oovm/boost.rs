@@ -1,0 +1,76 @@
+use crate::{
+    ValkyrieLanguage,
+    lexer::token_type::ValkyrieTokenType,
+    parser::{element_type::ValkyrieElementType, parse_modifiers::at_identifier_like, parse_statements},
+};
+use data_text_core::parser::ParserState;
+
+type State<'a, S> = ParserState<'a, ValkyrieLanguage, S>;
+
+/// 解析块表达式
+pub(crate) fn parse_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+    let cp = state.sink.checkpoint();
+    state.bump();
+    while state.not_at_end() && !state.at(ValkyrieTokenType::BraceR) {
+        state.skip_trivia();
+        if state.at(ValkyrieTokenType::BraceR) {
+            break;
+        }
+        parse_statement(state)?;
+    }
+    if state.at(ValkyrieTokenType::BraceR) {
+        state.bump();
+    }
+    state.sink.finish_node(cp, ValkyrieElementType::BlockExpression);
+    Ok(())
+}
+
+/// 解析块表达式
+pub(crate) fn parse_block_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+    if state.at(ValkyrieTokenType::BraceL) { parse_block(state) } else { Ok(()) }
+}
+
+/// 解析 `Point { x: 1, y }` 对象初始化块（也容纳 trailing closure 表达式体）。
+pub(crate) fn parse_object_initializer<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+    let cp = state.sink.checkpoint();
+    state.bump();
+    while state.not_at_end() && !state.at(ValkyrieTokenType::BraceR) {
+        state.skip_trivia();
+        if state.at(ValkyrieTokenType::BraceR) {
+            break;
+        }
+        let stmt_cp = state.sink.checkpoint();
+        if at_identifier_like(state) {
+            let name_cp = state.sink.checkpoint();
+            state.bump();
+            state.sink.finish_node(name_cp, ValkyrieElementType::IdentifierExpression);
+            if state.at(ValkyrieTokenType::Colon) || state.at(ValkyrieTokenType::Eq) {
+                let field_cp = state.sink.last_node_checkpoint();
+                state.bump();
+                crate::parser::parse_expressions::parse_expression(state)?;
+                state.sink.finish_node(field_cp, ValkyrieElementType::BinaryExpression);
+            }
+        }
+        else {
+            crate::parser::parse_expressions::parse_expression(state)?;
+        }
+        state.sink.finish_node(stmt_cp, ValkyrieElementType::ExprStatement);
+        state.skip_trivia();
+        if state.at(ValkyrieTokenType::Comma) {
+            state.bump();
+        }
+        if state.at(ValkyrieTokenType::Semicolon) {
+            state.bump();
+        }
+    }
+    if state.at(ValkyrieTokenType::BraceR) {
+        state.bump();
+    }
+    state.sink.finish_node(cp, ValkyrieElementType::BlockExpression);
+    Ok(())
+}
+
+// 以下函数在其他模块中定义
+pub(crate) fn parse_statement<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::OakError> {
+    parse_statements::parse_statement(state)
+}

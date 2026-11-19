@@ -1,0 +1,114 @@
+# Comprehensive YAML Lexer Test
+
+# Scalars
+string: "Hello, World!"
+single_quoted: 'Single quoted string'
+unquoted: Unquoted string
+boolean: true
+integer: 123
+float: 3.14
+hex: 0xFF
+octal: 0o777
+infinity: .inf
+nan: .NaN
+null_value: null
+timestamp: 2023-10-27T10:00:00Z
+
+# Sequences (Lists)
+list:
+    - item1
+    - item2
+    - item3
+    - "quoted item"
+    - { key: value }
+
+inline_list: [1, 2, 3, 4]
+
+# Mappings (Dictionaries)
+person:
+    name: Alice
+    age: 30
+    active: yes
+    address:
+        street: "123 Main St"
+        city: "Wonderland"
+
+inline_map: { name: Bob, age: 25 }
+
+# Block Scalars
+literal_block: |
+    This is a literal block.
+    Newlines are preserved.
+    Indentation matters.
+
+folded_block: >
+    This is a folded block.
+    Newlines are converted to spaces.
+    Unless there is a blank line.
+
+    Like this one.
+
+# Anchors and Aliases
+defaults: &defaults
+    adapter: postgres
+    host: localhost
+
+development:
+    database: dev_db
+    <<: *defaults
+
+production:
+    database: prod_db
+    <<: *defaults
+
+# Complex Keys
+? [ complex, key ]
+: [ complex, value ]
+
+? |
+    multi-line
+    key
+: value
+
+# Tags
+explicit_string: !!str 123
+explicit_int: !!int "123"
+binary_data: !!binary |
+    R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+
+# Documents
+---
+# Document 1
+name: Document 1
+...
+---
+# Document 2
+name: Document 2
+...
+
+# Comments
+# This is a comment
+key: value # Inline comment
+
+# Flow Style
+flow_sequence: [
+    "one",
+    "two",
+]
+
+flow_mapping: {
+    key: value,
+    another: value
+}
+
+# Sets
+set:
+    ? item1
+    ? item2
+    ? item3
+
+# Ordered Maps
+ordered: !!omap
+    - one: 1
+    - two: 2
+    - three: 3

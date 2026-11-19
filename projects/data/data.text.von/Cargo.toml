@@ -1,0 +1,31 @@
+[package]
+name = "data-text-von"
+version.workspace = true
+authors.workspace = true
+description = "Valkyrie language parser with support for modern Valkyrie syntax and features."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-von"
+categories = ["parsing"]
+keywords = ["parser", "valkyrie", "language"]
+
+[dependencies]
+data-text-core = { workspace = true }
+language-format = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

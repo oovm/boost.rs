@@ -1,0 +1,30 @@
+[package]
+name = "data-text-vue"
+version.workspace = true
+authors.workspace = true
+description = "High-performance incremental Vue SFC parser for the oak ecosystem."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing"]
+keywords = ["parser", "vue", "sfc", "incremental"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-highlight = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std"]
+
+[[test]]
+name = "main"
+required-features = ["serde"]

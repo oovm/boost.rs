@@ -1,0 +1,384 @@
+use data_text_awsl::{AwslAttributeValue, AwslDirectiveKind, AwslElement, AwslParser, AwslTemplateNode, AwslTextPart, validate_component_contract};
+
+fn expect_element<'a>(node: &'a AwslTemplateNode) -> &'a AwslElement {
+    match node {
+        AwslTemplateNode::Element(element) => element,
+        other => panic!("expected element, got {other:?}"),
+    }
+}
+
+fn non_empty_element_children(element: &AwslElement) -> Vec<&AwslElement> {
+    element
+        .children
+        .iter()
+        .filter_map(|node| match node {
+            AwslTemplateNode::Element(child) => Some(child),
+            AwslTemplateNode::Text { content, .. } if content.trim().is_empty() => None,
+            other => panic!("expected element child, got {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn parse_multiline_widget_whitespace() {
+    AwslParser::parse_root("<widget><div>\n<button>x</button>\n</div></widget>").expect("inner newlines");
+    AwslParser::parse_root("<widget>\n<div><button>x</button></div>\n</widget>").expect("outer newlines");
+}
+
+#[test]
+fn parse_widget_with_script_style_and_template() {
+    let source = r#"<script>
+[property] let label = ""
+</script>
+<style>.btn { }</style>
+<widget button>
+<div>{label}</div>
+</widget>"#;
+    let root = AwslParser::parse_root(source).expect("parse widget shell");
+    assert!(root.script.is_some());
+    assert_eq!(root.styles.len(), 1);
+    assert!(!root.template.is_empty());
+}
+
+#[test]
+fn parse_control_flow_tags() {
+    let source = "<widget>\n\
+        <loop item in todos()><span /></loop>\n\
+        <if !empty><span /></if>\n\
+    </widget>";
+    let root = AwslParser::parse_root(source).expect("control flow");
+    assert!(!root.template.is_empty());
+}
+
+#[test]
+fn widget_and_template_are_equivalent_top_level_containers() {
+    let widget_source = "<widget todo>\n\
+        <div class=\"app\"><span>{label}</span></div>\n\
+    </widget>";
+    let template_source = "<template todo>\n\
+        <div class=\"app\"><span>{label}</span></div>\n\
+    </template>";
+
+    let widget_root = AwslParser::parse_root(widget_source).expect("widget");
+    let template_root = AwslParser::parse_root(template_source).expect("template");
+
+    assert_eq!(widget_root.widget_name, Some("todo".into()));
+    assert_eq!(template_root.widget_name, Some("todo".into()));
+    assert_eq!(widget_root.template.len(), template_root.template.len());
+
+    let widget_div = expect_element(&widget_root.template[0]);
+    let template_div = expect_element(&template_root.template[0]);
+    assert_eq!(widget_div.tag, "div");
+    assert_eq!(template_div.tag, "div");
+    assert_eq!(widget_div.children.len(), template_div.children.len());
+}
+
+#[test]
+fn nested_element_tree_preserves_parent_child_relationships() {
+    let source = "<widget><div class=\"wrap\"><button @click=\"handler\">{label}</button></div></widget>";
+    let root = AwslParser::parse_root(source).expect("nested tree");
+
+    assert_eq!(root.template.len(), 1);
+    let div = expect_element(&root.template[0]);
+    assert_eq!(div.tag, "div");
+    assert_eq!(div.attributes.len(), 1);
+    assert_eq!(non_empty_element_children(div).len(), 1);
+
+    let button = non_empty_element_children(div)[0];
+    assert_eq!(button.tag, "button");
+    assert!(button.children.iter().any(|child| matches!(child, AwslTemplateNode::Interpolation { expr, .. } if expr == "label")));
+}
+
+#[test]
+fn rejects_nested_script_style_or_template_sections() {
+    for source in [
+        "<widget todo><script>let x = 1</script></widget>",
+        "<widget todo><style>.x {}</style></widget>",
+        "<widget todo><template><div /></template></widget>",
+        "<widget todo><script>let x = 1</script><style>.x {}</style><template><div /></template></widget>",
+    ] {
+        let error = AwslParser::parse_root(source).expect_err("nested section should fail");
+        assert!(error.message.contains("top-level sibling"), "unexpected error for `{source}`: {}", error.message);
+    }
+}
+
+#[test]
+fn loop_and_if_children_are_nested_under_control_flow_tags() {
+    let source = r#"<template>
+<loop item in todos()>
+<TodoItem :id="item.id" />
+</loop>
+<if !todos()>
+<div class="empty" />
+</if>
+</template>"#;
+    let root = AwslParser::parse_root(source).expect("control flow nesting");
+
+    assert_eq!(root.template.len(), 2);
+    let loop_el = expect_element(&root.template[0]);
+    assert_eq!(loop_el.tag, "loop");
+    assert_eq!(non_empty_element_children(loop_el).len(), 1);
+    assert_eq!(non_empty_element_children(loop_el)[0].tag, "TodoItem");
+
+    let if_el = expect_element(&root.template[1]);
+    assert_eq!(if_el.tag, "if");
+    assert_eq!(non_empty_element_children(if_el).len(), 1);
+    assert_eq!(non_empty_element_children(if_el)[0].tag, "div");
+}
+
+#[test]
+fn widget_with_script_style_as_sibling_sections() {
+    let source = "<widget todo>\n\
+        <div class=\"todo-app\" />\n\
+    </widget>\n\
+    <script>let x = 1</script>\n\
+    <style>.x {}</style>";
+    let root = AwslParser::parse_root(source).expect("sections");
+
+    assert_eq!(root.widget_name, Some("todo".into()));
+    assert!(root.script.as_ref().is_some_and(|s| s.contains("let x = 1")));
+    assert!(root.styles.first().is_some_and(|block| block.target.is_none() && block.content.contains(".x")));
+    assert_eq!(root.template.len(), 1);
+    assert_eq!(expect_element(&root.template[0]).tag, "div");
+}
+
+#[test]
+fn style_blocks_carry_target_attribute_and_multiple_blocks_are_allowed() {
+    let source = "<widget todo>\n\
+        <div class=\"todo-app\" />\n\
+    </widget>\n\
+    <style>root { gap: 8 }</style>\n\
+    <style target=\"dom\">#hero { background: @brand }</style>\n\
+    <style target=\"dom webview\">slot nav { gap: 4 }</style>";
+    let root = AwslParser::parse_root(source).expect("targeted style blocks");
+
+    assert_eq!(root.styles.len(), 3, "多个 <style> 块必须全部捕获");
+    assert_eq!(root.styles[0].target, None, "无 target 的块是公共块");
+    assert_eq!(root.styles[1].target, Some(vec!["dom".to_string()]));
+    assert_eq!(root.styles[2].target, Some(vec!["dom".to_string(), "webview".to_string()]));
+    assert!(root.styles[1].content.contains("#hero"));
+}
+
+#[test]
+fn style_block_with_empty_target_is_rejected() {
+    let source = "<widget todo><div /></widget>\n<style target=\"\">root { gap: 8 }</style>";
+    assert!(AwslParser::parse_root(source).is_err(), "空 target 列表必须拒绝");
+}
+
+#[test]
+fn rejects_script_only_without_widget_shell() {
+    let root = AwslParser::parse_root("<script>let x = 1</script>").unwrap();
+    assert!(!root.has_widget_shell);
+    let contract = data_text_awsl::validate_component_contract(&root, "x");
+    assert!(contract.is_err());
+}
+
+#[test]
+fn widget_name_must_match_file_stem_when_declared() {
+    let source = "<widget foo><div /></widget>";
+    let root = AwslParser::parse_root(source).expect("parse");
+    let error = data_text_awsl::validate_component_contract(&root, "bar").expect_err("mismatch");
+    assert!(error.message.contains("expected <widget bar>"));
+}
+
+#[test]
+fn rejects_script_or_style_nested_in_markup() {
+    let source = "<widget><div><script>let x = 1</script></div></widget>";
+    let error = AwslParser::parse_root(source).expect_err("nested script in markup should fail");
+    assert!(error.message.contains("top-level sibling"));
+}
+
+#[test]
+fn widget_accepts_multiple_top_level_tags() {
+    let source = "<widget>\n\
+        <div class=\"a\" />\n\
+        <div class=\"b\" />\n\
+    </widget>";
+    let root = AwslParser::parse_root(source).expect("multi-root widget");
+    assert!(root.has_widget_shell);
+    assert_eq!(root.template.len(), 2);
+}
+
+#[test]
+fn html_void_elements_parse_without_close_tag() {
+    let source = "<widget><div><br><img src=\"/x.png\"><input type=\"text\"></div></widget>";
+    let root = AwslParser::parse_root(source).expect("void html");
+    let div = expect_element(&root.template[0]);
+    assert_eq!(div.children.len(), 3);
+    assert!(div.children.iter().all(|node| matches!(node, AwslTemplateNode::Element(el) if el.self_closing)));
+}
+
+#[test]
+fn static_class_attribute_is_quoted_string_literal() {
+    let source = "<widget><text class=\"counter\">hi</text></widget>";
+    let root = AwslParser::parse_root(source).expect("parse class");
+    let text = expect_element(&root.template[0]);
+    let class_attr = text.attributes.iter().find(|a| a.name == "class").expect("class attr");
+    assert!(matches!(&class_attr.value, AwslAttributeValue::Literal(v) if v == "counter"));
+}
+
+#[test]
+fn rejects_bare_literal_attribute_values() {
+    let error = AwslParser::parse_root("<widget><div class=wrap /></widget>").expect_err("bare class");
+    assert!(error.message.contains("quoted"));
+}
+
+#[test]
+fn accepts_quoted_static_attribute_values() {
+    AwslParser::parse_root("<widget><div class=\"wrap\" /></widget>").expect("quoted class");
+}
+
+#[test]
+fn rejects_braced_attribute_values() {
+    let error = AwslParser::parse_root("<widget><Text title={title} /></widget>").expect_err("braced attr");
+    assert!(error.message.contains("quoted") || error.message.contains("static") || error.message.contains("braced"), "unexpected error: {}", error.message);
+}
+
+#[test]
+fn click_directive_uses_quoted_handler() {
+    let source = "<widget><button @click=\"increment\">+1</button></widget>";
+    let root = AwslParser::parse_root(source).expect("parse @click");
+    let button = expect_element(&root.template[0]);
+    assert!(button.directives.iter().any(|d| d.value.as_deref() == Some("increment")));
+}
+
+#[test]
+fn colon_bind_uses_quoted_expression() {
+    let source = "<widget><input :bind=\"name\" /></widget>";
+    let root = AwslParser::parse_root(source).expect("parse :bind");
+    let input = expect_element(&root.template[0]);
+    assert_eq!(input.attributes[0].name, "bind");
+    assert!(matches!(&input.attributes[0].value, AwslAttributeValue::Expression(v) if v == "name"));
+}
+
+// ---------- 统一模板规则（合同 §4.10 D/F）：`{ expr }` 插值与 `\{ raw \}` 原样花括号 ----------
+
+#[test]
+fn attribute_interpolation_is_expression_not_dict() {
+    // `<tag="{ expr }">` 的引号内容按模板规则处理：花括号是插值定界，不是 dict。
+    let source = "<widget><Text label=\"{ greeting }\" /></widget>";
+    let root = AwslParser::parse_root(source).expect("parse attr interpolation");
+    let text = expect_element(&root.template[0]);
+    let label = text.attributes.iter().find(|a| a.name == "label").expect("label attr");
+    assert!(matches!(&label.value, AwslAttributeValue::Expression(expr) if expr == "greeting"), "got {:?}", label.value);
+}
+
+#[test]
+fn attribute_mixed_text_and_interpolation() {
+    let source = "<widget><Text title=\"Hi {name}!\" /></widget>";
+    let root = AwslParser::parse_root(source).expect("parse mixed attr");
+    let text = expect_element(&root.template[0]);
+    let title = text.attributes.iter().find(|a| a.name == "title").expect("title attr");
+    match &title.value {
+        AwslAttributeValue::Mixed(parts) => {
+            assert_eq!(parts.len(), 3, "期望 Text/Expr/Text 三段，实际 {parts:?}");
+            assert!(matches!(&parts[0], AwslTextPart::Text(t) if t == "Hi "));
+            assert!(matches!(&parts[1], AwslTextPart::Expr(e) if e == "name"));
+            assert!(matches!(&parts[2], AwslTextPart::Text(t) if t == "!"));
+        }
+        other => panic!("mixed attribute 必须产出 Mixed，实际 {other:?}"),
+    }
+}
+
+#[test]
+fn attribute_literal_braces_stay_undecoded_text() {
+    // `\{ raw \}` 是原样花括号：转义候选成对留在文本段，解码归消费方，不解析其中的表达式。
+    let source = r#"<widget><Text title="\{ raw \}" /></widget>"#;
+    let root = AwslParser::parse_root(source).expect("parse literal braces attr");
+    let text = expect_element(&root.template[0]);
+    let title = text.attributes.iter().find(|a| a.name == "title").expect("title attr");
+    assert!(matches!(&title.value, AwslAttributeValue::Literal(v) if v == r"\{ raw \}"), "got {:?}", title.value);
+}
+
+#[test]
+fn text_region_interpolation_splits_into_nodes() {
+    let source = "<widget><div>hello {count + 1}!</div></widget>";
+    let root = AwslParser::parse_root(source).expect("parse text interpolation");
+    let div = expect_element(&root.template[0]);
+    let nodes: Vec<&AwslTemplateNode> = div.children.iter().filter(|node| !matches!(node, AwslTemplateNode::Text { content, .. } if content.trim().is_empty())).collect();
+    assert_eq!(nodes.len(), 3, "期望 Text/Interpolation/Text，实际 {:?}", div.children);
+    assert!(matches!(&nodes[0], AwslTemplateNode::Text { content, .. } if content == "hello "));
+    assert!(matches!(&nodes[1], AwslTemplateNode::Interpolation { expr, .. } if expr == "count + 1"));
+    assert!(matches!(&nodes[2], AwslTemplateNode::Text { content, .. } if content == "!"));
+}
+
+#[test]
+fn text_literal_braces_do_not_start_interpolation() {
+    let source = r"<widget><div>\{ literal \}</div></widget>";
+    let root = AwslParser::parse_root(source).expect("parse literal braces text");
+    let div = expect_element(&root.template[0]);
+    assert_eq!(div.children.len(), 1, "转义候选不得拆出插值节点：{:?}", div.children);
+    assert!(matches!(&div.children[0], AwslTemplateNode::Text { content, .. } if content == r"\{ literal \}"));
+}
+
+#[test]
+fn mustache_double_braces_are_no_longer_interpolation_syntax() {
+    // `{{expr}}` 不再是独立语法：外层 `{` 开启插值后内容按普通表达式解析，
+    // 绝不再产出表达式源码为 `count` 的 mustache 插值；内层非法时结构化失败同样合规。
+    match AwslParser::parse_root("<widget><div>{{count}}</div></widget>") {
+        Ok(root) => {
+            let div = expect_element(&root.template[0]);
+            let interpolations: Vec<&str> = div
+                .children
+                .iter()
+                .filter_map(|node| match node {
+                    AwslTemplateNode::Interpolation { expr, .. } => Some(expr.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(interpolations.iter().all(|expr| *expr != "count"), "mustache 别名已退役，实际 {interpolations:?}");
+        }
+        Err(_) => {}
+    }
+}
+
+#[test]
+fn bare_closing_brace_in_attribute_is_structured_error() {
+    let error = AwslParser::parse_root("<widget><Text title=\"a}\" /></widget>").expect_err("裸结束花括号必须报错");
+    assert!(error.message.contains("}"), "诊断必须指向花括号：{}", error.message);
+}
+
+#[test]
+fn backslash_does_not_protect_closing_quote() {
+    // §A.2：`"a\"` 的捕获在第二个引号结束，反斜杠只是转义候选，不延迟定界符。
+    let source = r#"<widget><div title="a\" /></widget>"#;
+    let root = AwslParser::parse_root(source).expect("capture ends at next quote");
+    let div = expect_element(&root.template[0]);
+    let title = div.attributes.iter().find(|a| a.name == "title").expect("title attr");
+    assert!(matches!(&title.value, AwslAttributeValue::Literal(v) if v == "a\\"), "捕获应在引号处结束，实际 {:?}", title.value);
+}
+
+#[test]
+fn style_directive_accepts_tailwind_string() {
+    let source = "<widget><div @style=\"flex w-4 h-4 rounded bg-blue-500\">x</div></widget>";
+    let root = AwslParser::parse_root(source).expect("parse @style");
+    let div = expect_element(&root.template[0]);
+    assert!(div.directives.iter().any(|d| matches!(&d.kind, AwslDirectiveKind::Style)));
+}
+
+#[test]
+fn loop_directive_parses_item_in_expr() {
+    let source = "<widget><ul @loop=\"item in items()\"><li>{item}</li></ul></widget>";
+    let root = AwslParser::parse_root(source).expect("parse @loop");
+    let ul = expect_element(&root.template[0]);
+    assert!(ul.directives.iter().any(|d| d.value.as_deref() == Some("item in items()")));
+}
+
+#[test]
+fn rejects_bare_click_directive() {
+    let error = AwslParser::parse_root("<widget><button @click=increment /></widget>").expect_err("bare @click");
+    assert!(error.message.contains("quoted"));
+}
+
+#[test]
+fn rejects_on_colon_click_attribute() {
+    let error = AwslParser::parse_root("<widget><button on:click=\"handler\" /></widget>").expect_err("on:click");
+    assert!(error.message.contains("@click"));
+}
+
+#[test]
+fn rejects_nested_widget_or_template_elements() {
+    let source = "<widget><div><widget /></div></widget>";
+    let error = AwslParser::parse_root(source).expect_err("nested widget should fail");
+    assert!(error.message.contains("top-level template container"));
+}

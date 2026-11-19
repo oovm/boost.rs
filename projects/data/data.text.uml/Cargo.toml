@@ -1,0 +1,14 @@
+[package]
+name = "data-text-uml"
+version.workspace = true
+authors.workspace = true
+description = "Unified Modeling Language (UML) semantic model for Oak"
+edition.workspace = true
+license = "MPL-2.0"
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde", "data-text-core/serde"]

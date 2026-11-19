@@ -1,0 +1,1942 @@
+use data_text_core::{GreenNode, GreenTree, ParseSession, Parser, RedNode, RedTree, SourceText, builder::Builder, source::ToSource};
+use data_text_sql::{SqlBuilder, SqlElementType, SqlLanguage, SqlParser, ast::*};
+
+#[test]
+fn test_sql_builder_select() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let source = SourceText::new("SELECT name, age FROM users WHERE age > 18;");
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&source, &[], &mut session);
+
+    if let Err(e) = &result.result {
+        panic!("Build error: {e:?}\nDiagnostics: {:?}", result.diagnostics);
+    }
+    let root = result.result.unwrap();
+    assert_eq!(root.statements.len(), 1);
+
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    assert_eq!(select.items.len(), 2);
+    assert!(select.from.is_some());
+    assert!(select.expr.is_some());
+}
+
+#[test]
+fn test_sql_builder_session_statements() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+
+    for (source, expected) in [("BEGIN", TransactionAction::Begin), ("COMMIT TRANSACTION", TransactionAction::Commit), ("ROLLBACK", TransactionAction::Rollback)] {
+        let mut session = ParseSession::<SqlLanguage>::default();
+        let result = builder.build(&SourceText::new(source), &[], &mut session);
+        let root = result.result.unwrap_or_else(|error| panic!("{source}: {error:?} {:?}", result.diagnostics));
+        let SqlStatement::Transaction(statement) = &root.statements[0]
+        else {
+            panic!("Expected transaction statement for {source}");
+        };
+        assert_eq!(statement.action, expected);
+    }
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SET NAMES utf8mb4 COLLATE utf8mb4_bin"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("SET NAMES: {error:?} {:?}", result.diagnostics));
+    let SqlStatement::SetNames(statement) = &root.statements[0]
+    else {
+        panic!("Expected SET NAMES statement, got {:?}", root.statements);
+    };
+    assert_eq!(statement.character_set.as_ref(), "utf8mb4");
+    assert_eq!(statement.collation.as_deref(), Some("utf8mb4_bin"));
+}
+
+#[test]
+fn test_sql_builder_savepoint_round_trip() {
+    // SAVEPOINT name
+    let (statement, source) = build_statement("SAVEPOINT sp1;");
+    let SqlStatement::Transaction(t) = &statement
+    else {
+        panic!("Expected Transaction, got {statement:?}");
+    };
+    assert!(matches!(&t.action, TransactionAction::Savepoint(name) if name.as_ref() == "sp1"));
+    assert_eq!(source, "SAVEPOINT sp1;");
+
+    // ROLLBACK TO SAVEPOINT name
+    let (statement, source) = build_statement("ROLLBACK TO SAVEPOINT sp1;");
+    let SqlStatement::Transaction(t) = &statement
+    else {
+        panic!("Expected Transaction, got {statement:?}");
+    };
+    assert!(matches!(&t.action, TransactionAction::RollbackToSavepoint(name) if name.as_ref() == "sp1"));
+    assert_eq!(source, "ROLLBACK TO SAVEPOINT sp1;");
+
+    // ROLLBACK TO name (short form) — parser 接受，ToSource 输出标准全拼
+    let (statement, source) = build_statement("ROLLBACK TO sp2;");
+    let SqlStatement::Transaction(t) = &statement
+    else {
+        panic!("Expected Transaction, got {statement:?}");
+    };
+    assert!(matches!(&t.action, TransactionAction::RollbackToSavepoint(name) if name.as_ref() == "sp2"));
+    assert_eq!(source, "ROLLBACK TO SAVEPOINT sp2;");
+
+    // RELEASE SAVEPOINT name
+    let (statement, source) = build_statement("RELEASE SAVEPOINT sp3;");
+    let SqlStatement::Transaction(t) = &statement
+    else {
+        panic!("Expected Transaction, got {statement:?}");
+    };
+    assert!(matches!(&t.action, TransactionAction::ReleaseSavepoint(name) if name.as_ref() == "sp3"));
+    assert_eq!(source, "RELEASE SAVEPOINT sp3;");
+
+    // RELEASE name (short form)
+    let (statement, source) = build_statement("RELEASE sp4;");
+    let SqlStatement::Transaction(t) = &statement
+    else {
+        panic!("Expected Transaction, got {statement:?}");
+    };
+    assert!(matches!(&t.action, TransactionAction::ReleaseSavepoint(name) if name.as_ref() == "sp4"));
+    assert_eq!(source, "RELEASE SAVEPOINT sp4;");
+
+    // plain ROLLBACK still round-trips
+    let (statement, source) = build_statement("ROLLBACK;");
+    let SqlStatement::Transaction(t) = &statement
+    else {
+        panic!("Expected Transaction, got {statement:?}");
+    };
+    assert_eq!(t.action, TransactionAction::Rollback);
+    assert_eq!(source, "ROLLBACK;");
+}
+
+#[test]
+fn test_sql_builder_savepoint_missing_name_is_rejected() {
+    assert!(rejection_reason("SAVEPOINT;").contains("requires a name"), "SAVEPOINT without name must be rejected");
+    assert!(rejection_reason("ROLLBACK TO;").contains("requires a savepoint name"), "ROLLBACK TO without name must be rejected");
+    assert!(rejection_reason("ROLLBACK TO SAVEPOINT;").contains("requires a savepoint name"), "ROLLBACK TO SAVEPOINT without name must be rejected");
+    assert!(rejection_reason("RELEASE;").contains("requires a savepoint name"), "RELEASE without name must be rejected");
+    assert!(rejection_reason("RELEASE SAVEPOINT;").contains("requires a savepoint name"), "RELEASE SAVEPOINT without name must be rejected");
+}
+
+/// Builds `sql` and returns its single statement with the source it round-trips to.
+fn build_statement(sql: &str) -> (SqlStatement, String) {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new(sql), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("{sql}: {error:?} {:?}", result.diagnostics));
+    let statement = root.statements.into_iter().next().unwrap_or_else(|| panic!("Missing statement for {sql}"));
+    let source = SqlRoot { statements: vec![statement.clone()], span: root.span }.to_source_string();
+    (statement, source)
+}
+
+/// Like [`build_statement`], but reuses the caller's session so several
+/// documents can be parsed through one cache.
+fn build_statement_with_session(sql: &str, builder: &SqlBuilder, session: &mut ParseSession<SqlLanguage>) -> (SqlStatement, String) {
+    let result = builder.build(&SourceText::new(sql), &[], session);
+    let root = result.result.unwrap_or_else(|error| panic!("{sql}: {error:?} {:?}", result.diagnostics));
+    let statement = root.statements.into_iter().next().unwrap_or_else(|| panic!("Missing statement for {sql}"));
+    let source = SqlRoot { statements: vec![statement.clone()], span: root.span }.to_source_string();
+    (statement, source)
+}
+
+#[test]
+fn test_sql_builder_scoped_session_variables() {
+    let (statement, source) = build_statement("SET SESSION sql_mode = 'STRICT';");
+    let SqlStatement::SetVariable(statement) = &statement
+    else {
+        panic!("Expected SET statement, got {statement:?}");
+    };
+    assert_eq!(statement.scope, Some(SessionScope::Session));
+    assert_eq!(statement.name.as_ref(), "sql_mode");
+    assert!(matches!(&statement.value, Expression::Literal(Literal::String(value, _)) if value.as_ref() == "STRICT"));
+    assert_eq!(source, "SET SESSION sql_mode = 'STRICT';");
+
+    let (statement, source) = build_statement("SET autocommit = 0;");
+    let SqlStatement::SetVariable(statement) = &statement
+    else {
+        panic!("Expected SET statement, got {statement:?}");
+    };
+    assert_eq!(statement.scope, None);
+    assert_eq!(statement.name.as_ref(), "autocommit");
+    assert!(matches!(&statement.value, Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "0"));
+    assert_eq!(source, "SET autocommit = 0;");
+}
+
+#[test]
+fn test_sql_builder_show_and_pragma() {
+    let (statement, source) = build_statement("SHOW GLOBAL VARIABLES LIKE 'max_%';");
+    let SqlStatement::Show(statement) = &statement
+    else {
+        panic!("Expected SHOW statement, got {statement:?}");
+    };
+    assert_eq!(statement.scope, Some(SessionScope::Global));
+    assert_eq!(statement.target.as_ref(), "VARIABLES");
+    assert_eq!(statement.like.as_deref(), Some("max_%"));
+    assert_eq!(source, "SHOW GLOBAL VARIABLES LIKE 'max_%';");
+
+    let (statement, source) = build_statement("SHOW STATUS;");
+    let SqlStatement::Show(statement) = &statement
+    else {
+        panic!("Expected SHOW statement, got {statement:?}");
+    };
+    assert_eq!(statement.scope, None);
+    assert_eq!(statement.target.as_ref(), "STATUS");
+    assert_eq!(statement.like, None);
+    assert_eq!(source, "SHOW STATUS;");
+
+    let (statement, source) = build_statement("PRAGMA journal_mode = WAL;");
+    let SqlStatement::Pragma(statement) = &statement
+    else {
+        panic!("Expected PRAGMA statement, got {statement:?}");
+    };
+    assert_eq!(statement.name.as_ref(), "journal_mode");
+    assert!(matches!(&statement.value, Some(Expression::Identifier(identifier)) if identifier.name.as_ref() == "WAL"));
+    assert_eq!(source, "PRAGMA journal_mode = WAL;");
+
+    let (statement, source) = build_statement("PRAGMA user_version;");
+    let SqlStatement::Pragma(statement) = &statement
+    else {
+        panic!("Expected PRAGMA statement, got {statement:?}");
+    };
+    assert_eq!(statement.name.as_ref(), "user_version");
+    assert!(statement.value.is_none());
+    assert_eq!(source, "PRAGMA user_version;");
+}
+
+/// Builds `sql` and returns the `WHERE` expression of its single SELECT statement.
+fn build_where(sql: &str) -> Expression {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new(sql), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("{sql}: {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement for {sql}, got {:?}", root.statements);
+    };
+    select.expr.clone().unwrap_or_else(|| panic!("Missing WHERE expression for {sql}"))
+}
+
+#[test]
+fn test_sql_builder_predicates() {
+    let Expression::InList { list, negated, .. } = build_where("SELECT * FROM t WHERE id IN (1, 2, 3);")
+    else {
+        panic!("Expected IN list");
+    };
+    assert!(!negated);
+    assert_eq!(list.len(), 3);
+    assert!(matches!(&list[2], Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "3"));
+
+    let Expression::Between { low, high, negated, .. } = build_where("SELECT * FROM t WHERE age BETWEEN 18 AND 30;")
+    else {
+        panic!("Expected BETWEEN");
+    };
+    assert!(!negated);
+    assert!(matches!(low.as_ref(), Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "18"));
+    assert!(matches!(high.as_ref(), Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "30"));
+
+    let Expression::IsNull { expr, negated: false, span } = build_where("SELECT * FROM t WHERE name IS NULL;")
+    else {
+        panic!("Expected IS NULL");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "name"));
+    assert_eq!(span.start, expr.span().start);
+
+    let Expression::IsNull { expr, negated: true, .. } = build_where("SELECT * FROM t WHERE name IS NOT NULL;")
+    else {
+        panic!("Expected IS NOT NULL");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "name"));
+
+    let Expression::Binary { op: BinaryOperator::Like, right, .. } = build_where("SELECT * FROM t WHERE name LIKE 'a%';")
+    else {
+        panic!("Expected LIKE");
+    };
+    assert!(matches!(right.as_ref(), Expression::Literal(Literal::String(value, _)) if value.as_ref() == "a%"));
+
+    let Expression::Binary { op: BinaryOperator::Equal, left, .. } = build_where("SELECT * FROM t WHERE id % 2 = 0;")
+    else {
+        panic!("Expected equality around a modulo");
+    };
+    assert!(matches!(left.as_ref(), Expression::Binary { op: BinaryOperator::Percent, .. }));
+}
+
+/// Builds `sql` and returns why it was rejected: the fatal error, the rejected
+/// statement, or the diagnostics collected while parsing.
+fn rejection_reason(sql: &str) -> String {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new(sql), &[], &mut session);
+    let mut reasons = result.diagnostics.iter().map(|diagnostic| diagnostic.to_string()).collect::<Vec<_>>();
+    match result.result {
+        Err(error) => reasons.push(error.to_string()),
+        Ok(root) => reasons.extend(root.statements.iter().filter_map(|statement| match statement {
+            SqlStatement::Error { message, .. } => Some(message.to_string()),
+            _ => None,
+        })),
+    }
+    reasons.join("\n")
+}
+
+#[test]
+fn test_sql_builder_is_null_and_truth_predicates() {
+    // `IS NULL` and `IS TRUE` are three-valued predicates, not comparisons.
+    let Expression::IsNull { expr, negated: false, span } = build_where("SELECT * FROM t WHERE name IS NULL;")
+    else {
+        panic!("Expected IS NULL");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "name"));
+    assert_eq!(span.start, expr.span().start);
+
+    let Expression::IsNull { negated: true, .. } = build_where("SELECT * FROM t WHERE name IS NOT NULL;")
+    else {
+        panic!("Expected IS NOT NULL");
+    };
+
+    let Expression::IsTruth { expr, value: true, negated: false, span } = build_where("SELECT * FROM t WHERE flag IS TRUE;")
+    else {
+        panic!("Expected IS TRUE");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "flag"));
+    assert_eq!(span.start, expr.span().start);
+
+    let Expression::IsTruth { value: false, negated: true, .. } = build_where("SELECT * FROM t WHERE flag IS NOT FALSE;")
+    else {
+        panic!("Expected IS NOT FALSE");
+    };
+
+    // `IS` keeps the same precedence as `IN` and `BETWEEN`: a surrounding `AND`
+    // stays outside the predicate.
+    let Expression::Binary { op: BinaryOperator::And, left, .. } = build_where("SELECT * FROM t WHERE flag IS TRUE AND id > 0;")
+    else {
+        panic!("Expected AND around IS TRUE");
+    };
+    assert!(matches!(left.as_ref(), Expression::IsTruth { value: true, negated: false, .. }));
+}
+
+#[test]
+fn test_sql_builder_is_predicate_source_round_trip() {
+    for (sql, expected) in [
+        ("SELECT * FROM t WHERE name IS NULL;", "SELECT*FROM t WHERE name IS NULL;"),
+        ("SELECT * FROM t WHERE name IS NOT NULL;", "SELECT*FROM t WHERE name IS NOT NULL;"),
+        ("SELECT * FROM t WHERE flag IS TRUE;", "SELECT*FROM t WHERE flag IS TRUE;"),
+        ("SELECT * FROM t WHERE flag IS NOT FALSE;", "SELECT*FROM t WHERE flag IS NOT FALSE;"),
+        ("SELECT * FROM t WHERE NOT flag IS NULL;", "SELECT*FROM t WHERE NOT flag IS NULL;"),
+        // A negated operand has to keep its parentheses: `IS` binds tighter
+        // than `NOT`, so dropping them would reparse as `NOT (flag IS NULL)`.
+        ("SELECT * FROM t WHERE (NOT flag) IS NULL;", "SELECT*FROM t WHERE(NOT flag) IS NULL;"),
+        ("SELECT * FROM t WHERE (a = 1) IS FALSE;", "SELECT*FROM t WHERE(a=1) IS FALSE;"),
+    ] {
+        let (_, source) = build_statement(sql);
+        assert_eq!(source, expected, "{sql}");
+        // The printed source must build the same predicate again.
+        let rebuilt = build_where(&source);
+        assert!(matches!(rebuilt, Expression::Unary { .. } | Expression::IsNull { .. } | Expression::IsTruth { .. }), "unexpected rebuilt predicate for {sql}: {rebuilt:?}");
+    }
+}
+
+#[test]
+fn test_sql_builder_null_comparison_stays_binary() {
+    // A plain `=` / `<>` against `NULL` is a comparison, not an `IS` predicate.
+    let Expression::Binary { op: BinaryOperator::Equal, right, .. } = build_where("SELECT * FROM t WHERE name = NULL;")
+    else {
+        panic!("Expected comparison against NULL");
+    };
+    assert!(matches!(right.as_ref(), Expression::Literal(Literal::Null(_))));
+
+    let Expression::Binary { op: BinaryOperator::NotEqual, right, .. } = build_where("SELECT * FROM t WHERE name <> NULL;")
+    else {
+        panic!("Expected negated comparison against NULL");
+    };
+    assert!(matches!(right.as_ref(), Expression::Literal(Literal::Null(_))));
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE name = NULL;");
+    assert_eq!(source, "SELECT*FROM t WHERE name=NULL;");
+}
+
+#[test]
+fn test_sql_builder_unsupported_is_predicates_are_reported() {
+    // `IS UNKNOWN` is a three-valued predicate without an AST node yet. It must be
+    // rejected instead of silently folding into `= UNKNOWN`.
+    let reason = rejection_reason("SELECT * FROM t WHERE a IS UNKNOWN;");
+    assert!(reason.contains("`IS UNKNOWN` is not supported"), "unexpected rejection: {reason}");
+
+    // `IS [NOT] DISTINCT FROM` is a null-safe comparison. A partial `IS` must
+    // never survive as a usable predicate.
+    for sql in ["SELECT * FROM t WHERE a IS DISTINCT FROM b;", "SELECT * FROM t WHERE a IS NOT DISTINCT FROM b;"] {
+        let reason = rejection_reason(sql);
+        assert!(reason.contains("`IS DISTINCT FROM` is not supported"), "{sql}: {reason}");
+    }
+
+    // A bare `IS` with no operand must not silently disappear either.
+    let reason = rejection_reason("SELECT * FROM t WHERE a IS;");
+    assert!(!reason.is_empty(), "`IS` without an operand must be reported");
+}
+
+#[test]
+fn test_sql_builder_qualified_columns_and_function_calls() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT t.id, t.name FROM t;"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("qualified columns: {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    let names = select
+        .items
+        .iter()
+        .map(|item| match item {
+            SelectItem::Expression { expr: Expression::Identifier(identifier), .. } => identifier.name.to_string(),
+            other => panic!("Expected identifier select item, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["t.id", "t.name"]);
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT COUNT(*) FROM users;"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("COUNT(*): {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::FunctionCall { name, args, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected function call select item, got {:?}", select.items[0]);
+    };
+    assert_eq!(name.name.as_ref(), "COUNT");
+    assert!(matches!(args.as_slice(), [Expression::Wildcard { .. }]), "COUNT(*) must keep its wildcard argument: {args:?}");
+
+    let (_, source) = build_statement("SELECT COUNT(*) FROM users;");
+    assert_eq!(source, "SELECT COUNT(*)FROM users;");
+
+    // A genuinely empty argument list stays empty and must not be confused with
+    // the wildcard form.
+    let (statement, _) = build_statement("SELECT COUNT() FROM users;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::FunctionCall { args, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected function call select item, got {:?}", select.items[0]);
+    };
+    assert!(args.is_empty(), "COUNT() must stay argument-free: {args:?}");
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT LOWER(name) FROM users;"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("LOWER(name): {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::FunctionCall { name, args, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected function call select item, got {:?}", select.items[0]);
+    };
+    assert_eq!(name.name.as_ref(), "LOWER");
+    assert!(matches!(args.as_slice(), [Expression::Identifier(identifier)] if identifier.name.as_ref() == "name"));
+
+    // Aggregate names are callable identifiers, not reserved keyword tokens.
+    // `MAX` used to be lexed as its own keyword, which made `MAX(age)` fall into
+    // an error node instead of a function call.
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT MAX(age) FROM users;"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("MAX(age): {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::FunctionCall { name, args, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected function call select item, got {:?}", select.items[0]);
+    };
+    assert_eq!(name.name.as_ref(), "MAX");
+    assert!(matches!(args.as_slice(), [Expression::Identifier(identifier)] if identifier.name.as_ref() == "age"));
+}
+
+#[test]
+fn test_sql_builder_prefix_unary_signs() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT -3;"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("SELECT -3: {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Unary { op, expr, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected unary select item, got {:?}", select.items[0]);
+    };
+    assert_eq!(*op, UnaryOperator::Minus);
+    assert!(matches!(expr.as_ref(), Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "3"));
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT * FROM t WHERE age > -1;"), &[], &mut session);
+    let root = result.result.unwrap_or_else(|error| panic!("age > -1: {error:?} {:?}", result.diagnostics));
+    let SqlStatement::Select(select) = &root.statements[0]
+    else {
+        panic!("Expected Select statement");
+    };
+    let Some(Expression::Binary { op: BinaryOperator::Greater, right, .. }) = &select.expr
+    else {
+        panic!("Expected greater-than expression, got {:?}", select.expr);
+    };
+    assert!(matches!(right.as_ref(), Expression::Unary { op: UnaryOperator::Minus, .. }));
+}
+
+/// Before the fix `WHERE NOT (a = 1)` parsed `NOT` as a lone `ErrorNode`, so the
+/// builder saw no `Expression` child and left `SelectStatement.expr` as `None`.
+/// That silently dropped the predicate instead of rejecting it.
+#[test]
+fn test_sql_builder_prefix_not() {
+    let Expression::Unary { op: UnaryOperator::Not, expr, .. } = build_where("SELECT * FROM t WHERE NOT (a = 1);")
+    else {
+        panic!("Expected NOT predicate");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Binary { op: BinaryOperator::Equal, .. }));
+
+    // `NOT` binds tighter than `AND` and looser than comparisons: `NOT a = 1`
+    // must be `NOT (a = 1)`, never `(NOT a) = 1`.
+    let Expression::Unary { op: UnaryOperator::Not, expr, .. } = build_where("SELECT * FROM t WHERE NOT a = 1;")
+    else {
+        panic!("Expected NOT around a comparison");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Binary { op: BinaryOperator::Equal, .. }));
+
+    let Expression::Unary { op: UnaryOperator::Not, expr, .. } = build_where("SELECT * FROM t WHERE NOT NOT a = 1;")
+    else {
+        panic!("Expected nested NOT");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Unary { op: UnaryOperator::Not, .. }));
+
+    // `IS` binds tighter than `NOT`, so the negation is around `flag IS NULL`.
+    let Expression::Unary { op: UnaryOperator::Not, expr, .. } = build_where("SELECT * FROM t WHERE NOT flag IS NULL;")
+    else {
+        panic!("Expected NOT around IS NULL");
+    };
+    assert!(matches!(expr.as_ref(), Expression::IsNull { negated: false, .. }));
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE NOT (a = 1);");
+    assert_eq!(source, "SELECT*FROM t WHERE NOT a=1;");
+}
+
+#[test]
+fn test_sql_builder_not_precedence_with_and_or() {
+    // `AND` binds tighter than `OR` and both bind looser than `NOT`.
+    let Expression::Binary { op: BinaryOperator::And, left, right, .. } = build_where("SELECT * FROM t WHERE NOT a = 1 AND b = 2;")
+    else {
+        panic!("Expected AND at the root");
+    };
+    assert!(matches!(left.as_ref(), Expression::Unary { op: UnaryOperator::Not, .. }));
+    assert!(matches!(right.as_ref(), Expression::Binary { op: BinaryOperator::Equal, .. }));
+
+    let Expression::Binary { op: BinaryOperator::Or, left, right, .. } = build_where("SELECT * FROM t WHERE a = 1 OR NOT b = 2;")
+    else {
+        panic!("Expected OR at the root");
+    };
+    assert!(matches!(left.as_ref(), Expression::Binary { op: BinaryOperator::Equal, .. }));
+    assert!(matches!(right.as_ref(), Expression::Unary { op: UnaryOperator::Not, .. }));
+
+    let Expression::Binary { op: BinaryOperator::Or, left, .. } = build_where("SELECT * FROM t WHERE NOT a = 1 OR b = 2;")
+    else {
+        panic!("Expected OR at the root");
+    };
+    assert!(matches!(left.as_ref(), Expression::Unary { op: UnaryOperator::Not, .. }));
+}
+
+#[test]
+fn test_sql_builder_negated_predicates() {
+    let Expression::InList { list, negated: true, .. } = build_where("SELECT * FROM t WHERE a NOT IN (1, 2);")
+    else {
+        panic!("Expected negated IN list");
+    };
+    assert_eq!(list.len(), 2);
+
+    let Expression::Unary { op: UnaryOperator::Not, expr, .. } = build_where("SELECT * FROM t WHERE NOT a IN (1, 2);")
+    else {
+        panic!("Expected NOT around IN");
+    };
+    assert!(matches!(expr.as_ref(), Expression::InList { negated: false, .. }));
+
+    let Expression::Between { negated: true, low, high, .. } = build_where("SELECT * FROM t WHERE a NOT BETWEEN 1 AND 2;")
+    else {
+        panic!("Expected negated BETWEEN");
+    };
+    assert!(matches!(low.as_ref(), Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "1"));
+    assert!(matches!(high.as_ref(), Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "2"));
+
+    let Expression::Unary { op: UnaryOperator::Not, expr, .. } = build_where("SELECT * FROM t WHERE name NOT LIKE 'a%';")
+    else {
+        panic!("Expected NOT LIKE");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Binary { op: BinaryOperator::Like, .. }));
+
+    let Expression::IsTruth { expr, value: true, negated: true, .. } = build_where("SELECT * FROM t WHERE a IS NOT TRUE;")
+    else {
+        panic!("Expected IS NOT TRUE");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "a"));
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE a NOT IN (1, 2);");
+    assert_eq!(source, "SELECT*FROM t WHERE a NOT IN(1,2);");
+}
+
+#[test]
+fn test_sql_builder_in_subquery() {
+    let Expression::InSubquery { query, negated: false, expr, .. } = build_where("SELECT * FROM t WHERE a IN (SELECT b FROM u);")
+    else {
+        panic!("Expected IN subquery");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "a"));
+    assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "u"));
+    assert!(matches!(&query.items[0], SelectItem::Expression { expr: Expression::Identifier(identifier), .. } if identifier.name.as_ref() == "b"));
+
+    let Expression::InSubquery { negated: true, .. } = build_where("SELECT * FROM t WHERE a NOT IN (SELECT b FROM u);")
+    else {
+        panic!("Expected negated IN subquery");
+    };
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE a IN (SELECT b FROM u);");
+    assert_eq!(source, "SELECT*FROM t WHERE a IN(SELECT b FROM u);");
+
+    // A mixed list is not valid SQL and must be rejected rather than silently
+    // keeping only the first element.
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT * FROM t WHERE a IN (1, SELECT b FROM u);"), &[], &mut session);
+    assert!(result.result.is_err(), "Mixed IN list must not be accepted: {:?}", result.result);
+}
+
+#[test]
+fn test_sql_builder_exists_predicate() {
+    let Expression::Exists { query, negated: false, .. } = build_where("SELECT * FROM t WHERE EXISTS (SELECT b FROM u);")
+    else {
+        panic!("Expected EXISTS");
+    };
+    assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "u"));
+    assert!(matches!(&query.items[0], SelectItem::Expression { expr: Expression::Identifier(identifier), .. } if identifier.name.as_ref() == "b"));
+
+    // `NOT EXISTS` is one predicate, not a unary `NOT` wrapped around `EXISTS`.
+    let Expression::Exists { negated: true, .. } = build_where("SELECT * FROM t WHERE NOT EXISTS (SELECT b FROM u);")
+    else {
+        panic!("Expected NOT EXISTS");
+    };
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE EXISTS (SELECT b FROM u);");
+    assert_eq!(source, "SELECT*FROM t WHERE EXISTS(SELECT b FROM u);");
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE NOT EXISTS (SELECT b FROM u);");
+    assert_eq!(source, "SELECT*FROM t WHERE NOT EXISTS(SELECT b FROM u);");
+}
+
+#[test]
+fn test_sql_builder_unsupported_predicate_is_reported() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    // An unsupported predicate must surface as an error. Before the fix it became
+    // `SelectStatement.expr == None`, which downstream read as "match every row".
+    // `*` is not a predicate, so it stays an error node instead of an expression.
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT * FROM t WHERE *;"), &[], &mut session);
+    let rejected = match &result.result {
+        Ok(root) => root.statements.iter().any(|statement| matches!(statement, SqlStatement::Error { .. })),
+        Err(_) => true,
+    };
+    assert!(rejected, "Unsupported predicate must not become `None`: {:?}", result.result);
+
+    // A trailing unsupported token must abort parsing instead of keeping only the
+    // first half of the predicate.
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&SourceText::new("SELECT * FROM t WHERE a = 1 XOR b = 2;"), &[], &mut session);
+    assert!(result.result.is_err(), "Partially parsed WHERE must not be accepted: {:?}", result.result);
+}
+
+/// Every identifier span must slice exactly the identifier text, no matter how
+/// much leading trivia precedes it.
+#[test]
+fn test_sql_builder_identifier_spans_skip_leading_trivia() {
+    for sql in [
+        "SELECT id FROM users;",
+        "  SELECT id FROM users;",
+        "\n\n\tSELECT id FROM users;",
+        "/* note */ SELECT id FROM users;",
+        "  \n /* note */\n\tSELECT id FROM users;",
+        "\r\n\t-- note\n  SELECT id FROM users;",
+        "; SELECT id FROM users;",
+        "BROKEN; SELECT id FROM users;",
+    ] {
+        let config = SqlLanguage::default();
+        let builder = SqlBuilder::new(&config);
+        let mut session = ParseSession::<SqlLanguage>::default();
+        let result = builder.build(&SourceText::new(sql), &[], &mut session);
+        let root = result.result.unwrap_or_else(|error| panic!("{sql}: {error:?} {:?}", result.diagnostics));
+
+        let SqlStatement::Select(select) = &root.statements[0]
+        else {
+            panic!("Expected Select statement for {sql}, got {:?}", root.statements);
+        };
+        let SelectItem::Expression { expr, .. } = &select.items[0]
+        else {
+            panic!("Expected expression item for {sql}");
+        };
+        let Expression::Identifier(identifier) = expr
+        else {
+            panic!("Expected identifier item for {sql}, got {expr:?}");
+        };
+        assert_eq!(sql.get(identifier.span.start..identifier.span.end), Some("id"), "identifier span for {sql}");
+
+        let Some(TableSource::Table(table)) = select.from.as_ref()
+        else {
+            panic!("Missing table for {sql}");
+        };
+        assert_eq!(sql.get(table.name.span.start..table.name.span.end), Some("users"), "table span for {sql}");
+        assert_eq!(sql.get(root.span.start..root.span.end), Some(sql), "root must cover the whole source for {sql}");
+    }
+}
+
+#[test]
+fn test_sql_builder_select_quantifier() {
+    let sql = "SELECT DISTINCT name FROM users;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let Some(SelectQuantifier::Distinct { span }) = &select.quantifier
+    else {
+        panic!("Expected DISTINCT quantifier, got {:?}", select.quantifier);
+    };
+    assert_eq!(sql.get(span.start..span.end), Some("DISTINCT"));
+    assert_eq!(source, "SELECT DISTINCT name FROM users;");
+
+    let sql = "SELECT DISTINCT ON (user_id, name) name FROM users;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let Some(SelectQuantifier::DistinctOn { expressions, span }) = &select.quantifier
+    else {
+        panic!("Expected DISTINCT ON quantifier, got {:?}", select.quantifier);
+    };
+    assert_eq!(sql.get(span.start..span.end), Some("DISTINCT ON (user_id, name)"));
+    assert_eq!(expressions.len(), 2);
+    assert!(matches!(&expressions[0], Expression::Identifier(identifier) if identifier.name.as_ref() == "user_id"));
+    assert!(matches!(&expressions[1], Expression::Identifier(identifier) if identifier.name.as_ref() == "name"));
+    assert_eq!(source, "SELECT DISTINCT ON(user_id,name)name FROM users;");
+
+    let (statement, source) = build_statement("SELECT ALL name FROM users;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    assert!(matches!(select.quantifier, Some(SelectQuantifier::All { .. })));
+    assert_eq!(source, "SELECT ALL name FROM users;");
+
+    let (statement, _) = build_statement("SELECT name FROM users;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    assert!(select.quantifier.is_none());
+}
+
+#[test]
+fn test_sql_builder_distinct_outside_select_is_reported() {
+    // `DISTINCT` may only appear in the SELECT quantifier position or inside
+    // aggregate function calls like `COUNT(DISTINCT x)`. The standalone keyword
+    // in other positions must still be reported instead of silently parsed.
+    for sql in ["SELECT name FROM users ORDER BY DISTINCT name;", "DISTINCT name FROM users;"] {
+        let reason = rejection_reason(sql);
+        assert!(reason.contains("`DISTINCT` is only allowed immediately after `SELECT`"), "{sql}: {reason}");
+    }
+
+    // `COUNT(DISTINCT x)` is now parsed normally — the DISTINCT token is kept in
+    // the CST and the builder projects it onto the FunctionCall as a boolean flag.
+    let (statement, source) = build_statement("SELECT COUNT(DISTINCT name) FROM users;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("expected SELECT statement")
+    };
+    let SelectItem::Expression { expr, .. } = &select.items[0]
+    else {
+        panic!("expected Expression select item")
+    };
+    let Expression::FunctionCall { distinct, args, .. } = expr
+    else {
+        panic!("expected FunctionCall projection")
+    };
+    assert!(*distinct, "DISTINCT flag must be set on COUNT call");
+    assert_eq!(args.len(), 1, "COUNT(DISTINCT name) should have one argument");
+
+    let reason = rejection_reason("SELECT DISTINCT ON name FROM users;");
+    assert!(reason.contains("`DISTINCT ON` requires a parenthesized expression list"), "{reason}");
+
+    let reason = rejection_reason("SELECT DISTINCT ON () name FROM users;");
+    assert!(reason.contains("`DISTINCT ON` requires at least one expression"), "{reason}");
+}
+
+#[test]
+fn test_sql_builder_group_by_items_and_having() {
+    let sql = "SELECT dept, COUNT(*) FROM employees GROUP BY dept, 1, LOWER(name) HAVING COUNT(*) > 1;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+
+    let group_by = select.group_by.as_ref().unwrap_or_else(|| panic!("Missing GROUP BY"));
+    assert_eq!(group_by.items.len(), 3);
+
+    let GroupByItem::Column(column) = &group_by.items[0]
+    else {
+        panic!("Expected a bare column item, got {:?}", group_by.items[0]);
+    };
+    assert_eq!(column.name.as_ref(), "dept");
+    assert_eq!(sql.get(column.span.start..column.span.end), Some("dept"));
+
+    let GroupByItem::Position { index, span } = &group_by.items[1]
+    else {
+        panic!("Expected a positional item, got {:?}", group_by.items[1]);
+    };
+    assert_eq!(*index, 1);
+    assert_eq!(sql.get(span.start..span.end), Some("1"));
+
+    assert!(matches!(&group_by.items[2], GroupByItem::Expression(Expression::FunctionCall { .. })), "expected a function item, got {:?}", group_by.items[2]);
+
+    let having = select.having.as_ref().unwrap_or_else(|| panic!("Missing HAVING"));
+    assert!(matches!(having.condition, Expression::Binary { op: BinaryOperator::Greater, .. }), "unexpected HAVING predicate {:?}", having.condition);
+
+    assert_eq!(source, "SELECT dept,COUNT(*)FROM employees GROUP BY dept,1,LOWER(name)HAVING COUNT(*)>1;");
+}
+
+#[test]
+fn test_sql_builder_group_by_distinguishes_positions_from_expressions() {
+    let (statement, source) = build_statement("SELECT a FROM t GROUP BY (1), 1 + 1, t.a;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let group_by = select.group_by.as_ref().unwrap_or_else(|| panic!("Missing GROUP BY"));
+
+    // A parenthesized constant is an expression, not a select-list position.
+    assert!(matches!(&group_by.items[0], GroupByItem::Expression(Expression::Literal(_))), "unexpected item {:?}", group_by.items[0]);
+    assert!(matches!(&group_by.items[1], GroupByItem::Expression(Expression::Binary { .. })), "unexpected item {:?}", group_by.items[1]);
+    let GroupByItem::Column(column) = &group_by.items[2]
+    else {
+        panic!("Expected a qualified column item, got {:?}", group_by.items[2]);
+    };
+    assert_eq!(column.name.as_ref(), "t.a");
+    assert_eq!(source, "SELECT a FROM t GROUP BY 1,1+1,t.a;");
+}
+
+/// `HAVING` must bind without a `GROUP BY` clause. Rejecting it is the
+/// downstream semantic layer's job, not the parser's.
+#[test]
+fn test_sql_builder_having_without_group_by_binds() {
+    let (statement, source) = build_statement("SELECT flag FROM events HAVING flag;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    assert!(select.group_by.is_none());
+    let having = select.having.as_ref().unwrap_or_else(|| panic!("Missing HAVING"));
+    assert!(matches!(&having.condition, Expression::Identifier(identifier) if identifier.name.as_ref() == "flag"));
+    assert_eq!(source, "SELECT flag FROM events HAVING flag;");
+}
+
+#[test]
+fn test_sql_builder_group_by_and_having_trailing_tokens_are_reported() {
+    for (sql, expected) in [
+        ("SELECT a FROM t GROUP BY;", "`GROUP BY` requires at least one item"),
+        ("SELECT a FROM t GROUP BY a,;", "trailing comma in `GROUP BY`"),
+        ("SELECT a FROM t GROUP BY a FOO;", "unsupported token in GROUP BY clause"),
+        ("SELECT a FROM t HAVING;", "`HAVING` requires a predicate"),
+        ("SELECT a FROM t HAVING a FOO;", "unsupported token in HAVING predicate"),
+    ] {
+        let reason = rejection_reason(sql);
+        assert!(reason.contains(expected), "{sql}: {reason}");
+    }
+}
+
+#[test]
+fn test_sql_builder_order_by_nulls_first_last() {
+    let sql = "SELECT a FROM t ORDER BY a DESC NULLS LAST, b ASC NULLS FIRST, c;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let order_by = select.order_by.as_ref().unwrap_or_else(|| panic!("Missing ORDER BY"));
+    assert_eq!(order_by.items.len(), 3);
+
+    assert_eq!(order_by.items[0].direction, OrderDirection::Desc);
+    assert_eq!(order_by.items[0].nulls, Some(NullsOrder::Last));
+    assert_eq!(sql.get(order_by.items[0].span.start..order_by.items[0].span.end), Some("a DESC NULLS LAST"));
+
+    assert_eq!(order_by.items[1].direction, OrderDirection::Asc);
+    assert_eq!(order_by.items[1].nulls, Some(NullsOrder::First));
+    assert_eq!(sql.get(order_by.items[1].span.start..order_by.items[1].span.end), Some("b ASC NULLS FIRST"));
+
+    assert_eq!(order_by.items[2].direction, OrderDirection::Asc);
+    assert_eq!(order_by.items[2].nulls, None);
+
+    assert_eq!(source, "SELECT a FROM t ORDER BY a DESC NULLS LAST,b ASC NULLS FIRST,c ASC;");
+
+    // `NULLS` does not require an explicit direction.
+    let (statement, source) = build_statement("SELECT a FROM t ORDER BY a NULLS FIRST;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let order_by = select.order_by.as_ref().unwrap_or_else(|| panic!("Missing ORDER BY"));
+    assert_eq!(order_by.items[0].direction, OrderDirection::Asc);
+    assert_eq!(order_by.items[0].nulls, Some(NullsOrder::First));
+    assert_eq!(source, "SELECT a FROM t ORDER BY a ASC NULLS FIRST;");
+}
+
+#[test]
+fn test_sql_builder_incomplete_nulls_order_is_reported() {
+    for (sql, expected) in [
+        ("SELECT a FROM t ORDER BY a NULLS MIDDLE;", "`NULLS` must be followed by `FIRST` or `LAST`"),
+        ("SELECT a FROM t ORDER BY a NULLS;", "`NULLS` must be followed by `FIRST` or `LAST`"),
+        ("SELECT a FROM t ORDER BY a FIRST;", "unsupported token in ORDER BY clause"),
+        ("SELECT a FROM t ORDER BY a NULLS FIRST LAST;", "unsupported token in ORDER BY clause"),
+        ("SELECT a FROM t ORDER BY;", "`ORDER BY` requires at least one item"),
+        ("SELECT a FROM t ORDER BY a,;", "trailing comma in `ORDER BY`"),
+    ] {
+        let reason = rejection_reason(sql);
+        assert!(reason.contains(expected), "{sql}: {reason}");
+    }
+}
+
+/// No statement may leave a token unconsumed without a diagnostic. The cases
+/// below differ in where the tail appears, not only in `NULLS` placement.
+#[test]
+fn test_sql_builder_unconsumed_trailing_tokens_are_reported() {
+    for (sql, expected) in [
+        ("SELECT a FROM t LIMIT 1 FOO;", "unexpected token after statement"),
+        ("INSERT INTO t (a) VALUES (1) FOO;", "unexpected token after statement"),
+        ("UPDATE t SET a = 1 FOO;", "unexpected token after statement"),
+        ("SELECT a FROM t ORDER BY a FOO;", "unsupported token in ORDER BY clause"),
+        ("SELECT a FROM t GROUP BY a FOO;", "unsupported token in GROUP BY clause"),
+        ("SELECT a FROM t HAVING a FOO;", "unsupported token in HAVING predicate"),
+    ] {
+        let reason = rejection_reason(sql);
+        assert!(reason.contains(expected), "{sql}: {reason}");
+    }
+
+    // Valid tails stay quiet.
+    for sql in ["SELECT a FROM t LIMIT 1; SELECT b FROM u;", "SELECT a FROM t", "SELECT a FROM t ORDER BY a DESC NULLS LAST;"] {
+        assert_eq!(rejection_reason(sql), "", "{sql} should not be rejected");
+    }
+}
+
+#[test]
+fn test_sql_builder_set_operations() {
+    for (sql, expected_operator, expected_source) in [
+        ("SELECT a FROM t UNION SELECT b FROM u;", SetOperator::Union, "SELECT a FROM t UNION SELECT b FROM u;"),
+        ("SELECT a FROM t UNION ALL SELECT b FROM u;", SetOperator::UnionAll, "SELECT a FROM t UNION ALL SELECT b FROM u;"),
+        ("SELECT a FROM t INTERSECT SELECT b FROM u;", SetOperator::Intersect, "SELECT a FROM t INTERSECT SELECT b FROM u;"),
+        ("SELECT a FROM t INTERSECT ALL SELECT b FROM u;", SetOperator::IntersectAll, "SELECT a FROM t INTERSECT ALL SELECT b FROM u;"),
+        ("SELECT a FROM t EXCEPT SELECT b FROM u;", SetOperator::Except, "SELECT a FROM t EXCEPT SELECT b FROM u;"),
+        ("SELECT a FROM t EXCEPT ALL SELECT b FROM u;", SetOperator::ExceptAll, "SELECT a FROM t EXCEPT ALL SELECT b FROM u;"),
+    ] {
+        let (statement, source) = build_statement(sql);
+        let SqlStatement::SetOperation(set) = &statement
+        else {
+            panic!("Expected set operation for {sql}, got {statement:?}");
+        };
+        assert_eq!(set.operators.len(), 1, "{sql}");
+        assert_eq!(set.operands.len(), 2, "{sql}");
+        assert_eq!(set.operators[0], expected_operator, "{sql}");
+        assert_eq!(sql.get(set.operands[0].span.start..set.operands[0].span.end).map(str::trim), Some("SELECT a FROM t"), "{sql}");
+        assert_eq!(sql.get(set.operands[1].span.start..set.operands[1].span.end).map(str::trim), Some("SELECT b FROM u"), "{sql}");
+        assert!(set.order_by.is_none(), "{sql}");
+        assert!(set.limit.is_none(), "{sql}");
+        assert_eq!(source, expected_source, "{sql}");
+
+        // The printed source must parse back into the same statement.
+        let (rebuilt, rebuilt_source) = build_statement(&source);
+        let SqlStatement::SetOperation(rebuilt) = &rebuilt
+        else {
+            panic!("Expected set operation after round trip for {sql}, got {rebuilt:?}");
+        };
+        assert_eq!(rebuilt.operators[0], expected_operator, "{sql}");
+        assert_eq!(rebuilt_source, source, "{sql}");
+    }
+}
+
+/// `ORDER BY` and `LIMIT` after a set operation apply to the combined result, so
+/// they must not end up on the last branch.
+#[test]
+fn test_sql_builder_set_operation_tail_binds_to_whole_result() {
+    let sql = "SELECT a FROM t UNION SELECT b FROM u ORDER BY a LIMIT 5;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::SetOperation(set) = &statement
+    else {
+        panic!("Expected set operation, got {statement:?}");
+    };
+    assert_eq!(set.operators[0], SetOperator::Union);
+    let order_by = set.order_by.as_ref().unwrap_or_else(|| panic!("Missing ORDER BY on the set operation"));
+    assert_eq!(order_by.items.len(), 1);
+    let limit = set.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT on the set operation"));
+    assert!(matches!(&limit.limit, Some(Expression::Literal(Literal::Number(value, _))) if value.as_ref() == "5"));
+    assert!(set.operands[1].order_by.is_none(), "ORDER BY must not bind to the last operand");
+    assert!(set.operands[1].limit.is_none(), "LIMIT must not bind to the last operand");
+    assert_eq!(source, "SELECT a FROM t UNION SELECT b FROM u ORDER BY a ASC LIMIT 5;");
+
+    let (rebuilt, rebuilt_source) = build_statement(&source);
+    let SqlStatement::SetOperation(rebuilt) = &rebuilt
+    else {
+        panic!("Expected set operation after round trip, got {rebuilt:?}");
+    };
+    assert!(rebuilt.order_by.is_some());
+    assert!(rebuilt.limit.is_some());
+    assert!(rebuilt.operands[1].order_by.is_none());
+    assert_eq!(rebuilt_source, source);
+}
+
+/// Chains of three or more SELECTs linked by set operators must parse into a
+/// flat operands/operators layout and round-trip without losing any branch.
+#[test]
+fn test_sql_builder_chained_set_operations() {
+    let sql = "SELECT a FROM t UNION SELECT b FROM u UNION ALL SELECT c FROM v INTERSECT SELECT d FROM w;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::SetOperation(set) = &statement
+    else {
+        panic!("Expected set operation, got {statement:?}");
+    };
+    assert_eq!(set.operands.len(), 4);
+    assert_eq!(set.operators.len(), 3);
+    assert_eq!(set.operators, vec![SetOperator::Union, SetOperator::UnionAll, SetOperator::Intersect]);
+
+    // Round trip must preserve every operand and every operator.
+    let (rebuilt, rebuilt_source) = build_statement(&source);
+    let SqlStatement::SetOperation(rebuilt) = &rebuilt
+    else {
+        panic!("Expected set operation after round trip, got {rebuilt:?}");
+    };
+    assert_eq!(rebuilt.operands.len(), 4);
+    assert_eq!(rebuilt.operators, set.operators);
+    assert_eq!(rebuilt_source, source);
+}
+
+/// A stray operator with no right-hand operand (e.g. `SELECT a UNION;`) must
+/// still be reported as a build error.
+#[test]
+fn test_sql_builder_set_operation_missing_right_is_rejected() {
+    let reason = rejection_reason("SELECT a FROM t UNION;");
+    assert!(!reason.is_empty(), "a set operation without its right SELECT must be reported");
+}
+
+#[test]
+fn test_sql_builder_insert() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let source = SourceText::new("INSERT INTO users (name, age) VALUES ('John', 25);");
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&source, &[], &mut session);
+
+    if let Err(e) = &result.result {
+        panic!("Build error: {e:?}\nDiagnostics: {:?}", result.diagnostics);
+    }
+    let root = result.result.unwrap();
+    assert_eq!(root.statements.len(), 1);
+
+    let SqlStatement::Insert(insert) = &root.statements[0]
+    else {
+        panic!("Expected Insert statement");
+    };
+    assert_eq!(insert.table_name.name.name.as_ref(), "users");
+    assert_eq!(insert.columns.len(), 2);
+    assert_eq!(insert.rows.len(), 1);
+    assert_eq!(insert.rows[0].len(), 2);
+    assert!(matches!(insert.source, InsertSource::Values));
+    assert!(insert.on_conflict.is_none());
+    assert!(insert.returning.is_none());
+}
+
+#[test]
+fn test_sql_builder_insert_multiple_rows() {
+    let (statement, source) = build_statement("INSERT INTO users (name, age) VALUES ('John', 25), ('Jane', 30);");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    assert!(matches!(insert.source, InsertSource::Values));
+    assert_eq!(insert.rows.len(), 2);
+    assert_eq!(insert.rows[0].len(), 2);
+    assert_eq!(insert.rows[1].len(), 2);
+    assert_eq!(source, "INSERT INTO users(name,age)VALUES('John',25),('Jane',30);");
+
+    // The rendered source must reparse into the same row boundaries.
+    let (reparsed, reparsed_source) = build_statement(&source);
+    let SqlStatement::Insert(reparsed) = &reparsed
+    else {
+        panic!("Expected Insert statement after round trip, got {reparsed:?}");
+    };
+    assert_eq!(reparsed.rows.len(), 2);
+    assert_eq!(reparsed.rows[0].len(), 2);
+    assert_eq!(reparsed_source, source);
+}
+
+#[test]
+fn test_sql_builder_insert_function_call_and_subquery_values() {
+    // A top-level call or scalar subquery in a VALUES cell is a bare
+    // `FunctionCall` / `Subquery` node, not wrapped in `Expression`; the row
+    // builder must keep it instead of dropping the cell and desyncing the count.
+    let (statement, _source) = build_statement("INSERT INTO users (id, created_at, tag) VALUES (next_id('u'), now(), (SELECT 1));");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    assert_eq!(insert.columns.len(), 3);
+    assert_eq!(insert.rows.len(), 1);
+    assert_eq!(insert.rows[0].len(), 3, "each VALUES cell must survive into the row");
+    assert!(matches!(&insert.rows[0][0], Expression::FunctionCall { .. }));
+    assert!(matches!(&insert.rows[0][1], Expression::FunctionCall { .. }));
+    assert!(matches!(&insert.rows[0][2], Expression::Subquery { .. }));
+}
+
+#[test]
+fn test_sql_builder_insert_select() {
+    let (statement, source) = build_statement("INSERT INTO archive (id, name) SELECT id, name FROM users;");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    let InsertSource::Select(query) = &insert.source
+    else {
+        panic!("Expected a nested SELECT, got {:?}", insert.source);
+    };
+    assert_eq!(query.items.len(), 2);
+    assert!(query.from.is_some());
+    assert!(insert.rows.is_empty());
+    assert_eq!(source, "INSERT INTO archive(id,name)SELECT id,name FROM users;");
+
+    let (reparsed, reparsed_source) = build_statement(&source);
+    let SqlStatement::Insert(reparsed) = &reparsed
+    else {
+        panic!("Expected Insert statement after round trip, got {reparsed:?}");
+    };
+    assert!(matches!(reparsed.source, InsertSource::Select(_)));
+    assert_eq!(reparsed_source, source);
+}
+
+#[test]
+fn test_sql_builder_insert_default_values() {
+    let (statement, source) = build_statement("INSERT INTO users DEFAULT VALUES;");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    assert!(matches!(insert.source, InsertSource::DefaultValues));
+    assert!(insert.rows.is_empty());
+    assert_eq!(source, "INSERT INTO users DEFAULT VALUES;");
+
+    // The printed statement must parse back into the same form.
+    let (reparsed, reparsed_source) = build_statement(&source);
+    let SqlStatement::Insert(reparsed) = &reparsed
+    else {
+        panic!("Expected Insert statement after round trip, got {reparsed:?}");
+    };
+    assert!(matches!(reparsed.source, InsertSource::DefaultValues));
+    assert_eq!(reparsed_source, source);
+}
+
+#[test]
+fn test_sql_builder_insert_on_conflict_do_nothing() {
+    let (statement, source) = build_statement("INSERT INTO users (name) VALUES ('John') ON CONFLICT (name) DO NOTHING;");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    let on_conflict = insert.on_conflict.as_ref().unwrap_or_else(|| panic!("Expected `ON CONFLICT`, got {insert:?}"));
+    assert_eq!(on_conflict.columns.len(), 1);
+    assert_eq!(on_conflict.columns[0].name.as_ref(), "name");
+    assert!(matches!(on_conflict.action, OnConflictAction::DoNothing));
+    assert_eq!(source, "INSERT INTO users(name)VALUES('John')ON CONFLICT(name)DO NOTHING;");
+
+    let (reparsed, reparsed_source) = build_statement(&source);
+    let SqlStatement::Insert(reparsed) = &reparsed
+    else {
+        panic!("Expected Insert statement after round trip, got {reparsed:?}");
+    };
+    assert!(matches!(reparsed.on_conflict.as_ref().map(|it| &it.action), Some(OnConflictAction::DoNothing)));
+    assert_eq!(reparsed_source, source);
+}
+
+#[test]
+fn test_sql_builder_insert_on_conflict_do_update() {
+    let (statement, _source) = build_statement("INSERT INTO users (id, name) VALUES (1, 'John') ON CONFLICT (id) DO UPDATE SET name = 'Jane' WHERE users.name IS NULL;");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    let on_conflict = insert.on_conflict.as_ref().unwrap_or_else(|| panic!("Expected `ON CONFLICT`, got {insert:?}"));
+    assert_eq!(on_conflict.columns.len(), 1);
+    let OnConflictAction::DoUpdate { assignments, selection } = &on_conflict.action
+    else {
+        panic!("Expected `DO UPDATE`, got {:?}", on_conflict.action);
+    };
+    assert_eq!(assignments.len(), 1);
+    assert_eq!(assignments[0].column.name.as_ref(), "name");
+    assert!(selection.is_some());
+
+    // Round trip through `ToSource` keeps the clause intact.
+    let (_, rendered) = build_statement("INSERT INTO users (id, name) VALUES (1, 'John') ON CONFLICT (id) DO UPDATE SET name = 'Jane' WHERE users.name IS NULL;");
+    let (reparsed, reparsed_source) = build_statement(&rendered);
+    let SqlStatement::Insert(reparsed) = &reparsed
+    else {
+        panic!("Expected Insert statement after round trip, got {reparsed:?}");
+    };
+    let reparsed_conflict = reparsed.on_conflict.as_ref().unwrap_or_else(|| panic!("Expected `ON CONFLICT` after round trip, got {reparsed:?}"));
+    let OnConflictAction::DoUpdate { assignments, selection } = &reparsed_conflict.action
+    else {
+        panic!("Expected `DO UPDATE` after round trip, got {:?}", reparsed_conflict.action);
+    };
+    assert_eq!(assignments.len(), 1);
+    assert!(selection.is_some());
+    assert_eq!(reparsed_source, rendered);
+}
+
+#[test]
+fn test_sql_builder_insert_returning() {
+    let (statement, source) = build_statement("INSERT INTO users (name) VALUES ('John') RETURNING id, name AS alias;");
+
+    let SqlStatement::Insert(insert) = &statement
+    else {
+        panic!("Expected Insert statement, got {statement:?}");
+    };
+    let returning = insert.returning.as_ref().unwrap_or_else(|| panic!("Expected `RETURNING`, got {insert:?}"));
+    assert_eq!(returning.items.len(), 2);
+    let SelectItem::Expression { alias: Some(alias), .. } = &returning.items[1]
+    else {
+        panic!("Expected an aliased returned item, got {:?}", returning.items[1]);
+    };
+    assert_eq!(alias.name.as_ref(), "alias");
+    assert_eq!(source, "INSERT INTO users(name)VALUES('John')RETURNING id,name AS alias;");
+
+    let (reparsed, reparsed_source) = build_statement(&source);
+    let SqlStatement::Insert(reparsed) = &reparsed
+    else {
+        panic!("Expected Insert statement after round trip, got {reparsed:?}");
+    };
+    assert_eq!(reparsed.returning.as_ref().map(|it| it.items.len()), Some(2));
+    assert_eq!(reparsed_source, source);
+}
+
+#[test]
+fn test_sql_builder_create_table() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let source = SourceText::new("CREATE TABLE users (id INT PRIMARY KEY, name TEXT);");
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&source, &[], &mut session);
+
+    assert!(result.result.is_ok());
+    let root = result.result.unwrap();
+    assert_eq!(root.statements.len(), 1);
+
+    let SqlStatement::Create(create) = &root.statements[0]
+    else {
+        panic!("Expected Create statement");
+    };
+    assert_eq!(create.object_type, CreateObjectType::Table);
+    assert_eq!(create.name.name.as_ref(), "users");
+    let CreateBody::Table { columns, .. } = &create.body
+    else {
+        panic!("Expected Table body");
+    };
+    assert_eq!(columns.len(), 2);
+    assert_eq!(columns[0].name.name.as_ref(), "id");
+    assert_eq!(columns[0].data_type.as_ref(), "INT");
+    assert!(!columns[0].constraints.is_empty());
+    assert_eq!(columns[1].name.name.as_ref(), "name");
+    assert_eq!(columns[1].data_type.as_ref(), "TEXT");
+}
+
+/// Table-level constraints keep their typed shape and print back into a
+/// statement that parses to the same constraints.
+#[test]
+fn test_sql_builder_table_constraints() {
+    let sql = "CREATE TABLE orders (id INT, user_id INT, total INT, PRIMARY KEY (id DESC, user_id ASC) ON CONFLICT REPLACE, FOREIGN KEY (user_id) REFERENCES users (id), CHECK (total >= 0));";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Create(create) = &statement
+    else {
+        panic!("Expected Create statement, got {statement:?}");
+    };
+    let CreateBody::Table { columns, constraints, .. } = &create.body
+    else {
+        panic!("Expected Table body");
+    };
+    assert_eq!(columns.len(), 3);
+    assert_eq!(constraints.len(), 3);
+
+    let TableConstraint::PrimaryKey { columns: primary, on_conflict, .. } = &constraints[0]
+    else {
+        panic!("Expected PRIMARY KEY, got {:?}", constraints[0]);
+    };
+    assert_eq!(primary.len(), 2);
+    assert_eq!(primary[0].name.name.as_ref(), "id");
+    assert_eq!(primary[0].direction, Some(OrderDirection::Desc));
+    assert_eq!(primary[1].name.name.as_ref(), "user_id");
+    assert_eq!(primary[1].direction, Some(OrderDirection::Asc));
+    assert_eq!(on_conflict, &Some(ConflictResolution::Replace));
+
+    let TableConstraint::ForeignKey { columns: foreign, table_name, referenced_columns, .. } = &constraints[1]
+    else {
+        panic!("Expected FOREIGN KEY, got {:?}", constraints[1]);
+    };
+    assert_eq!(foreign.len(), 1);
+    assert_eq!(foreign[0].name.as_ref(), "user_id");
+    assert_eq!(table_name.name.name.as_ref(), "users");
+    assert_eq!(referenced_columns.len(), 1);
+    assert_eq!(referenced_columns[0].name.as_ref(), "id");
+
+    assert!(matches!(&constraints[2], TableConstraint::Check { .. }), "Expected CHECK, got {:?}", constraints[2]);
+
+    assert_eq!(source, "CREATE TABLE orders(id INT,user_id INT,total INT,PRIMARY KEY(id DESC,user_id ASC) ON CONFLICT REPLACE,FOREIGN KEY(user_id) REFERENCES users(id),CHECK(total>=0));");
+
+    // The printed statement must parse back into the same constraints.
+    let (reparsed, reparsed_source) = build_statement(&source);
+    let SqlStatement::Create(reparsed) = &reparsed
+    else {
+        panic!("Expected Create statement after round trip, got {reparsed:?}");
+    };
+    let CreateBody::Table { constraints: reparsed_constraints, .. } = &reparsed.body
+    else {
+        panic!("Expected Table body after round trip");
+    };
+    assert_eq!(reparsed_constraints.len(), 3);
+    assert_eq!(reparsed_source, source);
+}
+
+#[test]
+fn test_sql_builder_table_constraint_rejects_unknown_conflict_resolution() {
+    let reason = rejection_reason("CREATE TABLE t (id INT, PRIMARY KEY (id) ON CONFLICT SOMETIMES);");
+    assert!(reason.contains("`ON CONFLICT` requires ROLLBACK, ABORT, FAIL, IGNORE or REPLACE"), "{reason}");
+}
+
+#[test]
+fn test_sql_builder_create_view() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let source = SourceText::new("CREATE VIEW active_users AS SELECT name FROM users WHERE active = 1;");
+
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let result = builder.build(&source, &[], &mut session);
+
+    assert!(result.result.is_ok());
+    let root = result.result.unwrap();
+
+    let SqlStatement::Create(create) = &root.statements[0]
+    else {
+        panic!("Expected Create statement");
+    };
+    assert_eq!(create.object_type, CreateObjectType::View);
+    assert_eq!(create.name.name.as_ref(), "active_users");
+    let CreateBody::View { query, .. } = &create.body
+    else {
+        panic!("Expected View body");
+    };
+    assert!(query.from.is_some());
+    assert!(query.expr.is_some());
+}
+
+#[test]
+fn test_sql_builder_update_delete() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    // One session parses both documents: the cache must not leak the first
+    // document's tree into the second.
+    let mut session = ParseSession::<SqlLanguage>::default();
+
+    let source_update = SourceText::new("UPDATE users SET name = 'John', age = 30 WHERE id = 1;");
+    let result_update = builder.build(&source_update, &[], &mut session);
+    assert!(result_update.result.is_ok());
+    let root_update = result_update.result.unwrap();
+    let SqlStatement::Update(update) = &root_update.statements[0]
+    else {
+        panic!("Expected Update statement");
+    };
+    assert_eq!(update.table_name.name.name.as_ref(), "users");
+    assert_eq!(update.assignments.len(), 2);
+    assert!(update.selection.is_some());
+
+    let source_delete = SourceText::new("DELETE FROM users WHERE id = 1;");
+    let result_delete = builder.build(&source_delete, &[], &mut session);
+    assert!(result_delete.result.is_ok());
+    let root_delete = result_delete.result.unwrap();
+    let SqlStatement::Delete(delete) = &root_delete.statements[0]
+    else {
+        panic!("Expected Delete statement");
+    };
+    assert_eq!(delete.table_name.name.name.as_ref(), "users");
+    assert!(delete.selection.is_some());
+}
+
+#[test]
+fn test_sql_builder_drop_alter() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+
+    let source_drop = SourceText::new("DROP TABLE IF EXISTS users;");
+    let result_drop = builder.build(&source_drop, &[], &mut session);
+    assert!(result_drop.result.is_ok());
+    let root_drop = result_drop.result.unwrap();
+    let SqlStatement::Drop(drop) = &root_drop.statements[0]
+    else {
+        panic!("Expected Drop statement");
+    };
+    assert_eq!(drop.object_type, DropObjectType::Table);
+    assert_eq!(drop.name.name.as_ref(), "users");
+    assert!(drop.if_exists);
+
+    let source_alter = SourceText::new("ALTER TABLE users RENAME TO customers;");
+    let result_alter = builder.build(&source_alter, &[], &mut session);
+    assert!(result_alter.result.is_ok());
+    let root_alter = result_alter.result.unwrap();
+    let SqlStatement::Alter(alter) = &root_alter.statements[0]
+    else {
+        panic!("Expected Alter statement");
+    };
+    assert_eq!(alter.table_name.name.name.as_ref(), "users");
+}
+
+/// A reused `ParseSession` must never serve a tree that belongs to the
+/// previously parsed document.
+#[test]
+fn test_same_session_parses_a_different_document() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+
+    let (first, first_source) = build_statement_with_session("SELECT 1;", &builder, &mut session);
+    let SqlStatement::Select(_) = &first
+    else {
+        panic!("Expected Select statement, got {first:?}");
+    };
+    assert_eq!(first_source, "SELECT 1;");
+
+    let (second, second_source) = build_statement_with_session("DROP TABLE t;", &builder, &mut session);
+    let SqlStatement::Drop(drop) = &second
+    else {
+        panic!("Expected Drop statement, got {second:?}");
+    };
+    assert_eq!(drop.object_type, DropObjectType::Table);
+    assert_eq!(drop.name.name.as_ref(), "t");
+    assert_eq!(second_source, "DROP TABLE t;");
+}
+
+#[test]
+fn test_sql_builder_database_stmt() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+
+    let source_create = SourceText::new("CREATE DATABASE test_db;");
+    let result_create = builder.build(&source_create, &[], &mut session);
+    assert!(result_create.result.is_ok());
+    let root_create = result_create.result.unwrap();
+    let SqlStatement::Create(create) = &root_create.statements[0]
+    else {
+        panic!("Expected Create statement");
+    };
+    assert_eq!(create.object_type, CreateObjectType::Database);
+    assert_eq!(create.name.name.as_ref(), "test_db");
+    assert!(matches!(create.body, CreateBody::Database { .. }));
+
+    let source_drop = SourceText::new("DROP DATABASE test_db;");
+    let result_drop = builder.build(&source_drop, &[], &mut session);
+    assert!(result_drop.result.is_ok());
+    let root_drop = result_drop.result.unwrap();
+    let SqlStatement::Drop(drop) = &root_drop.statements[0]
+    else {
+        panic!("Expected Drop statement");
+    };
+    assert_eq!(drop.object_type, DropObjectType::Database);
+    assert_eq!(drop.name.name.as_ref(), "test_db");
+}
+
+/// Returns the named table of a row source, panicking when it is a derived table.
+fn named_table(source: &TableSource) -> &TableName {
+    match source {
+        TableSource::Table(table) => table,
+        other => panic!("Expected a named table, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_sql_builder_table_aliases() {
+    // `FROM users AS u` keeps the alias next to the table it renames.
+    let sql = "SELECT u.name FROM users AS u WHERE u.age > 18;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let table = named_table(select.from.as_ref().unwrap_or_else(|| panic!("Missing table")));
+    assert_eq!(table.name.name.as_ref(), "users");
+    assert_eq!(table.alias.as_ref().map(|alias| alias.name.as_ref()), Some("u"));
+    assert_eq!(sql.get(table.span.start..table.span.end).map(str::trim), Some("users AS u"));
+    assert_eq!(source, "SELECT u.name FROM users AS u WHERE u.age>18;");
+
+    // The same table can be referenced twice under different aliases.
+    let sql = "SELECT a.id, b.id FROM users a JOIN users AS b ON b.id = a.id;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let table = named_table(select.from.as_ref().unwrap_or_else(|| panic!("Missing table")));
+    assert_eq!(table.name.name.as_ref(), "users");
+    assert_eq!(table.alias.as_ref().map(|alias| alias.name.as_ref()), Some("a"));
+    assert_eq!(select.joins.len(), 1);
+    let joined = named_table(&select.joins[0].table);
+    assert_eq!(joined.name.name.as_ref(), "users");
+    assert_eq!(joined.alias.as_ref().map(|alias| alias.name.as_ref()), Some("b"));
+    assert_eq!(source, "SELECT a.id,b.id FROM users AS a INNER JOIN users AS b ON b.id=a.id;");
+
+    // An aliased table must not swallow the clause that follows it.
+    let (statement, _) = build_statement("SELECT id FROM users u ORDER BY u.id;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    assert_eq!(named_table(select.from.as_ref().unwrap_or_else(|| panic!("Missing table"))).alias.as_ref().map(|alias| alias.name.as_ref()), Some("u"));
+    assert!(select.order_by.is_some());
+}
+
+#[test]
+fn test_sql_builder_derived_tables() {
+    let sql = "SELECT x.id FROM (SELECT id FROM users WHERE age > 18) AS x WHERE x.id > 1;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let Some(TableSource::Derived { query, alias, .. }) = select.from.as_ref()
+    else {
+        panic!("Expected a derived table, got {:?}", select.from);
+    };
+    assert_eq!(alias.as_ref().map(|alias| alias.name.as_ref()), Some("x"));
+    assert_eq!(query.items.len(), 1);
+    assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "users"));
+    assert!(query.expr.is_some(), "the inner WHERE must stay with the inner SELECT");
+    assert!(select.expr.is_some(), "the outer WHERE must stay with the outer SELECT");
+    assert_eq!(source, "SELECT x.id FROM(SELECT id FROM users WHERE age>18)AS x WHERE x.id>1;");
+
+    // A derived table also works as the right side of a JOIN.
+    let sql = "SELECT u.id FROM users u JOIN (SELECT id FROM orders) o ON o.id = u.id;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let Some(TableSource::Derived { query, alias, .. }) = select.joins.first().map(|join| &join.table)
+    else {
+        panic!("Expected a derived table in the JOIN, got {:?}", select.joins);
+    };
+    assert_eq!(alias.as_ref().map(|alias| alias.name.as_ref()), Some("o"));
+    assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "orders"));
+    assert_eq!(source, "SELECT u.id FROM users AS u INNER JOIN(SELECT id FROM orders)AS o ON o.id=u.id;");
+}
+
+#[test]
+fn test_sql_builder_cross_join() {
+    let sql = "SELECT * FROM a CROSS JOIN b;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    assert_eq!(select.joins.len(), 1);
+    assert_eq!(select.joins[0].join_type, JoinType::Cross);
+    assert!(select.joins[0].on.is_none(), "CROSS JOIN must have no ON clause");
+    let joined = named_table(&select.joins[0].table);
+    assert_eq!(joined.name.name.as_ref(), "b");
+    assert_eq!(source, "SELECT*FROM a CROSS JOIN b;");
+
+    // Round-trip stability.
+    let (rebuilt, rebuilt_source) = build_statement(&source);
+    let SqlStatement::Select(rebuilt_select) = &rebuilt
+    else {
+        panic!("Expected Select after round trip");
+    };
+    assert_eq!(rebuilt_select.joins[0].join_type, JoinType::Cross);
+    assert_eq!(rebuilt_source, source);
+}
+
+#[test]
+fn test_sql_builder_cte() {
+    let sql = "WITH young AS (SELECT id FROM users WHERE age < 18) SELECT id FROM young;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let with = select.with.as_ref().unwrap_or_else(|| panic!("Missing WITH clause"));
+    assert_eq!(with.ctes.len(), 1);
+    assert_eq!(with.ctes[0].name.name.as_ref(), "young");
+    assert!(with.ctes[0].columns.is_empty());
+    assert!(with.ctes[0].query.expr.is_some(), "the CTE body keeps its own WHERE");
+    assert!(matches!(select.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "young"));
+    assert_eq!(source, "WITH young AS(SELECT id FROM users WHERE age<18)SELECT id FROM young;");
+
+    // Multiple CTEs, an explicit column list, and a later CTE reading an earlier one.
+    let sql = "WITH a(x, y) AS (SELECT 1, 2), b AS (SELECT x FROM a) SELECT * FROM b;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let with = select.with.as_ref().unwrap_or_else(|| panic!("Missing WITH clause"));
+    assert_eq!(with.ctes.len(), 2);
+    assert_eq!(with.ctes[0].columns.iter().map(|column| column.name.as_ref()).collect::<Vec<_>>(), ["x", "y"]);
+    assert!(matches!(with.ctes[1].query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "a"));
+    assert_eq!(source, "WITH a(x,y)AS(SELECT 1,2),b AS(SELECT x FROM a)SELECT*FROM b;");
+
+    // A recursive CTE cannot be evaluated by this AST, so it is rejected instead
+    // of being silently read as a non-recursive one.
+    let reason = rejection_reason("WITH RECURSIVE t AS (SELECT 1) SELECT * FROM t;");
+    assert!(reason.contains("recursive CTEs are not supported"), "unexpected rejection: {reason}");
+}
+
+#[test]
+fn test_sql_builder_case_when_basic() {
+    let sql = "SELECT CASE WHEN a = 1 THEN 'one' END FROM t;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Case { branches, else_branch, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected Case expression, got {:?}", select.items[0]);
+    };
+    assert_eq!(branches.len(), 1);
+    assert!(else_branch.is_none());
+    // Pretty-printer strips trivia whitespace but keeps keyword internal spacing.
+    assert_eq!(source, "SELECT CASE WHEN a=1 THEN 'one' END FROM t;");
+}
+
+#[test]
+fn test_sql_builder_case_when_multiple_and_else() {
+    let sql = "SELECT CASE WHEN a = 1 THEN 'one' WHEN a = 2 THEN 'two' ELSE 'other' END FROM t;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Case { branches, else_branch, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected Case expression");
+    };
+    assert_eq!(branches.len(), 2);
+    assert!(else_branch.is_some());
+    assert_eq!(source, "SELECT CASE WHEN a=1 THEN 'one' WHEN a=2 THEN 'two' ELSE 'other' END FROM t;");
+}
+
+#[test]
+fn test_sql_builder_cast_integer() {
+    let sql = "SELECT CAST(age AS INTEGER) FROM users;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Cast { expr, target, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected Cast expression");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "age"));
+    assert_eq!(target.as_ref(), "INTEGER");
+    assert_eq!(source, "SELECT CAST(age AS INTEGER)FROM users;");
+}
+
+#[test]
+fn test_sql_builder_cast_blob_identifier_type() {
+    // BLOB is not a dedicated keyword token — it comes through as Identifier_.
+    let sql = "SELECT CAST(data AS BLOB) FROM records;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Cast { target, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected Cast expression");
+    };
+    assert_eq!(target.as_ref(), "BLOB");
+    assert_eq!(source, "SELECT CAST(data AS BLOB)FROM records;");
+}
+
+#[test]
+fn test_sql_builder_cast_timestamp_with_expression() {
+    let sql = "SELECT CAST(a + b AS TIMESTAMP) FROM t;";
+    let (statement, source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Cast { expr, target, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected Cast expression");
+    };
+    assert!(matches!(expr.as_ref(), Expression::Binary { op: BinaryOperator::Plus, .. }));
+    assert_eq!(target.as_ref(), "TIMESTAMP");
+    assert_eq!(source, "SELECT CAST(a+b AS TIMESTAMP)FROM t;");
+}
+
+/// Returns the kinds of every node in the CST of `sql`, depth first.
+fn cst_node_kinds(sql: &str) -> Vec<SqlElementType> {
+    fn collect<'a>(node: &GreenNode<'a, SqlLanguage>, kinds: &mut Vec<SqlElementType>) {
+        kinds.push(node.kind());
+        for child in node.children() {
+            if let GreenTree::Node(child) = child {
+                collect(child, kinds);
+            }
+        }
+    }
+
+    let config = SqlLanguage::default();
+    let parser = SqlParser::new(&config);
+    let source = SourceText::new(sql.to_string());
+    let mut session = ParseSession::<SqlLanguage>::default();
+    let output = parser.parse(&source, &[], &mut session);
+    let root = output.result.unwrap_or_else(|error| panic!("{sql}: {error:?} {:?}", output.diagnostics));
+    let mut kinds = Vec::new();
+    collect(root, &mut kinds);
+    kinds
+}
+
+#[test]
+fn test_sql_builder_scalar_subquery_in_projection() {
+    let (statement, source) = build_statement("SELECT (SELECT MAX(v) FROM t) AS top FROM x;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let SelectItem::Expression { expr: Expression::Subquery { query, .. }, alias, .. } = &select.items[0]
+    else {
+        panic!("Expected a scalar subquery select item, got {:?}", select.items[0]);
+    };
+    assert_eq!(alias.as_ref().map(|alias| alias.name.as_ref()), Some("top"));
+    assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "t"));
+    assert!(matches!(&query.items[0], SelectItem::Expression { expr: Expression::FunctionCall { name, .. }, .. } if name.name.as_ref() == "MAX"), "Expected `MAX(v)` in the subquery, got {:?}", query.items[0]);
+    assert_eq!(source, "SELECT(SELECT MAX(v)FROM t)AS top FROM x;");
+}
+
+#[test]
+fn test_sql_builder_scalar_subquery_as_comparison_operand() {
+    let Expression::Binary { op: BinaryOperator::Equal, left, right, .. } = build_where("SELECT * FROM t WHERE a = (SELECT MAX(v) FROM u);")
+    else {
+        panic!("Expected an equality whose right operand is a subquery");
+    };
+    assert!(matches!(left.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "a"));
+    let Expression::Subquery { query, span } = right.as_ref()
+    else {
+        panic!("Expected a scalar subquery, got {right:?}");
+    };
+    assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "u"));
+    // The span starts at `(` and ends at the matching `)`, not at the inner query.
+    assert_eq!(&"SELECT * FROM t WHERE a = (SELECT MAX(v) FROM u);"[span.start..span.end], "(SELECT MAX(v) FROM u)");
+
+    let (_, source) = build_statement("SELECT * FROM t WHERE a = (SELECT MAX(v) FROM u);");
+    assert_eq!(source, "SELECT*FROM t WHERE a=(SELECT MAX(v)FROM u);");
+}
+
+#[test]
+fn test_sql_builder_parenthesized_expressions_stay_grouped() {
+    // Ordinary parentheses keep their grouped-expression reading and must not
+    // become subqueries.
+    let (statement, _) = build_statement("SELECT (a + b) * 2 FROM t;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Binary { op: BinaryOperator::Star, left, .. }, .. } = &select.items[0]
+    else {
+        panic!("Expected `(a + b) * 2`, got {:?}", select.items[0]);
+    };
+    assert!(matches!(left.as_ref(), Expression::Binary { op: BinaryOperator::Plus, .. }));
+
+    // Nested parentheses still resolve to the innermost expression.
+    let (statement, _) = build_statement("SELECT ((age)) FROM users;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let SelectItem::Expression { expr: Expression::Identifier(identifier), .. } = &select.items[0]
+    else {
+        panic!("Expected `age`, got {:?}", select.items[0]);
+    };
+    assert_eq!(identifier.name.as_ref(), "age");
+
+    // A comma list is a row constructor, not a subquery.
+    let Expression::InList { list, .. } = build_where("SELECT * FROM t WHERE a IN (1, 2);")
+    else {
+        panic!("Expected an IN list");
+    };
+    assert_eq!(list.len(), 2);
+}
+
+#[test]
+fn test_sql_cst_subquery_nodes() {
+    // A parenthesized query in an expression position becomes an `Expression`
+    // wrapping a `Subquery` whose child is the nested `SelectStatement`.
+    let kinds = cst_node_kinds("SELECT (SELECT MAX(v) FROM t) FROM x;");
+    let subquery = kinds.iter().position(|kind| *kind == SqlElementType::Subquery).unwrap_or_else(|| panic!("Missing Subquery node in {kinds:?}"));
+    assert_eq!(kinds.get(subquery + 1), Some(&SqlElementType::SelectStatement));
+
+    // `IN (SELECT ...)` and `EXISTS (SELECT ...)` keep producing `Subquery`
+    // nodes, so their builders keep binding as before.
+    for sql in ["SELECT * FROM t WHERE a IN (SELECT b FROM u);", "SELECT * FROM t WHERE EXISTS (SELECT b FROM u);"] {
+        let kinds = cst_node_kinds(sql);
+        assert!(kinds.contains(&SqlElementType::Subquery), "Missing Subquery node for {sql}: {kinds:?}");
+    }
+
+    // A `WITH`-prefixed parenthesized query takes the same path.
+    let kinds = cst_node_kinds("SELECT (WITH n AS (SELECT 1 AS v) SELECT v FROM n) FROM t;");
+    assert!(kinds.contains(&SqlElementType::Subquery), "Missing Subquery node for a `WITH` subquery: {kinds:?}");
+    assert!(kinds.contains(&SqlElementType::WithClause), "Missing `WithClause` node for a `WITH` subquery: {kinds:?}");
+
+    // Grouped expressions never produce a `Subquery` node.
+    let kinds = cst_node_kinds("SELECT (a + b) FROM t;");
+    assert!(!kinds.contains(&SqlElementType::Subquery), "Grouped expression became a subquery: {kinds:?}");
+}
+
+#[test]
+fn test_sql_builder_subquery_parentheses_are_required() {
+    // An empty parenthesis has nothing to select, so it stays an error.
+    assert!(!rejection_reason("SELECT () FROM t;").is_empty(), "`()` must be rejected");
+    // An unclosed subquery parenthesis must be reported instead of silently
+    // keeping a truncated query.
+    assert!(!rejection_reason("SELECT * FROM t WHERE a = (SELECT b FROM u;").is_empty(), "Unclosed `(SELECT` must be rejected");
+}
+
+#[test]
+fn test_sql_builder_limit_offset_round_trip() {
+    // Plain number literals keep working as before.
+    let (statement, source) = build_statement("SELECT * FROM t LIMIT 10 OFFSET 5;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
+    assert!(matches!(&limit_clause.limit, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "10"));
+    assert!(matches!(&limit_clause.offset, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "5"));
+    assert_eq!(source, "SELECT*FROM t LIMIT 10 OFFSET 5;");
+
+    // LIMIT alone.
+    let (statement, source) = build_statement("SELECT * FROM t LIMIT 10;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
+    assert!(matches!(&limit_clause.limit, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "10"));
+    assert!(limit_clause.offset.is_none());
+    assert_eq!(source, "SELECT*FROM t LIMIT 10;");
+}
+
+/// A standalone `OFFSET` skips rows and must never be folded into `limit`:
+/// `SELECT a FROM t OFFSET 2` builds `limit: None, offset: Some(2)` and the
+/// rendered source round-trips back to the same shape without a `LIMIT`.
+#[test]
+fn test_sql_builder_standalone_offset_keeps_offset_semantics() {
+    let (statement, source) = build_statement("SELECT a FROM t OFFSET 2");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing OFFSET clause"));
+    assert!(limit_clause.limit.is_none(), "standalone OFFSET must not become a LIMIT, got {:?}", limit_clause.limit);
+    assert!(matches!(&limit_clause.offset, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "2"));
+    assert_eq!(source, "SELECT a FROM t OFFSET 2;");
+
+    // Re-parsing the rendered source keeps the offset semantics stable.
+    let (rebuilt, rebuilt_source) = build_statement(&source);
+    let SqlStatement::Select(rebuilt) = &rebuilt
+    else {
+        panic!("Expected Select statement after round trip, got {rebuilt:?}");
+    };
+    let rebuilt_clause = rebuilt.limit.as_ref().unwrap_or_else(|| panic!("OFFSET clause lost in round trip"));
+    assert!(rebuilt_clause.limit.is_none(), "round trip must not rewrite OFFSET into LIMIT");
+    assert!(matches!(&rebuilt_clause.offset, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "2"));
+    assert_eq!(rebuilt_source, source);
+
+    // OFFSET with an expression value keeps working standalone.
+    let (statement, _source) = build_statement("SELECT * FROM t OFFSET a + b;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing OFFSET clause"));
+    assert!(limit_clause.limit.is_none());
+    assert!(matches!(&limit_clause.offset, Some(Expression::Binary { .. })), "standalone OFFSET should accept a binary expression, got {:?}", limit_clause.offset);
+
+    // A clause keyword with no value at all is rejected with a clear message.
+    assert!(rejection_reason("SELECT a FROM t LIMIT;").contains("LIMIT/OFFSET clause requires at least one value"), "LIMIT without a value must name both keywords in the error");
+    assert!(rejection_reason("SELECT a FROM t OFFSET;").contains("LIMIT/OFFSET clause requires at least one value"), "OFFSET without a value must name both keywords in the error");
+}
+
+#[test]
+fn test_sql_builder_limit_offset_expressions() {
+    // Scalar subquery as LIMIT value.
+    let (statement, _source) = build_statement("SELECT * FROM t LIMIT (SELECT 1);");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
+    assert!(matches!(&limit_clause.limit, Some(Expression::Subquery { .. })), "LIMIT should accept a scalar subquery, got {:?}", limit_clause.limit);
+
+    // Expression (column reference + arithmetic) as OFFSET value.
+    let (statement, _source) = build_statement("SELECT * FROM t LIMIT 10 OFFSET a + b;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
+    assert!(matches!(&limit_clause.limit, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "10"));
+    assert!(matches!(&limit_clause.offset, Some(Expression::Binary { .. })), "OFFSET should accept a binary expression, got {:?}", limit_clause.offset);
+
+    // Bare identifier as LIMIT value (resolved by semantic layer, parser accepts it).
+    let (statement, _source) = build_statement("SELECT * FROM t LIMIT n;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
+    assert!(matches!(&limit_clause.limit, Some(Expression::Identifier(id)) if id.name.as_ref() == "n"), "LIMIT should accept a bare identifier");
+
+    // Negative literal as LIMIT value (unary minus).
+    let (statement, _source) = build_statement("SELECT * FROM t LIMIT -1;");
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement");
+    };
+    let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
+    assert!(matches!(&limit_clause.limit, Some(Expression::Unary { op: UnaryOperator::Minus, .. })), "LIMIT should accept unary minus expression");
+}

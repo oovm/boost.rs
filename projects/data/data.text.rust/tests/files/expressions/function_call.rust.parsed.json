@@ -1,0 +1,123 @@
+{
+    "success": true,
+    "node_count": 18,
+    "ast_structure": {
+        "kind": "SourceFile",
+        "children": [
+            {
+                "kind": "Function",
+                "children": [
+                    {
+                        "kind": "Function",
+                        "children": [
+                            {
+                                "kind": "ParameterList",
+                                "children": [
+                                    {
+                                        "kind": "Leaves(3)",
+                                        "children": [],
+                                        "text_length": 3,
+                                        "is_leaf": true
+                                    }
+                                ],
+                                "text_length": 3,
+                                "is_leaf": false
+                            },
+                            {
+                                "kind": "BlockExpression",
+                                "children": [
+                                    {
+                                        "kind": "IdentifierExpression",
+                                        "children": [
+                                            {
+                                                "kind": "Leaves(1)",
+                                                "children": [],
+                                                "text_length": 7,
+                                                "is_leaf": true
+                                            }
+                                        ],
+                                        "text_length": 7,
+                                        "is_leaf": false
+                                    },
+                                    {
+                                        "kind": "CallExpression",
+                                        "children": [
+                                            {
+                                                "kind": "IdentifierExpression",
+                                                "children": [
+                                                    {
+                                                        "kind": "Leaves(1)",
+                                                        "children": [],
+                                                        "text_length": 7,
+                                                        "is_leaf": true
+                                                    }
+                                                ],
+                                                "text_length": 7,
+                                                "is_leaf": false
+                                            },
+                                            {
+                                                "kind": "LiteralExpression",
+                                                "children": [
+                                                    {
+                                                        "kind": "Leaves(1)",
+                                                        "children": [],
+                                                        "text_length": 7,
+                                                        "is_leaf": true
+                                                    }
+                                                ],
+                                                "text_length": 7,
+                                                "is_leaf": false
+                                            },
+                                            {
+                                                "kind": "Leaves(2)",
+                                                "children": [],
+                                                "text_length": 2,
+                                                "is_leaf": true
+                                            }
+                                        ],
+                                        "text_length": 16,
+                                        "is_leaf": false
+                                    },
+                                    {
+                                        "kind": "Leaves(5)",
+                                        "children": [],
+                                        "text_length": 9,
+                                        "is_leaf": true
+                                    }
+                                ],
+                                "text_length": 32,
+                                "is_leaf": false
+                            },
+                            {
+                                "kind": "Leaves(3)",
+                                "children": [],
+                                "text_length": 7,
+                                "is_leaf": true
+                            }
+                        ],
+                        "text_length": 42,
+                        "is_leaf": false
+                    }
+                ],
+                "text_length": 42,
+                "is_leaf": false
+            },
+            {
+                "kind": "Error",
+                "children": [
+                    {
+                        "kind": "Leaves(1)",
+                        "children": [],
+                        "text_length": 0,
+                        "is_leaf": true
+                    }
+                ],
+                "text_length": 0,
+                "is_leaf": false
+            }
+        ],
+        "text_length": 42,
+        "is_leaf": false
+    },
+    "errors": []
+}

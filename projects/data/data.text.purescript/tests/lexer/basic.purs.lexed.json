@@ -1,0 +1,2029 @@
+{
+    "success": true,
+    "count": 337,
+    "tokens": [
+        {
+            "kind": "Module",
+            "text": "module",
+            "start": 40,
+            "end": 46
+        },
+        {
+            "kind": "Identifier",
+            "text": "Main",
+            "start": 47,
+            "end": 51
+        },
+        {
+            "kind": "Where",
+            "text": "where",
+            "start": 52,
+            "end": 57
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 59,
+            "end": 65
+        },
+        {
+            "kind": "Identifier",
+            "text": "Prelude",
+            "start": 66,
+            "end": 73
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 74,
+            "end": 80
+        },
+        {
+            "kind": "Identifier",
+            "text": "Effect",
+            "start": 81,
+            "end": 87
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 88,
+            "end": 89
+        },
+        {
+            "kind": "Identifier",
+            "text": "Effect",
+            "start": 89,
+            "end": 95
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 95,
+            "end": 96
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 97,
+            "end": 103
+        },
+        {
+            "kind": "Identifier",
+            "text": "Effect",
+            "start": 104,
+            "end": 110
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 110,
+            "end": 111
+        },
+        {
+            "kind": "Identifier",
+            "text": "Console",
+            "start": 111,
+            "end": 118
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 119,
+            "end": 120
+        },
+        {
+            "kind": "Identifier",
+            "text": "log",
+            "start": 120,
+            "end": 123
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 123,
+            "end": 124
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 125,
+            "end": 131
+        },
+        {
+            "kind": "Identifier",
+            "text": "Data",
+            "start": 132,
+            "end": 136
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 136,
+            "end": 137
+        },
+        {
+            "kind": "Identifier",
+            "text": "Maybe",
+            "start": 137,
+            "end": 142
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 143,
+            "end": 144
+        },
+        {
+            "kind": "Identifier",
+            "text": "Maybe",
+            "start": 144,
+            "end": 149
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 149,
+            "end": 150
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 150,
+            "end": 151
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 151,
+            "end": 152
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 152,
+            "end": 153
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 153,
+            "end": 154
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 155,
+            "end": 161
+        },
+        {
+            "kind": "Identifier",
+            "text": "Data",
+            "start": 162,
+            "end": 166
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 166,
+            "end": 167
+        },
+        {
+            "kind": "Identifier",
+            "text": "List",
+            "start": 167,
+            "end": 171
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 172,
+            "end": 173
+        },
+        {
+            "kind": "Identifier",
+            "text": "List",
+            "start": 173,
+            "end": 177
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 177,
+            "end": 178
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 178,
+            "end": 179
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 179,
+            "end": 180
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 180,
+            "end": 181
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 181,
+            "end": 182
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 183,
+            "end": 184
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 184,
+            "end": 185
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 185,
+            "end": 186
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 186,
+            "end": 187
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 188,
+            "end": 194
+        },
+        {
+            "kind": "Identifier",
+            "text": "Data",
+            "start": 195,
+            "end": 199
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 199,
+            "end": 200
+        },
+        {
+            "kind": "Identifier",
+            "text": "Tuple",
+            "start": 200,
+            "end": 205
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 206,
+            "end": 207
+        },
+        {
+            "kind": "Identifier",
+            "text": "Tuple",
+            "start": 207,
+            "end": 212
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 212,
+            "end": 213
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 213,
+            "end": 214
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 214,
+            "end": 215
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 215,
+            "end": 216
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 216,
+            "end": 217
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 218,
+            "end": 224
+        },
+        {
+            "kind": "Identifier",
+            "text": "Data",
+            "start": 225,
+            "end": 229
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 229,
+            "end": 230
+        },
+        {
+            "kind": "Identifier",
+            "text": "Either",
+            "start": 230,
+            "end": 236
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 237,
+            "end": 238
+        },
+        {
+            "kind": "Identifier",
+            "text": "Either",
+            "start": 238,
+            "end": 244
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 244,
+            "end": 245
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 245,
+            "end": 246
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 246,
+            "end": 247
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 247,
+            "end": 248
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 248,
+            "end": 249
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 250,
+            "end": 256
+        },
+        {
+            "kind": "Identifier",
+            "text": "Control",
+            "start": 257,
+            "end": 264
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 264,
+            "end": 265
+        },
+        {
+            "kind": "Identifier",
+            "text": "Monad",
+            "start": 265,
+            "end": 270
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 270,
+            "end": 271
+        },
+        {
+            "kind": "Identifier",
+            "text": "Eff",
+            "start": 271,
+            "end": 274
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 275,
+            "end": 276
+        },
+        {
+            "kind": "Identifier",
+            "text": "Eff",
+            "start": 276,
+            "end": 279
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 279,
+            "end": 280
+        },
+        {
+            "kind": "Identifier",
+            "text": "i",
+            "start": 297,
+            "end": 298
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 299,
+            "end": 301
+        },
+        {
+            "kind": "Identifier",
+            "text": "Int",
+            "start": 302,
+            "end": 305
+        },
+        {
+            "kind": "Identifier",
+            "text": "i",
+            "start": 306,
+            "end": 307
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 308,
+            "end": 309
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "42",
+            "start": 310,
+            "end": 312
+        },
+        {
+            "kind": "Identifier",
+            "text": "n",
+            "start": 314,
+            "end": 315
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 316,
+            "end": 318
+        },
+        {
+            "kind": "Identifier",
+            "text": "Number",
+            "start": 319,
+            "end": 325
+        },
+        {
+            "kind": "Identifier",
+            "text": "n",
+            "start": 326,
+            "end": 327
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 328,
+            "end": 329
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "3.14",
+            "start": 330,
+            "end": 334
+        },
+        {
+            "kind": "Identifier",
+            "text": "s",
+            "start": 336,
+            "end": 337
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 338,
+            "end": 340
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 341,
+            "end": 347
+        },
+        {
+            "kind": "Identifier",
+            "text": "s",
+            "start": 348,
+            "end": 349
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 350,
+            "end": 351
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Hello, world!\"",
+            "start": 352,
+            "end": 367
+        },
+        {
+            "kind": "Identifier",
+            "text": "b",
+            "start": 369,
+            "end": 370
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 371,
+            "end": 373
+        },
+        {
+            "kind": "Identifier",
+            "text": "Boolean",
+            "start": 374,
+            "end": 381
+        },
+        {
+            "kind": "Identifier",
+            "text": "b",
+            "start": 382,
+            "end": 383
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 384,
+            "end": 385
+        },
+        {
+            "kind": "True",
+            "text": "true",
+            "start": 386,
+            "end": 390
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 392,
+            "end": 393
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 394,
+            "end": 396
+        },
+        {
+            "kind": "Identifier",
+            "text": "Char",
+            "start": 397,
+            "end": 401
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 402,
+            "end": 403
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 404,
+            "end": 405
+        },
+        {
+            "kind": "CharLiteral",
+            "text": "'A'",
+            "start": 406,
+            "end": 409
+        },
+        {
+            "kind": "Identifier",
+            "text": "arr",
+            "start": 433,
+            "end": 436
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 437,
+            "end": 439
+        },
+        {
+            "kind": "Identifier",
+            "text": "Array",
+            "start": 440,
+            "end": 445
+        },
+        {
+            "kind": "Identifier",
+            "text": "Int",
+            "start": 446,
+            "end": 449
+        },
+        {
+            "kind": "Identifier",
+            "text": "arr",
+            "start": 450,
+            "end": 453
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 454,
+            "end": 455
+        },
+        {
+            "kind": "LeftBracket",
+            "text": "[",
+            "start": 456,
+            "end": 457
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "1",
+            "start": 457,
+            "end": 458
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 458,
+            "end": 459
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "2",
+            "start": 460,
+            "end": 461
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 461,
+            "end": 462
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "3",
+            "start": 463,
+            "end": 464
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 464,
+            "end": 465
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "4",
+            "start": 466,
+            "end": 467
+        },
+        {
+            "kind": "RightBracket",
+            "text": "]",
+            "start": 467,
+            "end": 468
+        },
+        {
+            "kind": "Identifier",
+            "text": "rec",
+            "start": 470,
+            "end": 473
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 474,
+            "end": 476
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 477,
+            "end": 478
+        },
+        {
+            "kind": "Identifier",
+            "text": "name",
+            "start": 479,
+            "end": 483
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 484,
+            "end": 486
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 487,
+            "end": 493
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 493,
+            "end": 494
+        },
+        {
+            "kind": "Identifier",
+            "text": "age",
+            "start": 495,
+            "end": 498
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 499,
+            "end": 501
+        },
+        {
+            "kind": "Identifier",
+            "text": "Int",
+            "start": 502,
+            "end": 505
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 506,
+            "end": 507
+        },
+        {
+            "kind": "Identifier",
+            "text": "rec",
+            "start": 508,
+            "end": 511
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 512,
+            "end": 513
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 514,
+            "end": 515
+        },
+        {
+            "kind": "Identifier",
+            "text": "name",
+            "start": 516,
+            "end": 520
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 520,
+            "end": 521
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Alice\"",
+            "start": 522,
+            "end": 529
+        },
+        {
+            "kind": "Comma",
+            "text": ",",
+            "start": 529,
+            "end": 530
+        },
+        {
+            "kind": "Identifier",
+            "text": "age",
+            "start": 531,
+            "end": 534
+        },
+        {
+            "kind": "Colon",
+            "text": ":",
+            "start": 534,
+            "end": 535
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "30",
+            "start": 536,
+            "end": 538
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 539,
+            "end": 540
+        },
+        {
+            "kind": "Identifier",
+            "text": "showPerson",
+            "start": 562,
+            "end": 572
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 573,
+            "end": 575
+        },
+        {
+            "kind": "Forall",
+            "text": "forall",
+            "start": 576,
+            "end": 582
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 583,
+            "end": 584
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 584,
+            "end": 585
+        },
+        {
+            "kind": "LeftBrace",
+            "text": "{",
+            "start": 586,
+            "end": 587
+        },
+        {
+            "kind": "Identifier",
+            "text": "name",
+            "start": 588,
+            "end": 592
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 593,
+            "end": 595
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 596,
+            "end": 602
+        },
+        {
+            "kind": "Pipe",
+            "text": "|",
+            "start": 603,
+            "end": 604
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 605,
+            "end": 606
+        },
+        {
+            "kind": "RightBrace",
+            "text": "}",
+            "start": 607,
+            "end": 608
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 609,
+            "end": 611
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 612,
+            "end": 618
+        },
+        {
+            "kind": "Identifier",
+            "text": "showPerson",
+            "start": 619,
+            "end": 629
+        },
+        {
+            "kind": "Identifier",
+            "text": "p",
+            "start": 630,
+            "end": 631
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 632,
+            "end": 633
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Name: \"",
+            "start": 634,
+            "end": 642
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 643,
+            "end": 644
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 644,
+            "end": 645
+        },
+        {
+            "kind": "Identifier",
+            "text": "p",
+            "start": 646,
+            "end": 647
+        },
+        {
+            "kind": "Dot",
+            "text": ".",
+            "start": 647,
+            "end": 648
+        },
+        {
+            "kind": "Identifier",
+            "text": "name",
+            "start": 648,
+            "end": 652
+        },
+        {
+            "kind": "Data",
+            "text": "data",
+            "start": 678,
+            "end": 682
+        },
+        {
+            "kind": "Identifier",
+            "text": "Shape",
+            "start": 683,
+            "end": 688
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 693,
+            "end": 694
+        },
+        {
+            "kind": "Identifier",
+            "text": "Circle",
+            "start": 695,
+            "end": 701
+        },
+        {
+            "kind": "Identifier",
+            "text": "Number",
+            "start": 702,
+            "end": 708
+        },
+        {
+            "kind": "Pipe",
+            "text": "|",
+            "start": 713,
+            "end": 714
+        },
+        {
+            "kind": "Identifier",
+            "text": "Rectangle",
+            "start": 715,
+            "end": 724
+        },
+        {
+            "kind": "Identifier",
+            "text": "Number",
+            "start": 725,
+            "end": 731
+        },
+        {
+            "kind": "Identifier",
+            "text": "Number",
+            "start": 732,
+            "end": 738
+        },
+        {
+            "kind": "Pipe",
+            "text": "|",
+            "start": 743,
+            "end": 744
+        },
+        {
+            "kind": "Identifier",
+            "text": "Point",
+            "start": 745,
+            "end": 750
+        },
+        {
+            "kind": "Identifier",
+            "text": "area",
+            "start": 772,
+            "end": 776
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 777,
+            "end": 779
+        },
+        {
+            "kind": "Identifier",
+            "text": "Shape",
+            "start": 780,
+            "end": 785
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 786,
+            "end": 788
+        },
+        {
+            "kind": "Identifier",
+            "text": "Number",
+            "start": 789,
+            "end": 795
+        },
+        {
+            "kind": "Identifier",
+            "text": "area",
+            "start": 796,
+            "end": 800
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 801,
+            "end": 802
+        },
+        {
+            "kind": "Identifier",
+            "text": "Circle",
+            "start": 802,
+            "end": 808
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 809,
+            "end": 810
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 810,
+            "end": 811
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 812,
+            "end": 813
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "3.14159",
+            "start": 814,
+            "end": 821
+        },
+        {
+            "kind": "Star",
+            "text": "*",
+            "start": 822,
+            "end": 823
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 824,
+            "end": 825
+        },
+        {
+            "kind": "Star",
+            "text": "*",
+            "start": 826,
+            "end": 827
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 828,
+            "end": 829
+        },
+        {
+            "kind": "Identifier",
+            "text": "area",
+            "start": 830,
+            "end": 834
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 835,
+            "end": 836
+        },
+        {
+            "kind": "Identifier",
+            "text": "Rectangle",
+            "start": 836,
+            "end": 845
+        },
+        {
+            "kind": "Identifier",
+            "text": "w",
+            "start": 846,
+            "end": 847
+        },
+        {
+            "kind": "Identifier",
+            "text": "h",
+            "start": 848,
+            "end": 849
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 849,
+            "end": 850
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 851,
+            "end": 852
+        },
+        {
+            "kind": "Identifier",
+            "text": "w",
+            "start": 853,
+            "end": 854
+        },
+        {
+            "kind": "Star",
+            "text": "*",
+            "start": 855,
+            "end": 856
+        },
+        {
+            "kind": "Identifier",
+            "text": "h",
+            "start": 857,
+            "end": 858
+        },
+        {
+            "kind": "Identifier",
+            "text": "area",
+            "start": 859,
+            "end": 863
+        },
+        {
+            "kind": "Identifier",
+            "text": "Point",
+            "start": 864,
+            "end": 869
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 870,
+            "end": 871
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "0.0",
+            "start": 872,
+            "end": 875
+        },
+        {
+            "kind": "Newtype",
+            "text": "newtype",
+            "start": 889,
+            "end": 896
+        },
+        {
+            "kind": "Identifier",
+            "text": "Email",
+            "start": 897,
+            "end": 902
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 903,
+            "end": 904
+        },
+        {
+            "kind": "Identifier",
+            "text": "Email",
+            "start": 905,
+            "end": 910
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 911,
+            "end": 917
+        },
+        {
+            "kind": "Class",
+            "text": "class",
+            "start": 935,
+            "end": 940
+        },
+        {
+            "kind": "Identifier",
+            "text": "Show",
+            "start": 941,
+            "end": 945
+        },
+        {
+            "kind": "Identifier",
+            "text": "a",
+            "start": 946,
+            "end": 947
+        },
+        {
+            "kind": "Where",
+            "text": "where",
+            "start": 948,
+            "end": 953
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 958,
+            "end": 962
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 963,
+            "end": 965
+        },
+        {
+            "kind": "Identifier",
+            "text": "a",
+            "start": 966,
+            "end": 967
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 968,
+            "end": 970
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 971,
+            "end": 977
+        },
+        {
+            "kind": "Instance",
+            "text": "instance",
+            "start": 979,
+            "end": 987
+        },
+        {
+            "kind": "Identifier",
+            "text": "showShape",
+            "start": 988,
+            "end": 997
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 998,
+            "end": 1000
+        },
+        {
+            "kind": "Identifier",
+            "text": "Show",
+            "start": 1001,
+            "end": 1005
+        },
+        {
+            "kind": "Identifier",
+            "text": "Shape",
+            "start": 1006,
+            "end": 1011
+        },
+        {
+            "kind": "Where",
+            "text": "where",
+            "start": 1012,
+            "end": 1017
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1022,
+            "end": 1026
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 1027,
+            "end": 1028
+        },
+        {
+            "kind": "Identifier",
+            "text": "Circle",
+            "start": 1028,
+            "end": 1034
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 1035,
+            "end": 1036
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 1036,
+            "end": 1037
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 1038,
+            "end": 1039
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Circle \"",
+            "start": 1040,
+            "end": 1049
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 1050,
+            "end": 1051
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 1051,
+            "end": 1052
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1053,
+            "end": 1057
+        },
+        {
+            "kind": "Identifier",
+            "text": "r",
+            "start": 1058,
+            "end": 1059
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1064,
+            "end": 1068
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 1069,
+            "end": 1070
+        },
+        {
+            "kind": "Identifier",
+            "text": "Rectangle",
+            "start": 1070,
+            "end": 1079
+        },
+        {
+            "kind": "Identifier",
+            "text": "w",
+            "start": 1080,
+            "end": 1081
+        },
+        {
+            "kind": "Identifier",
+            "text": "h",
+            "start": 1082,
+            "end": 1083
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 1083,
+            "end": 1084
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 1085,
+            "end": 1086
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Rectangle \"",
+            "start": 1087,
+            "end": 1099
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 1100,
+            "end": 1101
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 1101,
+            "end": 1102
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1103,
+            "end": 1107
+        },
+        {
+            "kind": "Identifier",
+            "text": "w",
+            "start": 1108,
+            "end": 1109
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 1110,
+            "end": 1111
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 1111,
+            "end": 1112
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\" \"",
+            "start": 1113,
+            "end": 1116
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 1117,
+            "end": 1118
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 1118,
+            "end": 1119
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1120,
+            "end": 1124
+        },
+        {
+            "kind": "Identifier",
+            "text": "h",
+            "start": 1125,
+            "end": 1126
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1131,
+            "end": 1135
+        },
+        {
+            "kind": "Identifier",
+            "text": "Point",
+            "start": 1136,
+            "end": 1141
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 1142,
+            "end": 1143
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Point\"",
+            "start": 1144,
+            "end": 1151
+        },
+        {
+            "kind": "Class",
+            "text": "class",
+            "start": 1180,
+            "end": 1185
+        },
+        {
+            "kind": "Identifier",
+            "text": "Collection",
+            "start": 1186,
+            "end": 1196
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 1197,
+            "end": 1198
+        },
+        {
+            "kind": "Identifier",
+            "text": "e",
+            "start": 1199,
+            "end": 1200
+        },
+        {
+            "kind": "Pipe",
+            "text": "|",
+            "start": 1201,
+            "end": 1202
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 1203,
+            "end": 1204
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 1205,
+            "end": 1207
+        },
+        {
+            "kind": "Identifier",
+            "text": "e",
+            "start": 1208,
+            "end": 1209
+        },
+        {
+            "kind": "Where",
+            "text": "where",
+            "start": 1210,
+            "end": 1215
+        },
+        {
+            "kind": "Identifier",
+            "text": "insert",
+            "start": 1220,
+            "end": 1226
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 1227,
+            "end": 1229
+        },
+        {
+            "kind": "Identifier",
+            "text": "e",
+            "start": 1230,
+            "end": 1231
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 1232,
+            "end": 1234
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 1235,
+            "end": 1236
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 1237,
+            "end": 1239
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 1240,
+            "end": 1241
+        },
+        {
+            "kind": "Identifier",
+            "text": "member",
+            "start": 1246,
+            "end": 1252
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 1253,
+            "end": 1255
+        },
+        {
+            "kind": "Identifier",
+            "text": "e",
+            "start": 1256,
+            "end": 1257
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 1258,
+            "end": 1260
+        },
+        {
+            "kind": "Identifier",
+            "text": "c",
+            "start": 1261,
+            "end": 1262
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 1263,
+            "end": 1265
+        },
+        {
+            "kind": "Identifier",
+            "text": "Boolean",
+            "start": 1266,
+            "end": 1273
+        },
+        {
+            "kind": "Data",
+            "text": "data",
+            "start": 1294,
+            "end": 1298
+        },
+        {
+            "kind": "Identifier",
+            "text": "Proxy",
+            "start": 1299,
+            "end": 1304
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 1305,
+            "end": 1306
+        },
+        {
+            "kind": "Identifier",
+            "text": "a",
+            "start": 1306,
+            "end": 1307
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 1308,
+            "end": 1310
+        },
+        {
+            "kind": "Identifier",
+            "text": "Type",
+            "start": 1311,
+            "end": 1315
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 1315,
+            "end": 1316
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 1317,
+            "end": 1318
+        },
+        {
+            "kind": "Identifier",
+            "text": "Proxy",
+            "start": 1319,
+            "end": 1324
+        },
+        {
+            "kind": "Foreign",
+            "text": "foreign",
+            "start": 1345,
+            "end": 1352
+        },
+        {
+            "kind": "Import",
+            "text": "import",
+            "start": 1353,
+            "end": 1359
+        },
+        {
+            "kind": "Identifier",
+            "text": "logMessage",
+            "start": 1360,
+            "end": 1370
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 1371,
+            "end": 1373
+        },
+        {
+            "kind": "Identifier",
+            "text": "String",
+            "start": 1374,
+            "end": 1380
+        },
+        {
+            "kind": "Arrow",
+            "text": "->",
+            "start": 1381,
+            "end": 1383
+        },
+        {
+            "kind": "Identifier",
+            "text": "Effect",
+            "start": 1384,
+            "end": 1390
+        },
+        {
+            "kind": "Identifier",
+            "text": "Unit",
+            "start": 1391,
+            "end": 1395
+        },
+        {
+            "kind": "Identifier",
+            "text": "main",
+            "start": 1412,
+            "end": 1416
+        },
+        {
+            "kind": "ColonColon",
+            "text": "::",
+            "start": 1417,
+            "end": 1419
+        },
+        {
+            "kind": "Identifier",
+            "text": "Effect",
+            "start": 1420,
+            "end": 1426
+        },
+        {
+            "kind": "Identifier",
+            "text": "Unit",
+            "start": 1427,
+            "end": 1431
+        },
+        {
+            "kind": "Identifier",
+            "text": "main",
+            "start": 1432,
+            "end": 1436
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 1437,
+            "end": 1438
+        },
+        {
+            "kind": "Do",
+            "text": "do",
+            "start": 1439,
+            "end": 1441
+        },
+        {
+            "kind": "Identifier",
+            "text": "log",
+            "start": 1446,
+            "end": 1449
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Starting...\"",
+            "start": 1450,
+            "end": 1463
+        },
+        {
+            "kind": "Let",
+            "text": "let",
+            "start": 1468,
+            "end": 1471
+        },
+        {
+            "kind": "Identifier",
+            "text": "result",
+            "start": 1472,
+            "end": 1478
+        },
+        {
+            "kind": "Equal",
+            "text": "=",
+            "start": 1479,
+            "end": 1480
+        },
+        {
+            "kind": "Identifier",
+            "text": "area",
+            "start": 1481,
+            "end": 1485
+        },
+        {
+            "kind": "LeftParen",
+            "text": "(",
+            "start": 1486,
+            "end": 1487
+        },
+        {
+            "kind": "Identifier",
+            "text": "Circle",
+            "start": 1487,
+            "end": 1493
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "10.0",
+            "start": 1494,
+            "end": 1498
+        },
+        {
+            "kind": "RightParen",
+            "text": ")",
+            "start": 1498,
+            "end": 1499
+        },
+        {
+            "kind": "Identifier",
+            "text": "log",
+            "start": 1504,
+            "end": 1507
+        },
+        {
+            "kind": "Error",
+            "text": "$",
+            "start": 1508,
+            "end": 1509
+        },
+        {
+            "kind": "StringLiteral",
+            "text": "\"Area: \"",
+            "start": 1510,
+            "end": 1518
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 1519,
+            "end": 1520
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 1520,
+            "end": 1521
+        },
+        {
+            "kind": "Identifier",
+            "text": "show",
+            "start": 1522,
+            "end": 1526
+        },
+        {
+            "kind": "Identifier",
+            "text": "result",
+            "start": 1527,
+            "end": 1533
+        },
+        {
+            "kind": "Identifier",
+            "text": "pure",
+            "start": 1538,
+            "end": 1542
+        },
+        {
+            "kind": "Identifier",
+            "text": "unit",
+            "start": 1543,
+            "end": 1547
+        },
+        {
+            "kind": "Infixl",
+            "text": "infixl",
+            "start": 1562,
+            "end": 1568
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "4",
+            "start": 1569,
+            "end": 1570
+        },
+        {
+            "kind": "Identifier",
+            "text": "add",
+            "start": 1571,
+            "end": 1574
+        },
+        {
+            "kind": "Identifier",
+            "text": "as",
+            "start": 1575,
+            "end": 1577
+        },
+        {
+            "kind": "Plus",
+            "text": "+",
+            "start": 1578,
+            "end": 1579
+        },
+        {
+            "kind": "Infixr",
+            "text": "infixr",
+            "start": 1580,
+            "end": 1586
+        },
+        {
+            "kind": "NumberLiteral",
+            "text": "5",
+            "start": 1587,
+            "end": 1588
+        },
+        {
+            "kind": "Identifier",
+            "text": "append",
+            "start": 1589,
+            "end": 1595
+        },
+        {
+            "kind": "Identifier",
+            "text": "as",
+            "start": 1596,
+            "end": 1598
+        },
+        {
+            "kind": "Less",
+            "text": "<",
+            "start": 1599,
+            "end": 1600
+        },
+        {
+            "kind": "Greater",
+            "text": ">",
+            "start": 1600,
+            "end": 1601
+        },
+        {
+            "kind": "Eof",
+            "text": "",
+            "start": 1602,
+            "end": 1602
+        }
+    ],
+    "errors": []
+}

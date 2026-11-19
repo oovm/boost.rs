@@ -1,0 +1,40 @@
+[package]
+name = "data-text-nix"
+version.workspace = true
+authors.workspace = true
+description = "Nix package manager language parser with support for declarative package configuration and reproducible builds."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-nix"
+categories = ["parsing"]
+keywords = ["parser", "nix", "package-manager", "declarative"]
+
+[dependencies]
+data-text-core = { workspace = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+
+tokio = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

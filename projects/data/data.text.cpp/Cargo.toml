@@ -1,0 +1,40 @@
+[package]
+name = "data-text-cpp"
+version.workspace = true
+authors.workspace = true
+description = "C++ systems programming language parser with support for modern C++ features and object-oriented programming."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-cpp"
+categories = ["parsing"]
+keywords = ["parser", "cpp", "cplusplus", "syntax-analysis"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+
+language-server = { workspace = true, optional = true }
+language-hover = { workspace = true, optional = true }
+language-mcp = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[dev-dependencies]
+language-testing = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
+language-highlight = ["dep:language-highlight"]
+lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "dep:language-format", "dep:futures"]
+mcp = ["lsp", "language-mcp/io-std"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "main"
+required-features = ["serde"]

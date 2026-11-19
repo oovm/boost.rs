@@ -1,0 +1,831 @@
+#[cfg(feature = "oak-pretty-print")]
+use crate::ast::*;
+#[cfg(feature = "oak-pretty-print")]
+use oak_pretty_print::{AsDocument, Document, LINE as line, NIL as nil, SOFT_LINE_SPACE as soft_space, doc, indent};
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for SqlRoot {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        Document::join(self.statements.iter().map(|it| it.as_document(&())), doc!(";", line))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for SqlStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            SqlStatement::Select(it) => it.as_document(&()),
+            SqlStatement::SetOperation(it) => it.as_document(&()),
+            SqlStatement::Insert(it) => it.as_document(&()),
+            SqlStatement::Update(it) => it.as_document(&()),
+            SqlStatement::Delete(it) => it.as_document(&()),
+            SqlStatement::Create(it) => it.as_document(&()),
+            SqlStatement::Drop(it) => it.as_document(&()),
+            SqlStatement::Alter(it) => it.as_document(&()),
+            SqlStatement::Transaction(it) => match &it.action {
+                crate::ast::TransactionAction::Begin => Document::text("BEGIN"),
+                crate::ast::TransactionAction::Commit => Document::text("COMMIT"),
+                crate::ast::TransactionAction::Rollback => Document::text("ROLLBACK"),
+                crate::ast::TransactionAction::Savepoint(name) => doc!("SAVEPOINT ", name.as_ref()),
+                crate::ast::TransactionAction::RollbackToSavepoint(name) => doc!("ROLLBACK TO SAVEPOINT ", name.as_ref()),
+                crate::ast::TransactionAction::ReleaseSavepoint(name) => doc!("RELEASE SAVEPOINT ", name.as_ref()),
+            },
+            SqlStatement::SetNames(it) => {
+                if let Some(collation) = &it.collation {
+                    doc!("SET NAMES ", it.character_set.as_ref(), " COLLATE ", collation.as_ref())
+                }
+                else {
+                    doc!("SET NAMES ", it.character_set.as_ref())
+                }
+            }
+            SqlStatement::SetVariable(it) => {
+                let mut d = Document::text("SET ");
+                if let Some(scope) = it.scope {
+                    d = doc!(d, scope.as_str(), " ");
+                }
+                doc!(d, it.name.as_ref(), " = ", it.value.as_document(&()))
+            }
+            SqlStatement::Show(it) => {
+                let mut d = Document::text("SHOW ");
+                if let Some(scope) = it.scope {
+                    d = doc!(d, scope.as_str(), " ");
+                }
+                d = doc!(d, it.target.as_ref());
+                if let Some(pattern) = &it.like {
+                    d = doc!(d, " LIKE '", pattern.as_ref(), "'");
+                }
+                d
+            }
+            SqlStatement::Pragma(it) => {
+                let mut d = doc!("PRAGMA ", it.name.as_ref());
+                if let Some(value) = &it.value {
+                    d = doc!(d, " = ", value.as_document(&()));
+                }
+                d
+            }
+            SqlStatement::Error { .. } => nil,
+            SqlStatement::Unknown { .. } => nil,
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for SelectStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        if let Some(with) = &self.with {
+            parts.push(with.as_document(&()));
+            parts.push(line);
+        }
+        parts.push(Document::text("SELECT"));
+
+        if let Some(quantifier) = &self.quantifier {
+            parts.push(soft_space);
+            parts.push(quantifier.as_document(&()));
+        }
+
+        let items = Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space));
+        parts.push(indent(doc!(line, items)));
+
+        if let Some(from) = &self.from {
+            parts.push(line);
+            parts.push(Document::text("FROM"));
+            parts.push(soft_space);
+            parts.push(from.as_document(&()));
+        }
+
+        for join in &self.joins {
+            parts.push(line);
+            parts.push(join.as_document(&()));
+        }
+
+        if let Some(expr) = &self.expr {
+            parts.push(line);
+            parts.push(Document::text("WHERE"));
+            parts.push(soft_space);
+            parts.push(expr.as_document(&()));
+        }
+
+        if let Some(group_by) = &self.group_by {
+            parts.push(line);
+            parts.push(group_by.as_document(&()));
+        }
+
+        if let Some(having) = &self.having {
+            parts.push(line);
+            parts.push(having.as_document(&()));
+        }
+
+        if let Some(order_by) = &self.order_by {
+            parts.push(line);
+            parts.push(order_by.as_document(&()));
+        }
+
+        if let Some(limit) = &self.limit {
+            parts.push(line);
+            parts.push(limit.as_document(&()));
+        }
+
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for WithClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let ctes = Document::join(self.ctes.iter().map(|cte| cte.as_document(&())), doc!(",", line));
+        doc!("WITH", indent(doc!(line, ctes)))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for CteDefinition {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut head = self.name.as_document(&());
+        if !self.columns.is_empty() {
+            head = doc!(head, "(", Document::join(self.columns.iter().map(|column| column.as_document(&())), doc!(",", soft_space)), ")");
+        }
+        doc!(head, soft_space, "AS", soft_space, "(", self.query.as_document(&()), ")")
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for SetOperationStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        for (i, operand) in self.operands.iter().enumerate() {
+            if i > 0 {
+                parts.push(line);
+                parts.push(Document::text(match self.operators[i - 1] {
+                    SetOperator::Union => "UNION",
+                    SetOperator::UnionAll => "UNION ALL",
+                    SetOperator::Intersect => "INTERSECT",
+                    SetOperator::IntersectAll => "INTERSECT ALL",
+                    SetOperator::Except => "EXCEPT",
+                    SetOperator::ExceptAll => "EXCEPT ALL",
+                }));
+                parts.push(line);
+            }
+            parts.push(operand.as_document(&()));
+        }
+
+        if let Some(order_by) = &self.order_by {
+            parts.push(line);
+            parts.push(order_by.as_document(&()));
+        }
+
+        if let Some(limit) = &self.limit {
+            parts.push(line);
+            parts.push(limit.as_document(&()));
+        }
+
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for SelectQuantifier {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            SelectQuantifier::All { .. } => Document::text("ALL"),
+            SelectQuantifier::Distinct { .. } => Document::text("DISTINCT"),
+            SelectQuantifier::DistinctOn { expressions, .. } => {
+                doc!("DISTINCT", soft_space, "ON", "(", Document::join(expressions.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for SelectItem {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            SelectItem::Star { .. } => Document::text("*"),
+            SelectItem::Expression { expr, alias, .. } => {
+                if let Some(alias) = alias {
+                    doc!(expr.as_document(&()), soft_space, "AS", soft_space, alias.as_document(&()))
+                }
+                else {
+                    expr.as_document(&())
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for Expression {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            Expression::Identifier(it) => it.as_document(&()),
+            Expression::Wildcard { .. } => Document::text("*"),
+            Expression::Literal(it) => it.as_document(&()),
+            Expression::Binary { left, op, right, .. } => {
+                let precedence = binary_precedence(*op);
+                doc!(binary_operand_document(left, precedence, false), soft_space, op.as_document(&()), soft_space, binary_operand_document(right, precedence, true))
+            }
+            Expression::Unary { op, expr, .. } => {
+                doc!(op.as_document(&()), expr.as_document(&()))
+            }
+            Expression::FunctionCall { name, args, .. } => {
+                doc!(name.as_document(&()), "(", Document::join(args.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
+            }
+            Expression::InList { expr, list, negated, .. } => {
+                doc!(expr.as_document(&()), if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "IN", soft_space, "(", Document::join(list.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
+            }
+            Expression::Between { expr, low, high, negated, .. } => {
+                doc!(expr.as_document(&()), if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "BETWEEN", soft_space, low.as_document(&()), soft_space, "AND", soft_space, high.as_document(&()))
+            }
+            Expression::IsNull { expr, negated, .. } => {
+                doc!(is_operand_document(expr), soft_space, "IS", if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "NULL")
+            }
+            Expression::IsTruth { expr, value, negated, .. } => {
+                doc!(is_operand_document(expr), soft_space, "IS", if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, if *value { "TRUE" } else { "FALSE" })
+            }
+            Expression::Subquery { query, .. } => {
+                doc!("(", query.as_document(&()), ")")
+            }
+            Expression::InSubquery { expr, query: subquery, negated, .. } => {
+                doc!(expr.as_document(&()), if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "IN", soft_space, "(", subquery.as_document(&()), ")")
+            }
+            Expression::Exists { query, negated, .. } => {
+                doc!(if *negated { doc!("NOT", soft_space) } else { nil }, "EXISTS", "(", query.as_document(&()), ")")
+            }
+            Expression::Case { branches, else_branch, .. } => {
+                let mut parts = vec![Document::text("CASE")];
+                for (when, then) in branches {
+                    parts.push(line);
+                    parts.push(doc!("WHEN", soft_space, when.as_document(&()), soft_space, "THEN", soft_space, then.as_document(&())));
+                }
+                if let Some(else_branch) = else_branch {
+                    parts.push(line);
+                    parts.push(doc!("ELSE", soft_space, else_branch.as_document(&())));
+                }
+                parts.push(line);
+                parts.push(Document::text("END"));
+                Document::group(Document::Concat(parts))
+            }
+            Expression::Cast { expr, target, .. } => {
+                doc!("CAST", "(", expr.as_document(&()), soft_space, "AS", soft_space, target.as_ref(), ")")
+            }
+            Expression::Error { .. } => nil,
+            Expression::Vector { elements, .. } => {
+                doc!("[", Document::join(elements.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), "]")
+            }
+        }
+    }
+}
+
+/// Writes the left operand of an `IS` predicate, keeping parentheses when the
+/// operand would otherwise reparse at a lower precedence.
+#[cfg(feature = "oak-pretty-print")]
+fn is_operand_document(expr: &Expression) -> Document<'_> {
+    if crate::ast::expression_nodes::needs_is_operand_parentheses(expr) { doc!("(", expr.as_document(&()), ")") } else { expr.as_document(&()) }
+}
+
+/// Binding strength used when pretty-printing binary expressions. It mirrors
+/// SQLite, where `||` binds tighter than `*`/`/`/`%`, which in turn bind tighter
+/// than `+`/`-`, and all of them bind tighter than the comparison/logical
+/// operators.
+#[cfg(feature = "oak-pretty-print")]
+fn binary_precedence(op: BinaryOperator) -> u8 {
+    match op {
+        BinaryOperator::Or => 1,
+        BinaryOperator::And => 2,
+        BinaryOperator::Equal | BinaryOperator::NotEqual | BinaryOperator::Less | BinaryOperator::Greater | BinaryOperator::LessEqual | BinaryOperator::GreaterEqual | BinaryOperator::Like => 4,
+        BinaryOperator::Plus | BinaryOperator::Minus => 10,
+        BinaryOperator::Star | BinaryOperator::Slash | BinaryOperator::Percent => 11,
+        BinaryOperator::Concat => 12,
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+fn expression_precedence(expr: &Expression) -> u8 {
+    match expr {
+        Expression::Binary { op, .. } => binary_precedence(*op),
+        Expression::Unary { op: UnaryOperator::Not, .. } => 3,
+        Expression::Unary { .. } => 14,
+        Expression::InList { .. } | Expression::Between { .. } | Expression::IsNull { .. } | Expression::IsTruth { .. } | Expression::InSubquery { .. } | Expression::Exists { .. } => 5,
+        _ => u8::MAX,
+    }
+}
+
+/// Writes a binary operand, adding parentheses when it would otherwise reparse
+/// with a different grouping. A right-nested operand of the same precedence also
+/// needs parentheses because SQLite's binary operators are left-associative.
+#[cfg(feature = "oak-pretty-print")]
+fn binary_operand_document(expr: &Expression, parent_precedence: u8, is_right: bool) -> Document<'_> {
+    let needs_parentheses = expression_precedence(expr) < parent_precedence || (is_right && expression_precedence(expr) == parent_precedence);
+    if needs_parentheses { doc!("(", expr.as_document(&()), ")") } else { expr.as_document(&()) }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for BinaryOperator {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            BinaryOperator::Plus => Document::text("+"),
+            BinaryOperator::Minus => Document::text("-"),
+            BinaryOperator::Star => Document::text("*"),
+            BinaryOperator::Slash => Document::text("/"),
+            BinaryOperator::Percent => Document::text("%"),
+            BinaryOperator::And => Document::text("AND"),
+            BinaryOperator::Or => Document::text("OR"),
+            BinaryOperator::Equal => Document::text("="),
+            BinaryOperator::NotEqual => Document::text("<>"),
+            BinaryOperator::Less => Document::text("<"),
+            BinaryOperator::Greater => Document::text(">"),
+            BinaryOperator::LessEqual => Document::text("<="),
+            BinaryOperator::GreaterEqual => Document::text(">="),
+            BinaryOperator::Like => Document::text("LIKE"),
+            BinaryOperator::Concat => Document::text("||"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for UnaryOperator {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            UnaryOperator::Plus => Document::text("+"),
+            UnaryOperator::Minus => Document::text("-"),
+            UnaryOperator::Not => Document::text("NOT"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for Literal {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            Literal::Number(n, _) => Document::text(n.as_ref()),
+            Literal::String(s, _) => doc!("'", s.as_ref(), "'"),
+            Literal::Boolean(b, _) => Document::text(if *b { "TRUE" } else { "FALSE" }),
+            Literal::Null(_) => Document::text("NULL"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for Identifier {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        Document::text(self.name.as_ref())
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for TableName {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        if let Some(alias) = &self.alias { doc!(self.name.as_document(&()), soft_space, "AS", soft_space, alias.as_document(&())) } else { self.name.as_document(&()) }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for TableSource {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            TableSource::Table(table) => table.as_document(&()),
+            TableSource::Derived { query, alias, .. } => {
+                let subquery = doc!("(", query.as_document(&()), ")");
+                if let Some(alias) = alias { doc!(subquery, soft_space, "AS", soft_space, alias.as_document(&())) } else { subquery }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for ColumnName {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        self.name.as_document(&())
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for JoinClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!(self.join_type.as_document(&()), soft_space, "JOIN", soft_space, self.table.as_document(&()), if let Some(on) = &self.on { doc!(soft_space, "ON", soft_space, on.as_document(&())) } else { nil })
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for JoinType {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            JoinType::Inner => Document::text("INNER"),
+            JoinType::Left => Document::text("LEFT"),
+            JoinType::Right => Document::text("RIGHT"),
+            JoinType::Full => Document::text("FULL"),
+            JoinType::Cross => Document::text("CROSS"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for GroupByClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!("GROUP", soft_space, "BY", soft_space, Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for GroupByItem {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            GroupByItem::Column(identifier) => identifier.as_document(&()),
+            GroupByItem::Position { index, .. } => Document::text(index.to_string()),
+            GroupByItem::Expression(expr) => expr.as_document(&()),
+            GroupByItem::GroupingSets(groups) => {
+                let sets = Document::join(groups.iter().map(|group| doc!("(", Document::join(group.iter().map(|item| item.as_document(&())), doc!(",", soft_space)), ")")), doc!(",", soft_space));
+                doc!("GROUPING", soft_space, "SETS", soft_space, "(", sets, ")")
+            }
+            GroupByItem::Rollup(items) => {
+                doc!("ROLLUP", "(", Document::join(items.iter().map(|item| item.as_document(&())), doc!(",", soft_space)), ")")
+            }
+            GroupByItem::Cube(items) => {
+                doc!("CUBE", "(", Document::join(items.iter().map(|item| item.as_document(&())), doc!(",", soft_space)), ")")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for HavingClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!("HAVING", soft_space, self.condition.as_document(&()))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for OrderByClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!("ORDER", soft_space, "BY", soft_space, Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for OrderByItem {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!(self.expr.as_document(&()), soft_space, self.direction.as_document(&()), if let Some(nulls) = &self.nulls { doc!(soft_space, "NULLS", soft_space, nulls.as_document(&())) } else { nil })
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for NullsOrder {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            NullsOrder::First => Document::text("FIRST"),
+            NullsOrder::Last => Document::text("LAST"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for OrderDirection {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            OrderDirection::Asc => Document::text("ASC"),
+            OrderDirection::Desc => Document::text("DESC"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for LimitClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match (&self.limit, &self.offset) {
+            (Some(limit), Some(offset)) => doc!("LIMIT", soft_space, limit.as_document(&()), soft_space, "OFFSET", soft_space, offset.as_document(&())),
+            (Some(limit), None) => doc!("LIMIT", soft_space, limit.as_document(&())),
+            (None, Some(offset)) => doc!("OFFSET", soft_space, offset.as_document(&())),
+            (None, None) => nil,
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for CreateStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        parts.push(Document::text("CREATE"));
+        if let CreateBody::Index { unique: true, .. } = &self.body {
+            parts.push(soft_space);
+            parts.push(Document::text("UNIQUE"));
+        }
+        parts.push(soft_space);
+        parts.push(self.object_type.as_document(&()));
+        if self.if_not_exists {
+            parts.push(soft_space);
+            parts.push(Document::text("IF NOT EXISTS"));
+        }
+        parts.push(soft_space);
+        parts.push(self.name.as_document(&()));
+
+        match &self.body {
+            CreateBody::Table { columns, constraints, .. } => {
+                if !columns.is_empty() || !constraints.is_empty() {
+                    parts.push(soft_space);
+                    parts.push(Document::text("("));
+                    let mut items: Vec<Document<'_>> = columns.iter().map(|it| it.as_document(&())).collect();
+                    items.extend(constraints.iter().map(|it| it.as_document(&())));
+                    let body = Document::join(items, doc!(",", line));
+                    parts.push(indent(doc!(line, body)));
+                    parts.push(line);
+                    parts.push(Document::text(")"));
+                }
+            }
+            CreateBody::View { query, .. } => {
+                parts.push(line);
+                parts.push(Document::text("AS"));
+                parts.push(soft_space);
+                parts.push(query.as_document(&()));
+            }
+            CreateBody::Index { table_name, columns, unique: _, .. } => {
+                parts.push(soft_space);
+                parts.push(Document::text("ON"));
+                parts.push(soft_space);
+                parts.push(table_name.as_document(&()));
+                parts.push(soft_space);
+                parts.push(Document::text("("));
+                let cols = Document::join(columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space));
+                parts.push(cols);
+                parts.push(Document::text(")"));
+            }
+            CreateBody::Database { .. } => {}
+        }
+
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for ColumnDefinition {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let data_type_str = self.data_type.to_string();
+        doc!(self.name.as_document(&()), soft_space, data_type_str, Document::join(self.constraints.iter().map(|it| doc!(soft_space, it.as_document(&()))), nil))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for ColumnConstraint {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            ColumnConstraint::PrimaryKey { .. } => Document::text("PRIMARY KEY"),
+            ColumnConstraint::NotNull { .. } => Document::text("NOT NULL"),
+            ColumnConstraint::Nullable { .. } => Document::text("NULL"),
+            ColumnConstraint::Unique { .. } => Document::text("UNIQUE"),
+            ColumnConstraint::Default(expr, _) => doc!("DEFAULT", soft_space, expr.as_document(&())),
+            ColumnConstraint::Check(expr, _) => doc!("CHECK", soft_space, "(", expr.as_document(&()), ")"),
+            ColumnConstraint::AutoIncrement { .. } => Document::text("AUTOINCREMENT"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for TableConstraint {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            TableConstraint::PrimaryKey { columns, on_conflict, .. } => {
+                let columns = Document::join(columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space));
+                let conflict = match on_conflict {
+                    Some(resolution) => doc!(soft_space, "ON CONFLICT", soft_space, resolution.as_document(&())),
+                    None => nil,
+                };
+                doc!("PRIMARY", soft_space, "KEY", soft_space, "(", columns, ")", conflict)
+            }
+            TableConstraint::ForeignKey { columns, table_name, referenced_columns, .. } => {
+                let columns = Document::join(columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space));
+                let referenced = if referenced_columns.is_empty() { nil } else { doc!(soft_space, "(", Document::join(referenced_columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")") };
+                doc!("FOREIGN", soft_space, "KEY", soft_space, "(", columns, ")", soft_space, "REFERENCES", soft_space, table_name.as_document(&()), referenced)
+            }
+            TableConstraint::Check { expr, .. } => doc!("CHECK", soft_space, "(", expr.as_document(&()), ")"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for IndexedColumn {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match &self.direction {
+            Some(direction) => doc!(self.name.as_document(&()), soft_space, direction.as_document(&())),
+            None => self.name.as_document(&()),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for ConflictResolution {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            ConflictResolution::Rollback => Document::text("ROLLBACK"),
+            ConflictResolution::Abort => Document::text("ABORT"),
+            ConflictResolution::Fail => Document::text("FAIL"),
+            ConflictResolution::Ignore => Document::text("IGNORE"),
+            ConflictResolution::Replace => Document::text("REPLACE"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for CreateObjectType {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            CreateObjectType::Table => Document::text("TABLE"),
+            CreateObjectType::View => Document::text("VIEW"),
+            CreateObjectType::Index => Document::text("INDEX"),
+            CreateObjectType::Database => Document::text("DATABASE"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for InsertStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        parts.push(Document::text("INSERT INTO"));
+        parts.push(soft_space);
+        parts.push(self.table_name.as_document(&()));
+
+        if !self.columns.is_empty() {
+            parts.push(soft_space);
+            parts.push(Document::text("("));
+            parts.push(Document::join(self.columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space)));
+            parts.push(Document::text(")"));
+        }
+
+        match &self.source {
+            InsertSource::Values => {
+                parts.push(line);
+                parts.push(Document::text("VALUES"));
+                let rows = self.rows.iter().map(|row| doc!("(", Document::join(row.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")"));
+                parts.push(soft_space);
+                parts.push(Document::join(rows, doc!(",", soft_space)));
+            }
+            InsertSource::DefaultValues => {
+                parts.push(line);
+                parts.push(Document::text("DEFAULT VALUES"));
+            }
+            InsertSource::Select(query) => {
+                parts.push(line);
+                parts.push(query.as_document(&()));
+            }
+        }
+
+        if let Some(on_conflict) = &self.on_conflict {
+            parts.push(line);
+            parts.push(on_conflict.as_document(&()));
+        }
+
+        if let Some(returning) = &self.returning {
+            parts.push(line);
+            parts.push(returning.as_document(&()));
+        }
+
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for OnConflictClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        parts.push(Document::text("ON CONFLICT"));
+        if !self.columns.is_empty() {
+            parts.push(soft_space);
+            parts.push(Document::text("("));
+            parts.push(Document::join(self.columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space)));
+            parts.push(Document::text(")"));
+        }
+        parts.push(soft_space);
+        parts.push(self.action.as_document(&()));
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for OnConflictAction {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            OnConflictAction::DoNothing => Document::text("DO NOTHING"),
+            OnConflictAction::DoUpdate { assignments, selection } => {
+                let mut parts = Vec::new();
+                parts.push(Document::text("DO UPDATE"));
+                parts.push(line);
+                parts.push(Document::text("SET"));
+                parts.push(indent(doc!(line, Document::join(assignments.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))));
+                if let Some(selection) = selection {
+                    parts.push(line);
+                    parts.push(Document::text("WHERE"));
+                    parts.push(soft_space);
+                    parts.push(selection.as_document(&()));
+                }
+                Document::group(Document::Concat(parts))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for ReturningClause {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!("RETURNING", soft_space, Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for UpdateStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        parts.push(Document::text("UPDATE"));
+        parts.push(soft_space);
+        parts.push(self.table_name.as_document(&()));
+        parts.push(line);
+        parts.push(Document::text("SET"));
+        parts.push(soft_space);
+        parts.push(Document::join(self.assignments.iter().map(|it| it.as_document(&())), doc!(",", line)));
+
+        if let Some(selection) = &self.selection {
+            parts.push(line);
+            parts.push(Document::text("WHERE"));
+            parts.push(soft_space);
+            parts.push(selection.as_document(&()));
+        }
+
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for Assignment {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!(self.column.as_document(&()), soft_space, "=", soft_space, self.value.as_document(&()))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for DeleteStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut parts = Vec::new();
+        parts.push(Document::text("DELETE FROM"));
+        parts.push(soft_space);
+        parts.push(self.table_name.as_document(&()));
+
+        if let Some(selection) = &self.selection {
+            parts.push(line);
+            parts.push(Document::text("WHERE"));
+            parts.push(soft_space);
+            parts.push(selection.as_document(&()));
+        }
+
+        Document::group(Document::Concat(parts))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for DropStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        doc!("DROP", soft_space, self.object_type.as_document(&()), if self.if_exists { doc!(soft_space, "IF EXISTS") } else { nil }, soft_space, self.name.as_document(&()))
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for DropObjectType {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            DropObjectType::Table => Document::text("TABLE"),
+            DropObjectType::View => Document::text("VIEW"),
+            DropObjectType::Index => Document::text("INDEX"),
+            DropObjectType::Database => Document::text("DATABASE"),
+        }
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for AlterStatement {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        let mut d = doc!("ALTER TABLE", soft_space, self.table_name.as_document(&()));
+        if let Some(action) = &self.action {
+            d = doc!(d, soft_space, action.as_document(&()));
+        }
+        d
+    }
+}
+
+#[cfg(feature = "oak-pretty-print")]
+impl AsDocument for AlterAction {
+    fn as_document(&self, _config: &Self::Config) -> Document<'_> {
+        match self {
+            AlterAction::AddColumn { name, data_type, .. } => {
+                let mut d = doc!("ADD COLUMN", soft_space, name.as_document(&()));
+                if let Some(dt) = data_type {
+                    let dt_str = dt.to_string();
+                    d = doc!(d, soft_space, dt_str);
+                }
+                d
+            }
+            AlterAction::DropColumn { name, .. } => {
+                doc!("DROP COLUMN", soft_space, name.as_document(&()))
+            }
+            AlterAction::RenameTo { new_name, .. } => {
+                doc!("RENAME TO", soft_space, new_name.as_document(&()))
+            }
+        }
+    }
+}
