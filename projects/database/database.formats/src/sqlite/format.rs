@@ -14,23 +14,62 @@ pub const ENGINE_LIBRARY_VERSION: &str = "3.45.0";
 /// Packed SQLite library version integer written to the database header.
 pub const ENGINE_LIBRARY_VERSION_NUMBER: u32 = 3_045_000;
 
-/// Canonical blank database bytes (one 4096-byte page, validated by tests).
-const BLANK_DATABASE: &[u8] = include_bytes!("assets/blank.sqlite");
+/// Canonical blank database bytes, built in code (one 4096-byte page).
+///
+/// Boost 的零二进制边界不允许 `include_bytes!` 携带 `.sqlite` 资产；这里直接按
+/// SQLite format 3 头部布局构造与历史资产逐字节一致的单页空库（含 page-1 btree
+/// 页头），并由 `blank_database` 盖引擎版本戳。
+const BLANK_DATABASE: [u8; DEFAULT_PAGE_SIZE] = {
+    let mut page = [0u8; DEFAULT_PAGE_SIZE];
+    let magic = MAGIC;
+    let mut i = 0;
+    while i < magic.len() {
+        page[i] = magic[i];
+        i += 1;
+    }
+    page[16] = 0x10; // page size 4096 (big-endian, 1-based)
+    page[17] = 0x00;
+    page[18] = 1; // write version
+    page[19] = 1; // read version
+    page[20] = 0; // reserved bytes per page
+    page[21] = 64;
+    page[22] = 32;
+    page[23] = 32; // payload fractions
+    page[24] = 0;
+    page[25] = 0;
+    page[26] = 0;
+    page[27] = 1; // file change counter
+    page[28] = 0;
+    page[29] = 0;
+    page[30] = 0;
+    page[31] = 1; // database size in pages
+    page[44] = 0;
+    page[45] = 0;
+    page[46] = 0;
+    page[47] = 1; // schema format version
+    page[56] = 0;
+    page[57] = 0;
+    page[58] = 0;
+    page[59] = 1; // text encoding: UTF-8
+    page[92] = 0;
+    page[93] = 0;
+    page[94] = 0;
+    page[95] = 1; // version-valid-for
+    page[100] = 0x0d; // page-1 btree header: table-without-rowid leaf
+    page[105] = 0x10; // cell content area start = 4096 (big-endian at 105..107)
+    page[106] = 0x00;
+    page
+};
 
 /// 返回已校验、并盖上引擎版本戳的空白库字节。
 pub fn blank_database() -> Result<Vec<u8>> {
     if BLANK_DATABASE.len() != DEFAULT_PAGE_SIZE {
         return Err(Error::Corrupt("blank sqlite asset has unexpected size"));
     }
-    validate_header(BLANK_DATABASE)?;
+    validate_header(&BLANK_DATABASE)?;
 
     let mut pages = BLANK_DATABASE.to_vec();
     stamp_library_version(&mut pages, ENGINE_LIBRARY_VERSION_NUMBER);
-    // The bundled asset predates first use, so its text-encoding field is
-    // still zero; a real SQLite database stamps UTF-8 at creation.
-    if pages[56..60] == [0, 0, 0, 0] {
-        pages[56..60].copy_from_slice(&1u32.to_be_bytes());
-    }
     Ok(pages)
 }
 

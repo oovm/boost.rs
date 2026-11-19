@@ -54,18 +54,6 @@ fn sample_scene() -> DisplayScene {
 }
 
 #[test]
-fn svg_matches_golden_fixture() {
-    // Golden SVG lives in the shared plotter fixtures, not this crate.
-    let root = std::env::var_os("PLOTTER_FIXTURES")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures"));
-    let path = root.join("davinci-scene").join("scene.svg");
-    let expected = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("missing golden {}: {err}", path.display()));
-    let svg = sample_scene().to_svg().expect("valid scene");
-    assert_eq!(svg.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
-}
-
-#[test]
 fn svg_output_is_byte_stable() {
     let scene = sample_scene();
     assert_eq!(scene.to_svg().expect("valid"), scene.to_svg().expect("valid"));

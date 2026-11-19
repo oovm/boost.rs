@@ -1,10 +1,8 @@
-//! A2 golden：point / bar / text 的 Scene + CPU/SVG 回归。
+//! A2 冒烟：point / bar / text / line 的 Scene + CPU/SVG 回归。
 //!
-//! SVG / fingerprint golden 语料随仓维护在 `projects/plotter/fixtures/plotter-golden`
-//! （原 apollo.rs 产品 fixtures）。`PLOTTER_FIXTURES` 可显式覆盖语料根目录，
-//! 本文件永不把 golden 写回 crate 自身。
-
-use std::{fs, path::PathBuf};
+//! 逐字节 golden 语料已按「fixtures 归下游」策略迁出 Boost，见
+//! `plotter-audit/fixtures/plotter`。本文件只保留仓内自洽断言：场景结构、
+//! SVG 关键元素、非空像素输出，以及双跑确定性（同一输入两次渲染必须逐字节一致）。
 
 use plotter::{
     data::ColumnTable,
@@ -13,36 +11,16 @@ use plotter::{
     view::SceneNodeKind,
 };
 
-fn golden_dir() -> PathBuf {
-    let root = std::env::var_os("PLOTTER_FIXTURES")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures"));
-    root.join("plotter-golden")
+fn assert_svg_deterministic(scene: &plotter::view::Scene) {
+    let first = render_svg(scene).expect("first svg render");
+    let second = render_svg(scene).expect("second svg render");
+    assert_eq!(first, second, "svg render must be deterministic");
 }
 
-fn read_or_write_golden(name: &str, actual: &str) {
-    let dir = golden_dir();
-    let path = dir.join(name);
-    if std::env::var("PLOTTER_UPDATE_GOLDEN").ok().as_deref() == Some("1") {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, actual).unwrap();
-        return;
-    }
-    let expected = fs::read_to_string(&path).unwrap_or_else(|err| panic!("missing golden {}: {err}", path.display()));
-    assert_eq!(expected.replace("\r\n", "\n"), actual.replace("\r\n", "\n"), "golden mismatch: {name}");
-}
-
-fn assert_cpu_fingerprint(name: &str, fingerprint: u64) {
-    let dir = golden_dir();
-    let path = dir.join(format!("{name}.fingerprint"));
-    let actual = format!("{fingerprint:#018x}\n");
-    if std::env::var("PLOTTER_UPDATE_GOLDEN").ok().as_deref() == Some("1") {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, &actual).unwrap();
-        return;
-    }
-    let expected = fs::read_to_string(&path).unwrap();
-    assert_eq!(expected, actual, "cpu fingerprint mismatch: {name}");
+fn assert_image_smoke(scene: &plotter::view::Scene) {
+    let image = render_rgba8(scene).expect("cpu raster");
+    assert!(image.non_white_count() > 0, "cpu raster produced an empty image");
+    assert_eq!(image.fingerprint(), render_rgba8(scene).expect("second cpu raster").fingerprint(), "cpu fingerprint must be stable");
 }
 
 #[test]
@@ -54,11 +32,8 @@ fn golden_point() {
 
     let svg = render_svg(&scene).unwrap();
     assert!(svg.contains("<circle"));
-    read_or_write_golden("point.svg", &svg);
-
-    let image = render_rgba8(&scene).unwrap();
-    assert!(image.non_white_count() > 0);
-    assert_cpu_fingerprint("point", image.fingerprint());
+    assert_svg_deterministic(&scene);
+    assert_image_smoke(&scene);
 }
 
 #[test]
@@ -70,11 +45,8 @@ fn golden_bar() {
 
     let svg = render_svg(&scene).unwrap();
     assert!(svg.contains("<polygon"));
-    read_or_write_golden("bar.svg", &svg);
-
-    let image = render_rgba8(&scene).unwrap();
-    assert!(image.non_white_count() > 0);
-    assert_cpu_fingerprint("bar", image.fingerprint());
+    assert_svg_deterministic(&scene);
+    assert_image_smoke(&scene);
 }
 
 #[test]
@@ -95,11 +67,8 @@ fn golden_text() {
     let svg = render_svg(&scene).unwrap();
     assert!(svg.contains("<text"));
     assert!(svg.contains(">a</text>"));
-    read_or_write_golden("text.svg", &svg);
-
-    let image = render_rgba8(&scene).unwrap();
-    assert!(image.non_white_count() > 0);
-    assert_cpu_fingerprint("text", image.fingerprint());
+    assert_svg_deterministic(&scene);
+    assert_image_smoke(&scene);
 }
 
 #[test]
@@ -108,7 +77,7 @@ fn golden_line_still_works() {
     let plot = PlotSpec::new(table).mapping(Mapping::xy("x", "y")).layer(LayerSpec::geom_line());
     let scene = compile_plot(&plot, CompileOptions::golden()).unwrap();
     let svg = render_svg(&scene).unwrap();
-    read_or_write_golden("line.svg", &svg);
-    let image = render_rgba8(&scene).unwrap();
-    assert_cpu_fingerprint("line", image.fingerprint());
+    assert!(!svg.is_empty(), "line svg must not be empty");
+    assert_svg_deterministic(&scene);
+    assert_image_smoke(&scene);
 }
