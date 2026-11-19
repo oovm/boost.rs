@@ -22,7 +22,7 @@ fn svg_text_diagnostic_matches_golden() {
     registry.register(&source_ref, source);
 
     let actual = structured_to_svg(&sample_text_diagnostic(source_ref), &cache, &registry).unwrap();
-    let expected = include_str!("diagnostic_preview/golden/preview-text.svg");
+    let expected = include_str!("diagnostic_preview/golden/preview-text.svg.txt");
     assert_eq!(actual, expected);
 }
 
@@ -39,7 +39,7 @@ fn write_svg_golden_fixture() {
     registry.register(&source_ref, source);
 
     let svg = structured_to_svg(&sample_text_diagnostic(source_ref), &cache, &registry).unwrap();
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/diagnostic_preview/golden/preview-text.svg");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/diagnostic_preview/golden/preview-text.svg.txt");
     fs::create_dir_all(path.parent().unwrap()).expect("create golden dir");
     fs::write(path, svg).expect("write svg golden");
 }

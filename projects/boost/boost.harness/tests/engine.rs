@@ -17,7 +17,8 @@ fn iter_collects_samples_and_reports() {
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].qualified_name, "math/add_one");
     assert_eq!(reports[0].sample_count, 5);
-    assert!(reports[0].mean > std::time::Duration::ZERO);
+    // 墙上时钟在粗粒度计时器上可能把极快迭代测成 0，断言样本本身而不是均值。
+    assert_eq!(reports[0].samples.len(), 5);
 }
 
 #[test]

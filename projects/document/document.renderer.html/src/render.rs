@@ -366,6 +366,16 @@ fn formula_svg(
     glyphs: &mut GlyphDefs,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<FormulaSvg> {
+    // 声明了未知排版语言的公式不进入引擎，否则只会在页面上留下空 SVG。
+    if matches!(formula.expression, document_ir::MathExpression::Unsupported { .. }) {
+        diagnostics.push(Diagnostic {
+            code: "vutex.render.html.math.not-typeset".into(),
+            severity: Severity::Warning,
+            message: format!("formula `{}` keeps its source text: unsupported typesetting language", formula.source),
+            span: None,
+        });
+        return None;
+    }
     match layout_formula_for(formula, math.base_size, math.family) {
         Ok((result, _root, mut layout_diagnostics)) => {
             diagnostics.append(&mut layout_diagnostics);
