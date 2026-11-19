@@ -1,0 +1,15 @@
+[package]
+name = "ml-data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Datasets, batching and tabular preprocessing for Boost ML"
+publish = false
+
+[dependencies]
+dl-types = { workspace = true }
+dl-tensor = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"

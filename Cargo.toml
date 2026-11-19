@@ -343,6 +343,8 @@ members = [
     "projects/media/media.vector",
     "projects/media/media.voice",
     "projects/media/media.voxel",
+    "projects/ml/ml.data",
+    "projects/ml/ml.metrics",
     "projects/package/package.cache",
     "projects/package/package.manager",
     "projects/package/package.publish",
@@ -593,6 +595,8 @@ media-types = { path = "projects/media/media.types" }
 media-vector = { path = "projects/media/media.vector" }
 media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
+ml-data = { path = "projects/ml/ml.data" }
+ml-metrics = { path = "projects/ml/ml.metrics" }
 
 package-cache = { path = "projects/package/package.cache" }
 package-manager = { path = "projects/package/package.manager" }

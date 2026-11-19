@@ -3713,10 +3713,12 @@ dependencies = [
 name = "dl-model"
 version = "0.1.0"
 dependencies = [
+ "boost-random",
  "data-safetensors",
  "dl-autograd",
  "dl-nn",
  "dl-tensor",
+ "dl-train",
  "dl-types",
 ]
 
@@ -5340,6 +5342,18 @@ dependencies = [
  "wasi",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "ml-data"
+version = "0.1.0"
+dependencies = [
+ "dl-tensor",
+ "dl-types",
+]
+
+[[package]]
+name = "ml-metrics"
+version = "0.1.0"
 
 [[package]]
 name = "mongo"
