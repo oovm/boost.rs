@@ -103,8 +103,7 @@ fn parse_toml_map(matter: &str) -> CoreResult<Map<String, Value>> {
     if matter.trim().is_empty() {
         return Ok(Map::new());
     }
-    let table: toml::Table = matter.parse().map_err(|e| CoreError::build(format!("invalid TOML front matter: {e}")))?;
-    let value = serde_json::to_value(table).map_err(|e| CoreError::build(format!("toml front matter to json failed: {e}")))?;
+    let value: Value = data_text_toml::from_str(matter).map_err(|e| CoreError::build(format!("invalid TOML front matter: {e}")))?;
     match value {
         Value::Object(map) => Ok(map),
         other => Err(CoreError::build(format!("front matter must be a mapping, got {other}"))),

@@ -39,9 +39,6 @@ pub use crate::lsp::TomlLanguageService;
 #[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub use crate::lsp::formatter::TomlFormatter;
 
-#[cfg(feature = "mcp")]
-// pub use crate::mcp::serve_toml_mcp;
-
 /// Serializes a Rust type into a TOML string.
 #[cfg(feature = "serde")]
 pub use crate::language::to_string;

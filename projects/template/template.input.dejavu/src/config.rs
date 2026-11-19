@@ -6,9 +6,9 @@
 //! defaults, and `toml_edit` handles in-place TOML manipulation.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map as TomlMap, Value as TomlValue};
 use std::path::{Path, PathBuf};
 use template_types::{DejavuError, DejavuResult};
-use toml::{Value as TomlValue, map::Map as TomlMap};
 
 /// Default `template_dir` value (used by serde when all config sources omit it).
 fn default_template_dir() -> PathBuf {
@@ -39,7 +39,8 @@ impl DejavuConfig {
     pub fn load<P: Into<PathBuf>>(path: P) -> DejavuResult<Self> {
         let path = path.into();
         let text = std::fs::read_to_string(&path)?;
-        let config = toml::from_str(&text).map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))?;
+        let config =
+            data_text_toml::from_str(&text).map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))?;
         Ok(config)
     }
 
@@ -50,7 +51,7 @@ impl DejavuConfig {
     /// Any source present but invalid (malformed TOML, wrong value type, …)
     /// → `DejavuError::InvalidConfig` propagated — never silently swallowed.
     pub fn load_default() -> DejavuResult<Self> {
-        let mut merged = TomlValue::try_from(Self::default())
+        let mut merged = serde_json::to_value(Self::default())
             .map_err(|e| DejavuError::InvalidConfig(format!("failed to encode default configuration: {e}")))?;
 
         for candidate in ["dejavu.toml", ".dejavu.toml"] {
@@ -61,13 +62,13 @@ impl DejavuConfig {
         }
         merge_env(&mut merged, "DEJAVU_");
 
-        merged.try_into().map_err(|e| DejavuError::InvalidConfig(format!("invalid configuration: {e}")))
+        serde_json::from_value(merged).map_err(|e| DejavuError::InvalidConfig(format!("invalid configuration: {e}")))
     }
 
     /// Save configuration to a TOML file
     pub fn save<P: Into<PathBuf>>(&self, path: P) -> DejavuResult<()> {
         let path = path.into();
-        let content = toml::to_string_pretty(self).map_err(|e| DejavuError::InvalidConfig(format!("failed to serialize config: {e}")))?;
+        let content = data_text_toml::to_string(self).map_err(|e| DejavuError::InvalidConfig(format!("failed to serialize config: {e}")))?;
         std::fs::write(&path, content)?;
         Ok(())
     }
@@ -88,16 +89,16 @@ impl DejavuConfig {
 /// Read a TOML document into a value tree.
 fn read_toml(path: &Path) -> DejavuResult<TomlValue> {
     let text = std::fs::read_to_string(path)?;
-    text.parse::<TomlValue>().map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))
+    data_text_toml::from_str(&text).map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))
 }
 
 /// Deep-merge `overlay` into `base`: tables merge key by key, every other value replaces.
 fn merge_toml(base: &mut TomlValue, overlay: TomlValue) {
     match (base, overlay) {
-        (TomlValue::Table(base_table), TomlValue::Table(overlay_table)) => {
+        (TomlValue::Object(base_table), TomlValue::Object(overlay_table)) => {
             for (key, value) in overlay_table {
                 match base_table.get_mut(&key) {
-                    Some(slot) if slot.is_table() && value.is_table() => merge_toml(slot, value),
+                    Some(slot) if slot.is_object() && value.is_object() => merge_toml(slot, value),
                     Some(slot) => *slot = value,
                     None => {
                         base_table.insert(key, value);
@@ -127,7 +128,7 @@ fn insert_path(base: &mut TomlValue, segments: &[&str], value: TomlValue) {
     else {
         return;
     };
-    let TomlValue::Table(table) = base
+    let TomlValue::Object(table) = base
     else {
         return;
     };
@@ -135,6 +136,6 @@ fn insert_path(base: &mut TomlValue, segments: &[&str], value: TomlValue) {
         table.insert((*first).to_owned(), value);
         return;
     }
-    let slot = table.entry((*first).to_owned()).or_insert_with(|| TomlValue::Table(TomlMap::new()));
+    let slot = table.entry((*first).to_owned()).or_insert_with(|| TomlValue::Object(TomlMap::new()));
     insert_path(slot, rest, value);
 }

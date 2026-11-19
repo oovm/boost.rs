@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use toml::Value as TomlValue;
+use serde_json::Value as TomlValue;
 
 use crate::{
     error::{ConfigError, ConfigResult},
@@ -271,8 +271,7 @@ pub fn peek_theme_ref(root: impl AsRef<Path>) -> ConfigResult<Option<ExtensionRe
     if !config_file.is_file() {
         return Err(ConfigError::invalid(format!("missing doki.toml under {}", root.display())));
     }
-    let peek: ThemePeek = read_toml(&config_file)?
-        .try_into()
+    let peek: ThemePeek = serde_json::from_value(read_toml(&config_file)?)
         .map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
     if let Some(theme) = &peek.theme {
         theme.validate("theme")?;
@@ -283,16 +282,16 @@ pub fn peek_theme_ref(root: impl AsRef<Path>) -> ConfigResult<Option<ExtensionRe
 /// Read a TOML document into a value tree.
 fn read_toml(path: &Path) -> ConfigResult<TomlValue> {
     let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Io { source })?;
-    text.parse::<TomlValue>().map_err(|error| ConfigError::Extract { message: format!("failed to parse {}: {error}", path.display()) })
+    data_text_toml::from_str(&text).map_err(|error| ConfigError::Extract { message: format!("failed to parse {}: {error}", path.display()) })
 }
 
 /// Deep-merge `overlay` into `base`: tables merge key by key, every other value replaces.
 fn merge_toml(base: &mut TomlValue, overlay: TomlValue) {
     match (base, overlay) {
-        (TomlValue::Table(base_table), TomlValue::Table(overlay_table)) => {
+        (TomlValue::Object(base_table), TomlValue::Object(overlay_table)) => {
             for (key, value) in overlay_table {
                 match base_table.get_mut(&key) {
-                    Some(slot) if slot.is_table() && value.is_table() => merge_toml(slot, value),
+                    Some(slot) if slot.is_object() && value.is_object() => merge_toml(slot, value),
                     Some(slot) => *slot = value,
                     None => {
                         base_table.insert(key, value);
@@ -329,7 +328,7 @@ pub fn load_project_config(root: impl AsRef<Path>, options: LoadOptions) -> Conf
 
     let theme_defaults_path = resolve_theme_defaults_path(&root, &options)?;
 
-    let mut merged = TomlValue::try_from(ProjectConfig::default())
+    let mut merged = serde_json::to_value(ProjectConfig::default())
         .map_err(|error| ConfigError::Extract { message: format!("failed to encode default configuration: {error}") })?;
 
     if let Some(path) = &theme_defaults_path {
@@ -344,7 +343,7 @@ pub fn load_project_config(root: impl AsRef<Path>, options: LoadOptions) -> Conf
     }
 
     let config: ProjectConfig =
-        merged.try_into().map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
+        serde_json::from_value(merged).map_err(|error| ConfigError::Extract { message: format!("invalid project configuration: {error}") })?;
     config.validate()?;
 
     Ok((ProjectPaths { root, config_file }, config))
