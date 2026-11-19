@@ -138,6 +138,8 @@ pub struct SqlSchemaIndexDocument {
 pub enum SqlSchemaFieldTypeDocument {
     /// 32 位整数。
     Int32,
+    /// 16 位整数（PostgreSQL `smallint`）。
+    Int16,
     /// 64 位整数。
     Int64,
     /// 64 位浮点。

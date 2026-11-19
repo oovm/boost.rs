@@ -366,7 +366,13 @@ fn join_hash_columns(
 fn hash_compatible(left: &database_query::catalog_bind::SqlFieldType, right: &database_query::catalog_bind::SqlFieldType) -> bool {
     use database_query::catalog_bind::SqlFieldType;
     let (left, right) = (left.inner(), right.inner());
-    left == right || matches!((&left, &right), (SqlFieldType::Int32, SqlFieldType::Int64) | (SqlFieldType::Int64, SqlFieldType::Int32))
+    left == right
+        || matches!(
+            (&left, &right),
+            (SqlFieldType::Int16, SqlFieldType::Int32 | SqlFieldType::Int64)
+                | (SqlFieldType::Int32, SqlFieldType::Int16 | SqlFieldType::Int64)
+                | (SqlFieldType::Int64, SqlFieldType::Int16 | SqlFieldType::Int32)
+        )
 }
 
 /// 按右行的等值列建一次哈希桶，桶内保留右行下标以维持与嵌套循环一致的输出顺序。

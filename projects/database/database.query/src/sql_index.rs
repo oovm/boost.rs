@@ -49,12 +49,15 @@ pub fn index_namespace(table_namespace: &str, field_id: u64) -> String {
 /// 16 字节大端原文（字节序与规范文本序一致）。其余类型（浮点、布尔、日期、
 /// 未知）保持全表扫描，避免浮点格式化与布尔字面量的口径差异。
 pub fn index_supported(field_type: &SqlFieldType) -> bool {
-    matches!(field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64 | SqlFieldType::String | SqlFieldType::Uuid)
+    matches!(
+        field_type.inner(),
+        SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64 | SqlFieldType::String | SqlFieldType::Uuid
+    )
 }
 
 /// 该列是否支持带上下界的索引范围扫描（只有定长保序编码可以）。
 pub fn range_supported(field_type: &SqlFieldType) -> bool {
-    matches!(field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64)
+    matches!(field_type.inner(), SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64)
 }
 
 /// 一个已存值在索引里的 payload。
@@ -65,7 +68,7 @@ pub fn range_supported(field_type: &SqlFieldType) -> bool {
 ///   不能悄悄少写一条，否则读过索引的结果集会漏行。
 pub fn encode_value(bytes: &[u8], field_type: &SqlFieldType) -> Result<Option<Vec<u8>>, ()> {
     match field_type.inner() {
-        SqlFieldType::Int32 | SqlFieldType::Int64 => {
+        SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64 => {
             let text = std::str::from_utf8(bytes).map_err(|_| ())?;
             let value: i64 = text.trim().parse().map_err(|_| ())?;
             Ok(Some(encode_integer(value)))

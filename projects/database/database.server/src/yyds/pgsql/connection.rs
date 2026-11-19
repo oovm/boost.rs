@@ -1110,7 +1110,7 @@ fn test_stand_in(field_type: Option<SqlFieldType>) -> SqlValue {
     match field_type {
         Some(SqlFieldType::Uuid) => SqlValue::String("00000000-0000-0000-0000-000000000000".to_owned()),
         Some(SqlFieldType::Bool) => SqlValue::Boolean(false),
-        Some(SqlFieldType::Int32 | SqlFieldType::Int64) => SqlValue::Integer(0),
+        Some(SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64) => SqlValue::Integer(0),
         Some(SqlFieldType::Float64 | SqlFieldType::Decimal) => SqlValue::Integer(0),
         Some(SqlFieldType::Date) => SqlValue::String("2000-01-01".to_owned()),
         Some(SqlFieldType::Datetime) => SqlValue::String("2000-01-01 00:00:00".to_owned()),
@@ -1467,6 +1467,7 @@ fn pg_parameter(name: &str) -> Option<&'static str> {
 fn pg_oid(field_type: &SqlFieldType) -> u32 {
     match field_type.inner() {
         SqlFieldType::Int32 => OID_INT4,
+        SqlFieldType::Int16 => OID_INT2,
         SqlFieldType::Int64 => OID_INT8,
         SqlFieldType::Float64 => OID_FLOAT8,
         SqlFieldType::Bool => OID_BOOL,

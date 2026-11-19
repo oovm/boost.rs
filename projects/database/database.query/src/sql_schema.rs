@@ -352,7 +352,7 @@ impl RegistryState {
                     )));
                 }
                 if field.auto_increment {
-                    if !matches!(field.field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64) {
+                    if !matches!(field.field_type.inner(), SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64) {
                         return Err(SqlFrontendError::internal(format!(
                             "SQL schema field `{}` of table `{}` owns a sequence but is not an integer column",
                             field.name, table.name
@@ -452,6 +452,7 @@ fn field_id(table: &SchemaTable, name: &str) -> Option<u64> {
 fn canonical_sql_type(field_type: &SqlFieldType) -> &'static str {
     match field_type.inner() {
         SqlFieldType::Int32 => "INTEGER",
+        SqlFieldType::Int16 => "SMALLINT",
         SqlFieldType::Int64 => "BIGINT",
         SqlFieldType::Float64 => "DOUBLE PRECISION",
         SqlFieldType::String => "TEXT",

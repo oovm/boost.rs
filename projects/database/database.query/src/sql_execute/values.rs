@@ -111,7 +111,9 @@ impl SqlValue {
                 Some(text) => SqlValue::String(text),
                 None => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
             },
-            crate::catalog_bind::SqlFieldType::Int64 | crate::catalog_bind::SqlFieldType::Int32 => {
+            crate::catalog_bind::SqlFieldType::Int64
+            | crate::catalog_bind::SqlFieldType::Int32
+            | crate::catalog_bind::SqlFieldType::Int16 => {
                 if bytes.is_empty() {
                     return SqlValue::Null;
                 }

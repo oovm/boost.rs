@@ -11,7 +11,7 @@ use std::{borrow::Cow, collections::HashMap, io, sync::Arc};
 
 use database_protocol_mysql::{
     MYSQL_TYPE_BLOB, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME, MYSQL_TYPE_DOUBLE, MYSQL_TYPE_LONG, MYSQL_TYPE_LONGLONG, MYSQL_TYPE_NEWDECIMAL,
-    MYSQL_TYPE_TINY, MYSQL_TYPE_VAR_STRING, SERVER_STATUS_IN_TRANS, append_packet, column_definition_payload, encode_length_encoded,
+    MYSQL_TYPE_SHORT, MYSQL_TYPE_TINY, MYSQL_TYPE_VAR_STRING, SERVER_STATUS_IN_TRANS, append_packet, column_definition_payload, encode_length_encoded,
 };
 use database_query::{
     MYSQL_BLOB_CAPACITY, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlColumn,
@@ -159,6 +159,8 @@ fn normalize_session_boolean(sql: &str) -> Cow<'_, str> {
 fn mysql_field_type(field_type: &SqlFieldType) -> u8 {
     match field_type.inner() {
         SqlFieldType::Int32 => MYSQL_TYPE_LONG,
+        // MySQL 的 SMALLINT 在 wire 上是 2 字节短整型。
+        SqlFieldType::Int16 => MYSQL_TYPE_SHORT,
         SqlFieldType::Int64 => MYSQL_TYPE_LONGLONG,
         SqlFieldType::Float64 => MYSQL_TYPE_DOUBLE,
         SqlFieldType::Bool => MYSQL_TYPE_TINY,

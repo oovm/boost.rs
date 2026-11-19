@@ -1067,7 +1067,7 @@ fn write_types_compatible(target: &crate::catalog_bind::SqlFieldType, source: &c
         || target == source
         || matches!(
             (&target, &source),
-            (SqlFieldType::Int64, SqlFieldType::Int32)
+            (SqlFieldType::Int64 | SqlFieldType::Int32 | SqlFieldType::Int16, SqlFieldType::Int32 | SqlFieldType::Int16)
                 | (SqlFieldType::Float64, SqlFieldType::Int32 | SqlFieldType::Int64)
                 // 文本源写进 uuid 列：值在逐行编码时按规范写法解析，非法文本会当场报错。
                 | (SqlFieldType::Uuid, SqlFieldType::String)
@@ -1248,7 +1248,7 @@ pub fn check_write_literal(
     }
     let fits = match field_type.inner() {
         SqlFieldType::Unknown => true,
-        SqlFieldType::Int64 | SqlFieldType::Int32 => match literal {
+        SqlFieldType::Int64 | SqlFieldType::Int32 | SqlFieldType::Int16 => match literal {
             SqlBoundLiteral::Null | SqlBoundLiteral::Integer(_) => true,
             SqlBoundLiteral::String(text) => text.parse::<i64>().is_ok(),
             SqlBoundLiteral::Number(_) | SqlBoundLiteral::Boolean(_) | SqlBoundLiteral::Bytes(_) => false,
@@ -2089,7 +2089,7 @@ fn merge_upper(left: Option<PkBound>, right: Option<PkBound>) -> Option<PkBound>
 
 /// 整数主键才走十进制字节边界；文本主键可以包含任意前缀，字节序与数值序无关。
 fn is_integer_primary_key(field: &crate::SqlCatalogField) -> bool {
-    matches!(field.field_type.inner(), SqlFieldType::Int32 | SqlFieldType::Int64)
+    matches!(field.field_type.inner(), SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64)
 }
 
 /// 主键 `LIKE 'prefix%'` 能否直接当 rowid 字节前缀下推。
@@ -2098,7 +2098,7 @@ fn is_integer_primary_key(field: &crate::SqlCatalogField) -> bool {
 /// 看到的文本一致，两者都能安全下推。uuid 主键的 rowid 是 16 字节二进制，文本前缀
 /// 匹配不到，必须留在 remaining 逐行求值，否则会漏行。
 fn like_prefix_supported(field: &crate::SqlCatalogField) -> bool {
-    matches!(field.field_type.inner(), SqlFieldType::String | SqlFieldType::Int32 | SqlFieldType::Int64)
+    matches!(field.field_type.inner(), SqlFieldType::String | SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64)
 }
 
 fn pk_scan_bounds(integer_primary_key: bool, lower: Option<PkBound>, upper: Option<PkBound>) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
@@ -2353,7 +2353,9 @@ fn merge_index_bound(current: Option<(i64, bool)>, candidate: (i64, bool), lower
 fn index_payload(literal: &SqlBoundLiteral, field_type: &crate::catalog_bind::SqlFieldType) -> Option<Vec<u8>> {
     use crate::catalog_bind::SqlFieldType;
     match (literal, field_type.inner()) {
-        (SqlBoundLiteral::Integer(value), SqlFieldType::Int32 | SqlFieldType::Int64) => Some(crate::sql_index::encode_integer(*value)),
+        (SqlBoundLiteral::Integer(value), SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64) => {
+            Some(crate::sql_index::encode_integer(*value))
+        }
         (SqlBoundLiteral::String(value), SqlFieldType::String) => Some(value.as_bytes().to_vec()),
         // uuid 的索引载荷与行存储共用 16 字节大端原文；文本字面量先解析成规范字节，
         // 解析失败时退回全表扫描（索引只是少读行，不能因此漏行）。

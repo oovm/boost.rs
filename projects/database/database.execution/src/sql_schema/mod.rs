@@ -415,6 +415,7 @@ fn state_from_document(document: SqlSchemaDocument) -> RegistryState {
 fn field_type_document(field_type: &SqlFieldType) -> SqlSchemaFieldTypeDocument {
     match field_type.inner() {
         SqlFieldType::Int32 => SqlSchemaFieldTypeDocument::Int32,
+        SqlFieldType::Int16 => SqlSchemaFieldTypeDocument::Int16,
         SqlFieldType::Int64 => SqlSchemaFieldTypeDocument::Int64,
         SqlFieldType::Float64 => SqlSchemaFieldTypeDocument::Float64,
         SqlFieldType::String => SqlSchemaFieldTypeDocument::String,
@@ -432,6 +433,7 @@ fn field_type_document(field_type: &SqlFieldType) -> SqlSchemaFieldTypeDocument 
 fn field_type_base(document: SqlSchemaFieldTypeDocument) -> SqlFieldType {
     match document {
         SqlSchemaFieldTypeDocument::Int32 => SqlFieldType::Int32,
+        SqlSchemaFieldTypeDocument::Int16 => SqlFieldType::Int16,
         SqlSchemaFieldTypeDocument::Int64 => SqlFieldType::Int64,
         SqlSchemaFieldTypeDocument::Float64 => SqlFieldType::Float64,
         SqlSchemaFieldTypeDocument::String => SqlFieldType::String,

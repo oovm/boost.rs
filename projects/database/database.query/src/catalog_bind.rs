@@ -20,6 +20,11 @@ pub enum SqlFieldType {
     Int64,
     /// 32-bit signed integer (`i32` / `int32`).
     Int32,
+    /// 16-bit signed integer (`i16` / `int16`, PostgreSQL `smallint`).
+    ///
+    /// PostgreSQL 上报 `int2`，驱动按 `i16` 物化；存储载荷与整数比较与
+    /// [`SqlFieldType::Int32`] 同一条路径。
+    Int16,
     /// 64-bit floating point (`f64` / `float64`).
     Float64,
     /// UTF-8 string (`utf8`).
@@ -134,7 +139,8 @@ pub fn uuid_text(bytes: &[u8]) -> Option<String> {
 pub fn project_resolved_type(ty: &ResolvedCanonicalType) -> SqlFieldType {
     match ty {
         ResolvedCanonicalType::Scalar(scalar) => match scalar {
-            CanonicalScalar::I8 | CanonicalScalar::I16 | CanonicalScalar::I32 => SqlFieldType::Int32,
+            CanonicalScalar::I16 => SqlFieldType::Int16,
+            CanonicalScalar::I8 | CanonicalScalar::I32 => SqlFieldType::Int32,
             CanonicalScalar::I64 | CanonicalScalar::U8 | CanonicalScalar::U16 | CanonicalScalar::U32 => SqlFieldType::Int64,
             CanonicalScalar::F32 | CanonicalScalar::F64 => SqlFieldType::Float64,
             CanonicalScalar::Utf8 => SqlFieldType::String,

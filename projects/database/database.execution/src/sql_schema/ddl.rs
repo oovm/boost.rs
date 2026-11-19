@@ -433,7 +433,9 @@ fn map_sql_type(sql_type: &str) -> Result<(SqlFieldType, Option<u32>), SqlFronte
     let field_type = match base {
         "TINYINT" if parameters == Some("1") => SqlFieldType::Bool,
         "BOOL" | "BOOLEAN" => SqlFieldType::Bool,
-        "TINYINT" | "SMALLINT" | "MEDIUMINT" | "INT" | "INTEGER" | "INT2" | "INT4" | "SMALLSERIAL" | "SERIAL" => SqlFieldType::Int32,
+        "TINYINT" | "MEDIUMINT" | "INT" | "INTEGER" | "INT4" | "SERIAL" => SqlFieldType::Int32,
+        // 16 位整数保留宽度：PostgreSQL 上报 `int2`，驱动按 `i16` 物化。
+        "SMALLINT" | "INT2" | "SMALLSERIAL" => SqlFieldType::Int16,
         "BIGINT" | "INT8" | "BIGSERIAL" => SqlFieldType::Int64,
         "FLOAT" | "REAL" | "DOUBLE" | "DOUBLE PRECISION" | "FLOAT4" | "FLOAT8" => SqlFieldType::Float64,
         "VARCHAR" | "CHAR" | "CHARACTER" | "CHARACTER VARYING" => SqlFieldType::String,

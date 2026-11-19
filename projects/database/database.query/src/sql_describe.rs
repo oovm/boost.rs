@@ -222,7 +222,7 @@ fn infer_expression_type(
                 let argument = args.first().map(|arg| infer_expression_type(arg, field_types, dialect)).unwrap_or(SqlFieldType::Unknown);
                 // MySQL 的 `SUM` 只在精确操作数上返回 `DECIMAL`，浮点求和仍是 `DOUBLE`。
                 if matches!(dialect, SqlDialect::Mysql)
-                    && matches!(argument.clone().inner(), SqlFieldType::Int32 | SqlFieldType::Int64 | SqlFieldType::Bool)
+                    && matches!(argument.clone().inner(), SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64 | SqlFieldType::Bool)
                 {
                     SqlFieldType::Decimal
                 }
