@@ -14,7 +14,7 @@ mod wal;
 mod writer;
 
 pub use crate::sqlite::{
-    database::{SqliteDatabase, read_existing},
+    database::{OpenWritableError, OpenWritableOptions, OpenedWritable, SqliteDatabase, open_writable, read_existing},
     journal::{PublishMode, publish},
     lock::{LockError, WriterLock},
     schema::{

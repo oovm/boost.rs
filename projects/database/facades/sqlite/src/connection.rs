@@ -25,9 +25,7 @@ use crate::{
 
 use database_execution::sqlite::session::SqliteSession;
 use database_storage::sqlite::{
-    PublishMode, WriterLock,
-    journal,
-    lock::LockError,
+    OpenWritableError, OpenWritableOptions, PublishMode, WriterLock, journal, lock::LockError, open_writable,
 };
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 
@@ -39,6 +37,19 @@ fn lock_error(error: LockError) -> SqlError {
         LockError::Busy { .. } => SqlError::new("busy", error.to_string()),
         LockError::Open { .. } | LockError::Lock { .. } => SqlError::new("storage", error.to_string()),
     }
+}
+
+/// 把存储层的打开拒绝映射成结构化的 SQL 拒绝。
+fn open_error(error: OpenWritableError, path: &Path) -> SqlError {
+    match error {
+        OpenWritableError::Lock(inner) => lock_error(inner),
+        OpenWritableError::Missing => not_found(path),
+        OpenWritableError::Storage(inner) => storage_failure(inner),
+    }
+}
+
+fn not_found(path: &Path) -> SqlError {
+    SqlError::new("not-found", format!("database file `{}` does not exist", path.display()))
 }
 
 /// 提交时发布新镜像并处理回滚日志的方式。
@@ -220,25 +231,36 @@ impl Connection {
     /// 打开已有文件时先回放热 `-journal`:写连接把回滚结果写回主文件后再清理
     /// 日志,只读连接只在内存里使用回滚结果、不改动磁盘。
     pub fn open(options: ConnectionOptions) -> Result<Self, SqlError> {
-        let mut created = false;
         let mut lock = None;
         let writer = if let Some(pages) = &options.data {
             SqliteWriter::from_pages(pages.clone()).map_err(storage_failure)?
         }
         else if let Some(path) = &options.filename {
-            if !options.read_only && (path.exists() || options.create) {
-                lock = Some(WriterLock::acquire(path, Duration::from_millis(options.busy_timeout_ms)).map_err(lock_error)?);
-            }
-            if path.exists() {
-                let pages = load_recovered(path, options.read_only, options.journal_mode, options.synchronous)?;
-                SqliteWriter::from_pages(pages).map_err(storage_failure)?
-            }
-            else if options.create && !options.read_only {
-                created = true;
-                SqliteWriter::create(options.page_size.unwrap_or(4096) as usize).map_err(storage_failure)?
-            }
-            else {
-                return Err(SqlError::new("not-found", format!("database file `{}` does not exist", path.display())));
+            match options.read_only {
+                true => {
+                    if !path.exists() {
+                        return Err(not_found(path));
+                    }
+                    let pages =
+                        journal::recover(path, true, options.journal_mode == JournalMode::Truncate, options.synchronous)
+                            .map_err(storage_failure)?;
+                    SqliteWriter::from_pages(pages).map_err(storage_failure)?
+                }
+                false => {
+                    let opened = open_writable(
+                        path,
+                        OpenWritableOptions {
+                            busy_timeout: Duration::from_millis(options.busy_timeout_ms),
+                            create: options.create,
+                            page_size: options.page_size.unwrap_or(4096) as usize,
+                            publish: options.journal_mode.publish_mode(),
+                            synchronous: options.synchronous,
+                        },
+                    )
+                    .map_err(|error| open_error(error, path))?;
+                    lock = Some(opened.lock);
+                    opened.writer
+                }
             }
         }
         else {
@@ -248,15 +270,7 @@ impl Connection {
         engine.set_synchronous(options.synchronous);
         let journal_mode = options.journal_mode;
         let session = SqliteSession::new(engine, options.filename, options.read_only, journal_mode.publish_mode());
-        let mut connection = Self { session, lock, journal_mode };
-        if created {
-            // 新建库没有旧镜像可回滚;残留日志只可能来自更早的失败创建,先清掉。
-            if let Some(path) = connection.session.filename() {
-                journal::finish(path, false).map_err(storage_failure)?;
-            }
-            connection.session.publish()?;
-        }
-        Ok(connection)
+        Ok(Self { session, lock, journal_mode })
     }
 
     /// 当前数据库镜像,可直接写成 `.sqlite3` 文件。
@@ -405,14 +419,6 @@ impl Connection {
     pub fn journal_mode(&self) -> JournalMode {
         self.journal_mode
     }
-}
-
-/// 读取主文件并回放热日志。
-///
-/// 文件字节与回滚日志的重放机制归 `database.storage::sqlite::journal`;
-/// 本连接只把日志模式映射成存储层的发布形状。
-fn load_recovered(path: &Path, read_only: bool, journal_mode: JournalMode, synchronous: bool) -> Result<Vec<u8>, SqlError> {
-    journal::recover(path, read_only, journal_mode == JournalMode::Truncate, synchronous).map_err(storage_failure)
 }
 
 impl std::fmt::Debug for Connection {

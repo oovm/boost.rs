@@ -5,6 +5,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::OnceLock,
+    time::Duration,
 };
 
 use database_types::{Error, Result};
@@ -14,11 +15,14 @@ use database_formats::sqlite::{
 };
 
 use crate::sqlite::{
+    journal::PublishMode,
+    lock::{LockError, WriterLock},
     schema::{
         SchemaObject, index_rows_from_objects, named_table_from_objects, named_table_range_from_objects, read_schema,
         without_rowid_rows_from_objects,
     },
     table::{TableLimits, TableRow},
+    writer::SqliteWriter,
 };
 
 /// Storage mode for [`SqliteDatabase`].
@@ -195,4 +199,84 @@ pub fn read_existing(path: impl AsRef<Path>) -> Result<Vec<u8>> {
     file.read_to_end(&mut bytes).map_err(Error::Io)?;
     validate_database(&bytes)?;
     Ok(bytes)
+}
+
+/// Options for opening a writable SQLite main file through the storage layer.
+#[derive(Debug, Clone, Copy)]
+pub struct OpenWritableOptions {
+    /// How long [`open_writable`] waits for the cross-process writer lease.
+    pub busy_timeout: Duration,
+    /// Create a blank database when the file does not exist.
+    pub create: bool,
+    /// Page size of a newly created database.
+    pub page_size: usize,
+    /// Journal shape used to publish the first image of a created database.
+    pub publish: PublishMode,
+    /// Whether the first publication waits for the disk.
+    pub synchronous: bool,
+}
+
+/// A writable SQLite main file: the held lease plus the loaded or created writer.
+pub struct OpenedWritable {
+    /// Cross-process writer lease, held until the connection closes.
+    pub lock: WriterLock,
+    /// Engine input for the opened file; a created file already has its blank image on disk.
+    pub writer: SqliteWriter,
+    /// Whether this open created the file.
+    pub created: bool,
+}
+
+/// Failure while opening a writable SQLite main file.
+#[derive(Debug)]
+pub enum OpenWritableError {
+    /// Another process or handle holds the writer lease.
+    Lock(LockError),
+    /// The file does not exist and `create` was not requested.
+    Missing,
+    /// The file could not be read, recovered, created or published.
+    Storage(Error),
+}
+
+impl std::fmt::Display for OpenWritableError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lock(error) => formatter.write_str(&error.to_string()),
+            Self::Missing => formatter.write_str("database file does not exist"),
+            Self::Storage(error) => formatter.write_str(&error.to_string()),
+        }
+    }
+}
+
+impl std::error::Error for OpenWritableError {}
+
+/// Opens a database file for writing: acquire the lease, recover or create, then publish the first image.
+///
+/// The order is a storage contract, not a facade choice: the lease is taken before the
+/// file is read so two writers never start from the same image, an existing file replays
+/// its hot journal in memory before the writer sees it, and a created file is published
+/// durably before the caller receives the handle.
+pub fn open_writable(path: &Path, options: OpenWritableOptions) -> std::result::Result<OpenedWritable, OpenWritableError> {
+    let exists = path.exists();
+    if !exists && !options.create {
+        return Err(OpenWritableError::Missing);
+    }
+    let lock = WriterLock::acquire(path, options.busy_timeout).map_err(OpenWritableError::Lock)?;
+    if exists {
+        let pages = crate::sqlite::journal::recover(
+            path,
+            false,
+            options.publish == PublishMode::JournalTruncate,
+            options.synchronous,
+        )
+        .map_err(OpenWritableError::Storage)?;
+        let writer = SqliteWriter::from_pages(pages).map_err(OpenWritableError::Storage)?;
+        return Ok(OpenedWritable { lock, writer, created: false });
+    }
+    let mut writer = SqliteWriter::create(options.page_size).map_err(OpenWritableError::Storage)?;
+    writer.set_synchronous(options.synchronous);
+    // A brand-new database has no previous image to roll back; only a stale journal from an
+    // earlier failed create can be present, and it must not survive the first publication.
+    crate::sqlite::journal::finish(path, false).map_err(OpenWritableError::Storage)?;
+    crate::sqlite::journal::publish(path, &mut writer, options.publish).map_err(OpenWritableError::Storage)?;
+    Ok(OpenedWritable { lock, writer, created: true })
 }
