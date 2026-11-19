@@ -517,8 +517,8 @@ fn respond(
     // time instead of at EXEC time. The actual runtime behaviour (wrong-type, NX failure,
     // etc.) is deferred to EXEC per Redis semantics.
     if state.session.in_multi() {
-        if let Err(error_bytes) = session::validate_command_for_queue(command, count, &request.arguments, executor.is_some(), namespace) {
-            stream.write_all(&error_bytes)?;
+        if let Err(error) = session::validate_command_for_queue(command, count, &request.arguments, executor.is_some(), namespace) {
+            stream.write_all(&database_protocol_redis::codec::encode_reply(&error.to_reply(), state.protocol))?;
             // 同 TypeScript 侧：规划失败立刻毒化事务，EXEC 整队丢弃。
             state.session.poison();
             return Ok(true);
@@ -684,32 +684,39 @@ fn respond(
     else if command.eq_ignore_ascii_case(b"COMMAND") {
         server_face::handle_command(stream, request, state.protocol)?;
     }
-    else if string::handle_string(stream, request, executor, probe, Some(tracker), namespace, state.protocol)? {
-        // 字符串与键族的回复已由 handle_string 写出。
-    }
-    else if collections::is_hyperloglog_command(command) {
-        let reply = collections::handle_hyperloglog(request, executor, namespace).unwrap_or_else(|error| error.to_reply());
-        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
-    }
-    else if collections::is_hash_command(command) {
-        let reply = collections::handle_hash(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
-        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
-    }
-    else if collections::is_list_command(command) {
-        let reply = collections::handle_list(request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())
-            .unwrap_or_else(|error| error.to_reply());
-        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
-    }
-    else if collections::is_set_command(command) {
-        let reply = collections::handle_set(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
-        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
-    }
-    else if collections::is_zset_command(command) {
-        let reply = collections::handle_zset(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
-        stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
-    }
     else {
-        write_unknown_command(stream, &request.arguments)?;
+        // 字符串与键空间族产出类型化 Reply / CommandError，字节统一由 protocol codec 编码；
+        // `Ok(None)` 表示非本族命令，继续走容器族分派与未知命令兜底。
+        match string::handle_string(request, executor, probe, Some(tracker), namespace, state.protocol) {
+            Ok(Some(reply)) => stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?,
+            Err(error) => stream.write_all(&database_protocol_redis::codec::encode_reply(&error.to_reply(), state.protocol))?,
+            Ok(None) => {
+                if collections::is_hyperloglog_command(command) {
+                    let reply = collections::handle_hyperloglog(request, executor, namespace).unwrap_or_else(|error| error.to_reply());
+                    stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
+                }
+                else if collections::is_hash_command(command) {
+                    let reply = collections::handle_hash(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+                    stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
+                }
+                else if collections::is_list_command(command) {
+                    let reply = collections::handle_list(request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())
+                        .unwrap_or_else(|error| error.to_reply());
+                    stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
+                }
+                else if collections::is_set_command(command) {
+                    let reply = collections::handle_set(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+                    stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
+                }
+                else if collections::is_zset_command(command) {
+                    let reply = collections::handle_zset(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+                    stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
+                }
+                else {
+                    write_unknown_command(stream, &request.arguments)?;
+                }
+            }
+        }
     }
     Ok(true)
 }

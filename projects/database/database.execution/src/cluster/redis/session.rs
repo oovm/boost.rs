@@ -5,6 +5,7 @@
 //! 套接字、协议版本与 `CLIENT LIST` 投影。
 
 use database_protocol_redis::bind::{BindError, bind};
+use database_protocol_redis::codec::CommandError;
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_types::cluster::Namespace;
 
@@ -170,32 +171,33 @@ pub fn watched_keys_modified(executor: &dyn KeyValueExecutor, watched: &[Watched
 /// 入队前对每条命令做一次轻量的 arity / 语法检查。
 ///
 /// 这里返回的错误会立刻写回客户端（不延迟到 `EXEC`）。语法不通过的命令按真机语义毒化
-/// 整个事务，`EXEC` 随后回 `EXECABORT`。返回 `Err(bytes)` 表示要原样发出的 RESP 错误。
+/// 整个事务，`EXEC` 随后回 `EXECABORT`。返回 `Err(CommandError)` 表示要发出的语义错误，
+/// RESP error 行的字节形状统一由 `database_protocol_redis::codec` 编码。
 pub fn validate_command_for_queue(
     command: &[u8],
     count: usize,
     arguments: &[&[u8]],
     has_executor: bool,
     namespace: &Namespace,
-) -> Result<(), Vec<u8>> {
+) -> Result<(), CommandError> {
     // PING: 1 or 2 args
     if command.eq_ignore_ascii_case(b"PING") {
         if count > 2 {
-            return Err(b"-ERR wrong number of arguments for 'ping' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'ping' command".to_owned()));
         }
         return Ok(());
     }
     // ECHO: exactly 2
     if command.eq_ignore_ascii_case(b"ECHO") {
         if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'echo' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'echo' command".to_owned()));
         }
         return Ok(());
     }
     // QUIT: exactly 1
     if command.eq_ignore_ascii_case(b"QUIT") {
         if count != 1 {
-            return Err(b"-ERR wrong number of arguments for 'quit' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'quit' command".to_owned()));
         }
         return Ok(());
     }
@@ -203,20 +205,20 @@ pub fn validate_command_for_queue(
     // no-password error at EXEC, so queueing only checks arity here.
     if command.eq_ignore_ascii_case(b"AUTH") {
         if !matches!(count, 2 | 3) {
-            return Err(b"-ERR wrong number of arguments for 'auth' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'auth' command".to_owned()));
         }
         return Ok(());
     }
     // SELECT: exactly 2, needs executor
     if command.eq_ignore_ascii_case(b"SELECT") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'select' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'select' command".to_owned()));
         }
         if parse_database(arguments[1]).is_none() {
-            return Err(b"-ERR DB index is out of range\r\n".to_vec());
+            return Err(CommandError::Failed("DB index is out of range".to_owned()));
         }
         return Ok(());
     }
@@ -224,26 +226,26 @@ pub fn validate_command_for_queue(
     // are validated when the command runs, like upstream.
     if command.eq_ignore_ascii_case(b"EXPIRE") || command.eq_ignore_ascii_case(b"PEXPIRE") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 3 {
-            return Err(b"-ERR wrong number of arguments for 'expire' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'expire' command".to_owned()));
         }
         if parse_integer(arguments[2]).is_none() {
-            return Err(b"-ERR value is not an integer or out of range\r\n".to_vec());
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         }
         return Ok(());
     }
     // EXPIREAT / PEXPIREAT: at least 3, need executor, integer check.
     if command.eq_ignore_ascii_case(b"EXPIREAT") || command.eq_ignore_ascii_case(b"PEXPIREAT") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 3 {
-            return Err(b"-ERR wrong number of arguments for 'expireat' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'expireat' command".to_owned()));
         }
         if parse_integer(arguments[2]).is_none() {
-            return Err(b"-ERR value is not an integer or out of range\r\n".to_vec());
+            return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
         }
         return Ok(());
     }
@@ -251,28 +253,28 @@ pub fn validate_command_for_queue(
     // conflicts are runtime semantics and stay deferred to EXEC.
     if command.eq_ignore_ascii_case(b"RENAME") || command.eq_ignore_ascii_case(b"RENAMENX") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 3 {
             let name = if command.eq_ignore_ascii_case(b"RENAMENX") { "renamenx" } else { "rename" };
-            return Err(format!("-ERR wrong number of arguments for '{name}' command\r\n").into_bytes());
+            return Err(CommandError::Failed(format!("wrong number of arguments for '{name}' command")));
         }
         return Ok(());
     }
     // GETEX: at least 2, needs executor, at most one well-formed expiry option
     if command.eq_ignore_ascii_case(b"GETEX") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'getex' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'getex' command".to_owned()));
         }
         let mut seen_option = false;
         let mut index = 2;
         while index < count {
             let option = arguments[index];
             if seen_option {
-                return Err(b"-ERR syntax error\r\n".to_vec());
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
             if option.eq_ignore_ascii_case(b"PERSIST") {
                 seen_option = true;
@@ -285,16 +287,16 @@ pub fn validate_command_for_queue(
             {
                 let Some(raw) = arguments.get(index + 1)
                 else {
-                    return Err(b"-ERR syntax error\r\n".to_vec());
+                    return Err(CommandError::Failed("syntax error".to_owned()));
                 };
                 if parse_integer(raw).is_none() {
-                    return Err(b"-ERR value is not an integer or out of range\r\n".to_vec());
+                    return Err(CommandError::Failed("value is not an integer or out of range".to_owned()));
                 }
                 seen_option = true;
                 index += 2;
             }
             else {
-                return Err(b"-ERR syntax error\r\n".to_vec());
+                return Err(CommandError::Failed("syntax error".to_owned()));
             }
         }
         return Ok(());
@@ -303,10 +305,10 @@ pub fn validate_command_for_queue(
     // argument are runtime checks and stay deferred to EXEC, like upstream.
     if command.eq_ignore_ascii_case(b"OBJECT") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'object' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'object' command".to_owned()));
         }
         return Ok(());
     }
@@ -317,63 +319,63 @@ pub fn validate_command_for_queue(
         || command.eq_ignore_ascii_case(b"STRLEN")
     {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 2 {
-            return Err(b"-ERR wrong number of arguments\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments".to_owned()));
         }
         return Ok(());
     }
     // MGET: at least 2
     if command.eq_ignore_ascii_case(b"MGET") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'mget' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'mget' command".to_owned()));
         }
         return Ok(());
     }
     // EXISTS: at least 2
     if command.eq_ignore_ascii_case(b"EXISTS") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'exists' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'exists' command".to_owned()));
         }
         return Ok(());
     }
     // APPEND: exactly 3
     if command.eq_ignore_ascii_case(b"APPEND") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 3 {
-            return Err(b"-ERR wrong number of arguments for 'append' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'append' command".to_owned()));
         }
         return Ok(());
     }
     // PERSIST: exactly 2
     if command.eq_ignore_ascii_case(b"PERSIST") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'persist' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'persist' command".to_owned()));
         }
         return Ok(());
     }
     // SETEX: exactly 4 with a positive integer TTL
     if command.eq_ignore_ascii_case(b"SETEX") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 4 {
-            return Err(b"-ERR wrong number of arguments for 'setex' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'setex' command".to_owned()));
         }
         if parse_integer(arguments[2]).is_none_or(|seconds| seconds <= 0) {
-            return Err(b"-ERR invalid expire time in 'setex' command\r\n".to_vec());
+            return Err(CommandError::Failed("invalid expire time in 'setex' command".to_owned()));
         }
         return Ok(());
     }
@@ -381,28 +383,28 @@ pub fn validate_command_for_queue(
     if command.eq_ignore_ascii_case(b"CLIENT") {
         let Some(subcommand) = arguments.get(1)
         else {
-            return Err(b"-ERR Unknown subcommand or wrong number of arguments for 'CLIENT'. Try CLIENT HELP.\r\n".to_vec());
+            return Err(CommandError::Failed("Unknown subcommand or wrong number of arguments for 'CLIENT'. Try CLIENT HELP.".to_owned()));
         };
         if subcommand.eq_ignore_ascii_case(b"SETINFO") {
             let valid = count == 4 && (arguments[2].eq_ignore_ascii_case(b"LIB-NAME") || arguments[2].eq_ignore_ascii_case(b"LIB-VER"));
             if !valid {
-                return Err(b"-ERR wrong number of arguments for 'client|setinfo' command\r\n".to_vec());
+                return Err(CommandError::Failed("wrong number of arguments for 'client|setinfo' command".to_owned()));
             }
             return Ok(());
         }
         if subcommand.eq_ignore_ascii_case(b"SETNAME") {
             if count != 3 {
-                return Err(b"-ERR wrong number of arguments for 'client|setname' command\r\n".to_vec());
+                return Err(CommandError::Failed("wrong number of arguments for 'client|setname' command".to_owned()));
             }
             return Ok(());
         }
         if subcommand.eq_ignore_ascii_case(b"GETNAME") {
             if count != 2 {
-                return Err(b"-ERR wrong number of arguments for 'client|getname' command\r\n".to_vec());
+                return Err(CommandError::Failed("wrong number of arguments for 'client|getname' command".to_owned()));
             }
             return Ok(());
         }
-        return Err(b"-ERR unsupported command\r\n".to_vec());
+        return Err(CommandError::Failed("unsupported command".to_owned()));
     }
     // Hash / list value commands: they need the executor. Their arity and type checks
     // are runtime semantics and stay deferred to EXEC, like upstream queueing.
@@ -413,68 +415,68 @@ pub fn validate_command_for_queue(
         || collections::is_hyperloglog_command(command)
     {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         return Ok(());
     }
     // RANDOMKEY / DBSIZE: exactly 1. FLUSHALL accepts an optional ASYNC / SYNC.
     if command.eq_ignore_ascii_case(b"RANDOMKEY") || command.eq_ignore_ascii_case(b"DBSIZE") || command.eq_ignore_ascii_case(b"FLUSHALL") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         let maximum = if command.eq_ignore_ascii_case(b"FLUSHALL") { 2 } else { 1 };
         if count > maximum {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
+            return Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command))));
         }
         return Ok(());
     }
     // COPY: at least 3, needs executor. Options are validated at runtime.
     if command.eq_ignore_ascii_case(b"COPY") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 3 {
-            return Err(b"-ERR wrong number of arguments for 'copy' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'copy' command".to_owned()));
         }
         return Ok(());
     }
     // EXPIRETIME / PEXPIRETIME: exactly 2.
     if command.eq_ignore_ascii_case(b"EXPIRETIME") || command.eq_ignore_ascii_case(b"PEXPIRETIME") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 2 {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
+            return Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command))));
         }
         return Ok(());
     }
     // SCAN: cursor iteration, options are validated at runtime like upstream.
     if command.eq_ignore_ascii_case(b"SCAN") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'scan' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'scan' command".to_owned()));
         }
         return Ok(());
     }
     // KEYS: exactly one pattern, needs executor.
     if command.eq_ignore_ascii_case(b"KEYS") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 2 {
-            return Err(b"-ERR wrong number of arguments for 'keys' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'keys' command".to_owned()));
         }
         return Ok(());
     }
     // DEL: one or more keys, mirrors the `-2` arity of the upstream command.
     if command.eq_ignore_ascii_case(b"DEL") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count < 2 {
-            return Err(b"-ERR wrong number of arguments for 'del' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'del' command".to_owned()));
         }
         return Ok(());
     }
@@ -482,52 +484,50 @@ pub fn validate_command_for_queue(
     // validated at runtime, so queueing only checks arity like upstream.
     if command.eq_ignore_ascii_case(b"GETRANGE") || command.eq_ignore_ascii_case(b"SETRANGE") || command.eq_ignore_ascii_case(b"SETBIT") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 4 {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
+            return Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command))));
         }
         return Ok(());
     }
     if command.eq_ignore_ascii_case(b"INCRBYFLOAT") || command.eq_ignore_ascii_case(b"GETBIT") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if count != 3 {
-            return Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes());
+            return Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command))));
         }
         return Ok(());
     }
     if command.eq_ignore_ascii_case(b"BITCOUNT") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if !matches!(count, 2 | 4 | 5) {
-            return Err(b"-ERR wrong number of arguments for 'bitcount' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'bitcount' command".to_owned()));
         }
         return Ok(());
     }
     if command.eq_ignore_ascii_case(b"BITPOS") {
         if !has_executor {
-            return Err(b"-ERR unsupported command\r\n".to_vec());
+            return Err(CommandError::Failed("unsupported command".to_owned()));
         }
         if !(3..=6).contains(&count) {
-            return Err(b"-ERR wrong number of arguments for 'bitpos' command\r\n".to_vec());
+            return Err(CommandError::Failed("wrong number of arguments for 'bitpos' command".to_owned()));
         }
         return Ok(());
     }
     // Fall back to bind()'s own syntax checks.
     match bind(arguments, namespace.0.as_str()) {
         Ok(_) => Ok(()),
-        Err(BindError::WrongArity) => {
-            Err(format!("-ERR wrong number of arguments for '{}' command\r\n", lowercase_command(command)).into_bytes())
-        }
-        Err(BindError::Syntax) => Err(b"-ERR syntax error\r\n".to_vec()),
-        Err(BindError::UnsupportedOptions) => Err(b"-ERR syntax error\r\n".to_vec()),
-        Err(BindError::InvalidInteger) => Err(b"-ERR value is not an integer or out of range\r\n".to_vec()),
-        Err(BindError::InvalidExpire) => Err(b"-ERR invalid expire time in 'set' command\r\n".to_vec()),
-        Err(BindError::EmptyCommand) => Err(b"-ERR empty command\r\n".to_vec()),
-        Err(BindError::UnsupportedCommand) => Err(b"-ERR unsupported command\r\n".to_vec()),
+        Err(BindError::WrongArity) => Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command)))),
+        Err(BindError::Syntax) => Err(CommandError::Failed("syntax error".to_owned())),
+        Err(BindError::UnsupportedOptions) => Err(CommandError::Failed("syntax error".to_owned())),
+        Err(BindError::InvalidInteger) => Err(CommandError::Failed("value is not an integer or out of range".to_owned())),
+        Err(BindError::InvalidExpire) => Err(CommandError::Failed("invalid expire time in 'set' command".to_owned())),
+        Err(BindError::EmptyCommand) => Err(CommandError::Failed("empty command".to_owned())),
+        Err(BindError::UnsupportedCommand) => Err(CommandError::Failed("unsupported command".to_owned())),
     }
 }
 

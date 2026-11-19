@@ -10,7 +10,7 @@
 //! 字符串内容再特殊也不会被当成 hash/list；判定类型只是逐个命名空间探测可见记录，
 //! 同一逻辑键在任一时刻至多存在一种表示（写入时强制互斥，删除时清干净）。
 
-use std::{io, time::Duration};
+use std::time::Duration;
 
 use database_storage::cluster_kv::redis::format::{
     decode_hash, decode_list, decode_set, decode_zset, encode_hash, encode_list, encode_set, encode_zset, read_u32, set_blob_count,
@@ -138,11 +138,6 @@ fn remove_value(executor: &dyn KeyValueExecutor, namespace: &Namespace, key: &[u
         Ok(_) => Err("collection delete returned an unexpected result".into()),
         Err(error) => Err(error.to_string()),
     }
-}
-
-/// 过渡垫片：字符串族在下一逻辑块收敛到 `CommandError::WrongType` 后删除。
-pub fn write_wrong_type(stream: &mut dyn io::Write) -> io::Result<()> {
-    stream.write_all(b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n")
 }
 
 /// arity 错误的语义消息，由 protocol 编码为 `-ERR ...`。
