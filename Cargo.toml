@@ -96,6 +96,7 @@ members = [
     "projects/data/data.binary.aarch64",
     "projects/data/data.binary.asn1",
     "projects/data/data.binary.cfb",
+    "projects/data/boost.data",
     "projects/data/data.binary.core",
     "projects/data/data.binary.dex",
     "projects/data/data.binary.doc",
