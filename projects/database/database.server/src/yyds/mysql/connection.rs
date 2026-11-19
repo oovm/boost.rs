@@ -21,7 +21,13 @@ use database_execution::{
     sql_exec::execute_plan,
     sql_schema::{SqlSchemaCheckpoint, SqlSchemaRegistry, apply_auto_increment},
 };
-use database_protocol_mysql::{MAX_PACKET_PAYLOAD, PROTOCOL_VERSION};
+use database_protocol_mysql::{
+    LenencError, MAX_PACKET_PAYLOAD, MYSQL_TYPE_BLOB, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME, MYSQL_TYPE_DECIMAL, MYSQL_TYPE_DOUBLE, MYSQL_TYPE_FLOAT,
+    MYSQL_TYPE_INT24, MYSQL_TYPE_LONG, MYSQL_TYPE_LONGLONG, MYSQL_TYPE_LONG_BLOB, MYSQL_TYPE_MEDIUM_BLOB, MYSQL_TYPE_NEWDECIMAL, MYSQL_TYPE_NULL,
+    MYSQL_TYPE_SHORT, MYSQL_TYPE_STRING, MYSQL_TYPE_TINY, MYSQL_TYPE_TINY_BLOB, MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_YEAR, PROTOCOL_VERSION,
+    SERVER_STATUS_AUTOCOMMIT, SERVER_STATUS_IN_TRANS, append_packet, column_definition_payload, encode_length_encoded, eof_payload, error_payload,
+    ok_payload, prepare_ok_payload, read_length_encoded,
+};
 use database_query::{
     MYSQL_BLOB_CAPACITY, SqlBoundExpression, SqlBoundLiteral, SqlCatalog, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlColumn,
     SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError, SqlParameterStyle, SqlResult,
@@ -36,8 +42,6 @@ const SERVER_CAPABILITIES: u32 = 0x0000_0001 | 0x0000_0004 | 0x0000_0008 | 0x000
 const CLIENT_PROTOCOL_41: u32 = 0x0000_0200;
 const CLIENT_SSL: u32 = 0x0000_0800;
 const CLIENT_SECURE_CONNECTION: u32 = 0x0000_8000;
-const SERVER_STATUS_IN_TRANS: u16 = 0x0001;
-const SERVER_STATUS_AUTOCOMMIT: u16 = 0x0002;
 const CLIENT_PLUGIN_AUTH: u32 = 0x0008_0000;
 const CLIENT_PLUGIN_AUTH_LENENC: u32 = 0x0020_0000;
 const CLIENT_CONNECT_WITH_DB: u32 = 0x0000_0008;
@@ -60,27 +64,6 @@ const COM_RESET_CONNECTION: u8 = 0x1F;
 /// implement so the client sees a real MySQL error instead of a desynchronised
 /// stream.
 const ER_UNKNOWN_COM_ERROR: u16 = 1047;
-
-/// `MYSQL_TYPE_*` codes carried by parameter and column definitions.
-const MYSQL_TYPE_DECIMAL: u8 = 0x00;
-const MYSQL_TYPE_TINY: u8 = 0x01;
-const MYSQL_TYPE_SHORT: u8 = 0x02;
-const MYSQL_TYPE_LONG: u8 = 0x03;
-const MYSQL_TYPE_FLOAT: u8 = 0x04;
-const MYSQL_TYPE_DOUBLE: u8 = 0x05;
-const MYSQL_TYPE_NULL: u8 = 0x06;
-const MYSQL_TYPE_LONGLONG: u8 = 0x08;
-const MYSQL_TYPE_INT24: u8 = 0x09;
-const MYSQL_TYPE_DATE: u8 = 0x0A;
-const MYSQL_TYPE_DATETIME: u8 = 0x0C;
-const MYSQL_TYPE_YEAR: u8 = 0x0D;
-const MYSQL_TYPE_NEWDECIMAL: u8 = 0xF6;
-const MYSQL_TYPE_TINY_BLOB: u8 = 0xF9;
-const MYSQL_TYPE_MEDIUM_BLOB: u8 = 0xFA;
-const MYSQL_TYPE_LONG_BLOB: u8 = 0xFB;
-const MYSQL_TYPE_BLOB: u8 = 0xFC;
-const MYSQL_TYPE_VAR_STRING: u8 = 0xFD;
-const MYSQL_TYPE_STRING: u8 = 0xFE;
 
 /// Emulated `SHOW VARIABLES` table. Values describe what this gateway actually
 /// implements: no strict mode, a single-node engine, and utf8mb4 text.
@@ -1004,31 +987,12 @@ fn take_nul_bytes<'a>(payload: &'a [u8], cursor: &mut usize) -> Result<&'a [u8],
 }
 
 fn take_lenenc(payload: &[u8], cursor: &mut usize) -> Result<usize, &'static str> {
-    let first = *payload.get(*cursor).ok_or("missing auth response length")?;
-    *cursor += 1;
-    match first {
-        0..=250 => Ok(usize::from(first)),
-        251 => Err("NULL auth response length is invalid"),
-        252 => take_integer(payload, cursor, 2),
-        253 => take_integer(payload, cursor, 3),
-        254 => take_integer(payload, cursor, 8),
-        _ => Err("invalid auth response length"),
+    match read_length_encoded(payload, cursor) {
+        Ok(Some(value)) => usize::try_from(value).map_err(|_| "length-encoded integer overflow"),
+        Ok(None) => Err("NULL auth response length is invalid"),
+        Err(LenencError::Truncated) => Err("truncated length-encoded integer"),
+        Err(LenencError::InvalidMarker) => Err("invalid auth response length"),
     }
-}
-
-fn take_integer(payload: &[u8], cursor: &mut usize, length: usize) -> Result<usize, &'static str> {
-    let bytes = payload.get(*cursor..*cursor + length).ok_or("truncated length-encoded integer")?;
-    *cursor += length;
-    let mut value = 0_usize;
-    for (shift, byte) in bytes.iter().enumerate() {
-        if shift * 8 >= usize::BITS as usize && *byte != 0 {
-            return Err("length-encoded integer overflow");
-        }
-        if shift * 8 < usize::BITS as usize {
-            value |= usize::from(*byte) << (shift * 8);
-        }
-    }
-    Ok(value)
 }
 
 fn advance(payload: &[u8], cursor: &mut usize, length: usize) -> Result<(), &'static str> {
@@ -1138,23 +1102,11 @@ fn write_packet(stream: &mut impl Write, sequence: u8, payload: &[u8]) -> io::Re
 
 fn write_ok(stream: &mut impl Write, sequence: u8, status_flags: u16) -> io::Result<()> {
     // OK identifier + affected_rows (length-encoded 0) + last_insert_id (length-encoded 0) + status_flags + warnings
-    let mut payload = Vec::with_capacity(9);
-    payload.push(0x00);
-    payload.push(0x00); // affected_rows = 0
-    payload.push(0x00); // last_insert_id = 0
-    payload.extend_from_slice(&status_flags.to_le_bytes());
-    payload.extend_from_slice(&0_u16.to_le_bytes());
-    write_packet(stream, sequence, &payload)
+    write_packet(stream, sequence, &ok_payload(0, 0, status_flags))
 }
 
 fn write_error(stream: &mut impl Write, sequence: u8, code: u16, state: &str, message: &str) -> io::Result<()> {
-    let mut payload = Vec::with_capacity(message.len() + 9);
-    payload.push(0xff);
-    payload.extend_from_slice(&code.to_le_bytes());
-    payload.push(b'#');
-    payload.extend_from_slice(state.as_bytes());
-    payload.extend_from_slice(message.as_bytes());
-    write_packet(stream, sequence, &payload)
+    write_packet(stream, sequence, &error_payload(code, state, message))
 }
 
 /// 把一条 SQL 走完整的 bind → plan → execute → wire 路径。
@@ -1555,14 +1507,7 @@ fn handle_prepare(
 }
 
 fn write_prepare_ok(stream: &mut impl Write, sequence: u8, statement_id: u32, parameter_count: u16, column_count: u16) -> io::Result<()> {
-    let mut payload = Vec::with_capacity(12);
-    payload.push(0x00);
-    payload.extend_from_slice(&statement_id.to_le_bytes());
-    payload.extend_from_slice(&column_count.to_le_bytes());
-    payload.extend_from_slice(&parameter_count.to_le_bytes());
-    payload.push(0x00); // reserved
-    payload.extend_from_slice(&0_u16.to_le_bytes()); // warning count
-    write_packet(stream, sequence, &payload)
+    write_packet(stream, sequence, &prepare_ok_payload(statement_id, parameter_count, column_count))
 }
 
 /// `COM_STMT_EXECUTE`: decodes the typed parameter block, renders the statement
@@ -1773,25 +1718,13 @@ fn take_slice<'a>(payload: &'a [u8], cursor: &mut usize, length: usize) -> Resul
 }
 
 fn take_length_encoded(payload: &[u8], cursor: &mut usize) -> Result<usize, String> {
-    let first = *payload.get(*cursor).ok_or_else(|| "truncated length-encoded parameter".to_string())?;
-    *cursor += 1;
-    match first {
-        0..=250 => Ok(usize::from(first)),
-        251 => Err("NULL length-encoded parameter must be flagged in the null bitmap".to_string()),
-        252 => {
-            let bytes = take_slice(payload, cursor, 2)?;
-            Ok(usize::from(u16::from_le_bytes([bytes[0], bytes[1]])))
+    match read_length_encoded(payload, cursor) {
+        Ok(Some(value)) => {
+            usize::try_from(value).map_err(|_| "length-encoded parameter length exceeds the address space".to_string())
         }
-        253 => {
-            let bytes = take_slice(payload, cursor, 3)?;
-            Ok(usize::try_from(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0])).expect("u24 fits usize"))
-        }
-        254 => {
-            let bytes = take_slice(payload, cursor, 8)?;
-            usize::try_from(u64::from_le_bytes(bytes.try_into().expect("checked length")))
-                .map_err(|_| "length-encoded parameter length exceeds the address space".to_string())
-        }
-        _ => Err("invalid length-encoded parameter length".to_string()),
+        Ok(None) => Err("NULL length-encoded parameter must be flagged in the null bitmap".to_string()),
+        Err(LenencError::Truncated) => Err("truncated length-encoded parameter".to_string()),
+        Err(LenencError::InvalidMarker) => Err("invalid length-encoded parameter length".to_string()),
     }
 }
 
@@ -1828,13 +1761,7 @@ fn write_ok_with_affected(
     last_insert_id: Option<u64>,
     status_flags: u16,
 ) -> io::Result<()> {
-    let mut payload = Vec::with_capacity(13);
-    payload.push(0x00); // OK identifier
-    encode_length_encoded(&mut payload, affected);
-    encode_length_encoded(&mut payload, last_insert_id.unwrap_or(0));
-    payload.extend_from_slice(&status_flags.to_le_bytes());
-    payload.extend_from_slice(&0_u16.to_le_bytes()); // warnings = 0
-    write_packet(stream, sequence, &payload)
+    write_packet(stream, sequence, &ok_payload(affected, last_insert_id.unwrap_or(0), status_flags))
 }
 
 /// The value `apply_auto_increment` allocated for the last row of an INSERT.
@@ -1943,21 +1870,12 @@ const RESULT_FLUSH_BYTES: usize = 64 * 1024;
 
 /// 把一条已经编码好的载荷按 classic 协议组帧追加到缓冲区。
 fn push_packet(out: &mut Vec<u8>, sequence: u8, payload: &[u8]) -> io::Result<()> {
-    let length = payload.len();
-    if length > MAX_PACKET_PAYLOAD {
-        return Err(packet_error(PacketError::PayloadTooLarge));
-    }
-    out.reserve(length + 4);
-    out.extend_from_slice(&[length as u8, (length >> 8) as u8, (length >> 16) as u8, sequence]);
-    out.extend_from_slice(payload);
-    Ok(())
+    append_packet(out, sequence, payload).map_err(packet_error)
 }
 
 /// 把 EOF 包追加到结果集缓冲区。
 fn push_eof(out: &mut Vec<u8>, sequence: u8, status_flags: u16) -> io::Result<()> {
-    let mut payload = [0xFE, 0x00, 0x00, 0x00, 0x00];
-    payload[3..].copy_from_slice(&status_flags.to_le_bytes());
-    push_packet(out, sequence, &payload)
+    push_packet(out, sequence, &eof_payload(status_flags))
 }
 
 /// 直接以 4 字节帧头占位写一行文本行，载荷长度算完后回填，省掉每行的临时 `Vec`。
@@ -2059,34 +1977,9 @@ fn column_type(rows: &[Vec<SqlValue>], index: usize) -> u8 {
         .unwrap_or(MYSQL_TYPE_VAR_STRING)
 }
 
-/// MySQL wire protocol ColumnDefinition 编码。`NOT_NULL = 0x0002` 在列不可空时设置。
-/// TINY 列的 column_length 设置为 1，等价于 TINYINT(1)，驱动程序据此把 BOOLEAN 当成 0/1。
-/// BLOB 列声明 binary 字符集（63），驱动据此把载荷当作原始 octets 而不是文本。
+/// MySQL wire protocol ColumnDefinition 编码，委托 protocol.mysql 的 payload 原语。
 fn encode_column_definition(name: &str, column_type: u8, nullable: bool) -> Vec<u8> {
-    let mut out = Vec::new();
-    encode_length_encoded(&mut out, b"def".len() as u64);
-    out.extend_from_slice(b"def");
-    encode_length_encoded(&mut out, 0); // schema
-    encode_length_encoded(&mut out, 0); // table
-    encode_length_encoded(&mut out, 0); // org_table
-    encode_length_encoded(&mut out, name.len() as u64);
-    out.extend_from_slice(name.as_bytes());
-    encode_length_encoded(&mut out, 0); // org_name
-    out.push(0x0C); // fixed length
-    let charset: u16 = if column_type == MYSQL_TYPE_BLOB { 63 } else { 0x000C };
-    out.extend_from_slice(&charset.to_le_bytes()); // charset
-    let column_length: u32 = match column_type {
-        MYSQL_TYPE_TINY => 1,
-        MYSQL_TYPE_BLOB => MYSQL_BLOB_CAPACITY as u32,
-        _ => 255,
-    };
-    out.extend_from_slice(&column_length.to_le_bytes());
-    out.push(column_type);
-    let flags: u16 = if !nullable { 0x0002 } else { 0 };
-    out.extend_from_slice(&flags.to_le_bytes());
-    out.push(if column_type == MYSQL_TYPE_DOUBLE { 31 } else { 0 }); // decimals
-    out.extend_from_slice(&[0u8; 2]); // filler
-    out
+    column_definition_payload(name, column_type, nullable, MYSQL_BLOB_CAPACITY as u32)
 }
 
 fn encode_sql_value(out: &mut Vec<u8>, value: &SqlValue) {
@@ -2140,33 +2033,9 @@ fn encode_integer_text(out: &mut Vec<u8>, value: i64) {
     out.extend_from_slice(&digits[position..]);
 }
 
-/// 把整数写成 MySQL length-encoded integer。
-///
-/// `251` 不能用单字节 `0xFB`（保留表示 `NULL`），必须走 `0xFC` 双字节形式。
-pub fn encode_length_encoded(out: &mut Vec<u8>, value: u64) {
-    match value {
-        0..=250 => out.push(value as u8),
-        251 => out.extend_from_slice(&[252, 251, 0]),
-        252..=0xFFFF => {
-            out.push(252);
-            out.extend_from_slice(&(value as u16).to_le_bytes());
-        }
-        0x10000..=0xFFFF_FFFF => {
-            out.push(253);
-            out.extend_from_slice(&(value as u32).to_le_bytes());
-        }
-        _ => {
-            out.push(254);
-            out.extend_from_slice(&value.to_le_bytes());
-        }
-    }
-}
-
 fn write_eof(stream: &mut impl Write, sequence: u8, status_flags: u16) -> io::Result<()> {
     // 简化 EOF packet: 0xFE + 0x0000 (warnings) + status_flags
-    let mut payload = [0xFE, 0x00, 0x00, 0x00, 0x00];
-    payload[3..].copy_from_slice(&status_flags.to_le_bytes());
-    write_packet(stream, sequence, &payload)
+    write_packet(stream, sequence, &eof_payload(status_flags))
 }
 
 /// MySQL `LIKE` matching for `SHOW VARIABLES LIKE 'pattern'` — `%` matches any

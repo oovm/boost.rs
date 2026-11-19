@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use database_protocol_mysql::MAX_PACKET_PAYLOAD;
+use database_protocol_mysql::{LenencError, MAX_PACKET_PAYLOAD, encode_length_encoded, read_length_encoded};
 use database_types::{Error, Result};
 
 use super::{Cell, ColumnInfo, Param, QueryResult, auth, mysql_type};
@@ -505,45 +505,15 @@ fn server_error(payload: &[u8]) -> Error {
 
 /// Decode a length-encoded integer; `None` means an SQL `NULL` marker.
 fn lenenc(payload: &[u8], offset: &mut usize) -> Result<Option<u64>> {
-    let marker = read_u8(payload, offset)?;
-    match marker {
-        0x00..=0xfa => Ok(Some(u64::from(marker))),
-        0xfb => Ok(None),
-        0xfc => {
-            let bytes = take(payload, offset, 2)?;
-            Ok(Some(u64::from(u16::from_le_bytes([bytes[0], bytes[1]]))))
-        }
-        0xfd => {
-            let bytes = take(payload, offset, 3)?;
-            Ok(Some(u64::from(bytes[0]) | (u64::from(bytes[1]) << 8) | (u64::from(bytes[2]) << 16)))
-        }
-        0xfe => {
-            let bytes = take(payload, offset, 8)?;
-            let mut value = [0u8; 8];
-            value.copy_from_slice(bytes);
-            Ok(Some(u64::from_le_bytes(value)))
-        }
-        0xff => Err(Error::Corrupt("invalid MySQL length-encoded value")),
-    }
+    read_length_encoded(payload, offset).map_err(|error| match error {
+        LenencError::Truncated => Error::Corrupt("truncated MySQL packet"),
+        LenencError::InvalidMarker => Error::Corrupt("invalid MySQL length-encoded value"),
+    })
 }
 
 /// Append a length-encoded integer (values below `0xfb` fit one byte).
 fn push_lenenc(payload: &mut Vec<u8>, value: usize) {
-    if value < 0xfb {
-        payload.push(value as u8);
-    }
-    else if value <= 0xffff {
-        payload.push(0xfc);
-        payload.extend_from_slice(&(value as u16).to_le_bytes());
-    }
-    else if value <= 0x00ff_ffff {
-        payload.push(0xfd);
-        payload.extend_from_slice(&(value as u32).to_le_bytes()[..3]);
-    }
-    else {
-        payload.push(0xfe);
-        payload.extend_from_slice(&(value as u64).to_le_bytes());
-    }
+    encode_length_encoded(payload, value as u64);
 }
 
 fn lenenc_usize(payload: &[u8], offset: &mut usize) -> Result<Option<usize>> {
