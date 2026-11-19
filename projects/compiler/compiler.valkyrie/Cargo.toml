@@ -23,7 +23,9 @@ acorn-wasm = { workspace = true }
 acorn-x64 = { workspace = true }
 acorn-zip = { workspace = true }
 base64 = { workspace = true }
+boost-collection = { workspace = true }
 boost-harness = { workspace = true }
+boost-math = { workspace = true }
 compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }
 compiler-target = { workspace = true }

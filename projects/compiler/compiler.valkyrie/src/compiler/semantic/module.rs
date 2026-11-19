@@ -9,6 +9,8 @@ use std::{
     path::PathBuf,
 };
 
+use boost_collection::GraphView;
+use boost_math::graph_theory::{cycle_path, topological_order_by};
 use compiler_types::QualifiedName;
 
 /// 模块解析错误类型。
@@ -166,94 +168,38 @@ impl DependencyGraph {
 
     /// 检测图中是否存在循环依赖。
     ///
-    /// 如果存在循环，返回循环路径；否则返回 `None`。
+    /// 如果存在循环，返回循环路径；否则返回 `None`。路径首尾是同一个模块，
+    /// 由共享图论核给出，本方法只把键映射回限定名。
     pub fn detect_cycle(&self) -> Option<Vec<QualifiedName>> {
-        let mut visited = BTreeSet::new();
-        let mut stack = Vec::new();
-        let mut path = Vec::new();
-
-        for node in self.edges.keys() {
-            if !visited.contains(node) {
-                if let Some(cycle) = self.dfs_detect_cycle(node, &mut visited, &mut stack, &mut path) {
-                    return Some(cycle);
-                }
-            }
+        let view = self.view();
+        match cycle_path(&view) {
+            Ok(Some(cycle)) => Some(cycle.into_iter().cloned().collect()),
+            // 视图固定为有向图且顶点来自同一张邻接表，失败只可能是实现错误。
+            Ok(None) | Err(_) => None,
         }
-
-        None
-    }
-
-    /// DFS 递归检测循环依赖。
-    fn dfs_detect_cycle(
-        &self,
-        node: &QualifiedName,
-        visited: &mut BTreeSet<QualifiedName>,
-        stack: &mut Vec<QualifiedName>,
-        path: &mut Vec<QualifiedName>,
-    ) -> Option<Vec<QualifiedName>> {
-        if stack.contains(node) {
-            // 找到循环，提取循环路径
-            let start = stack.iter().position(|n| n == node).unwrap();
-            let mut cycle: Vec<QualifiedName> = stack[start..].to_vec();
-            cycle.push(node.clone());
-            return Some(cycle);
-        }
-
-        if visited.contains(node) {
-            return None;
-        }
-
-        visited.insert(node.clone());
-        stack.push(node.clone());
-        path.push(node.clone());
-
-        if let Some(deps) = self.edges.get(node) {
-            for dep in deps {
-                if let Some(cycle) = self.dfs_detect_cycle(dep, visited, stack, path) {
-                    return Some(cycle);
-                }
-            }
-        }
-
-        stack.pop();
-        None
     }
 
     /// 对图进行拓扑排序。
     ///
-    /// 返回依赖在前、被依赖在后的顺序。
-    /// 如果存在循环依赖，返回错误。
+    /// 返回依赖在前、被依赖在后的顺序。如果存在循环依赖，返回错误。
+    /// 就绪集合按限定名有序选择，因此同一张图的结果是确定的。
     pub fn topological_sort(&self) -> Result<Vec<QualifiedName>, TopologicalSortError> {
-        if let Some(cycle) = self.detect_cycle() {
-            return Err(TopologicalSortError { cycle });
+        let view = self.view();
+        match topological_order_by(&view, |name| (*name).clone()) {
+            Ok(order) => Ok(order.into_iter().cloned().collect()),
+            Err(_) => Err(TopologicalSortError { cycle: self.detect_cycle().unwrap_or_default() }),
         }
-
-        let mut visited = BTreeSet::new();
-        let mut result = Vec::new();
-
-        for node in self.edges.keys() {
-            if !visited.contains(node) {
-                self.dfs_topo_sort(node, &mut visited, &mut result);
-            }
-        }
-
-        Ok(result)
     }
 
-    /// DFS 递归拓扑排序（后序遍历）。
-    fn dfs_topo_sort(&self, node: &QualifiedName, visited: &mut BTreeSet<QualifiedName>, result: &mut Vec<QualifiedName>) {
-        if visited.contains(node) {
-            return;
-        }
-
-        visited.insert(node.clone());
-
-        if let Some(deps) = self.edges.get(node) {
-            for dep in deps {
-                self.dfs_topo_sort(dep, visited, result);
+    /// 把邻接表投影成借用视图；只在调用期间有效，不复制模块名。
+    fn view(&self) -> GraphView<'_, QualifiedName> {
+        let mut view = GraphView::new(true);
+        for (name, dependencies) in &self.edges {
+            view.add_vertex(name);
+            for dependency in dependencies {
+                view.add_edge(name, dependency);
             }
         }
-
-        result.push(node.clone());
+        view
     }
 }
