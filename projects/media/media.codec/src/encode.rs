@@ -54,7 +54,9 @@ impl Encoder {
         #[cfg(not(windows))]
         {
             let _ = (out, width, height, fps, bitrate, sample_rate, with_audio, required);
-            Err(Error::unsupported("OpenCut encoding currently requires Windows Media Foundation"))
+            Err(Error::unsupported(
+                "no system H.264 encoder on this platform; `Encoder::open` will accept a portable MJPEG/PCM backend once it is wired up (see `capability`)",
+            ))
         }
     }
 
@@ -80,7 +82,7 @@ impl Encoder {
         #[cfg(not(windows))]
         {
             let _ = (nv12, frame, fps);
-            Ok(())
+            Err(Error::unsupported("this encoder was never opened: encoding is unavailable on this platform"))
         }
     }
 
@@ -93,19 +95,20 @@ impl Encoder {
         #[cfg(not(windows))]
         {
             let _ = (pcm, start_sample);
-            Ok(())
+            Err(Error::unsupported("this encoder was never opened: encoding is unavailable on this platform"))
         }
     }
 
     /// Flushes and closes the container.
-    pub fn finish(mut self) -> Result<(), Error> {
+    pub fn finish(self) -> Result<(), Error> {
         #[cfg(windows)]
         {
-            self.inner.finish()
+            let mut inner = self.inner;
+            inner.finish()
         }
         #[cfg(not(windows))]
         {
-            Ok(())
+            Err(Error::unsupported("this encoder was never opened: encoding is unavailable on this platform"))
         }
     }
 }

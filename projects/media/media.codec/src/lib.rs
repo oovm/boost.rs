@@ -9,6 +9,7 @@
 //! the isometric preview are driven by the one face list.
 #![warn(missing_docs)]
 
+pub mod capability;
 pub mod decode;
 pub mod encode;
 #[cfg(feature = "obj")]
@@ -18,6 +19,7 @@ pub mod png;
 pub mod svg;
 pub mod wav;
 
+pub use capability::Capabilities;
 pub use decode::{DecodeLimits, MediaLibrary};
 pub use encode::Encoder;
 #[cfg(feature = "obj")]
