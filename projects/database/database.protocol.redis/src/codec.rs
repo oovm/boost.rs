@@ -1,4 +1,7 @@
-//! RESP2 / RESP3 编解码：命令组帧、回复编解码与绑定侧 reply 规格。
+//! RESP2 / RESP3 编解码：命令组帧、回复编解码、命令结果合同与绑定侧 reply 规格。
+//!
+//! 执行层与下游绑定只传递 [`Reply`] 与 [`CommandError`] 这类正式结果类型；
+//! RESP 字节编码（含 error 行折行截断）只发生在本 crate。
 //!
 //! 连接从 RESP2 开始，只有在 `HELLO 3` 之后才切到 RESP3。RESP2 的缺失 bulk 是
 //! `$-1\r\n`、map 退化成数组；RESP3 下同一个值写作 `_\r\n`，map 是 `%N`。
@@ -50,7 +53,94 @@ pub enum Reply {
     Map(Vec<(Reply, Reply)>),
 }
 
+/// 命令结果的语义错误类别。
+///
+/// 执行层只产出这些语义类别与 [`Reply`] 值，RESP error 行的字节形状（前导 `-`、
+/// 单行折行、512 字符截断与固定文案）全部由本 crate 编码，消费者不得自行拼包。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandError {
+    /// `-ERR <message>` 通用失败，消息体不带前导 `ERR`。
+    Failed(String),
+    /// `WRONGTYPE Operation against a key holding the wrong kind of value`。
+    WrongType,
+    /// 自带前缀码的完整错误体（如 `EXECABORT ...`、`NOPROTO ...` 或带自定义文案的
+    /// `WRONGTYPE ...`），不再叠加 `ERR` 前缀。
+    Coded(String),
+}
+
+impl CommandError {
+    /// 把消息折成单行并截断到 512 个字符，保证 error 行不破坏 RESP 分帧。
+    pub fn sanitize(message: &str) -> String {
+        message.chars().map(|character| if matches!(character, '\r' | '\n') { ' ' } else { character }).take(512).collect()
+    }
+
+    /// 转成线协议 error 回复。
+    pub fn to_reply(&self) -> Reply {
+        match self {
+            Self::Failed(message) => Reply::Error(format!("ERR {}", Self::sanitize(message))),
+            Self::WrongType => Reply::Error("WRONGTYPE Operation against a key holding the wrong kind of value".to_owned()),
+            Self::Coded(body) => Reply::Error(Self::sanitize(body)),
+        }
+    }
+}
+
+impl From<CommandError> for Reply {
+    fn from(error: CommandError) -> Self {
+        error.to_reply()
+    }
+}
+
 impl Reply {
+    /// 状态回复 `+<text>`。
+    pub fn status(text: &str) -> Self {
+        Self::Simple(text.to_owned())
+    }
+
+    /// `+OK` 状态回复。
+    pub fn ok() -> Self {
+        Self::Simple("OK".to_owned())
+    }
+
+    /// null 回复（RESP2 `$-1`，RESP3 `_`，由编码端按版本决定）。
+    pub fn nil() -> Self {
+        Self::Null
+    }
+
+    /// `EXEC` 在 watch 失效时使用的 nil 数组。
+    pub fn nil_array() -> Self {
+        Self::NullArray
+    }
+
+    /// 整数回复。
+    pub fn integer(value: i64) -> Self {
+        Self::Integer(value)
+    }
+
+    /// bulk 回复。
+    pub fn bulk(bytes: impl Into<Vec<u8>>) -> Self {
+        Self::Bulk(bytes.into())
+    }
+
+    /// 有序数组回复。
+    pub fn array(items: impl IntoIterator<Item = Reply>) -> Self {
+        Self::Array(items.into_iter().collect())
+    }
+
+    /// 聚合 set 回复（RESP2 编码时退化为普通数组）。
+    pub fn set(items: impl IntoIterator<Item = Reply>) -> Self {
+        Self::Set(items.into_iter().collect())
+    }
+
+    /// `ERR` 前缀的错误回复，消息按 error 行规则折行并截断。
+    pub fn error(message: impl Into<String>) -> Self {
+        CommandError::Failed(message.into()).to_reply()
+    }
+
+    /// `WRONGTYPE` 错误回复。
+    pub fn wrong_type() -> Self {
+        CommandError::WrongType.to_reply()
+    }
+
     /// 按协商后的协议版本编码一条回复。
     pub fn encode(&self, protocol: u8, out: &mut Vec<u8>) {
         match self {
@@ -630,6 +720,34 @@ mod tests {
             assert!(request.args.is_empty());
             assert_eq!(consumed, frame.len());
         }
+    }
+
+    #[test]
+    fn command_errors_encode_the_canonical_error_lines() {
+        use super::CommandError;
+        assert_eq!(super::encode_reply(&CommandError::WrongType.to_reply(), 2), b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+        assert_eq!(super::encode_reply(&CommandError::Failed("syntax error".to_owned()).to_reply(), 2), b"-ERR syntax error\r\n");
+        assert_eq!(super::encode_reply(&CommandError::Coded("EXECABORT Transaction discarded because of previous errors.".to_owned()).to_reply(), 2), b"-EXECABORT Transaction discarded because of previous errors.\r\n");
+        // 折行与 512 字符截断属于 error 行合同：`\r` 与 `\n` 各折为一个空格。
+        assert_eq!(super::encode_reply(&CommandError::Failed("a\r\nb".to_owned()).to_reply(), 2), b"-ERR a  b\r\n");
+        let long = "x".repeat(600);
+        let encoded = super::encode_reply(&CommandError::Failed(long).to_reply(), 2);
+        assert_eq!(encoded, format!("-ERR {}\r\n", "x".repeat(512)).into_bytes());
+        let reply: Reply = CommandError::WrongType.into();
+        assert_eq!(reply, Reply::wrong_type());
+    }
+
+    #[test]
+    fn typed_constructors_keep_wire_shapes_across_versions() {
+        assert_eq!(super::encode_reply(&Reply::ok(), 2), b"+OK\r\n");
+        assert_eq!(super::encode_reply(&Reply::nil(), 2), b"$-1\r\n");
+        assert_eq!(super::encode_reply(&Reply::nil(), 3), b"_\r\n");
+        assert_eq!(super::encode_reply(&Reply::nil_array(), 2), b"*-1\r\n");
+        assert_eq!(super::encode_reply(&Reply::integer(7), 2), b":7\r\n");
+        assert_eq!(super::encode_reply(&Reply::bulk(b"v"), 2), b"$1\r\nv\r\n");
+        assert_eq!(super::encode_reply(&Reply::array(vec![Reply::integer(1)]), 2), b"*1\r\n:1\r\n");
+        assert_eq!(super::encode_reply(&Reply::set(vec![Reply::bulk(b"m")]), 2), b"*1\r\n$1\r\nm\r\n");
+        assert_eq!(super::encode_reply(&Reply::set(vec![Reply::bulk(b"m")]), 3), b"~1\r\n$1\r\nm\r\n");
     }
 
     #[test]
