@@ -12,6 +12,7 @@
 //! - `oplog`：`local.oplog.rs` 条目形态（来自 `database-formats`，`storage` feature）
 //! - `store`：`.yyds` catalog + `.yykv` shard 后端（`storage` feature）
 //! - `storage`：命令层唯一的存储入口 trait（`storage` feature）
+//! - `auth`：SCRAM 认证会话与用户、角色管理命令（`storage` feature）
 //! - `authorization`：内置角色表、权限展开与命令授权判定（`storage` feature）
 //! - `replica`：单成员副本集状态、集群时间与 `replSet*` 命令（`storage` feature）
 //! - `retry`：重试写的登记表、键推导与应答重放（`storage` feature）
@@ -24,6 +25,8 @@ pub use database_protocol_mongo::{bson, json, wire};
 
 pub mod id;
 
+#[cfg(feature = "storage")]
+pub mod auth;
 #[cfg(feature = "storage")]
 pub mod authorization;
 #[cfg(feature = "storage")]
