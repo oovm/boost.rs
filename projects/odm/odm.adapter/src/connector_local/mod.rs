@@ -496,8 +496,8 @@ fn is_write_program(source: &str) -> bool {
     is_write_expr(result)
 }
 
-fn is_write_expr(expr: &oak_vos::VosExpr) -> bool {
-    use oak_vos::VosExpr;
+fn is_write_expr(expr: &data_text_vos::VosExpr) -> bool {
+    use data_text_vos::VosExpr;
     let VosExpr::Call { callee, args, .. } = expr
     else {
         return false;

@@ -34,7 +34,7 @@ fn rejects_legacy_sql_gateway_surfaces() {
 fn connector_does_not_depend_on_sql_or_yydb_crates() {
     let manifest = include_str!("../../Cargo.toml");
     assert_eq!(BACKEND_ID, "yyds");
-    for banned in ["yydb", "rusqlite", "postgres", "mysql", "sqlx", "oak-sql", "yyds-odbc", "we-trust-sqlite"] {
+    for banned in ["yydb", "rusqlite", "postgres", "mysql", "sqlx", "data-text-sql", "yyds-odbc", "we-trust-sqlite"] {
         assert!(!manifest.contains(banned), "iris-connector-yyds must not depend on `{banned}` while gated");
     }
     assert!(manifest.contains("serde"));

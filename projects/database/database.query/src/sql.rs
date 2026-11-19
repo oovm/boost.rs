@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use oak_sql::ast::{BinaryOperator, Expression, Literal, SelectItem, SqlStatement};
+use data_text_sql::ast::{BinaryOperator, Expression, Literal, SelectItem, SqlStatement};
 
 /// Structured failure category from the Oak SQL frontend, gateway binder,
 /// planner or executor.
@@ -262,16 +262,16 @@ pub enum SqlTransactionAction {
 /// only language configuration that lexes backtick identifiers, which both the
 /// normalization step and MySQL clients need. PostgreSQL double-quoted identifiers
 /// are therefore normalized into backtick identifiers before parsing.
-pub fn parse_sql(source: &str, dialect: SqlDialect) -> Result<oak_sql::ast::SqlRoot, SqlFrontendError> {
+pub fn parse_sql(source: &str, dialect: SqlDialect) -> Result<data_text_sql::ast::SqlRoot, SqlFrontendError> {
     parse_ast(&normalise_sql_source(source, dialect))
 }
 
 /// Parses already-normalized SQL text and rejects Oak error statements.
-fn parse_ast(source: &str) -> Result<oak_sql::ast::SqlRoot, SqlFrontendError> {
-    use oak_core::{Builder, parser::session::ParseSession, source::SourceText};
+fn parse_ast(source: &str) -> Result<data_text_sql::ast::SqlRoot, SqlFrontendError> {
+    use data_text_core::{Builder, parser::session::ParseSession, source::SourceText};
 
-    let language = oak_sql::SqlLanguage::mysql();
-    let builder = oak_sql::SqlBuilder::new(&language);
+    let language = data_text_sql::SqlLanguage::mysql();
+    let builder = data_text_sql::SqlBuilder::new(&language);
     let source_text = SourceText::new(source.to_string());
     let mut cache = ParseSession::default();
     let root = builder.build(&source_text, &[], &mut cache).result.map_err(|error| SqlFrontendError::syntax(error.to_string()))?;
@@ -397,12 +397,12 @@ pub fn parse_session_command(source: &str) -> Result<Option<SqlSessionCommand>, 
             collation: statement.collation.as_deref().map(str::to_string),
         }),
         SqlStatement::Transaction(statement) => Some(SqlSessionCommand::Transaction(match &statement.action {
-            oak_sql::ast::TransactionAction::Begin => SqlTransactionAction::Begin,
-            oak_sql::ast::TransactionAction::Commit => SqlTransactionAction::Commit,
-            oak_sql::ast::TransactionAction::Rollback => SqlTransactionAction::Rollback,
-            oak_sql::ast::TransactionAction::Savepoint(name) => SqlTransactionAction::Savepoint(name.to_string()),
-            oak_sql::ast::TransactionAction::RollbackToSavepoint(name) => SqlTransactionAction::RollbackToSavepoint(name.to_string()),
-            oak_sql::ast::TransactionAction::ReleaseSavepoint(name) => SqlTransactionAction::ReleaseSavepoint(name.to_string()),
+            data_text_sql::ast::TransactionAction::Begin => SqlTransactionAction::Begin,
+            data_text_sql::ast::TransactionAction::Commit => SqlTransactionAction::Commit,
+            data_text_sql::ast::TransactionAction::Rollback => SqlTransactionAction::Rollback,
+            data_text_sql::ast::TransactionAction::Savepoint(name) => SqlTransactionAction::Savepoint(name.to_string()),
+            data_text_sql::ast::TransactionAction::RollbackToSavepoint(name) => SqlTransactionAction::RollbackToSavepoint(name.to_string()),
+            data_text_sql::ast::TransactionAction::ReleaseSavepoint(name) => SqlTransactionAction::ReleaseSavepoint(name.to_string()),
         })),
         SqlStatement::SetVariable(statement) => Some(SqlSessionCommand::SetVariable {
             scope: statement.scope.map(project_variable_scope),
@@ -578,11 +578,11 @@ fn unquote_simple_identifier(token: &str) -> Option<&str> {
     Some(inner)
 }
 
-fn project_variable_scope(scope: oak_sql::ast::SessionScope) -> SqlVariableScope {
+fn project_variable_scope(scope: data_text_sql::ast::SessionScope) -> SqlVariableScope {
     match scope {
-        oak_sql::ast::SessionScope::Global => SqlVariableScope::Global,
-        oak_sql::ast::SessionScope::Session => SqlVariableScope::Session,
-        oak_sql::ast::SessionScope::Local => SqlVariableScope::Local,
+        data_text_sql::ast::SessionScope::Global => SqlVariableScope::Global,
+        data_text_sql::ast::SessionScope::Session => SqlVariableScope::Session,
+        data_text_sql::ast::SessionScope::Local => SqlVariableScope::Local,
     }
 }
 
@@ -1419,8 +1419,8 @@ pub fn bind_sql(source: &str, dialect: SqlDialect) -> Result<SqlBoundStatement, 
                 Some(conflict) => Some(SqlBoundConflict {
                     columns: conflict.columns.iter().map(|id| normalize_identifier(id.name.as_ref())).collect(),
                     action: match &conflict.action {
-                        oak_sql::ast::OnConflictAction::DoNothing => SqlBoundConflictAction::DoNothing,
-                        oak_sql::ast::OnConflictAction::DoUpdate { assignments, selection } => SqlBoundConflictAction::DoUpdate {
+                        data_text_sql::ast::OnConflictAction::DoNothing => SqlBoundConflictAction::DoNothing,
+                        data_text_sql::ast::OnConflictAction::DoUpdate { assignments, selection } => SqlBoundConflictAction::DoUpdate {
                             assignments: assignments
                                 .iter()
                                 .map(|assignment| {
@@ -1451,9 +1451,9 @@ pub fn bind_sql(source: &str, dialect: SqlDialect) -> Result<SqlBoundStatement, 
             }
             // `INSERT ... SELECT` 复用唯一一份 SELECT 绑定，不另造一套值绑定。
             let source = match &insert.source {
-                oak_sql::ast::InsertSource::Values => SqlBoundInsertSource::Values,
-                oak_sql::ast::InsertSource::DefaultValues => SqlBoundInsertSource::DefaultValues,
-                oak_sql::ast::InsertSource::Select(select) => SqlBoundInsertSource::Select(Box::new(bind_select_statement(select)?)),
+                data_text_sql::ast::InsertSource::Values => SqlBoundInsertSource::Values,
+                data_text_sql::ast::InsertSource::DefaultValues => SqlBoundInsertSource::DefaultValues,
+                data_text_sql::ast::InsertSource::Select(select) => SqlBoundInsertSource::Select(Box::new(bind_select_statement(select)?)),
             };
             // `DEFAULT VALUES` 自身不携带任何值，行宽校验只对真正的 `VALUES` 列表成立。
             if matches!(source, SqlBoundInsertSource::Values) {
@@ -1510,7 +1510,7 @@ pub fn bind_sql(source: &str, dialect: SqlDialect) -> Result<SqlBoundStatement, 
 /// query, so a CTE can only carry shapes the gateway already binds. Oak rejects
 /// `WITH RECURSIVE` while parsing. An explicit column list renames the CTE output;
 /// it is carried here and applied to the flattened column scope at catalog bind time.
-fn bind_with_clause(clause: Option<&oak_sql::ast::WithClause>) -> Result<Vec<SqlBoundCte>, SqlFrontendError> {
+fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<Vec<SqlBoundCte>, SqlFrontendError> {
     let Some(clause) = clause
     else {
         return Ok(Vec::new());
@@ -1536,12 +1536,12 @@ fn bind_with_clause(clause: Option<&oak_sql::ast::WithClause>) -> Result<Vec<Sql
 }
 
 /// Binds one Oak `SELECT` — shared by top-level statements and `IN (SELECT ...)` subqueries.
-fn bind_select_statement(select: &oak_sql::ast::SelectStatement) -> Result<SqlBoundSelect, SqlFrontendError> {
+fn bind_select_statement(select: &data_text_sql::ast::SelectStatement) -> Result<SqlBoundSelect, SqlFrontendError> {
     let with = bind_with_clause(select.with.as_ref())?;
     let distinct = match &select.quantifier {
-        None | Some(oak_sql::ast::SelectQuantifier::All { .. }) => false,
-        Some(oak_sql::ast::SelectQuantifier::Distinct { .. }) => true,
-        Some(oak_sql::ast::SelectQuantifier::DistinctOn { .. }) => {
+        None | Some(data_text_sql::ast::SelectQuantifier::All { .. }) => false,
+        Some(data_text_sql::ast::SelectQuantifier::Distinct { .. }) => true,
+        Some(data_text_sql::ast::SelectQuantifier::DistinctOn { .. }) => {
             return Err(SqlFrontendError::unsupported("SELECT DISTINCT ON is outside the gateway subset"));
         }
     };
@@ -1553,11 +1553,11 @@ fn bind_select_statement(select: &oak_sql::ast::SelectStatement) -> Result<SqlBo
             let mut expressions = Vec::with_capacity(clause.items.len());
             for item in &clause.items {
                 expressions.push(match item {
-                    oak_sql::ast::GroupByItem::Column(identifier) => {
+                    data_text_sql::ast::GroupByItem::Column(identifier) => {
                         SqlBoundExpression::Identifier(normalize_identifier(identifier.name.as_ref()))
                     }
-                    oak_sql::ast::GroupByItem::Expression(expression) => bind_expression(expression)?,
-                    oak_sql::ast::GroupByItem::Position { index, .. } => match projections.get(index.saturating_sub(1)) {
+                    data_text_sql::ast::GroupByItem::Expression(expression) => bind_expression(expression)?,
+                    data_text_sql::ast::GroupByItem::Position { index, .. } => match projections.get(index.saturating_sub(1)) {
                         Some(SqlBoundProjection::Expression { expression, .. }) => expression.clone(),
                         Some(SqlBoundProjection::Star) => {
                             return Err(SqlFrontendError::unsupported("GROUP BY ordinal position cannot reference a star projection"));
@@ -1566,7 +1566,7 @@ fn bind_select_statement(select: &oak_sql::ast::SelectStatement) -> Result<SqlBo
                             return Err(SqlFrontendError::unsupported("GROUP BY ordinal position is outside the projection list"));
                         }
                     },
-                    oak_sql::ast::GroupByItem::GroupingSets(_) | oak_sql::ast::GroupByItem::Rollup(_) | oak_sql::ast::GroupByItem::Cube(_) => {
+                    data_text_sql::ast::GroupByItem::GroupingSets(_) | data_text_sql::ast::GroupByItem::Rollup(_) | data_text_sql::ast::GroupByItem::Cube(_) => {
                         return Err(SqlFrontendError::unsupported(
                             "GROUPING SETS, ROLLUP and CUBE are not yet supported by the cluster gateway",
                         ));
@@ -1583,13 +1583,13 @@ fn bind_select_statement(select: &oak_sql::ast::SelectStatement) -> Result<SqlBo
         .iter()
         .map(|join| {
             let kind = match join.join_type {
-                oak_sql::ast::JoinType::Inner => SqlBoundJoinKind::Inner,
-                oak_sql::ast::JoinType::Left => SqlBoundJoinKind::Left,
-                oak_sql::ast::JoinType::Right => SqlBoundJoinKind::Right,
-                oak_sql::ast::JoinType::Full => SqlBoundJoinKind::Full,
-                oak_sql::ast::JoinType::Cross => SqlBoundJoinKind::Cross,
+                data_text_sql::ast::JoinType::Inner => SqlBoundJoinKind::Inner,
+                data_text_sql::ast::JoinType::Left => SqlBoundJoinKind::Left,
+                data_text_sql::ast::JoinType::Right => SqlBoundJoinKind::Right,
+                data_text_sql::ast::JoinType::Full => SqlBoundJoinKind::Full,
+                data_text_sql::ast::JoinType::Cross => SqlBoundJoinKind::Cross,
             };
-            let on = if matches!(join.join_type, oak_sql::ast::JoinType::Cross) {
+            let on = if matches!(join.join_type, data_text_sql::ast::JoinType::Cross) {
                 // CROSS JOIN has no ON clause — use a tautology so downstream
                 // binders keep treating it as a predicate. The executor ignores
                 // the condition for the Cartesian product.
@@ -1618,7 +1618,7 @@ fn bind_select_statement(select: &oak_sql::ast::SelectStatement) -> Result<SqlBo
 
 /// Binds one Oak set operation. `ORDER BY` stays in surface form because it
 /// references the combined output columns rather than catalog columns.
-fn bind_set_operation(set: &oak_sql::ast::SetOperationStatement) -> Result<SqlBoundSetOperation, SqlFrontendError> {
+fn bind_set_operation(set: &data_text_sql::ast::SetOperationStatement) -> Result<SqlBoundSetOperation, SqlFrontendError> {
     let (limit, offset) = bind_limit_clause(set.limit.as_ref())?;
     let order_by = bind_order_by_clause(set.order_by.as_ref())?;
     let operands = set
@@ -1630,14 +1630,14 @@ fn bind_set_operation(set: &oak_sql::ast::SetOperationStatement) -> Result<SqlBo
     fold_set_operation(operands, operators, order_by, limit, offset)
 }
 
-fn bind_set_operator(operator: oak_sql::ast::SetOperator) -> SqlBoundSetOperator {
+fn bind_set_operator(operator: data_text_sql::ast::SetOperator) -> SqlBoundSetOperator {
     match operator {
-        oak_sql::ast::SetOperator::Union => SqlBoundSetOperator::Union,
-        oak_sql::ast::SetOperator::UnionAll => SqlBoundSetOperator::UnionAll,
-        oak_sql::ast::SetOperator::Intersect => SqlBoundSetOperator::Intersect,
-        oak_sql::ast::SetOperator::IntersectAll => SqlBoundSetOperator::IntersectAll,
-        oak_sql::ast::SetOperator::Except => SqlBoundSetOperator::Except,
-        oak_sql::ast::SetOperator::ExceptAll => SqlBoundSetOperator::ExceptAll,
+        data_text_sql::ast::SetOperator::Union => SqlBoundSetOperator::Union,
+        data_text_sql::ast::SetOperator::UnionAll => SqlBoundSetOperator::UnionAll,
+        data_text_sql::ast::SetOperator::Intersect => SqlBoundSetOperator::Intersect,
+        data_text_sql::ast::SetOperator::IntersectAll => SqlBoundSetOperator::IntersectAll,
+        data_text_sql::ast::SetOperator::Except => SqlBoundSetOperator::Except,
+        data_text_sql::ast::SetOperator::ExceptAll => SqlBoundSetOperator::ExceptAll,
     }
 }
 
@@ -1722,7 +1722,7 @@ fn close_intersect_group(operands: Vec<SqlBoundSetOperand>, operators: Vec<SqlBo
 /// an option: `OFFSET` changes the result set, so an unsupported shape fails the
 /// statement.
 fn bind_limit_clause(
-    clause: Option<&oak_sql::ast::LimitClause>,
+    clause: Option<&data_text_sql::ast::LimitClause>,
 ) -> Result<(Option<SqlBoundExpression>, Option<SqlBoundExpression>), SqlFrontendError> {
     let Some(clause) = clause
     else {
@@ -1793,7 +1793,7 @@ fn validate_row_count_expression(expression: &SqlBoundExpression, clause: &str) 
 }
 
 /// Binds an Oak `ORDER BY` clause into gateway order items.
-fn bind_order_by_clause(clause: Option<&oak_sql::ast::OrderByClause>) -> Result<Option<Vec<SqlBoundOrderByItem>>, SqlFrontendError> {
+fn bind_order_by_clause(clause: Option<&data_text_sql::ast::OrderByClause>) -> Result<Option<Vec<SqlBoundOrderByItem>>, SqlFrontendError> {
     Ok(match clause {
         Some(clause) if !clause.items.is_empty() => {
             let items = clause
@@ -1803,12 +1803,12 @@ fn bind_order_by_clause(clause: Option<&oak_sql::ast::OrderByClause>) -> Result<
                     Ok(SqlBoundOrderByItem {
                         expr: bind_expression(&item.expr)?,
                         direction: match item.direction {
-                            oak_sql::ast::OrderDirection::Asc => SqlBoundOrderDirection::Asc,
-                            oak_sql::ast::OrderDirection::Desc => SqlBoundOrderDirection::Desc,
+                            data_text_sql::ast::OrderDirection::Asc => SqlBoundOrderDirection::Asc,
+                            data_text_sql::ast::OrderDirection::Desc => SqlBoundOrderDirection::Desc,
                         },
                         nulls: item.nulls.map(|nulls| match nulls {
-                            oak_sql::ast::NullsOrder::First => SqlNullsOrder::First,
-                            oak_sql::ast::NullsOrder::Last => SqlNullsOrder::Last,
+                            data_text_sql::ast::NullsOrder::First => SqlNullsOrder::First,
+                            data_text_sql::ast::NullsOrder::Last => SqlNullsOrder::Last,
                         }),
                     })
                 })
@@ -1823,7 +1823,7 @@ fn bind_order_by_clause(clause: Option<&oak_sql::ast::OrderByClause>) -> Result<
 ///
 /// Oak only parses `PARTITION BY <column>` and `ORDER BY <column>` inside a
 /// window, so every partitioning / ordering term is a plain identifier.
-fn bind_window_spec(spec: &oak_sql::ast::WindowSpec) -> Result<SqlBoundWindowSpec, SqlFrontendError> {
+fn bind_window_spec(spec: &data_text_sql::ast::WindowSpec) -> Result<SqlBoundWindowSpec, SqlFrontendError> {
     let partition_by =
         spec.partition_by.iter().map(|column| SqlBoundExpression::Identifier(normalize_identifier(column.name.as_ref()))).collect();
     let order_by: Vec<SqlBoundOrderByItem> = spec
@@ -1832,12 +1832,12 @@ fn bind_window_spec(spec: &oak_sql::ast::WindowSpec) -> Result<SqlBoundWindowSpe
         .map(|item| SqlBoundOrderByItem {
             expr: SqlBoundExpression::Identifier(normalize_identifier(item.column.name.as_ref())),
             direction: match item.direction {
-                oak_sql::ast::OrderDirection::Asc => SqlBoundOrderDirection::Asc,
-                oak_sql::ast::OrderDirection::Desc => SqlBoundOrderDirection::Desc,
+                data_text_sql::ast::OrderDirection::Asc => SqlBoundOrderDirection::Asc,
+                data_text_sql::ast::OrderDirection::Desc => SqlBoundOrderDirection::Desc,
             },
             nulls: item.nulls.map(|nulls| match nulls {
-                oak_sql::ast::NullsOrder::First => SqlNullsOrder::First,
-                oak_sql::ast::NullsOrder::Last => SqlNullsOrder::Last,
+                data_text_sql::ast::NullsOrder::First => SqlNullsOrder::First,
+                data_text_sql::ast::NullsOrder::Last => SqlNullsOrder::Last,
             }),
         })
         .collect();
@@ -1865,10 +1865,10 @@ fn bind_window_spec(spec: &oak_sql::ast::WindowSpec) -> Result<SqlBoundWindowSpe
 /// `ORDER BY` and, for value offsets, exactly one ordering column. `GROUPS`
 /// never reaches this point: the Oak AST has no `GROUPS` unit and the parser
 /// rejects the spelling before binding.
-fn bind_window_frame(frame: &oak_sql::ast::WindowFrame) -> Result<SqlBoundWindowFrame, SqlFrontendError> {
+fn bind_window_frame(frame: &data_text_sql::ast::WindowFrame) -> Result<SqlBoundWindowFrame, SqlFrontendError> {
     let unit = match frame.unit {
-        oak_sql::ast::WindowFrameUnit::Rows => SqlBoundWindowFrameUnit::Rows,
-        oak_sql::ast::WindowFrameUnit::Range => SqlBoundWindowFrameUnit::Range,
+        data_text_sql::ast::WindowFrameUnit::Rows => SqlBoundWindowFrameUnit::Rows,
+        data_text_sql::ast::WindowFrameUnit::Range => SqlBoundWindowFrameUnit::Range,
     };
     let start = bind_window_frame_bound(frame.start);
     let end = match frame.end {
@@ -1885,13 +1885,13 @@ fn bind_window_frame(frame: &oak_sql::ast::WindowFrame) -> Result<SqlBoundWindow
     Ok(SqlBoundWindowFrame { unit, start, end })
 }
 
-fn bind_window_frame_bound(bound: oak_sql::ast::WindowFrameBound) -> SqlBoundWindowFrameBound {
+fn bind_window_frame_bound(bound: data_text_sql::ast::WindowFrameBound) -> SqlBoundWindowFrameBound {
     match bound {
-        oak_sql::ast::WindowFrameBound::UnboundedPreceding => SqlBoundWindowFrameBound::UnboundedPreceding,
-        oak_sql::ast::WindowFrameBound::Preceding(value) => SqlBoundWindowFrameBound::Preceding(value),
-        oak_sql::ast::WindowFrameBound::CurrentRow => SqlBoundWindowFrameBound::CurrentRow,
-        oak_sql::ast::WindowFrameBound::Following(value) => SqlBoundWindowFrameBound::Following(value),
-        oak_sql::ast::WindowFrameBound::UnboundedFollowing => SqlBoundWindowFrameBound::UnboundedFollowing,
+        data_text_sql::ast::WindowFrameBound::UnboundedPreceding => SqlBoundWindowFrameBound::UnboundedPreceding,
+        data_text_sql::ast::WindowFrameBound::Preceding(value) => SqlBoundWindowFrameBound::Preceding(value),
+        data_text_sql::ast::WindowFrameBound::CurrentRow => SqlBoundWindowFrameBound::CurrentRow,
+        data_text_sql::ast::WindowFrameBound::Following(value) => SqlBoundWindowFrameBound::Following(value),
+        data_text_sql::ast::WindowFrameBound::UnboundedFollowing => SqlBoundWindowFrameBound::UnboundedFollowing,
     }
 }
 
@@ -1914,13 +1914,13 @@ fn window_integer_argument(argument: &SqlBoundExpression, display: &str, role: &
 /// Binds an Oak `FROM` / `JOIN` source into a catalog table reference or a
 /// derived table. A derived table is a full nested `SELECT`, so it is bound
 /// through the same [`bind_select_statement`] path as every other query.
-fn bind_table_source(source: &oak_sql::ast::TableSource) -> Result<SqlBoundSource, SqlFrontendError> {
+fn bind_table_source(source: &data_text_sql::ast::TableSource) -> Result<SqlBoundSource, SqlFrontendError> {
     match source {
-        oak_sql::ast::TableSource::Table(table) => Ok(SqlBoundSource::Table {
+        data_text_sql::ast::TableSource::Table(table) => Ok(SqlBoundSource::Table {
             name: normalize_identifier(table.name.name.as_ref()),
             alias: table.alias.as_ref().map(|alias| normalize_identifier(alias.name.as_ref())),
         }),
-        oak_sql::ast::TableSource::Derived { query, alias, .. } => {
+        data_text_sql::ast::TableSource::Derived { query, alias, .. } => {
             let alias = alias.as_ref().ok_or_else(|| bind_error("SQL derived table requires an alias"))?;
             Ok(SqlBoundSource::Derived { query: Box::new(bind_select_statement(query)?), alias: normalize_identifier(alias.name.as_ref()) })
         }
@@ -1950,7 +1950,7 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
         Expression::Unary { op, expr, .. } => {
             // `-<integer>` 折叠成一个精确的负整数字面量：这样 `-9223372036854775808`
             // 仍落在 `i64` 内，而不是先解析成正数再溢出回浮点。
-            if let oak_sql::ast::UnaryOperator::Minus = op {
+            if let data_text_sql::ast::UnaryOperator::Minus = op {
                 if let Expression::Literal(Literal::Number(text, _)) = expr.as_ref() {
                     if let Some(value) = negated_integer_literal(text) {
                         return Ok(SqlBoundExpression::Literal(SqlBoundLiteral::Integer(value)));
@@ -1959,9 +1959,9 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
             }
             Ok(SqlBoundExpression::Unary {
                 operator: match op {
-                    oak_sql::ast::UnaryOperator::Plus => SqlBoundUnaryOperator::Plus,
-                    oak_sql::ast::UnaryOperator::Minus => SqlBoundUnaryOperator::Minus,
-                    oak_sql::ast::UnaryOperator::Not => SqlBoundUnaryOperator::Not,
+                    data_text_sql::ast::UnaryOperator::Plus => SqlBoundUnaryOperator::Plus,
+                    data_text_sql::ast::UnaryOperator::Minus => SqlBoundUnaryOperator::Minus,
+                    data_text_sql::ast::UnaryOperator::Not => SqlBoundUnaryOperator::Not,
                 },
                 expression: Box::new(bind_expression(expr)?),
             })
@@ -2421,7 +2421,7 @@ fn bind_binary_operator(operator: BinaryOperator) -> Result<SqlBoundBinaryOperat
         BinaryOperator::LessEqual => SqlBoundBinaryOperator::LessEqual,
         BinaryOperator::GreaterEqual => SqlBoundBinaryOperator::GreaterEqual,
         BinaryOperator::Like => SqlBoundBinaryOperator::Like,
-        // `oak-sql` keeps `||` in the AST. PostgreSQL spells concat with `||`;
+        // `data-text-sql` keeps `||` in the AST. PostgreSQL spells concat with `||`;
         // MySQL's `||` is logical OR, so the MySQL dialect is rejected at the
         // catalog-bind layer before this operator ever reaches evaluation.
         BinaryOperator::Concat => SqlBoundBinaryOperator::Concat,

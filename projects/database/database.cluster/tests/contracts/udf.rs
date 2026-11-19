@@ -27,7 +27,7 @@ fn cluster_evaluates_a_manually_constructed_distributed_udf() {
 }
 
 #[test]
-fn cluster_lowers_an_oak_validated_vos_shard_udf() {
+fn cluster_lowers_a_syntax_validated_vos_shard_udf() {
     let udf =
         lower_vos_udf("micro sum(left: i64, right: i64) -> i64 { left + right }", 3).expect("VOS UDF lowers into cluster shard execution");
     assert_eq!(udf.id(), "sum");
@@ -36,7 +36,7 @@ fn cluster_lowers_an_oak_validated_vos_shard_udf() {
 }
 
 #[test]
-fn cluster_rejects_oak_vos_udf_syntax_and_non_i64_lowering() {
+fn cluster_rejects_vos_udf_syntax_and_non_i64_lowering() {
     assert!(lower_vos_udf("micro broken(left: i64) -> i64 { left + }", 1).is_err());
     assert!(lower_vos_udf("micro broken(left: bool) -> bool { left }", 1).is_err());
 }

@@ -135,7 +135,7 @@ impl ReferenceStore {
     ///
     /// Capability rejection is tested on the planner path; this path proves
     /// physical-op semantics independently of capability gating.
-    pub fn interpret_program(&self, program: &oak_vos::VosProgram) -> Result<Vec<Row>> {
+    pub fn interpret_program(&self, program: &data_text_vos::VosProgram) -> Result<Vec<Row>> {
         let (ops, _span) = lower::lower_program(program)?;
         let plan = PhysicalPlan {
             envelope: database_query::ir::IrEnvelope {

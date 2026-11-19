@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use oak_vos::{VosBinaryOp, VosExpr, VosFnDecl, VosFnKind, VosLiteral, VosTypeSyntax};
+use data_text_vos::{VosBinaryOp, VosExpr, VosFnDecl, VosFnKind, VosLiteral, VosTypeSyntax};
 
 use database_types::cluster::Error;
 

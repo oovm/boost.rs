@@ -165,7 +165,7 @@ fn update_set_arithmetic_evaluates_per_row() {
     assert_eq!(gateway.scalar_integer("SELECT stock FROM inv WHERE id = 2"), 11);
 
     // 列引用与字符串拼接函数：`SET name = (CONCAT(name, 'x'))`。
-    // 括号是必需的：钉住的 oak-sql 解析器把 SET 右值的裸函数调用报成
+    // 括号是必需的：钉住的 data-text-sql 解析器把 SET 右值的裸函数调用报成
     // "Missing value in assignment"，括号形式才产出 Expression 节点。
     assert_eq!(gateway.expect_sql("UPDATE inv SET name = (CONCAT(name, 'x')) WHERE id = 1").affected_rows, 1);
     assert_eq!(gateway.scalar_text("SELECT name FROM inv WHERE id = 1"), "ax");

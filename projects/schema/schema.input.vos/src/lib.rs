@@ -1,6 +1,6 @@
 //! VOS schema input chain of the Boost `schema.*` tree.
 //!
-//! Oak owns VOS lexing, parsing, CST and syntax projection (`oak-vos`). This
+//! Oak owns VOS lexing, parsing, CST and syntax projection (`data-text-vos`). This
 //! crate owns name resolution, canonical types, durable identity, the resolved
 //! contract and structured diagnostics. Foundational models are exposed through
 //! [`types`].
@@ -14,7 +14,7 @@
 pub use schema_types as types;
 
 /// Oak syntax surface consumed by VOS hosts.
-pub use oak_vos as syntax;
+pub use data_text_vos as syntax;
 
 pub mod registry;
 pub mod vfs;
@@ -29,7 +29,7 @@ pub use semantic::*;
 /// lower query and update bodies. It performs no name resolution or type
 /// checking.
 pub fn parse_program(source: &str) -> Result<syntax::VosProgram, String> {
-    oak_vos::parse_program(source)
+    data_text_vos::parse_program(source)
 }
 
 /// Parses and validates a schema through Oak and the VOS schema contract.

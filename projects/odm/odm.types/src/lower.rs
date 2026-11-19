@@ -3,7 +3,7 @@
 use core::range::Range;
 
 use database_query::ir::{CmpOp, LiteralKind, PhysicalOp, Pred, ProjectField, SortKey, StringMatchOp, WriteField};
-use oak_vos::{
+use data_text_vos::{
     VosBinaryOp as BinaryOp, VosExpr as Expr, VosLiteral as Literal, VosPathSep as PathSep, VosProgram as Program, VosProjItem as ProjItem,
     VosStmt as Stmt,
 };

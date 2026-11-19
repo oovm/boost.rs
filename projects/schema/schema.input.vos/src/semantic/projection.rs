@@ -1,5 +1,5 @@
 use core::range::Range;
-use oak_vos::{VosDeclarationKind, VosField, VosFieldAttribute, VosRoot, VosServiceMethod, VosTypeArgument, VosTypeSyntax};
+use data_text_vos::{VosDeclarationKind, VosField, VosFieldAttribute, VosRoot, VosServiceMethod, VosTypeArgument, VosTypeSyntax};
 use schema_types::*;
 
 /// Projects Oak operation declarations without parsing their bodies.
@@ -166,7 +166,7 @@ pub fn project_services_artifact(root: &VosRoot) -> Result<ServiceProjectionArti
     })
 }
 
-fn slice_contract(slice: &oak_vos::VosSyntaxSlice) -> SyntaxSliceContract {
+fn slice_contract(slice: &data_text_vos::VosSyntaxSlice) -> SyntaxSliceContract {
     SyntaxSliceContract { text: slice.text.clone(), span: slice.span }
 }
 

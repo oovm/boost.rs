@@ -3,7 +3,7 @@
 use database_query::ir::{
     EffectKind, IrEnvelope, IrVersion, PhysicalOp, PhysicalPlan, PlannedNode, RealizationClass, SchemaFingerprint, hash_ops,
 };
-use oak_vos::VosProgram;
+use data_text_vos::VosProgram;
 
 use crate::{
     capability::CapabilitySet,

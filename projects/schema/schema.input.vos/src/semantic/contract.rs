@@ -501,7 +501,7 @@ mod tests {
 
     fn make_op(attributes: Vec<AttributeContract>) -> OperationProjection {
         let source = "query ping() -> bool { true }";
-        let parsed = oak_vos::parse(source).unwrap();
+        let parsed = data_text_vos::parse(source).unwrap();
         let mut op = crate::semantic::projection::project_operations(&parsed).unwrap().into_iter().next().unwrap();
         op.attributes = attributes;
         op
@@ -569,9 +569,9 @@ mod tests {
     }
 
     #[test]
-    fn parses_effect_and_capability_from_vos_source_attributes_via_oak() {
+    fn parses_effect_and_capability_from_vos_source_attributes() {
         // Leading attribute on a top-level operation declaration must survive the
-        // Oak parse → project pipeline without being dropped.
+        // parse → project pipeline without being dropped.
         let source = "\
 [effect(read)]
 query listTodos() -> [Todo] { Todo }
@@ -582,7 +582,7 @@ micro addTodo(title: utf8) -> Todo { Todo.new(title) }
 [effect(pure)]
 macro is_done(todo: Todo) -> bool { todo.done }
 ";
-        let parsed = oak_vos::parse(source).expect("Oak parses VOS with leading attributes");
+        let parsed = data_text_vos::parse(source).expect("Oak parses VOS with leading attributes");
         let operations = crate::semantic::projection::project_operations(&parsed).expect("VOS projects operations");
         assert_eq!(operations.len(), 3, "all three operations must project");
 
@@ -608,7 +608,7 @@ macro is_done(todo: Todo) -> bool { todo.done }
     #[test]
     fn operation_without_effect_attribute_is_rejected() {
         let source = "query ping() -> bool { true }";
-        let parsed = oak_vos::parse(source).expect("Oak parses");
+        let parsed = data_text_vos::parse(source).expect("Oak parses");
         let operations = crate::semantic::projection::project_operations(&parsed).expect("VOS projects");
         assert_eq!(operations.len(), 1);
         // Negative: no [effect(...)] attribute → OPC001 diagnostic

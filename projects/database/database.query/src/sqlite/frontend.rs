@@ -54,14 +54,14 @@
 //! `UPDATE` / `DELETE` with their `RETURNING` projection belong to the same
 //! family: the engine plans the whole statement against a snapshot, validates
 //! uniqueness in ascending rowid order, and only then writes, so the shapes
-//! above are the ones a future `oak-sql` node must reproduce.
+//! above are the ones a future `data-text-sql` node must reproduce.
 //!
 //! The schema-editing statements (`DROP TABLE`, `DROP INDEX`, `ALTER TABLE`
 //! with `RENAME TO` / `RENAME COLUMN` / `ADD COLUMN` / `DROP COLUMN`) also live
 //! here, including the token-level rewrite of the stored `sqlite_master.sql`
 //! text.
 //!
-//! These stay here until `oak-sql` grows window / `LIMIT`-expression / `CHECK`
+//! These stay here until `data-text-sql` grows window / `LIMIT`-expression / `CHECK`
 //! / `UPDATE` / `DELETE` / `RETURNING` / schema-editing AST nodes and
 //! `yydb-gateway` lowering can execute them; the shapes above are listed so the
 //! hand-off is mechanical rather than a re-discovery.

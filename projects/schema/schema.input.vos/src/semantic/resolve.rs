@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use oak_vos::{VosDeclaration, VosDeclarationKind, VosSyntaxElement};
+use data_text_vos::{VosDeclaration, VosDeclarationKind, VosSyntaxElement};
 
 use crate::vfs::{Vfs, VfsError};
 
@@ -100,7 +100,7 @@ impl SymbolTable {
 ///
 /// This is the **collect pass** — no file I/O happens here, we just
 /// examine what is already in memory.
-pub fn collect_decls(root: &oak_vos::VosRoot) -> SourceDecls {
+pub fn collect_decls(root: &data_text_vos::VosRoot) -> SourceDecls {
     let mut decls = SourceDecls::default();
     let literals = collect_string_literals(root);
 
@@ -143,17 +143,17 @@ pub fn collect_decls(root: &oak_vos::VosRoot) -> SourceDecls {
 }
 
 /// (span_start, span_end, unquoted_text) for every StringLiteral in the root.
-fn collect_string_literals(root: &oak_vos::VosRoot) -> Vec<(usize, usize, String)> {
+fn collect_string_literals(root: &data_text_vos::VosRoot) -> Vec<(usize, usize, String)> {
     let mut out = Vec::new();
     walk_literals(&root.syntax, &mut out);
     out
 }
 
-fn walk_literals(node: &oak_vos::VosSyntaxNode, out: &mut Vec<(usize, usize, String)>) {
+fn walk_literals(node: &data_text_vos::VosSyntaxNode, out: &mut Vec<(usize, usize, String)>) {
     for child in &node.children {
         match child {
             VosSyntaxElement::Token(token) => {
-                if matches!(token.kind, oak_vos::VosTokenType::StringLiteral) {
+                if matches!(token.kind, data_text_vos::VosTokenType::StringLiteral) {
                     let text = token.text.trim();
                     let stripped = text.strip_prefix('"').or_else(|| text.strip_prefix('\'')).unwrap_or(text);
                     let stripped = stripped.strip_suffix('"').or_else(|| stripped.strip_suffix('\'')).unwrap_or(stripped);
@@ -232,7 +232,7 @@ fn resolve_recursive<V: Vfs>(current: &Path, vfs: &V, table: &mut SymbolTable, v
         }
     };
 
-    let root = match oak_vos::parse(&source) {
+    let root = match data_text_vos::parse(&source) {
         Ok(r) => r,
         Err(e) => {
             diagnostics.push(VfsError::new(crate::vfs::VfsErrorKind::Io, format!("parse error in {}: {e}", canonical.display())));
@@ -266,21 +266,21 @@ mod tests {
 
     #[test]
     fn collects_namespace_style_using() {
-        let root = oak_vos::parse("using foo::bar").unwrap();
+        let root = data_text_vos::parse("using foo::bar").unwrap();
         let decls = collect_decls(&root);
         assert_eq!(decls.using_paths, vec!["foo/bar".to_owned()]);
     }
 
     #[test]
     fn collects_string_literal_using() {
-        let root = oak_vos::parse("using \"./shared.vos\"").unwrap();
+        let root = data_text_vos::parse("using \"./shared.vos\"").unwrap();
         let decls = collect_decls(&root);
         assert_eq!(decls.using_paths, vec!["./shared.vos".to_owned()]);
     }
 
     #[test]
     fn collects_decls_under_namespace() {
-        let root = oak_vos::parse("namespace demo\ntable User { @@id: uuid, }\nservice Identity { create() }").unwrap();
+        let root = data_text_vos::parse("namespace demo\ntable User { @@id: uuid, }\nservice Identity { create() }").unwrap();
         let decls = collect_decls(&root);
         assert_eq!(decls.namespace, vec!["demo".to_owned()]);
         assert_eq!(decls.declarations.len(), 3); // Namespace + Table + Service
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn empty_source_produces_empty_decls() {
-        let root = oak_vos::parse("").unwrap();
+        let root = data_text_vos::parse("").unwrap();
         let decls = collect_decls(&root);
         assert!(decls.declarations.is_empty());
         assert!(decls.using_paths.is_empty());

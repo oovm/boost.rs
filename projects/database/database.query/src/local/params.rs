@@ -22,7 +22,7 @@ use super::{
     ops::{BoundValue, QueryOp, SessionOp, SlotTy, WriteOp},
     sql,
 };
-use oak_vos::{VosExpr, VosProgram, VosStmt};
+use data_text_vos::{VosExpr, VosProgram, VosStmt};
 
 /// Authoring language a statement was prepared from.
 ///
@@ -287,7 +287,7 @@ pub struct BoundWrite {
     pub values: Vec<Value>,
     /// The parsed and macro-expanded program, so a caller that plans and then
     /// executes the same write does not parse and expand it twice.
-    pub program: oak_vos::VosProgram,
+    pub program: data_text_vos::VosProgram,
 }
 
 /// Rewrite `$name` parameters in a VOS write program and bind `named` values.
@@ -314,7 +314,7 @@ pub fn bind_vos_write(source: &str, named: &BTreeMap<String, Value>, schema_docu
 pub struct ParsedVosWrite {
     parameters: Vec<ParameterDescriptor>,
     rewritten: String,
-    program: oak_vos::VosProgram,
+    program: data_text_vos::VosProgram,
 }
 
 impl ParsedVosWrite {

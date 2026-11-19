@@ -11,7 +11,7 @@ publish = false
 [dependencies]
 database-formats = { workspace = true }
 database-types = { workspace = true }
-oak-vos = { workspace = true }
+data-text-vos = { workspace = true }
 schema-input-vos = { workspace = true }
 schema-types = { workspace = true }
 serde = { workspace = true }

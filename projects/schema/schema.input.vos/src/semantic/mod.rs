@@ -2,7 +2,7 @@
 
 #![deny(missing_docs)]
 
-use oak_vos::{VosDeclaration, VosField, VosRoot, VosSyntaxNode};
+use data_text_vos::{VosDeclaration, VosField, VosRoot, VosSyntaxNode};
 
 mod contract;
 mod identity;
@@ -27,7 +27,7 @@ pub use schema_types::*;
 
 /// Parses VOS source through Oak and wraps the resulting root for semantic use.
 pub fn parse_oak(source: &str) -> Result<ContractInput, String> {
-    oak_vos::parse(source).map(ContractInput::from_oak)
+    data_text_vos::parse(source).map(ContractInput::from_oak)
 }
 
 /// Oak output accepted by the VOS semantic pipeline.
@@ -109,7 +109,7 @@ mod tests {
         OPERATION_PROJECTION_STAGE, OperationKind, OperationProjectionArtifact, PROJECTION_STAGE, SERVICE_CONTRACT_FORMAT_VERSION,
         SERVICE_PROJECTION_STAGE, ServiceProjectionArtifact, parse_oak,
     };
-    use oak_vos::VosDeclarationKind;
+    use data_text_vos::VosDeclarationKind;
 
     #[test]
     fn consumes_oak_root_without_reparsing() {

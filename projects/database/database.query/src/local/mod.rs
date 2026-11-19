@@ -4,7 +4,7 @@
 //!
 //! | Stage | Module | Knows about |
 //! |-------|--------|-------------|
-//! | parse | `oak-vos` / `oak-sql` | authoring syntax |
+//! | parse | `data-text-vos` / `data-text-sql` | authoring syntax |
 //! | lower | `sql` / `lower` | frontend AST → `ops` |
 //! | plan | `params` / `window` | parameters, kind, read/write set, record windows |
 //!

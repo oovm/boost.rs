@@ -15,7 +15,7 @@ fn adopt_catalog_schema_accepts_vos_text() {
 }
 
 #[test]
-fn catalog_rejects_invalid_oak_structure_and_vos_semantics() {
+fn catalog_rejects_invalid_vos_structure_and_semantics() {
     for source in ["table User { @@id: uuid } ]", "table User { id: i64 }"] {
         assert!(matches!(adopt_catalog_schema(1, source), Err(Error::Schema { .. })));
     }

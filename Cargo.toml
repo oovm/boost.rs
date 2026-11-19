@@ -937,8 +937,6 @@ oak-xml = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb
 oak-tex = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
 
 oak-typst = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-sql = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false, features = ["serde"] }
-oak-vos = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484" }
 
 # `.metis` 前端 `oak-metis` 与其余 oak 家族统一到同一 `yggdrasil-language` oaks pin。
 oak-metis = { git = "https://github.com/yggdrasil-language/oak.rs", rev = "a0416cb1cba9a348df175d3ca230f794ec562484", default-features = false }

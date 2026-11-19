@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 schema-types = { workspace = true }
-oak-vos = { workspace = true }
+data-text-vos = { workspace = true }
 uuid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -107,7 +107,7 @@ fn expand_macro_call(expr: &VosExpr, schema_document: Option<&str>) -> Result<Vo
         return Err(plan_error(format!("Phase 1 macro expansion does not bind parameters for `{name}()`")));
     }
     let document = schema_document.ok_or_else(|| plan_error("macro expansion requires an installed schema document"))?;
-    let document = oak_vos::parse(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
+    let document = data_text_vos::parse(document).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     find_macro_body(&document, name).ok_or_else(|| plan_error(format!("unknown schema macro `{name}`")))
 }
 

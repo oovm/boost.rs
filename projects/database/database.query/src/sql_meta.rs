@@ -6,7 +6,7 @@
 //! statement is answered from it directly. Anything outside the documented
 //! shape is rejected with `Unsupported` instead of approximated.
 
-use oak_sql::ast::{
+use data_text_sql::ast::{
     BinaryOperator, Expression, JoinType, Literal, OrderDirection, SelectItem, SelectStatement, SqlStatement, TableName, TableSource,
 };
 
@@ -542,7 +542,7 @@ fn statement_kind(statement: &SqlStatement) -> &'static str {
     }
 }
 
-fn analyze_show(show: &oak_sql::ast::ShowStatement, dialect: SqlDialect) -> Result<Option<MetaQuery>, SqlFrontendError> {
+fn analyze_show(show: &data_text_sql::ast::ShowStatement, dialect: SqlDialect) -> Result<Option<MetaQuery>, SqlFrontendError> {
     let target = show.target.to_ascii_uppercase();
     match target.as_str() {
         "TABLES" if dialect == SqlDialect::Mysql => Ok(Some(MetaQuery {

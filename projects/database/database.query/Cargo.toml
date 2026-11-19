@@ -14,9 +14,9 @@ database-formats = { workspace = true }
 database-protocol-mongo = { workspace = true }
 database-storage = { workspace = true }
 database-types = { workspace = true }
-oak-core = { workspace = true }
-oak-sql = { workspace = true }
-oak-vos = { workspace = true }
+data-text-core = { workspace = true }
+data-text-sql = { workspace = true }
+data-text-vos = { workspace = true }
 regex = { workspace = true }
 schema-input-vos = { workspace = true }
 schema-types = { workspace = true }

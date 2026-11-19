@@ -1458,7 +1458,7 @@ fn coalesce_rejects_nested_aggregates() {
 // ─── Nested scalar calls ───────────────────────────────────────────────
 //
 // A scalar call may be an argument of another scalar call, including an
-// aggregate argument, because `oak-sql` keeps the nested `FunctionCall` in the
+// aggregate argument, because `data-text-sql` keeps the nested `FunctionCall` in the
 // argument list. Nested aggregates and nested window calls stay rejected.
 
 #[test]
@@ -1846,10 +1846,10 @@ fn select_with_boolean_literal_always_false_predicate() {
 
 #[test]
 fn bare_bool_column_reference_as_predicate_is_rejected_by_parser() {
-    // WHERE active — oak-sql does not accept a bare column reference as a
+    // WHERE active — data-text-sql does not accept a bare column reference as a
     // WHERE predicate. The lowering *would* handle `Expression::Identifier`,
     // but the parser errors first. We confirm this is rejected at parse time
-    // so future lowering work knows to update the test if oak-sql ever gains
+    // so future lowering work knows to update the test if data-text-sql ever gains
     // this syntax.
     let err = prepare_sql("SELECT * FROM Account WHERE active").expect_err("bare bool column reference must be rejected at parse time");
     assert!(format!("{err}").contains("predicate") || format!("{err}").contains("parse"));
@@ -3251,7 +3251,7 @@ fn select_distinct_does_not_change_plain_sum() {
 
 // ─── CASE WHEN ... THEN ... [ELSE ...] END ───────────────────────────────
 
-// These tests require oak-sql to have builder support for
+// These tests require data-text-sql to have builder support for
 // `Expression::Case`. The lowering path and executor are already in place;
 // re-enable once the parser emits CASE AST nodes.
 
@@ -3320,7 +3320,7 @@ fn case_when_nested_inside_then_branch() {
 
 // ─── CAST(expr AS type) ──────────────────────────────────────────────────
 
-// These tests require oak-sql builder support for `Expression::Cast`.
+// These tests require data-text-sql builder support for `Expression::Cast`.
 // Executor handles INTEGER / REAL / TEXT / BLOB target types; NULL input
 // stays NULL regardless of target.
 
@@ -3407,7 +3407,7 @@ fn cast_bool_to_integer_and_back() {
 }
 
 #[test]
-fn unsupported_oak_sql_clauses_are_rejected_with_their_own_message() {
+fn unsupported_data_text_sql_clauses_are_rejected_with_their_own_message() {
     let contract = contract();
     let mut records = BTreeMap::new();
 

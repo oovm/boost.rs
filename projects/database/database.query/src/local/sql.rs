@@ -1,13 +1,13 @@
 //! SQL frontend: lower an Oak SQL AST into the shared physical operators.
 //!
-//! Parsing belongs to `oak-sql`; this module only *lowers*. It resolves no
+//! Parsing belongs to `data-text-sql`; this module only *lowers*. It resolves no
 //! catalog information and touches no storage, so the same plan can be prepared
 //! once and executed against any schema that declares the referenced tables.
 
 use std::{cell::Cell, collections::BTreeMap, rc::Rc};
 
 use database_types::{Error, Result, Value};
-use oak_sql::ast::{
+use data_text_sql::ast::{
     Assignment, BinaryOperator, DeleteStatement, Expression, GroupByClause, GroupByItem, Identifier, InsertSource, InsertStatement, JoinClause,
     JoinType, LimitClause, Literal, OnConflictAction, OrderByItem, SelectItem, SelectStatement, SetOperationStatement, SetOperator, SqlRoot,
     SqlStatement, TableName, TableSource, TransactionAction, UnaryOperator, UpdateStatement, WindowFrame as AstWindowFrame,
@@ -48,7 +48,7 @@ pub struct SqlPlan {
 
 /// Parse SQL source into the Oak SQL root node.
 pub fn parse(source: &str) -> Result<SqlRoot> {
-    oak_sql::parse(source).map_err(|diagnostics| sql_error(format!("SQL parse error: {diagnostics}")))
+    data_text_sql::parse(source).map_err(|diagnostics| sql_error(format!("SQL parse error: {diagnostics}")))
 }
 
 /// Lower a whole SQL source (exactly one statement) into shared operators.
@@ -280,7 +280,7 @@ fn lower_select(select: &SelectStatement, parameters: &[ParameterDescriptor], ct
     // `SELECT DISTINCT` is captured here and, when paired with a COUNT(expr),
     // promotes that COUNT to a distinct-count aggregate. MVP does not yet
     // emit a top-level DISTINCT operator for non-aggregate queries.
-    let quantifier_is_distinct = matches!(select.quantifier, Some(oak_sql::ast::SelectQuantifier::Distinct { .. }));
+    let quantifier_is_distinct = matches!(select.quantifier, Some(data_text_sql::ast::SelectQuantifier::Distinct { .. }));
     let (group_keys, aggregates) = lower_aggregate(select, parameters, quantifier_is_distinct, &scope)?;
     let has_aggregate = !aggregates.is_empty() || !group_keys.is_empty();
     if has_aggregate {
@@ -835,7 +835,7 @@ fn lower_window_spec(window: &AstWindowSpec, _ctes: &CteScope) -> Result<WindowS
         let WindowOrderItem { column, direction, .. } = item;
         order_by.push(WindowOrderKey {
             expr: ProjectExpr::Scalar { path: split_identifier(column) },
-            ascending: !matches!(direction, oak_sql::ast::OrderDirection::Desc),
+            ascending: !matches!(direction, data_text_sql::ast::OrderDirection::Desc),
         });
     }
     let frame = match &window.frame {
@@ -967,7 +967,7 @@ fn lower_sort_key(item: &OrderByItem, parameters: &[ParameterDescriptor], scope:
     if let Some(name) = first_window_function(&item.expr) {
         return Err(sql_error(format!("window function `{name}` cannot appear in `ORDER BY`: order by the window column alias instead")));
     }
-    let ascending = !matches!(item.direction, oak_sql::ast::OrderDirection::Desc);
+    let ascending = !matches!(item.direction, data_text_sql::ast::OrderDirection::Desc);
     match &item.expr {
         Expression::Identifier(identifier) => Ok(SortKey { field: identifier.name.to_string(), expr: None, ascending }),
         other => {
@@ -1880,7 +1880,7 @@ fn lower_insert_select(
     if select.group_by.is_some() {
         return Err(sql_error("INSERT ... SELECT source must be a plain row projection: GROUP BY is not supported yet"));
     }
-    if matches!(select.quantifier, Some(oak_sql::ast::SelectQuantifier::Distinct { .. })) {
+    if matches!(select.quantifier, Some(data_text_sql::ast::SelectQuantifier::Distinct { .. })) {
         return Err(sql_error("INSERT ... SELECT source must be a plain row projection: DISTINCT is not supported yet"));
     }
     if select

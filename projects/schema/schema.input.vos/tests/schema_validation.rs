@@ -1,9 +1,9 @@
-//! Facade schema validation goes through Oak and the VOS schema contract.
+//! Facade schema validation goes through the VOS syntax crate and the VOS schema contract.
 
 use schema_input_vos::validate_schema;
 
 #[test]
-fn schema_validation_uses_oak_and_requires_table_primary() {
+fn schema_validation_uses_vos_syntax_and_requires_table_primary() {
     assert!(validate_schema("table User { @@id: uuid }").is_ok());
     assert!(validate_schema("table User { id: uuid }").is_err());
     assert!(validate_schema("table User {").is_err());

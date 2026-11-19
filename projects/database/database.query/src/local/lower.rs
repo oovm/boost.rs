@@ -1,6 +1,6 @@
 //! Lower VOS expression pipelines into Phase 1 query ops.
 
-use oak_vos::{VosBinaryOp, VosExpr, VosFieldInit, VosLiteral, VosProgram, VosProjItem, VosStmt};
+use data_text_vos::{VosBinaryOp, VosExpr, VosFieldInit, VosLiteral, VosProgram, VosProjItem, VosStmt};
 
 use database_types::{Error, Result};
 

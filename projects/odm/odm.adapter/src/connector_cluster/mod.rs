@@ -22,7 +22,7 @@ pub const READINESS_CODE: &str = "IRIS-YYDS-VOS-NOT-READY";
 /// Forbidden legacy surfaces that must never be wired through this connector.
 pub const FORBIDDEN_LEGACY_SURFACES: &[&str] = &[
     "yyds-gateway/src/sql",
-    "oak-sql",
+    "data-text-sql",
     "yyds-odbc",
     "we-trust-sqlite",
     "we-trust-mysql",
