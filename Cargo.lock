@@ -558,6 +558,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "commander-core"
+version = "0.1.0"
+dependencies = [
+ "commander-types",
+ "serde_json",
+]
+
+[[package]]
+name = "commander-prompt"
+version = "0.1.0"
+dependencies = [
+ "boost-terminal",
+ "commander-core",
+ "commander-types",
+ "serde_json",
+]
+
+[[package]]
 name = "commander-types"
 version = "0.1.0"
 dependencies = [
@@ -990,6 +1008,7 @@ dependencies = [
 name = "database-harness"
 version = "0.1.0"
 dependencies = [
+ "boost-math",
  "database-types",
  "plotter-chart",
  "plotter-scene",
