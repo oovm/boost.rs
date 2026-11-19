@@ -3745,6 +3745,8 @@ name = "dl-plan"
 version = "0.1.0"
 dependencies = [
  "dl-graph",
+ "dl-tensor",
+ "dl-types",
  "hardware-backend-npu",
  "hardware-capability",
  "hardware-runtime",

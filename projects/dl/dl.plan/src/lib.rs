@@ -14,8 +14,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use dl_graph::{Graph, NodeId, Op};
 use hardware_capability::{BackendId, Conversion, DeviceId, ExecDecision, ExecPlan, ExecRefusal, ExecSignature, MemoryBudget};
 
+mod execute;
 mod stream;
 
+pub use execute::{ExecutedPlan, RunError, execute_plan};
 pub use scheduler_oracle::SchedulerOracle;
 pub use stream::{StreamReport, StreamStep, stream_plan};
 

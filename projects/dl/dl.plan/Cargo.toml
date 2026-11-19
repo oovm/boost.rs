@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 dl-graph = { workspace = true }
+dl-tensor = { workspace = true }
+dl-types = { workspace = true }
 hardware-capability = { workspace = true }
 hardware-runtime = { workspace = true }
 hardware-scheduler = { workspace = true }

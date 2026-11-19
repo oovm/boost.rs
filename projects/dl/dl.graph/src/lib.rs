@@ -422,13 +422,61 @@ impl Graph {
 
     /// 按绑定执行前向，返回输出张量。
     pub fn run(&self, bindings: &Bindings) -> Result<Vec<Tensor>> {
-        let mut values: Vec<Option<Tensor>> = Vec::with_capacity(self.nodes.len());
-        for node in &self.nodes {
-            let value = eval(node, &values, bindings)?;
-            debug_assert_eq!(value.shape(), node.shape.as_slice(), "inferred shape must match execution");
-            values.push(Some(value));
-        }
-        self.outputs.iter().map(|id| values.get(id.0).and_then(Option::as_ref).cloned().ok_or(DlError::UnknownNode { id: id.0 })).collect()
+        let mut interpreter = self.interpreter(bindings)?;
+        while interpreter.step()?.is_some() {}
+        interpreter.outputs()
+    }
+
+    /// 创建逐节点执行器；用于按放置计划分步执行。
+    pub fn interpreter<'a>(&'a self, bindings: &'a Bindings) -> Result<Interpreter<'a>> {
+        self.validate()?;
+        Ok(Interpreter { graph: self, bindings, values: Vec::with_capacity(self.nodes.len()), cursor: 0 })
+    }
+}
+
+/// 逐节点执行器；每次 [`Interpreter::step`] 只计算下一个节点。
+///
+/// 执行顺序固定为节点创建顺序，与 [`Graph::run`] 共用同一 `dl-ops` 内核，因此分步结果
+/// 必须与整图执行一致。
+pub struct Interpreter<'a> {
+    graph: &'a Graph,
+    bindings: &'a Bindings,
+    values: Vec<Option<Tensor>>,
+    cursor: usize,
+}
+
+impl<'a> Interpreter<'a> {
+    /// 是否还有未执行节点。
+    pub fn is_finished(&self) -> bool {
+        self.cursor >= self.graph.nodes.len()
+    }
+
+    /// 下一个待执行节点。
+    pub fn next_node(&self) -> Option<NodeId> {
+        if self.is_finished() { None } else { Some(NodeId(self.cursor)) }
+    }
+
+    /// 执行下一个节点并返回其值；已执行完时返回 `None`。
+    pub fn step(&mut self) -> Result<Option<Tensor>> {
+        let Some(node) = self.graph.nodes.get(self.cursor)
+        else {
+            return Ok(None);
+        };
+        let value = eval(node, &self.values, self.bindings)?;
+        debug_assert_eq!(value.shape(), node.shape.as_slice(), "inferred shape must match execution");
+        self.values.push(Some(value.clone()));
+        self.cursor += 1;
+        Ok(Some(value))
+    }
+
+    /// 已执行节点的值。
+    pub fn value(&self, id: NodeId) -> Option<&Tensor> {
+        self.values.get(id.0).and_then(Option::as_ref)
+    }
+
+    /// 收集图输出；未执行完时返回未知节点错误。
+    pub fn outputs(&self) -> Result<Vec<Tensor>> {
+        self.graph.outputs.iter().map(|id| self.value(*id).cloned().ok_or(DlError::UnknownNode { id: id.0 })).collect()
     }
 }
 
