@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 /// AST module.
 pub mod ast;
@@ -17,7 +15,7 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 // /// LSP module.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 // pub mod mcp;
 /// Parser module.
@@ -27,7 +25,7 @@ pub use crate::{ast::WatRoot, builder::WatBuilder, language::WatLanguage, lexer:
 
 //
 /// Dummy highlighter for Wat.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod dummy_highlighter {}
 
 // /// LSP implementation.

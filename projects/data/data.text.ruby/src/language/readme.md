@@ -16,7 +16,7 @@ Currently, `RubyLanguage` serves as a marker struct for Ruby support. Future ver
 - **`experimental`**: Enables parsing of experimental syntax from recent Ruby versions.
 - **`strict`**: When enabled, the parser enforces stricter Ruby syntax rules during analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, literals, and interpolation tokens.

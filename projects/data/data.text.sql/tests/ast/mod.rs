@@ -1,5 +1,4 @@
 use data_text_core::{ParseSession, SourceText, builder::Builder, source::ToSource};
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::AsDocument;
 use data_text_sql::{SqlBuilder, SqlLanguage};
 
@@ -26,7 +25,6 @@ fn test_sql_to_source() {
 }
 
 #[test]
-#[cfg(feature = "oak-pretty-print")]
 fn test_sql_to_doc() {
     let config = SqlLanguage::default();
     let builder = SqlBuilder::new(&config);
@@ -182,7 +180,6 @@ fn test_sql_database_to_source() {
 }
 
 #[test]
-#[cfg(feature = "oak-pretty-print")]
 fn test_sql_pretty_print_complex() {
     let config = SqlLanguage::default();
     let builder = SqlBuilder::new(&config);

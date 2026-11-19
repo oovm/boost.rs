@@ -1,6 +1,6 @@
 # oak-cobol
 
-High-performance incremental COBOL parser for the oak ecosystem.
+High-performance incremental COBOL parser for the `data.text` family.
 
 ## Features
 

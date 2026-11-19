@@ -14,7 +14,7 @@ Currently, `SvelteLanguage` serves as a marker struct for Svelte support. Future
 - **`svelte_version`**: Specific Svelte version targeting (e.g., 3, 4, or 5).
 - **`experimental_features`**: Enables support for experimental Svelte features.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering HTML tags, JS/TS tokens, and Svelte structural tokens (control blocks, snippets).

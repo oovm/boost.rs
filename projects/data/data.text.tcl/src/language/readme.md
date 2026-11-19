@@ -15,7 +15,7 @@ Currently, `TclLanguage` serves as a marker struct for Tcl support. Future versi
 - **`commands`**: Custom command definitions for better semantic analysis.
 - **`encoding`**: Source file encoding configuration.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering commands, words, variables, and substitutions.

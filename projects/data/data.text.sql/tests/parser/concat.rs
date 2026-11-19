@@ -1,5 +1,4 @@
 use data_text_core::{Builder, Lexer, ParseSession, SourceText, TokenType, source::ToSource};
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::AsDocument;
 use data_text_sql::{
     SqlBuilder, SqlLanguage, SqlLexer, SqlTokenType,
@@ -154,8 +153,6 @@ fn test_concat_keeps_operator_in_source() {
     let source = result.result.unwrap().to_source_string();
     assert!(source.contains("||"), "{source}");
 }
-
-#[cfg(feature = "oak-pretty-print")]
 fn shape(expr: &Expression) -> String {
     match expr {
         Expression::Binary { left, op, right, .. } => format!("({} {op:?} {})", shape(left), shape(right)),
@@ -165,8 +162,6 @@ fn shape(expr: &Expression) -> String {
         other => format!("{other:?}"),
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 #[test]
 fn test_concat_pretty_round_trip() {
     for sql in ["select 1 || 'x'", "select 'a' || 'b' || 'c'", "select a || b from t", "select a || 'x' || 1", "select 1 || 2 * 3", "select 3 + 4 || 5", "select (a + b) || c", "select a || (b || c)", "select (a || b) * 2", "select 'a' || 'b' = 'ab'"] {

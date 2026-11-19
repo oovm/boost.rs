@@ -19,7 +19,7 @@ Currently, `LuaLanguage` serves as a marker struct for Lua support. Future versi
 - **`compat_mode`**: Enables specific compatibility behaviors for older Lua versions.
 - **`jit_extensions`**: Enables support for LuaJIT-specific extensions (e.g., FFI, 64-bit integers).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, table constructors, and long string tokens.

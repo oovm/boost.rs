@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 extern crate alloc;
 
@@ -19,7 +17,7 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 // /// LSP module.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 // pub mod mcp;
 /// Parser module.
@@ -28,7 +26,7 @@ pub mod parser;
 pub use crate::{ast::*, builder::VLangBuilder, language::VLangLanguage, lexer::VLangLexer, parser::VLangParser};
 pub use data_text_core::{ElementType, TokenType};
 
-// #[cfg(feature = "oak-highlight")]
+// #[cfg(feature = "language-highlight")]
 // pub use crate::lsp::highlighter::VLangHighlighter;
 
 // /// LSP implementation.

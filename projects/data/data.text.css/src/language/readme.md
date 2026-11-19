@@ -17,7 +17,7 @@ Currently, `CssLanguage` serves as a marker struct for CSS support. Future versi
 - **`strict`**: When enabled, the parser enforces stricter CSS rules.
 - **`browsers`**: Configures the parser to be aware of specific browser-specific properties and hacks.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering selectors, property names/values, and at-rules.

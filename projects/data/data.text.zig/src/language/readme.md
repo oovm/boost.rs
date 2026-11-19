@@ -15,7 +15,7 @@ Currently, `ZigLanguage` serves as a marker struct for Zig support. Future versi
 - **`comptime_eval`**: Configures how the parser should handle or simplify complex compile-time expressions.
 - **`strict`**: When enabled, the parser enforces stricter Zig syntax rules.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and literals.

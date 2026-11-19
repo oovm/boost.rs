@@ -16,7 +16,7 @@ Currently, `KotlinLanguage` serves as a marker struct for Kotlin support. Future
 - **`kmp_support`**: Enables support for Kotlin Multiplatform keywords like `expect` and `actual`.
 - **`strict`**: When enabled, the parser enforces stricter Kotlin syntax rules during analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, literals, and string template tokens.

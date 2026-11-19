@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/oak-hover.svg)](https://crates.io/crates/oak-hover)
 [![Documentation](https://docs.rs/oak-hover/badge.svg)](https://docs.rs/oak-hover)
 
-**Hover Information Provider for the Oak Ecosystem** — A lightweight, trait-based library for providing hover information in editors and IDEs.
+**Hover Information Provider for the `data.text` family** — A lightweight, trait-based library for providing hover information in editors and IDEs.
 
 ## 🎯 Why oak-hover?
 

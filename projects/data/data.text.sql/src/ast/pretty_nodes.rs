@@ -1,16 +1,10 @@
-#[cfg(feature = "oak-pretty-print")]
 use crate::ast::*;
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::{AsDocument, Document, LINE as line, NIL as nil, SOFT_LINE_SPACE as soft_space, doc, indent};
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SqlRoot {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         Document::join(self.statements.iter().map(|it| it.as_document(&())), doc!(";", line))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SqlStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -68,8 +62,6 @@ impl AsDocument for SqlStatement {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SelectStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -129,16 +121,12 @@ impl AsDocument for SelectStatement {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for WithClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let ctes = Document::join(self.ctes.iter().map(|cte| cte.as_document(&())), doc!(",", line));
         doc!("WITH", indent(doc!(line, ctes)))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for CteDefinition {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut head = self.name.as_document(&());
@@ -148,8 +136,6 @@ impl AsDocument for CteDefinition {
         doc!(head, soft_space, "AS", soft_space, "(", self.query.as_document(&()), ")")
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SetOperationStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -182,8 +168,6 @@ impl AsDocument for SetOperationStatement {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SelectQuantifier {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -195,8 +179,6 @@ impl AsDocument for SelectQuantifier {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SelectItem {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -212,8 +194,6 @@ impl AsDocument for SelectItem {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Expression {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -278,7 +258,6 @@ impl AsDocument for Expression {
 
 /// Writes the left operand of an `IS` predicate, keeping parentheses when the
 /// operand would otherwise reparse at a lower precedence.
-#[cfg(feature = "oak-pretty-print")]
 fn is_operand_document(expr: &Expression) -> Document<'_> {
     if crate::ast::expression_nodes::needs_is_operand_parentheses(expr) { doc!("(", expr.as_document(&()), ")") } else { expr.as_document(&()) }
 }
@@ -287,7 +266,6 @@ fn is_operand_document(expr: &Expression) -> Document<'_> {
 /// SQLite, where `||` binds tighter than `*`/`/`/`%`, which in turn bind tighter
 /// than `+`/`-`, and all of them bind tighter than the comparison/logical
 /// operators.
-#[cfg(feature = "oak-pretty-print")]
 fn binary_precedence(op: BinaryOperator) -> u8 {
     match op {
         BinaryOperator::Or => 1,
@@ -298,8 +276,6 @@ fn binary_precedence(op: BinaryOperator) -> u8 {
         BinaryOperator::Concat => 12,
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 fn expression_precedence(expr: &Expression) -> u8 {
     match expr {
         Expression::Binary { op, .. } => binary_precedence(*op),
@@ -313,13 +289,10 @@ fn expression_precedence(expr: &Expression) -> u8 {
 /// Writes a binary operand, adding parentheses when it would otherwise reparse
 /// with a different grouping. A right-nested operand of the same precedence also
 /// needs parentheses because SQLite's binary operators are left-associative.
-#[cfg(feature = "oak-pretty-print")]
 fn binary_operand_document(expr: &Expression, parent_precedence: u8, is_right: bool) -> Document<'_> {
     let needs_parentheses = expression_precedence(expr) < parent_precedence || (is_right && expression_precedence(expr) == parent_precedence);
     if needs_parentheses { doc!("(", expr.as_document(&()), ")") } else { expr.as_document(&()) }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for BinaryOperator {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -341,8 +314,6 @@ impl AsDocument for BinaryOperator {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for UnaryOperator {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -352,8 +323,6 @@ impl AsDocument for UnaryOperator {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Literal {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -364,22 +333,16 @@ impl AsDocument for Literal {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Identifier {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         Document::text(self.name.as_ref())
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for TableName {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         if let Some(alias) = &self.alias { doc!(self.name.as_document(&()), soft_space, "AS", soft_space, alias.as_document(&())) } else { self.name.as_document(&()) }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for TableSource {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -391,22 +354,16 @@ impl AsDocument for TableSource {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for ColumnName {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         self.name.as_document(&())
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JoinClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!(self.join_type.as_document(&()), soft_space, "JOIN", soft_space, self.table.as_document(&()), if let Some(on) = &self.on { doc!(soft_space, "ON", soft_space, on.as_document(&())) } else { nil })
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JoinType {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -418,15 +375,11 @@ impl AsDocument for JoinType {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for GroupByClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!("GROUP", soft_space, "BY", soft_space, Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for GroupByItem {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -446,29 +399,21 @@ impl AsDocument for GroupByItem {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for HavingClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!("HAVING", soft_space, self.condition.as_document(&()))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for OrderByClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!("ORDER", soft_space, "BY", soft_space, Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for OrderByItem {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!(self.expr.as_document(&()), soft_space, self.direction.as_document(&()), if let Some(nulls) = &self.nulls { doc!(soft_space, "NULLS", soft_space, nulls.as_document(&())) } else { nil })
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for NullsOrder {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -477,8 +422,6 @@ impl AsDocument for NullsOrder {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for OrderDirection {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -487,8 +430,6 @@ impl AsDocument for OrderDirection {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LimitClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match (&self.limit, &self.offset) {
@@ -499,8 +440,6 @@ impl AsDocument for LimitClause {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for CreateStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -554,16 +493,12 @@ impl AsDocument for CreateStatement {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for ColumnDefinition {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let data_type_str = self.data_type.to_string();
         doc!(self.name.as_document(&()), soft_space, data_type_str, Document::join(self.constraints.iter().map(|it| doc!(soft_space, it.as_document(&()))), nil))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for ColumnConstraint {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -577,8 +512,6 @@ impl AsDocument for ColumnConstraint {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for TableConstraint {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -599,8 +532,6 @@ impl AsDocument for TableConstraint {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for IndexedColumn {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match &self.direction {
@@ -609,8 +540,6 @@ impl AsDocument for IndexedColumn {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for ConflictResolution {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -622,8 +551,6 @@ impl AsDocument for ConflictResolution {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for CreateObjectType {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -634,8 +561,6 @@ impl AsDocument for CreateObjectType {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for InsertStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -681,8 +606,6 @@ impl AsDocument for InsertStatement {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for OnConflictClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -698,8 +621,6 @@ impl AsDocument for OnConflictClause {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for OnConflictAction {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -721,15 +642,11 @@ impl AsDocument for OnConflictAction {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for ReturningClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!("RETURNING", soft_space, Document::join(self.items.iter().map(|it| it.as_document(&())), doc!(",", soft_space)))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for UpdateStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -751,15 +668,11 @@ impl AsDocument for UpdateStatement {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Assignment {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!(self.column.as_document(&()), soft_space, "=", soft_space, self.value.as_document(&()))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for DeleteStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -777,15 +690,11 @@ impl AsDocument for DeleteStatement {
         Document::group(Document::Concat(parts))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for DropStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         doc!("DROP", soft_space, self.object_type.as_document(&()), if self.if_exists { doc!(soft_space, "IF EXISTS") } else { nil }, soft_space, self.name.as_document(&()))
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for DropObjectType {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -796,8 +705,6 @@ impl AsDocument for DropObjectType {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for AlterStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut d = doc!("ALTER TABLE", soft_space, self.table_name.as_document(&()));
@@ -807,8 +714,6 @@ impl AsDocument for AlterStatement {
         d
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for AlterAction {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {

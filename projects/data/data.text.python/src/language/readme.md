@@ -16,7 +16,7 @@ Currently, `PythonLanguage` serves as a marker struct for Python support. Future
 - **`strict_indentation`**: When enabled, the parser strictly enforces consistent indentation.
 - **`future_features`**: Enables support for upcoming Python features defined in `__future__` imports.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, indentation tokens, and f-strings.

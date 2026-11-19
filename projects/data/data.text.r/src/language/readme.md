@@ -15,7 +15,7 @@ Currently, `RLanguage` serves as a marker struct for R support. Future versions 
 - **`strict`**: When enabled, the parser enforces stricter R syntax rules.
 - **`extensions`**: Enables support for specific R package-related syntax extensions if applicable.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and literals.

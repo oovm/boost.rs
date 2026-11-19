@@ -15,7 +15,7 @@ Currently, `SchemeLanguage` serves as a marker struct for Scheme support. Future
 - **`extensions`**: Enables support for specific implementation extensions (e.g., Guile, Chicken, Racket).
 - **`case_sensitivity`**: Configures symbol case sensitivity.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering parentheses, symbols, literals, and keywords.

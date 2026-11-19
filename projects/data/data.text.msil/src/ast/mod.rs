@@ -1,7 +1,6 @@
 #![doc = include_str!("readme.md")]
 use core::range::Range;
 use data_text_core::source::{SourceBuffer, ToSource};
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::{AsDocument, Document};
 
 /// MSIL Typed AST Root.
@@ -38,8 +37,6 @@ impl ToSource for MsilRoot {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for MsilRoot {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         Document::join(self.items.iter().map(|i| i.as_document(&())), Document::Line)
@@ -77,8 +74,6 @@ impl ToSource for Item {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Item {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
@@ -108,8 +103,6 @@ impl ToSource for Assembly {
         buffer.push(" {}")
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Assembly {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         Document::Text(format!(".assembly {} {{}}", self.name).into())
@@ -141,8 +134,6 @@ impl ToSource for Class {
         buffer.push("\n}")
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Class {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         Document::Concat(vec![
@@ -183,8 +174,6 @@ impl ToSource for Method {
         buffer.push("\n}")
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Method {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut body = vec![Document::Text(".entrypoint".into()), Document::Line];
@@ -228,8 +217,6 @@ impl ToSource for Instruction {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for Instruction {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {

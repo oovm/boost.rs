@@ -24,7 +24,7 @@ pub enum DateTimeFormat {
 
 - **`standard()`**: Standard TOML configuration (Multiline strings enabled, hex numbers disabled, RFC3339 date-time).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering TOML keys, strings, numbers, dates, and structural characters.

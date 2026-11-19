@@ -15,7 +15,7 @@ Currently, `CobolLanguage` serves as a marker struct for COBOL support. Future v
 - **`format`**: Source format configuration (Fixed Format vs. Free Format).
 - **`dialect`**: Specific dialect-dependent features and reserved words.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, picture clauses, literals, and delimiters.

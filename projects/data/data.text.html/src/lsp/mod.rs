@@ -3,7 +3,7 @@ use crate::HtmlLanguage;
 use core::range::Range;
 use data_text_core::tree::RedNode;
 /// Highlighter module.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]

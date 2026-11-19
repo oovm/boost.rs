@@ -12,7 +12,7 @@ The `TypeScriptLanguage` struct defines how the parser and lexer should behave t
 - **`emit_decorator_metadata`**: Enables parsing logic that respects metadata-heavy decorator usage.
 - **`strict_mode`**: When enabled, the parser enforces stricter TypeScript syntax rules during analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering all TS/JS keywords, operators, type-only tokens, and TSX tags.

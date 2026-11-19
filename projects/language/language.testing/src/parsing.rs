@@ -1,4 +1,4 @@
-//! Parser testing utilities for the Oak ecosystem.
+//! Parser testing utilities for the `data.text` family.
 //!
 //! This module provides comprehensive testing infrastructure for parsers,
 //! including file-based testing, expected output comparison, timeout handling,

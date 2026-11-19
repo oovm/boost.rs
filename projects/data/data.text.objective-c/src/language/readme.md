@@ -12,7 +12,7 @@ The `ObjectiveCLanguage` struct defines how the parser and lexer should behave t
 - **`strict_mode`**: When enabled, the parser enforces stricter Objective-C syntax rules during analysis.
 - **`runtime_awareness`**: Configures how the parser identifies and handles Objective-C runtime-specific constructs.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering all Objective-C keywords (`@`-prefixed), operators, literals, and message selector tokens.

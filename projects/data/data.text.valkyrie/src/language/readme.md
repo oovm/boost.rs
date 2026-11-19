@@ -14,13 +14,13 @@ pub struct ValkyrieLanguage {
 }
 ```
 
-- **`NAME`**: Identifies the language as "valkyrie" across the Oak ecosystem.
+- **`NAME`**: Identifies the language as "valkyrie" across the `data.text` family.
 - **`CATEGORY`**: Classified as `LanguageCategory::Programming`.
 - **`TokenType`**: Maps to `ValkyrieTokenType`, covering all Valkyrie keywords, operators, and literals.
 - **`ElementType`**: Maps to `ValkyrieElementType`, representing structural components like namespaces, micro functions, and expressions.
 - **`TypedRoot`**: Provides `ValkyrieRoot`, the strongly-typed entry point for AST analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module enables:
 1. **Generic Infrastructure**: Allows `oak-core` to handle file management and incremental logic without needing to know Valkyrie-specific details.

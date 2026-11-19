@@ -6,7 +6,7 @@ A parser for Jinja2 templates written in Rust using the Oak framework.
 
 - Parses Jinja2 syntax
 - Supports standard Jinja2 constructs
-- Integration with Oak ecosystem (LSP, highlighting, etc.)
+- Integration with `data.text` family (LSP, highlighting, etc.)
 
 ## Usage
 

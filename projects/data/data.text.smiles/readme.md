@@ -1,6 +1,6 @@
 # oak-smiles
 
-SMILES and reaction-SMILES parser for the oak ecosystem.
+SMILES and reaction-SMILES parser for the `data.text` family.
 
 The crate follows the same three-stage contract as the other oak frontends:
 

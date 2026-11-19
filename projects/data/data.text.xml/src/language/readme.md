@@ -16,7 +16,7 @@ Currently, `XmlLanguage` serves as a marker struct for XML support. Future versi
 - **`namespace_aware`**: Enable or disable XML namespace processing.
 - **`handle_comments`**: Configure how comments are processed and retained.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering XML tags, attributes, text content, and entities.

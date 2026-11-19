@@ -12,13 +12,13 @@ pub struct HlslLanguage {
 }
 ```
 
-- **`NAME`**: Identifies the language as "hlsl" across the Oak ecosystem.
+- **`NAME`**: Identifies the language as "hlsl" across the `data.text` family.
 - **`CATEGORY`**: Classified as `LanguageCategory::Programming`.
 - **`TokenType`**: Maps to `HlslTokenType`, covering all HLSL keywords, shader semantics, operators, and literals.
 - **`ElementType`**: Maps to `HlslElementType`, representing structural components like shader stages, buffer declarations, and expressions.
 - **`TypedRoot`**: Provides `HlslRoot`, the strongly-typed entry point for AST analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module enables:
 1. **Generic Infrastructure**: Allows `oak-core` to handle file management and incremental logic without needing to know HLSL-specific details.

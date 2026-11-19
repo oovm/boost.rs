@@ -16,7 +16,7 @@ Currently, `JavaLanguage` serves as a marker struct for Java support. Future ver
 - **`strict`**: Configures how strictly the parser should enforce Java syntax rules.
 - **`stdlib`**: Configures how the parser identifies and handles core Java standard library types.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, identifiers, literals, and operators.

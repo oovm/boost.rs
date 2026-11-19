@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::source::{SourceBuffer, ToSource};
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::Document;
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::to_doc::AsDocument;
 use std::{string::String, vec::Vec};
 
@@ -19,8 +17,6 @@ impl ToSource for JasmRoot {
         self.class.to_source(buffer)
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JasmRoot {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         self.class.as_document(config)
@@ -101,8 +97,6 @@ impl ToSource for JasmClass {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JasmClass {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         let mut docs = Vec::new();
@@ -211,8 +205,6 @@ impl ToSource for JasmMethod {
         buffer.push(".end method")
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JasmMethod {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         let mut docs = Vec::new();
@@ -286,8 +278,6 @@ impl ToSource for JasmField {
         buffer.push(&self.name_and_descriptor)
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JasmField {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut docs = Vec::new();
@@ -360,8 +350,6 @@ impl ToSource for JasmInstruction {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for JasmInstruction {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {

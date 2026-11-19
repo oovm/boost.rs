@@ -15,7 +15,7 @@ Currently, `VueLanguage` serves as a marker struct for Vue support. Future versi
 - **`style_lang`**: Default language for style blocks (e.g., CSS, SCSS, Less).
 - **`experimental_features`**: Enables support for experimental Vue features (e.g., Vapor mode).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering HTML tags, JS tokens, CSS selectors, and SFC structural tokens.

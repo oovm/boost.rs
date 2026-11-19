@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -8,7 +8,6 @@ use {
     language_server::{DocumentSession, MemoryVfs, Vfs},
     language_server::{service::LanguageService, workspace::WorkspaceManager},
 };
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::language::TexLanguage;
 use data_text_core::tree::RedNode;

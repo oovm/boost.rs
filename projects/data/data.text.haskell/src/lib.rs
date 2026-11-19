@@ -1,7 +1,5 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 #![warn(missing_docs)]
 
 /// Abstract Syntax Tree (AST) definitions for Haskell.
@@ -12,7 +10,7 @@ pub mod builder;
 mod language;
 mod lexer;
 /// Language Server Protocol (LSP) and editor integration for Haskell.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// Model Context Protocol (MCP) support for Haskell.
 #[cfg(feature = "mcp")]
@@ -22,7 +20,7 @@ mod parser;
 
 pub use crate::{ast::HaskellRoot, builder::HaskellBuilder, language::HaskellLanguage, lexer::HaskellLexer, parser::HaskellParser};
 
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::HaskellHighlighter;
 
 #[cfg(feature = "lsp")]

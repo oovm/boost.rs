@@ -1,7 +1,5 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 #![warn(missing_docs)]
 
 /// AST module.
@@ -14,7 +12,7 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 /// LSP module.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]
@@ -25,7 +23,7 @@ pub mod parser;
 
 pub use crate::{ast::JasminRoot, builder::JasminBuilder, language::JasminLanguage, lexer::JasminLexer, parser::JasminParser};
 
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::JasminHighlighter;
 
 #[cfg(feature = "lsp")]

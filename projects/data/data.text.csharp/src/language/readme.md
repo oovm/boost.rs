@@ -16,7 +16,7 @@ Currently, `CsharpLanguage` serves as a marker struct for C# support. Future ver
 - **`nullable`**: Configures the parser's awareness of nullable reference types.
 - **`strict`**: When enabled, the parser enforces stricter C# syntax rules during analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, literals (including raw string literals), and interpolation tokens.

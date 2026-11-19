@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 use crate::{CoqLanguage, parser::element_type::CoqElementType};
@@ -72,5 +72,4 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
         Some(&self.hover_provider)
     }
 }
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;

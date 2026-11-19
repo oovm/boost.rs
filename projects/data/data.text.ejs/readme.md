@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/oak-ejs.svg)](https://crates.io/crates/oak-ejs)
 [![Documentation](https://docs.rs/oak-ejs/badge.svg)](https://docs.rs/oak-ejs)
 
-**Embedded JavaScript Templates for the Oak Ecosystem** — A high-performance, incremental EJS template parser built on the Oak framework. Optimized for server-side rendering, static site generation, and real-time template processing.
+**Embedded JavaScript Templates for the `data.text` family** — A high-performance, incremental EJS template parser built on the Oak framework. Optimized for server-side rendering, static site generation, and real-time template processing.
 
 ## 🎯 Project Vision
 

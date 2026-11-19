@@ -1,6 +1,6 @@
 # oak-abc
 
-ABC music notation parser for the oak ecosystem.
+ABC music notation parser for the `data.text` family.
 
 The crate follows the same three-stage contract as the other oak frontends:
 

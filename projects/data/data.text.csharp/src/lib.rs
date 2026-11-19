@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 use data_text_core::Builder;
 
@@ -15,7 +13,7 @@ pub mod language;
 /// Lexer implementation for C#.
 pub mod lexer;
 /// LSP-related functionality (hover, completion, highlighting) for C#.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// Parser implementation for C#.
 pub mod parser;

@@ -15,7 +15,7 @@ Currently, `ScalaLanguage` serves as a marker struct for Scala support. Future v
 - **`experimental_features`**: Enables support for experimental Scala features.
 - **`dialect`**: Specific Scala dialects (e.g., Dotty, Typelevel Scala).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, identifiers, and literals.

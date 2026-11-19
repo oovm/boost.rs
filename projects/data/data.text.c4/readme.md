@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/oak-c4.svg)](https://crates.io/crates/oak-c4)
 [![Documentation](https://docs.rs/oak-c4/badge.svg)](https://docs.rs/oak-c4)
 
-**Architecture Modeling for the Oak Ecosystem.** `oak-c4` provides a semantic model for C4 architecture diagrams, enabling infrastructure-as-code approaches to system design and documentation.
+**Architecture Modeling for the `data.text` family.** `oak-c4` provides a semantic model for C4 architecture diagrams, enabling infrastructure-as-code approaches to system design and documentation.
 
 ## ✨ Core Features
 

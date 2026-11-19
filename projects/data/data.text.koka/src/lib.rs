@@ -7,7 +7,7 @@ pub mod builder;
 
 pub mod language;
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]

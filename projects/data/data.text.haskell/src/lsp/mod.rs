@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 use crate::{HaskellLanguage, lexer::token_type::HaskellTokenType, parser::element_type::HaskellElementType};

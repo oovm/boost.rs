@@ -4,7 +4,7 @@ This module defines the `PerlLanguage` struct, which serves as the central confi
 
 ## 🛠️ Language Configuration
 
-The `PerlLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the Oak ecosystem.
+The `PerlLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the `data.text` family.
 
 ```rust
 pub struct PerlLanguage {

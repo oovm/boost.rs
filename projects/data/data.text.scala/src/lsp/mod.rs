@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -9,7 +9,6 @@ use {
     language_server::{service::LanguageService, types::Hover as LspHover},
     std::future::Future,
 };
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::{ScalaLanguage, lexer::token_type::ScalaTokenType, parser::element_type::ScalaElementType};
 use core::range::Range;

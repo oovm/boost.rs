@@ -31,7 +31,7 @@ pub struct JsonLanguage {
 - **`json5()`**: Full JSON5 support (comments, trailing commas, bare keys, etc.).
 - **`relaxed()`**: Alias for JSON5, allowing for a more flexible parsing experience.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering JSON values, structural characters, and extension-specific tokens.

@@ -16,7 +16,7 @@ Currently, `SwiftLanguage` serves as a marker struct for Swift support. Future v
 - **`experimental`**: Enables parsing of experimental syntax from recent Swift Evolution proposals.
 - **`concurrency`**: Configures the parser's awareness of strict concurrency checks (e.g., `@Sendable`).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, custom operators, literals, and interpolation tokens.

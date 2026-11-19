@@ -15,7 +15,7 @@ Currently, `BashLanguage` serves as a marker struct for Bash support. Future ver
 - **`compat_mode`**: Enables specific compatibility behaviors for older shell versions.
 - **`alias_expansion`**: Configures how shell aliases should be handled during parsing.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, redirections, and expansion tokens.

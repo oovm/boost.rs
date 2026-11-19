@@ -1,6 +1,6 @@
 # oak-solidity
 
-High-performance incremental Solidity parser for the oak ecosystem.
+High-performance incremental Solidity parser for the `data.text` family.
 
 ## Features
 

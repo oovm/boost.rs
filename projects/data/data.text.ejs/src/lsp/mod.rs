@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -9,8 +9,6 @@ use {
     language_server::types::Hover as LspHover,
     language_server::{MemoryVfs, Vfs},
 };
-
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::language::EjsLanguage;
 use core::range::Range;

@@ -15,7 +15,7 @@ Currently, `YamlLanguage` serves as a marker struct for YAML support. Future ver
 - **`strict_mode`**: Enforce stricter adherence to the YAML specification.
 - **`allow_custom_tags`**: Enable or disable support for custom YAML tags.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering YAML structural tokens, scalars, and document markers.

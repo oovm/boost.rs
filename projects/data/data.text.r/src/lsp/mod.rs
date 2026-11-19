@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -10,7 +10,6 @@ use language_hover::{Hover, HoverProvider};
 use language_server::Vfs;
 #[cfg(feature = "lsp")]
 use language_server::service::LanguageService;
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::{language::RLanguage, parser::element_type::RElementType};
 use core::range::Range;

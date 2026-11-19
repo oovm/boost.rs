@@ -3,8 +3,6 @@
 #![feature(portable_simd)]
 #![warn(missing_docs)]
 #![doc = include_str!("readme.md")]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 /// AST module for HTML nodes.
 pub mod ast;
@@ -16,7 +14,7 @@ pub mod language;
 /// Lexer module for HTML tokenization.
 pub mod lexer;
 /// LSP module for HTML language service features.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]
@@ -30,7 +28,7 @@ pub mod query;
 pub use crate::{ast::HtmlDocument, builder::HtmlBuilder, language::HtmlLanguage, lexer::HtmlLexer, parser::HtmlParser};
 
 /// Re-export of the HTML highlighter.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::HtmlHighlighter;
 
 /// Re-export of the HTML language service.

@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 /// AST module.
 pub mod ast;
@@ -15,7 +13,7 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 /// LSP module.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 
 /// Parser module.
@@ -35,7 +33,7 @@ pub fn parse(dhall: &str) -> Result<crate::ast::DHallRoot, String> {
 }
 
 /// Highlighter implementation.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::DHallHighlighter;
 
 #[cfg(feature = "lsp")]

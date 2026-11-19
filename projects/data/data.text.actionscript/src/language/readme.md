@@ -11,7 +11,7 @@ The `ActionScriptLanguage` struct defines how the parser and lexer should behave
 - **`enable_e4x`**: Configures support for ECMAScript for XML (E4X) extensions, allowing the parser to handle inline XML literals and operators.
 - **`metadata_awareness`**: Enables the parser to correctly identify and structured metadata tags (e.g., `[Event]`, `[Bindable]`, `[Style]`).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering all AS3 keywords, operators, and literals.

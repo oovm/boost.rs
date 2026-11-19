@@ -10,4 +10,4 @@ The `ActionScriptBuilder` is responsible for bridging the gap between the low-le
 
 ## 🔄 Integration with Oak
 
-As a core part of the Oak ecosystem, the builder implements the `Builder` trait, allowing it to participate in the incremental compilation pipeline. It ensures that any changes to the source code are reflected in an updated AST with minimal re-computation.
+As a core part of the `data.text` family, the builder implements the `Builder` trait, allowing it to participate in the incremental compilation pipeline. It ensures that any changes to the source code are reflected in an updated AST with minimal re-computation.

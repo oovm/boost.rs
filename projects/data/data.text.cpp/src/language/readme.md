@@ -16,7 +16,7 @@ Currently, `CppLanguage` serves as a marker struct for C++ support. Future versi
 - **`stdlib`**: Configures how the parser identifies and handles standard library types and namespaces.
 - **`extensions`**: Enables support for common compiler extensions (e.g., MSVC, GCC, Clang specific attributes).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, identifiers, literals, and operators.

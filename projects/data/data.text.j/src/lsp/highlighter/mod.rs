@@ -66,10 +66,10 @@ impl Highlighter for JHighlighter {
     }
 }
 
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 impl oak_highlight::Highlighter for JHighlighter {
     fn highlight<'a>(&self, _source: &'a str, _language: &str, _theme: oak_highlight::Theme) -> data_text_core::errors::ParseResult<oak_highlight::HighlightResult<'a>> {
-        // TODO: Implement proper highlighting using the new oak-highlight API
+        // TODO: Implement proper highlighting using the new language-highlight API
         Ok(oak_highlight::HighlightResult { segments: Vec::new(), source: std::borrow::Cow::Borrowed(_source) })
     }
 }

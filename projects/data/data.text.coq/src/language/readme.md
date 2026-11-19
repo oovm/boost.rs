@@ -15,7 +15,7 @@ Currently, `CoqLanguage` serves as a marker struct for Coq support. Future versi
 - **`notation_level`**: Configures how the parser should handle complex nested notations.
 - **`tactic_depth`**: Limits the depth of tactic analysis for large proof scripts.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and notation delimiters.

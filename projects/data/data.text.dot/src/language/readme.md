@@ -14,7 +14,7 @@ Currently, `DotLanguage` serves as a marker struct for DOT support. Future versi
 - **`strict`**: Enforce Graphviz strict mode (no duplicate edges).
 - **`attribute_validation`**: Validate attribute names against standard Graphviz properties.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords (`graph`, `digraph`, `subgraph`), operators, and identifiers.

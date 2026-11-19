@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![deny(missing_docs)]
 #![allow(missing_copy_implementations)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 /// The Markdown language implementation for Oaks.
 pub mod language;
@@ -16,7 +14,7 @@ pub mod builder;
 /// Lexer for tokenizing Markdown source.
 pub mod lexer;
 /// Language Server Protocol support for Markdown.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]
@@ -27,7 +25,7 @@ pub mod parser;
 
 pub use crate::{ast::MarkdownRoot, builder::MarkdownBuilder, language::MarkdownLanguage, lexer::MarkdownLexer, parser::MarkdownParser};
 
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::MarkdownHighlighter;
 
 // #[cfg(feature = "mcp")]

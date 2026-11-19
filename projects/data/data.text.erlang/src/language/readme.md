@@ -4,7 +4,7 @@ This module defines the `ErlangLanguage` struct, which serves as the central con
 
 ## 🛠️ Language Configuration
 
-The `ErlangLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the Oak ecosystem.
+The `ErlangLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the `data.text` family.
 
 ```rust
 pub struct ErlangLanguage {

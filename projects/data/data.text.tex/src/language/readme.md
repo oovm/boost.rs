@@ -15,7 +15,7 @@ Currently, `TexLanguage` serves as a marker struct for TeX support. Future versi
 - **`format`**: Target format (e.g., Plain TeX, LaTeX, ConTeXt).
 - **`packages`**: Pre-loaded package definitions for better semantic analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering control sequences, braces, math mode delimiters, and text.

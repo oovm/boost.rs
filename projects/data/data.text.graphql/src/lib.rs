@@ -1,7 +1,5 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 #![warn(missing_docs)]
 
 /// AST module for GraphQL.
@@ -15,7 +13,7 @@ pub use crate::language::GraphQLLanguage;
 /// Lexer module for GraphQL.
 pub mod lexer;
 /// LSP module for GraphQL.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// Parser module for GraphQL.
 pub mod parser;

@@ -14,7 +14,7 @@ Currently, `JLanguage` serves as a marker struct for J support. Future versions 
 - **`standard`**: Target J standard (e.g., J 2012, J 2022).
 - **`strict`**: When enabled, the parser enforces stricter J syntax rules.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and literals.

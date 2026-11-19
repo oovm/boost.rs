@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -9,7 +9,6 @@ use {
     language_server::Vfs,
     language_server::service::LanguageService,
 };
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 pub mod semantic_tokens;
 use self::semantic_tokens::RbqSemanticTokensProvider;

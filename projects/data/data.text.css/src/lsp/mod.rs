@@ -2,7 +2,7 @@
 use crate::CssLanguage;
 use data_text_core::tree::RedNode;
 /// Highlighter module.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -10,7 +10,6 @@ use {language_server::Vfs, language_server::service::LanguageService, std::futur
 /// MCP module.
 /// Formatter module.
 #[cfg(feature = "lsp")]
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 /// Language service implementation for CSS.
 #[cfg(feature = "lsp")]

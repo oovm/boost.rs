@@ -16,7 +16,7 @@ Currently, `PhpLanguage` serves as a marker struct for PHP support. Future versi
 - **`short_tags`**: Configures support for short opening tags (`<? ... ?>`).
 - **`strict_types`**: Configures the parser's awareness of `declare(strict_types=1)`.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, literals, and complex string tokens.

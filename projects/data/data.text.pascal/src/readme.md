@@ -22,7 +22,7 @@ fn main() {
 - **ast/ (if exists)**: Defines the syntax tree structure.
 
 ## 🏗️ Architecture Design
-The project follows the general architectural specifications of the Oak ecosystem, emphasizing:
+The project follows the general architectural specifications of the `data.text` family, emphasizing:
 1. **Immutability**: Uses the Green/Red Tree structure to ensure efficient sharing of syntax trees.
 2. **Fault Tolerance**: Core logic is highly inclusive of erroneous input.
 3. **Scalability**: Convenient for downstream tools to perform secondary development.

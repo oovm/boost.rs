@@ -15,7 +15,7 @@ Currently, `GoLanguage` serves as a marker struct for Go support. Future version
 - **`generics`**: Explicitly enables or disables support for Go generics (Type Parameters).
 - **`strict`**: Configures how strictly the parser should enforce Go syntax rules during analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and literals.

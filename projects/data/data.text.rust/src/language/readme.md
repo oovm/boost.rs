@@ -16,7 +16,7 @@ Currently, `RustLanguage` serves as a marker struct for Rust support. Future ver
 - **`macro_expansion`**: Configures the maximum depth for recursive macro expansion during parsing.
 - **`strict`**: Configures how strictly the parser should enforce Rust syntax rules.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and literals.

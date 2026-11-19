@@ -220,7 +220,6 @@ return
     assert!(result.result.is_ok());
 
     let _green = result.result.unwrap();
-    #[cfg(feature = "oak-pretty-print")]
     {
         use data_text_core::Builder;
         use data_text_jasm::{JasmBuilder, JasmFormatter};

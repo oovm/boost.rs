@@ -2,13 +2,11 @@
 ///
 /// This module provides LSP (Language Server Protocol) support for Jinja templates.
 
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
 use {data_text_core::tree::RedNode, language_server::LanguageService, language_server::MemoryVfs, std::future::Future};
-
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 
 use crate::language::JinjaLanguage;

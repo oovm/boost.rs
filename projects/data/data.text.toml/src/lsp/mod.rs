@@ -1,5 +1,5 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -8,8 +8,6 @@ use {
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover as LspHover},
 };
-
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::{language::TomlLanguage, lexer::token_type::TomlTokenKind};
 use core::range::Range;

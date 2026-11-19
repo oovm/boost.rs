@@ -1,7 +1,6 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 use crate::language::TailwindLanguage;

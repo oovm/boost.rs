@@ -1,6 +1,6 @@
 # oak-valkyrie
 
-High-performance incremental Valkyrie parser for the oak ecosystem.
+High-performance incremental Valkyrie parser for the `data.text` family.
 
 ## Features
 

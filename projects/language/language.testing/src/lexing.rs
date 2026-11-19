@@ -1,4 +1,4 @@
-//! Lexer testing utilities for the Oak ecosystem.
+//! Lexer testing utilities for the `data.text` family.
 //!
 //! This module provides comprehensive testing infrastructure for lexers,
 //! including file-based testing, expected output comparison, and

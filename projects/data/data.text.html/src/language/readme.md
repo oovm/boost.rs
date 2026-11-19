@@ -16,7 +16,7 @@ Currently, `HtmlLanguage` serves as a marker struct for HTML support. Future ver
 - **`strict`**: When enabled, the parser enforces stricter HTML5 rules.
 - **`self_closing`**: Configures how the parser handles trailing slashes on non-void elements (e.g., `<div />`).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering tags, attributes, text, and comments.

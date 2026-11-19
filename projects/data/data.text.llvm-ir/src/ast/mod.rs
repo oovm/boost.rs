@@ -3,9 +3,7 @@ use data_text_core::{
     Range,
     source::{SourceBuffer, ToSource},
 };
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::document::Document;
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::to_doc::AsDocument;
 
 /// Root node of an LLVM IR module.
@@ -29,8 +27,6 @@ impl ToSource for LLirRoot {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirRoot {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         Document::join(self.items.iter().map(|i| i.as_document(config)), Document::Line)
@@ -55,8 +51,6 @@ impl ToSource for LLirItem {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirItem {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         match self {
@@ -103,8 +97,6 @@ impl ToSource for LLirFunction {
         buffer.push("}\n");
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirFunction {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         let mut parts = vec![Document::text("define "), Document::text(&self.return_type), Document::text(" @"), Document::text(&self.name), Document::text("(")];
@@ -139,8 +131,6 @@ impl ToSource for LLirParameter {
         buffer.push(&self.name);
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirParameter {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         Document::concat(vec![Document::text(&self.ty), Document::text(" %"), Document::text(&self.name)])
@@ -170,8 +160,6 @@ impl ToSource for LLirBlock {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirBlock {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -215,8 +203,6 @@ impl ToSource for LLirInstruction {
         }
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirInstruction {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = Vec::new();
@@ -263,8 +249,6 @@ impl ToSource for LLirGlobal {
         buffer.push(&self.value);
     }
 }
-
-#[cfg(feature = "oak-pretty-print")]
 impl AsDocument for LLirGlobal {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let mut parts = vec![Document::text("@"), Document::text(&self.name), Document::text(" = ")];

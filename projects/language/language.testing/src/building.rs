@@ -1,4 +1,4 @@
-//! Builder testing utilities for the Oak ecosystem.
+//! Builder testing utilities for the `data.text` family.
 //!
 //! This module provides comprehensive testing infrastructure for builders,
 //! including file-based testing, expected output comparison, timeout handling,

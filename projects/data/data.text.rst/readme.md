@@ -1,13 +1,13 @@
 # oak-rst
 
-High-performance incremental reStructuredText parser for the oak ecosystem.
+High-performance incremental reStructuredText parser for the `data.text` family.
 
 ## Features
 
 - Incremental parsing for efficient editing
 - Support for core reStructuredText syntax
 - Extensible architecture
-- Integration with the oak ecosystem
+- Integration with the `data.text` family
 
 ## Usage
 

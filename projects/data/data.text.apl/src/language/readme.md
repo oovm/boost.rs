@@ -15,7 +15,7 @@ pub struct AplLanguage {
 }
 ```
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering APL symbols, literals, and identifiers.

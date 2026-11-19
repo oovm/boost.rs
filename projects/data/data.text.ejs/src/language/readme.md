@@ -12,7 +12,7 @@ The `JavaScriptLanguage` struct defines how the parser and lexer should behave t
 - **`allow_experimental_features`**: Enables parsing of experimental or stage-proposal features (e.g., decorators, private class fields).
 - **`strict_mode`**: When enabled, the parser enforces stricter ECMAScript rules (similar to `"use strict"`).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering all JS keywords, operators, literals, and JSX tokens.

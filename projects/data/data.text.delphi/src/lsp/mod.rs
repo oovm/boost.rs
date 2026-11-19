@@ -1,10 +1,9 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
 use {futures::Future, language_server::Vfs, language_server::service::LanguageService, language_server::types::Hover as LspHover};
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::language::DelphiLanguage;
 use core::range::Range;

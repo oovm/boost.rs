@@ -1,10 +1,9 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
 use {language_server::LanguageService, language_server::MemoryVfs};
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 use crate::language::VampireLanguage;
 /// Vampire language service.

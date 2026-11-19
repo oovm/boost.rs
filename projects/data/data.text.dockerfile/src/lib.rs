@@ -1,7 +1,5 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 #![warn(missing_docs)]
 
 /// Root node of the Dockerfile AST.
@@ -11,7 +9,7 @@ pub mod builder;
 /// Language configuration for Dockerfile.
 pub mod language;
 mod lexer;
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 mod parser;
 

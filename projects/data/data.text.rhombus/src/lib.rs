@@ -1,8 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 pub mod ast;
 pub mod language;
@@ -10,7 +8,7 @@ pub mod lexer;
 pub mod parser;
 
 mod builder;
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]
@@ -20,9 +18,9 @@ pub use crate::{ast::*, builder::RhombusBuilder, language::RhombusLanguage, lexe
 
 #[cfg(feature = "lsp")]
 pub use crate::lsp::RhombusLanguageService;
-#[cfg(all(feature = "lsp", feature = "oak-pretty-print"))]
+#[cfg(feature = "lsp")]
 pub use crate::lsp::formatter::RhombusFormatter;
-#[cfg(all(feature = "lsp", feature = "oak-highlight"))]
+#[cfg(all(feature = "lsp", feature = "language-highlight"))]
 pub use crate::lsp::highlighter::RhombusHighlighter;
 
 #[cfg(feature = "mcp")]

@@ -4,7 +4,7 @@ This module defines the `ElixirLanguage` struct, which serves as the central con
 
 ## 🛠️ Language Configuration
 
-The `ElixirLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the Oak ecosystem.
+The `ElixirLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the `data.text` family.
 
 ```rust
 pub struct ElixirLanguage {

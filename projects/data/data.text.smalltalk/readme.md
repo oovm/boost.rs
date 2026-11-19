@@ -1,6 +1,6 @@
 # oak-smalltalk
 
-High-performance incremental Smalltalk parser for the oak ecosystem.
+High-performance incremental Smalltalk parser for the `data.text` family.
 
 ## Features
 

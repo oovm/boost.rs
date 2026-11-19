@@ -2,8 +2,6 @@
 #![feature(new_range_api)]
 #![feature(portable_simd)]
 #![warn(missing_docs)]
-#![doc(html_logo_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
-#![doc(html_favicon_url = "https://raw.githubusercontent.com/ygg-lang/oaks/refs/heads/dev/documents/logo.svg")]
 
 /// AST module.
 pub mod ast;
@@ -18,7 +16,7 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 /// LSP module.
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]
@@ -36,7 +34,7 @@ pub use crate::{
 };
 
 /// Highlighter implementation.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::JsonHighlighter;
 
 #[cfg(feature = "serde")]
@@ -61,7 +59,7 @@ pub use language_macro::json;
 /// LSP implementation.
 #[cfg(feature = "lsp")]
 pub use crate::lsp::JsonLanguageService;
-// #[cfg(feature = "oak-pretty-print")]
+// pretty-print is always available through `data-text-pretty`
 // pub use crate::lsp::formatter::JsonFormatter;
 
 /// MCP service implementation.

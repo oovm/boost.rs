@@ -28,7 +28,7 @@ pub struct SqlLanguage {
 - **`postgresql()`**: PostgreSQL-style configuration (Double-quoted identifiers).
 - **`sqlserver()`**: SQL Server-style configuration (Bracket identifiers enabled).
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering all SQL keywords, operators, and dialect-specific literals.

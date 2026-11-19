@@ -4,7 +4,7 @@ The VLang Lexer module provides lexical analysis for the [V programming language
 
 ## Purpose
 
-This module is designed to be a fast and reliable lexer for V, supporting its modern syntax and features. It serves as the foundation for the V parser and other V-related tools in the Oak ecosystem.
+This module is designed to be a fast and reliable lexer for V, supporting its modern syntax and features. It serves as the foundation for the V parser and other V-related tools in the `data.text` family.
 
 ## Features
 

@@ -16,7 +16,7 @@ Currently, `KokaLanguage` serves as a marker struct for Koka support. Future ver
 - **`kmp_support`**: Enables support for Koka Multiplatform keywords like `expect` and `actual`.
 - **`strict`**: When enabled, the parser enforces stricter Koka syntax rules during analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, literals, and string template tokens.

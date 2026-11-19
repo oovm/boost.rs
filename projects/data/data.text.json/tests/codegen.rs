@@ -18,8 +18,6 @@ fn test_json_to_source() {
     let source = root.to_source_string();
     assert_eq!(source, "{\"name\":\"oak\",\"version\":1}");
 }
-
-#[cfg(feature = "oak-pretty-print")]
 #[test]
 fn test_json_to_doc() {
     use data_text_pretty::{AsDocument, PrinterConfig};

@@ -1,10 +1,9 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
 use {language_server::LanguageService, language_server::MemoryVfs, std::future::Future};
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 /// Go language LSP service.
 use crate::language::GoLanguage;

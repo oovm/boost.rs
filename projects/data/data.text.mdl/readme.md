@@ -1,6 +1,6 @@
 # oak-mdl
 
-MDL connection-table parser for the oak ecosystem.
+MDL connection-table parser for the `data.text` family.
 
 The crate follows the same three-stage contract as the other oak frontends:
 

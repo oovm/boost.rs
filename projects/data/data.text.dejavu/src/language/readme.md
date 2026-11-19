@@ -14,13 +14,13 @@ pub struct DejavuLanguage {
 }
 ```
 
-- **`NAME`**: Identifies the language as "dejavu" across the Oak ecosystem.
+- **`NAME`**: Identifies the language as "dejavu" across the `data.text` family.
 - **`CATEGORY`**: Classified as `LanguageCategory::Programming`.
 - **`TokenType`**: Maps to `DejavuTokenType`, covering all Dejavu keywords, operators, and literals.
 - **`ElementType`**: Maps to `DejavuElementType`, representing structural components like namespaces, micro functions, and expressions.
 - **`TypedRoot`**: Provides `DejavuRoot`, the strongly-typed entry point for AST analysis.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module enables:
 1. **Generic Infrastructure**: Allows `oak-core` to handle file management and incremental logic without needing to know Dejavu-specific details.

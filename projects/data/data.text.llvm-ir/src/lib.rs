@@ -7,7 +7,7 @@ mod builder;
 
 pub mod language;
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "oak-highlight", feature = "oak-pretty-print"))]
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 pub mod lsp;
 /// MCP module.
 #[cfg(feature = "mcp")]
@@ -23,7 +23,7 @@ pub use crate::{
     parser::LLirParser,
 };
 
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::LLirHighlighter;
 
 #[cfg(feature = "lsp")]

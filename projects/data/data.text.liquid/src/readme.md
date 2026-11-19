@@ -1,6 +1,6 @@
 # oak-liquid
 
-High-performance incremental Liquid2 parser for the oak ecosystem with flexible configuration, supporting template rendering and syntax analysis.
+High-performance incremental Liquid2 parser for the `data.text` family with flexible configuration, supporting template rendering and syntax analysis.
 
 ## Features
 

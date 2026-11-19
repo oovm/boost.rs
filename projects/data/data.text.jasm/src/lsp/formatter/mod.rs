@@ -1,9 +1,7 @@
 //! Formatter implementation for the JASM language.
 
 use data_text_core::source::{SourceBuffer, ToSource};
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::to_doc::AsDocument;
-#[cfg(feature = "oak-pretty-print")]
 use data_text_pretty::{Document, PrinterConfig};
 
 use crate::ast::JasmRoot;
@@ -28,16 +26,9 @@ impl JasmFormatter {
     }
 
     /// Formats a JASM root node using pretty-printing.
-    #[cfg(feature = "oak-pretty-print")]
     pub fn format_pretty(&self, root: &JasmRoot) -> String {
         let doc = root.as_document(&Default::default());
         doc.render()
-    }
-
-    /// Formats a JASM root node using pretty-printing (fallback for no oak-pretty-print).
-    #[cfg(not(feature = "oak-pretty-print"))]
-    pub fn format_pretty(&self, root: &JasmRoot) -> String {
-        self.format(root)
     }
 }
 

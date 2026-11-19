@@ -3,7 +3,7 @@ use crate::language::StylusLanguage;
 use core::range::Range;
 use data_text_core::tree::RedNode;
 /// Highlighter module.
-#[cfg(feature = "oak-highlight")]
+#[cfg(feature = "language-highlight")]
 pub mod highlighter;
 
 #[cfg(feature = "lsp")]
@@ -15,7 +15,6 @@ use {
 };
 /// MCP module.
 /// Formatter module.
-#[cfg(feature = "oak-pretty-print")]
 pub mod formatter;
 #[cfg(feature = "lsp")]
 pub struct StylusHoverProvider;

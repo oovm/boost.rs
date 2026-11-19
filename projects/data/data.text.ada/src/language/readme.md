@@ -14,7 +14,7 @@ Currently, `AdaLanguage` serves as a marker struct for Ada support. Future versi
 - **`standard`**: Target Ada standard (e.g., Ada 2012, Ada 2022).
 - **`strict`**: When enabled, the parser enforces stricter Ada syntax rules.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, operators, and literals.

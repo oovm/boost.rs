@@ -15,7 +15,7 @@ Currently, `CLanguage` serves as a marker struct for C support. Future versions 
 - **`extensions`**: Enable or disable specific compiler extensions (e.g., GCC, Clang, MSVC).
 - **`preprocess`**: Configure how the preprocessor should be handled during parsing.
 
-## 🧩 Oak Integration
+## 🧩 `data.text` Integration
 
 By implementing the `Language` trait, this module provides the glue that connects:
 - **`TokenType`**: Defined in the `lexer` module, covering keywords, identifiers, literals, and operators.

@@ -1,13 +1,13 @@
 # oak-asciidoc
 
-High-performance incremental AsciiDoc parser for the oak ecosystem.
+High-performance incremental AsciiDoc parser for the `data.text` family.
 
 ## Features
 
 - Incremental parsing for efficient editing
 - Support for core AsciiDoc syntax
 - Extensible architecture
-- Integration with the oak ecosystem
+- Integration with the `data.text` family
 
 ## Usage
 
