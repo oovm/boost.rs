@@ -10,6 +10,8 @@ use database_storage::local::RowSource;
 use database_types::{Error, Result, TableUniqueConstraint, Value};
 use schema_types::ResolvedContract;
 
+use crate::engine::bytes::Placement;
+
 use super::{
     exec,
     write::{self, WriteOutcome},
@@ -73,11 +75,12 @@ pub fn execute_write_prepared(
     contract: &ResolvedContract,
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
+    placement: &Placement,
 ) -> Result<WriteOutcome> {
     if stmt.write_ops.is_empty() {
         return Err(Error::Unsupported("statement is a read pipeline, not a write program"));
     }
-    write::execute_ops(&stmt.write_ops, contract, declared, records, values)
+    write::execute_ops(&stmt.write_ops, contract, declared, records, values, placement)
 }
 
 /// Result of one SQL statement.
@@ -109,7 +112,10 @@ pub fn execute_sql(
             Ok(SqlOutcome { rows, affected: 0 })
         }
         QueryKind::Write => {
-            let outcome = execute_write_prepared(&stmt, &bound, contract, declared, records)?;
+            // This one-shot SQL entry has no attached object store, so every
+            // `bytes` / `vector<N>` value stays inline; the connection surface
+            // passes [`Placement::Commit`] through `execute_write_prepared`.
+            let outcome = execute_write_prepared(&stmt, &bound, contract, declared, records, &Placement::Inline)?;
             Ok(SqlOutcome { rows: outcome.rows, affected: outcome.affected })
         }
         QueryKind::Session => Err(Error::Schema {

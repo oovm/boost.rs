@@ -22,8 +22,6 @@ pub mod lower;
 pub mod ops;
 #[doc(hidden)]
 pub mod params;
-#[doc(hidden)]
-pub mod placement;
 mod sql;
 mod window;
 #[doc(hidden)]
@@ -41,6 +39,5 @@ pub use params::{
 };
 #[doc(hidden)]
 pub use params::{Dialect, prepare_sql};
-pub use placement::{BytesPlacementHook, VectorPlacementHook, with_bytes_placement, with_vector_placement};
 pub use window::{ReadWindow, read_window, write_windows};
 

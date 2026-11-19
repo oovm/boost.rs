@@ -258,13 +258,13 @@ fn coerce_exact(value: Value, ty: &ResolvedCanonicalType) -> Result<Value> {
     }
     // A BLOB value belongs in a `bytes` column. Every other target keeps an
     // exact value, so bytes are rejected before staging instead of being
-    // reinterpreted as text or a number.
+    // reinterpreted as text or a number. Whether a large payload stays inline
+    // or becomes an object reference is a physical property of the execution
+    // store, so coercion keeps the octets untouched and the execution side
+    // places them through its storage port.
     if let Value::Bytes(_) = &value {
         return match scalar_target(ty) {
-            Some(ScalarTarget::Bytes) => match value {
-                Value::Bytes(octets) => super::placement::place_bytes(octets),
-                other => Ok(other),
-            },
+            Some(ScalarTarget::Bytes) => Ok(value),
             _ => Err(coerce_error(
                 "BLOB value cannot be stored: the target column is not `bytes` and 本地 never converts BLOB into an \
                  integer, bool, text, uuid, date, time, timestamp or decimal column",
@@ -321,9 +321,9 @@ fn coerce_file(value: Value) -> Result<Value> {
 /// The declared dimension is part of the column contract, so a vector with
 /// another component count cannot be stored as if it were the declared one, and
 /// a non-finite component is refused before the write is staged instead of
-/// landing a value that no comparison or distance can interpret. After
-/// validation the host's vector placement hook decides whether the value stays
-/// inline or becomes a CAS `VectorPayload` reference.
+/// landing a value that no comparison or distance can interpret. Whether the
+/// validated vector stays inline or becomes a CAS `VectorPayload` reference is
+/// decided by the execution store, not here.
 fn coerce_vector(value: Value, dimension: u32) -> Result<Value> {
     match value {
         Value::Null => Ok(Value::Null),
@@ -336,7 +336,7 @@ fn coerce_vector(value: Value, dimension: u32) -> Result<Value> {
                     "column type `vector<{dimension}>` requires finite components, component {index} is not finite"
                 )));
             }
-            super::placement::place_vector(vector)
+            Ok(Value::Vector(vector))
         }
         other => Err(coerce_error(format!("column type `vector<{dimension}>` requires a vector value, got `{}`", other.kind()))),
     }
@@ -373,7 +373,7 @@ fn coerce_to(value: Value, target: ScalarTarget) -> Result<Value> {
         (Value::Text(_) | Value::Bool(_), ScalarTarget::Real) => {
             Err(coerce_error("column type `f64` requires an integer or REAL numeric literal"))
         }
-        (Value::Bytes(bytes), ScalarTarget::Bytes) => super::placement::place_bytes(bytes),
+        (Value::Bytes(bytes), ScalarTarget::Bytes) => Ok(Value::Bytes(bytes)),
         (Value::Object(object), ScalarTarget::Bytes) => Ok(Value::Object(object)),
         (Value::Text(_), ScalarTarget::Bytes) => Err(coerce_error(
             "column type `bytes` requires a BLOB value: 本地 never converts text into BLOB implicitly, use \

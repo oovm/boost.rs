@@ -12,14 +12,11 @@ use std::time::Instant;
 use super::super::kv::lease::now_millis;
 
 use crate::engine::{
-    bytes::{ObjectStoreResolver, YydbBytesPolicy, YydbVectorPolicy},
     Error, Result,
+    bytes::{ObjectStoreResolver, Placement},
 };
 use database_formats::yy::row::{with_object_resolver, ObjectResolver};
-use database_query::local::{
-    fingerprint as fp, prepare as prepare_source, with_bytes_placement, with_vector_placement, BytesPlacementHook, Dialect, PreparedStatement,
-    QueryRow, VectorPlacementHook,
-};
+use database_query::local::{fingerprint as fp, prepare as prepare_source, Dialect, PreparedStatement, QueryRow};
 use database_types::Value;
 
 use super::{Backend, Connection};
@@ -71,24 +68,28 @@ impl Connection {
         Arc::new(ObjectStoreResolver::new(Arc::clone(&self.objects)))
     }
 
-    fn bytes_policy(&self) -> Arc<dyn BytesPlacementHook> {
-        Arc::new(YydbBytesPolicy::new(Arc::clone(&self.objects)))
+    /// The placement a write of this connection executes with: large `bytes`
+    /// and `vector<N>` payloads land in the connection object store and the
+    /// row keeps the content-addressed reference.
+    fn placement(&self) -> Placement<'_> {
+        Placement::Commit(&self.objects)
     }
 
-    fn vector_policy(&self) -> Arc<dyn VectorPlacementHook> {
-        Arc::new(YydbVectorPolicy::new(Arc::clone(&self.objects)))
+    /// The placement a write of this connection plans with: the same
+    /// content-addressed row values as [`Self::placement`], derived purely
+    /// from the payload without writing anything. A failed plan, a repeated
+    /// plan or an `EXPLAIN` therefore leaves no object behind.
+    fn planning_placement(&self) -> Placement<'static> {
+        Placement::Preview
     }
 
-    /// Run `body` with the object resolver and byte/vector placement hooks in
-    /// scope.
+    /// Run `body` with the object resolver in scope so row decoding can
+    /// resolve out-of-line references.
     ///
-    /// Planning a write and executing it both evaluate field initializers, so
-    /// both must see the same storage policies or a keyed plan could disagree
-    /// with the row the executor builds.
-    fn with_write_hooks<T>(&self, body: impl FnOnce() -> T) -> T {
-        with_object_resolver(Some(self.object_resolver()), || {
-            with_bytes_placement(Some(self.bytes_policy()), || with_vector_placement(Some(self.vector_policy()), body))
-        })
+    /// Placement is no longer a callback: the write entries take an explicit
+    /// [`Placement`] so planning stays pure and only execution writes.
+    fn with_row_resolver<T>(&self, body: impl FnOnce() -> T) -> T {
+        with_object_resolver(Some(self.object_resolver()), body)
     }
 
     /// Prepare a VOS read pipeline into a reusable query plan.
@@ -482,11 +483,18 @@ impl Connection {
                     }
                 };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
-                let keys = self
-                    .with_write_hooks(|| {
-                        crate::local::point_write_keys_parsed(&program, contract, &metadata.unique_constraints, schema_document, &[], exempt)
-                    })
-                    .map(|keys| keys.map(Self::key_windows))?;
+                let keys = self.with_row_resolver(|| {
+                    crate::local::point_write_keys_parsed(
+                        &program,
+                        contract,
+                        &metadata.unique_constraints,
+                        schema_document,
+                        &[],
+                        exempt,
+                        &self.planning_placement(),
+                    )
+                })
+                .map(|keys| keys.map(Self::key_windows))?;
                 let complete = keys.is_none() || holds_every_row;
                 Ok((keys, (program, basis, complete)))
             },
@@ -498,8 +506,9 @@ impl Connection {
                 let records = &mut state.records;
                 let constraints = &state.unique_constraints;
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
-                self.with_write_hooks(|| {
-                    crate::local::execute_write_parsed_indexed(&program, &contract, constraints, schema_document, records, &[], Some(&index))
+                let placement = self.placement();
+                self.with_row_resolver(|| {
+                    crate::local::execute_write_parsed_indexed(&program, &contract, constraints, schema_document, records, &[], Some(&index), &placement)
                 })
             },
         )
@@ -543,18 +552,18 @@ impl Connection {
                     }
                 };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
-                let keys = self
-                    .with_write_hooks(|| {
-                        crate::local::point_write_keys_parsed(
-                            &plan.program,
-                            contract,
-                            &metadata.unique_constraints,
-                            schema_document,
-                            &plan.values,
-                            exempt,
-                        )
-                    })
-                    .map(|keys| keys.map(Self::key_windows))?;
+                let keys = self.with_row_resolver(|| {
+                    crate::local::point_write_keys_parsed(
+                        &plan.program,
+                        contract,
+                        &metadata.unique_constraints,
+                        schema_document,
+                        &plan.values,
+                        exempt,
+                        &self.planning_placement(),
+                    )
+                })
+                .map(|keys| keys.map(Self::key_windows))?;
                 let complete = keys.is_none() || holds_every_row;
                 Ok((keys, (plan, basis, complete)))
             },
@@ -567,7 +576,8 @@ impl Connection {
                 let constraints = &state.unique_constraints;
                 let values = &plan.values;
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
-                self.with_write_hooks(|| {
+                let placement = self.placement();
+                self.with_row_resolver(|| {
                     crate::local::execute_write_parsed_indexed(
                         &plan.program,
                         &contract,
@@ -576,6 +586,7 @@ impl Connection {
                         records,
                         values,
                         Some(&index),
+                        &placement,
                     )
                 })
             },
@@ -599,9 +610,10 @@ impl Connection {
         self.mutate_narrowed_write_unlocked(
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
-                let windows = self.with_write_hooks(|| {
-                    database_query::local::write_windows(&stmt.write_ops, &contract, &metadata.unique_constraints, &values, holds_every_row)
-                })?;
+                // Window planning is pure: `write_windows` only reads the bound
+                // values, so no placement is involved and nothing is written.
+                let windows =
+                    database_query::local::write_windows(&stmt.write_ops, &contract, &metadata.unique_constraints, &values, holds_every_row)?;
                 Ok((windows, ()))
             },
             |state, ()| {
@@ -614,12 +626,9 @@ impl Connection {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
-                let outcome = with_object_resolver(Some(self.object_resolver()), || {
-                    with_bytes_placement(Some(self.bytes_policy()), || {
-                        with_vector_placement(Some(self.vector_policy()), || {
-                            crate::local::execute_write_prepared(&stmt, &values, &contract, &state.unique_constraints, &mut state.records)
-                        })
-                    })
+                let placement = self.placement();
+                let outcome = self.with_row_resolver(|| {
+                    crate::local::execute_write_prepared(&stmt, &values, &contract, &state.unique_constraints, &mut state.records, &placement)
                 })?;
                 affected = outcome.affected;
                 Ok(())

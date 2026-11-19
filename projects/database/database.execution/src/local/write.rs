@@ -19,6 +19,8 @@ use database_query::local::{
     },
 };
 
+use crate::engine::bytes::Placement;
+
 use super::exec;
 
 fn write_error(message: impl Into<String>) -> Error {
@@ -36,18 +38,25 @@ pub struct WriteOutcome {
 }
 
 /// Execute a write program in order, returning the accumulated outcome.
+///
+/// `placement` decides where out-of-row `bytes` / `vector<N>` values land at
+/// the row-build choke point, after coercion. Execution passes
+/// [`Placement::Commit`] so the object store receives the payload; a caller
+/// without a store passes [`Placement::Inline`].
 pub fn execute_ops(
     ops: &[WriteOp],
     contract: &ResolvedContract,
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
+    placement: &Placement,
 ) -> Result<WriteOutcome> {
     let mut outcome = WriteOutcome::default();
     for op in ops {
         match op {
             WriteOp::Insert { table, rows, conflict, returning } => {
-                let inserted = insert_rows(table, rows, conflict.as_ref(), returning.as_ref(), contract, declared, records, bound_values)?;
+                let inserted =
+                    insert_rows(table, rows, conflict.as_ref(), returning.as_ref(), contract, declared, records, bound_values, placement)?;
                 outcome.affected += inserted.len();
                 outcome.rows.extend(inserted);
             }
@@ -63,12 +72,13 @@ pub fn execute_ops(
                     declared,
                     records,
                     bound_values,
+                    placement,
                 )?;
                 outcome.affected += inserted.len();
                 outcome.rows.extend(inserted);
             }
             WriteOp::Update { table, assignments, predicate } => {
-                outcome.affected += update_rows(table, assignments, predicate.as_ref(), contract, declared, records, bound_values)?;
+                outcome.affected += update_rows(table, assignments, predicate.as_ref(), contract, declared, records, bound_values, placement)?;
             }
             WriteOp::Delete { table, predicate } => {
                 outcome.affected += delete_rows(table, predicate.as_ref(), contract, records, bound_values)?;
@@ -267,6 +277,7 @@ fn insert_rows(
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
+    placement: &Placement,
 ) -> Result<Vec<QueryRow>> {
     let (entry, storage) = resolve_table(contract, table)?;
     let pk_field = catalog::primary_field_name(entry)?.to_string();
@@ -299,7 +310,8 @@ fn insert_rows(
         for field in fields {
             let slot = catalog::field_on_table(entry, &field.name)?;
             let value = resolve_value(&field.value, bound_values)?;
-            row.insert(field.name.clone(), coerce::value_to_scalar(value.clone(), &slot.canonical_type, contract)?);
+            let coerced = coerce::value_to_scalar(value.clone(), &slot.canonical_type, contract)?;
+            row.insert(field.name.clone(), placement.place(coerced)?);
         }
         let pk = row.get(&pk_field).ok_or_else(|| write_error(format!("insert into `{table}` is missing primary key field `{pk_field}`")))?;
         let pk_text = constraints::value_text(pk)?;
@@ -323,6 +335,7 @@ fn insert_rows(
                         &storage,
                         records,
                         bound_values,
+                        placement,
                     )?
                     else {
                         continue;
@@ -464,6 +477,7 @@ fn conflict_update_row(
     storage: &str,
     records: &BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
+    placement: &Placement,
 ) -> Result<Option<QueryRow>> {
     if let Some(predicate) = predicate {
         let predicate = exec::resolve_subquery_predicates(predicate, None, &ReadRows::owned(records), bound_values)?;
@@ -479,7 +493,8 @@ fn conflict_update_row(
             return Err(write_error(format!("primary key field `{pk_field}` cannot be updated")));
         }
         let value = eval_write_expr(&assignment.value, matched, bound_values)?;
-        row.insert(assignment.field.clone(), coerce::value_to_scalar(value, &slot.canonical_type, contract)?);
+        let coerced = coerce::value_to_scalar(value, &slot.canonical_type, contract)?;
+        row.insert(assignment.field.clone(), placement.place(coerced)?);
     }
 
     let matched_pk =
@@ -509,6 +524,7 @@ fn insert_from_query(
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
+    placement: &Placement,
 ) -> Result<Vec<QueryRow>> {
     let source_rows = exec::execute_ops(source, Some(contract), records, bound_values)?;
 
@@ -540,7 +556,7 @@ fn insert_from_query(
                 .collect()
         })
         .collect();
-    insert_rows(table, &rows, conflict, returning, contract, declared, records, bound_values)
+    insert_rows(table, &rows, conflict, returning, contract, declared, records, bound_values, placement)
 }
 
 /// Columns a `SELECT *` source produces, in catalog declaration order.
@@ -573,6 +589,7 @@ fn update_rows(
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
+    placement: &Placement,
 ) -> Result<usize> {
     let (entry, storage) = resolve_table(contract, table)?;
     let pk_field = catalog::primary_field_name(entry)?.to_string();
@@ -595,7 +612,8 @@ fn update_rows(
                     return Err(write_error(format!("primary key field `{pk_field}` cannot be updated")));
                 }
                 let value = eval_write_expr(&assignment.value, &row, bound_values)?;
-                row.insert(assignment.field.clone(), coerce::value_to_scalar(value, &slot.canonical_type, contract)?);
+                let coerced = coerce::value_to_scalar(value, &slot.canonical_type, contract)?;
+                row.insert(assignment.field.clone(), placement.place(coerced)?);
             }
             replacements.push((key, row));
         }

@@ -32,11 +32,17 @@ use database_query::local::{
     write_plan::{expand_program, has_write_call, is_macro_call},
 };
 
+use crate::engine::bytes::Placement;
+
 fn dml_error(message: impl Into<String>) -> Error {
     Error::Schema { message: message.into() }
 }
 
 /// Execute unit-valued VOS write programs against stored table rows.
+///
+/// Without an attached object store every `bytes` / `vector<N>` value stays
+/// inline; the connection surface passes an explicit [`Placement`] through
+/// [`execute_parsed_indexed`].
 pub fn execute(
     source: &str,
     contract: &ResolvedContract,
@@ -94,7 +100,7 @@ pub fn execute_parsed(
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
 ) -> Result<()> {
-    execute_parsed_indexed(program, contract, declared, schema_document, records, params, None)
+    execute_parsed_indexed(program, contract, declared, schema_document, records, params, None, &Placement::Inline)
 }
 
 /// Execute an already parsed write program while maintaining a connection's
@@ -111,9 +117,10 @@ pub fn execute_parsed_indexed(
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
     index: Option<&constraints::WriteIndex<'_>>,
+    placement: &Placement,
 ) -> Result<()> {
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
-    execute_program_with_constraints(program, contract, &constraints, schema_document, records, params, index)
+    execute_program_with_constraints(program, contract, &constraints, schema_document, records, params, index, placement)
 }
 
 /// If `source` is a single `Type::insert({ … })` program, run it and return the stored row.
@@ -121,6 +128,7 @@ pub fn try_insert_returning(
     source: &str,
     contract: &ResolvedContract,
     records: &mut BTreeMap<String, Vec<u8>>,
+    placement: &Placement,
 ) -> Result<Option<Vec<QueryRow>>> {
     let program = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })?;
     if !program.statements.is_empty() || program.result.is_none() {
@@ -138,7 +146,7 @@ pub fn try_insert_returning(
     if is_macro_call(result) || is_zero_arg_insert {
         return Ok(None);
     }
-    let (table, row) = match lower_insert(result, contract, &[], &[]) {
+    let (table, row) = match lower_insert(result, contract, &[], &[], placement) {
         Ok(value) => value,
         Err(_) => return Ok(None),
     };
@@ -155,6 +163,7 @@ fn execute_program_with_constraints(
     records: &mut BTreeMap<String, Vec<u8>>,
     params: &[Value],
     index: Option<&constraints::WriteIndex<'_>>,
+    placement: &Placement,
 ) -> Result<()> {
     let expanded = expand_program(program, schema_document)?;
     let mut bindings: Vec<(String, VosExpr)> = Vec::new();
@@ -164,7 +173,7 @@ fn execute_program_with_constraints(
         match stmt {
             VosStmt::Let(let_) => bindings.push((let_.name.clone(), let_.value.clone())),
             VosStmt::Expr(expr) => {
-                apply_write(expr, contract, constraints, records, &bindings, params, index)?;
+                apply_write(expr, contract, constraints, records, &bindings, params, index, placement)?;
                 wrote = true;
             }
         }
@@ -174,7 +183,7 @@ fn execute_program_with_constraints(
         if is_macro_call(result) {
             return Err(dml_error("macro call could not be expanded (schema document required)"));
         }
-        apply_write(result, contract, constraints, records, &bindings, params, index)?;
+        apply_write(result, contract, constraints, records, &bindings, params, index, placement)?;
         wrote = true;
     }
 
@@ -208,10 +217,14 @@ pub fn point_write_keys(
     holds_every_row: bool,
 ) -> Result<Option<Vec<String>>> {
     let program = parse_write_program(source)?;
-    point_write_keys_program(&program, contract, declared, schema_document, params, holds_every_row)
+    point_write_keys_program(&program, contract, declared, schema_document, params, holds_every_row, &Placement::Inline)
 }
 
 /// Same as [`point_write_keys`] over an already parsed program.
+///
+/// Planning is pure: the caller passes [`Placement::Preview`] so the keys are
+/// derived from the same row values the executor will commit, without the plan
+/// ever writing an object.
 pub fn point_write_keys_program(
     program: &VosProgram,
     contract: &ResolvedContract,
@@ -219,6 +232,7 @@ pub fn point_write_keys_program(
     schema_document: Option<&str>,
     params: &[Value],
     holds_every_row: bool,
+    placement: &Placement,
 ) -> Result<Option<Vec<String>>> {
     let constraints = constraints::merge(constraints::from_contract(contract)?, declared);
     let Ok(expanded) = expand_program(program, schema_document)
@@ -232,7 +246,7 @@ pub fn point_write_keys_program(
         match stmt {
             VosStmt::Let(let_) => bindings.push((let_.name.clone(), let_.value.clone())),
             VosStmt::Expr(expr) => {
-                let Ok(Some(key)) = plan_point_key(expr, contract, &constraints, &bindings, params, holds_every_row)
+                let Ok(Some(key)) = plan_point_key(expr, contract, &constraints, &bindings, params, holds_every_row, placement)
                 else {
                     return Ok(None);
                 };
@@ -242,7 +256,7 @@ pub fn point_write_keys_program(
         }
     }
     if let Some(result) = &expanded.result {
-        let Ok(Some(key)) = plan_point_key(result, contract, &constraints, &bindings, params, holds_every_row)
+        let Ok(Some(key)) = plan_point_key(result, contract, &constraints, &bindings, params, holds_every_row, placement)
         else {
             return Ok(None);
         };
@@ -266,6 +280,7 @@ fn plan_point_key(
     bindings: &[(String, VosExpr)],
     params: &[Value],
     holds_every_row: bool,
+    placement: &Placement,
 ) -> Result<Option<String>> {
     let VosExpr::Call { callee, .. } = expr
     else {
@@ -277,7 +292,7 @@ fn plan_point_key(
     };
     let (table, pk_text) = match name.as_str() {
         "insert" => {
-            let Ok((table, row)) = lower_insert(expr, contract, bindings, params)
+            let Ok((table, row)) = lower_insert(expr, contract, bindings, params, placement)
             else {
                 return Ok(None);
             };
@@ -300,7 +315,7 @@ fn plan_point_key(
             (table, pk_text)
         }
         "update" | "delete" => {
-            let Ok((table, pk_text, _)) = lower_keyed_write(expr, contract, name.as_str(), bindings, params)
+            let Ok((table, pk_text, _)) = lower_keyed_write(expr, contract, name.as_str(), bindings, params, placement)
             else {
                 return Ok(None);
             };
@@ -327,6 +342,7 @@ fn apply_write(
     bindings: &[(String, VosExpr)],
     params: &[Value],
     index: Option<&constraints::WriteIndex<'_>>,
+    placement: &Placement,
 ) -> Result<()> {
     let VosExpr::Call { callee, .. } = expr
     else {
@@ -337,13 +353,13 @@ fn apply_write(
         return Err(dml_error("Phase 1 execute expects a write expression"));
     };
     match name.as_str() {
-        "insert" => apply_insert(expr, contract, constraints, records, bindings, params, index),
+        "insert" => apply_insert(expr, contract, constraints, records, bindings, params, index, placement),
         "update" => {
-            let (table, pk_text, patch) = lower_keyed_write(expr, contract, "update", bindings, params)?;
+            let (table, pk_text, patch) = lower_keyed_write(expr, contract, "update", bindings, params, placement)?;
             apply_update(contract, constraints, records, &table, &pk_text, &patch, index)
         }
         "delete" => {
-            let (table, pk_text, _) = lower_keyed_write(expr, contract, "delete", bindings, params)?;
+            let (table, pk_text, _) = lower_keyed_write(expr, contract, "delete", bindings, params, placement)?;
             apply_delete(contract, constraints, records, &table, &pk_text, index)
         }
         _ => Err(Error::Unsupported("Phase 1 execute supports `.insert()`, `.update()` and `.delete()` only")),
@@ -358,6 +374,7 @@ fn lower_keyed_write(
     verb: &str,
     bindings: &[(String, VosExpr)],
     params: &[Value],
+    placement: &Placement,
 ) -> Result<(String, String, QueryRow)> {
     let VosExpr::Call { callee, args, .. } = expr
     else {
@@ -384,7 +401,7 @@ fn lower_keyed_write(
     else {
         return Err(Error::Unsupported("Phase 1 keyed writes require a plain `{ … }` object, not a lambda or projection"));
     };
-    let object = lower_field_inits(entry, contract, &fields, params)?;
+    let object = lower_field_inits(entry, contract, &fields, params, placement)?;
     let pk_field = primary_field_name(entry)?;
     let pk = object.get(pk_field).ok_or_else(|| dml_error(format!("`.{verb}()` object must carry the primary key field `{pk_field}`")))?;
     let pk_text = constraints::value_text(pk)?;
@@ -450,8 +467,9 @@ fn apply_insert(
     bindings: &[(String, VosExpr)],
     params: &[Value],
     index: Option<&constraints::WriteIndex<'_>>,
+    placement: &Placement,
 ) -> Result<()> {
-    let (table, row) = lower_insert(expr, contract, bindings, params)?;
+    let (table, row) = lower_insert(expr, contract, bindings, params, placement)?;
     upsert_row_for_table(contract, constraints, records, &table, &row, index)?;
     Ok(())
 }
@@ -483,7 +501,13 @@ fn upsert_row_for_table(
     Ok(row.clone())
 }
 
-fn lower_insert(expr: &VosExpr, contract: &ResolvedContract, bindings: &[(String, VosExpr)], params: &[Value]) -> Result<(String, QueryRow)> {
+fn lower_insert(
+    expr: &VosExpr,
+    contract: &ResolvedContract,
+    bindings: &[(String, VosExpr)],
+    params: &[Value],
+    placement: &Placement,
+) -> Result<(String, QueryRow)> {
     let VosExpr::Call { callee, args, .. } = expr
     else {
         return Err(dml_error("Phase 1 execute expects an insert expression"));
@@ -503,7 +527,7 @@ fn lower_insert(expr: &VosExpr, contract: &ResolvedContract, bindings: &[(String
         else {
             return Err(dml_error("Phase 1 execute expects `Type::insert({ … })` with an object literal"));
         };
-        let row = lower_field_inits(entry, contract, &fields, params)?;
+        let row = lower_field_inits(entry, contract, &fields, params, placement)?;
         return Ok((table, row));
     }
     if !args.is_empty() {
@@ -516,7 +540,7 @@ fn lower_insert(expr: &VosExpr, contract: &ResolvedContract, bindings: &[(String
         return Err(dml_error("Phase 1 execute supports `Type { … }.insert()` or `Type::insert({ … })`"));
     };
     let entry = table_type_by_name(contract, &ty)?;
-    let row = lower_field_inits(entry, contract, &fields, params)?;
+    let row = lower_field_inits(entry, contract, &fields, params, placement)?;
     Ok((ty, row))
 }
 
@@ -532,18 +556,30 @@ fn table_display_name(entry: &ResolvedTypeContract) -> String {
     entry.canonical_path.join("::")
 }
 
-fn lower_field_inits(entry: &ResolvedTypeContract, contract: &ResolvedContract, fields: &[VosFieldInit], params: &[Value]) -> Result<QueryRow> {
+fn lower_field_inits(
+    entry: &ResolvedTypeContract,
+    contract: &ResolvedContract,
+    fields: &[VosFieldInit],
+    params: &[Value],
+    placement: &Placement,
+) -> Result<QueryRow> {
     let mut row = QueryRow::new();
     for init in fields {
         let slot = field_on_table(entry, &init.name)
             .map_err(|_| dml_error(format!("unknown field `{}` on `{}`", init.name, table_display_name(entry))))?;
         let value = init.value.as_ref().ok_or_else(|| dml_error(format!("field `{}` requires an explicit initializer", init.name)))?;
-        row.insert(init.name.clone(), eval_literal(value, &slot.canonical_type, contract, params)?);
+        row.insert(init.name.clone(), eval_literal(value, &slot.canonical_type, contract, params, placement)?);
     }
     Ok(row)
 }
 
-fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, contract: &ResolvedContract, params: &[Value]) -> Result<Value> {
+fn eval_literal(
+    expr: &VosExpr,
+    ty: &ResolvedCanonicalType,
+    contract: &ResolvedContract,
+    params: &[Value],
+    placement: &Placement,
+) -> Result<Value> {
     match expr {
         VosExpr::Literal(literal) => {
             let raw = match literal {
@@ -553,7 +589,7 @@ fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, contract: &ResolvedC
                 VosLiteral::String(text) => Value::Text(text.clone()),
                 VosLiteral::Float(text) => Value::F64(text.parse().map_err(|_| dml_error(format!("invalid REAL literal `{text}`")))?),
             };
-            coerce::value_to_scalar(raw, ty, contract)
+            placement.place(coerce::value_to_scalar(raw, ty, contract)?)
         }
         VosExpr::Name { name, .. } => {
             let Some(slot) = name.strip_prefix(database_query::local::params::PARAM_PREFIX)
@@ -562,7 +598,7 @@ fn eval_literal(expr: &VosExpr, ty: &ResolvedCanonicalType, contract: &ResolvedC
             };
             let index: usize = slot.parse().map_err(|_| dml_error(format!("malformed parameter slot `{name}`")))?;
             let value = params.get(index).ok_or_else(|| dml_error(format!("parameter slot {index} has no bound value")))?;
-            coerce::value_to_scalar(value.clone(), ty, contract)
+            placement.place(coerce::value_to_scalar(value.clone(), ty, contract)?)
         }
         _ => Err(dml_error("Phase 1 execute only supports literal field initializers and bound parameters")),
     }
