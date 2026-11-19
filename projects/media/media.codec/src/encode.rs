@@ -1,15 +1,22 @@
-//! MP4 encoding through the Media Foundation that ships with Windows.
+//! MP4 encoding: H.264/AAC through the Media Foundation that ships with
+//! Windows, and a portable MJPEG/PCM backend written by this crate alone on
+//! every other platform.
 //!
-//! Video enters as NV12 samples and is encoded to H.264; audio enters as
-//! PCM16 (with the WAVEFORMATEXTENSIBLE tag MF expects inside uncompressed
-//! audio samples) and is encoded to AAC. No external encoder is involved.
+//! Video enters as NV12 samples; on Windows the MF sink writer encodes them
+//! to H.264, elsewhere the crate's own JPEG encoder packs them into the
+//! MP4 muxer. Audio enters as interleaved PCM16 (with the
+//! WAVEFORMATEXTENSIBLE tag MF expects inside uncompressed audio samples)
+//! and becomes AAC on Windows or `sowt` PCM elsewhere. No external encoder
+//! is involved on either path.
 
 use media_types::Error;
 
-/// The sink-writer-backed encoder for one output file.
+/// The encoder for one output file, backed by the platform's best path.
 pub struct Encoder {
     #[cfg(windows)]
     inner: WindowsEncoder,
+    #[cfg(not(windows))]
+    inner: PortableEncoder,
 }
 
 impl Encoder {
@@ -34,9 +41,10 @@ impl Encoder {
     /// Opens `out` requiring one audio codec instead of accepting a fallback.
     ///
     /// `required` is `None` to negotiate as [`Encoder::open`] does, or a codec
-    /// name (`aac`, `flac`). When a name is given and the machine cannot
+    /// name (`aac`, `flac`, `pcm`). When a name is given and the machine cannot
     /// provide it, this is an error: a delivery profile that promises AAC must
-    /// not quietly produce FLAC.
+    /// not quietly produce FLAC. Off Windows the portable backend writes
+    /// `pcm`, so only `None`/`"pcm"` succeed there.
     pub fn open_with_audio_codec(
         out: &std::path::Path,
         width: u32,
@@ -53,50 +61,25 @@ impl Encoder {
         }
         #[cfg(not(windows))]
         {
-            let _ = (out, width, height, fps, bitrate, sample_rate, with_audio, required);
-            Err(Error::unsupported(
-                "no system H.264 encoder on this platform; `Encoder::open` will accept a portable MJPEG/PCM backend once it is wired up (see `capability`)",
-            ))
+            Ok(Self { inner: PortableEncoder::open(out, width, height, fps, bitrate, sample_rate, with_audio, required)? })
         }
     }
 
-    /// Name of the negotiated audio codec (`aac`, `flac`, or empty when silent).
+    /// Name of the negotiated audio codec (`aac`, `flac`, `pcm`, or empty
+    /// when silent).
     #[must_use]
     pub fn audio_codec(&self) -> &str {
-        #[cfg(windows)]
-        {
-            self.inner.audio_codec()
-        }
-        #[cfg(not(windows))]
-        {
-            ""
-        }
+        self.inner.audio_codec()
     }
 
     /// Writes one NV12 frame (1.5 bytes per pixel, stride = width).
     pub fn write_video(&mut self, nv12: &[u8], frame: u32, fps: u32) -> Result<(), Error> {
-        #[cfg(windows)]
-        {
-            self.inner.write_video(nv12, frame, fps)
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = (nv12, frame, fps);
-            Err(Error::unsupported("this encoder was never opened: encoding is unavailable on this platform"))
-        }
+        self.inner.write_video(nv12, frame, fps)
     }
 
     /// Writes one interleaved s16 stereo chunk starting at `start_sample`.
     pub fn write_audio(&mut self, pcm: &[i16], start_sample: u64) -> Result<(), Error> {
-        #[cfg(windows)]
-        {
-            self.inner.write_audio(pcm, start_sample)
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = (pcm, start_sample);
-            Err(Error::unsupported("this encoder was never opened: encoding is unavailable on this platform"))
-        }
+        self.inner.write_audio(pcm, start_sample)
     }
 
     /// Flushes and closes the container.
@@ -108,7 +91,7 @@ impl Encoder {
         }
         #[cfg(not(windows))]
         {
-            Err(Error::unsupported("this encoder was never opened: encoding is unavailable on this platform"))
+            self.inner.finish()
         }
     }
 }
@@ -409,3 +392,159 @@ mod windows_encoder {
 
 #[cfg(windows)]
 use windows_encoder::WindowsEncoder;
+
+#[cfg(not(windows))]
+use portable_encoder::PortableEncoder;
+
+/// The encoding path every platform has: the crate's own JPEG encoder feeds
+/// the crate's own MP4 muxer, with audio kept as uncompressed PCM16.
+///
+/// This is a fallback for correctness, not a competitor with a hardware
+/// H.264 encoder — frames are large and the container declares `jpeg`/`sowt`
+/// sample entries. Platforms with a system encoder (Windows today, macOS
+/// next) use that instead.
+#[cfg(not(windows))]
+mod portable_encoder {
+    use std::path::Path;
+
+    use media_types::Error;
+
+    use crate::{
+        jpeg::{DEFAULT_QUALITY, encode_nv12},
+        mp4::{VIDEO_TIMESCALE, AudioParams, Muxer, VideoParams},
+    };
+
+    pub(super) struct PortableEncoder {
+        muxer: Muxer,
+        width: u32,
+        height: u32,
+        silent: bool,
+    }
+
+    impl PortableEncoder {
+        pub fn open(
+            out: &Path,
+            width: u32,
+            height: u32,
+            fps: u32,
+            bitrate: u32,
+            sample_rate: u32,
+            with_audio: bool,
+            required: Option<&str>,
+        ) -> Result<Self, Error> {
+            let _ = bitrate; // MJPEG is quality-based; the target bitrate has no meaning here.
+            if width == 0 || height == 0 || width > 65_535 || height > 65_535 {
+                return Err(Error::invalid_input(format!("portable: frame {width}x{height} is outside 1..=65535 per side")));
+            }
+            if width % 2 == 1 || height % 2 == 1 {
+                return Err(Error::invalid_input(format!("portable: frame {width}x{height} needs even dimensions for 4:2:0")));
+            }
+            if fps == 0 {
+                return Err(Error::invalid_input("portable: frame rate must be positive"));
+            }
+            match required {
+                None | Some("pcm") => {}
+                Some(name) => {
+                    return Err(Error::unsupported(format!(
+                        "no system `{name}` encoder on this platform; the portable backend writes PCM (`pcm`) only"
+                    )));
+                }
+            }
+            let audio = with_audio.then(|| AudioParams {
+                fourcc: *b"sowt",
+                sample_rate: sample_rate.max(1),
+                channels: 2,
+                bits: 16,
+                entry_children: Vec::new(),
+            });
+            let muxer = Muxer::open(
+                out,
+                VideoParams { fourcc: *b"jpeg", width: width as u16, height: height as u16, entry_children: Vec::new() },
+                audio,
+            )?;
+            Ok(Self { muxer, width, height, silent: !with_audio })
+        }
+
+        pub fn write_video(&mut self, nv12: &[u8], frame: u32, fps: u32) -> Result<(), Error> {
+            let _ = frame; // the muxer derives timing from durations, not absolute sample numbers
+            let expected = (self.width * self.height * 3 / 2) as usize;
+            if nv12.len() != expected {
+                return Err(Error::encode(format!("NV12 buffer {} bytes, expected {expected}", nv12.len())));
+            }
+            let jpeg = encode_nv12(self.width, self.height, nv12, DEFAULT_QUALITY)?;
+            let duration = VIDEO_TIMESCALE / fps.max(1);
+            self.muxer.write_video_sample(&jpeg, duration)
+        }
+
+        pub fn write_audio(&mut self, pcm: &[i16], start_sample: u64) -> Result<(), Error> {
+            let _ = start_sample; // chunks are appended in order; the muxer places them
+            if self.silent {
+                return Ok(());
+            }
+            if pcm.len() % 2 != 0 {
+                return Err(Error::invalid_input(format!("portable: stereo PCM needs an even sample count, got {}", pcm.len())));
+            }
+            let bytes: Vec<u8> = pcm.iter().flat_map(|value| value.to_le_bytes()).collect();
+            let frames = (pcm.len() / 2) as u32;
+            self.muxer.write_audio_sample(&bytes, frames)
+        }
+
+        pub(super) fn audio_codec(&self) -> &'static str {
+            if self.silent { "" } else { "pcm" }
+        }
+
+        pub fn finish(self) -> Result<(), Error> {
+            self.muxer.finish()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::PortableEncoder;
+
+        fn frame(width: u32, height: u32, shift: u8) -> Vec<u8> {
+            let (w, h) = (width as usize, height as usize);
+            let mut nv12 = vec![0u8; w * h + w * h / 2];
+            for (i, byte) in nv12[..w * h].iter_mut().enumerate() {
+                *byte = (i as u8).wrapping_mul(3).wrapping_add(shift);
+            }
+            for byte in &mut nv12[w * h..] {
+                *byte = 128;
+            }
+            nv12
+        }
+
+        #[test]
+        fn writes_a_parseable_mjpeg_pcm_file() {
+            let dir = std::env::temp_dir().join("media-codec-portable-tests");
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            let path = dir.join("portable-round-trip.mp4");
+
+            let mut encoder = PortableEncoder::open(&path, 32, 32, 30, 0, 48_000, true, None).expect("open");
+            assert_eq!(encoder.audio_codec(), "pcm");
+            encoder.write_video(&frame(32, 32, 0), 0, 30).expect("frame 0");
+            encoder.write_video(&frame(32, 32, 40), 1, 30).expect("frame 1");
+            encoder.write_audio(&[0i16; 960], 0).expect("audio");
+            encoder.finish().expect("finish");
+
+            let bytes = std::fs::read(&path).expect("read back");
+            assert_eq!(&bytes[4..8], b"ftyp");
+            // The mdat carries the two JPEG frames: each starts with SOI.
+            let soi = u32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
+            assert_eq!(&bytes[soi + 16..soi + 18], &[0xFF, 0xD8], "first sample is a JPEG");
+            assert!(bytes.windows(4).any(|w| w == b"moov"), "moov written after mdat");
+            assert!(bytes.windows(4).any(|w| w == b"jpeg"), "video sample entry");
+            assert!(bytes.windows(4).any(|w| w == b"sowt"), "audio sample entry");
+            std::fs::remove_file(&path).ok();
+        }
+
+        #[test]
+        fn a_promised_system_codec_is_not_silently_dropped() {
+            let path = std::env::temp_dir().join("rejected.mp4");
+            match PortableEncoder::open(&path, 16, 16, 30, 0, 48_000, true, Some("aac")) {
+                Err(error) => assert_eq!(error.code(), "unsupported_platform"),
+                Ok(_) => panic!("a promised AAC encoder must be refused, not silently downgraded"),
+            }
+        }
+    }
+}

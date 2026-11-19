@@ -1,6 +1,6 @@
 [package]
 name = "media-codec"
-description = "Host codecs: image and video decode, audio decode and Media Foundation encoding"
+description = "Host codecs, a portable pure-Rust JPEG/MP4 backend, and PNG/WAV writers"
 readme = "readme.md"
 version.workspace = true
 edition.workspace = true
