@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use core::range::Range;
 use data_text_core::source::{SourceBuffer, ToSource};
-use data_text_pretty::{AsDocument, doc as pp_doc};
+use data_text_pretty::{AsDocument, Doc, doc as pp_doc};
 
 /// The root node of a JSON AST.
 #[derive(Clone, Debug, PartialEq)]
@@ -201,7 +201,10 @@ impl From<Vec<JsonValueNode>> for JsonValueNode {
 
 impl From<std::collections::HashMap<String, JsonValueNode>> for JsonValueNode {
     fn from(fields: std::collections::HashMap<String, JsonValueNode>) -> Self {
-        let mut fields_vec: Vec<JsonField> = fields.into_iter().map(|(k, v)| JsonField { name: JsonString { value: k, span: (0..0).into() }, value: v, span: (0..0).into() }).collect();
+        let mut fields_vec: Vec<JsonField> = fields
+            .into_iter()
+            .map(|(k, v)| JsonField { name: JsonString { value: k, span: (0..0).into() }, value: v, span: (0..0).into() })
+            .collect();
         // Sort fields by name for consistent output
         fields_vec.sort_by(|a, b| a.name.value.cmp(&b.name.value));
         JsonValueNode::Object(JsonObject { fields: fields_vec, span: (0..0).into() })
@@ -231,24 +234,22 @@ impl ToSource for JsonValueNode {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[text(doc = 
-    if _self.fields.is_empty() {
-        pp_doc!("{}")
-    } else {
-        pp_doc!(group( [
-            "{",
-            indent( [line, join(_self.fields.iter(), [",", line])]),
-            line,
-            "}"
-        ]))
-    }
-)]
+#[text(doc = object_document(_self))]
 pub struct JsonObject {
     /// The fields (key-value pairs) of the object.
     pub fields: Vec<JsonField>,
     /// The source range of the object.
     #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]
     pub span: Range<usize>,
+}
+
+fn object_document(value: &JsonObject) -> Doc<'_> {
+    if value.fields.is_empty() {
+        pp_doc!("{}")
+    }
+    else {
+        pp_doc!(group(["{", indent([line, join(value.fields.iter(), [",", line])]), line, "}"]))
+    }
 }
 
 impl JsonObject {
@@ -298,24 +299,22 @@ impl ToSource for JsonField {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(AsDocument)]
-#[text(doc = 
-    if _self.elements.is_empty() {
-        pp_doc!("[]")
-    } else {
-        pp_doc!(group( [
-            "[",
-            indent( [line, join(_self.elements.iter(), [",", line])]),
-            line,
-            "]"
-        ]))
-    }
-)]
+#[text(doc = array_document(_self))]
 pub struct JsonArray {
     /// The elements of the array.
     pub elements: Vec<JsonValueNode>,
     /// The source range of the array.
     #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]
     pub span: Range<usize>,
+}
+
+fn array_document(value: &JsonArray) -> Doc<'_> {
+    if value.elements.is_empty() {
+        pp_doc!("[]")
+    }
+    else {
+        pp_doc!(group(["[", indent([line, join(value.elements.iter(), [",", line])]), line, "]"]))
+    }
 }
 
 impl ToSource for JsonArray {
