@@ -1,6 +1,6 @@
-//! Migrated integration tests for `mongo`.
+//! Handshake smoke for the Mongo gateway.
+//!
+//! Detailed CRUD, reconcile and wire matrices live downstream in
+//! `mongo-conformance`.
 
-mod crud;
 mod gateway;
-mod reconcile;
-mod wire;
