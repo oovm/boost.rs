@@ -21,7 +21,7 @@ fn emitted_vertex_raster_passes_structural_validation() {
     let shaders = emit_vertex_raster_dxbc().expect("DXBC emission");
     for bytes in [&shaders.vs, &shaders.ps] {
         assert_eq!(&bytes[0..4], b"DXBC");
-        acorn_dxbc::validate_dxbc_bytes(bytes).expect("structurally valid DXBC");
+        data_binary_dxbc::validate_dxbc_bytes(bytes).expect("structurally valid DXBC");
     }
 }
 

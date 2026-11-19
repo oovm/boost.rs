@@ -1,6 +1,6 @@
 [package]
 name = "hardware-frontend"
-description = "UCF shader front-end: authored WGSL parses through oak-wgsl and lowers to UCF IR"
+description = "UCF shader front-end: authored WGSL parses through data-text-wgsl and lowers to UCF IR"
 readme = "readme.md"
 version.workspace = true
 edition.workspace = true

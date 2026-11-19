@@ -1,4 +1,4 @@
-//! HLSL input: `oak-hlsl` syntax tree to neutral shader syntax.
+//! HLSL input: `data-text-hlsl` syntax tree to neutral shader syntax.
 #![warn(missing_docs)]
 
 use hardware_frontend::{
@@ -9,17 +9,17 @@ use hardware_frontend::{
     },
     lower_module,
 };
-use oak_hlsl::ast as h;
+use data_text_hlsl::ast as h;
 
 /// Parses HLSL text and lowers it into UCF IR.
 pub fn lower_hlsl(source: &str) -> Result<LoweredShader, FrontendError> {
-    let root = oak_hlsl::parse_hlsl(source).map_err(FrontendError::Parse)?;
+    let root = data_text_hlsl::parse_hlsl(source).map_err(FrontendError::Parse)?;
     lower_module(&convert_module(&root)?)
 }
 
 /// Parses HLSL text into the language-neutral shader module.
 pub fn parse_hlsl_module(source: &str) -> Result<ShaderModule, FrontendError> {
-    let root = oak_hlsl::parse_hlsl(source).map_err(FrontendError::Parse)?;
+    let root = data_text_hlsl::parse_hlsl(source).map_err(FrontendError::Parse)?;
     convert_module(&root)
 }
 

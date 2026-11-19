@@ -1,6 +1,6 @@
 [package]
 name = "hardware-input-wgsl"
-description = "WGSL input: parses with oak-wgsl and lowers into the neutral shader syntax"
+description = "WGSL input: parses with data-text-wgsl and lowers into the neutral shader syntax"
 readme = "readme.md"
 version.workspace = true
 edition.workspace = true
@@ -10,10 +10,10 @@ publish.workspace = true
 
 [dependencies]
 hardware-frontend = { workspace = true }
-oak-wgsl = { workspace = true }
+data-text-wgsl = { workspace = true }
 
 [dev-dependencies]
-acorn-dxbc = { workspace = true }
-acorn-spirv = { workspace = true }
+data-binary-dxbc = { workspace = true }
+data-binary-spirv = { workspace = true }
 hardware-emitter = { workspace = true }
 hardware-program = { workspace = true }

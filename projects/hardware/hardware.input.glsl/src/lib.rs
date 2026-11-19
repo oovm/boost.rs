@@ -1,4 +1,4 @@
-//! GLSL input: `oak-glsl` syntax tree to neutral shader syntax.
+//! GLSL input: `data-text-glsl` syntax tree to neutral shader syntax.
 #![warn(missing_docs)]
 
 use hardware_frontend::{
@@ -9,20 +9,20 @@ use hardware_frontend::{
     },
     lower_module,
 };
-use oak_glsl::ast as g;
+use data_text_glsl::ast as g;
 
 /// Name of the synthetic parameter that carries `gl_GlobalInvocationID`.
 const GLOBAL_INVOCATION: &str = "__global_invocation_id";
 
 /// Parses GLSL text and lowers it into UCF IR.
 pub fn lower_glsl(source: &str) -> Result<LoweredShader, FrontendError> {
-    let root = oak_glsl::parse_glsl(source).map_err(FrontendError::Parse)?;
+    let root = data_text_glsl::parse_glsl(source).map_err(FrontendError::Parse)?;
     lower_module(&convert_module(&root)?)
 }
 
 /// Parses GLSL text into the language-neutral shader module.
 pub fn parse_glsl_module(source: &str) -> Result<ShaderModule, FrontendError> {
-    let root = oak_glsl::parse_glsl(source).map_err(FrontendError::Parse)?;
+    let root = data_text_glsl::parse_glsl(source).map_err(FrontendError::Parse)?;
     convert_module(&root)
 }
 

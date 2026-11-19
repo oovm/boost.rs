@@ -21,6 +21,6 @@ serde_json = { workspace = true }
 windows = { workspace = true }
 
 [dev-dependencies]
-acorn-dxbc = { workspace = true }
+data-binary-dxbc = { workspace = true }
 hardware-backend-cpu = { workspace = true }
 hardware-runtime = { workspace = true }

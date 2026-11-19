@@ -1,6 +1,6 @@
 [package]
 name = "hardware-input-hlsl"
-description = "HLSL input: parses with oak-hlsl and lowers into the neutral shader syntax"
+description = "HLSL input: parses with data-text-hlsl and lowers into the neutral shader syntax"
 readme = "readme.md"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 hardware-frontend = { workspace = true }
-oak-hlsl = { workspace = true }
+data-text-hlsl = { workspace = true }
 
 [dev-dependencies]
 hardware-program = { workspace = true }

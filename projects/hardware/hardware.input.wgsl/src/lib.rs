@@ -1,4 +1,4 @@
-//! WGSL input: `oak-wgsl` syntax tree to neutral shader syntax.
+//! WGSL input: `data-text-wgsl` syntax tree to neutral shader syntax.
 #![warn(missing_docs)]
 
 use hardware_frontend::{
@@ -9,17 +9,17 @@ use hardware_frontend::{
     },
     lower_module,
 };
-use oak_wgsl::ast as w;
+use data_text_wgsl::ast as w;
 
 /// Parses WGSL text and lowers it into UCF IR.
 pub fn lower_wgsl(source: &str) -> Result<LoweredShader, FrontendError> {
-    let root = oak_wgsl::parse_wgsl(source).map_err(FrontendError::Parse)?;
+    let root = data_text_wgsl::parse_wgsl(source).map_err(FrontendError::Parse)?;
     lower_module(&convert_module(&root))
 }
 
 /// Parses WGSL text into the language-neutral shader module.
 pub fn parse_wgsl_module(source: &str) -> Result<ShaderModule, FrontendError> {
-    let root = oak_wgsl::parse_wgsl(source).map_err(FrontendError::Parse)?;
+    let root = data_text_wgsl::parse_wgsl(source).map_err(FrontendError::Parse)?;
     Ok(convert_module(&root))
 }
 

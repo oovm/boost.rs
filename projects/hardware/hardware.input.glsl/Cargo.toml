@@ -1,6 +1,6 @@
 [package]
 name = "hardware-input-glsl"
-description = "GLSL input: parses with oak-glsl and lowers into the neutral shader syntax"
+description = "GLSL input: parses with data-text-glsl and lowers into the neutral shader syntax"
 readme = "readme.md"
 version.workspace = true
 edition.workspace = true
@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 hardware-frontend = { workspace = true }
-oak-glsl = { workspace = true }
+data-text-glsl = { workspace = true }
 
 [dev-dependencies]
 hardware-program = { workspace = true }

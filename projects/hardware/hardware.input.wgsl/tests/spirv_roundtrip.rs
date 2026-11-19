@@ -2,7 +2,7 @@ use hardware_emitter::emit_program_spirv;
 use hardware_input_wgsl::lower_wgsl;
 
 /// The lowered WGSL program must survive the internal SPIR-V emitter and the
-/// `acorn-spirv` structural validator.
+/// `data-binary-spirv` structural validator.
 #[test]
 fn lowered_wgsl_emits_structurally_valid_spirv() {
     let source = r#"
@@ -17,6 +17,6 @@ fn fill(@builtin(global_invocation_id) gid: vec3<u32>) {
     let bytes = emit_program_spirv(&lowered.program, &lowered.entry).expect("SPIR-V emission");
     assert_eq!(&bytes[0..4], &0x0723_0203u32.to_le_bytes());
 
-    let summary = acorn_spirv::validate_spirv_bytes(&bytes).expect("structurally valid SPIR-V");
+    let summary = data_binary_spirv::validate_spirv_bytes(&bytes).expect("structurally valid SPIR-V");
     assert!(summary.instruction_words > 0);
 }
