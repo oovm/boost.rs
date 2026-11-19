@@ -70,3 +70,14 @@ fn base64_whitespace_policy_is_explicit() {
     let error = rejecting.decode(b"TQ\n").expect_err("whitespace");
     assert!(matches!(error, EncodingError::InvalidByte { offset: 2, byte: b'\n' }));
 }
+#[test]
+fn strict_protocol_profile_rejects_malleable_text() {
+    use data_encoding::representation::Base64;
+
+    let codec = Base64::standard_strict();
+    assert_eq!(codec.encode_text(b"f"), "Zg==");
+    assert_eq!(codec.decode_canonical("Zg==").unwrap(), b"f");
+    assert!(codec.decode_canonical("Zh==").is_err());
+    assert!(codec.decode_canonical(" Zg==").is_err());
+    assert!(codec.decode_canonical("Zg").is_err());
+}

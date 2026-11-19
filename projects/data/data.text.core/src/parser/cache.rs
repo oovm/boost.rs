@@ -1,12 +1,12 @@
 use crate::{
     Language,
-    hashing::XxHash64,
     lexer::{LexOutput, LexerCache, Token},
     memory::arena::SyntaxArena,
     parser::session::ParseCache,
     source::Source,
     tree::GreenNode,
 };
+use data_checksum::XxHash64;
 use std::{collections::HashMap, sync::Arc};
 
 /// A content-based cache for parsed results.

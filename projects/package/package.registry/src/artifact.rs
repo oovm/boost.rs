@@ -1,8 +1,8 @@
 use std::path::{Component, Path, PathBuf};
 
-use data_compression::CodecLimits;
 use data_binary_tar::{TarEntryKind, TarGz};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use data_compression::CodecLimits;
+use data_encoding::representation::Base64;
 use sha2::{Digest, Sha256, Sha512};
 
 use crate::RegistryError;
@@ -22,7 +22,7 @@ pub fn verify_sri(data: &[u8], integrity: Option<&str>) -> Result<(), RegistryEr
         "sha512" => Sha512::digest(data).to_vec(),
         other => return Err(RegistryError::message(format!("unsupported integrity algorithm: {other}"))),
     };
-    let actual = BASE64.encode(digest);
+    let actual = Base64::standard_strict().encode_text(digest);
     if actual != expected {
         return Err(RegistryError::message(format!("integrity mismatch: expected {expected}, got {actual}")));
     }
@@ -45,7 +45,8 @@ pub fn extract_tarball(data: &[u8], target_directory: &Path) -> Result<(), Regis
     std::fs::create_dir_all(target_directory)?;
 
     for entry in &archive.archive().entries {
-        let Some(relative) = relative_member_path(&entry.path)? else {
+        let Some(relative) = relative_member_path(&entry.path)?
+        else {
             continue;
         };
         let destination = target_directory.join(&relative);
@@ -54,7 +55,10 @@ pub fn extract_tarball(data: &[u8], target_directory: &Path) -> Result<(), Regis
                 std::fs::create_dir_all(&destination)?;
             }
             TarEntryKind::Symlink | TarEntryKind::HardLink => {
-                return Err(RegistryError::message(format!("tarball member `{}` is a link, which package artifacts must not contain", relative.display())));
+                return Err(RegistryError::message(format!(
+                    "tarball member `{}` is a link, which package artifacts must not contain",
+                    relative.display()
+                )));
             }
             _ if !entry.kind.has_data() => {}
             _ => {

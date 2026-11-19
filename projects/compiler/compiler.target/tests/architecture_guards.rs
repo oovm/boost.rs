@@ -8,7 +8,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const ALLOWED_IMPORT_ROOTS: &[&str] = &["crate", "std", "core", "alloc", "compiler_types", "compiler_optimize", "compiler_analysis", "serde", "serde_json", "serde_yaml"];
+const ALLOWED_IMPORT_ROOTS: &[&str] =
+    &["crate", "std", "core", "alloc", "compiler_types", "compiler_optimize", "compiler_analysis", "serde", "serde_json"];
 
 fn crate_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")

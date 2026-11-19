@@ -8,13 +8,12 @@ license = "MPL-2.0"
 publish.workspace = true
 
 [dependencies]
-ruzstd = { workspace = true }
 data-binary-core = { workspace = true, optional = true }
-data-checksum = { workspace = true, optional = true }
+data-checksum = { workspace = true }
 
 [features]
 default = []
-deflate = ["dep:data-checksum", "dep:data-binary-core"]
+deflate = ["dep:data-binary-core"]
 
 [[test]]
 name = "deflate"

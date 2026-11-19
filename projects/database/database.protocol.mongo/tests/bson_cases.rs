@@ -3,7 +3,7 @@
 //! 期望值原样保留：BSON 文档按字节比对，解码结果按扩展 JSON 比对，解码后
 //! 再编码必须与输入字节完全一致。断言不放宽。
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use data_encoding::representation::Base64;
 use database_protocol_mongo::{
     bson::{BsonDocument, BsonValue, double_bits, encode_bson, integral_value, parse_bson, parse_bson_projected, value_to_key},
     decimal128::Decimal128,
@@ -245,7 +245,8 @@ fn tagged_value(tag: &str, payload: &Value) -> Option<BsonValue> {
         }
         "$binary" => {
             let body = payload.as_object().expect("$binary is an object");
-            let bytes = STANDARD.decode(body["base64"].as_str().expect("$binary.base64 is a string")).expect("valid base64");
+            let bytes =
+                Base64::standard_strict().decode_canonical(body["base64"].as_str().expect("$binary.base64 is a string")).expect("valid base64");
             let subtype = u8::from_str_radix(body["subType"].as_str().expect("$binary.subType is a string"), 16).expect("valid subtype");
             Some(BsonValue::Binary(database_protocol_mongo::bson::BinaryData::new(subtype, bytes)))
         }
@@ -311,7 +312,7 @@ fn value_to_json(value: &BsonValue) -> Value {
         BsonValue::ObjectId(bytes) => tagged_json("$oid", bytes_to_hex(bytes)),
         BsonValue::Binary(data) => {
             let mut binary = Map::new();
-            binary.insert("base64".to_string(), Value::String(STANDARD.encode(&data.bytes)));
+            binary.insert("base64".to_string(), Value::String(Base64::standard_strict().encode_text(&data.bytes)));
             binary.insert("subType".to_string(), Value::String(format!("{:02x}", data.subtype)));
             let mut wrapper = Map::new();
             wrapper.insert("$binary".to_string(), Value::Object(binary));

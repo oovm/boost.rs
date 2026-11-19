@@ -44,6 +44,11 @@ impl Base64 {
         Self { alphabet: STANDARD_ALPHABET, padding: Padding::Required, whitespace: Whitespace::IgnoreAscii }
     }
 
+    /// Standard padded Base64 with no whitespace, for protocol fields.
+    pub const fn standard_strict() -> Self {
+        Self::standard().with_whitespace(Whitespace::Reject)
+    }
+
     /// URL-safe Base64 without padding.
     pub const fn url_safe_no_padding() -> Self {
         Self { alphabet: URL_SAFE_ALPHABET, padding: Padding::Forbidden, whitespace: Whitespace::Reject }
@@ -88,6 +93,22 @@ impl Base64 {
             }
         }
         output
+    }
+
+    /// Encodes bytes as Base64 text.
+    pub fn encode_text(&self, input: impl AsRef<[u8]>) -> String {
+        String::from_utf8(self.encode(input.as_ref())).expect("Base64 alphabet is ASCII")
+    }
+
+    /// Decodes bytes and rejects nonzero unused bits in the final symbol.
+    pub fn decode_canonical(&self, input: impl AsRef<[u8]>) -> Result<Vec<u8>, EncodingError> {
+        let input = input.as_ref();
+        let decoded = self.decode(input)?;
+        if decoded.canonical != Canonicality::Canonical {
+            let offset = input.iter().rposition(|byte| *byte != b'=' && !byte.is_ascii_whitespace()).unwrap_or(0);
+            return Err(EncodingError::NonCanonicalEncoding { offset });
+        }
+        Ok(decoded.value)
     }
 
     /// Decodes Base64 `input` into owned bytes.

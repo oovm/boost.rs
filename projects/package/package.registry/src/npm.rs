@@ -1,14 +1,14 @@
 use std::{collections::BTreeMap, path::Path};
 
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use data_encoding::representation::Base64;
 use serde::Deserialize;
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::{Digest as Sha2Digest, Sha512};
 
 use crate::{
     Package, PublishOptions, PublishResult, Registry, RegistryError, RetryConfig, TokenVerifyResult,
-    http::{HttpClient, build_url, url_encode},
     artifact::{extract_tarball, verify_sri},
+    http::{HttpClient, build_url, url_encode},
 };
 
 /// npm 渠道适配器。
@@ -200,7 +200,7 @@ fn build_npm_publish_document(options: &PublishOptions, tarball_data: &[u8], end
     let attachment = format!("{name}-{version}.tgz");
     let integrity = {
         let digest = <Sha512 as Sha2Digest>::digest(tarball_data);
-        format!("sha512-{}", BASE64.encode(digest))
+        format!("sha512-{}", Base64::standard_strict().encode_text(digest))
     };
     let shasum = {
         let digest = <Sha1 as Sha1Digest>::digest(tarball_data);
@@ -236,7 +236,7 @@ fn build_npm_publish_document(options: &PublishOptions, tarball_data: &[u8], end
         attachment,
         serde_json::json!({
             "content_type": "application/octet-stream",
-            "data": BASE64.encode(tarball_data),
+            "data": Base64::standard_strict().encode_text(tarball_data),
             "length": tarball_data.len()
         }),
     );

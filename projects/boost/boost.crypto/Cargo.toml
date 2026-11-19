@@ -12,7 +12,7 @@ edition.workspace = true
 boost-random = { workspace = true, features = ["std", "system"] }
 rsa = { workspace = true }
 sha2-rsa = { workspace = true }
-base64 = { workspace = true }
+data-encoding = { workspace = true }
 sha1-rsa = { workspace = true }
 zeroize = { workspace = true }
 

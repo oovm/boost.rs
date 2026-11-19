@@ -129,7 +129,7 @@ impl PgPassword {
     /// The SCRAM salt comes from the host random source, so two roles that pick
     /// the same password still carry different verifiers.
     pub fn derive(password: &str, role: &str) -> Result<Self, ObjectError> {
-        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        use data_encoding::representation::Base64;
         use database_protocol_pgsql::auth::{ScramVerifier, md5_hex, verifier_for};
 
         let mut salt = [0u8; 16];
@@ -142,10 +142,10 @@ impl PgPassword {
         Ok(Self {
             md5: md5_hex(format!("{password}{role}").as_bytes()),
             scram: PgScramVerifier {
-                salt: STANDARD.encode(salt),
+                salt: Base64::standard_strict().encode_text(salt),
                 iterations: ITERATIONS,
-                stored_key: STANDARD.encode(stored_key),
-                server_key: STANDARD.encode(server_key),
+                stored_key: Base64::standard_strict().encode_text(stored_key),
+                server_key: Base64::standard_strict().encode_text(server_key),
             },
         })
     }
@@ -164,10 +164,10 @@ impl PgPassword {
 
     /// Decoded SCRAM parameters, or `None` when the stored document is corrupt.
     pub fn scram(&self) -> Option<(database_protocol_pgsql::auth::ScramVerifier, Vec<u8>)> {
-        use base64::{Engine as _, engine::general_purpose::STANDARD};
-        let salt = STANDARD.decode(&self.scram.salt).ok()?;
-        let stored_key: [u8; 32] = STANDARD.decode(&self.scram.stored_key).ok()?.try_into().ok()?;
-        let server_key: [u8; 32] = STANDARD.decode(&self.scram.server_key).ok()?.try_into().ok()?;
+        use data_encoding::representation::Base64;
+        let salt = Base64::standard_strict().decode_canonical(&self.scram.salt).ok()?;
+        let stored_key: [u8; 32] = Base64::standard_strict().decode_canonical(&self.scram.stored_key).ok()?.try_into().ok()?;
+        let server_key: [u8; 32] = Base64::standard_strict().decode_canonical(&self.scram.server_key).ok()?.try_into().ok()?;
         Some((database_protocol_pgsql::auth::ScramVerifier { stored_key, server_key }, salt))
     }
 }
@@ -213,7 +213,8 @@ impl PgSequence {
     fn advance(&mut self) -> Result<i64, ObjectError> {
         let next = if self.is_called {
             self.last_value.checked_add(self.increment).ok_or(ObjectError::SequenceExhausted(self.name.clone()))?
-        } else {
+        }
+        else {
             self.last_value
         };
         let out_of_range = if self.increment > 0 { next > self.max_value } else { next < self.min_value };
@@ -223,7 +224,8 @@ impl PgSequence {
             }
             // `CYCLE` wraps to the opposite bound.
             self.last_value = if self.increment > 0 { self.min_value } else { self.max_value };
-        } else {
+        }
+        else {
             self.last_value = next;
         }
         self.is_called = true;
@@ -417,7 +419,8 @@ impl PgObjectCatalog {
                 )));
             }
             document
-        } else {
+        }
+        else {
             ObjectDocument::empty()
         };
         let catalog = Self { state: Mutex::new(state), path: Some(path) };
@@ -768,7 +771,8 @@ impl PgObjectCatalog {
     }
 
     fn save(&self, state: &ObjectDocument) -> Result<(), ObjectError> {
-        let Some(path) = &self.path else {
+        let Some(path) = &self.path
+        else {
             return Ok(());
         };
         write_document(path, state)

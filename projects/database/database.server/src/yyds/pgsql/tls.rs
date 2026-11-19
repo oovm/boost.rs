@@ -7,7 +7,7 @@
 
 use std::{io, sync::Arc};
 
-use base64::Engine as _;
+use data_encoding::representation::Base64;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
 /// Failure raised while building a TLS acceptor.
@@ -56,7 +56,10 @@ impl PgTls {
         if chain.is_empty() {
             return Err(TlsError::Malformed("the certificate chain is empty".to_string()));
         }
-        let config = rustls::ServerConfig::builder().with_no_client_auth().with_single_cert(chain, key).map_err(|error| TlsError::Rejected(error.to_string()))?;
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(chain, key)
+            .map_err(|error| TlsError::Rejected(error.to_string()))?;
         Ok(Self { config: Arc::new(config), require_client_tls: false })
     }
 
@@ -77,7 +80,8 @@ impl PgTls {
 
     /// One server-side connection for an accepted socket.
     pub(crate) fn server_connection(&self) -> io::Result<rustls::ServerConnection> {
-        rustls::ServerConnection::new(Arc::clone(&self.config)).map_err(|error| io::Error::other(format!("TLS server connection failed: {error}")))
+        rustls::ServerConnection::new(Arc::clone(&self.config))
+            .map_err(|error| io::Error::other(format!("TLS server connection failed: {error}")))
     }
 }
 
@@ -109,12 +113,13 @@ fn read_pem_blocks(pem: &str, tag: &str) -> Result<Option<Vec<Vec<u8>>>, TlsErro
     let mut rest = pem;
     while let Some(start) = rest.find(&begin) {
         let body_start = start + begin.len();
-        let Some(close) = rest[body_start..].find(&end) else {
+        let Some(close) = rest[body_start..].find(&end)
+        else {
             return Err(TlsError::Malformed(format!("unterminated `{tag}` PEM block")));
         };
         let body = &rest[body_start..body_start + close];
-        let decoded = base64::engine::general_purpose::STANDARD
-            .decode(body.split_whitespace().collect::<String>())
+        let decoded = Base64::standard_strict()
+            .decode_canonical(body.split_whitespace().collect::<String>())
             .map_err(|error| TlsError::Malformed(format!("invalid base64 in `{tag}` PEM block: {error}")))?;
         blocks.push(decoded);
         rest = &rest[body_start + close + end.len()..];

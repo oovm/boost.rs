@@ -4,10 +4,7 @@
 //! 签名与协议字段在文本边界使用。
 
 use crate::{CryptoError, Result};
-use base64::{
-    Engine as _,
-    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
-};
+use data_encoding::representation::{Base64, Padding};
 
 /// 小写十六进制字符表。
 const LOWER_HEX: &[u8; 16] = b"0123456789abcdef";
@@ -45,12 +42,12 @@ pub fn hex_decode(text: &str) -> Result<Vec<u8>> {
 ///
 /// 用于 JOSE、ACME 与各类把摘要塞进 URL 或 JSON 字符串的协议。
 pub fn base64url_encode(bytes: &[u8]) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    Base64::url_safe_no_padding().encode_text(bytes)
 }
 
 /// 解码无填充的 URL-safe base64，同时接受带填充输入。
 pub fn base64url_decode(text: &str) -> Result<Vec<u8>> {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(text.trim_end_matches('=')).map_err(|_| CryptoError::InvalidInput)
+    Base64::url_safe_no_padding().decode_canonical(text.trim_end_matches('=')).map_err(|_| CryptoError::InvalidInput)
 }
 
 fn hex_digit(byte: u8) -> Result<u8> {
@@ -64,22 +61,22 @@ fn hex_digit(byte: u8) -> Result<u8> {
 
 /// 标准 base64 编码（带 `=` 填充）。
 pub fn base64_encode(bytes: &[u8]) -> String {
-    STANDARD.encode(bytes)
+    Base64::standard_strict().encode_text(bytes)
 }
 
 /// 无填充 base64 编码。
 pub fn base64_encode_no_pad(bytes: &[u8]) -> String {
-    STANDARD_NO_PAD.encode(bytes)
+    Base64::standard_strict().with_padding(Padding::Forbidden).encode_text(bytes)
 }
 
 /// 解码标准 base64（接受带填充输入）。
 pub fn base64_decode(text: &str) -> Result<Vec<u8>> {
-    STANDARD.decode(text).map_err(|_| CryptoError::InvalidInput)
+    Base64::standard_strict().decode_canonical(text).map_err(|_| CryptoError::InvalidInput)
 }
 
 /// 解码无填充 base64（接受不带填充输入）。
 pub fn base64_decode_no_pad(text: &str) -> Result<Vec<u8>> {
-    STANDARD_NO_PAD.decode(text).map_err(|_| CryptoError::InvalidInput)
+    Base64::standard_strict().with_padding(Padding::Forbidden).decode_canonical(text).map_err(|_| CryptoError::InvalidInput)
 }
 
 #[cfg(test)]

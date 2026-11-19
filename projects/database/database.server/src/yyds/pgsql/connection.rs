@@ -11,18 +11,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::wire::{FrameError, StartupParameterError, StartupParameters, decode_message, decode_startup, encode_message};
-use super::auth::{AuthFailure, PgAuthentication};
-use database_protocol_pgsql::auth::ScramServer;
-use database_execution::pgsql::{
-    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession,
-    dispatch_statement, pg_sqlstate, run_statement, statement_error,
+use super::{
+    auth::{AuthFailure, PgAuthentication},
+    wire::{FrameError, StartupParameterError, StartupParameters, decode_message, decode_startup, encode_message},
 };
+use database_execution::pgsql::{
+    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession, dispatch_statement,
+    pg_sqlstate, run_statement, statement_error,
+};
+use database_protocol_pgsql::auth::ScramServer;
 use database_query::{
-    DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlColumn, SqlDialect, SqlParameterStyle, SqlSessionCommand, SqlFieldType,
-    SqlValue, SqlCatalogBoundStatement, analyze_meta_query, bind_sql_catalog, describe_bound_insert,
-    describe_plan, detect_session_reset_statement, encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, pg_server_version,
-    plan_statement_for_dialect, rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
+    DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalogBoundStatement, SqlColumn, SqlDialect, SqlFieldType, SqlParameterStyle,
+    SqlSessionCommand, SqlValue, analyze_meta_query, bind_sql_catalog, describe_bound_insert, describe_plan, detect_session_reset_statement,
+    encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, pg_server_version, plan_statement_for_dialect,
+    rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
 };
 
 /// PostgreSQL type OIDs supported by the gateway.
@@ -56,11 +58,7 @@ pub fn serve_connection(stream: TcpStream, runtime: Option<Arc<PgsqlSqlRuntime>>
 
 /// Establishes a protocol-v3 session that authenticates with `auth` before any
 /// query runs.
-pub fn serve_connection_with_auth(
-    stream: TcpStream,
-    runtime: Option<Arc<PgsqlSqlRuntime>>,
-    auth: PgAuthentication,
-) -> io::Result<()> {
+pub fn serve_connection_with_auth(stream: TcpStream, runtime: Option<Arc<PgsqlSqlRuntime>>, auth: PgAuthentication) -> io::Result<()> {
     serve_connection_with_auth_and_tls(stream, runtime, auth, None)
 }
 
@@ -292,7 +290,7 @@ fn read_startup_outcome(
                         return Ok(StartupOutcome::Fatal);
                     }
                 }
-            },
+            }
             _ => {
                 write_fatal(stream, "0A000", "unsupported PostgreSQL protocol version")?;
                 return Ok(StartupOutcome::Fatal);
@@ -464,10 +462,7 @@ fn handle_copy_from_stdin(
 
 /// Column count reported in `CopyInResponse`, resolved through the catalog when
 /// `COPY` did not name the columns.
-fn copy_column_count(
-    plan: &database_execution::pgsql::CopyInPlan,
-    runtime: &Arc<PgsqlSqlRuntime>,
-) -> Result<usize, (String, String)> {
+fn copy_column_count(plan: &database_execution::pgsql::CopyInPlan, runtime: &Arc<PgsqlSqlRuntime>) -> Result<usize, (String, String)> {
     if !plan.columns.is_empty() {
         return Ok(plan.columns.len());
     }
@@ -707,7 +702,6 @@ fn execute_simple_query(
         Err((code, message)) => write_error_response(stream, &code, &message),
     }
 }
-
 
 fn write_execution_outcome(stream: &mut impl Write, outcome: &ExecutionOutcome) -> io::Result<()> {
     if outcome.returns_rows() {
@@ -1713,9 +1707,7 @@ fn authenticate(
                 super::auth::PgPasswordMethod::ScramSha256 => {
                     let Some((verifier, salt)) = stored.scram()
                     else {
-                        return Ok(Some(AuthFailure::unsupported(format!(
-                            "the stored verifier of role \"{user}\" is malformed"
-                        ))));
+                        return Ok(Some(AuthFailure::unsupported(format!("the stored verifier of role \"{user}\" is malformed"))));
                     };
                     let mut suffix = [0u8; 18];
                     fill_random(&mut suffix)?;
@@ -1755,9 +1747,7 @@ fn run_scram_exchange(
         return Ok(Some(AuthFailure::protocol("malformed SASL initial response")));
     };
     if mechanism != "SCRAM-SHA-256" {
-        return Ok(Some(AuthFailure::unsupported(format!(
-            "the gateway only offers SCRAM-SHA-256, the client selected `{mechanism}`"
-        ))));
+        return Ok(Some(AuthFailure::unsupported(format!("the gateway only offers SCRAM-SHA-256, the client selected `{mechanism}`"))));
     }
     let Some(length) = take_i32(&initial.payload, &mut cursor)
     else {
@@ -1823,8 +1813,8 @@ fn fill_random(bytes: &mut [u8]) -> io::Result<()> {
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    STANDARD.encode(bytes)
+    use data_encoding::representation::Base64;
+    Base64::standard_strict().encode_text(bytes)
 }
 
 fn send_parameter(stream: &mut impl Write, key: &str, value: &str) -> io::Result<()> {

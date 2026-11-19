@@ -22,7 +22,6 @@ futures = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
-serde_yaml = { version = "0.9"}
 language-testing = { workspace = true }
 
 [features]

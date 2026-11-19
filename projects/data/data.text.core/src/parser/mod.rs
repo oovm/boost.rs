@@ -27,7 +27,7 @@ pub use crate::{
 
 /// Computes the fingerprint a [`ParseCache`] stores to recognise its document.
 fn source_fingerprint<S: Source + ?Sized>(text: &S) -> u64 {
-    let mut hasher = crate::hashing::XxHash64::new();
+    let mut hasher = data_checksum::XxHash64::new();
     hasher.write(text.get_text_from(0).as_bytes());
     hasher.finish()
 }
