@@ -22,4 +22,20 @@ fn prints_the_adapter_inventory() {
         );
     }
     assert!(!adapters.is_empty(), "DXGI must report at least one adapter");
+
+    match Dx12Backend::enumerate_compute_adapters() {
+        Ok(compute) => {
+            for (index, adapter) in compute.iter().enumerate() {
+                println!(
+                    "compute[{index}] {} hardware={} vram={} MiB compute={} graphics={}",
+                    adapter.name,
+                    adapter.hardware_id,
+                    adapter.dedicated_memory / (1024 * 1024),
+                    adapter.d3d12_core_compute,
+                    adapter.d3d12_graphics
+                );
+            }
+        }
+        Err(error) => println!("DXCore enumeration failed: {error}"),
+    }
 }

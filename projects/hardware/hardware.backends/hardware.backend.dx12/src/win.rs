@@ -147,6 +147,67 @@ impl Dx12Backend {
     }
 }
 
+/// 一块对 DXCore 可见的计算适配器；MCDM 设备（如 NPU）会出现在这里。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeAdapterInfo {
+    /// 驱动描述。
+    pub name: String,
+    /// 硬件 ID。
+    pub hardware_id: String,
+    /// 专用适配器内存字节数。
+    pub dedicated_memory: u64,
+    /// 是否支持 D3D12 core compute。
+    pub d3d12_core_compute: bool,
+    /// 是否支持 D3D12 图形。
+    pub d3d12_graphics: bool,
+}
+
+/// 读取 DXCore 字符串属性。
+unsafe fn dxcore_string(adapter: &IDXCoreAdapter, property: DXCoreAdapterProperty) -> Option<String> {
+    let size = unsafe { adapter.GetPropertySize(property) }.ok()?;
+    if size == 0 {
+        return Some(String::new());
+    }
+    let mut bytes = vec![0u8; size];
+    unsafe { adapter.GetProperty(property, size, bytes.as_mut_ptr().cast()) }.ok()?;
+    let end = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+    Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
+}
+
+/// 读取 DXCore 的 `u64` 属性。
+unsafe fn dxcore_u64(adapter: &IDXCoreAdapter, property: DXCoreAdapterProperty) -> Option<u64> {
+    let size = unsafe { adapter.GetPropertySize(property) }.ok()?;
+    if size < 8 {
+        return None;
+    }
+    let mut value = 0u64;
+    unsafe { adapter.GetProperty(property, 8, (&raw mut value).cast()) }.ok()?;
+    Some(value)
+}
+
+impl Dx12Backend {
+    /// 枚举 DXCore 计算适配器；NPU 走 MCDM，只在这里出现，不会出现在 DXGI 里。
+    pub fn enumerate_compute_adapters() -> Result<Vec<ComputeAdapterInfo>> {
+        unsafe {
+            let factory: IDXCoreAdapterFactory = DXCoreCreateAdapterFactory().map_err(dx_err)?;
+            let list: IDXCoreAdapterList =
+                factory.CreateAdapterList::<IDXCoreAdapterList>(&[DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE]).map_err(dx_err)?;
+            let mut adapters = Vec::new();
+            for index in 0..list.GetAdapterCount() {
+                let adapter: IDXCoreAdapter = list.GetAdapter(index).map_err(dx_err)?;
+                adapters.push(ComputeAdapterInfo {
+                    name: dxcore_string(&adapter, DriverDescription).unwrap_or_default(),
+                    hardware_id: dxcore_string(&adapter, HardwareID).unwrap_or_default(),
+                    dedicated_memory: dxcore_u64(&adapter, DedicatedAdapterMemory).unwrap_or(0),
+                    d3d12_core_compute: adapter.IsAttributeSupported(&DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE),
+                    d3d12_graphics: adapter.IsAttributeSupported(&DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS),
+                });
+            }
+            Ok(adapters)
+        }
+    }
+}
+
 /// DirectX 12 backend with device-resident buffers and compute dispatch.
 pub struct Dx12Backend {
     device: ID3D12Device,
@@ -1650,6 +1711,11 @@ fn dx_err(error: windows::core::Error) -> SchedulerError {
 fn dx_err_msg(message: impl Into<String>) -> SchedulerError {
     SchedulerError::Backend("dx12".into(), message.into())
 }
+
+use windows::Win32::Graphics::DXCore::{
+    DXCORE_ADAPTER_ATTRIBUTE_D3D12_CORE_COMPUTE, DXCORE_ADAPTER_ATTRIBUTE_D3D12_GRAPHICS, DXCoreAdapterProperty, DXCoreCreateAdapterFactory,
+    DedicatedAdapterMemory, DriverDescription, HardwareID, IDXCoreAdapter, IDXCoreAdapterFactory, IDXCoreAdapterList,
+};
 
 fn map_emit_err(error: String) -> SchedulerError {
     SchedulerError::Backend("dx12".into(), error)
