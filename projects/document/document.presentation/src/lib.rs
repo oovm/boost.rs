@@ -2,6 +2,7 @@
 #![warn(missing_docs, rustdoc::missing_crate_level_docs)]
 #![doc = include_str!("readme.md")]
 
+pub mod authored;
 pub mod builder;
 pub mod display;
 pub mod flow;

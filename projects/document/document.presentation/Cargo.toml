@@ -9,6 +9,10 @@ readme = "readme.md"
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+boost-source = { workspace = true }
+data-binary-zip = { workspace = true }
+sha2 = { workspace = true }
 document-ir = { workspace = true }
 plotter-scene = { workspace = true }
 document-compose = { workspace = true, features = ["serde"] }
