@@ -1,0 +1,16 @@
+[package]
+name = "commander-core"
+version.workspace = true
+authors.workspace = true
+description = "Command tree parsing, execution context, output routing, and interactive effect gating for the commander family"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/commander/commander.core"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+commander-types = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

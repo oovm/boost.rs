@@ -22,9 +22,12 @@ pub struct ActionRequiredDescriptor {
     /// Stable action identity owned by the domain.
     pub action_id: String,
     /// Reference into the domain's persisted state.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status_ref: Option<String>,
     /// RFC 3339 expiry of the pending external action.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
     /// Structured continuation the caller may run after the action.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_action: Option<NextAction>,
 }
