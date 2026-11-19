@@ -32,6 +32,8 @@ pub mod pragma;
 pub mod probe;
 pub mod scalar;
 pub mod select;
+/// SQLite 连接级会话状态机：脏镜像跟踪、事务代数、发布边界判定与游标表。
+pub mod session;
 pub mod stmt;
 pub mod trigger;
 pub mod txn;

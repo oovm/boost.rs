@@ -1,15 +1,16 @@
-//! 连接层:数据库行为的权威归属。
+//! 连接层:公开对象、选项映射与资源组装,会话状态委托执行层。
 //!
-//! [`Connection`] 拥有真实连接、文件访问、只读判定、预编译语句、参数槽位、
-//! 读写分类、提交边界与备份。宿主(N-API、PyO3、WebAssembly)只能把这些权威
-//! 信息映射成各自的 JS/Python 形状,不得在宿主层重复实现这些语义:
+//! [`Connection`] 把宿主(N-API、PyO3、WebAssembly)需要的权威信息映射成
+//! 各自的 JS/Python 形状。本层不再持有连接状态:
 //!
 //! - 语句切分与词法来自 [`crate::sql::parse`],宿主不再自己扫分号;
 //! - 参数槽位来自 [`crate::sql::parameter_slots`],宿主不再自己数 `?`;
 //! - 读写判定来自 [`crate::sql::Statement::writes`],宿主不再用关键词猜;
-//! - 文件落盘只发生在提交边界(autocommit 写语句成功后、`COMMIT` 成功后),
-//!   由存储层 [`crate::SqliteWriter::save`] 完成,宿主不再写临时 snapshot
-//!   再改名冒充备份。
+//! - 脏镜像跟踪、事务代数、提交边界判定(autocommit 写、`COMMIT`、
+//!   `ROLLBACK`、最外层 `RELEASE`)与游标表归
+//!   `database_execution::sqlite::session`,本连接只转调;
+//! - 文件落盘只发生在提交边界,物理发布与恢复归
+//!   `database_storage::sqlite::{journal, lock}`,由存储层入口完成。
 
 use std::{
     path::{Path, PathBuf},
@@ -19,10 +20,10 @@ use std::{
 
 use crate::{
     SqliteWriter,
-    sql::{Cell, Engine, ExecResult, SqlError, Statement, TransactionAction, parameter_slots, storage_failure},
+    sql::{Cell, Engine, ExecResult, SqlError, Statement, parameter_slots, storage_failure},
 };
 
-use database_execution::sqlite::cursor::CursorTable;
+use database_execution::sqlite::session::SqliteSession;
 use database_storage::sqlite::{
     PublishMode, WriterLock,
     journal,
@@ -186,7 +187,11 @@ impl Prepared {
     }
 }
 
-/// 一个真实连接:引擎句柄、文件归属与提交边界都在这里。
+/// 一个真实连接:公开对象、选项映射与资源组装,会话状态归执行层。
+///
+/// 脏镜像跟踪、事务代数、提交边界判定与游标表由
+/// [`SqliteSession`](`database_execution::sqlite::session`)拥有;本结构
+/// 只持有会话句柄、跨进程写锁与公开的日志模式选项。
 ///
 /// 文件写连接在打开时取得跨进程写锁并持有到 [`Connection::close`] 或句柄
 /// 释放;只读连接不参与加锁,打开时把文件一次性读进内存,因此不会被写连接
@@ -194,25 +199,12 @@ impl Prepared {
 /// 完整镜像,要么读到新的完整镜像。`delete`/`truncate` 模式在改名前进写出
 /// 回滚日志,提交中断后重新打开会回滚到旧镜像。
 pub struct Connection {
-    /// 底层执行引擎,持有 format-3 写者与目录。
-    engine: Engine,
-    /// 落盘目标;`None` 为纯内存。
-    filename: Option<PathBuf>,
-    /// 只读标志。
-    read_only: bool,
-    /// 镜像自上次落盘后是否发生过变化。
-    dirty: bool,
+    /// 连接级会话状态机:引擎句柄、文件归属、脏标记、代数与游标表。
+    session: SqliteSession,
     /// 文件写连接的跨进程写锁;只读、内存与字节镜像连接为 `None`。
     lock: Option<WriterLock>,
-    /// `close` 之后不再接受语句。
-    closed: bool,
-    /// 提交时如何发布新镜像并处理回滚日志。
+    /// 提交时如何发布新镜像并处理回滚日志(公开的选项映射)。
     journal_mode: JournalMode,
-    /// 落盘时是否 `fsync`;回滚日志与恢复写回共用同一强度。
-    synchronous: bool,
-    /// 本连接打开的结果游标表,以句柄为键;游标状态机归
-    /// `database.execution::sqlite::cursor`。
-    cursors: CursorTable,
 }
 
 impl Connection {
@@ -255,24 +247,14 @@ impl Connection {
         let mut engine = Engine::from_writer(writer)?;
         engine.set_synchronous(options.synchronous);
         let journal_mode = options.journal_mode;
-        let synchronous = options.synchronous;
-        let mut connection = Self {
-            engine,
-            filename: options.filename,
-            read_only: options.read_only,
-            dirty: false,
-            lock,
-            closed: false,
-            journal_mode,
-            synchronous,
-            cursors: CursorTable::new(),
-        };
+        let session = SqliteSession::new(engine, options.filename, options.read_only, journal_mode.publish_mode());
+        let mut connection = Self { session, lock, journal_mode };
         if created {
             // 新建库没有旧镜像可回滚;残留日志只可能来自更早的失败创建,先清掉。
-            if let Some(path) = &connection.filename {
+            if let Some(path) = connection.session.filename() {
                 journal::finish(path, false).map_err(storage_failure)?;
             }
-            connection.publish()?;
+            connection.session.publish()?;
         }
         Ok(connection)
     }
@@ -282,18 +264,18 @@ impl Connection {
     /// 显式事务内推迟的索引重建会在这里先落下,所以镜像永远与目录一致;重建
     /// 失败按 `storage` 家庭错误返回,不交出半成品的字节。
     pub fn snapshot(&mut self) -> Result<&[u8], SqlError> {
-        self.engine.snapshot()
+        self.session.snapshot()
     }
 
     /// 镜像头里的 format-3 库版本。
     pub fn sqlite_version(&self) -> Result<String, SqlError> {
-        self.engine.sqlite_version()
+        self.session.sqlite_version()
     }
 
     /// 注册一个宿主自定义标量函数;解析与求值都经本连接的引擎,注册语义
     /// 见 [`Engine::register_host_function`]。
     pub fn register_host_function(&mut self, definition: HostMicroDefinition, adapter: Arc<dyn HostRuntimeAdapter>) -> Result<(), SqlError> {
-        self.engine.register_host_function(definition, adapter)
+        self.session.register_host_function(definition, adapter)
     }
 
     /// 解析一次 SQL,得到可反复执行的预编译语句。
@@ -304,7 +286,7 @@ impl Connection {
     /// 拒绝口径——`prepare` 仍然成功,标签如实为 `None`,错误留给执行期按
     /// 既有语义抛出。
     pub fn prepare(&self, sql: &str) -> Result<Prepared, SqlError> {
-        let statements = self.engine.parse(sql)?;
+        let statements = self.session.parse(sql)?;
         let statement = match statements.len() {
             1 => statements.into_iter().next().expect("length checked"),
             0 => return Err(SqlError::new("empty-statement", "expected exactly one statement but found 0")),
@@ -312,53 +294,24 @@ impl Connection {
         };
         let slots = parameter_slots(&statement);
         let is_write = statement.writes();
-        let columns = self.engine.describe(&statement).ok().flatten();
+        let columns = self.session.describe(&statement);
         Ok(Prepared { sql: sql.to_string(), statement, slots, is_write, columns })
     }
 
     /// 执行一条预编译语句,绑定零基位置参数。
     ///
-    /// 只读连接在任何会写镜像的语句执行前拒绝;参数少于槽位数时以
-    /// `bind-parameter` 拒绝;成功后按提交边界决定是否落盘。
+    /// 只读拒绝、参数检查、执行与提交边界全部由会话状态机给出,本连接
+    /// 只做转调。
     pub fn run(&mut self, prepared: &Prepared, parameters: &[Cell]) -> Result<ExecResult, SqlError> {
-        self.guard_open()?;
-        self.guard_write(prepared.is_write())?;
-        let required = prepared.parameter_count();
-        if parameters.len() < required {
-            return Err(SqlError::new("bind-parameter", format!("statement expects {required} parameters, got {}", parameters.len()))
-                .in_statement(prepared.statement_name()));
-        }
-        let is_write = prepared.is_write();
-        let was_in_transaction = self.engine.in_transaction();
-        let result = self.engine.execute_statement(&prepared.statement, parameters)?;
-        self.advance_epoch_if_transaction_ended(was_in_transaction);
-        self.after_statement(is_write, &prepared.statement)?;
-        Ok(result)
+        self.session.run(&prepared.statement, parameters)
     }
 
     /// 执行一段分号分隔的脚本,逐条语句应用只读拒绝与提交边界。
     pub fn execute(&mut self, sql: &str, parameters: &[Cell]) -> Result<Vec<ExecResult>, SqlError> {
-        self.guard_open()?;
-        let statements = self.engine.parse(sql)?;
-        let mut results = Vec::with_capacity(statements.len());
-        for statement in statements {
-            let is_write = statement.writes();
-            self.guard_write(is_write)?;
-            let required = parameter_slots(&statement).last().map(|(index, _)| index + 1).unwrap_or(0);
-            if parameters.len() < required {
-                return Err(SqlError::new("bind-parameter", format!("statement expects {required} parameters, got {}", parameters.len()))
-                    .in_statement(statement.name()));
-            }
-            let was_in_transaction = self.engine.in_transaction();
-            let result = self.engine.execute_statement(&statement, parameters)?;
-            self.advance_epoch_if_transaction_ended(was_in_transaction);
-            self.after_statement(is_write, &statement)?;
-            results.push(result);
-        }
-        Ok(results)
+        self.session.execute(sql, parameters)
     }
 
-    /// 执行一条预编译语句,把结果集放进连接内的游标表,返回句柄与表头。
+    /// 执行一条预编译语句,把结果集放进会话的游标表,返回句柄与表头。
     ///
     /// 简单单表扫描在打开时只固定一份整页快照,后续 [`Connection::cursor_next`]
     /// 按 b-tree 页顺序分批解码,`CursorOpen::lazy` 为 `true`。其余语句与
@@ -368,26 +321,7 @@ impl Connection {
     /// 事务内打开的游标记录当前事务代数;事务提交或回滚后调用
     /// [`Connection::cursor_next`] 会以 `cursor-expired` 拒绝。
     pub fn open_cursor(&mut self, prepared: &Prepared, parameters: &[Cell]) -> Result<CursorOpen, SqlError> {
-        self.guard_open()?;
-        self.guard_write(prepared.is_write())?;
-        let required = prepared.parameter_count();
-        if parameters.len() < required {
-            return Err(SqlError::new("bind-parameter", format!("statement expects {required} parameters, got {}", parameters.len()))
-                .in_statement(prepared.statement_name()));
-        }
-        let transaction_epoch = self.engine.in_transaction().then_some(self.cursors.epoch());
-        if let Some(lazy) = self.engine.open_lazy_cursor(&prepared.statement, parameters)? {
-            let columns = lazy.columns().to_vec();
-            let handle = self.cursors.open_lazy(lazy, transaction_epoch);
-            return Ok(CursorOpen { handle, columns, lazy: true });
-        }
-        let was_in_transaction = self.engine.in_transaction();
-        let ExecResult { columns, rows, .. } = self.engine.execute_statement(&prepared.statement, parameters)?;
-        self.advance_epoch_if_transaction_ended(was_in_transaction);
-        self.after_statement(prepared.is_write(), &prepared.statement)?;
-        let transaction_epoch = self.engine.in_transaction().then_some(self.cursors.epoch());
-        let handle = self.cursors.open_materialized(rows, transaction_epoch);
-        Ok(CursorOpen { handle, columns, lazy: false })
+        self.session.open_cursor(&prepared.statement, parameters)
     }
 
     /// 从游标读取至多 `limit` 行,返回本窗口与是否已到末尾。
@@ -396,34 +330,25 @@ impl Connection {
     /// 释放。未知句柄以 `cursor-not-found` 拒绝,事务已结束的句柄以
     /// `cursor-expired` 拒绝,已关闭的连接以 `db-closed` 拒绝。
     pub fn cursor_next(&mut self, handle: u64, limit: usize) -> Result<CursorBatch, SqlError> {
-        self.guard_open()?;
-        let Self { cursors, engine, .. } = self;
-        cursors.next(handle, limit, |lazy, limit| engine.lazy_cursor_next(lazy, limit))
+        self.session.cursor_next(handle, limit)
     }
 
     /// 释放一个游标。未知句柄视为已释放,便于宿主在 `finally` 里安全清理。
     pub fn cursor_close(&mut self, handle: u64) -> Result<(), SqlError> {
-        self.guard_open()?;
-        self.cursors.close(handle);
-        Ok(())
+        self.session.cursor_close(handle)
     }
 
     /// 当前连接仍持有的游标数量(测试与诊断用,不是作者面 API)。
     #[doc(hidden)]
     pub fn cursor_count(&self) -> usize {
-        self.cursors.len()
-    }
-
-    /// 事务结束时让代数前进,使事务内打开的游标失效。
-    fn advance_epoch_if_transaction_ended(&mut self, was_in_transaction: bool) {
-        self.cursors.advance_if_transaction_ended(was_in_transaction, self.engine.in_transaction());
+        self.session.cursor_count()
     }
 
     /// 把当前镜像完整写入 `path`,即真正的备份。
     ///
     /// 只读连接允许备份:它读取镜像、写出到另一个文件,不改变本连接。
     pub fn backup(&mut self, path: &Path) -> Result<(), SqlError> {
-        self.engine.save(path)
+        self.session.backup(path)
     }
 
     /// 关闭连接:已提交但未落盘的改动先落盘;事务未结束时不落盘,
@@ -432,103 +357,44 @@ impl Connection {
     /// 关闭同时释放跨进程写锁,另一个写连接随后即可打开同一文件;再次调用
     /// `close` 为空操作,关闭后的连接以 `db-closed` 拒绝语句。
     pub fn close(&mut self) -> Result<(), SqlError> {
-        if self.closed {
-            return Ok(());
-        }
-        self.closed = true;
-        let published = if self.dirty && !self.engine.in_transaction() {
-            self.dirty = false;
-            self.publish()
-        }
-        else {
-            Ok(())
-        };
+        let published = self.session.close();
         self.lock = None;
-        self.cursors.clear();
         published
     }
 
     /// 是否有显式事务或保存点作用域打开。
     pub fn in_transaction(&self) -> bool {
-        self.engine.in_transaction()
+        self.session.in_transaction()
     }
 
     /// 本连接最近一次成功插入的 rowid。
     pub fn last_insert_rowid(&self) -> i64 {
-        self.engine.last_insert_rowid()
+        self.session.last_insert_rowid()
     }
 
     /// 配置的页大小。
     pub fn page_size(&self) -> u32 {
-        self.engine.page_size()
+        self.session.page_size()
     }
 
     /// 连接是否为只读。
     pub fn is_read_only(&self) -> bool {
-        self.read_only
+        self.session.is_read_only()
     }
 
     /// 落盘目标路径。
     pub fn filename(&self) -> Option<&Path> {
-        self.filename.as_deref()
+        self.session.filename()
     }
 
     /// `PRAGMA synchronous` 透传。
     pub fn set_synchronous(&mut self, on: bool) {
-        self.synchronous = on;
-        self.engine.set_synchronous(on);
+        self.session.set_synchronous(on);
     }
 
     /// 本连接提交时使用的日志模式。
     pub fn journal_mode(&self) -> JournalMode {
         self.journal_mode
-    }
-
-    /// 只读连接拒绝任何会写镜像的语句,在执行前拒绝。
-    fn guard_write(&self, is_write: bool) -> Result<(), SqlError> {
-        if self.read_only && is_write {
-            return Err(SqlError::new("read-only", "cannot modify a read-only database"));
-        }
-        Ok(())
-    }
-
-    /// 已关闭的连接不再接受语句。
-    fn guard_open(&self) -> Result<(), SqlError> {
-        if self.closed {
-            return Err(SqlError::new("db-closed", "database connection is closed"));
-        }
-        Ok(())
-    }
-
-    /// 成功执行一条语句后应用提交边界。
-    ///
-    /// 写语句弄脏镜像;只要显式事务没有打开(autocommit、`COMMIT` 之后、
-    /// 最外层 `RELEASE` 之后),脏镜像立即由存储层落盘。`ROLLBACK` 把镜像
-    /// 恢复到上次落盘的状态,脏标志随之清除。
-    fn after_statement(&mut self, is_write: bool, statement: &Statement) -> Result<(), SqlError> {
-        if is_write {
-            self.dirty = true;
-        }
-        if matches!(statement, Statement::Transaction { action: TransactionAction::Rollback }) {
-            self.dirty = false;
-        }
-        if self.dirty && !self.engine.in_transaction() {
-            self.dirty = false;
-            self.publish()?;
-        }
-        Ok(())
-    }
-
-    /// 把当前镜像写到本连接的文件。纯内存连接为空操作。
-    ///
-    /// 提交发行策略归 `database.storage::sqlite`:本连接只把公开的
-    /// [`JournalMode`] 映射成存储层的 [`PublishMode`] 并转调。
-    fn publish(&mut self) -> Result<(), SqlError> {
-        let Some(path) = self.filename.clone()
-        else {
-            return Ok(());
-        };
-        self.engine.publish(&path, self.journal_mode.publish_mode())
     }
 }
 
@@ -544,9 +410,9 @@ impl std::fmt::Debug for Connection {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Connection")
-            .field("filename", &self.filename)
-            .field("read_only", &self.read_only)
-            .field("dirty", &self.dirty)
+            .field("filename", &self.session.filename())
+            .field("read_only", &self.session.is_read_only())
+            .field("dirty", &self.session.is_dirty())
             .finish()
     }
 }
