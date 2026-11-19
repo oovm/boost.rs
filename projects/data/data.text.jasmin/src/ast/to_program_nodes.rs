@@ -1,5 +1,5 @@
-use data_text_core::Parser;
 //! Converter from JASM AST to JVM program.
+use data_text_core::Parser;
 
 use crate::{formats::jasm::ast::*, program::*};
 use data_text_core::{TextDiagnostics, TextError};
@@ -162,42 +162,36 @@ impl JasmToJvmConverter {
                 }
             }
             JasmInstruction::WithArgument { instruction, argument } => {
-                    // Handles instructions with arguments
-                    match instruction.as_str() {
+                // Handles instructions with arguments
+                match instruction.as_str() {
                     "bipush" => {
-                        let value = argument
-                            .parse::<i8>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid bipush value: {}", argument)))?;
+                        let value =
+                            argument.parse::<i8>().map_err(|_| TextError::custom_error(format!("Invalid bipush value: {}", argument)))?;
                         Ok(JvmInstruction::Bipush { value })
                     }
                     "sipush" => {
-                        let value = argument
-                            .parse::<i16>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid sipush value: {}", argument)))?;
+                        let value =
+                            argument.parse::<i16>().map_err(|_| TextError::custom_error(format!("Invalid sipush value: {}", argument)))?;
                         Ok(JvmInstruction::Sipush { value })
                     }
                     "iload" => {
-                        let index = argument
-                            .parse::<u16>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid iload index: {}", argument)))?;
+                        let index =
+                            argument.parse::<u16>().map_err(|_| TextError::custom_error(format!("Invalid iload index: {}", argument)))?;
                         Ok(JvmInstruction::Iload { index })
                     }
                     "aload" => {
-                        let index = argument
-                            .parse::<u16>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid aload index: {}", argument)))?;
+                        let index =
+                            argument.parse::<u16>().map_err(|_| TextError::custom_error(format!("Invalid aload index: {}", argument)))?;
                         Ok(JvmInstruction::Aload { index })
                     }
                     "istore" => {
-                        let index = argument
-                            .parse::<u16>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid istore index: {}", argument)))?;
+                        let index =
+                            argument.parse::<u16>().map_err(|_| TextError::custom_error(format!("Invalid istore index: {}", argument)))?;
                         Ok(JvmInstruction::Istore { index })
                     }
                     "astore" => {
-                        let index = argument
-                            .parse::<u16>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid astore index: {}", argument)))?;
+                        let index =
+                            argument.parse::<u16>().map_err(|_| TextError::custom_error(format!("Invalid astore index: {}", argument)))?;
                         Ok(JvmInstruction::Astore { index })
                     }
                     "ldc" => {
@@ -219,9 +213,8 @@ impl JasmToJvmConverter {
                     "instanceof" => Ok(JvmInstruction::Instanceof { class_name: argument }),
                     "anewarray" => Ok(JvmInstruction::Anewarray { class_name: argument }),
                     "newarray" => {
-                        let atype = argument
-                            .parse::<u8>()
-                            .map_err(|_| TextError::custom_error(format!("Invalid newarray type: {}", argument)))?;
+                        let atype =
+                            argument.parse::<u8>().map_err(|_| TextError::custom_error(format!("Invalid newarray type: {}", argument)))?;
                         Ok(JvmInstruction::Newarray { atype })
                     }
                     _ => Err(TextError::custom_error(format!("Unknown instruction with argument: {}", instruction))),
@@ -327,12 +320,7 @@ impl JasmToJvmConverter {
 
     /// Parses string literal
     fn parse_string_literal(&self, literal: &str) -> Result<String> {
-        if literal.starts_with('"') && literal.ends_with('"') {
-            Ok(literal[1..literal.len() - 1].to_string())
-        }
-        else {
-            Ok(literal.to_string())
-        }
+        if literal.starts_with('"') && literal.ends_with('"') { Ok(literal[1..literal.len() - 1].to_string()) } else { Ok(literal.to_string()) }
     }
 
     /// Adds string constant to constant pool
@@ -366,14 +354,14 @@ impl JasmToJvmConverter {
 
     /// Adds field reference to constant pool
     fn add_field_reference(&mut self, class_name: &str, field_name: &str, descriptor: &str) {
-        let class_entry = JvmConstantPoolEntry::Class { name: class_name.to_string() }
+        let class_entry = JvmConstantPoolEntry::Class { name: class_name.to_string() };
         let _class_index = self.constant_pool.add_entry(class_entry);
 
         let field_entry = JvmConstantPoolEntry::Fieldref {
             class_name: class_name.to_string(),
             name: field_name.to_string(),
             descriptor: descriptor.to_string(),
-        }
+        };
         let field_index = self.constant_pool.add_entry(field_entry);
 
         let symbol = format!("field_{}_{}", class_name.replace('/', "_"), field_name);

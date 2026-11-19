@@ -28,7 +28,7 @@ impl JvmToJasmConverter {
             methods: Vec::new(),
             fields: Vec::new(),
             source_file: program.source_file,
-        }
+        };
 
         for jvm_field in program.fields {
             let jasm_field = self.convert_field(jvm_field)?;
@@ -146,9 +146,7 @@ impl JvmToJasmConverter {
             JvmInstruction::Return => Ok(JasmInstruction::Simple("return".to_string())),
 
             // Object operations
-            JvmInstruction::New { class_name } => {
-                Ok(JasmInstruction::WithArgument { instruction: "new".to_string(), argument: class_name })
-            }
+            JvmInstruction::New { class_name } => Ok(JasmInstruction::WithArgument { instruction: "new".to_string(), argument: class_name }),
             JvmInstruction::Newarray { atype } => {
                 Ok(JasmInstruction::WithArgument { instruction: "newarray".to_string(), argument: atype.to_string() })
             }
@@ -230,10 +228,7 @@ impl JvmToJasmConverter {
                     JvmConstantPoolEntry::InterfaceMethodref { class_name, name, descriptor } => {
                         Ok(format!("{}.\"{}\":\"{}\"", class_name, name, descriptor))
                     }
-                    _ => Err(TextError::custom_error(format!(
-                        "Unsupported constant pool entry type for JASM conversion: {:?}",
-                        entry
-                    ))),
+                    _ => Err(TextError::custom_error(format!("Unsupported constant pool entry type for JASM conversion: {:?}", entry))),
                 }
             }
             else {
