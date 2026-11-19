@@ -59,6 +59,22 @@ pub enum TomlTokenKind {
     /// Double right brackets (]]) for array of tables.
     DoubleRightBracket,
 
+    // Syntax nodes
+    /// A dotted key (`a.b.c`).
+    Key,
+    /// A single key inside a key, or a quoted key segment.
+    KeySegment,
+    /// A key-value pair.
+    KeyValue,
+    /// A standard table `[table]`.
+    Table,
+    /// An array of tables `[[table]]`.
+    ArrayOfTables,
+    /// An array value.
+    Array,
+    /// An inline table `{ a = 1 }`.
+    InlineTable,
+
     // Internal
     /// Represents a lexing error.
     Error,
@@ -99,7 +115,14 @@ impl TokenType for TomlTokenKind {
             | Self::RightBracket
             | Self::DoubleLeftBracket
             | Self::DoubleRightBracket => UniversalTokenRole::Punctuation,
-            Self::Root => UniversalTokenRole::None,
+            Self::Root
+            | Self::Key
+            | Self::KeySegment
+            | Self::KeyValue
+            | Self::Table
+            | Self::ArrayOfTables
+            | Self::Array
+            | Self::InlineTable => UniversalTokenRole::None,
             Self::Error => UniversalTokenRole::Error,
             Self::Eof => UniversalTokenRole::None,
         }

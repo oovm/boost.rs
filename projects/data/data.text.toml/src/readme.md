@@ -18,35 +18,22 @@ data-text-toml = { path = "..." }
 The following is a standard workflow for parsing a TOML file:
 
 ```rust
-use data_text_toml::{TomlParser, SourceText, TomlLanguage};
+use data_text_toml::parse;
 
 fn main() {
-    // 1. Prepare source code
     let code = r#"
         [package]
         name = "data-text-toml"
         version = "0.1.0"
         authors = ["Yggdrasil <contact@yggdrasil.com>"]
-        edition = "2024"
 
         [dependencies]
-        data-text-core = { path = "../../data-text-core" }
         serde = { version = "1.0", features = ["derive"] }
     "#;
-    let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = TomlLanguage::standard();
-    let parser = TomlParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
+    match parse(code) {
+        Ok(root) => println!("Parsing successful! Top-level items: {}", root.items.len()),
+        Err(error) => eprintln!("Errors found during parsing: {error}"),
     }
 }
 ```
@@ -58,14 +45,14 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 
 ### 2. Incremental Parsing
 No need to re-parse massive `Cargo.lock` or configuration files when small changes occur:
-```rust
+```text
 // Assuming you have an old parse result 'old_result' and new source text 'new_source'
 let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
 `data-text-toml` provides precise error feedback for malformed TOML, such as invalid date formats, re-defined keys, or unclosed strings:
-```rust
+```text
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);
 }
