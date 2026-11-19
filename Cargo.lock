@@ -1890,6 +1890,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-text-formatter"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+]
+
+[[package]]
 name = "data-text-fortran"
 version = "0.1.0"
 dependencies = [

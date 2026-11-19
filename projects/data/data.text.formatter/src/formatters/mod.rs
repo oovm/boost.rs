@@ -1,0 +1,148 @@
+use data_text_core::Range;
+
+use crate::{config::GapConstraint, errors::FormatResult};
+
+/// A source edit produced by a formatter gap decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextEdit {
+    /// The source gap replaced by this edit.
+    pub span: Range<usize>,
+    /// Replacement whitespace or trivia layout.
+    pub text: String,
+}
+/// A token boundary and its source gap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenGap<'a> {
+    /// The preceding token text.
+    pub left: &'a str,
+    /// The source bytes between the two tokens.
+    pub source: &'a str,
+    /// The following token text.
+    pub right: &'a str,
+    /// The source range of the gap.
+    pub span: Range<usize>,
+}
+
+/// Convert non-overlapping gap decisions into source edits.
+pub fn edits_for_gaps<'a, I>(gaps: I) -> FormatResult<Vec<TextEdit>>
+where
+    I: IntoIterator<Item = (TokenGap<'a>, GapConstraint)>,
+{
+    let mut edits = Vec::new();
+    let mut previous_end = 0;
+    for (gap, constraint) in gaps {
+        if gap.span.start < previous_end || gap.span.end < gap.span.start {
+            return Err(data_text_core::TextError::format_error("formatter produced overlapping token gaps"));
+        }
+        let text = match constraint {
+            GapConstraint::NoSpace => String::new(),
+            GapConstraint::RequiredSpace | GapConstraint::OptionalSpace => " ".to_owned(),
+            GapConstraint::Preserve => gap.source.to_owned(),
+            GapConstraint::HardLine => "\n".to_owned(),
+        };
+        if text != gap.source {
+            edits.push(TextEdit { span: gap.span.clone(), text });
+        }
+        previous_end = gap.span.end;
+    }
+    Ok(edits)
+}
+
+/// Apply validated, source-relative edits from right to left.
+pub fn apply_edits(source: &str, edits: &[TextEdit]) -> FormatResult<String> {
+    let mut ordered = edits.to_vec();
+    ordered.sort_by_key(|edit| (edit.span.start, edit.span.end));
+    let mut previous_end = 0;
+    for edit in &ordered {
+        if edit.span.start < previous_end || edit.span.end > source.len() {
+            return Err(data_text_core::TextError::format_error("formatter edit range is invalid or overlapping"));
+        }
+        previous_end = edit.span.end;
+    }
+    let mut output = source.to_owned();
+    for edit in ordered.into_iter().rev() {
+        output.replace_range(edit.span.start..edit.span.end, &edit.text);
+    }
+    Ok(output)
+}
+
+/// Choose a conservative whitespace constraint for two lexical tokens.
+pub fn conservative_constraint(left: &str, gap: &str, right: &str) -> GapConstraint {
+    if left.starts_with("//") || left.starts_with("/*") || right.starts_with("//") || right.starts_with("/*") || gap.contains("//") || gap.contains("/*") || gap.contains('\n') {
+        return GapConstraint::Preserve;
+    }
+    if needs_space(left, right) { GapConstraint::RequiredSpace } else { GapConstraint::NoSpace }
+}
+
+fn needs_space(left: &str, right: &str) -> bool {
+    if right.is_empty() {
+        return false;
+    }
+    if (left == "<" && right == "/") || (left == "/" && right == ">") {
+        return false;
+    }
+    // Delimiters and member access bind directly to their neighbours.
+    if matches!(right, ")" | "]" | "," | ";" | "." | "?.")
+        || matches!(left, "(" | "[" | "." | "?.")
+        || (left == "{" && right == "}")
+        || (left == "?" && right == ":")
+        || (left == "/" && right.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic()))
+        // `!` is postfix non-null assertion — binds tight to following delimiters
+        // and member access, but keeps its space before any other operator. The
+        // lexer coalesces `!=` / `!==`, so when right starts with `!` (a lone `!`
+        // or another inequality like `!==`), both tokens exist independently and
+        // must be separated: `a! !== b`, not `a!!== b`.
+        || (left == "!" && matches!(right, "." | "?." | "," | ";" | ")" | "]" | "}"))
+        || left == "~"
+        // Postfix `++`/`--` bind tight to their operand on the left. Prefix
+        // increments must stay separated from the preceding operator or
+        // keyword (`x = ++i`, `return ++n`); the operand on the left is the
+        // distinguishing cue.
+        || (matches!(right, "++" | "--") && left.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']')))
+    {
+        return false;
+    }
+    // `++`/`--` prefix the operand they touch but separate from a following
+    // operator, so `guard++ < 64` keeps its spaces while `++i` stays tight.
+    if matches!(left, "++" | "--") {
+        return !(right.chars().next().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$')) || matches!(right, "(" | "[" | ")" | "]" | "," | ";" | "." | "?."));
+    }
+    // Optional properties and parameters use `name?: Type`.
+    if left == "?" && right == ":" {
+        return false;
+    }
+    if left == "?" {
+        return true;
+    }
+    if right == ":" {
+        return false;
+    }
+    // Control-flow keywords conventionally separate from their condition.
+    if matches!(left, "if" | "for" | "while" | "switch" | "catch" | "with" | "function") && right == "(" {
+        return true;
+    }
+    if matches!(right, "as" | "instanceof" | "in") || matches!(left, "as" | "instanceof" | "in") {
+        return true;
+    }
+    if matches!(left, "return" | "throw" | "new" | "typeof" | "void" | "delete" | "await" | "yield" | "of") && matches!(right, "[" | "{" | "(" | "!" | "~") {
+        return true;
+    }
+    let left_word = left.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$');
+    let right_word = right.chars().next().is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$');
+    let left_quote = left.ends_with(['\'', '"', '`']);
+    let right_quote = right.starts_with(['\'', '"', '`']);
+    let left_operator = left.ends_with(['=', '+', '-', '*', '/', '%', ':', '&', '|', '^']) || matches!(left, "??" | "??=" | "&&" | "&&=" | "||" | "||=" | "=>" | "<=" | ">=" | "==" | "===" | "<<" | ">>" | ">>>" | "<<=" | ">>=" | ">>>=");
+    let right_operator = right.starts_with(['=', '+', '-', '*', '/', '%', ':', '&', '|', '^']) || matches!(right, "??" | "??=" | "&&" | "&&=" | "||" | "||=" | "=>" | "<=" | ">=" | "==" | "===" | "!=" | "!==" | "<<" | ">>" | ">>>" | "<<=" | ">>=" | ">>>=");
+    let brace_boundary = left.ends_with('{') || right.starts_with('}') || right == "{" || (left_word && right.starts_with('{')) || (left.ends_with('}') && right_word);
+
+    (left_word && (right_word || right_quote || right.starts_with('#')))
+        || (left_quote && right_word)
+        || left.ends_with(',')
+        || left.ends_with(';')
+        || left.ends_with(':')
+        || left_operator
+        || right_operator
+        || (left_word && right == "<")
+        || (left == ">" && right_word)
+        || brace_boundary
+}
