@@ -151,6 +151,11 @@ impl Catalog {
         Ok(())
     }
 
+    /// Encodes the current catalog state to `.yyds` bytes without touching the filesystem.
+    pub fn encode_bytes(&self) -> Result<Vec<u8>> {
+        format::encode(self.schema.as_ref(), self.routing_epoch, &self.shards, self.resolved_contract.as_ref(), &self.owners)
+    }
+
     /// Persists the catalog when file-backed.
     pub fn flush(&self) -> Result<()> {
         let Some(path) = &self.path

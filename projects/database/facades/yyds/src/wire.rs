@@ -1,17 +1,13 @@
 //! 把 YYDS 的分片 KV 执行器接入共享 YY 线服务。
 //!
 //! 线服务的 TCP/WebSocket 循环、鉴权门与权限门统一由 `database.server::yydb`
-//! 提供;本模块只实现执行后端(分片 `KeyValueExecutor` 与可选 catalog)以及
-//! YYDS 自己的 bootstrap 配置读取。
+//! 提供;本模块只实现执行后端(分片 `KeyValueExecutor` 与可选 catalog 的正式
+//! schema 变更服务 `CatalogSchemaService`)以及 YYDS 自己的 bootstrap 配置读取。
 
-use std::{
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use database::{
-    cluster::catalog::Catalog,
-    execution::cluster::KeyValueExecutor,
+    execution::cluster::{CatalogSchemaService, KeyValueExecutor},
     query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult},
     server::yydb::{AuthBootstrap, BackendFactory, Principal, PrincipalKind, Role, ServeBackend, ServeOptions},
     types::{Error as DatabaseError, Result as DatabaseResult, SchemaVersion, cluster::Namespace},
@@ -23,14 +19,14 @@ pub const DEFAULT_NAMESPACE: &str = "default";
 /// 分片执行器后端:一条连接一个实例,共享同一个 `KeyValueExecutor` 与 catalog。
 pub struct KvBackend {
     executor: Arc<dyn KeyValueExecutor>,
-    catalog: Option<Arc<Mutex<Catalog>>>,
+    catalog: Option<CatalogSchemaService>,
 }
 
 impl ServeBackend for KvBackend {
     fn info(&self) -> DatabaseResult<Vec<u8>> {
         let mut text = format!("product=yyds\n{}\n", env!("CARGO_PKG_VERSION"));
         if let Some(catalog) = &self.catalog {
-            let schema_line = match catalog.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).schema() {
+            let schema_line = match catalog.schema() {
                 Some(schema) => format!("schema.version={}\n", schema.version),
                 None => "schema.version=\n".to_owned(),
             };
@@ -44,8 +40,7 @@ impl ServeBackend for KvBackend {
         else {
             return Ok(None);
         };
-        let guard = catalog.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        Ok(guard.schema().map(|schema| SchemaVersion { version: schema.version, document: schema.document.clone() }))
+        Ok(catalog.schema().map(|schema| SchemaVersion { version: schema.version, document: schema.document }))
     }
 
     fn ensure_schema(&self, version: u32, document: &str) -> DatabaseResult<()> {
@@ -53,9 +48,7 @@ impl ServeBackend for KvBackend {
         else {
             return Err(DatabaseError::Unsupported("YYDS wire catalog is not wired up yet"));
         };
-        let mut guard = catalog.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        guard.ensure_schema(version, document)?;
-        guard.flush()?;
+        catalog.ensure_schema(version, document)?;
         Ok(())
     }
 
@@ -89,19 +82,19 @@ impl ServeBackend for KvBackend {
 /// 为每条连接打开 [`KvBackend`]。
 pub struct KvBackendFactory {
     executor: Arc<dyn KeyValueExecutor>,
-    catalog: Option<Arc<Mutex<Catalog>>>,
+    catalog: Option<CatalogSchemaService>,
 }
 
 impl KvBackendFactory {
-    /// 用分片执行器与可选 catalog 建立工厂。
-    pub fn new(executor: Arc<dyn KeyValueExecutor>, catalog: Option<Arc<Mutex<Catalog>>>) -> Self {
+    /// 用分片执行器与可选 catalog schema 服务建立工厂。
+    pub fn new(executor: Arc<dyn KeyValueExecutor>, catalog: Option<CatalogSchemaService>) -> Self {
         Self { executor, catalog }
     }
 }
 
 impl BackendFactory for KvBackendFactory {
     fn open(&self, _peer_is_loopback: bool) -> Box<dyn ServeBackend> {
-        Box::new(KvBackend { executor: Arc::clone(&self.executor), catalog: self.catalog.as_ref().map(Arc::clone) })
+        Box::new(KvBackend { executor: Arc::clone(&self.executor), catalog: self.catalog.clone() })
     }
 }
 
