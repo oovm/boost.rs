@@ -13,7 +13,7 @@ use media_image::{Bitmap, Frame};
 use media_motion::Motion;
 use media_post::Vignette;
 use media_raster::Paint;
-use media_scene::{Align, Background, Blend, Component, Item, Node, Project, ShapeKind, resolve_design};
+use media_scene::{Align, Background, Blend, Component, Item, Node, Project, ShapeKind, Space, resolve_design};
 use media_text::Fonts;
 use media_types::{Error, hash};
 
@@ -1410,6 +1410,10 @@ fn paint_frame(
         // camera still has real pixels to show instead of an upscale.
         paint_background(target, &scene.background, seconds);
         for node in &scene.items {
+            // Screen-space nodes are painted after the lens, below.
+            if node.space == Space::Screen {
+                continue;
+            }
             paint_node(project, fonts, media, target, node, local, frame_index, seconds, global_zoom, 1.0, limits, pool, 0)?;
         }
         if global {
@@ -1442,6 +1446,18 @@ fn paint_frame(
     // no darkening.
     if let Some(vignette) = vignette {
         vignette.apply(out);
+    }
+    // Screen-space nodes skip the lens and the look: they are painted straight
+    // onto the output frame, on the same scene-local clock as the world nodes,
+    // so an annotation keeps its size and position while the camera pushes in.
+    if let Some(scene) = scene {
+        let seconds = project.time_base().to_seconds(frame_index) as f32;
+        let local = frame_index - scene.start;
+        for node in &scene.items {
+            if node.space == Space::Screen {
+                paint_node(project, fonts, media, out, node, local, frame_index, seconds, 1.0, 1.0, limits, pool, 0)?;
+            }
+        }
     }
     Ok(())
 }

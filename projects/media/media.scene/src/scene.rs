@@ -93,12 +93,34 @@ impl Project {
     }
 }
 
+/// Which space a node is painted in.
+///
+/// A `World` node belongs to the drawing: it is painted into the scene buffer
+/// and then moved by the lens. A `Screen` node skips that transform and is
+/// painted onto the output frame after the camera, at the same scene-local
+/// time, so an annotation keeps its size and screen position while the camera
+/// pushes in. Screen space applies to top-level scene nodes; nodes inside a
+/// component still paint into the component's own buffer.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Space {
+    #[default]
+    World,
+    Screen,
+}
+
+impl Space {
+    fn is_world(&self) -> bool {
+        *self == Space::World
+    }
+}
+
 /// One node: an item plus the identity and motion authored on it.
 ///
 /// The item is flattened, so wire JSON keeps the historical shape
-/// (`{ "kind": "text", … }`) and only gains optional `id` and `anim` keys. That
-/// keeps existing films valid while giving every node a stable name a revision
-/// or a lock can point at.
+/// (`{ "kind": "text", … }`) and only gains optional `id`, `anim` and `space`
+/// keys. That keeps existing films valid while giving every node a stable name
+/// a revision or a lock can point at.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Node {
     /// Stable identity. Optional for legacy wire data, required by anything
@@ -108,6 +130,9 @@ pub struct Node {
     /// Motion declared on this node, in the node's local frames.
     #[serde(default, skip_serializing_if = "Animated::is_empty")]
     pub anim: Animated,
+    /// Space the node is painted in; defaults to the camera's world.
+    #[serde(default, skip_serializing_if = "Space::is_world")]
+    pub space: Space,
     #[serde(flatten)]
     pub item: Item,
 }
@@ -115,7 +140,7 @@ pub struct Node {
 impl Node {
     /// Wraps an item as a node with no identity or motion.
     pub fn plain(item: Item) -> Self {
-        Self { id: None, anim: Animated::default(), item }
+        Self { id: None, anim: Animated::default(), space: Space::World, item }
     }
 }
 
