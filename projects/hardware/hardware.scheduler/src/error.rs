@@ -10,6 +10,8 @@ pub enum ErrorCode {
     Ir,
     /// No registered backend matches placement / pin.
     NoBackend,
+    /// Backends exist, but none accepts the task signature (see refusal details).
+    Infeasible,
     /// A backend returned a driver or submit failure (including missing GPU).
     Backend,
     /// Soft capacity policy rejected the graph.
@@ -22,6 +24,13 @@ pub enum Error {
     Ir(#[from] hardware_ir::Error),
     #[error("no backend registered for unit `{0}`")]
     NoBackend(String),
+    #[error("no feasible backend for `{task}`: {detail}")]
+    Infeasible {
+        /// Task label used in the message.
+        task: String,
+        /// Joined per-backend refusal reasons.
+        detail: String,
+    },
     #[error("backend `{0}` failed: {1}")]
     Backend(String, String),
     #[error("capacity exceeded on {domain:?}: used {used} bytes, limit {limit}")]
@@ -34,6 +43,7 @@ impl Error {
         match self {
             Error::Ir(_) => ErrorCode::Ir,
             Error::NoBackend(_) => ErrorCode::NoBackend,
+            Error::Infeasible { .. } => ErrorCode::Infeasible,
             Error::Backend(_, _) => ErrorCode::Backend,
             Error::CapacityExceeded { .. } => ErrorCode::CapacityExceeded,
         }

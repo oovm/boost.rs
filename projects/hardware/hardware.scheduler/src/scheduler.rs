@@ -10,7 +10,7 @@ use crate::{
     exec::ExecutionBindings,
     probe::BackendProbeEvent,
 };
-use hardware_capability::CapabilityReport;
+use hardware_capability::{CapabilityReport, DeviceState, ExecDecision, ExecRefusal, ExecSignature, MemoryBudget};
 
 /// One cross-backend placement transition observed during dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,11 +78,36 @@ impl Scheduler {
 
     /// Validate the graph and allocate/bind resources on every backend.
     ///
-    /// Idempotent when resource sizes match an existing allocation.
+    /// Idempotent when resource sizes match an existing allocation. Prefer
+    /// [`Self::prepare_selected`] / [`Self::execute`], which only prepare backends that
+    /// actually receive work.
     pub fn prepare(&mut self, graph: &Graph) -> Result<()> {
         graph.validate()?;
         for backend in &mut self.backends {
             backend.prepare(graph)?;
+        }
+        Ok(())
+    }
+
+    /// Validate the graph and prepare only the backends selected by placement.
+    ///
+    /// Placement runs first: pinned backends win, then infeasible backends are filtered
+    /// out by [`Backend::supports`], health, state and budget, then the lowest estimated
+    /// cost wins. Exactly one prepare call is made per selected backend.
+    pub fn prepare_selected(&mut self, graph: &Graph) -> Result<()> {
+        graph.validate()?;
+        let placement = self.plan_placement(graph)?;
+        self.prepare_placed(graph, &placement)
+    }
+
+    fn prepare_placed(&mut self, graph: &Graph, placement: &Placement) -> Result<()> {
+        let mut prepared = vec![false; self.backends.len()];
+        for task_id in &placement.order {
+            let index = placement.backends[task_id];
+            if !prepared[index] {
+                self.backends[index].prepare(graph)?;
+                prepared[index] = true;
+            }
         }
         Ok(())
     }
@@ -107,38 +132,49 @@ impl Scheduler {
     /// (see [`crate::effective_deadlines`]) before batch work.
     ///
     /// Placement: optional string param `backend` pins a task to a registered backend
-    /// name (exact or substring). Crossing backends calls [`Backend::flush`] on the
-    /// previous backend before the next submit.
+    /// name (exact or substring). Otherwise every backend is asked via
+    /// [`Backend::supports`]; infeasible ones (refusal, unhealthy, not submittable, over
+    /// budget) are filtered out and the lowest estimated cost wins. Only selected
+    /// backends are prepared. Crossing backends calls [`Backend::flush`] on the previous
+    /// backend before the next submit.
     pub fn execute(&mut self, graph: &Graph) -> Result<()> {
-        self.prepare(graph)?;
-        self.dispatch(graph)
+        graph.validate()?;
+        self.last_backend_switches.clear();
+        self.last_backend_probes.clear();
+        let mut tracer = self.tracer.take();
+        let result = match self.plan_placement(graph) {
+            Ok(placement) => self.prepare_placed(graph, &placement).and_then(|()| self.dispatch_inner(graph, &placement, &mut tracer)),
+            Err(error) => {
+                record_placement_failure(&mut tracer, &error);
+                Err(error)
+            }
+        };
+        self.tracer = tracer;
+        result
     }
 
     fn dispatch(&mut self, graph: &Graph) -> Result<()> {
         self.last_backend_switches.clear();
         self.last_backend_probes.clear();
         let mut tracer = self.tracer.take();
-        let result = self.dispatch_inner(graph, &mut tracer);
+        let result = match self.plan_placement(graph) {
+            Ok(placement) => self.dispatch_inner(graph, &placement, &mut tracer),
+            Err(error) => {
+                record_placement_failure(&mut tracer, &error);
+                Err(error)
+            }
+        };
         self.tracer = tracer;
         result
     }
 
-    fn dispatch_inner(&mut self, graph: &Graph, tracer: &mut Option<Tracer>) -> Result<()> {
-        let deadlines = effective_deadlines(graph);
-        let order = schedule_order(graph, &deadlines)?;
+    fn dispatch_inner(&mut self, graph: &Graph, placement: &Placement, tracer: &mut Option<Tracer>) -> Result<()> {
         let mut last_backend: Option<usize> = None;
-        for task_id in order {
+        for task_id in &placement.order {
+            let task_id = *task_id;
             let task = graph.tasks.nodes.iter().find(|t| t.id == task_id).expect("task in order must exist");
             let label = task_label(task);
-            let backend_idx = match self.pick_backend_index(task) {
-                Ok(index) => index,
-                Err(error) => {
-                    if let Some(tracer) = tracer.as_mut() {
-                        tracer.record(EventKind::DispatchFailed { task: label, message: error.to_string() });
-                    }
-                    return Err(error);
-                }
-            };
+            let backend_idx = placement.backends[&task_id];
             let backend_name = self.backends[backend_idx].name().to_string();
             if let Some(tracer) = tracer.as_mut() {
                 let pinned = matches!(task.params.get("backend"), Some(hardware_ir::ParamValue::Str(_)));
@@ -159,7 +195,8 @@ impl Scheduler {
             }
             let submitted = if let Some(tracer) = tracer.as_mut() {
                 tracer.span(format!("dispatch {label} on {backend_name}"), |_| self.backends[backend_idx].submit_task(graph, task))
-            } else {
+            }
+            else {
                 self.backends[backend_idx].submit_task(graph, task)
             };
             match submitted {
@@ -191,43 +228,85 @@ impl Scheduler {
         Ok(())
     }
 
+    /// Compute placement for every task: pins first, then feasibility filtering,
+    /// then lowest estimated cost (ties keep registration order).
+    fn plan_placement(&self, graph: &Graph) -> Result<Placement> {
+        let deadlines = effective_deadlines(graph);
+        let order = schedule_order(graph, &deadlines)?;
+        let mut backends = BTreeMap::new();
+        for task_id in &order {
+            let task = graph.tasks.nodes.iter().find(|t| t.id == *task_id).expect("task in order must exist");
+            backends.insert(*task_id, self.pick_backend_index(task)?);
+        }
+        Ok(Placement { order, backends })
+    }
+
     fn pick_backend_index(&self, task: &hardware_ir::TaskNode) -> Result<usize> {
+        let signature = signature_of(task);
         if let Some(hardware_ir::ParamValue::Str(name)) = task.params.get("backend") {
-            let pinned = self.backends.iter().position(|b| b.name() == name || b.name().contains(name.as_str()));
-            if let Some(idx) = pinned {
-                return Ok(idx);
-            }
-            return Err(Error::NoBackend(format!("pinned backend `{name}` not registered")));
+            let idx = self
+                .backends
+                .iter()
+                .position(|b| b.name() == name || b.name().contains(name.as_str()))
+                .ok_or_else(|| Error::NoBackend(format!("pinned backend `{name}` not registered")))?;
+            return self.confirm_candidate(idx, task, &signature);
         }
 
-        let prefer_cuda = matches!(task.kind, hardware_ir::TaskKind::MatMul | hardware_ir::TaskKind::Dispatch);
-        let prefer_cpu = matches!(task.kind, hardware_ir::TaskKind::Copy | hardware_ir::TaskKind::Fill);
-        let prefer_graphics = matches!(task.kind, hardware_ir::TaskKind::Raster | hardware_ir::TaskKind::RtTrace);
-
-        let idx = self
-            .backends
-            .iter()
-            .position(|b| {
-                if prefer_cuda {
-                    b.name().contains("cuda") || b.name() == "cpu"
-                } else if prefer_cpu {
-                    b.name() == "cpu"
-                } else if prefer_graphics {
-                    b.name().contains("dx") || b.name().contains("vulkan")
-                } else {
-                    true
+        let mut refusals = Vec::new();
+        let mut best: Option<(u64, usize)> = None;
+        for index in 0..self.backends.len() {
+            match self.feasibility(index, &signature) {
+                Ok(plan) => {
+                    // 后端自己的端到端代价加上旧的种类偏好权重：默认后端代价为 0，
+                    // 因此默认放置与旧的按种类/注册顺序完全一致。
+                    let cost = plan.estimated_cost.saturating_add(legacy_weight(task, self.backends[index].name()));
+                    let candidate = (cost, index);
+                    if best.map_or(true, |current| candidate < current) {
+                        best = Some(candidate);
+                    }
                 }
-            })
-            .or_else(|| {
-                if task.priority == Priority::Interactive || matches!(task.objective, Objective::MinLatency { .. }) {
-                    self.backends.iter().position(|b| b.name().contains("dx"))
-                } else {
-                    None
-                }
-            })
-            .or_else(|| if self.backends.is_empty() { None } else { Some(0) });
+                Err(reason) => refusals.push(format!("{}: {reason}", self.backends[index].name())),
+            }
+        }
 
-        idx.ok_or_else(|| Error::NoBackend(format!("{task_kind:?}", task_kind = task.kind)))
+        match best {
+            Some((_, index)) => Ok(index),
+            None if self.backends.is_empty() => Err(Error::NoBackend(format!("{task_kind:?}", task_kind = task.kind))),
+            None => Err(Error::Infeasible { task: task_label(task), detail: refusals.join("; ") }),
+        }
+    }
+
+    fn confirm_candidate(&self, index: usize, task: &hardware_ir::TaskNode, signature: &ExecSignature) -> Result<usize> {
+        match self.feasibility(index, signature) {
+            Ok(_) => Ok(index),
+            Err(reason) => Err(Error::Infeasible { task: task_label(task), detail: format!("{}: {reason}", self.backends[index].name()) }),
+        }
+    }
+
+    /// 可行性硬条件：健康、可提交、签名被接受、实时预算装得下。
+    fn feasibility(&self, index: usize, signature: &ExecSignature) -> std::result::Result<hardware_capability::ExecPlan, String> {
+        let backend = &self.backends[index];
+        let health = backend.health();
+        if let Some(reason) = health.reason() {
+            if !health.is_usable() {
+                return Err(ExecRefusal::Unhealthy(reason.to_string()).to_string());
+            }
+        }
+        let state = backend.state();
+        if state != DeviceState::Submittable {
+            return Err(ExecRefusal::Unhealthy(format!("device state is {state:?}")).to_string());
+        }
+        match backend.supports(signature) {
+            ExecDecision::Accept(plan) => {
+                let budget: MemoryBudget = backend.budget();
+                let required = plan.footprint_bytes();
+                if !budget.fits(required) {
+                    return Err(ExecRefusal::BudgetExceeded { required_bytes: required, available_bytes: budget.available_bytes() }.to_string());
+                }
+                Ok(plan)
+            }
+            ExecDecision::Refuse(reason) => Err(reason.to_string()),
+        }
     }
 }
 
@@ -235,6 +314,75 @@ impl Default for Scheduler {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// 一次放置结果：执行顺序与每个任务选中的后端下标。
+struct Placement {
+    order: Vec<TaskId>,
+    backends: BTreeMap<TaskId, usize>,
+}
+
+fn record_placement_failure(tracer: &mut Option<Tracer>, error: &Error) {
+    if let Some(tracer) = tracer.as_mut() {
+        tracer.record(EventKind::DispatchFailed { task: "placement".into(), message: error.to_string() });
+    }
+}
+
+/// 把任务描述翻译成可执行性签名；未知元数据留空，由后端按自身支持范围判断。
+fn signature_of(task: &hardware_ir::TaskNode) -> ExecSignature {
+    fn text(params: &BTreeMap<String, hardware_ir::ParamValue>, key: &str) -> Option<String> {
+        match params.get(key) {
+            Some(hardware_ir::ParamValue::Str(value)) => Some(value.clone()),
+            _ => None,
+        }
+    }
+
+    let op = match &task.kind {
+        TaskKind::Custom(name) => name.clone(),
+        other => format!("{other:?}"),
+    };
+    let dtypes = text(&task.params, "dtype").into_iter().collect();
+    let mut signature = ExecSignature::operator(op, dtypes, Vec::new());
+    if let Some(layout) = text(&task.params, "layout") {
+        signature = signature.with_layout(layout);
+    }
+    if let Some(quantization) = text(&task.params, "quantization") {
+        signature = signature.with_quantization(quantization);
+    }
+    if let Some(precision) = text(&task.params, "precision") {
+        signature = signature.with_precision(precision);
+    }
+    signature
+}
+
+/// 旧的种类/交互偏好，折算成代价权重；偏好命中为 0，其余按注册顺序兜底。
+fn legacy_weight(task: &hardware_ir::TaskNode, backend: &str) -> u64 {
+    const PREFERRED: u64 = 0;
+    const INTERACTIVE_FALLBACK: u64 = 50;
+    const OTHER: u64 = 100;
+
+    let prefer_cuda = matches!(task.kind, TaskKind::MatMul | TaskKind::Dispatch);
+    let prefer_cpu = matches!(task.kind, TaskKind::Copy | TaskKind::Fill);
+    let prefer_graphics = matches!(task.kind, TaskKind::Raster | TaskKind::RtTrace);
+    if !(prefer_cuda || prefer_cpu || prefer_graphics) {
+        return PREFERRED;
+    }
+
+    let preferred = if prefer_cuda {
+        backend.contains("cuda") || backend == "cpu"
+    }
+    else if prefer_cpu {
+        backend == "cpu"
+    }
+    else {
+        backend.contains("dx") || backend.contains("vulkan")
+    };
+    if preferred {
+        return PREFERRED;
+    }
+
+    let interactive = task.priority == Priority::Interactive || matches!(task.objective, Objective::MinLatency { .. });
+    if interactive && backend.contains("dx") { INTERACTIVE_FALLBACK } else { OTHER }
 }
 
 fn schedule_order(graph: &Graph, deadlines: &BTreeMap<TaskId, Option<u64>>) -> Result<Vec<TaskId>> {
@@ -487,5 +635,135 @@ mod tests {
             EventKind::BackendProbe { backend, kind, shader_key }
                 if backend == "cuda" && kind.as_str() == crate::probe_kinds::MODULE_COMPILE && *shader_key == Some(0x1234)
         )));
+    }
+
+    struct PlacementBackend {
+        name: String,
+        cost: u64,
+        refusal: Option<hardware_capability::ExecRefusal>,
+        budget: hardware_capability::MemoryBudget,
+        prepared: Arc<Mutex<Vec<String>>>,
+        submitted: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl PlacementBackend {
+        fn new(name: &str, cost: u64, prepared: Arc<Mutex<Vec<String>>>, submitted: Arc<Mutex<Vec<String>>>) -> Self {
+            Self { name: name.into(), cost, refusal: None, budget: hardware_capability::MemoryBudget::unlimited(), prepared, submitted }
+        }
+
+        fn refusing(mut self, refusal: hardware_capability::ExecRefusal) -> Self {
+            self.refusal = Some(refusal);
+            self
+        }
+
+        fn with_budget(mut self, budget: hardware_capability::MemoryBudget) -> Self {
+            self.budget = budget;
+            self
+        }
+    }
+
+    impl Backend for PlacementBackend {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn features(&self) -> hardware_capability::FeatureSet {
+            hardware_capability::FeatureSet::new()
+        }
+
+        fn budget(&self) -> hardware_capability::MemoryBudget {
+            self.budget
+        }
+
+        fn supports(&self, _signature: &hardware_capability::ExecSignature) -> hardware_capability::ExecDecision {
+            match &self.refusal {
+                Some(reason) => hardware_capability::ExecDecision::Refuse(reason.clone()),
+                None => hardware_capability::ExecDecision::Accept(
+                    hardware_capability::ExecPlan::new(self.name.clone(), self.name.clone()).with_temp_bytes(64).with_estimated_cost(self.cost),
+                ),
+            }
+        }
+
+        fn prepare(&mut self, _graph: &Graph) -> Result<()> {
+            self.prepared.lock().unwrap().push(self.name.clone());
+            Ok(())
+        }
+
+        fn submit_task(&mut self, _graph: &Graph, task: &hardware_ir::TaskNode) -> Result<()> {
+            self.submitted.lock().unwrap().push(format!("{}:{}", self.name, task.id.0));
+            Ok(())
+        }
+    }
+
+    fn single_task_graph() -> Graph {
+        Graph {
+            resources: ResourceGraph { nodes: vec![] },
+            tasks: TaskGraph { nodes: vec![task(1, Priority::Batch, Objective::MaxThroughput)], edges: vec![] },
+        }
+    }
+
+    #[test]
+    fn placement_picks_lowest_cost_feasible_backend() {
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(PlacementBackend::new("cpu", 20, prepared.clone(), submitted.clone())));
+        sched.register(Box::new(PlacementBackend::new("dx12", 5, prepared.clone(), submitted.clone())));
+        sched.execute(&single_task_graph()).expect("execute");
+
+        assert_eq!(*prepared.lock().unwrap(), vec!["dx12".to_string()], "only the selected backend is prepared");
+        assert_eq!(*submitted.lock().unwrap(), vec!["dx12:1".to_string()]);
+    }
+
+    #[test]
+    fn placement_filters_refused_backend_and_reports_reason() {
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("cpu", 0, prepared.clone(), submitted.clone())
+                .refusing(hardware_capability::ExecRefusal::UnsupportedOp("matmul".into())),
+        ));
+        sched.register(Box::new(PlacementBackend::new("dx12", 90, prepared.clone(), submitted.clone())));
+        sched.execute(&single_task_graph()).expect("fallback backend accepted");
+        assert_eq!(*submitted.lock().unwrap(), vec!["dx12:1".to_string()]);
+
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("cpu", 0, prepared.clone(), submitted.clone())
+                .refusing(hardware_capability::ExecRefusal::UnsupportedOp("matmul".into())),
+        ));
+        let error = sched.execute(&single_task_graph()).expect_err("no feasible backend");
+        assert_eq!(error.code(), crate::ErrorCode::Infeasible);
+        assert!(error.to_string().contains("unsupported op `matmul`"), "{error}");
+    }
+
+    #[test]
+    fn placement_rejects_over_budget_plan() {
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("cpu", 0, prepared.clone(), submitted.clone()).with_budget(hardware_capability::MemoryBudget::new(32, 0, 0)),
+        ));
+        let error = sched.execute(&single_task_graph()).expect_err("over budget");
+        assert_eq!(error.code(), crate::ErrorCode::Infeasible);
+        assert!(error.to_string().contains("budget exceeded"), "{error}");
+    }
+
+    #[test]
+    fn pinned_backend_is_confirmed_against_feasibility() {
+        let prepared = Arc::new(Mutex::new(Vec::new()));
+        let submitted = Arc::new(Mutex::new(Vec::new()));
+        let mut sched = Scheduler::new();
+        sched.register(Box::new(
+            PlacementBackend::new("cpu", 0, prepared.clone(), submitted.clone())
+                .refusing(hardware_capability::ExecRefusal::UnsupportedPrecision("f16".into())),
+        ));
+        sched.register(Box::new(PlacementBackend::new("dx12", 0, prepared.clone(), submitted.clone())));
+        let graph = Graph { resources: ResourceGraph { nodes: vec![] }, tasks: TaskGraph { nodes: vec![pinned(1, "cpu")], edges: vec![] } };
+        let error = sched.execute(&graph).expect_err("pin cannot bypass feasibility");
+        assert_eq!(error.code(), crate::ErrorCode::Infeasible);
+        assert!(error.to_string().contains("unsupported precision: f16"), "{error}");
     }
 }

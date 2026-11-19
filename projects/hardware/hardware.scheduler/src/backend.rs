@@ -1,4 +1,4 @@
-use hardware_capability::FeatureSet;
+use hardware_capability::{BackendId, DeviceId, DeviceState, ExecDecision, ExecPlan, ExecSignature, FeatureSet, Health, MemoryBudget};
 use hardware_ir::{Graph, TaskNode};
 
 use crate::{
@@ -14,6 +14,45 @@ pub trait Backend: Send + Sync {
 
     /// Declared hardware / API capabilities.
     fn features(&self) -> FeatureSet;
+
+    /// Stable id for this API path; defaults to [`Self::name`].
+    fn id(&self) -> BackendId {
+        BackendId::new(self.name())
+    }
+
+    /// Physical device this backend drives.
+    ///
+    /// Several backends may share one device (e.g. DX12 and Vulkan on the same GPU);
+    /// they must return the same [`DeviceId`] so budgets are accounted once.
+    fn device(&self) -> DeviceId {
+        DeviceId::new(self.name())
+    }
+
+    /// Lifecycle state reported to placement; only [`DeviceState::Submittable`] is selectable.
+    fn state(&self) -> DeviceState {
+        DeviceState::Submittable
+    }
+
+    /// Health reported to placement; unhealthy devices are filtered out.
+    fn health(&self) -> Health {
+        Health::Healthy
+    }
+
+    /// Live memory budget for this device path.
+    ///
+    /// When several backends share one physical [`DeviceId`] (e.g. DX12 and Vulkan on the
+    /// same GPU), each must report device-wide usage so placement does not double-book it.
+    fn budget(&self) -> MemoryBudget {
+        MemoryBudget::unlimited()
+    }
+
+    /// Whether this backend can execute `signature`, and at what cost.
+    ///
+    /// Default accepts every signature at zero cost, which keeps simple backends and
+    /// existing tests working; real backends override this with their operator/shape limits.
+    fn supports(&self, _signature: &ExecSignature) -> ExecDecision {
+        ExecDecision::Accept(ExecPlan::new(self.id(), self.device()))
+    }
 
     /// Adopt external buffers / preferred stream from a downstream adapter.
     ///
