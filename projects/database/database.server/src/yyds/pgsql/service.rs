@@ -17,7 +17,8 @@ use database_execution::{pgsql::PgsqlSqlRuntime, sql_schema::SqlSchemaRegistry};
 use database_query::SqlCatalog;
 
 use super::auth::PgAuthentication;
-use super::connection::serve_cancellable_with_auth;
+use super::connection::serve_cancellable_with_auth_and_tls;
+use super::tls::PgTls;
 
 const MAX_CLIENTS: usize = 64;
 
@@ -32,7 +33,21 @@ pub struct PgsqlService {
 impl PgsqlService {
     /// Starts a listener without creating a node or cluster identity.
     pub fn start(owner: Arc<NodeLease>, address: SocketAddr) -> io::Result<Self> {
-        Self::start_inner(owner, address, None, PgAuthentication::Trust)
+        Self::start_inner(Some(owner), address, None, PgAuthentication::Trust, None)
+    }
+
+    /// Starts a listener over an existing SQL runtime without a node lease.
+    ///
+    /// The product facade owns the engine and its lifecycle; this entry keeps
+    /// the accept loop, client cap and shutdown in the service, so a listener
+    /// is only ever started through one code path.
+    pub fn start_with_runtime(
+        runtime: Arc<PgsqlSqlRuntime>,
+        address: SocketAddr,
+        auth: PgAuthentication,
+        tls: Option<Arc<PgTls>>,
+    ) -> io::Result<Self> {
+        Self::start_inner(None, address, Some(runtime), auth, tls)
     }
 
     /// Starts a listener with a YYDS SQL runtime for SELECT, DML, and DDL execution.
@@ -54,7 +69,7 @@ impl PgsqlService {
         auth: PgAuthentication,
     ) -> io::Result<Self> {
         let runtime = Arc::new(PgsqlSqlRuntime::new(schema, executor));
-        Self::start_inner(owner, address, Some(runtime), auth)
+        Self::start_inner(Some(owner), address, Some(runtime), auth, None)
     }
 
     /// Starts a listener seeded from a published catalog.
@@ -100,10 +115,11 @@ impl PgsqlService {
     }
 
     fn start_inner(
-        owner: Arc<NodeLease>,
+        owner: Option<Arc<NodeLease>>,
         address: SocketAddr,
         runtime: Option<Arc<PgsqlSqlRuntime>>,
         auth: PgAuthentication,
+        tls: Option<Arc<PgTls>>,
     ) -> io::Result<Self> {
         if !address.ip().is_loopback() {
             return Err(io::Error::new(
@@ -111,7 +127,7 @@ impl PgsqlService {
                 "PostgreSQL accepts loopback connections only",
             ));
         }
-        let listener = TcpListener::bind(address)?;
+        let listener = bind_with_retry(address)?;
         listener.set_nonblocking(true)?;
         let address = listener.local_addr()?;
         let stopping = Arc::new(AtomicBool::new(false));
@@ -120,7 +136,7 @@ impl PgsqlService {
         let auth = Arc::new(auth);
         let worker = thread::Builder::new().name("yyds-pgsql-listener".into()).spawn(move || {
             let _owner = owner;
-            listen(listener, signal, runtime_for_listen, auth)
+            listen(listener, signal, runtime_for_listen, auth, tls)
         })?;
         Ok(Self { address, stopping, worker: Some(worker) })
     }
@@ -185,11 +201,29 @@ impl Drop for Clients {
     }
 }
 
+/// Binds the listener, absorbing a short `AddrInUse` window left by a
+/// listener that was just stopped on the same port.
+fn bind_with_retry(endpoint: SocketAddr) -> io::Result<TcpListener> {
+    let mut delay = Duration::from_millis(10);
+    for _ in 0..10 {
+        match TcpListener::bind(endpoint) {
+            Ok(listener) => return Ok(listener),
+            Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+                thread::sleep(delay);
+                delay *= 2;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    TcpListener::bind(endpoint)
+}
+
 fn listen(
     listener: TcpListener,
     stopping: Arc<AtomicBool>,
     runtime: Option<Arc<PgsqlSqlRuntime>>,
     auth: Arc<PgAuthentication>,
+    tls: Option<Arc<PgTls>>,
 ) -> io::Result<()> {
     let mut clients = Clients { workers: Vec::new(), stopping: Arc::clone(&stopping) };
     while !stopping.load(Ordering::Acquire) {
@@ -203,11 +237,13 @@ fn listen(
                     drop(stream);
                     continue;
                 }
+                let _ = stream.set_nodelay(true);
                 let cancellation = Arc::clone(&stopping);
                 let rt = runtime.clone();
                 let auth = Arc::clone(&auth);
+                let conn_tls = tls.clone();
                 let worker = thread::Builder::new().name("yyds-pgsql-client".into()).spawn(move || {
-                    let _ = serve_cancellable_with_auth(stream, cancellation, rt, (*auth).clone());
+                    let _ = serve_cancellable_with_auth_and_tls(stream, cancellation, rt, (*auth).clone(), conn_tls);
                 })?;
                 clients.workers.push(worker);
             }

@@ -22,18 +22,13 @@
 //! `<data-dir>/schema.json`, so a restart reads the same tables back.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     error,
     fmt,
     io,
-    net::{SocketAddr, TcpListener},
+    net::SocketAddr,
     path::PathBuf,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    thread::{self, JoinHandle},
-    time::Duration,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use database_client::pgsql::{Connection, error::PostgresError};
@@ -43,7 +38,7 @@ use database_execution::pgsql::{
     PgsqlSqlRuntime, StatementOutcome, TransactionControl, TransactionSession, dispatch_statement,
 };
 use database_execution::sql_schema::SqlSchemaRegistry;
-use database_server::yyds::pgsql::connection::serve_cancellable_with_auth_and_tls;
+use database_server::yyds::pgsql::service::PgsqlService;
 use database_server::yyds::pgsql::{PgAuthentication, PgTls};
 use database_storage::cluster_kv::FileShard;
 use database_types::cluster::{ShardEpoch, ShardId};
@@ -228,7 +223,10 @@ pub struct PostgreSQL {
     /// single writer, so the lease only guards the directory.
     instance: Mutex<Option<ServerInstance>>,
     session: Mutex<TransactionSession>,
-    listeners: Arc<ListenerRegistry>,
+    /// One shared slot per live service listener; the slot is the only handle
+    /// that can stop the accept loop, shared between the [`Listener`] handle
+    /// and [`PostgreSQL::close`].
+    listeners: Arc<Mutex<Vec<Arc<Mutex<Option<PgsqlService>>>>>>,
     database: String,
 }
 
@@ -255,7 +253,7 @@ impl PostgreSQL {
             runtime,
             instance: Mutex::new(Some(instance)),
             session: Mutex::new(TransactionSession::new()),
-            listeners: Arc::new(ListenerRegistry::default()),
+            listeners: Arc::new(Mutex::new(Vec::new())),
             database: options.database,
         })
     }
@@ -329,45 +327,23 @@ impl PostgreSQL {
         if !endpoint.ip().is_loopback() {
             return Err(Error::Unsupported("the gateway accepts loopback connections only".to_owned()));
         }
-        let runtime = Arc::clone(&self.runtime);
-        let tcp = bind_with_retry(endpoint)?;
-        let bound = tcp.local_addr()?;
-        let stopping = Arc::new(AtomicBool::new(false));
-        let acceptor = Arc::clone(&stopping);
-        let joiner = thread::spawn(move || {
-            if tcp.set_nonblocking(true).is_err() {
-                return;
-            }
-            while !acceptor.load(Ordering::Acquire) {
-                match tcp.accept() {
-                    Ok((stream, _)) => {
-                        let _ = stream.set_nodelay(true);
-                        let conn_runtime = Arc::clone(&runtime);
-                        let conn_stopping = Arc::clone(&acceptor);
-                        let conn_auth = auth.clone();
-                        let conn_tls = tls.clone();
-                        thread::spawn(move || {
-                            let _ = serve_cancellable_with_auth_and_tls(
-                                stream,
-                                Arc::clone(&conn_stopping),
-                                Some(conn_runtime),
-                                conn_auth,
-                                conn_tls,
-                            );
-                        });
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(5)),
-                    Err(_) => break,
-                }
-            }
-        });
-        let id = self.listeners.register(AcceptLoop { stopping, joiner: Mutex::new(Some(joiner)) });
-        Ok(Listener { id, endpoint: bound, database: self.database.clone(), registry: Arc::clone(&self.listeners) })
+        let service = PgsqlService::start_with_runtime(Arc::clone(&self.runtime), endpoint, auth, tls)?;
+        let bound = service.address();
+        let slot = Arc::new(Mutex::new(Some(service)));
+        self.lock(&self.listeners)?.push(Arc::clone(&slot));
+        Ok(Listener { endpoint: bound, database: self.database.clone(), slot, registry: Arc::clone(&self.listeners) })
     }
 
     /// Stops every listener, releases the directory lock and consumes the engine.
     pub fn close(self) -> Result<(), Error> {
-        self.listeners.stop_all();
+        if let Ok(mut listeners) = self.listeners.lock() {
+            for slot in listeners.drain(..) {
+                let service = slot.lock().ok().and_then(|mut service| service.take());
+                if let Some(service) = service {
+                    let _ = service.stop();
+                }
+            }
+        }
         let instance = self.instance.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::State("store already closed".to_owned()))?;
         instance.close().map_err(Error::from)
     }
@@ -419,10 +395,13 @@ impl Transaction<'_> {
 /// Dropping the handle keeps the listener running; [`PostgreSQL::close`] stops
 /// every listener the engine still owns.
 pub struct Listener {
-    id: u64,
     endpoint: SocketAddr,
     database: String,
-    registry: Arc<ListenerRegistry>,
+    /// The service slot this handle stops; shared with the engine registry so
+    /// exactly one of [`Listener::close`] / [`PostgreSQL::close`] joins the
+    /// accept loop.
+    slot: Arc<Mutex<Option<PgsqlService>>>,
+    registry: Arc<Mutex<Vec<Arc<Mutex<Option<PgsqlService>>>>>>,
 }
 
 impl Listener {
@@ -438,74 +417,14 @@ impl Listener {
 
     /// Stops this listener's accept loop. The engine stays open.
     pub fn close(self) {
-        self.registry.stop(self.id);
-    }
-}
-
-/// Every accept loop one engine started, addressed by a monotonic id.
-#[derive(Default)]
-struct ListenerRegistry {
-    next: AtomicU64,
-    loops: Mutex<BTreeMap<u64, AcceptLoop>>,
-}
-
-impl ListenerRegistry {
-    fn register(&self, accept: AcceptLoop) -> u64 {
-        let id = self.next.fetch_add(1, Ordering::AcqRel);
-        if let Ok(mut loops) = self.loops.lock() {
-            loops.insert(id, accept);
+        if let Ok(mut listeners) = self.registry.lock() {
+            listeners.retain(|existing| !Arc::ptr_eq(existing, &self.slot));
         }
-        id
-    }
-
-    fn stop(&self, id: u64) {
-        let accept = self.loops.lock().ok().and_then(|mut loops| loops.remove(&id));
-        if let Some(accept) = accept {
-            accept.stop();
+        let service = self.slot.lock().ok().and_then(|mut service| service.take());
+        if let Some(service) = service {
+            let _ = service.stop();
         }
     }
-
-    fn stop_all(&self) {
-        let accepts: Vec<AcceptLoop> = match self.loops.lock() {
-            Ok(mut loops) => std::mem::take(&mut *loops).into_values().collect(),
-            Err(_) => Vec::new(),
-        };
-        for accept in accepts {
-            accept.stop();
-        }
-    }
-}
-
-/// Owned accept loop: cancellation flag plus the joinable accept thread.
-struct AcceptLoop {
-    stopping: Arc<AtomicBool>,
-    joiner: Mutex<Option<JoinHandle<()>>>,
-}
-
-impl AcceptLoop {
-    fn stop(&self) {
-        self.stopping.store(true, Ordering::Release);
-        if let Ok(mut joiner) = self.joiner.lock()
-            && let Some(handle) = joiner.take()
-        {
-            let _ = handle.join();
-        }
-    }
-}
-
-fn bind_with_retry(endpoint: SocketAddr) -> io::Result<TcpListener> {
-    let mut delay = Duration::from_millis(10);
-    for _ in 0..10 {
-        match TcpListener::bind(endpoint) {
-            Ok(listener) => return Ok(listener),
-            Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
-                thread::sleep(delay);
-                delay *= 2;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    TcpListener::bind(endpoint)
 }
 
 impl database_migration::MigrationTarget for PostgreSQL {
