@@ -1,0 +1,16 @@
+[package]
+name = "data-binary-asn1"
+version.workspace = true
+authors.workspace = true
+description = "ASN.1 DER codec: strict TLV reading and writing, object identifiers and X.509 time."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["encoding", "parsing"]
+keywords = ["asn1", "der", "binary", "x509"]
+
+[dependencies]
+
+[package.metadata.docs.rs]
+all-features = true

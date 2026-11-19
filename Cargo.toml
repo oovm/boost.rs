@@ -81,6 +81,7 @@ members = [
     "projects/database/facades/yydb-client",
     "projects/database/facades/yyds",
     "projects/database/facades/yyds-client",
+    "projects/data/data.binary.asn1",
     "projects/data/data.binary.core",
     "projects/data/data.binary.probe",
     "projects/data/data.checksum",
@@ -438,6 +439,7 @@ unicode-types = { path = "projects/unicode/unicode.types" }
 unicode-width = { path = "projects/unicode/unicode.width" }
 
 # data 能力树
+data-binary-asn1 = { path = "projects/data/data.binary.asn1" }
 data-binary-core = { path = "projects/data/data.binary.core" }
 data-binary-probe = { path = "projects/data/data.binary.probe" }
 data-checksum = { path = "projects/data/data.checksum" }
