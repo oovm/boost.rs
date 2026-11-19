@@ -105,6 +105,48 @@ pub struct ProgramCacheStats {
 /// Maximum number of cached generic-program pipelines.
 const PROGRAM_CACHE_CAPACITY: usize = 16;
 
+/// 一块对 DXGI 可见的适配器。
+///
+/// NPU 通过 MCDM 暴露时也会出现在这里（计算专用适配器），可用来确认设备是否
+/// 真正接到了 D3D12，而不是只有一条 PCI 记录。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterInfo {
+    /// 适配器描述。
+    pub name: String,
+    /// PCI 厂商 ID。
+    pub vendor_id: u32,
+    /// PCI 设备 ID。
+    pub device_id: u32,
+    /// 专用显存字节数。
+    pub dedicated_memory: u64,
+    /// 是否为软件（WARP）适配器。
+    pub software: bool,
+}
+
+impl Dx12Backend {
+    /// 枚举 DXGI 适配器，用于确认 NPU/MCDM 等计算设备是否对 D3D12 可见。
+    pub fn enumerate_adapters() -> Result<Vec<AdapterInfo>> {
+        unsafe {
+            let factory: IDXGIFactory4 = CreateDXGIFactory1().map_err(dx_err)?;
+            let mut adapters = Vec::new();
+            let mut index = 0u32;
+            while let Ok(adapter) = factory.EnumAdapters(index) {
+                let description = adapter.GetDesc().map_err(dx_err)?;
+                let name = String::from_utf16_lossy(&description.Description);
+                adapters.push(AdapterInfo {
+                    name: name.trim_end_matches('\0').to_string(),
+                    vendor_id: description.VendorId,
+                    device_id: description.DeviceId,
+                    dedicated_memory: description.DedicatedVideoMemory as u64,
+                    software: description.VendorId == 0x1414,
+                });
+                index += 1;
+            }
+            Ok(adapters)
+        }
+    }
+}
+
 /// DirectX 12 backend with device-resident buffers and compute dispatch.
 pub struct Dx12Backend {
     device: ID3D12Device,
