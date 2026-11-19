@@ -924,7 +924,6 @@ sha2 = { version = "0.11.1", features = ["oid"] }
 sha1-rsa = { package = "sha1", version = "0.10" }
 rsa = { version = "0.9.10", features = ["sha2"] }
 serde_yaml = "0.9"
-toml = "0.8"
 toml_edit = "0.25"
 unicode-normalization = "0.1"
 fluent = "0.16.0"
