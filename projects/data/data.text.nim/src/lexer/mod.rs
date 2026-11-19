@@ -405,7 +405,15 @@ impl<'config> NimLexer<'config> {
     /// Runs the lexer on the given state.
     pub fn run<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> Result<(), data_text_core::TextError> {
         while state.not_at_end() {
-            if self.skip_whitespace(state) || self.lex_newline(state) || self.lex_comment(state) || self.lex_string(state) || self.lex_char(state) || self.lex_number(state) || self.lex_identifier(state) || self.lex_operator(state) {
+            if self.skip_whitespace(state)
+                || self.lex_newline(state)
+                || self.lex_comment(state)
+                || self.lex_string(state)
+                || self.lex_char(state)
+                || self.lex_number(state)
+                || self.lex_identifier(state)
+                || self.lex_operator(state)
+            {
                 continue;
             }
 
@@ -421,7 +429,12 @@ impl<'config> NimLexer<'config> {
 }
 
 impl<'config> Lexer<NimLanguage> for NimLexer<'config> {
-    fn lex<'s, S: Source + ?Sized>(&self, source: &'s S, _edits: &[data_text_core::source::TextEdit], cache: &'s mut impl LexerCache<NimLanguage>) -> LexOutput<NimLanguage> {
+    fn lex<'s, S: Source + ?Sized>(
+        &self,
+        source: &'s S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'s mut impl LexerCache<NimLanguage>,
+    ) -> LexOutput<NimLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

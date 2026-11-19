@@ -87,7 +87,10 @@ fn field_named_get_stays_property() {
 #[test]
 fn real_getter_and_setter_still_detected() {
     let members = class_members("class C {\n  get value() { return 1; }\n  set value(v) {}\n}");
-    let [ClassMember::Method { name: get_name, modifiers: get_modifiers, .. }, ClassMember::Method { name: set_name, modifiers: set_modifiers, .. }] = members.as_slice()
+    let [
+        ClassMember::Method { name: get_name, modifiers: get_modifiers, .. },
+        ClassMember::Method { name: set_name, modifiers: set_modifiers, .. },
+    ] = members.as_slice()
     else {
         panic!("expected getter/setter pair, got {members:?}")
     };

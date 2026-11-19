@@ -171,8 +171,7 @@ impl<'a> Reader<'a> {
     /// Consume a BIT STRING and validate its padding.
     pub fn expect_bitstring(&mut self) -> DerResult<BitString<'a>> {
         let element = self.expect(Tag::BIT_STRING)?;
-        let (&unused, bytes) =
-            element.value.split_first().ok_or(DerError::new(DerErrorKind::MalformedContent, element.offset))?;
+        let (&unused, bytes) = element.value.split_first().ok_or(DerError::new(DerErrorKind::MalformedContent, element.offset))?;
         if unused > 7 || (unused > 0 && bytes.is_empty()) {
             return Err(DerError::new(DerErrorKind::MalformedContent, element.offset));
         }

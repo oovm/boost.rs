@@ -126,17 +126,7 @@ impl TvmHeader {
 
         TvmOperation::from_u8(operation).ok_or(TvmHeaderError::InvalidOperation(operation))?;
 
-        Ok(Self {
-            version,
-            encoding,
-            operation,
-            flags,
-            min_match_len,
-            literal_prefix_offset,
-            dfa_table_offset,
-            dfa_state_count,
-            total_size,
-        })
+        Ok(Self { version, encoding, operation, flags, min_match_len, literal_prefix_offset, dfa_table_offset, dfa_state_count, total_size })
     }
 
     /// 将头部信息写入字节切片。

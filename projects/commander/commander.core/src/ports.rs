@@ -1,8 +1,9 @@
 //! Injected host ports. The core never reads real process state itself.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 /// Monotonic-enough wall clock in milliseconds since the Unix epoch.
 ///
@@ -19,10 +20,7 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now_ms(&self) -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
     }
 }
 
@@ -63,12 +61,7 @@ pub struct Ports {
 
 impl Ports {
     /// Builds ports from individual parts with an uncancelled token.
-    pub fn new(
-        clock: Arc<dyn Clock>,
-        writer: Arc<dyn Writer>,
-        localizer: Arc<dyn Localizer>,
-        locale: impl Into<String>,
-    ) -> Self {
+    pub fn new(clock: Arc<dyn Clock>, writer: Arc<dyn Writer>, localizer: Arc<dyn Localizer>, locale: impl Into<String>) -> Self {
         Self { clock, writer, localizer, cancel: Arc::new(AtomicBool::new(false)), locale: locale.into() }
     }
 }

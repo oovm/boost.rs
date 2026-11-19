@@ -3,8 +3,7 @@ use data_text_core::{
     Range,
     source::{SourceBuffer, ToSource},
 };
-use data_text_pretty::document::Document;
-use data_text_pretty::to_doc::AsDocument;
+use data_text_pretty::{document::Document, to_doc::AsDocument};
 
 /// Root node of an LLVM IR module.
 #[derive(Debug, Clone, Default)]
@@ -99,7 +98,13 @@ impl ToSource for LLirFunction {
 }
 impl AsDocument for LLirFunction {
     fn as_document(&self, config: &Self::Config) -> Document<'_> {
-        let mut parts = vec![Document::text("define "), Document::text(&self.return_type), Document::text(" @"), Document::text(&self.name), Document::text("(")];
+        let mut parts = vec![
+            Document::text("define "),
+            Document::text(&self.return_type),
+            Document::text(" @"),
+            Document::text(&self.name),
+            Document::text("("),
+        ];
 
         let params_docs = Document::join(self.parameters.iter().map(|p| p.as_document(config)), Document::text(", "));
         parts.push(params_docs);

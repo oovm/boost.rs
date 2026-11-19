@@ -118,7 +118,8 @@ impl<'config> JavaBuilder<'config> {
                 match sub_node.green.kind {
                     JavaElementType::Identifier => {
                         let name = self.get_text(sub_node.span(), source).trim().to_string();
-                        let enum_const = EnumConstant { name, annotations: Vec::new(), arguments: Vec::new(), body: None, span: sub_node.span() };
+                        let enum_const =
+                            EnumConstant { name, annotations: Vec::new(), arguments: Vec::new(), body: None, span: sub_node.span() };
                         constants.push(enum_const);
                     }
                     JavaElementType::MethodDeclaration => members.push(Member::Method(self.build_method(sub_node, source))),

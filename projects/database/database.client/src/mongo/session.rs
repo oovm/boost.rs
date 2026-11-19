@@ -103,14 +103,7 @@ impl MongoWireSession {
 
     /// 自定义帧上限创建会话。
     pub fn with_max_frame_size(max_frame_size: i64) -> Self {
-        Self {
-            next_request_id: 1,
-            buffer: Vec::new(),
-            pending: Vec::new(),
-            handshaked: false,
-            failed: None,
-            max_frame_size,
-        }
+        Self { next_request_id: 1, buffer: Vec::new(), pending: Vec::new(), handshaked: false, failed: None, max_frame_size }
     }
 
     /// `hello` 握手是否已完成（对应握手请求的应答帧到达即置位）。
@@ -132,11 +125,7 @@ impl MongoWireSession {
             return Err(SessionError::Failed { reason: reason.clone() });
         }
         let command = decode_op_msg_command(op_msg_body).map_err(|_| SessionError::MalformedCommand)?;
-        let name = command
-            .fields
-            .first()
-            .map(|(key, _)| key.clone())
-            .ok_or(SessionError::MalformedCommand)?;
+        let name = command.fields.first().map(|(key, _)| key.clone()).ok_or(SessionError::MalformedCommand)?;
         let handshake = is_handshake_command(&name);
         if !self.handshaked && !handshake {
             return Err(SessionError::NotHandshaked { command: name });
@@ -150,7 +139,8 @@ impl MongoWireSession {
             }
             body[..4].copy_from_slice(&MORE_TO_COME_FLAG.to_le_bytes());
             self.pending.push(PendingRequest { request_id, expectation: Expectation::Optional, handshake });
-        } else {
+        }
+        else {
             self.pending.push(PendingRequest { request_id, expectation: Expectation::Acknowledged, handshake });
         }
 
@@ -224,11 +214,9 @@ impl MongoWireSession {
                 return;
             }
         };
-        let position = self
-            .pending
-            .iter()
-            .position(|entry| entry.request_id == header.response_to);
-        let Some(position) = position else {
+        let position = self.pending.iter().position(|entry| entry.request_id == header.response_to);
+        let Some(position) = position
+        else {
             self.fail(&format!("response {response_to} matches no pending request", response_to = header.response_to), events);
             return;
         };

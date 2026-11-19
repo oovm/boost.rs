@@ -106,7 +106,10 @@ pub fn plan_latency(arguments: &[&[u8]]) -> Result<Reply, CommandError> {
 
 /// 真机把子命令按原样回显，截断到 128 字节。
 pub fn subcommand_syntax_error(command: &str, typed: &str) -> CommandError {
-    CommandError::Coded(format!("ERR Unknown subcommand or wrong number of arguments for '{}'. Try {command} HELP.", typed.chars().take(128).collect::<String>()))
+    CommandError::Coded(format!(
+        "ERR Unknown subcommand or wrong number of arguments for '{}'. Try {command} HELP.",
+        typed.chars().take(128).collect::<String>()
+    ))
 }
 
 #[cfg(test)]

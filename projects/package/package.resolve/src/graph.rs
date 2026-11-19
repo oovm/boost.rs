@@ -78,15 +78,20 @@ impl DependencyResolver {
         if !visiting.insert(name.to_string()) {
             return Err(PackageError::message(format!("dependency cycle detected at {name}")));
         }
-        let registry =
-            self.registries.get(registry_name).ok_or_else(|| PackageError::message(format!("注册器 {registry_name} 未找到")))?;
+        let registry = self.registries.get(registry_name).ok_or_else(|| PackageError::message(format!("注册器 {registry_name} 未找到")))?;
         let package = registry.get_package(name, version)?;
         let mut children = Vec::new();
         for (child_name, child_version) in &package.dependency_versions {
             children.push(self.resolve_one(child_name, child_version, registry_name, depth + 1, visiting, resolved)?);
         }
         visiting.remove(name);
-        let node = DependencyNode { name: package.name.clone(), version: package.version.clone(), registry: registry_name.to_string(), package, children };
+        let node = DependencyNode {
+            name: package.name.clone(),
+            version: package.version.clone(),
+            registry: registry_name.to_string(),
+            package,
+            children,
+        };
         resolved.insert(name.to_string(), node.clone());
         Ok(node)
     }

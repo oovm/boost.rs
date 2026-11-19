@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::local::execute;
-use database_execution::local::execute_write_with_constraints;
+use database_execution::local::{execute, execute_write_with_constraints};
 use database_query::local::resolved_contract_from_document;
 use database_types::{Error, TableUniqueConstraint, UniqueConstraint, Value};
 use schema_types::ResolvedContract;
@@ -261,10 +260,8 @@ fn is_not_null_condition_lets_null_rows_skip_the_rule() {
 
 #[test]
 fn a_write_against_a_schema_with_a_mismatched_predicate_literal_reports_a_schema_error() {
-    let contract = resolved_contract_from_document(
-        r#"table Bad { @@id: i64, [unique(ux where flag = 1)] flag: utf8 }"#,
-    )
-    .expect("the document parses");
+    let contract =
+        resolved_contract_from_document(r#"table Bad { @@id: i64, [unique(ux where flag = 1)] flag: utf8 }"#).expect("the document parses");
     let mut records = BTreeMap::new();
     let error =
         execute_write_with_constraints(r#"Bad::insert({ id: 1, flag: "x" })"#, &contract, &[], None, &mut records).expect_err("schema error");

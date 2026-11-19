@@ -69,15 +69,8 @@ pub fn support(capability: StyleCapability, stage: BackendStage) -> Support {
 }
 
 /// 阶段一（dom/html）定死的能力集合：语义自此冻结，后续阶段不得改义。
-pub const STAGE1_FROZEN: &[Property] = &[
-    Property::Direction,
-    Property::Spacing,
-    Property::Inset,
-    Property::MainAlign,
-    Property::CrossAlign,
-    Property::Width,
-    Property::Height,
-];
+pub const STAGE1_FROZEN: &[Property] =
+    &[Property::Direction, Property::Spacing, Property::Inset, Property::MainAlign, Property::CrossAlign, Property::Width, Property::Height];
 
 /// 校验一组能力在某阶段是否可用；`Unsupported` fail-closed，`Approximate` 收集返回。
 pub fn validate(capabilities: &[StyleCapability], stage: BackendStage) -> Result<Vec<&'static str>, super::StyleContractError> {
@@ -91,7 +84,7 @@ pub fn validate(capabilities: &[StyleCapability], stage: BackendStage) -> Result
                     property: format!("{capability:?}"),
                     value: format!("{stage:?}"),
                     reason: reason.to_string(),
-                })
+                });
             }
         }
     }

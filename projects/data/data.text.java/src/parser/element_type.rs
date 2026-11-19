@@ -162,10 +162,25 @@ impl ElementType for JavaElementType {
             | Self::Continue
             | Self::TryStatement
             | Self::ThrowStatement => Statement,
-            Self::ClassDeclaration | Self::InterfaceDeclaration | Self::EnumDeclaration | Self::StructDeclaration | Self::RecordDeclaration | Self::MethodDeclaration | Self::FieldDeclaration | Self::ConstructorDeclaration | Self::AnonymousClass => {
-                Definition
-            }
-            Self::Parameter | Self::CatchClause | Self::SwitchCase | Self::DefaultCase | Self::ThrowsClause | Self::Annotation | Self::TypeParameter | Self::TypeParameterConstraint | Self::AnnotationElement | Self::EnumConstant => Detail,
+            Self::ClassDeclaration
+            | Self::InterfaceDeclaration
+            | Self::EnumDeclaration
+            | Self::StructDeclaration
+            | Self::RecordDeclaration
+            | Self::MethodDeclaration
+            | Self::FieldDeclaration
+            | Self::ConstructorDeclaration
+            | Self::AnonymousClass => Definition,
+            Self::Parameter
+            | Self::CatchClause
+            | Self::SwitchCase
+            | Self::DefaultCase
+            | Self::ThrowsClause
+            | Self::Annotation
+            | Self::TypeParameter
+            | Self::TypeParameterConstraint
+            | Self::AnnotationElement
+            | Self::EnumConstant => Detail,
             Self::Package | Self::Import => Statement,
             Self::BlockStatement => Container,
             Self::LambdaExpression | Self::GenericType => Expression,

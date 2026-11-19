@@ -40,7 +40,8 @@ fn parse_template_node<S: data_text_core::Source + ?Sized>(state: &mut State<'_,
 }
 
 fn is_unexpected_boundary_directive(tokens: &[Token<ValkyrieTokenType>]) -> bool {
-    is_else_if_directive(tokens) || matches!(directive_first_keyword(tokens), Some(ValkyrieKeywords::Case) | Some(ValkyrieKeywords::Else) | Some(ValkyrieKeywords::End))
+    is_else_if_directive(tokens)
+        || matches!(directive_first_keyword(tokens), Some(ValkyrieKeywords::Case) | Some(ValkyrieKeywords::Else) | Some(ValkyrieKeywords::End))
 }
 
 fn is_if_arm_boundary(tokens: &[Token<ValkyrieTokenType>]) -> bool {
@@ -51,7 +52,10 @@ fn is_match_arm_boundary(tokens: &[Token<ValkyrieTokenType>]) -> bool {
     matches!(directive_first_keyword(tokens), Some(ValkyrieKeywords::Case) | Some(ValkyrieKeywords::Else) | Some(ValkyrieKeywords::End))
 }
 
-fn parse_if_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, if_cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+fn parse_if_block<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    if_cp: (usize, usize),
+) -> Result<(), data_text_core::TextError> {
     parse_template_body(state, is_if_arm_boundary)?;
     state.finish_at(if_cp, ValkyrieElementType::TemplateIfFragment);
 
@@ -89,7 +93,10 @@ fn parse_if_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, 
     Err(data_text_core::TextError::custom_error("unclosed `<% if %>` block"))
 }
 
-fn parse_loop_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, loop_cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+fn parse_loop_block<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    loop_cp: (usize, usize),
+) -> Result<(), data_text_core::TextError> {
     state.finish_at(loop_cp, ValkyrieElementType::TemplateLoopFragment);
     parse_template_body(state, |tokens| directive_first_keyword(tokens) == Some(ValkyrieKeywords::End))?;
     if !state.at(ValkyrieTokenType::TemplateL) {
@@ -105,7 +112,10 @@ fn parse_loop_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>
     Ok(())
 }
 
-fn parse_match_block<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, match_cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+fn parse_match_block<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    match_cp: (usize, usize),
+) -> Result<(), data_text_core::TextError> {
     state.finish_at(match_cp, ValkyrieElementType::TemplateMatchFragment);
     lint_match_prelude_gap(state)?;
 
@@ -167,7 +177,10 @@ fn lint_match_prelude_gap<S: data_text_core::Source + ?Sized>(state: &mut State<
     Ok(())
 }
 
-fn parse_template_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, stop: impl Fn(&[Token<ValkyrieTokenType>]) -> bool) -> Result<(), data_text_core::TextError> {
+fn parse_template_body<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    stop: impl Fn(&[Token<ValkyrieTokenType>]) -> bool,
+) -> Result<(), data_text_core::TextError> {
     while state.not_at_end() {
         state.skip_trivia();
         if state.at(ValkyrieTokenType::BraceR) {
@@ -191,7 +204,9 @@ fn parse_template_body<S: data_text_core::Source + ?Sized>(state: &mut State<'_,
     Ok(())
 }
 
-fn read_and_bump_directive<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<ParsedTemplateDirective, data_text_core::TextError> {
+fn read_and_bump_directive<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<ParsedTemplateDirective, data_text_core::TextError> {
     let parsed = peek_template_directive(state)?;
     if !state.at(ValkyrieTokenType::TemplateL) {
         return Err(data_text_core::TextError::custom_error("expected `<%`"));
@@ -207,7 +222,9 @@ fn read_and_bump_directive<S: data_text_core::Source + ?Sized>(state: &mut State
     Ok(parsed)
 }
 
-fn peek_template_directive<S: data_text_core::Source + ?Sized>(state: &State<'_, S>) -> Result<ParsedTemplateDirective, data_text_core::TextError> {
+fn peek_template_directive<S: data_text_core::Source + ?Sized>(
+    state: &State<'_, S>,
+) -> Result<ParsedTemplateDirective, data_text_core::TextError> {
     if !state.at(ValkyrieTokenType::TemplateL) {
         return Err(data_text_core::TextError::custom_error("expected `<%`"));
     }

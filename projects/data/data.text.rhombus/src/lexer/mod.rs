@@ -3,7 +3,7 @@ use crate::{language::RhombusLanguage, lexer::token_type::RhombusTokenType};
 /// Token type definitions for Rhombus lexer.
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, Source, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -11,7 +11,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, RhombusLanguage>;
 
 static RHOMBUS_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static RHOMBUS_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
+static RHOMBUS_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
 static RHOMBUS_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer for Rhombus source code.
@@ -21,7 +22,12 @@ pub struct RhombusLexer<'config> {
 }
 
 impl<'config> Lexer<RhombusLanguage> for RhombusLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<RhombusLanguage>) -> LexOutput<RhombusLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<RhombusLanguage>,
+    ) -> LexOutput<RhombusLanguage> {
         let mut state: State<'_, S> = LexerState::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

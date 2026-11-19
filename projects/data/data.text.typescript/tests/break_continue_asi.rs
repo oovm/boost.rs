@@ -11,7 +11,8 @@ use data_text_typescript::{TypeScriptBuilder, TypeScriptLanguage, ast::TypeScrip
 fn assert_clean(source: &str) {
     let language = TypeScriptLanguage::standard();
     let mut cache = ParseSession::<TypeScriptLanguage>::new(32);
-    let output: data_text_core::TextDiagnostics<TypeScriptRoot> = TypeScriptBuilder::new(&language).build(&SourceText::new(source), &[], &mut cache);
+    let output: data_text_core::TextDiagnostics<TypeScriptRoot> =
+        TypeScriptBuilder::new(&language).build(&SourceText::new(source), &[], &mut cache);
     assert!(output.diagnostics.is_empty(), "{source}: {:#?}", output.diagnostics);
 }
 

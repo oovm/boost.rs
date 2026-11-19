@@ -4,19 +4,19 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Mutex,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
 use crate::engine::{
-    journal::{shm_path, wal_path, OpenFlags},
+    Error, Result, SchemaVersion,
+    journal::{OpenFlags, shm_path, wal_path},
     objects::ObjectStore,
     storage::snapshot,
     udf::UdfSubsystem,
-    Error, Result, SchemaVersion,
 };
-use database_storage::local::{snapshot_from_main_bytes, snapshot_to_main_bytes, Database};
+use database_storage::local::{Database, snapshot_from_main_bytes, snapshot_to_main_bytes};
 
 mod backup;
 mod compact;
@@ -370,11 +370,6 @@ impl Connection {
     /// prepared statements so a stale handle fails fast instead of
     /// silently operating on a half-closed store.
     pub(crate) fn guard_session_alive(&self) -> Result<()> {
-        if self.is_closed() {
-            Err(Error::SessionClosed)
-        }
-        else {
-            Ok(())
-        }
+        if self.is_closed() { Err(Error::SessionClosed) } else { Ok(()) }
     }
 }

@@ -16,7 +16,7 @@ pub mod lsp;
 /// Parser module.
 pub mod parser;
 
+pub use data_text_core::{ElementType, Language, LanguageCategory, TokenType};
 pub use language::CLanguage;
 pub use lexer::{CLexer, token_type::CTokenType};
-pub use data_text_core::{ElementType, Language, LanguageCategory, TokenType};
 pub use parser::{CParser, element_type::CElementType};

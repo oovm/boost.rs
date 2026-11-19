@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::JasminLanguage, lexer::token_type::JasminTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, JasminLanguage>;
 
@@ -326,7 +326,12 @@ impl<'config> JasminLexer<'config> {
 }
 
 impl<'config> Lexer<JasminLanguage> for JasminLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<JasminLanguage>) -> LexOutput<JasminLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<JasminLanguage>,
+    ) -> LexOutput<JasminLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -50,12 +50,7 @@ struct Token {
 impl Token {
     fn text(&self) -> &str {
         match &self.kind {
-            Kind::Word(text)
-            | Kind::Number(text)
-            | Kind::String(text)
-            | Kind::Quoted(text)
-            | Kind::Placeholder(text)
-            | Kind::Op(text) => text,
+            Kind::Word(text) | Kind::Number(text) | Kind::String(text) | Kind::Quoted(text) | Kind::Placeholder(text) | Kind::Op(text) => text,
             Kind::Punct('(') => "(",
             Kind::Punct(')') => ")",
             Kind::Punct('[') => "[",
@@ -140,21 +135,11 @@ fn left_operand_start(tokens: &[Token], operator: usize) -> Result<usize, SqlFro
             // Only a call name immediately touching the parenthesis is part of
             // the operand: `COUNT(*)::int` includes `COUNT`, while
             // `SELECT (a + b)::int` does not include `SELECT`.
-            if open > 0 && tokens[open - 1].is_callable_name() && tokens[open - 1].end == tokens[open].start {
-                Ok(open - 1)
-            }
-            else {
-                Ok(open)
-            }
+            if open > 0 && tokens[open - 1].is_callable_name() && tokens[open - 1].end == tokens[open].start { Ok(open - 1) } else { Ok(open) }
         }
         Kind::Punct(']') => {
             let open = matching_open(tokens, operator - 1, '[', ']')?;
-            if open > 0 && tokens[open - 1].is_callable_name() && tokens[open - 1].end == tokens[open].start {
-                Ok(open - 1)
-            }
-            else {
-                Ok(open)
-            }
+            if open > 0 && tokens[open - 1].is_callable_name() && tokens[open - 1].end == tokens[open].start { Ok(open - 1) } else { Ok(open) }
         }
         Kind::Word(_) | Kind::Number(_) | Kind::String(_) | Kind::Quoted(_) | Kind::Placeholder(_) => {
             let mut start = operator - 1;
@@ -266,7 +251,12 @@ fn needs_space(previous: &Token, next: &Token) -> bool {
     if previous.is_punct('(') || previous.is_punct('[') || previous.is_punct(',') || previous.is_punct('.') {
         return false;
     }
-    if next.is_punct('(') || next.is_punct(')') || next.is_punct('[') || next.is_punct(']') || next.is_punct(',') || next.is_punct('.')
+    if next.is_punct('(')
+        || next.is_punct(')')
+        || next.is_punct('[')
+        || next.is_punct(']')
+        || next.is_punct(',')
+        || next.is_punct('.')
         || next.is_punct(';')
     {
         return false;

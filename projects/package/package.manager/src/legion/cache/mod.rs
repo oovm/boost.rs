@@ -13,4 +13,4 @@ pub use artifact::{
 };
 pub use compilation::{CompilationCache, EntrySliceCacheEntry, IrCacheEntry};
 pub use resolve::{cache_root_for, resolve_cache_root, resolve_workspace_root};
-pub use store::{combined_hash, files_hash, resolve_marker_root, WorkspaceCache};
+pub use store::{WorkspaceCache, combined_hash, files_hash, resolve_marker_root};

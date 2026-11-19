@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source};
+use data_text_core::{GreenNode, RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     /// Builds a strongly-typed AST from a green tree.
@@ -25,7 +25,12 @@ impl<'config> DejavuBuilder<'config> {
                 RedTree::Leaf(t) => match t.kind {
                     DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment => continue,
                     DejavuTokenType::Eof => continue,
-                    DejavuTokenType::CodeStart | DejavuTokenType::TemplateControlStart | DejavuTokenType::CodeEnd | DejavuTokenType::TemplateControlEnd | DejavuTokenType::TemplateCommentStart | DejavuTokenType::TemplateCommentEnd => continue,
+                    DejavuTokenType::CodeStart
+                    | DejavuTokenType::TemplateControlStart
+                    | DejavuTokenType::CodeEnd
+                    | DejavuTokenType::TemplateControlEnd
+                    | DejavuTokenType::TemplateCommentStart
+                    | DejavuTokenType::TemplateCommentEnd => continue,
                     DejavuTokenType::StringPart => {
                         let content = source.get_text_in(t.span.into()).to_string();
                         items.push(ItemNode::TemplateText(crate::ast::TemplateTextNode { content, span: t.span }));
@@ -53,7 +58,12 @@ impl<'config> DejavuBuilder<'config> {
             }
             DejavuElementType::Attribute => {
                 let attr = self.build_attribute(n, source)?;
-                Ok(ItemNode::Statement(StatementNode::Expr(ExpressionStatement { annotations: vec![attr], expr: ExpressionNode::Ident(IdentifierNode { name: "".to_string(), span: (0..0).into() }), semi: false, span: (0..0).into() })))
+                Ok(ItemNode::Statement(StatementNode::Expr(ExpressionStatement {
+                    annotations: vec![attr],
+                    expr: ExpressionNode::Ident(IdentifierNode { name: "".to_string(), span: (0..0).into() }),
+                    semi: false,
+                    span: (0..0).into(),
+                })))
             }
             DejavuElementType::Micro => {
                 let micro = self.build_micro(n, source)?;
@@ -128,7 +138,12 @@ impl<'config> DejavuBuilder<'config> {
                         items.push(self.build_item(child_node, source)?);
                     }
                 }
-                Ok(ItemNode::Block(crate::ast::BlockDeclaration { name: crate::ast::IdentifierNode { name: "".to_string(), span: (0..0).into() }, annotations: vec![], items, span }))
+                Ok(ItemNode::Block(crate::ast::BlockDeclaration {
+                    name: crate::ast::IdentifierNode { name: "".to_string(), span: (0..0).into() },
+                    annotations: vec![],
+                    items,
+                    span,
+                }))
             }
             DejavuElementType::IncludeDirective => {
                 let span = n.span();
@@ -143,7 +158,10 @@ impl<'config> DejavuBuilder<'config> {
                 let path = path_expr.unwrap_or(ExpressionNode::Ident(IdentifierNode { name: "".to_string(), span: (0..0).into() }));
                 Ok(ItemNode::IncludeDirective(crate::ast::IncludeDirectiveNode { path, span }))
             }
-            DejavuElementType::IfExpression | DejavuElementType::LoopExpression | DejavuElementType::MatchExpression | DejavuElementType::Expression => {
+            DejavuElementType::IfExpression
+            | DejavuElementType::LoopExpression
+            | DejavuElementType::MatchExpression
+            | DejavuElementType::Expression => {
                 let span = n.span();
                 let expr = match self.build_expr(n, source) {
                     Ok(e) => e,

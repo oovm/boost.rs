@@ -4,7 +4,7 @@ use crate::{
     builder::{ValkyrieBuilder, utils},
     lexer::token_type::ValkyrieTokenType,
 };
-use data_text_core::{TextError, RedNode, Source};
+use data_text_core::{RedNode, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     pub(crate) fn build_call<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {

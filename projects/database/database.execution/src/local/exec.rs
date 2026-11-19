@@ -18,8 +18,7 @@ use schema_types::ResolvedContract;
 
 use database_query::local::{
     catalog::{primary_field_name, table_row_key_name, table_type_by_name},
-    constraints,
-    lower,
+    constraints, lower,
     ops::{
         AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, Expr, JoinKind, OUTER_ROW_MARKER, Pred, ProjectExpr, ProjectField, QueryOp,
         QueryRow, ScalarFunction, SetOpKind, TextOp, WindowField, WindowFrame, WindowFrameBound, WindowFrameUnit, WindowFunction,
@@ -566,12 +565,7 @@ const INLINE_SORT_ROWS: usize = 4096;
 /// `Ok(Some(Some(pk)))` means the scan can read that one record,
 /// `Ok(Some(None))` means the comparison can never hold (a `NULL` right-hand
 /// side), and `Ok(None)` keeps the ordinary table scan.
-fn primary_key_lookup(
-    predicate: &Pred,
-    contract: &ResolvedContract,
-    table: &str,
-    bound_values: &[Value],
-) -> Result<Option<Option<String>>> {
+fn primary_key_lookup(predicate: &Pred, contract: &ResolvedContract, table: &str, bound_values: &[Value]) -> Result<Option<Option<String>>> {
     let entry = table_type_by_name(contract, table)?;
     let pk_field = primary_field_name(entry)?;
     let (path, op, value) = match predicate {

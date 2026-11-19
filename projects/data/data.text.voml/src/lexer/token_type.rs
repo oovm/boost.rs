@@ -324,7 +324,9 @@ impl TokenType for VomlTokenType {
             | Self::ByteKw
             | Self::VoidptrKw
             | Self::CharKw => UniversalTokenRole::Keyword,
-            Self::BoolLiteral | Self::StringLiteral | Self::CharLiteral | Self::FloatLiteral | Self::IntegerLiteral => UniversalTokenRole::Literal,
+            Self::BoolLiteral | Self::StringLiteral | Self::CharLiteral | Self::FloatLiteral | Self::IntegerLiteral => {
+                UniversalTokenRole::Literal
+            }
             Self::Identifier => UniversalTokenRole::Name,
             Self::Number => UniversalTokenRole::Literal,
             Self::String => UniversalTokenRole::Literal,
@@ -368,7 +370,9 @@ impl TokenType for VomlTokenType {
             | Self::Question
             | Self::Tilde => UniversalTokenRole::Operator,
             Self::Comma | Self::Colon | Self::Semicolon => UniversalTokenRole::Punctuation,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace => UniversalTokenRole::Punctuation,
+            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace => {
+                UniversalTokenRole::Punctuation
+            }
         }
     }
 }

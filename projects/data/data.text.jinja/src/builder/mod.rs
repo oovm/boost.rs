@@ -3,7 +3,7 @@
 /// This module defines the builder for Jinja templates, used to construct the AST
 /// from the parsed green tree.
 use data_text_core::{
-    BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, SourceText,
+    BuilderCache, GreenNode, GreenTree, SourceText, TextDiagnostics, TextError,
     builder::{BuildOutput, Builder as BuilderTrait},
     source::{Source, TextEdit},
 };
@@ -115,7 +115,12 @@ impl<'a> JinjaBuilder<'a> {
     }
 
     /// Extracts the parts of an if statement
-    fn extract_if_parts<'b>(&self, node: &'b GreenNode<'b, JinjaLanguage>, offset: usize, source: &SourceText) -> (String, Vec<JinjaElement>, Option<Vec<JinjaElement>>) {
+    fn extract_if_parts<'b>(
+        &self,
+        node: &'b GreenNode<'b, JinjaLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> (String, Vec<JinjaElement>, Option<Vec<JinjaElement>>) {
         let mut condition = String::new();
         let mut body = Vec::new();
         let mut else_body = None;
@@ -128,7 +133,10 @@ impl<'a> JinjaBuilder<'a> {
             match child {
                 GreenTree::Node(n) => {
                     if !found_tag_end {
-                        if n.kind == JinjaElementType::Expression || n.kind == JinjaElementType::Identifier || n.kind == JinjaElementType::Literal {
+                        if n.kind == JinjaElementType::Expression
+                            || n.kind == JinjaElementType::Identifier
+                            || n.kind == JinjaElementType::Literal
+                        {
                             let span: data_text_core::Range<usize> = (current_offset..current_offset + n.byte_length as usize).into();
                             let text = source.get_text_in(span);
                             if !condition.is_empty() {
@@ -166,7 +174,12 @@ impl<'a> JinjaBuilder<'a> {
     }
 
     /// Extracts the parts of a for statement
-    fn extract_for_parts<'b>(&self, node: &'b GreenNode<'b, JinjaLanguage>, offset: usize, source: &SourceText) -> (String, String, Vec<JinjaElement>, Option<Vec<JinjaElement>>) {
+    fn extract_for_parts<'b>(
+        &self,
+        node: &'b GreenNode<'b, JinjaLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> (String, String, Vec<JinjaElement>, Option<Vec<JinjaElement>>) {
         let mut variable = String::new();
         let mut iterable = String::new();
         let mut body = Vec::new();
@@ -233,7 +246,12 @@ impl<'a> JinjaBuilder<'a> {
     }
 
     /// Extracts the parts of a block statement
-    fn extract_block_parts<'b>(&self, node: &'b GreenNode<'b, JinjaLanguage>, offset: usize, source: &SourceText) -> (String, Vec<JinjaElement>) {
+    fn extract_block_parts<'b>(
+        &self,
+        node: &'b GreenNode<'b, JinjaLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> (String, Vec<JinjaElement>) {
         let mut name = String::new();
         let mut body = Vec::new();
         let mut current_offset = offset;
@@ -268,7 +286,12 @@ impl<'a> JinjaBuilder<'a> {
     }
 
     /// Extracts the parts of a macro definition
-    fn extract_macro_parts<'b>(&self, node: &'b GreenNode<'b, JinjaLanguage>, offset: usize, source: &SourceText) -> (String, Vec<String>, Vec<JinjaElement>) {
+    fn extract_macro_parts<'b>(
+        &self,
+        node: &'b GreenNode<'b, JinjaLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> (String, Vec<String>, Vec<JinjaElement>) {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut body = Vec::new();
@@ -377,7 +400,12 @@ impl<'a> JinjaBuilder<'a> {
 }
 
 impl<'a> BuilderTrait<JinjaLanguage> for JinjaBuilder<'a> {
-    fn build<'b, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], _cache: &'b mut impl BuilderCache<JinjaLanguage>) -> BuildOutput<JinjaLanguage> {
+    fn build<'b, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        _cache: &'b mut impl BuilderCache<JinjaLanguage>,
+    ) -> BuildOutput<JinjaLanguage> {
         let parser = JinjaParser::new(self.language);
         let lexer = JinjaLexer::new(self.language);
 

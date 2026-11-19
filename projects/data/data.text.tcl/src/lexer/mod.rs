@@ -85,7 +85,12 @@ impl<'config> TclLexer<'config> {
 }
 
 impl<'config> Lexer<TclLanguage> for TclLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<TclLanguage>) -> LexOutput<TclLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<TclLanguage>,
+    ) -> LexOutput<TclLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)
@@ -294,7 +299,14 @@ impl<'config> TclLexer<'config> {
         let start = state.get_position();
 
         // Multi-character operators
-        let patterns: &[(&str, TclTokenType)] = &[("==", TclTokenType::Equal), ("!=", TclTokenType::NotEqual), ("<=", TclTokenType::LessEqual), (">=", TclTokenType::GreaterEqual), ("&&", TclTokenType::AmpersandAmpersand), ("||", TclTokenType::PipePipe)];
+        let patterns: &[(&str, TclTokenType)] = &[
+            ("==", TclTokenType::Equal),
+            ("!=", TclTokenType::NotEqual),
+            ("<=", TclTokenType::LessEqual),
+            (">=", TclTokenType::GreaterEqual),
+            ("&&", TclTokenType::AmpersandAmpersand),
+            ("||", TclTokenType::PipePipe),
+        ];
 
         for (pat, kind) in patterns {
             let mut matches = true;

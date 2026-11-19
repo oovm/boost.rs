@@ -300,9 +300,7 @@ pub fn probe_build_host() -> Result<CanonicalTarget, TargetResolutionError> {
         "riscv64" => CanonicalArch::RiscV64,
         "riscv32" => CanonicalArch::RiscV32,
         other => {
-            return Err(TargetResolutionError::new(format!(
-                "无法识别构建宿主的 CPU 架构 `{other}`；请显式指定目标三元组或四元组"
-            )));
+            return Err(TargetResolutionError::new(format!("无法识别构建宿主的 CPU 架构 `{other}`；请显式指定目标三元组或四元组")));
         }
     };
     let (vendor, specification, abi) = match std::env::consts::OS {
@@ -314,9 +312,7 @@ pub fn probe_build_host() -> Result<CanonicalTarget, TargetResolutionError> {
         ),
         "linux" => (CanonicalVendor::Unknown, CanonicalSpecification::Linux, CanonicalAbi::Gnu),
         other => {
-            return Err(TargetResolutionError::new(format!(
-                "无法识别构建宿主的操作系统 `{other}`；请显式指定目标三元组或四元组"
-            )));
+            return Err(TargetResolutionError::new(format!("无法识别构建宿主的操作系统 `{other}`；请显式指定目标三元组或四元组")));
         }
     };
     Ok(CanonicalTarget::new(arch, vendor, specification, Some(abi)))
@@ -331,7 +327,12 @@ fn freeze(target: CanonicalTarget) -> CanonicalTarget {
 fn require_machine_platform(request: TargetRequest, platform: CanonicalTarget) -> Result<CanonicalTarget, TargetResolutionError> {
     let platform = freeze(platform);
     match platform.arch {
-        CanonicalArch::X86 | CanonicalArch::X86_64 | CanonicalArch::AArch64 | CanonicalArch::Arm | CanonicalArch::RiscV32 | CanonicalArch::RiscV64 => {}
+        CanonicalArch::X86
+        | CanonicalArch::X86_64
+        | CanonicalArch::AArch64
+        | CanonicalArch::Arm
+        | CanonicalArch::RiscV32
+        | CanonicalArch::RiscV64 => {}
         other => {
             return Err(TargetResolutionError::new(format!(
                 "`{request}` 是原生宿主占位符，但平台 `{platform}` 的架构是 `{}`，不是机器架构",
@@ -405,9 +406,7 @@ impl PythonHostProbe {
     ) -> Result<Self, TargetResolutionError> {
         let platform = host_platform_from_tokens(platform, machine, "Python")?;
         if module_suffix.trim().is_empty() {
-            return Err(TargetResolutionError::new(
-                "Python 宿主没有提供扩展后缀（`EXT_SUFFIX`）；扩展产物名不能只凭 OS 推导",
-            ));
+            return Err(TargetResolutionError::new("Python 宿主没有提供扩展后缀（`EXT_SUFFIX`）；扩展产物名不能只凭 OS 推导"));
         }
         if platform.specification == CanonicalSpecification::Windows && import_library.is_none_or(|value| value.trim().is_empty()) {
             return Err(TargetResolutionError::new(

@@ -8,8 +8,7 @@ use crate::numeric::{budget::ExecutionBudget, kernel::ScratchWorkspace};
 /// 借用 scratch 执行 kernel（调用结束清空）。
 #[cfg(feature = "std")]
 pub(crate) fn with_kernel_scratch<R>(budget: &ExecutionBudget, f: impl FnOnce(&mut ScratchWorkspace, &ExecutionBudget) -> R) -> R {
-    use std::cell::RefCell;
-    use std::thread_local;
+    use std::{cell::RefCell, thread_local};
 
     thread_local! {
         static KERNEL_SCRATCH: RefCell<ScratchWorkspace> = RefCell::new(ScratchWorkspace::default());

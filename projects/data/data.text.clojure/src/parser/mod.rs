@@ -108,7 +108,12 @@ impl<'config> ClojureParser<'config> {
 }
 
 impl<'config> Parser<ClojureLanguage> for ClojureParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ClojureLanguage>) -> ParseOutput<'a, ClojureLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ClojureLanguage>,
+    ) -> ParseOutput<'a, ClojureLanguage> {
         let lexer = crate::lexer::ClojureLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -97,8 +97,16 @@ fn test_plain_call_shapes_do_not_regress() {
     let (select, _) = select_and_source("SELECT ROUND(x, 2) FROM t;");
     let (_, args, window) = call(first_expression(&select), "ROUND");
     assert_eq!(args.len(), 2, "`ROUND(x, 2)` must keep both arguments: {args:?}");
-    assert!(matches!(&args[0], Expression::Identifier(identifier) if identifier.name.as_ref() == "x"), "the first argument stays an identifier: {:?}", args[0]);
-    assert!(matches!(&args[1], Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "2"), "the second argument stays a number literal: {:?}", args[1]);
+    assert!(
+        matches!(&args[0], Expression::Identifier(identifier) if identifier.name.as_ref() == "x"),
+        "the first argument stays an identifier: {:?}",
+        args[0]
+    );
+    assert!(
+        matches!(&args[1], Expression::Literal(Literal::Number(value, _)) if value.as_ref() == "2"),
+        "the second argument stays a number literal: {:?}",
+        args[1]
+    );
     assert!(window.is_none(), "`ROUND(x, 2)` has no window: {window:?}");
 }
 

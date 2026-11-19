@@ -262,13 +262,8 @@ pub fn open_writable(path: &Path, options: OpenWritableOptions) -> std::result::
     }
     let lock = WriterLock::acquire(path, options.busy_timeout).map_err(OpenWritableError::Lock)?;
     if exists {
-        let pages = crate::sqlite::journal::recover(
-            path,
-            false,
-            options.publish == PublishMode::JournalTruncate,
-            options.synchronous,
-        )
-        .map_err(OpenWritableError::Storage)?;
+        let pages = crate::sqlite::journal::recover(path, false, options.publish == PublishMode::JournalTruncate, options.synchronous)
+            .map_err(OpenWritableError::Storage)?;
         let writer = SqliteWriter::from_pages(pages).map_err(OpenWritableError::Storage)?;
         return Ok(OpenedWritable { lock, writer, created: false });
     }

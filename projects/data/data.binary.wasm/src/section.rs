@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    SECTION_CODE, SECTION_EXPORT, SECTION_IMPORT, SECTION_TYPE, WasmBinaryError, WasmBinaryModule, WasmByteReader,
-    compute_section_offset, skip_value_type,
+    SECTION_CODE, SECTION_EXPORT, SECTION_IMPORT, SECTION_TYPE, WasmBinaryError, WasmBinaryModule, WasmByteReader, compute_section_offset,
+    skip_value_type,
 };
 
 /// `WASM` 外部实体种类，用于 `import` / `export` 段条目。

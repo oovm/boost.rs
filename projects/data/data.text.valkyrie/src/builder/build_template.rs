@@ -1,6 +1,8 @@
 use crate::{
     ValkyrieLanguage, ValkyrieParser,
-    ast::{Statement, StatementNode, TemplateIf, TemplateIfArm, TemplateLoop, TemplateMatch, TemplateMatchArm, TemplateNode, TemplateTokenStream},
+    ast::{
+        Statement, StatementNode, TemplateIf, TemplateIfArm, TemplateLoop, TemplateMatch, TemplateMatchArm, TemplateNode, TemplateTokenStream,
+    },
     builder::ValkyrieBuilder,
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
     parser::{
@@ -8,14 +10,22 @@ use crate::{
         template_directive::{directive_first_keyword, directive_payload_tokens, is_else_if_directive, parse_template_directive},
     },
 };
-use data_text_core::{TextError, Parser, RedNode, RedTree, Source, SourceText, Token, TokenType, parser::session::ParseSession};
+use data_text_core::{Parser, RedNode, RedTree, Source, SourceText, TextError, Token, TokenType, parser::session::ParseSession};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_template_item<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<StatementNode, TextError> {
+    pub(crate) fn build_template_item<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<StatementNode, TextError> {
         Ok(StatementNode::Template(Box::new(self.build_template_node(node, source)?)))
     }
 
-    pub(crate) fn build_template_statement<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Statement, TextError> {
+    pub(crate) fn build_template_statement<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Statement, TextError> {
         Ok(Statement::Template(Box::new(self.build_template_node(node, source)?)))
     }
 
@@ -55,14 +65,21 @@ impl<'config> ValkyrieBuilder<'config> {
                 }
                 Ok(TemplateNode::Match(TemplateMatch { header, arms, span: node.span() }))
             }
-            ValkyrieElementType::TemplateStatement => Ok(TemplateNode::Fragment { tokens: directive_tokens_from_node(&node), span: node.span() }),
+            ValkyrieElementType::TemplateStatement => {
+                Ok(TemplateNode::Fragment { tokens: directive_tokens_from_node(&node), span: node.span() })
+            }
             _ => Err(source.syntax_error(format!("Unexpected template node: {:?}", node.green.kind), node.span().start)),
         }
     }
 
     fn build_template_if_arm<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TemplateIfArm, TextError> {
         let directive = parse_template_directive(&directive_tokens_from_node(&node));
-        let header = if directive_first_keyword(&directive.tokens) == Some(ValkyrieKeywords::Else) && !is_else_if_directive(&directive.tokens) { Vec::new() } else { directive_payload_tokens(&directive) };
+        let header = if directive_first_keyword(&directive.tokens) == Some(ValkyrieKeywords::Else) && !is_else_if_directive(&directive.tokens) {
+            Vec::new()
+        }
+        else {
+            directive_payload_tokens(&directive)
+        };
         let body = self.build_template_body_items(&node, source)?;
         Ok(TemplateIfArm { header, body, span: node.span() })
     }
@@ -79,11 +96,21 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TemplateMatchArm { pattern: None, body, span: node.span() })
     }
 
-    fn build_template_body_items<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<StatementNode>, TextError> {
+    fn build_template_body_items<S: Source + ?Sized>(
+        &self,
+        node: &RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Vec<StatementNode>, TextError> {
         let mut items = Vec::new();
         for child in node.children() {
             if let RedTree::Node(child_node) = child {
-                if matches!(child_node.green.kind, ValkyrieElementType::TemplateIfStatement | ValkyrieElementType::TemplateLoop | ValkyrieElementType::TemplateMatch | ValkyrieElementType::TemplateStatement) {
+                if matches!(
+                    child_node.green.kind,
+                    ValkyrieElementType::TemplateIfStatement
+                        | ValkyrieElementType::TemplateLoop
+                        | ValkyrieElementType::TemplateMatch
+                        | ValkyrieElementType::TemplateStatement
+                ) {
                     items.push(self.build_template_item(child_node, source)?);
                     continue;
                 }
@@ -95,7 +122,11 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(items)
     }
 
-    fn build_items_from_template_text<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<StatementNode>, TextError> {
+    fn build_items_from_template_text<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Vec<StatementNode>, TextError> {
         let text = crate::builder::text(source, node.span());
         if text.trim().is_empty() {
             return Ok(Vec::new());

@@ -120,10 +120,10 @@ impl Frame {
         if available == 0 {
             return Err(crate::JvmError::StackUnderflow { needed: 1, available });
         }
-        self.stack.pop().ok_or(crate::JvmError::StackUnderflow { needed: 1, available }).map_err(|_| crate::JvmError::TypeMismatch {
-            expected,
-            actual: "empty",
-        })
+        self.stack
+            .pop()
+            .ok_or(crate::JvmError::StackUnderflow { needed: 1, available })
+            .map_err(|_| crate::JvmError::TypeMismatch { expected, actual: "empty" })
     }
 
     /// 弹出两个单槽整数，先弹出的为右操作数。

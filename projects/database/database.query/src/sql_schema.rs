@@ -249,7 +249,10 @@ impl RegistryState {
                 // projection, exactly as the write path can no longer enforce it.
                 let mut foreign_keys = Vec::new();
                 for key in &table.foreign_keys {
-                    let Some(parent) = self.table(&key.references_table) else { continue };
+                    let Some(parent) = self.table(&key.references_table)
+                    else {
+                        continue;
+                    };
                     let columns: Option<Vec<u64>> = key.columns.iter().map(|name| field_id(table, name)).collect();
                     let parent_columns: Option<Vec<u64>> = key.references_columns.iter().map(|name| field_id(parent, name)).collect();
                     if let (Some(columns), Some(parent_columns)) = (columns, parent_columns) {
@@ -520,10 +523,8 @@ mod tests {
 
     #[test]
     fn duplicate_identities_fail_validation() {
-        let state = RegistryState::empty().seeded(vec![
-            table("a", 1, vec![field("id", 1, SqlFieldType::Int32)]),
-            table("b", 1, vec![field("id", 2, SqlFieldType::Int32)]),
-        ]);
+        let state = RegistryState::empty()
+            .seeded(vec![table("a", 1, vec![field("id", 1, SqlFieldType::Int32)]), table("b", 1, vec![field("id", 2, SqlFieldType::Int32)])]);
         let error = state.validate().expect_err("duplicate type id");
         assert!(error.message.contains("type identity"));
     }

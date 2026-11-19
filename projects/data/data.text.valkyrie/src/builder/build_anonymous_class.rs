@@ -4,7 +4,7 @@ use crate::{
     builder::{ValkyrieBuilder, text},
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// Builds an anonymous `class { ... }` / `structure { ... }` expression.
@@ -14,7 +14,11 @@ impl<'config> ValkyrieBuilder<'config> {
     /// - `structure { ... }`
     /// - `class: Trait { ... }`
     /// - `class(Parent)` / `class(alias: Parent)` / `class()`
-    pub(crate) fn build_anonymous_class<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_anonymous_class<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut is_structure = false;
         let mut annotations = Vec::new();
@@ -29,7 +33,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Keyword(ValkyrieKeywords::Structure) => {
                         is_structure = true;
                     }
@@ -62,7 +69,8 @@ impl<'config> ValkyrieBuilder<'config> {
                             parents.push(Parent { alias: None, name: path, span: n.span() });
                         }
                     }
-                    crate::parser::element_type::ValkyrieElementType::ParameterList | crate::parser::element_type::ValkyrieElementType::ArgList => {
+                    crate::parser::element_type::ValkyrieElementType::ParameterList
+                    | crate::parser::element_type::ValkyrieElementType::ArgList => {
                         parent_nodes.push(n);
                     }
                     crate::parser::element_type::ValkyrieElementType::Field => {
@@ -85,7 +93,10 @@ impl<'config> ValkyrieBuilder<'config> {
                 for child in parent_node.children() {
                     match child {
                         RedTree::Leaf(t) => match t.kind {
-                            ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                            ValkyrieTokenType::Whitespace
+                            | ValkyrieTokenType::Newline
+                            | ValkyrieTokenType::LineComment
+                            | ValkyrieTokenType::BlockComment => continue,
                             ValkyrieTokenType::Identifier => {
                                 let name = Identifier { name: text(source, t.span), span: t.span };
                                 parents.push(Parent { alias: None, name: NamePath { parts: vec![name], span: t.span }, span: t.span });
@@ -129,7 +140,11 @@ impl<'config> ValkyrieBuilder<'config> {
     ///     }
     /// }
     /// ```
-    pub(crate) fn build_super_call<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_super_call<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut parent_alias = None;
         let mut method = None;
@@ -138,7 +153,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         if method.is_none() {
                             method = Some(Identifier { name: text(source, t.span), span: t.span });

@@ -1,5 +1,5 @@
 use data_text_core::{
-    TextError, Source, TextEdit, TokenType,
+    Source, TextEdit, TextError, TokenType,
     parser::{ParseCache, Parser, ParserState},
 };
 
@@ -224,7 +224,12 @@ impl<'config> VonParser<'config> {
 }
 
 impl<'config> Parser<VonLanguage> for VonParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VonLanguage>) -> data_text_core::ParseOutput<'a, VonLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VonLanguage>,
+    ) -> data_text_core::ParseOutput<'a, VonLanguage> {
         let lexer = VonLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, source, edits, cache, |state| {
             let checkpoint = state.checkpoint();

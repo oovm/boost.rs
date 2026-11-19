@@ -83,7 +83,8 @@ impl MirBuilder {
         match extractor {
             HirExtractorPattern::Constructor { fields, .. } => {
                 for (slot, field_pattern) in fields.iter().enumerate() {
-                    let slot_type = self.infer_extractor_payload_field_type(&payload, slot).or_else(|| self.infer_extractor_slot_type(resolved, slot));
+                    let slot_type =
+                        self.infer_extractor_payload_field_type(&payload, slot).or_else(|| self.infer_extractor_slot_type(resolved, slot));
                     let extracted = self.lower_extractor_payload_field_operand(payload.clone(), slot, slot_type);
                     let item_match = self.lower_pattern_match_operand(field_pattern, extracted);
                     accumulated = Some(self.merge_pattern_match_operands(accumulated, item_match));
@@ -192,12 +193,7 @@ impl MirBuilder {
     }
 
     /// 按变体记录字段身份取 payload 槽位；没有记录身份时只允许单字段 payload 本身。
-    fn lower_extractor_payload_field_operand(
-        &mut self,
-        payload: MirOperand,
-        slot: usize,
-        expected_type: Option<ValkyrieType>,
-    ) -> MirOperand {
+    fn lower_extractor_payload_field_operand(&mut self, payload: MirOperand, slot: usize, expected_type: Option<ValkyrieType>) -> MirOperand {
         let payload_type = infer_builder_operand_type(&payload, &self.value_types);
         if let Some((field, field_type)) = payload_type.as_ref().and_then(|payload_ty| self.variant_record_slot(payload_ty, slot)) {
             let output = self.next_value(MirValueOrigin::Temporary);
@@ -287,7 +283,8 @@ impl MirBuilder {
 
     fn lower_binary_operator_operand(&mut self, member: &str, lhs: MirOperand, rhs: MirOperand, subject: &ValkyrieType) -> MirOperand {
         let member_id = Identifier::new(member);
-        let Some(instance) = crate::compiler::mir::ssa::generic_call_instantiation::lookup_member_dispatch(&self.member_dispatch, subject, &member_id, None)
+        let Some(instance) =
+            crate::compiler::mir::ssa::generic_call_instantiation::lookup_member_dispatch(&self.member_dispatch, subject, &member_id, None)
         else {
             return self.reject_unbound_member_call(member);
         };
@@ -629,5 +626,4 @@ impl MirBuilder {
             });
         MirOperand::Constant(MirConstant::Bool(false))
     }
-
 }

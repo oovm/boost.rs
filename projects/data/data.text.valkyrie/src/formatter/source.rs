@@ -38,8 +38,10 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let right = &pair[1];
         let span = Range { start: left.span.end, end: right.span.start };
         let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("lexer token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
+        let left_text =
+            source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text =
+            source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let constraint = valkyrie_gap_constraint(left_text, gap, right_text, left.kind, right.kind, index, &significant, source);
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
     }
@@ -55,10 +57,26 @@ fn is_layout(kind: ValkyrieTokenType) -> bool {
 }
 
 fn should_preserve_gap(left: &str, gap: &str, right: &str) -> bool {
-    gap.contains('\n') || left.starts_with('#') || right.starts_with('#') || left.starts_with("<#") || right.starts_with("<#") || gap.contains("<#") || gap.contains("#>") || gap.trim_start().starts_with('#')
+    gap.contains('\n')
+        || left.starts_with('#')
+        || right.starts_with('#')
+        || left.starts_with("<#")
+        || right.starts_with("<#")
+        || gap.contains("<#")
+        || gap.contains("#>")
+        || gap.trim_start().starts_with('#')
 }
 
-fn valkyrie_gap_constraint(left: &str, gap: &str, right: &str, left_kind: ValkyrieTokenType, right_kind: ValkyrieTokenType, index: usize, significant: &[&data_text_core::Token<ValkyrieTokenType>], source: &str) -> GapConstraint {
+fn valkyrie_gap_constraint(
+    left: &str,
+    gap: &str,
+    right: &str,
+    left_kind: ValkyrieTokenType,
+    right_kind: ValkyrieTokenType,
+    index: usize,
+    significant: &[&data_text_core::Token<ValkyrieTokenType>],
+    source: &str,
+) -> GapConstraint {
     if should_preserve_gap(left, gap, right) {
         return GapConstraint::Preserve;
     }
@@ -158,7 +176,9 @@ fn valkyrie_gap_constraint(left: &str, gap: &str, right: &str, left_kind: Valkyr
         }
     }
 
-    if matches!(left_kind, ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment) || matches!(right_kind, ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment) {
+    if matches!(left_kind, ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment)
+        || matches!(right_kind, ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment)
+    {
         constraint = GapConstraint::Preserve;
     }
 
@@ -268,7 +288,13 @@ fn is_generic_close(significant: &[&data_text_core::Token<ValkyrieTokenType>], c
 fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<ValkyrieTokenType>]) -> Result<(), data_text_core::TextError> {
     let mut stack = Vec::new();
     for token in tokens {
-        if matches!(token.kind, ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment) {
+        if matches!(
+            token.kind,
+            ValkyrieTokenType::StringLiteral
+                | ValkyrieTokenType::CharLiteral
+                | ValkyrieTokenType::LineComment
+                | ValkyrieTokenType::BlockComment
+        ) {
             continue;
         }
         match token.kind {
@@ -299,7 +325,12 @@ fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<ValkyrieTo
             _ => {}
         }
     }
-    if stack.is_empty() { Ok(()) } else { Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
+    if stack.is_empty() {
+        Ok(())
+    }
+    else {
+        Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}")))
+    }
 }
 
 fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::TextError> {

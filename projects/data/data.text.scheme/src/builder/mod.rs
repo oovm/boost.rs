@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{language::SchemeLanguage, parser::SchemeParser};
-use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, Parser, TextDiagnostics, TextEdit, source::Source};
 
 /// Builder for the Scheme language.
 #[derive(Clone)]
@@ -17,7 +17,12 @@ impl<'config> SchemeBuilder<'config> {
 }
 
 impl<'config> Builder<SchemeLanguage> for SchemeBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SchemeLanguage>) -> TextDiagnostics<()> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<SchemeLanguage>,
+    ) -> TextDiagnostics<()> {
         let parser = SchemeParser::new(self.config);
         let lexer = crate::lexer::SchemeLexer::new(&self.config);
 

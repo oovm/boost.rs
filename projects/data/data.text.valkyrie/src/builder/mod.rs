@@ -24,7 +24,7 @@ mod utils;
 use core::cell::RefCell;
 
 use crate::{ValkyrieLanguage, ValkyrieParser};
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextError, Parser, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, Parser, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source};
 
 /// Extracts text from source using a range.
 ///
@@ -112,7 +112,12 @@ impl<'config> Builder<ValkyrieLanguage> for ValkyrieBuilder<'config> {
     ///
     /// # Returns
     /// A `BuildOutput` containing the built AST or an error, along with any diagnostics.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ValkyrieLanguage>) -> BuildOutput<ValkyrieLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ValkyrieLanguage>,
+    ) -> BuildOutput<ValkyrieLanguage> {
         let parser = ValkyrieParser::new(self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<ValkyrieLanguage>::default();

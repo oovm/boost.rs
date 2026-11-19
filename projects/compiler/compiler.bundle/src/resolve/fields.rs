@@ -21,8 +21,7 @@
 //! - `exports` 目标必须以 `./` 开头（包内相对），否则视为包配置非法；
 //!   `imports` 目标可以是 `./` 包内路径、嵌套 `#` specifier 或裸包名。
 
-use super::Target;
-use super::json::Json;
+use super::{Target, json::Json};
 use std::borrow::Borrow;
 
 /// 字段匹配后的目标引用。
@@ -58,34 +57,26 @@ enum Mode {
 }
 
 /// 匹配 `exports` 的一个子路径（`"."` 或 `"./sub"`），返回包内目标引用。
-pub(crate) fn match_exports(
-    exports: &Json,
-    subpath: &str,
-    target: Target,
-) -> Result<TargetRef, FieldFailure> {
+pub(crate) fn match_exports(exports: &Json, subpath: &str, target: Target) -> Result<TargetRef, FieldFailure> {
     let entries = normalize_exports(exports)?;
-    let Some((_, value, captured)) = best_key_match(&entries, subpath) else {
+    let Some((_, value, captured)) = best_key_match(&entries, subpath)
+    else {
         return Err(FieldFailure::Encapsulated);
     };
     resolve_target(value, captured.as_deref(), target.conditions(), Mode::Exports)
 }
 
 /// 匹配 `imports` 的一个 `#` specifier，返回目标引用。
-pub(crate) fn match_imports(
-    imports: &Json,
-    specifier: &str,
-    target: Target,
-) -> Result<TargetRef, FieldFailure> {
-    let entries = imports
-        .as_object()
-        .ok_or_else(|| FieldFailure::Invalid("imports 字段必须是以 `#` 键开头的对象".into()))?;
+pub(crate) fn match_imports(imports: &Json, specifier: &str, target: Target) -> Result<TargetRef, FieldFailure> {
+    let entries = imports.as_object().ok_or_else(|| FieldFailure::Invalid("imports 字段必须是以 `#` 键开头的对象".into()))?;
     for (key, _) in entries {
         if !key.starts_with('#') {
             return Err(FieldFailure::Invalid(format!("imports 键必须以 `#` 开头：`{key}`")));
         }
         validate_pattern_key(key, "imports")?;
     }
-    let Some((_, value, captured)) = best_key_match(entries, specifier) else {
+    let Some((_, value, captured)) = best_key_match(entries, specifier)
+    else {
         return Err(FieldFailure::Undefined);
     };
     resolve_target(value, captured.as_deref(), target.conditions(), Mode::Imports)
@@ -108,19 +99,17 @@ fn normalize_exports(exports: &Json) -> Result<Vec<(String, &Json)>, FieldFailur
             if dot_keys == entries.len() {
                 for (key, _) in entries {
                     if key != "." && !key.starts_with("./") {
-                        return Err(FieldFailure::Invalid(format!(
-                            "exports 子路径键非法：`{key}`（必须是 `.` 或 `./` 前缀）"
-                        )));
+                        return Err(FieldFailure::Invalid(format!("exports 子路径键非法：`{key}`（必须是 `.` 或 `./` 前缀）")));
                     }
                     validate_pattern_key(key, "exports")?;
                 }
                 Ok(entries.iter().map(|(key, value)| (key.clone(), value)).collect())
-            } else if dot_keys == 0 {
+            }
+            else if dot_keys == 0 {
                 Ok(vec![(".".to_string(), exports)])
-            } else {
-                Err(FieldFailure::Invalid(
-                    "exports 不能在同一层混合子路径键（`.` / `./`）与条件键".into(),
-                ))
+            }
+            else {
+                Err(FieldFailure::Invalid("exports 不能在同一层混合子路径键（`.` / `./`）与条件键".into()))
             }
         }
         other => Err(FieldFailure::Invalid(format!("exports 字段类型非法：{}", type_name(other)))),
@@ -138,10 +127,7 @@ fn validate_pattern_key(key: &str, field: &str) -> Result<(), FieldFailure> {
 
 /// 精确键优先；否则在含 `*` 的键中按最长前缀、再最长后缀选一个。
 /// 返回 (键, 目标, pattern 捕获段)。
-fn best_key_match<'a, T: Borrow<Json>>(
-    entries: &'a [(String, T)],
-    spec: &str,
-) -> Option<(&'a str, &'a Json, Option<String>)> {
+fn best_key_match<'a, T: Borrow<Json>>(entries: &'a [(String, T)], spec: &str) -> Option<(&'a str, &'a Json, Option<String>)> {
     for (key, value) in entries {
         if !key.contains('*') && key == spec {
             return Some((key.as_str(), value.borrow(), None));
@@ -149,20 +135,15 @@ fn best_key_match<'a, T: Borrow<Json>>(
     }
     let mut best: Option<(usize, usize, &str, &Json, String)> = None;
     for (key, value) in entries {
-        let Some((prefix, suffix)) = split_single_star(key) else {
+        let Some((prefix, suffix)) = split_single_star(key)
+        else {
             continue;
         };
-        if spec.len() < prefix.len() + suffix.len()
-            || !spec.starts_with(prefix)
-            || !spec.ends_with(suffix)
-        {
+        if spec.len() < prefix.len() + suffix.len() || !spec.starts_with(prefix) || !spec.ends_with(suffix) {
             continue;
         }
         let score = (prefix.len(), suffix.len());
-        if best
-            .as_ref()
-            .is_none_or(|(best_prefix, best_suffix, ..)| score > (*best_prefix, *best_suffix))
-        {
+        if best.as_ref().is_none_or(|(best_prefix, best_suffix, ..)| score > (*best_prefix, *best_suffix)) {
             let captured = spec[prefix.len()..spec.len() - suffix.len()].to_string();
             best = Some((score.0, score.1, key.as_str(), value.borrow(), captured));
         }
@@ -181,12 +162,7 @@ fn split_single_star(key: &str) -> Option<(&str, &str)> {
 }
 
 /// 按 Node PACKAGE_TARGET_RESOLVE 口径解析一个目标值。
-fn resolve_target(
-    value: &Json,
-    captured: Option<&str>,
-    active: &[&str],
-    mode: Mode,
-) -> Result<TargetRef, FieldFailure> {
+fn resolve_target(value: &Json, captured: Option<&str>, active: &[&str], mode: Mode) -> Result<TargetRef, FieldFailure> {
     match value {
         Json::Null => Err(FieldFailure::Forbidden),
         Json::String(raw) => {
@@ -198,15 +174,15 @@ fn resolve_target(
                 return Ok(TargetRef::Relative(text));
             }
             match mode {
-                Mode::Exports => {
-                    Err(FieldFailure::Invalid(format!("exports 目标必须以 `./` 开头：`{text}`")))
-                }
+                Mode::Exports => Err(FieldFailure::Invalid(format!("exports 目标必须以 `./` 开头：`{text}`"))),
                 Mode::Imports => {
                     if text.starts_with('#') {
                         Ok(TargetRef::Hash(text))
-                    } else if text.starts_with("../") || text.starts_with('/') {
+                    }
+                    else if text.starts_with("../") || text.starts_with('/') {
                         Err(FieldFailure::Invalid(format!("imports 目标不能越出包根：`{text}`")))
-                    } else {
+                    }
+                    else {
                         Ok(TargetRef::Bare(text))
                     }
                 }
@@ -247,10 +223,9 @@ fn resolve_target(
             }
             Err(FieldFailure::NoApplicableCondition(keys_seen))
         }
-        Json::Bool(_) | Json::Number(_) => Err(FieldFailure::Invalid(format!(
-            "解析目标必须是字符串、数组、对象或 null，实际是 {}",
-            type_name(value)
-        ))),
+        Json::Bool(_) | Json::Number(_) => {
+            Err(FieldFailure::Invalid(format!("解析目标必须是字符串、数组、对象或 null，实际是 {}", type_name(value))))
+        }
     }
 }
 

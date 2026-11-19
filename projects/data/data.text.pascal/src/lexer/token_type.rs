@@ -216,8 +216,27 @@ impl TokenType for PascalTokenType {
             | Self::Div
             | Self::Mod
             | Self::In => UniversalTokenRole::Keyword,
-            Self::Plus | Self::Minus | Self::Multiply | Self::Divide | Self::Assign | Self::Equal | Self::NotEqual | Self::Less | Self::LessEqual | Self::Greater | Self::GreaterEqual | Self::Caret => UniversalTokenRole::Operator,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::Semicolon | Self::Comma | Self::Dot | Self::Colon | Self::Range => UniversalTokenRole::Punctuation,
+            Self::Plus
+            | Self::Minus
+            | Self::Multiply
+            | Self::Divide
+            | Self::Assign
+            | Self::Equal
+            | Self::NotEqual
+            | Self::Less
+            | Self::LessEqual
+            | Self::Greater
+            | Self::GreaterEqual
+            | Self::Caret => UniversalTokenRole::Operator,
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::Colon
+            | Self::Range => UniversalTokenRole::Punctuation,
             Self::Error => UniversalTokenRole::Error,
             Self::Eof => UniversalTokenRole::Eof,
             _ => UniversalTokenRole::None,

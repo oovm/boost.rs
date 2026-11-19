@@ -17,7 +17,18 @@ impl TokenType for ProtobufTokenType {
             Self::Comment => UniversalTokenRole::Comment,
             Self::StringLiteral | Self::NumberLiteral | Self::BooleanLiteral => UniversalTokenRole::Literal,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::Assign | Self::Semicolon | Self::Comma | Self::Dot | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::LeftAngle | Self::RightAngle => UniversalTokenRole::Punctuation,
+            Self::Assign
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftAngle
+            | Self::RightAngle => UniversalTokenRole::Punctuation,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,
             _ => UniversalTokenRole::Keyword, // Most variants are keywords or types

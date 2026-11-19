@@ -45,7 +45,10 @@ fn parse_implicit_match_arm_body<S: data_text_core::Source + ?Sized>(state: &mut
     while state.not_at_end() {
         state.skip_trivia();
         if depth == 0 {
-            if state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Case)) || state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Else)) || at_default_arm_keyword(state) {
+            if state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Case))
+                || state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Else))
+                || at_default_arm_keyword(state)
+            {
                 break;
             }
             if state.at(ValkyrieTokenType::BraceR) {
@@ -73,7 +76,9 @@ pub(crate) fn parse_if_expression<S: data_text_core::Source + ?Sized>(state: &mu
     parse_block_expression(state)?;
     // `else` 同时是 match 臂标记（`else:`）。只有后随 `{` 或 `if` 时才是 if 的 else 分支，
     // 后随 `:` 时属于外层 match 臂，不得被 if 贪婪吞掉。
-    let else_starts_if_branch = state.peek_non_trivia_kind_at(1).is_some_and(|kind| matches!(kind, ValkyrieTokenType::BraceL) || matches!(kind, ValkyrieTokenType::Keyword(ValkyrieKeywords::If)));
+    let else_starts_if_branch = state
+        .peek_non_trivia_kind_at(1)
+        .is_some_and(|kind| matches!(kind, ValkyrieTokenType::BraceL) || matches!(kind, ValkyrieTokenType::Keyword(ValkyrieKeywords::If)));
     if state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::Else)) && else_starts_if_branch {
         state.bump();
         if state.at(ValkyrieTokenType::Keyword(ValkyrieKeywords::If)) {
@@ -136,7 +141,12 @@ fn parse_match_pattern_atom<S: data_text_core::Source + ?Sized>(state: &mut Stat
     let pcp = state.sink.checkpoint();
     // 字面量原子：完整模式或构造/数组子模式的单个 token，直接消费进当前 Pattern 节点；
     // builder 按叶节点映射 `Pattern::Literal`，不经零消费的递归调用产生空节点。
-    if state.at(ValkyrieTokenType::IntegerLiteral) || state.at(ValkyrieTokenType::FloatLiteral) || state.at(ValkyrieTokenType::BoolLiteral) || state.at(ValkyrieTokenType::StringLiteral) || state.at(ValkyrieTokenType::CharLiteral) {
+    if state.at(ValkyrieTokenType::IntegerLiteral)
+        || state.at(ValkyrieTokenType::FloatLiteral)
+        || state.at(ValkyrieTokenType::BoolLiteral)
+        || state.at(ValkyrieTokenType::StringLiteral)
+        || state.at(ValkyrieTokenType::CharLiteral)
+    {
         state.bump();
     }
     else if state.at(ValkyrieTokenType::Underscore) {
@@ -151,7 +161,11 @@ fn parse_match_pattern_atom<S: data_text_core::Source + ?Sized>(state: &mut Stat
                 break;
             }
             // 未闭合保护：撞上 arm / 块结构边界立即按未闭合处理，不吞并后续结构。
-            if state.at(ValkyrieTokenType::BraceR) || state.at(ValkyrieTokenType::Arrow) || state.at(ValkyrieTokenType::Colon) || state.at(ValkyrieTokenType::Eq) {
+            if state.at(ValkyrieTokenType::BraceR)
+                || state.at(ValkyrieTokenType::Arrow)
+                || state.at(ValkyrieTokenType::Colon)
+                || state.at(ValkyrieTokenType::Eq)
+            {
                 break;
             }
             let before = state.checkpoint().0;
@@ -288,7 +302,9 @@ pub(crate) fn parse_match_arm<S: data_text_core::Source + ?Sized>(state: &mut St
 }
 
 /// 解析带标签的循环：`'label: loop/while/for …`。
-pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     if state.at(ValkyrieTokenType::Colon) {
@@ -308,9 +324,14 @@ pub(crate) fn parse_loop_expression<S: data_text_core::Source + ?Sized>(state: &
     parse_loop_expression_with(state, cp)
 }
 
-fn parse_loop_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::TextError> {
+fn parse_loop_expression_with<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    cp: usize,
+) -> Result<(), data_text_core::TextError> {
     state.bump();
-    if (state.at(ValkyrieTokenType::Identifier) || state.at(ValkyrieTokenType::Underscore)) && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::Keyword(ValkyrieKeywords::In)) {
+    if (state.at(ValkyrieTokenType::Identifier) || state.at(ValkyrieTokenType::Underscore))
+        && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::Keyword(ValkyrieKeywords::In))
+    {
         parse_pattern(state)?;
         state.bump();
         crate::parser::parse_expressions::parse_scrutinee_expression(state)?;
@@ -336,7 +357,10 @@ pub(crate) fn parse_while_expression<S: data_text_core::Source + ?Sized>(state: 
     parse_while_expression_with(state, cp)
 }
 
-fn parse_while_expression_with<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, cp: usize) -> Result<(), data_text_core::TextError> {
+fn parse_while_expression_with<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    cp: usize,
+) -> Result<(), data_text_core::TextError> {
     state.bump();
     crate::parser::parse_expressions::parse_condition_expression(state)?;
     parse_block_expression(state)?;
@@ -363,10 +387,24 @@ fn parse_for_expression_with<S: data_text_core::Source + ?Sized>(state: &mut Sta
 }
 
 fn can_start_return_value<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> bool {
-    if state.at(ValkyrieTokenType::Semicolon) || state.at(ValkyrieTokenType::BraceR) || state.at(ValkyrieTokenType::ParenthesisR) || state.at(ValkyrieTokenType::Eof) {
+    if state.at(ValkyrieTokenType::Semicolon)
+        || state.at(ValkyrieTokenType::BraceR)
+        || state.at(ValkyrieTokenType::ParenthesisR)
+        || state.at(ValkyrieTokenType::Eof)
+    {
         return false;
     }
-    if matches!(state.current().map(|token| &token.kind), Some(ValkyrieTokenType::Keyword(ValkyrieKeywords::Case | ValkyrieKeywords::Else | ValkyrieKeywords::Let | ValkyrieKeywords::Return | ValkyrieKeywords::Break | ValkyrieKeywords::Continue))) {
+    if matches!(
+        state.current().map(|token| &token.kind),
+        Some(ValkyrieTokenType::Keyword(
+            ValkyrieKeywords::Case
+                | ValkyrieKeywords::Else
+                | ValkyrieKeywords::Let
+                | ValkyrieKeywords::Return
+                | ValkyrieKeywords::Break
+                | ValkyrieKeywords::Continue
+        ))
+    ) {
         return false;
     }
     !at_default_arm_keyword(state)

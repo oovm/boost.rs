@@ -128,7 +128,12 @@ fn resolve_layout_identity(submission: &FragmentSubmission, ty: &SemanticType) -
 /// 字段声明值类型的布局身份已由 canonical 冻结在计划里（`field_type_layouts`）。
 /// 声明是聚合时只比较布局身份；声明不是聚合（标量 / 合成容器 / 函数）时按结构
 /// 逐层比较，名义叶子仍按布局身份判等。两侧都不得按拼写或名字回查。
-fn same_frozen_field_type(submission: &FragmentSubmission, field: &compiler_types::FieldId, declared: &SemanticType, actual: &SemanticType) -> bool {
+fn same_frozen_field_type(
+    submission: &FragmentSubmission,
+    field: &compiler_types::FieldId,
+    declared: &SemanticType,
+    actual: &SemanticType,
+) -> bool {
     if declared == actual {
         return true;
     }

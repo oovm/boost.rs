@@ -28,7 +28,9 @@ impl<'config> JasmParser<'config> {
     }
 
     fn skip_trivia<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
-        while state.not_at_end() && (state.at(JasmTokenType::Whitespace) || state.at(JasmTokenType::Newline) || state.at(JasmTokenType::Comment)) {
+        while state.not_at_end()
+            && (state.at(JasmTokenType::Whitespace) || state.at(JasmTokenType::Newline) || state.at(JasmTokenType::Comment))
+        {
             state.bump();
         }
     }
@@ -70,7 +72,12 @@ impl<'config> JasmParser<'config> {
         }
         else {
             // Error recovery: skip until identifier or next keyword
-            while state.not_at_end() && !state.at(JasmTokenType::Identifier) && !state.at(JasmTokenType::ExtendsKw) && !state.at(JasmTokenType::ImplementsKw) && !state.at(JasmTokenType::LeftBrace) {
+            while state.not_at_end()
+                && !state.at(JasmTokenType::Identifier)
+                && !state.at(JasmTokenType::ExtendsKw)
+                && !state.at(JasmTokenType::ImplementsKw)
+                && !state.at(JasmTokenType::LeftBrace)
+            {
                 state.advance();
             }
         }
@@ -85,7 +92,11 @@ impl<'config> JasmParser<'config> {
             }
             else {
                 // Error recovery: skip until identifier or next keyword
-                while state.not_at_end() && !state.at(JasmTokenType::Identifier) && !state.at(JasmTokenType::ImplementsKw) && !state.at(JasmTokenType::LeftBrace) {
+                while state.not_at_end()
+                    && !state.at(JasmTokenType::Identifier)
+                    && !state.at(JasmTokenType::ImplementsKw)
+                    && !state.at(JasmTokenType::LeftBrace)
+                {
                     state.advance();
                 }
             }
@@ -185,7 +196,13 @@ impl<'config> JasmParser<'config> {
         while state.not_at_end()
             && matches!(
                 state.current().map(|t| t.kind),
-                Some(JasmTokenType::Public) | Some(JasmTokenType::Private) | Some(JasmTokenType::Protected) | Some(JasmTokenType::Static) | Some(JasmTokenType::Final) | Some(JasmTokenType::Synthetic) | Some(JasmTokenType::Deprecated)
+                Some(JasmTokenType::Public)
+                    | Some(JasmTokenType::Private)
+                    | Some(JasmTokenType::Protected)
+                    | Some(JasmTokenType::Static)
+                    | Some(JasmTokenType::Final)
+                    | Some(JasmTokenType::Synthetic)
+                    | Some(JasmTokenType::Deprecated)
             )
         {
             state.bump();
@@ -194,7 +211,11 @@ impl<'config> JasmParser<'config> {
 
         // Error recovery: if no field keyword, skip until we find one or end of file
         if !state.at(JasmTokenType::FieldKw) {
-            while state.not_at_end() && !state.at(JasmTokenType::FieldKw) && !state.at(JasmTokenType::MethodKw) && !state.at(JasmTokenType::RightBrace) {
+            while state.not_at_end()
+                && !state.at(JasmTokenType::FieldKw)
+                && !state.at(JasmTokenType::MethodKw)
+                && !state.at(JasmTokenType::RightBrace)
+            {
                 state.advance();
             }
         }
@@ -208,7 +229,12 @@ impl<'config> JasmParser<'config> {
         }
         else {
             // Error recovery: skip until identifier or descriptor
-            while state.not_at_end() && !state.at(JasmTokenType::Identifier) && !state.at(JasmTokenType::String) && !state.at(JasmTokenType::Newline) && !state.at(JasmTokenType::Semicolon) {
+            while state.not_at_end()
+                && !state.at(JasmTokenType::Identifier)
+                && !state.at(JasmTokenType::String)
+                && !state.at(JasmTokenType::Newline)
+                && !state.at(JasmTokenType::Semicolon)
+            {
                 state.advance();
             }
         }
@@ -253,7 +279,11 @@ impl<'config> JasmParser<'config> {
 
         // Error recovery: if no method keyword, skip until we find one or end of file
         if !state.at(JasmTokenType::MethodKw) {
-            while state.not_at_end() && !state.at(JasmTokenType::MethodKw) && !state.at(JasmTokenType::FieldKw) && !state.at(JasmTokenType::RightBrace) {
+            while state.not_at_end()
+                && !state.at(JasmTokenType::MethodKw)
+                && !state.at(JasmTokenType::FieldKw)
+                && !state.at(JasmTokenType::RightBrace)
+            {
                 state.advance();
             }
         }
@@ -267,7 +297,11 @@ impl<'config> JasmParser<'config> {
         }
         else {
             // Error recovery: skip until identifier or descriptor
-            while state.not_at_end() && !state.at(JasmTokenType::Identifier) && !state.at(JasmTokenType::String) && !state.at(JasmTokenType::LeftBrace) {
+            while state.not_at_end()
+                && !state.at(JasmTokenType::Identifier)
+                && !state.at(JasmTokenType::String)
+                && !state.at(JasmTokenType::LeftBrace)
+            {
                 state.advance();
             }
         }
@@ -313,7 +347,12 @@ impl<'config> JasmParser<'config> {
 }
 
 impl<'config> Parser<JasmLanguage> for JasmParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JasmLanguage>) -> ParseOutput<'a, JasmLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JasmLanguage>,
+    ) -> ParseOutput<'a, JasmLanguage> {
         let lexer = JasmLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

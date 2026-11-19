@@ -29,7 +29,12 @@ impl<'config> VampireParser<'config> {
 
 impl<'config> Parser<VampireLanguage> for VampireParser<'config> {
     /// Parses the input text and produces a green tree for the Vampire language.
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VampireLanguage>) -> ParseOutput<'a, VampireLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VampireLanguage>,
+    ) -> ParseOutput<'a, VampireLanguage> {
         let lexer = VampireLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

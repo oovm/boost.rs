@@ -102,12 +102,27 @@ impl<'a> HtmlDocumentView<'a> {
 fn index_element<'a>(element: &'a Element, parent: Option<u64>, nodes: &mut Vec<HtmlNodeData>, sources: &mut Vec<&'a Element>) -> u64 {
     let node_id = nodes.len() as u64;
     let attributes = element.attributes.iter().map(|attr| (attr.name.clone(), attr.value.clone())).collect::<Vec<_>>();
-    let classes = attributes.iter().find(|(name, _)| name.eq_ignore_ascii_case("class")).and_then(|(_, value)| value.as_ref()).map(|value| value.split_whitespace().map(str::to_string).collect()).unwrap_or_default();
+    let classes = attributes
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("class"))
+        .and_then(|(_, value)| value.as_ref())
+        .map(|value| value.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default();
     let id = attributes.iter().find(|(name, _)| name.eq_ignore_ascii_case("id")).and_then(|(_, value)| value.clone());
     let direct_text = collect_direct_text(&element.children);
     let descendant_text = collect_descendant_text(&element.children);
     let mut children = Vec::new();
-    nodes.push(HtmlNodeData { tag_name: element.tag_name.clone(), attributes, classes, id, parent, children: Vec::new(), direct_text, descendant_text, span: element.span });
+    nodes.push(HtmlNodeData {
+        tag_name: element.tag_name.clone(),
+        attributes,
+        classes,
+        id,
+        parent,
+        children: Vec::new(),
+        direct_text,
+        descendant_text,
+        span: element.span,
+    });
     sources.push(element);
     for child in &element.children {
         if let HtmlNode::Element(child_element) = child {
@@ -150,12 +165,18 @@ impl<'a> ElementView for HtmlElementView<'a> {
     }
 
     fn parent(&self) -> Option<ElementRef> {
-        self.document.node(self.node_id).and_then(|node| node.parent).map(|parent| ElementRef { node_id: parent, revision: self.document.revision })
+        self.document
+            .node(self.node_id)
+            .and_then(|node| node.parent)
+            .map(|parent| ElementRef { node_id: parent, revision: self.document.revision })
     }
 
     fn element_children(&self) -> Vec<ElementRef> {
         let revision = self.document.revision;
-        self.document.node(self.node_id).map(|node| node.children.iter().map(|child| ElementRef { node_id: *child, revision }).collect()).unwrap_or_default()
+        self.document
+            .node(self.node_id)
+            .map(|node| node.children.iter().map(|child| ElementRef { node_id: *child, revision }).collect())
+            .unwrap_or_default()
     }
 
     fn resolve(&self, reference: ElementRef) -> Option<Self> {
@@ -167,7 +188,11 @@ impl<'a> ElementView for HtmlElementView<'a> {
 
     fn attribute(&self, name: &ExpandedName) -> Option<Arc<str>> {
         let node = self.document.node(self.node_id)?;
-        node.attributes.iter().find(|(attr_name, _)| attr_name.eq_ignore_ascii_case(&name.local_name)).and_then(|(_, value)| value.as_ref()).map(|value| Arc::from(value.as_str()))
+        node.attributes
+            .iter()
+            .find(|(attr_name, _)| attr_name.eq_ignore_ascii_case(&name.local_name))
+            .and_then(|(_, value)| value.as_ref())
+            .map(|value| Arc::from(value.as_str()))
     }
 
     fn text_content(&self, policy: TextPolicy) -> Arc<str> {

@@ -15,7 +15,8 @@ use std::sync::LazyLock;
 type State<'s, S> = LexerState<'s, S, ElmLanguage>;
 
 static ELM_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static ELM_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "--", block_start: "{-", block_end: "-}", nested_blocks: true });
+static ELM_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "--", block_start: "{-", block_end: "-}", nested_blocks: true });
 static ELM_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 static ELM_CHAR: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['\''], escape: Some('\\') });
 
@@ -26,7 +27,12 @@ pub struct ElmLexer<'config> {
 }
 
 impl<'config> Lexer<ElmLanguage> for ElmLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<ElmLanguage>) -> LexOutput<ElmLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<ElmLanguage>,
+    ) -> LexOutput<ElmLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

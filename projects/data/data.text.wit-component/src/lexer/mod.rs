@@ -8,7 +8,7 @@ pub mod token_type;
 
 use crate::{language::WitLanguage, lexer::token_type::WitTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, TextEdit,
+    Lexer, LexerCache, LexerState, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -17,7 +17,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, WitLanguage>;
 
 static WIT_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static WIT_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
+static WIT_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
 static WIT_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer for WIT (WebAssembly Interface Types) files.
@@ -30,7 +31,12 @@ pub struct WitLexer<'config> {
 }
 
 impl<'config> Lexer<WitLanguage> for WitLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<WitLanguage>) -> LexOutput<WitLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<WitLanguage>,
+    ) -> LexOutput<WitLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

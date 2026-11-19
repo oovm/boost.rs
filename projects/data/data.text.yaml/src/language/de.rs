@@ -263,7 +263,10 @@ where
                             let item_line = item_line.trim();
                             if item_line.starts_with('-') {
                                 let item_value = item_line[1..].trim();
-                                items.push(YamlValueNode::Scalar(YamlScalar { span: (0..item_value.len()).into(), value: item_value.to_string() }));
+                                items.push(YamlValueNode::Scalar(YamlScalar {
+                                    span: (0..item_value.len()).into(),
+                                    value: item_value.to_string(),
+                                }));
                             }
                         }
                         YamlValueNode::Sequence(YamlSequence { span: (0..current_value.len()).into(), items })
@@ -271,7 +274,11 @@ where
                     else {
                         YamlValueNode::Scalar(YamlScalar { span: (0..current_value.len()).into(), value: current_value.trim().to_string() })
                     };
-                    entries.push(YamlMappingEntry { span: (0..key.len() + current_value.len()).into(), key: YamlValueNode::Scalar(YamlScalar { span: (0..key.len()).into(), value: key }), value });
+                    entries.push(YamlMappingEntry {
+                        span: (0..key.len() + current_value.len()).into(),
+                        key: YamlValueNode::Scalar(YamlScalar { span: (0..key.len()).into(), value: key }),
+                        value,
+                    });
                     current_value.clear();
                 }
 
@@ -313,7 +320,11 @@ where
             else {
                 YamlValueNode::Scalar(YamlScalar { span: (0..current_value.len()).into(), value: current_value.trim().to_string() })
             };
-            entries.push(YamlMappingEntry { span: (0..key.len() + current_value.len()).into(), key: YamlValueNode::Scalar(YamlScalar { span: (0..key.len()).into(), value: key }), value });
+            entries.push(YamlMappingEntry {
+                span: (0..key.len() + current_value.len()).into(),
+                key: YamlValueNode::Scalar(YamlScalar { span: (0..key.len()).into(), value: key }),
+                value,
+            });
         }
 
         if !entries.is_empty() {

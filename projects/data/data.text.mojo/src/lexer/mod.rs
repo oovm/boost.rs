@@ -18,7 +18,12 @@ pub struct MojoLexer<'config> {
 }
 
 impl<'config> Lexer<MojoLanguage> for MojoLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<MojoLanguage>) -> LexOutput<MojoLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<MojoLanguage>,
+    ) -> LexOutput<MojoLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -26,15 +26,15 @@ pub use export_spec::{
     resolve_attribute_id, snake_case_to_camel_case,
 };
 pub use expr::{
-    CaptureMode, CaptureStorage, HirCallArgument, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirFunctionReference, HirLambdaEnvironment,
-    HirLambdaIdentity, HirResolvedCall, HirTraitDispatch, hir_call_arg_values,
+    CaptureMode, CaptureStorage, HirCallArgument, HirCallableDomain, HirCapture, HirExpr, HirExprKind, HirFunctionReference,
+    HirLambdaEnvironment, HirLambdaIdentity, HirResolvedCall, HirTraitDispatch, hir_call_arg_values,
 };
 pub use function::HirFunction;
 pub use identifier::HirIdentifier;
 pub use r#impl::{HirAssociatedTypeBinding, HirDerive, HirImpl, HirTraitBound, HirWhereConstraint};
 pub use module::{
-    HIR_WIRE_VERSION, HirCallResolutionFailure, HirCallResolutionFailureKind, HirCompileWarning, HirDependencySemanticExport,
-    HirDocumentation, HirFileScope, HirImport, HirImportBinding, HirInstantiatedCallable, HirModule, HirTypeAlias,
+    HIR_WIRE_VERSION, HirCallResolutionFailure, HirCallResolutionFailureKind, HirCompileWarning, HirDependencySemanticExport, HirDocumentation,
+    HirFileScope, HirImport, HirImportBinding, HirInstantiatedCallable, HirModule, HirTypeAlias,
 };
 pub use statement::{HirArgument, HirAttribute, HirBlock, HirLetOrigin, HirMatchArm, HirStatement, HirStatementKind};
 pub use r#struct::{HirField, HirParent, HirStruct, InheritancePermission};

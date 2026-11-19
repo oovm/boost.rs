@@ -19,7 +19,12 @@ const ONE_LETTER_ATOMS: &[char] = &['B', 'C', 'N', 'O', 'P', 'S', 'F', 'I', 'b',
 pub struct SmilesLexer;
 
 impl Lexer<SmilesLanguage> for SmilesLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<SmilesLanguage>) -> LexOutput<SmilesLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<SmilesLanguage>,
+    ) -> LexOutput<SmilesLanguage> {
         let mut state = LexerState::new_with_cache(text, text.length(), cache);
 
         while state.not_at_end() {

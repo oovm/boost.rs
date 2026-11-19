@@ -399,7 +399,17 @@ impl TokenType for ActionScriptTokenType {
 impl ActionScriptTokenType {
     /// Returns true if the token type is a literal.
     pub fn is_literal(&self) -> bool {
-        matches!(self, Self::StringLiteral | Self::CharLiteral | Self::NumberLiteral | Self::BooleanLiteral | Self::NullLiteral | Self::True | Self::False | Self::Null)
+        matches!(
+            self,
+            Self::StringLiteral
+                | Self::CharLiteral
+                | Self::NumberLiteral
+                | Self::BooleanLiteral
+                | Self::NullLiteral
+                | Self::True
+                | Self::False
+                | Self::Null
+        )
     }
 
     /// Returns true if the token type is a keyword.
@@ -504,6 +514,18 @@ impl ActionScriptTokenType {
 
     /// Returns true if the token type is a punctuation.
     pub fn is_punctuation(&self) -> bool {
-        matches!(self, Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Dot | Self::Comma | Self::Colon | Self::Semicolon)
+        matches!(
+            self,
+            Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::LeftBrace
+                | Self::RightBrace
+                | Self::Dot
+                | Self::Comma
+                | Self::Colon
+                | Self::Semicolon
+        )
     }
 }

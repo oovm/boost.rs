@@ -1,6 +1,6 @@
 //! 模式匹配与替换实例化。
 
-use crate::{term::Term, Identifier, QualifiedName};
+use crate::{Identifier, QualifiedName, term::Term};
 use std::collections::HashMap;
 
 /// 可进入 `E-Graph` 的模式项。

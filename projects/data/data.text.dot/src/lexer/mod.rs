@@ -335,7 +335,12 @@ impl<'config> DotLexer<'config> {
 }
 
 impl<'config> Lexer<DotLanguage> for DotLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<DotLanguage>) -> LexOutput<DotLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<DotLanguage>,
+    ) -> LexOutput<DotLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

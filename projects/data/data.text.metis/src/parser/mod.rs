@@ -18,9 +18,16 @@ impl Default for MetisParser {
 }
 
 impl Parser<MetisLanguage> for MetisParser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<MetisLanguage>) -> data_text_core::parser::ParseOutput<'a, MetisLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<MetisLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, MetisLanguage> {
         let lexer = MetisLexer::default();
-        parse_with_lexer(&lexer, text, edits, cache, |_st| Err(data_text_core::errors::TextError::custom_error("Metis parser not implemented yet")))
+        parse_with_lexer(&lexer, text, edits, cache, |_st| {
+            Err(data_text_core::errors::TextError::custom_error("Metis parser not implemented yet"))
+        })
     }
 }
 

@@ -8,7 +8,7 @@ use crate::{
     parser::element_type::ScalaElementType,
 };
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -28,7 +28,12 @@ impl<'config> ScalaParser<'config> {
 }
 
 impl<'config> Parser<ScalaLanguage> for ScalaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ScalaLanguage>) -> ParseOutput<'a, ScalaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ScalaLanguage>,
+    ) -> ParseOutput<'a, ScalaLanguage> {
         let lexer = ScalaLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

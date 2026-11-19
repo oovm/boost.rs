@@ -7,7 +7,10 @@
 
 use crate::{
     handlers::{PositionRequest, QueryRequest, RangeRequest, RenameRequest, TextDocumentParams, UriRequest},
-    types::{CodeAction, CompletionItem, Diagnostic, DocumentHighlight, FoldingRange, Hover, InitializeParams, InlayHint, LocationRange, SemanticTokens, SignatureHelp, StructureItem, TextEdit, WorkspaceEdit, WorkspaceSymbol},
+    types::{
+        CodeAction, CompletionItem, Diagnostic, DocumentHighlight, FoldingRange, Hover, InitializeParams, InlayHint, LocationRange,
+        SemanticTokens, SignatureHelp, StructureItem, TextEdit, WorkspaceEdit, WorkspaceSymbol,
+    },
 };
 
 /// LSP 请求方法身份。

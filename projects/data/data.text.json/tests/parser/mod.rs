@@ -1,4 +1,4 @@
-use data_text_core::{GreenNode, GreenTree, TextErrorKind, SourceText, TextEdit, parser::ParseSession};
+use data_text_core::{GreenNode, GreenTree, SourceText, TextEdit, TextErrorKind, parser::ParseSession};
 use data_text_json::{JsonElementType as JsonSyntaxKind, language::JsonLanguage, lexer::JsonLexer, parser::JsonParser};
 use language_testing::parsing::ParserTester;
 use std::path::PathBuf;

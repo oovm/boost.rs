@@ -368,19 +368,15 @@ impl std::fmt::Display for HirError {
             Self::InvalidArrayExtent { failure, .. } => {
                 use super::model::ArrayExtentFailure;
                 match failure {
-                    ArrayExtentFailure::NotLiteral => write!(
-                        f,
-                        "fixed array extent must be an integer literal or an integer tuple literal"
-                    ),
+                    ArrayExtentFailure::NotLiteral => write!(f, "fixed array extent must be an integer literal or an integer tuple literal"),
                     ArrayExtentFailure::LengthNotRepresentable => {
                         write!(f, "fixed array length exceeds the representable `usize` range")
                     }
                     ArrayExtentFailure::NegativeLength => write!(f, "fixed array extent must not be negative"),
                     ArrayExtentFailure::ZeroDimension => write!(f, "array shape dimensions must be greater than zero"),
-                    ArrayExtentFailure::UnsupportedDimensionCount { count } => write!(
-                        f,
-                        "array shape has {count} dimensions; only 1, 2 or 3 dimensions are supported"
-                    ),
+                    ArrayExtentFailure::UnsupportedDimensionCount { count } => {
+                        write!(f, "array shape has {count} dimensions; only 1, 2 or 3 dimensions are supported")
+                    }
                 }
             }
             Self::BackendContractRejected(error) => write!(f, "backend contract rejected the declaration: {error}"),
@@ -394,11 +390,7 @@ impl std::fmt::Display for HirError {
                 use super::model::QuoteLiteralFailure;
                 match failure {
                     QuoteLiteralFailure::UnknownPrefix { prefix } => {
-                        write!(
-                            f,
-                            "unknown quote literal prefix `{prefix}` at {}..{} (only `r` and `b` are defined)",
-                            span.start, span.end
-                        )
+                        write!(f, "unknown quote literal prefix `{prefix}` at {}..{} (only `r` and `b` are defined)", span.start, span.end)
                     }
                     QuoteLiteralFailure::TemplateSyntax { message } => {
                         write!(f, "invalid quote template at {}..{}: {message}", span.start, span.end)

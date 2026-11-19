@@ -31,7 +31,12 @@ impl<'config> WolframParser<'config> {
 }
 
 impl<'config> Parser<WolframLanguage> for WolframParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<WolframLanguage>) -> ParseOutput<'a, WolframLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<WolframLanguage>,
+    ) -> ParseOutput<'a, WolframLanguage> {
         let lexer = WolframLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -130,7 +135,11 @@ impl<'config> WolframParser<'config> {
     }
 
     /// `expr[[…]]` Part, or `expr[…]` Call on a non-primary head (e.g. list apply).
-    fn parse_bracket_postfix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, WolframLanguage>) -> &'a GreenNode<'a, WolframLanguage> {
+    fn parse_bracket_postfix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, WolframLanguage>,
+    ) -> &'a GreenNode<'a, WolframLanguage> {
         let checkpoint = state.checkpoint_before(left);
         // Distinguish Part `[[` from Call `[`.
         state.bump(); // first [
@@ -200,7 +209,10 @@ impl<'config> Pratt<WolframLanguage> for WolframParser<'config> {
             state.bump();
             state.finish_at(checkpoint, WolframElementType::Symbol)
         }
-        else if state.at(WolframTokenType::Underscore) || state.at(WolframTokenType::DoubleUnderscore) || state.at(WolframTokenType::TripleUnderscore) {
+        else if state.at(WolframTokenType::Underscore)
+            || state.at(WolframTokenType::DoubleUnderscore)
+            || state.at(WolframTokenType::TripleUnderscore)
+        {
             // `_` / `__` / `___`, optionally typed `_Integer`.
             state.bump();
             if state.peek_kind().is_some_and(Self::is_symbol_token) && state.peek_non_trivia_kind_at(1) != Some(WolframTokenType::LeftBracket) {
@@ -240,10 +252,20 @@ impl<'config> Pratt<WolframLanguage> for WolframParser<'config> {
             _ => None,
         };
 
-        if let Some(info) = info { unary(state, kind, info.precedence, WolframElementType::PrefixExpr, |s, p| self.parse_pratt(s, p)) } else { self.primary(state) }
+        if let Some(info) = info {
+            unary(state, kind, info.precedence, WolframElementType::PrefixExpr, |s, p| self.parse_pratt(s, p))
+        }
+        else {
+            self.primary(state)
+        }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, WolframLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, WolframLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, WolframLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, WolframLanguage>> {
         let kind = state.peek_kind()?;
 
         // Part `expr[[…]]` / Call `expr[…]` (high precedence postfix-like)
@@ -262,7 +284,9 @@ impl<'config> Pratt<WolframLanguage> for WolframParser<'config> {
             // `y'` Derivative[1][y] — high precedence, below Part/Call so `y'[x]` = (y')[x].
             WolframTokenType::Prime => Some(OperatorInfo::left(168)),
             // `x_` Pattern[x, Blank[]] — high precedence, below Part/Call.
-            WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore => Some(OperatorInfo::left(165)),
+            WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore => {
+                Some(OperatorInfo::left(165))
+            }
             _ => None,
         };
 
@@ -271,7 +295,9 @@ impl<'config> Pratt<WolframLanguage> for WolframParser<'config> {
                 return None;
             }
             let element = match kind {
-                WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore => WolframElementType::Pattern,
+                WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore => {
+                    WolframElementType::Pattern
+                }
                 _ => WolframElementType::PostfixExpr,
             };
             return Some(postfix(state, left, kind, element));
@@ -281,20 +307,27 @@ impl<'config> Pratt<WolframLanguage> for WolframParser<'config> {
         let info = match kind {
             WolframTokenType::Semicolon => Some(OperatorInfo::left(5)), // a;b CompoundExpression
             WolframTokenType::Assign | WolframTokenType::Set | WolframTokenType::SetDelayed => Some(OperatorInfo::right(20)),
-            WolframTokenType::Rule | WolframTokenType::RuleDelayed | WolframTokenType::Arrow | WolframTokenType::RuleDelayedOp => Some(OperatorInfo::right(30)),
+            WolframTokenType::Rule | WolframTokenType::RuleDelayed | WolframTokenType::Arrow | WolframTokenType::RuleDelayedOp => {
+                Some(OperatorInfo::right(30))
+            }
             WolframTokenType::SlashSlash => Some(OperatorInfo::left(40)), // x // f
             WolframTokenType::Or => Some(OperatorInfo::left(50)),
             WolframTokenType::And => Some(OperatorInfo::left(60)),
-            WolframTokenType::Equal | WolframTokenType::NotEqual | WolframTokenType::Less | WolframTokenType::Greater | WolframTokenType::LessEqual | WolframTokenType::GreaterEqual => Some(OperatorInfo::none(70)),
+            WolframTokenType::Equal
+            | WolframTokenType::NotEqual
+            | WolframTokenType::Less
+            | WolframTokenType::Greater
+            | WolframTokenType::LessEqual
+            | WolframTokenType::GreaterEqual => Some(OperatorInfo::none(70)),
             WolframTokenType::Plus | WolframTokenType::Minus => Some(OperatorInfo::left(80)),
             WolframTokenType::Times | WolframTokenType::Divide => Some(OperatorInfo::left(90)),
-            WolframTokenType::At => Some(OperatorInfo::right(100)),                 // f @ x
-            WolframTokenType::AtStar => Some(OperatorInfo::left(105)),              // f @* g  Composition
-            WolframTokenType::StarSlash => Some(OperatorInfo::left(105)),           // f /* g  RightComposition
-            WolframTokenType::MapOperator => Some(OperatorInfo::right(110)),        // f /@ list
-            WolframTokenType::ApplyOperator => Some(OperatorInfo::right(110)),      // f @@ terms
+            WolframTokenType::At => Some(OperatorInfo::right(100)),            // f @ x
+            WolframTokenType::AtStar => Some(OperatorInfo::left(105)),         // f @* g  Composition
+            WolframTokenType::StarSlash => Some(OperatorInfo::left(105)),      // f /* g  RightComposition
+            WolframTokenType::MapOperator => Some(OperatorInfo::right(110)),   // f /@ list
+            WolframTokenType::ApplyOperator => Some(OperatorInfo::right(110)), // f @@ terms
             WolframTokenType::ApplyLevelOperator => Some(OperatorInfo::right(110)), // f @@@ terms
-            WolframTokenType::MapAllOperator => Some(OperatorInfo::right(110)),     // f //@ list
+            WolframTokenType::MapAllOperator => Some(OperatorInfo::right(110)), // f //@ list
             WolframTokenType::Power => Some(OperatorInfo::right(120)),
             // MessageName `f::tag` binds tighter than most infix (Wolfram ~675–750 band).
             WolframTokenType::MessageName => Some(OperatorInfo::none(150)),
@@ -305,7 +338,9 @@ impl<'config> Pratt<WolframLanguage> for WolframParser<'config> {
             if info.precedence < min_precedence {
                 return None;
             }
-            return Some(binary(state, left, kind, info.precedence, info.associativity, WolframElementType::BinaryExpr, |s, p| self.parse_pratt(s, p)));
+            return Some(binary(state, left, kind, info.precedence, info.associativity, WolframElementType::BinaryExpr, |s, p| {
+                self.parse_pratt(s, p)
+            }));
         }
 
         // Implicit Times: `x y`, `2 x`, `Sin[x] Cos[x]` (Wolfram juxtaposition).

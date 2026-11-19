@@ -325,7 +325,15 @@ impl<'config> HlslLexer<'config> {
 
                 // Handle suffixes (f, h, l, u, etc.)
                 if let Some(suffix) = state.peek() {
-                    if suffix == 'f' || suffix == 'F' || suffix == 'h' || suffix == 'H' || suffix == 'l' || suffix == 'L' || suffix == 'u' || suffix == 'U' {
+                    if suffix == 'f'
+                        || suffix == 'F'
+                        || suffix == 'h'
+                        || suffix == 'H'
+                        || suffix == 'l'
+                        || suffix == 'L'
+                        || suffix == 'u'
+                        || suffix == 'U'
+                    {
                         state.advance(1);
                     }
                 }
@@ -734,7 +742,12 @@ impl<'config> HlslLexer<'config> {
 }
 
 impl<'config> Lexer<HlslLanguage> for HlslLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<HlslLanguage>) -> LexOutput<HlslLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<HlslLanguage>,
+    ) -> LexOutput<HlslLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

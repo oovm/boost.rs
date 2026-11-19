@@ -320,13 +320,7 @@ impl<'a, V: Eq + Hash> GraphView<'a, V> {
     /// 建立空视图；有向图同时维护入边索引，无向图不建。
     #[must_use]
     pub fn new(directed: bool) -> Self {
-        Self {
-            directed,
-            vertices: Vec::new(),
-            edges: Vec::new(),
-            outgoing: HashMap::new(),
-            incoming: directed.then(HashMap::new),
-        }
+        Self { directed, vertices: Vec::new(), edges: Vec::new(), outgoing: HashMap::new(), incoming: directed.then(HashMap::new) }
     }
 
     /// 登记一个顶点；重复登记不增加计数。

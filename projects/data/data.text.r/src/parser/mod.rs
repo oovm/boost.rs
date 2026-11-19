@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::RElementType,
 };
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -92,7 +92,11 @@ impl<'config> RParser<'config> {
                 state.finish_at(checkpoint, RElementType::IdentifierExpression);
             }
         }
-        else if state.at(RTokenType::IntegerLiteral) || state.at(RTokenType::FloatLiteral) || state.at(RTokenType::StringLiteral) || state.at(RTokenType::BooleanLiteral) {
+        else if state.at(RTokenType::IntegerLiteral)
+            || state.at(RTokenType::FloatLiteral)
+            || state.at(RTokenType::StringLiteral)
+            || state.at(RTokenType::BooleanLiteral)
+        {
             state.bump();
             state.finish_at(checkpoint, RElementType::LiteralExpression);
         }
@@ -103,7 +107,12 @@ impl<'config> RParser<'config> {
 }
 
 impl<'config> Parser<RLanguage> for RParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<RLanguage>) -> ParseOutput<'a, RLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<RLanguage>,
+    ) -> ParseOutput<'a, RLanguage> {
         let lexer = RLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

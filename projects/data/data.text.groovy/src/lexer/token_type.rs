@@ -74,7 +74,9 @@ impl TokenType for GroovyTokenType {
             return Keyword;
         }
         match self {
-            Self::IntLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::BooleanLiteral | Self::NullLiteral => Literal,
+            Self::IntLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::BooleanLiteral | Self::NullLiteral => {
+                Literal
+            }
             Self::Identifier => Name,
             Self::Plus
             | Self::Minus
@@ -111,7 +113,17 @@ impl TokenType for GroovyTokenType {
             | Self::Question
             | Self::Elvis
             | Self::SafeNavigation => Operator,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Comma | Self::Period | Self::Semicolon | Self::Colon | Self::At => Punctuation,
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Comma
+            | Self::Period
+            | Self::Semicolon
+            | Self::Colon
+            | Self::At => Punctuation,
             Self::Whitespace | Self::Newline => Whitespace,
             Self::Comment => Comment,
             _ => None,

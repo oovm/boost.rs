@@ -391,7 +391,17 @@ impl GoElementType {
 
     /// Returns true if the element is a Go literal.
     pub fn is_literal(&self) -> bool {
-        matches!(self, Self::IntLiteral | Self::FloatLiteral | Self::StringLiteral | Self::RuneLiteral | Self::BoolLiteral | Self::NilLiteral | Self::NumberLiteral | Self::CharLiteral)
+        matches!(
+            self,
+            Self::IntLiteral
+                | Self::FloatLiteral
+                | Self::StringLiteral
+                | Self::RuneLiteral
+                | Self::BoolLiteral
+                | Self::NilLiteral
+                | Self::NumberLiteral
+                | Self::CharLiteral
+        )
     }
 
     /// Returns true if the element is a Go operator.

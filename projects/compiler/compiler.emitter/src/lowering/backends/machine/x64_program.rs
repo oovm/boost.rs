@@ -11,16 +11,18 @@ use std::collections::BTreeMap;
 
 use crate::Result;
 
-use super::x64_lir::{
-    X64Reg, argument_register, emit_add_rax_imm32, emit_add_rdx_imm32, emit_call_import_placeholder, emit_call_placeholder, emit_copy_bytes,
-    emit_divide_by_ten, emit_function_return, emit_jump_if_zero_placeholder, emit_jump_placeholder, emit_lea_rax_from_frame,
-    emit_lea_rip_placeholder, emit_load_byte_from_rax, emit_load_descriptor_length, emit_load_from_rax, emit_mov_from_frame, emit_mov_imm64,
-    emit_mov_to_frame, emit_neg_rax, emit_prologue, emit_store_byte_at_rax_from_rdx, emit_store_dword_imm_to_rax, emit_store_dword_rcx_to_rax,
-    emit_store_rax_to_rcx, emit_store_rax_to_stack, emit_store_rcx_to_rax, emit_sub_rax_imm32, emit_syscall_write, emit_trap, emit_zero_stack_arg,
-    encode_operator, patch_rel32,
+use super::{
+    X64CallConv, X64DataTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction,
+    x64_lir::{
+        X64Reg, argument_register, emit_add_rax_imm32, emit_add_rdx_imm32, emit_call_import_placeholder, emit_call_placeholder,
+        emit_copy_bytes, emit_divide_by_ten, emit_function_return, emit_jump_if_zero_placeholder, emit_jump_placeholder,
+        emit_lea_rax_from_frame, emit_lea_rip_placeholder, emit_load_byte_from_rax, emit_load_descriptor_length, emit_load_from_rax,
+        emit_mov_from_frame, emit_mov_imm64, emit_mov_to_frame, emit_neg_rax, emit_prologue, emit_store_byte_at_rax_from_rdx,
+        emit_store_dword_imm_to_rax, emit_store_dword_rcx_to_rax, emit_store_rax_to_rcx, emit_store_rax_to_stack, emit_store_rcx_to_rax,
+        emit_sub_rax_imm32, emit_syscall_write, emit_trap, emit_zero_stack_arg, encode_operator, patch_rel32,
+    },
+    x86_64::X86_64OperatorCode,
 };
-use super::x86_64::X86_64OperatorCode;
-use super::{X64CallConv, X64DataTarget, X64TextInstruction, X64ProgramFunction, X64ProgramImage};
 
 fn align16(value: u32) -> u32 {
     (value + 15) & !15
@@ -54,11 +56,7 @@ fn binary_operator(instruction: &X64TextInstruction) -> Option<X86_64OperatorCod
 
 /// 超出寄存器上限的形参/实参索引：结构化错误，禁止借用其他 ABI。
 fn argument_out_of_range(abi: X64CallConv, index: u8, what: &str) -> String {
-    format!(
-        "{} 文本 ABI 只支持 {} 个寄存器整数{what}（index={index}；栈上传参未实现）",
-        abi.name(),
-        abi.integer_argument_limit()
-    )
+    format!("{} 文本 ABI 只支持 {} 个寄存器整数{what}（index={index}；栈上传参未实现）", abi.name(), abi.integer_argument_limit())
 }
 
 /// 把多函数文本 LIR 编码为一段 `.text` 与导出符号偏移（无宿主导入）。
@@ -231,10 +229,7 @@ pub fn encode_x64_program_with_dependencies(
                 }
                 X64TextInstruction::StoreSlotAddressToStackArg { slot, index } => {
                     if abi != X64CallConv::Win64 {
-                        return Err(format!(
-                            "{} 文本 ABI 不支持 `StoreSlotAddressToStackArg`：栈传参是 Win64 shadow space 合同",
-                            abi.name()
-                        ));
+                        return Err(format!("{} 文本 ABI 不支持 `StoreSlotAddressToStackArg`：栈传参是 Win64 shadow space 合同", abi.name()));
                     }
                     emit_lea_rax_from_frame(&mut text, *slot);
                     let offset = 32u32.checked_add(u32::from(*index) * 8).ok_or_else(|| "栈实参偏移超出 u32".to_string())?;
@@ -278,7 +273,8 @@ pub fn encode_x64_program_with_dependencies(
                             .iter()
                             .position(|(_, name)| name == field)
                             .ok_or_else(|| format!("native 导入 `{field}` 没有声明的动态符号"))?;
-                        elf_got_fixups.push((u32::try_from(field_offset).map_err(|_| "native 导入调用偏移超出 u32".to_string())?, index as u32));
+                        elf_got_fixups
+                            .push((u32::try_from(field_offset).map_err(|_| "native 导入调用偏移超出 u32".to_string())?, index as u32));
                     }
                 }
                 X64TextInstruction::Return => emit_function_return(&mut text),
@@ -290,10 +286,8 @@ pub fn encode_x64_program_with_dependencies(
         emit_function_return(&mut text);
 
         for (field, target) in jumps {
-            let target_offset = labels
-                .get(&target)
-                .copied()
-                .ok_or_else(|| format!("native text function `{}` 的跳转标签 {target} 未定义", function.name))?;
+            let target_offset =
+                labels.get(&target).copied().ok_or_else(|| format!("native text function `{}` 的跳转标签 {target} 未定义", function.name))?;
             patch_rel32(&mut text, field, target_offset, || format!("native text function `{}` 的跳转位移超出 rel32", function.name))?;
         }
     }

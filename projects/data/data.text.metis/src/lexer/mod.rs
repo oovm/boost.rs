@@ -18,7 +18,12 @@ impl Default for MetisLexer {
 }
 
 impl Lexer<MetisLanguage> for MetisLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<MetisLanguage>) -> LexOutput<MetisLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<MetisLanguage>,
+    ) -> LexOutput<MetisLanguage> {
         let mut state = LexerState::new_with_cache(text, text.length(), cache);
 
         while state.not_at_end() {

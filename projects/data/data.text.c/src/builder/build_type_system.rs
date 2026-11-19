@@ -117,7 +117,12 @@ impl<'config> super::CBuilder<'config> {
             current_type = self.apply_pointer(current_type, pointer);
         }
 
-        if let Some(direct) = &abs_decl.direct_abstract_declarator { self.apply_direct_abstract_declarator(current_type, direct, source) } else { current_type }
+        if let Some(direct) = &abs_decl.direct_abstract_declarator {
+            self.apply_direct_abstract_declarator(current_type, direct, source)
+        }
+        else {
+            current_type
+        }
     }
 
     /// Applies a direct abstract declarator to a base type.
@@ -125,11 +130,21 @@ impl<'config> super::CBuilder<'config> {
         match direct {
             DirectAbstractDeclarator::AbstractDeclarator(inner) => self.apply_abstract_declarator(current_type, inner, source),
             DirectAbstractDeclarator::Array { declarator, assignment_expression, .. } => {
-                let element_type = if let Some(inner) = declarator { self.apply_direct_abstract_declarator(current_type, inner, source) } else { current_type };
+                let element_type = if let Some(inner) = declarator {
+                    self.apply_direct_abstract_declarator(current_type, inner, source)
+                }
+                else {
+                    current_type
+                };
                 Type::Array { element_type: Box::new(element_type), size: assignment_expression.clone() }
             }
             DirectAbstractDeclarator::Function { declarator, parameter_list, .. } => {
-                let return_type = if let Some(inner) = declarator { self.apply_direct_abstract_declarator(current_type, inner, source) } else { current_type };
+                let return_type = if let Some(inner) = declarator {
+                    self.apply_direct_abstract_declarator(current_type, inner, source)
+                }
+                else {
+                    current_type
+                };
                 let mut parameters = Vec::new();
                 if let Some(list) = parameter_list {
                     for param in &list.parameter_declarations {
@@ -138,7 +153,11 @@ impl<'config> super::CBuilder<'config> {
                         }
                     }
                 }
-                Type::Function { return_type: Box::new(return_type), parameters, variadic: parameter_list.as_ref().map(|l| l.variadic).unwrap_or(false) }
+                Type::Function {
+                    return_type: Box::new(return_type),
+                    parameters,
+                    variadic: parameter_list.as_ref().map(|l| l.variadic).unwrap_or(false),
+                }
             }
         }
     }

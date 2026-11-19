@@ -5,7 +5,7 @@ pub mod element_type;
 
 use crate::{language::KokaLanguage, lexer::KokaLexer};
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -257,15 +257,22 @@ impl<'config> Pratt<KokaLanguage> for KokaParser<'config> {
         };
 
         match kind {
-            Plus | Minus | Exclamation | Tilde => unary(state, kind, 12, crate::parser::element_type::KokaElementType::PrefixExpression.into(), |s, p| {
-                self.skip_trivia(s);
-                PrattParser::parse(s, p, self)
-            }),
+            Plus | Minus | Exclamation | Tilde => {
+                unary(state, kind, 12, crate::parser::element_type::KokaElementType::PrefixExpression.into(), |s, p| {
+                    self.skip_trivia(s);
+                    PrattParser::parse(s, p, self)
+                })
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, KokaLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, KokaLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, KokaLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, KokaLanguage>> {
         use crate::lexer::token_type::KokaTokenType::*;
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
@@ -321,10 +328,18 @@ impl<'config> Pratt<KokaLanguage> for KokaParser<'config> {
                 state.expect(RBracket).ok();
                 Some(state.finish_at(cp, crate::parser::element_type::KokaElementType::MemberAccessExpression))
             }
-            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::KokaElementType::AssignmentExpression.into(), |s, p| {
-                self.skip_trivia(s);
-                PrattParser::parse(s, p, self)
-            })),
+            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign => Some(binary(
+                state,
+                left,
+                kind,
+                prec,
+                assoc,
+                crate::parser::element_type::KokaElementType::AssignmentExpression.into(),
+                |s, p| {
+                    self.skip_trivia(s);
+                    PrattParser::parse(s, p, self)
+                },
+            )),
             _ => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::KokaElementType::BinaryExpression.into(), |s, p| {
                 self.skip_trivia(s);
                 PrattParser::parse(s, p, self)
@@ -334,7 +349,12 @@ impl<'config> Pratt<KokaLanguage> for KokaParser<'config> {
 }
 
 impl<'config> Parser<KokaLanguage> for KokaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<KokaLanguage>) -> ParseOutput<'a, KokaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<KokaLanguage>,
+    ) -> ParseOutput<'a, KokaLanguage> {
         let lexer = KokaLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

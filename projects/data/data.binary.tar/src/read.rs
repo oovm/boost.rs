@@ -2,10 +2,11 @@
 
 use std::fmt;
 
-use boost_source::ByteRange;
-use boost_source::binary::{
-    ByteSource, ByteWindow, ContentIdentity, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities,
-    content_digest_of,
+use boost_source::{
+    ByteRange,
+    binary::{
+        ByteSource, ByteWindow, ContentIdentity, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, content_digest_of,
+    },
 };
 use data_binary_core::{BudgetError, BudgetTracker, ByteExtent};
 use data_compression::StreamChunk;
@@ -232,17 +233,14 @@ pub fn index_tar_bytes(label: impl Into<String>, bytes: Vec<u8>) -> Result<TarAr
 }
 
 /// Reads one member payload into memory after reserving the read budget.
-pub fn read_member_payload<S: ByteSource>(
-    source: S,
-    entry: &TarEntry,
-    ledger: &mut BudgetTracker,
-) -> Result<Vec<u8>, TarReadError> {
+pub fn read_member_payload<S: ByteSource>(source: S, entry: &TarEntry, ledger: &mut BudgetTracker) -> Result<Vec<u8>, TarReadError> {
     let range = entry.data_range;
     if range.len == 0 {
         return Ok(Vec::new());
     }
     ledger.reserve_read_bytes(range.len)?;
-    let Some(source_range) = ByteRange::with_len(range.start, range.len) else {
+    let Some(source_range) = ByteRange::with_len(range.start, range.len)
+    else {
         ledger.release_read_bytes(entry.data_range.len)?;
         return Err(TarReadError::InvalidRange("byte extent overflow".to_owned()));
     };
@@ -316,8 +314,7 @@ impl<S: ByteSource> TarEntryStream<S> {
             Ok(ReadOutcome::Partial { bytes_read }) => bytes_read as usize,
             Ok(ReadOutcome::Eof) => return Err(TarReadError::Source("payload ended before its declared size".to_owned())),
             Ok(ReadOutcome::Unavailable { range, reason }) => {
-                let range = ByteExtent::new_allowing_empty(range.start(), range.len())
-                    .unwrap_or(ByteExtent { start: range.start(), len: 0 });
+                let range = ByteExtent::new_allowing_empty(range.start(), range.len()).unwrap_or(ByteExtent { start: range.start(), len: 0 });
                 return Err(TarReadError::NeedRange { range, reason });
             }
             Err(error) => return Err(TarReadError::Source(error.to_string())),
@@ -361,13 +358,9 @@ fn map_index_read_error(error: ReadError) -> TarIndexError {
             range: ByteExtent::new_allowing_empty(range.start(), range.len()).unwrap_or(ByteExtent { start: range.start(), len: 0 }),
             reason,
         },
-        ReadError::ShortRead { expected, actual } => {
-            TarIndexError::Source(format!("short read: expected {expected}, got {actual}"))
-        }
+        ReadError::ShortRead { expected, actual } => TarIndexError::Source(format!("short read: expected {expected}, got {actual}")),
         ReadError::Eof => TarIndexError::Truncated { offset: 0 },
-        ReadError::ConflictingRange { range } => {
-            TarIndexError::Source(format!("conflicting bytes at {}..{}", range.start(), range.end()))
-        }
+        ReadError::ConflictingRange { range } => TarIndexError::Source(format!("conflicting bytes at {}..{}", range.start(), range.end())),
         ReadError::Io(message) => TarIndexError::Source(message),
     }
 }
@@ -378,13 +371,9 @@ fn map_read_error(error: ReadError) -> TarReadError {
             range: ByteExtent::new_allowing_empty(range.start(), range.len()).unwrap_or(ByteExtent { start: range.start(), len: 0 }),
             reason,
         },
-        ReadError::ShortRead { expected, actual } => {
-            TarReadError::Source(format!("short read: expected {expected}, got {actual}"))
-        }
+        ReadError::ShortRead { expected, actual } => TarReadError::Source(format!("short read: expected {expected}, got {actual}")),
         ReadError::Eof => TarReadError::InvalidRange("unexpected eof".to_owned()),
-        ReadError::ConflictingRange { range } => {
-            TarReadError::Source(format!("conflicting bytes at {}..{}", range.start(), range.end()))
-        }
+        ReadError::ConflictingRange { range } => TarReadError::Source(format!("conflicting bytes at {}..{}", range.start(), range.end())),
         ReadError::Io(message) => TarReadError::Source(message),
     }
 }
@@ -465,9 +454,7 @@ fn parse_pax_records(bytes: &[u8], offset: u64) -> Result<Vec<PaxRecord>, TarInd
         let space = remaining.iter().position(|&byte| byte == b' ').ok_or(TarIndexError::InvalidPaxRecord { offset })?;
         let length = remaining[..space]
             .iter()
-            .try_fold(0usize, |value, &byte| {
-                value.checked_mul(10)?.checked_add(usize::from(byte).checked_sub(usize::from(b'0'))?)
-            })
+            .try_fold(0usize, |value, &byte| value.checked_mul(10)?.checked_add(usize::from(byte).checked_sub(usize::from(b'0'))?))
             .ok_or(TarIndexError::InvalidPaxRecord { offset })?;
         if length == 0 || length > remaining.len() || length < space + 3 {
             return Err(TarIndexError::InvalidPaxRecord { offset });
@@ -510,12 +497,7 @@ impl ByteSource for SliceSource<'_> {
         let available = self.bytes.len() - offset;
         let copied = destination.len().min(available);
         destination[..copied].copy_from_slice(&self.bytes[offset..offset + copied]);
-        if copied == destination.len() {
-            Ok(ReadOutcome::Complete)
-        }
-        else {
-            Ok(ReadOutcome::Partial { bytes_read: copied as u64 })
-        }
+        if copied == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: copied as u64 }) }
     }
 
     fn capabilities(&self) -> SourceCapabilities {

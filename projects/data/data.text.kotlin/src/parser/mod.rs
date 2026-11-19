@@ -5,7 +5,7 @@ pub mod element_type;
 
 use crate::{language::KotlinLanguage, lexer::KotlinLexer};
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -247,7 +247,8 @@ impl<'config> Pratt<KotlinLanguage> for KotlinParser<'config> {
                 state.bump();
                 state.finish_at(cp, crate::parser::element_type::KotlinElementType::Identifier)
             }
-            Some(StringLiteral) | Some(CharLiteral) | Some(NumberLiteral) | Some(IntLiteral) | Some(FloatLiteral) | Some(BooleanLiteral) | Some(Null) | Some(True) | Some(False) => {
+            Some(StringLiteral) | Some(CharLiteral) | Some(NumberLiteral) | Some(IntLiteral) | Some(FloatLiteral) | Some(BooleanLiteral)
+            | Some(Null) | Some(True) | Some(False) => {
                 state.bump();
                 state.finish_at(cp, crate::parser::element_type::KotlinElementType::IntLiteral) // Simplified
             }
@@ -275,15 +276,22 @@ impl<'config> Pratt<KotlinLanguage> for KotlinParser<'config> {
         };
 
         match kind {
-            Plus | Minus | Exclamation | Tilde => unary(state, kind, 12, crate::parser::element_type::KotlinElementType::PrefixExpression.into(), |s, p| {
-                self.skip_trivia(s);
-                PrattParser::parse(s, p, self)
-            }),
+            Plus | Minus | Exclamation | Tilde => {
+                unary(state, kind, 12, crate::parser::element_type::KotlinElementType::PrefixExpression.into(), |s, p| {
+                    self.skip_trivia(s);
+                    PrattParser::parse(s, p, self)
+                })
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, KotlinLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, KotlinLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, KotlinLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, KotlinLanguage>> {
         use crate::lexer::token_type::KotlinTokenType::*;
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
@@ -345,20 +353,35 @@ impl<'config> Pratt<KotlinLanguage> for KotlinParser<'config> {
                 state.expect(RBracket).ok();
                 Some(state.finish_at(cp, crate::parser::element_type::KotlinElementType::MemberAccessExpression))
             }
-            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::KotlinElementType::AssignmentExpression.into(), |s, p| {
-                self.skip_trivia(s);
-                PrattParser::parse(s, p, self)
-            })),
-            _ => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::KotlinElementType::BinaryExpression.into(), |s, p| {
-                self.skip_trivia(s);
-                PrattParser::parse(s, p, self)
-            })),
+            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign => Some(binary(
+                state,
+                left,
+                kind,
+                prec,
+                assoc,
+                crate::parser::element_type::KotlinElementType::AssignmentExpression.into(),
+                |s, p| {
+                    self.skip_trivia(s);
+                    PrattParser::parse(s, p, self)
+                },
+            )),
+            _ => {
+                Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::KotlinElementType::BinaryExpression.into(), |s, p| {
+                    self.skip_trivia(s);
+                    PrattParser::parse(s, p, self)
+                }))
+            }
         }
     }
 }
 
 impl<'config> Parser<KotlinLanguage> for KotlinParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<KotlinLanguage>) -> ParseOutput<'a, KotlinLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<KotlinLanguage>,
+    ) -> ParseOutput<'a, KotlinLanguage> {
         let lexer = KotlinLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

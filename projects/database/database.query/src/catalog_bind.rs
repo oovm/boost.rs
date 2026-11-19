@@ -1650,11 +1650,7 @@ fn bind_expression(
             let mut bound_left = bind_expression(*left, sources, ctes, scope, catalog, variables)?;
             let mut bound_right = bind_expression(*right, sources, ctes, scope, catalog, variables)?;
             normalize_uuid_comparison(&mut bound_left, &mut bound_right, catalog)?;
-            Ok(SqlCatalogBoundExpression::Binary {
-                left: Box::new(bound_left),
-                operator,
-                right: Box::new(bound_right),
-            })
+            Ok(SqlCatalogBoundExpression::Binary { left: Box::new(bound_left), operator, right: Box::new(bound_right) })
         }
         SqlBoundExpression::Unary { operator, expression } => Ok(SqlCatalogBoundExpression::Unary {
             operator,

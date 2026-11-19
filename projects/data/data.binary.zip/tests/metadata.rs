@@ -119,8 +119,7 @@ fn keeps_raw_name_bytes_and_reports_the_name_encoding() {
     assert_eq!(legacy.members[0].raw_name, legacy_name);
     assert_eq!(legacy.members[0].name_encoding(), ZipNameEncoding::Unspecified);
 
-    let utf8 =
-        index_zip_bytes("utf8.zip", stored_zip("中文.txt".as_bytes(), FLAG_UTF8_NAME, 20, 0, 0, 0, &[], b"x")).expect("index");
+    let utf8 = index_zip_bytes("utf8.zip", stored_zip("中文.txt".as_bytes(), FLAG_UTF8_NAME, 20, 0, 0, 0, &[], b"x")).expect("index");
     assert_eq!(utf8.members[0].name_encoding(), ZipNameEncoding::Utf8);
     assert_eq!(std::str::from_utf8(&utf8.members[0].raw_name), Ok("中文.txt"));
 }
@@ -131,13 +130,11 @@ fn classifies_encryption_from_general_purpose_flags() {
     assert_eq!(plain.members[0].encryption(), ZipEncryption::None);
     assert!(!plain.members[0].is_encrypted());
 
-    let traditional =
-        index_zip_bytes("traditional.zip", stored_zip(b"a", FLAG_ENCRYPTED, 20, 0, 0, 0, &[], b"x")).expect("index");
+    let traditional = index_zip_bytes("traditional.zip", stored_zip(b"a", FLAG_ENCRYPTED, 20, 0, 0, 0, &[], b"x")).expect("index");
     assert_eq!(traditional.members[0].encryption(), ZipEncryption::Traditional);
 
     let strong =
-        index_zip_bytes("strong.zip", stored_zip(b"a", FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION, 20, 0, 0, 0, &[], b"x"))
-            .expect("index");
+        index_zip_bytes("strong.zip", stored_zip(b"a", FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION, 20, 0, 0, 0, &[], b"x")).expect("index");
     assert_eq!(strong.members[0].encryption(), ZipEncryption::Strong);
 }
 

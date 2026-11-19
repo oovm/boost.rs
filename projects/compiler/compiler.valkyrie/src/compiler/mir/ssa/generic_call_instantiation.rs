@@ -113,10 +113,7 @@ pub fn contains_unresolved_generic(ty: &ValkyrieType) -> bool {
 }
 
 /// 若 `concrete` 实例化 `template`，返回 binder → 实参代入表。
-pub fn collect_generic_substitutions(
-    template: &ValkyrieType,
-    concrete: &ValkyrieType,
-) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
+pub fn collect_generic_substitutions(template: &ValkyrieType, concrete: &ValkyrieType) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
     let mut substitutions = BTreeMap::new();
     if unify_generic_instantiation(template, concrete, &mut substitutions) { Some(substitutions) } else { None }
 }

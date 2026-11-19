@@ -521,10 +521,7 @@ fn an_interrupted_append_is_cut_back_to_the_last_frame_on_reopen() {
     fs::write(&path, &torn).expect("write torn tail");
 
     let mut reopened = FileShard::open(&path).expect("reopen cuts the torn tail");
-    assert_eq!(
-        reopened.get(&Key::new("ns", b"kept")).expect("get").expect("kept").value,
-        StoredValue::Inline(InlineValue(b"v".to_vec()))
-    );
+    assert_eq!(reopened.get(&Key::new("ns", b"kept")).expect("get").expect("kept").value, StoredValue::Inline(InlineValue(b"v".to_vec())));
     reopened.put(Key::new("ns", b"next"), StoredValue::Inline(InlineValue(b"w".to_vec()))).expect("append after recovery");
     drop(reopened);
     let reopened = FileShard::open(&path).expect("reopen after recovery append");

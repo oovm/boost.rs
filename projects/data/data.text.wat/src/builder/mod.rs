@@ -1,5 +1,8 @@
 use crate::{WatParser, ast::*, language::WatLanguage, lexer::token_type::WatTokenType, parser::element_type::WatElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    source::Source,
+};
 
 /// AST builder for the WebAssembly Text (WAT) format.
 #[derive(Clone, Copy)]
@@ -16,7 +19,12 @@ impl<'config> WatBuilder<'config> {
 }
 
 impl<'config> Builder<WatLanguage> for WatBuilder<'config> {
-    fn build<'a, S: data_text_core::source::Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<WatLanguage>) -> BuildOutput<WatLanguage> {
+    fn build<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<WatLanguage>,
+    ) -> BuildOutput<WatLanguage> {
         let parser = WatParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<WatLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);

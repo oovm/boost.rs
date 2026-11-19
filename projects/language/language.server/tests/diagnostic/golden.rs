@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use data_text_core::Arc;
 
-use boost_harness::diagnostic::{ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSet, DiagnosticSeverity, LabelRole, Message, SourceRef, terminal::SourceID};
+use boost_harness::diagnostic::{
+    ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSet, DiagnosticSeverity, LabelRole,
+    Message, SourceRef, terminal::SourceID,
+};
 use language_server::diagnostic::{SourceCache, SourceResolver, structured_set_to_protocol, structured_to_protocol};
 
 struct TestResolver(BTreeMap<String, SourceID>);
@@ -22,7 +25,13 @@ impl SourceResolver for TestResolver {
 }
 
 fn sample_text_diagnostic(source_ref: SourceRef) -> Diagnostic {
-    Diagnostic::new(DiagnosticCode::new("oak.syntax.unexpected-token"), DiagnosticSeverity::Error, DiagnosticOrigin::new("oak", "xml"), Message::new("oak.syntax.unexpected-token").with_fallback("unexpected token")).with_primary(DiagnosticLabel::new(
+    Diagnostic::new(
+        DiagnosticCode::new("oak.syntax.unexpected-token"),
+        DiagnosticSeverity::Error,
+        DiagnosticOrigin::new("oak", "xml"),
+        Message::new("oak.syntax.unexpected-token").with_fallback("unexpected token"),
+    )
+    .with_primary(DiagnosticLabel::new(
         DiagnosticLocation::Text { source: source_ref, range: ByteRange::new(4, 9).unwrap() },
         Message::new("label.token").with_fallback("token"),
         LabelRole::Primary,
@@ -36,7 +45,8 @@ fn protocol_text_diagnostic_matches_golden_json() {
     let file_id = cache.load_text("let value = 1", "sample.tao");
     let resolver = TestResolver::new(&source_ref, file_id);
 
-    let protocol = structured_to_protocol(&sample_text_diagnostic(source_ref), &cache, &resolver, &|_| Some(Arc::from("file:///sample.tao"))).unwrap();
+    let protocol =
+        structured_to_protocol(&sample_text_diagnostic(source_ref), &cache, &resolver, &|_| Some(Arc::from("file:///sample.tao"))).unwrap();
 
     let actual = serde_json::to_string_pretty(&protocol).expect("serialize protocol diagnostic");
     let expected = include_str!("golden/lsp-text.json");
@@ -69,7 +79,8 @@ fn write_protocol_golden_fixture() {
     let file_id = cache.load_text("let value = 1", "sample.tao");
     let resolver = TestResolver::new(&source_ref, file_id);
 
-    let protocol = structured_to_protocol(&sample_text_diagnostic(source_ref), &cache, &resolver, &|_| Some(Arc::from("file:///sample.tao"))).unwrap();
+    let protocol =
+        structured_to_protocol(&sample_text_diagnostic(source_ref), &cache, &resolver, &|_| Some(Arc::from("file:///sample.tao"))).unwrap();
 
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/diagnostic/golden/lsp-text.json");
     fs::create_dir_all(path.parent().unwrap()).expect("create golden dir");

@@ -4,8 +4,8 @@
 //! assembly 以及目标私有输入都在 Compiler 内完成。
 
 use super::error::{PipelineError, PipelineResult};
-use compiler_target::{ArtifactPartitionPlan, TargetBackendFamily};
 use compiler_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
+use compiler_target::{ArtifactPartitionPlan, TargetBackendFamily};
 use std::path::Path;
 
 use crate::compiler::{

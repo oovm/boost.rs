@@ -1,12 +1,15 @@
 use crate::{
     SvelteElementType,
-    ast::{Attribute, Directive, SvelteAttribute, SvelteAttributeValue, SvelteBlock, SvelteBranch, SvelteElement, SvelteExpression, SvelteNode, SvelteRoot, SvelteText},
+    ast::{
+        Attribute, Directive, SvelteAttribute, SvelteAttributeValue, SvelteBlock, SvelteBranch, SvelteElement, SvelteExpression, SvelteNode,
+        SvelteRoot, SvelteText,
+    },
     language::SvelteLanguage,
     lexer::token_type::SvelteTokenType,
 };
 use core::range::Range;
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source,
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, Source, TextDiagnostics, TextError,
     builder::BuildOutput,
     source::{SourceText, TextEdit},
 };
@@ -41,7 +44,12 @@ impl SvelteBuilder {
         Ok(SvelteRoot { nodes })
     }
 
-    fn build_node<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<Option<SvelteNode>, TextError> {
+    fn build_node<'a>(
+        &self,
+        node: &GreenNode<'a, SvelteLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<SvelteNode>, TextError> {
         match node.kind {
             SvelteElementType::Element => Ok(Some(SvelteNode::Element(self.build_element(node, offset, source)?))),
             SvelteElementType::Expression => Ok(Some(SvelteNode::Expression(self.build_expression(node, offset, source)?))),
@@ -74,7 +82,9 @@ impl SvelteBuilder {
                                 match sub_child {
                                     GreenTree::Leaf(t) if t.kind == SvelteTokenType::Identifier => {
                                         if tag_name.is_empty() {
-                                            tag_name = source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
+                                            tag_name = source
+                                                .get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize })
+                                                .to_string();
                                         }
                                     }
                                     GreenTree::Node(attr_node) if attr_node.kind == SvelteElementType::Attribute => {
@@ -97,7 +107,10 @@ impl SvelteBuilder {
                     if t.kind == SvelteTokenType::Text {
                         let content = source.get_text_in(Range { start: current_offset, end: current_offset + t.length as usize }).to_string();
                         if !content.trim().is_empty() {
-                            children.push(SvelteNode::Text(SvelteText { content, span: Range { start: current_offset, end: current_offset + t.length as usize } }));
+                            children.push(SvelteNode::Text(SvelteText {
+                                content,
+                                span: Range { start: current_offset, end: current_offset + t.length as usize },
+                            }));
                         }
                     }
                     current_offset += t.length as usize;
@@ -108,7 +121,12 @@ impl SvelteBuilder {
         Ok(SvelteElement { tag_name, attributes, children, span: Range { start: offset, end: offset + node.byte_length as usize } })
     }
 
-    fn build_attribute<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteAttribute, TextError> {
+    fn build_attribute<'a>(
+        &self,
+        node: &GreenNode<'a, SvelteLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<SvelteAttribute, TextError> {
         let mut name = String::new();
         let mut value = None;
         let mut current_offset = offset;
@@ -180,7 +198,12 @@ impl SvelteBuilder {
         }
     }
 
-    fn build_expression<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteExpression, TextError> {
+    fn build_expression<'a>(
+        &self,
+        node: &GreenNode<'a, SvelteLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<SvelteExpression, TextError> {
         let mut expression = String::new();
         let mut current_offset = offset;
 
@@ -199,7 +222,10 @@ impl SvelteBuilder {
             }
         }
 
-        Ok(SvelteExpression { expression: expression.trim().to_string(), span: Range { start: offset, end: offset + node.byte_length as usize } })
+        Ok(SvelteExpression {
+            expression: expression.trim().to_string(),
+            span: Range { start: offset, end: offset + node.byte_length as usize },
+        })
     }
 
     fn build_block<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteBlock, TextError> {
@@ -220,17 +246,23 @@ impl SvelteBuilder {
                                     GreenTree::Leaf(t) => {
                                         match t.kind {
                                             SvelteTokenType::Identifier if kind.is_empty() => {
-                                                kind = source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
+                                                kind = source
+                                                    .get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize })
+                                                    .to_string();
                                             }
                                             SvelteTokenType::HashBrace | SvelteTokenType::RightBrace => {}
                                             _ => {
-                                                expression.push_str(&source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }));
+                                                expression.push_str(
+                                                    &source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }),
+                                                );
                                             }
                                         }
                                         sub_offset += t.length as usize;
                                     }
                                     GreenTree::Node(sub_n) => {
-                                        expression.push_str(&source.get_text_in(Range { start: sub_offset, end: sub_offset + sub_n.byte_length as usize }));
+                                        expression.push_str(
+                                            &source.get_text_in(Range { start: sub_offset, end: sub_offset + sub_n.byte_length as usize }),
+                                        );
                                         sub_offset += sub_n.byte_length as usize;
                                     }
                                 }
@@ -247,9 +279,13 @@ impl SvelteBuilder {
                                 }
                                 else if let GreenTree::Leaf(t) = sub_child {
                                     if t.kind == SvelteTokenType::Text {
-                                        let content = source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
+                                        let content =
+                                            source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
                                         if !content.trim().is_empty() {
-                                            children.push(SvelteNode::Text(SvelteText { content, span: Range { start: sub_offset, end: sub_offset + t.length as usize } }));
+                                            children.push(SvelteNode::Text(SvelteText {
+                                                content,
+                                                span: Range { start: sub_offset, end: sub_offset + t.length as usize },
+                                            }));
                                         }
                                     }
                                     sub_offset += t.length as usize;
@@ -269,7 +305,13 @@ impl SvelteBuilder {
             }
         }
 
-        Ok(SvelteBlock { kind, expression: expression.trim().to_string(), children, branches, span: Range { start: offset, end: offset + node.byte_length as usize } })
+        Ok(SvelteBlock {
+            kind,
+            expression: expression.trim().to_string(),
+            children,
+            branches,
+            span: Range { start: offset, end: offset + node.byte_length as usize },
+        })
     }
 
     fn build_branch<'a>(&self, node: &GreenNode<'a, SvelteLanguage>, offset: usize, source: &SourceText) -> Result<SvelteBranch, TextError> {
@@ -289,19 +331,25 @@ impl SvelteBuilder {
                                     GreenTree::Leaf(t) => {
                                         match t.kind {
                                             SvelteTokenType::Identifier if name.is_empty() => {
-                                                name = source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
+                                                name = source
+                                                    .get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize })
+                                                    .to_string();
                                             }
                                             SvelteTokenType::ColonBrace | SvelteTokenType::RightBrace => {}
                                             _ => {
                                                 let expr = expression.get_or_insert_with(String::new);
-                                                expr.push_str(&source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }));
+                                                expr.push_str(
+                                                    &source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }),
+                                                );
                                             }
                                         }
                                         sub_offset += t.length as usize;
                                     }
                                     GreenTree::Node(sub_n) => {
                                         let expr = expression.get_or_insert_with(String::new);
-                                        expr.push_str(&source.get_text_in(Range { start: sub_offset, end: sub_offset + sub_n.byte_length as usize }));
+                                        expr.push_str(
+                                            &source.get_text_in(Range { start: sub_offset, end: sub_offset + sub_n.byte_length as usize }),
+                                        );
                                         sub_offset += sub_n.byte_length as usize;
                                     }
                                 }
@@ -318,9 +366,13 @@ impl SvelteBuilder {
                                 }
                                 else if let GreenTree::Leaf(t) = sub_child {
                                     if t.kind == SvelteTokenType::Text {
-                                        let content = source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
+                                        let content =
+                                            source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
                                         if !content.trim().is_empty() {
-                                            children.push(SvelteNode::Text(SvelteText { content, span: Range { start: sub_offset, end: sub_offset + t.length as usize } }));
+                                            children.push(SvelteNode::Text(SvelteText {
+                                                content,
+                                                span: Range { start: sub_offset, end: sub_offset + t.length as usize },
+                                            }));
                                         }
                                     }
                                     sub_offset += t.length as usize;
@@ -337,12 +389,22 @@ impl SvelteBuilder {
             }
         }
 
-        Ok(SvelteBranch { name, expression: expression.map(|e| e.trim().to_string()), children, span: Range { start: offset, end: offset + node.byte_length as usize } })
+        Ok(SvelteBranch {
+            name,
+            expression: expression.map(|e| e.trim().to_string()),
+            children,
+            span: Range { start: offset, end: offset + node.byte_length as usize },
+        })
     }
 }
 
 impl Builder<SvelteLanguage> for SvelteBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SvelteLanguage>) -> BuildOutput<SvelteLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<SvelteLanguage>,
+    ) -> BuildOutput<SvelteLanguage> {
         let source = SourceText::new(text.get_text_in(Range { start: 0, end: text.length() }).to_string());
         let config = SvelteLanguage::default();
         let parser = crate::parser::SvelteParser::new(&config);

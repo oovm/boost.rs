@@ -3,7 +3,7 @@ use crate::{
     ast::{MojoExpression, MojoLiteral, MojoStatement},
     parser::MojoElementType,
 };
-use data_text_core::{GreenNode, GreenTree, TextError, Source, source::SourceText};
+use data_text_core::{GreenNode, GreenTree, Source, TextError, source::SourceText};
 
 /// Mojo AST builder.
 pub struct MojoBuilder<'a> {
@@ -133,7 +133,10 @@ impl<'a> MojoBuilder<'a> {
                     MojoElementType::Identifier => {
                         name = self.source.get_text_in((current_offset..current_offset + child.len() as usize).into()).to_string();
                     }
-                    MojoElementType::BinaryExpr | MojoElementType::LiteralExpr | MojoElementType::IdentifierExpr | MojoElementType::Grouping => {
+                    MojoElementType::BinaryExpr
+                    | MojoElementType::LiteralExpr
+                    | MojoElementType::IdentifierExpr
+                    | MojoElementType::Grouping => {
                         value = Some(self.build_expression(child_node, current_offset)?);
                     }
                     _ => {}
@@ -154,7 +157,10 @@ impl<'a> MojoBuilder<'a> {
         for child in node.children() {
             if let GreenTree::Node(child_node) = child {
                 match child_node.kind {
-                    MojoElementType::BinaryExpr | MojoElementType::LiteralExpr | MojoElementType::IdentifierExpr | MojoElementType::Grouping => {
+                    MojoElementType::BinaryExpr
+                    | MojoElementType::LiteralExpr
+                    | MojoElementType::IdentifierExpr
+                    | MojoElementType::Grouping => {
                         condition = self.build_expression(child_node, current_offset)?;
                     }
                     MojoElementType::Block => {
@@ -186,7 +192,10 @@ impl<'a> MojoBuilder<'a> {
         for child in node.children() {
             if let GreenTree::Node(child_node) = child {
                 match child_node.kind {
-                    MojoElementType::BinaryExpr | MojoElementType::LiteralExpr | MojoElementType::IdentifierExpr | MojoElementType::Grouping => {
+                    MojoElementType::BinaryExpr
+                    | MojoElementType::LiteralExpr
+                    | MojoElementType::IdentifierExpr
+                    | MojoElementType::Grouping => {
                         condition = self.build_expression(child_node, current_offset)?;
                     }
                     MojoElementType::Block => {
@@ -273,7 +282,10 @@ impl<'a> MojoBuilder<'a> {
                                 left = Some(Box::new(self.build_expression(child_node, current_offset)?));
                             }
                             else if right.is_none()
-                                && (child_node.kind == MojoElementType::BinaryExpr || child_node.kind == MojoElementType::LiteralExpr || child_node.kind == MojoElementType::IdentifierExpr || child_node.kind == MojoElementType::Grouping)
+                                && (child_node.kind == MojoElementType::BinaryExpr
+                                    || child_node.kind == MojoElementType::LiteralExpr
+                                    || child_node.kind == MojoElementType::IdentifierExpr
+                                    || child_node.kind == MojoElementType::Grouping)
                             {
                                 right = Some(Box::new(self.build_expression(child_node, current_offset)?));
                             }
@@ -286,14 +298,21 @@ impl<'a> MojoBuilder<'a> {
                     current_offset += child.len() as usize;
                 }
 
-                Ok(MojoExpression::Binary { left: left.unwrap_or_else(|| Box::new(MojoExpression::Literal(MojoLiteral::None))), op, right: right.unwrap_or_else(|| Box::new(MojoExpression::Literal(MojoLiteral::None))) })
+                Ok(MojoExpression::Binary {
+                    left: left.unwrap_or_else(|| Box::new(MojoExpression::Literal(MojoLiteral::None))),
+                    op,
+                    right: right.unwrap_or_else(|| Box::new(MojoExpression::Literal(MojoLiteral::None))),
+                })
             }
             MojoElementType::Grouping => {
                 let mut expr = MojoExpression::Literal(MojoLiteral::None);
                 let mut current_offset = offset;
                 for child in node.children() {
                     if let GreenTree::Node(child_node) = child {
-                        if !child_node.kind.is_trivia() && child_node.kind != MojoElementType::LeftParen && child_node.kind != MojoElementType::RightParen {
+                        if !child_node.kind.is_trivia()
+                            && child_node.kind != MojoElementType::LeftParen
+                            && child_node.kind != MojoElementType::RightParen
+                        {
                             expr = self.build_expression(child_node, current_offset)?;
                         }
                     }

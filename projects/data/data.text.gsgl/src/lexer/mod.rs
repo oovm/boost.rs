@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::GsglLanguage, lexer::token_type::GsglTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, GsglLanguage>;
 
@@ -395,7 +395,12 @@ impl<'config> GsglLexer<'config> {
 }
 
 impl<'config> Lexer<GsglLanguage> for GsglLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<GsglLanguage>) -> LexOutput<GsglLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<GsglLanguage>,
+    ) -> LexOutput<GsglLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

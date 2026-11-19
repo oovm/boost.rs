@@ -245,8 +245,10 @@ pub fn parse_indexes(document: &str) -> Result<Vec<IndexSpec>, StoreError> {
             .get("namespace")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| StoreError::Catalog("catalog index entry has no namespace".to_string()))?;
-        let name =
-            entry.get("name").and_then(serde_json::Value::as_str).ok_or_else(|| StoreError::Catalog("catalog index entry has no name".to_string()))?;
+        let name = entry
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| StoreError::Catalog("catalog index entry has no name".to_string()))?;
         let sparse = entry.get("sparse").and_then(serde_json::Value::as_bool);
         let hidden = entry.get("hidden").and_then(serde_json::Value::as_bool).unwrap_or(false);
         // 旧目录没有该字段时按 multikey 处理：宁可退回集合扫描，也不漏数组文档。

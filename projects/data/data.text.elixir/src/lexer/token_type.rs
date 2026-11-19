@@ -245,9 +245,17 @@ impl TokenType for ElixirTokenType {
             | Self::Pipeline
             | Self::Arrow
             | Self::Pipe => UniversalTokenRole::Operator,
-            Self::Comma | Self::Semicolon | Self::Colon | Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::LeftDoubleBracket | Self::RightDoubleBracket => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::Comma
+            | Self::Semicolon
+            | Self::Colon
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftDoubleBracket
+            | Self::RightDoubleBracket => UniversalTokenRole::Punctuation,
             Self::Error => UniversalTokenRole::Error,
             _ if self.is_keyword() => UniversalTokenRole::Keyword,
             _ => UniversalTokenRole::None,

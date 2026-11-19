@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::StylusLanguage, lexer::token_type::StylusTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, StylusLanguage>;
 
@@ -358,7 +358,12 @@ impl<'config> StylusLexer<'config> {
 }
 
 impl<'config> Lexer<StylusLanguage> for StylusLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<StylusLanguage>) -> LexOutput<StylusLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<StylusLanguage>,
+    ) -> LexOutput<StylusLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

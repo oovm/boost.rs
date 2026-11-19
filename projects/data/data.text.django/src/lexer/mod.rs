@@ -3,7 +3,7 @@ pub mod token_type;
 
 use crate::{language::DjangoLanguage, lexer::token_type::DjangoTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source,
+    Lexer, LexerCache, LexerState, Source, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::TextEdit,
 };
@@ -12,7 +12,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, DjangoLanguage>;
 
 static DJANGO_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static _DJANGO_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "{#", block_start: "{#", block_end: "#}", nested_blocks: false });
+static _DJANGO_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "{#", block_start: "{#", block_end: "#}", nested_blocks: false });
 static DJANGO_STRING_DOUBLE: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 static DJANGO_STRING_SINGLE: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['\''], escape: Some('\\') });
 
@@ -23,7 +24,12 @@ pub struct DjangoLexer<'config> {
 }
 
 impl<'config> Lexer<DjangoLanguage> for DjangoLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<DjangoLanguage>) -> LexOutput<DjangoLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<DjangoLanguage>,
+    ) -> LexOutput<DjangoLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -466,7 +472,10 @@ impl<'config> DjangoLexer<'config> {
 
         while let Some(ch) = state.peek() {
             let rest = state.rest();
-            if rest.starts_with(&self.config.variable_start) || rest.starts_with(&self.config.tag_start) || rest.starts_with(&self.config.comment_start) {
+            if rest.starts_with(&self.config.variable_start)
+                || rest.starts_with(&self.config.tag_start)
+                || rest.starts_with(&self.config.comment_start)
+            {
                 break;
             }
             state.advance(ch.len_utf8())

@@ -223,10 +223,7 @@ impl NativePeWriter {
     /// `.data` 内的绝对指针按首选基址写成 `VA`，同时生成 `.reloc`
     /// （`IMAGE_REL_BASED_DIR64`）并在可选头声明 `DYNAMIC_BASE`；`.text` 内
     /// 对数据段的自相对引用由 `text_fixups` 回填。
-    pub fn write_executable_with_data(
-        image: &NativePeImage,
-        data_section: &NativeDataSection,
-    ) -> Result<Vec<u8>, NativePeWriteError> {
+    pub fn write_executable_with_data(image: &NativePeImage, data_section: &NativeDataSection) -> Result<Vec<u8>, NativePeWriteError> {
         if image.text.is_empty() {
             return Err(NativePeWriteError::EmptyText);
         }
@@ -296,10 +293,8 @@ impl NativePeWriter {
                 if field + 4 > text.len() {
                     return Err(NativePeWriteError::SizeOverflow("导入修复项（字段越界）"));
                 }
-                let displacement =
-                    (idata_section.rva as i64 + i64::from(*target)) - (layout.text.rva as i64 + field as i64 + 4);
-                let displacement =
-                    i32::try_from(displacement).map_err(|_| NativePeWriteError::SizeOverflow("导入修复项（rel32 越界）"))?;
+                let displacement = (idata_section.rva as i64 + i64::from(*target)) - (layout.text.rva as i64 + field as i64 + 4);
+                let displacement = i32::try_from(displacement).map_err(|_| NativePeWriteError::SizeOverflow("导入修复项（rel32 越界）"))?;
                 text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
             }
         }
@@ -316,10 +311,8 @@ impl NativePeWriter {
                 if *target as usize >= data_section.data.len() {
                     return Err(NativePeWriteError::SizeOverflow("数据引用（目标越界）"));
                 }
-                let displacement =
-                    (data_placement.rva as i64 + i64::from(*target)) - (layout.text.rva as i64 + field as i64 + 4);
-                let displacement =
-                    i32::try_from(displacement).map_err(|_| NativePeWriteError::SizeOverflow("数据引用（rel32 越界）"))?;
+                let displacement = (data_placement.rva as i64 + i64::from(*target)) - (layout.text.rva as i64 + field as i64 + 4);
+                let displacement = i32::try_from(displacement).map_err(|_| NativePeWriteError::SizeOverflow("数据引用（rel32 越界）"))?;
                 text[field..field + 4].copy_from_slice(&displacement.to_le_bytes());
             }
         }

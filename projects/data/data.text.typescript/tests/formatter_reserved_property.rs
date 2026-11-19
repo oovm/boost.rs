@@ -36,7 +36,12 @@ fn reserved_words_as_property_names_keep_call_parens_attached() {
 
 #[test]
 fn reserved_words_in_member_modifier_position_keep_call_parens_attached() {
-    for source in ["class A { static catch(arg) {} }", "class A { async catch(arg) {} }", "class A { get catch() { return 1 } }", "const o = { x: 1, catch(arg) { return arg } }"] {
+    for source in [
+        "class A { static catch(arg) {} }",
+        "class A { async catch(arg) {} }",
+        "class A { get catch() { return 1 } }",
+        "const o = { x: 1, catch(arg) { return arg } }",
+    ] {
         assert_eq!(format(source), source, "member gained a space: {source:?}");
     }
 }

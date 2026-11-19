@@ -59,11 +59,7 @@ pub struct Reader<'a> {
 
 impl<'a> fmt::Debug for Reader<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Reader")
-            .field("cursor", &self.cursor)
-            .field("limit", &self.limit)
-            .field("total", &self.bytes.len())
-            .finish()
+        f.debug_struct("Reader").field("cursor", &self.cursor).field("limit", &self.limit).field("total", &self.bytes.len()).finish()
     }
 }
 
@@ -108,11 +104,7 @@ impl<'a> Reader<'a> {
     /// Advance by `delta` bytes from current position.
     #[inline]
     pub fn skip(&mut self, delta: usize) -> Result<(), ReadError> {
-        let new = self.cursor.checked_add(delta).ok_or(ReadError::OutOfBounds {
-            offset: self.cursor,
-            limit: self.limit,
-            need: delta,
-        })?;
+        let new = self.cursor.checked_add(delta).ok_or(ReadError::OutOfBounds { offset: self.cursor, limit: self.limit, need: delta })?;
         if new > self.limit {
             return Err(ReadError::OutOfBounds { offset: self.cursor, limit: self.limit, need: delta });
         }

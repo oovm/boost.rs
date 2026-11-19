@@ -1,5 +1,5 @@
+use data_text_swift::{language::SwiftLanguage, lexer::SwiftLexer};
 use language_testing::lexing::LexerTester;
-use data_text_swift::{lexer::SwiftLexer, language::SwiftLanguage};
 
 use std::{path::Path, time::Duration};
 

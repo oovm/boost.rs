@@ -408,7 +408,13 @@ impl TokenType for VbNetTokenType {
             Self::Error => UniversalTokenRole::Error,
             _ if self.is_keyword() => UniversalTokenRole::Keyword,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::BooleanLiteral | Self::DateLiteral | Self::NothingLiteral => UniversalTokenRole::Literal,
+            Self::IntegerLiteral
+            | Self::FloatLiteral
+            | Self::StringLiteral
+            | Self::CharLiteral
+            | Self::BooleanLiteral
+            | Self::DateLiteral
+            | Self::NothingLiteral => UniversalTokenRole::Literal,
             _ => UniversalTokenRole::None,
         }
     }

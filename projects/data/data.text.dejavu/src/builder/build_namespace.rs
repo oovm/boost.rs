@@ -5,10 +5,14 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_namespace<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<NamespaceDeclaration, TextError> {
+    pub(crate) fn build_namespace<S: Source + ?Sized>(
+        &self,
+        node: RedNode<DejavuLanguage>,
+        source: &S,
+    ) -> Result<NamespaceDeclaration, TextError> {
         let span = node.span();
         let mut name = NamePathNode { parts: Vec::new(), span: Default::default() };
         let mut annotations = Vec::new();

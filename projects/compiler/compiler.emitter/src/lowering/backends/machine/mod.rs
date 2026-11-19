@@ -27,19 +27,18 @@ mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
-pub(crate) use extension::lower_fragment_to_machine_extension;
 pub use extension::X64LoweredExtension;
+pub(crate) use extension::lower_fragment_to_machine_extension;
 
 pub use carrier::{
-    HostMethod, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, PYTHON_EXEC_NAME, any_returns_bool, any_returns_utf8, append_text_arena,
-    is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec,
-    python_module_registration, reset_text_arena,
+    HostMethod, HostProperty, HostValueKind, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool, any_returns_utf8, append_text_arena,
+    is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data,
+    python_module_exec, python_module_registration, reset_text_arena,
 };
 pub use host::{HostModule, X64Platform, X64ProductTarget};
 
 pub use x64_program::{
-    encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
-    encode_x64_program_with_imports,
+    encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies, encode_x64_program_with_imports,
 };
 
 use compiler_target::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};

@@ -54,7 +54,9 @@ fn shorthand_event_directive_name_is_the_identifier_only() {
 fn root_covers_a_multi_element_template_document() {
     // Every node ends at its last token, so a dropped whitespace inside an expression
     // would shift every following span and leave the root short of the source end.
-    let source = SourceText::new(r#"<template><button @click="(() => armed = !armed)" :title="label">{{ label }}</button><li v-for="item in items" :key="item.id">{{ item }}</li></template>"#);
+    let source = SourceText::new(
+        r#"<template><button @click="(() => armed = !armed)" :title="label">{{ label }}</button><li v-for="item in items" :key="item.id">{{ item }}</li></template>"#,
+    );
     let language = VueLanguage::default();
     let parser = VueParser::new(&language);
     let mut session = ParseSession::default();

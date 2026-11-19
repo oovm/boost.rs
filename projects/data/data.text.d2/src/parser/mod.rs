@@ -21,7 +21,12 @@ impl<'config> D2Parser<'config> {
 }
 
 impl<'config> Parser<D2Language> for D2Parser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<D2Language>) -> ParseOutput<'a, D2Language> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<D2Language>,
+    ) -> ParseOutput<'a, D2Language> {
         let lexer = D2Lexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             while state.not_at_end() {

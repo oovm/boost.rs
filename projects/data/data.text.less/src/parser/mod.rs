@@ -5,12 +5,12 @@ use crate::{
     language::LessLanguage,
     lexer::{LessLexer, LessTokenType},
 };
-pub use element_type::LessElementType;
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
+pub use element_type::LessElementType;
 
 pub(crate) type State<'a, S> = ParserState<'a, LessLanguage, S>;
 
@@ -29,13 +29,23 @@ impl<'config> LessParser<'config> {
 
 impl<'config> Parser<LessLanguage> for LessParser<'config> {
     /// Parses the Less source code into a green tree.
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<LessLanguage>) -> ParseOutput<'a, LessLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<LessLanguage>,
+    ) -> ParseOutput<'a, LessLanguage> {
         let lexer = LessLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
 
             while state.not_at_end() {
-                if state.at(LessTokenType::AtRule) || state.at(LessTokenType::AtImport) || state.at(LessTokenType::AtMedia) { self.parse_at_rule(state)? } else { self.parse_ruleset(state)? }
+                if state.at(LessTokenType::AtRule) || state.at(LessTokenType::AtImport) || state.at(LessTokenType::AtMedia) {
+                    self.parse_at_rule(state)?
+                }
+                else {
+                    self.parse_ruleset(state)?
+                }
             }
 
             Ok(state.finish_at(cp, LessElementType::SourceFile))
@@ -111,7 +121,11 @@ impl<'config> LessParser<'config> {
 
         // Property
         let cp_prop = state.checkpoint();
-        while state.not_at_end() && !state.at(LessTokenType::Colon) && !state.at(LessTokenType::Semicolon) && !state.at(LessTokenType::RightBrace) {
+        while state.not_at_end()
+            && !state.at(LessTokenType::Colon)
+            && !state.at(LessTokenType::Semicolon)
+            && !state.at(LessTokenType::RightBrace)
+        {
             state.bump()
         }
         state.finish_at(cp_prop, LessElementType::Property);

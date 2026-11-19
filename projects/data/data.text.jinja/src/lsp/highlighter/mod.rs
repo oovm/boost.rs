@@ -21,7 +21,11 @@ impl JinjaHighlighter {
 impl HighlightSource for JinjaHighlighter {
     fn highlight<'a>(&self, source: &'a str, _language: &str, theme: Theme) -> Result<HighlightResult<'a>, data_text_core::errors::TextError> {
         let theme_config = theme.get_theme();
-        let segments = vec![HighlightSegment { span: HighlightSpan { start: 0, end: source.len() }, style: theme_config.resolve_style("none"), text: std::borrow::Cow::Borrowed(source) }];
+        let segments = vec![HighlightSegment {
+            span: HighlightSpan { start: 0, end: source.len() },
+            style: theme_config.resolve_style("none"),
+            text: std::borrow::Cow::Borrowed(source),
+        }];
         Ok(HighlightResult { segments, source: std::borrow::Cow::Borrowed(source) })
     }
 }

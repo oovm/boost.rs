@@ -1,5 +1,8 @@
-use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
+use crate::{
+    ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType,
+    parser::element_type::TypeScriptElementType,
+};
+use data_text_core::{RedNode, RedTree, Source, SourceText, TextError};
 
 impl<'config> TypeScriptBuilder<'config> {
     pub(crate) fn build_class_member(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<ClassMember>, TextError> {
@@ -63,10 +66,27 @@ impl<'config> TypeScriptBuilder<'config> {
                         },
                     }
                 }
-                Ok(Some(ClassMember::Property { decorators, name, ty, initializer: value, visibility, modifiers, optional_marker, span: span.into() }))
+                Ok(Some(ClassMember::Property {
+                    decorators,
+                    name,
+                    ty,
+                    initializer: value,
+                    visibility,
+                    modifiers,
+                    optional_marker,
+                    span: span.into(),
+                }))
             }
-            TypeScriptElementType::MethodDeclaration | TypeScriptElementType::MethodSignature | TypeScriptElementType::Constructor | TypeScriptElementType::ConstructorDeclaration => {
-                let mut name = if matches!(kind, TypeScriptElementType::Constructor | TypeScriptElementType::ConstructorDeclaration) { "constructor".to_string() } else { String::new() };
+            TypeScriptElementType::MethodDeclaration
+            | TypeScriptElementType::MethodSignature
+            | TypeScriptElementType::Constructor
+            | TypeScriptElementType::ConstructorDeclaration => {
+                let mut name = if matches!(kind, TypeScriptElementType::Constructor | TypeScriptElementType::ConstructorDeclaration) {
+                    "constructor".to_string()
+                }
+                else {
+                    String::new()
+                };
                 let mut type_params = Vec::new();
                 let mut params = Vec::new();
                 let mut return_type = None;
@@ -134,7 +154,18 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                Ok(Some(ClassMember::Method { decorators, name, type_params, params, return_type, body, visibility, modifiers, optional_marker, span: span.into() }))
+                Ok(Some(ClassMember::Method {
+                    decorators,
+                    name,
+                    type_params,
+                    params,
+                    return_type,
+                    body,
+                    visibility,
+                    modifiers,
+                    optional_marker,
+                    span: span.into(),
+                }))
             }
             _ => Ok(None),
         }

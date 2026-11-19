@@ -2,10 +2,16 @@
 
 use core::range::Range;
 
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, SourceText, TextDiagnostics, TextEdit, TextError, parser::session::ParseSession,
+    source::Source,
+};
 
 use crate::{
-    ast::{AbcAccidental, AbcBarline, AbcChord, AbcClef, AbcDecoration, AbcEvent, AbcFraction, AbcHeader, AbcKey, AbcMeasure, AbcMeter, AbcNote, AbcPitch, AbcRest, AbcRoot, AbcSlur, AbcTune, AbcTuplet, AbcUnsupported, AbcVoice},
+    ast::{
+        AbcAccidental, AbcBarline, AbcChord, AbcClef, AbcDecoration, AbcEvent, AbcFraction, AbcHeader, AbcKey, AbcMeasure, AbcMeter, AbcNote,
+        AbcPitch, AbcRest, AbcRoot, AbcSlur, AbcTune, AbcTuplet, AbcUnsupported, AbcVoice,
+    },
     language::AbcLanguage,
     parser::{AbcParser, element_type::AbcElementType},
 };
@@ -15,7 +21,12 @@ use crate::{
 pub struct AbcBuilder;
 
 impl Builder<AbcLanguage> for AbcBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<AbcLanguage>) -> TextDiagnostics<AbcRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<AbcLanguage>,
+    ) -> TextDiagnostics<AbcRoot> {
         let parser = AbcParser;
         let mut cache = ParseSession::<AbcLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -159,7 +170,9 @@ impl AbcBuilder {
                     'C' => header.composer = non_empty(value),
                     'Q' => header.tempo_bpm = parse_tempo(value),
                     'M' => header.meter = parse_meter(value),
-                    'L' => header.unit_note_length = parse_fraction(value).map(|(numerator, denominator)| AbcFraction::new(numerator, denominator)),
+                    'L' => {
+                        header.unit_note_length = parse_fraction(value).map(|(numerator, denominator)| AbcFraction::new(numerator, denominator))
+                    }
                     'K' => header.key = parse_key(value),
                     'V' => {
                         let (id, clef) = parse_voice(value);
@@ -201,7 +214,16 @@ impl AbcBuilder {
 
     /// Parse one music line into the voice's measures.
     #[allow(clippy::too_many_arguments)]
-    fn parse_music_line(&self, body: &str, base: usize, header: &AbcHeader, tune: &mut TuneBuild, voice_index: usize, lyric_targets: &mut Vec<(usize, usize, usize)>, _source: &SourceText) -> Result<(), TextError> {
+    fn parse_music_line(
+        &self,
+        body: &str,
+        base: usize,
+        header: &AbcHeader,
+        tune: &mut TuneBuild,
+        voice_index: usize,
+        lyric_targets: &mut Vec<(usize, usize, usize)>,
+        _source: &SourceText,
+    ) -> Result<(), TextError> {
         let unit = header.unit_note_length.unwrap_or_else(|| default_unit(header.meter));
         let bytes = body.as_bytes();
         let mut index = 0usize;
@@ -462,7 +484,12 @@ impl TuneBuild {
                 {
                     voice.measures.pop();
                 }
-                AbcVoice { id: voice.id, clef: voice.clef, measures: voice.measures.drain(..).map(MeasureBuild::into_ast).collect(), span: (voice.start..voice.end.max(voice.start)).into() }
+                AbcVoice {
+                    id: voice.id,
+                    clef: voice.clef,
+                    measures: voice.measures.drain(..).map(MeasureBuild::into_ast).collect(),
+                    span: (voice.start..voice.end.max(voice.start)).into(),
+                }
             })
             .collect();
         AbcTune { index: self.index, voices, unsupported: self.unsupported, span: (self.start..self.end.max(self.start)).into() }
@@ -630,7 +657,10 @@ fn parse_note(body: &str, start: usize, base: usize, state: &mut LineState, unit
 
     let mut tuplet = None;
     if let Some((declaration, used)) = state.tuplet.as_mut() {
-        length = AbcFraction::new(length.numerator * u32::from(declaration.normal.max(1)), length.denominator * u32::from(declaration.actual.max(1)));
+        length = AbcFraction::new(
+            length.numerator * u32::from(declaration.normal.max(1)),
+            length.denominator * u32::from(declaration.actual.max(1)),
+        );
         tuplet = Some(*declaration);
         *used += 1;
         if *used >= declaration.actual {

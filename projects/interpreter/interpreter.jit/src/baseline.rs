@@ -48,6 +48,7 @@ impl<M: ScalarProgramMatcher> JitCompiler for BaselineScalarJit<M> {
         let machine_code = self.matcher.match_scalar_program(request).ok_or(JitError::Unsupported)?;
         let maps = build_conservative_stack_maps(request.function_index, request.function.local_count, &request.function.safepoint_indices);
         let deopt = build_baseline_deopt_map(request.function_index, request.function.local_count, &request.function.safepoint_indices);
-        Ok(JitCompiledArtifact::with_machine_code(maps, deopt, machine_code).with_assumptions(baseline_scalar_assumptions(request.module_version)))
+        Ok(JitCompiledArtifact::with_machine_code(maps, deopt, machine_code)
+            .with_assumptions(baseline_scalar_assumptions(request.module_version)))
     }
 }

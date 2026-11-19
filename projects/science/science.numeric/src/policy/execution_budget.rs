@@ -107,7 +107,9 @@ impl core::ops::Deref for ExecutionBudget {
 /// 把 `boost-math` kernel / 预算失败映射为数值塔诊断。
 pub(crate) fn kernel_to_diagnostic(error: KernelError) -> Diagnostic {
     match error {
-        KernelError::Domain(operation) => Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "numeric").detail("operation", operation),
+        KernelError::Domain(operation) => {
+            Diagnostic::new(DiagnosticCode::DomainError).detail("domain", "numeric").detail("operation", operation)
+        }
         KernelError::ResourceLimit { kind, got, max } => Diagnostic::new(DiagnosticCode::NumericResourceLimit)
             .detail("domain", "numeric")
             .detail("kind", kind)

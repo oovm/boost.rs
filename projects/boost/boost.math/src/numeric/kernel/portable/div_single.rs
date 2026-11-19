@@ -2,7 +2,7 @@
 
 use crate::numeric::kernel::error::Result;
 
-use crate::numeric::{kernel::LimbBuffer, budget::ExecutionBudget};
+use crate::numeric::{budget::ExecutionBudget, kernel::LimbBuffer};
 
 use super::primitive::effective_len;
 

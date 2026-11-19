@@ -29,7 +29,10 @@ impl<'config> SchemeParser<'config> {
     fn parse_form<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
             Some(SchemeTokenType::LeftParen) => self.parse_list(state),
-            Some(SchemeTokenType::Quote_) | Some(SchemeTokenType::Quasiquote_) | Some(SchemeTokenType::Unquote_) | Some(SchemeTokenType::UnquoteSplicing_) => {
+            Some(SchemeTokenType::Quote_)
+            | Some(SchemeTokenType::Quasiquote_)
+            | Some(SchemeTokenType::Unquote_)
+            | Some(SchemeTokenType::UnquoteSplicing_) => {
                 let cp = state.checkpoint();
                 state.bump();
                 self.parse_form(state)?;
@@ -57,7 +60,12 @@ impl<'config> SchemeParser<'config> {
 }
 
 impl<'config> Parser<SchemeLanguage> for SchemeParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<SchemeLanguage>) -> ParseOutput<'a, SchemeLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<SchemeLanguage>,
+    ) -> ParseOutput<'a, SchemeLanguage> {
         let lexer = SchemeLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

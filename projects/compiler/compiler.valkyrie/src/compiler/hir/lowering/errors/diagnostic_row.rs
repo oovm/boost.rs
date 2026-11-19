@@ -426,7 +426,9 @@ pub(super) fn frontend_source(_error: &crate::compiler::syntax::surface::ParseEr
 /// 从 frontend `ParseError` 提取可定位的源码 span。
 pub(super) fn frontend_span(error: &crate::compiler::syntax::surface::ParseError) -> DiagnosticSpan {
     match error {
-        crate::compiler::syntax::surface::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
+        crate::compiler::syntax::surface::ParseError::Invalid { span: Some(range), .. } => {
+            DiagnosticSpan { start: range.start, end: range.end }
+        }
         _ => empty_span(),
     }
 }

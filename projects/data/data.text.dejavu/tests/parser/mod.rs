@@ -16,7 +16,8 @@ fn test_flags_parser() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lang = DejavuLanguage::default();
     let parser = DejavuParser::new(&lang);
-    let test_runner = ParserTester::new(here.join("tests").join("parser").join("flags")).with_extension("dejavu").with_timeout(Duration::from_secs(5));
+    let test_runner =
+        ParserTester::new(here.join("tests").join("parser").join("flags")).with_extension("dejavu").with_timeout(Duration::from_secs(5));
 
     // Only run flags related tests
     test_runner.run_tests::<DejavuLanguage, _>(&parser)

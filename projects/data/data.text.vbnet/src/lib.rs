@@ -46,7 +46,10 @@ pub fn parse(source: &str) -> Result<VbNetRoot, data_text_core::TextError> {
 /// # Errors
 ///
 /// Returns an [data_text_core::TextError] if parsing fails.
-pub fn parse_with_cache(source: &str, cache: &mut data_text_core::parser::CachingParseSession<VbNetLanguage, data_text_core::parser::ParseSession<VbNetLanguage>>) -> Result<VbNetRoot, data_text_core::TextError> {
+pub fn parse_with_cache(
+    source: &str,
+    cache: &mut data_text_core::parser::CachingParseSession<VbNetLanguage, data_text_core::parser::ParseSession<VbNetLanguage>>,
+) -> Result<VbNetRoot, data_text_core::TextError> {
     use data_text_core::ParseCache;
 
     let language = VbNetLanguage::new();

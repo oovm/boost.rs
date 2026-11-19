@@ -66,9 +66,21 @@ impl data_text_core::TokenType for FluentTokenKind {
             Self::Identifier => UniversalTokenRole::Name,
             Self::StringLiteral => UniversalTokenRole::Literal,
             Self::NumberLiteral => UniversalTokenRole::Literal,
-            Self::Equals | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Comma | Self::Period | Self::Colon | Self::Hyphen | Self::Underscore | Self::At | Self::Hash | Self::Dollar | Self::Pipe | Self::Asterisk => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::Equals
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Comma
+            | Self::Period
+            | Self::Colon
+            | Self::Hyphen
+            | Self::Underscore
+            | Self::At
+            | Self::Hash
+            | Self::Dollar
+            | Self::Pipe
+            | Self::Asterisk => UniversalTokenRole::Punctuation,
             Self::Error => UniversalTokenRole::Error,
         }
     }

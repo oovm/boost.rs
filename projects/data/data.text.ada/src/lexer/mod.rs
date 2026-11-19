@@ -23,7 +23,12 @@ pub struct AdaLexer<'config> {
 }
 
 impl<'config> Lexer<AdaLanguage> for AdaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<AdaLanguage>) -> LexOutput<AdaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<AdaLanguage>,
+    ) -> LexOutput<AdaLanguage> {
         let mut state: State<'_, S> = LexerState::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

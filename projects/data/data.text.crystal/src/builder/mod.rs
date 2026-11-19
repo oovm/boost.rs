@@ -4,7 +4,7 @@ use crate::{
     language::CrystalLanguage,
     parser::{CrystalParser, element_type::CrystalElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Crystal language
 #[derive(Clone)]
@@ -40,7 +40,11 @@ impl<'config> CrystalBuilder<'config> {
             CrystalElementType::ClassDef => self.build_class(node, source).map(Item::Class),
             CrystalElementType::ModuleDef => self.build_module(node, source).map(Item::Module),
             CrystalElementType::MethodDef => self.build_method(node, source).map(Item::Def),
-            _ if node.green.kind as u16 >= CrystalElementType::IfExpr as u16 && node.green.kind as u16 <= CrystalElementType::ParenExpr as u16 => self.build_expression(node, source).map(Item::Expression),
+            _ if node.green.kind as u16 >= CrystalElementType::IfExpr as u16
+                && node.green.kind as u16 <= CrystalElementType::ParenExpr as u16 =>
+            {
+                self.build_expression(node, source).map(Item::Expression)
+            }
             _ => None,
         }
     }
@@ -191,8 +195,12 @@ impl<'config> CrystalBuilder<'config> {
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
                         match n.green.kind {
-                            CrystalElementType::Number => return Some(Expression::Literal(Literal::Number(source.get_text_in(n.span()).to_string()))),
-                            CrystalElementType::String => return Some(Expression::Literal(Literal::String(source.get_text_in(n.span()).to_string()))),
+                            CrystalElementType::Number => {
+                                return Some(Expression::Literal(Literal::Number(source.get_text_in(n.span()).to_string())));
+                            }
+                            CrystalElementType::String => {
+                                return Some(Expression::Literal(Literal::String(source.get_text_in(n.span()).to_string())));
+                            }
                             CrystalElementType::TrueKeyword => return Some(Expression::Literal(Literal::Boolean(true))),
                             CrystalElementType::FalseKeyword => return Some(Expression::Literal(Literal::Boolean(false))),
                             CrystalElementType::NilKeyword => return Some(Expression::Literal(Literal::Nil)),
@@ -215,7 +223,9 @@ impl<'config> CrystalBuilder<'config> {
                                     name = Some(Identifier { name: source.get_text_in(n.span()).to_string(), span: n.span() });
                                 }
                             }
-                            _ if n.green.kind as u16 >= CrystalElementType::IfExpr as u16 && n.green.kind as u16 <= CrystalElementType::ParenExpr as u16 => {
+                            _ if n.green.kind as u16 >= CrystalElementType::IfExpr as u16
+                                && n.green.kind as u16 <= CrystalElementType::ParenExpr as u16 =>
+                            {
                                 if let Some(expr) = self.build_expression(&n, source) {
                                     if receiver.is_none() {
                                         receiver = Some(Box::new(expr));
@@ -238,7 +248,12 @@ impl<'config> CrystalBuilder<'config> {
 }
 
 impl<'config> Builder<CrystalLanguage> for CrystalBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CrystalLanguage>) -> data_text_core::builder::BuildOutput<CrystalLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CrystalLanguage>,
+    ) -> data_text_core::builder::BuildOutput<CrystalLanguage> {
         let parser = CrystalParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<CrystalLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

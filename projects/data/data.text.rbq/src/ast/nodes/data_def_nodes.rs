@@ -166,7 +166,18 @@ impl RbqUnionMember {
                 RbqElementType::Ident if name.is_empty() => name = source[child.span()].trim().to_string(),
                 RbqElementType::TypeDef => {
                     if let Some(node) = child.as_node() {
-                        payload = Some(RbqUnionPayload::Struct(node.children().filter_map(|c| if c.kind::<RbqElementType>() == RbqElementType::FieldDef { c.as_node().map(|n| RbqField::lower(n, source)) } else { None }).collect()))
+                        payload = Some(RbqUnionPayload::Struct(
+                            node.children()
+                                .filter_map(|c| {
+                                    if c.kind::<RbqElementType>() == RbqElementType::FieldDef {
+                                        c.as_node().map(|n| RbqField::lower(n, source))
+                                    }
+                                    else {
+                                        None
+                                    }
+                                })
+                                .collect(),
+                        ))
                     }
                 }
                 RbqElementType::TypeRef => {
@@ -244,7 +255,13 @@ impl RbqField {
                                     break;
                                 }
                             }
-                            type_ref = Some(RbqType::Named { path: path, generic_args: Vec::new(), is_physical_ptr: false, is_optional: false, span: node.span() });
+                            type_ref = Some(RbqType::Named {
+                                path: path,
+                                generic_args: Vec::new(),
+                                is_physical_ptr: false,
+                                is_optional: false,
+                                span: node.span(),
+                            });
                         }
                         else {
                             type_ref = Some(RbqType::lower(node, source));
@@ -261,6 +278,18 @@ impl RbqField {
             }
         }
 
-        Self { annotations, name, type_ref: type_ref.unwrap_or(RbqType::Named { path: "any".to_string(), generic_args: Vec::new(), is_physical_ptr: false, is_optional: false, span: span.clone() }), default_value, span }
+        Self {
+            annotations,
+            name,
+            type_ref: type_ref.unwrap_or(RbqType::Named {
+                path: "any".to_string(),
+                generic_args: Vec::new(),
+                is_physical_ptr: false,
+                is_optional: false,
+                span: span.clone(),
+            }),
+            default_value,
+            span,
+        }
     }
 }

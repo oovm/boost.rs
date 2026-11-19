@@ -80,7 +80,16 @@ impl TokenType for JasminTokenType {
             Self::StringLiteral | Self::Number => UniversalTokenRole::Literal,
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
-            Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::Colon | Self::Semicolon | Self::Dot | Self::Comma => UniversalTokenRole::Punctuation,
+            Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Colon
+            | Self::Semicolon
+            | Self::Dot
+            | Self::Comma => UniversalTokenRole::Punctuation,
             Self::Slash => UniversalTokenRole::Operator,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,

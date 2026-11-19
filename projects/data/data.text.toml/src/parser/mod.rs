@@ -2,7 +2,7 @@
 /// Element types for the TOML parser.
 pub mod element_type;
 use crate::{TomlBuilder, ast::TomlRoot, language::TomlLanguage, lexer::token_type::TomlTokenKind as TomlSyntaxKind};
-use data_text_core::{Builder, TextError, ParseCache, Parser, Source, parser::session::ParseSession, source::SourceText};
+use data_text_core::{Builder, ParseCache, Parser, Source, TextError, parser::session::ParseSession, source::SourceText};
 
 /// TOML language parser.
 ///
@@ -21,7 +21,12 @@ impl<'config> TomlParser<'config> {
 }
 
 impl<'config> Parser<TomlLanguage> for TomlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl data_text_core::ParseCache<TomlLanguage>) -> data_text_core::ParseOutput<'a, TomlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<TomlLanguage>,
+    ) -> data_text_core::ParseOutput<'a, TomlLanguage> {
         let lexer = crate::lexer::TomlLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

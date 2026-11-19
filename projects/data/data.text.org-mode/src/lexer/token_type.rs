@@ -178,7 +178,12 @@ impl TokenType for OrgModeTokenType {
             Self::Whitespace | Self::Newline => Whitespace,
             Self::Comment => Comment,
             Self::Number | Self::Date => Literal,
-            Self::HeadingLevel1 | Self::HeadingLevel2 | Self::HeadingLevel3 | Self::HeadingLevel4 | Self::HeadingLevel5 | Self::HeadingLevel6 => Keyword,
+            Self::HeadingLevel1
+            | Self::HeadingLevel2
+            | Self::HeadingLevel3
+            | Self::HeadingLevel4
+            | Self::HeadingLevel5
+            | Self::HeadingLevel6 => Keyword,
             Self::Todo | Self::Done | Self::Next | Self::Waiting | Self::Cancelled => Keyword,
             Self::PriorityA | Self::PriorityB | Self::PriorityC => Literal,
             Self::Text => None,

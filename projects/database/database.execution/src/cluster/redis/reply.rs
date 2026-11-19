@@ -59,13 +59,17 @@ pub fn unknown_command_error(arguments: &[&[u8]]) -> database_protocol_redis::co
         database_protocol_redis::codec::CommandError::Failed(format!("unknown command '{name}'"))
     }
     else {
-        database_protocol_redis::codec::CommandError::Failed(format!("unknown command '{name}', with args beginning with: {} ", shown.join(" ")))
+        database_protocol_redis::codec::CommandError::Failed(format!(
+            "unknown command '{name}', with args beginning with: {} ",
+            shown.join(" ")
+        ))
     }
 }
 
 /// 未知命令的真机文案：命令名之外还要回显参数前缀，末尾带一个空格。
 pub fn write_unknown_command(stream: &mut dyn Write, arguments: &[&[u8]]) -> io::Result<()> {
-    let database_protocol_redis::codec::CommandError::Failed(message) = unknown_command_error(arguments) else {
+    let database_protocol_redis::codec::CommandError::Failed(message) = unknown_command_error(arguments)
+    else {
         unreachable!("unknown command errors always carry the `ERR` prefix")
     };
     write_error(stream, &message)

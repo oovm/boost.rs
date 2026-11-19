@@ -102,11 +102,7 @@ impl ModuleRecord {
             assets: Vec::new(),
             requires: Vec::new(),
             cjs_named_exports: Vec::new(),
-            flags: ModuleFlags {
-                has_tla: false,
-                dynamic_import_nonliteral: false,
-                require_nonliteral: false,
-            },
+            flags: ModuleFlags { has_tla: false, dynamic_import_nonliteral: false, require_nonliteral: false },
             scope_bindings: Vec::new(),
             scope_incomplete_reasons: Vec::new(),
             diagnostics: Vec::new(),

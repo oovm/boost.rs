@@ -1,5 +1,5 @@
-use language_testing::lexing::LexerTester;
 use data_text_wit_component::{WitLanguage, WitLexer};
+use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]

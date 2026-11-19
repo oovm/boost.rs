@@ -90,8 +90,7 @@ impl DexWriter {
 
     fn add_class(&mut self, class: &JvmClassFile) -> std::result::Result<(), String> {
         let type_name = format!("L{};", class.internal_name);
-        let super_name =
-            if class.super_name.is_empty() { "Ljava/lang/Object;".to_string() } else { format!("L{};", class.super_name) };
+        let super_name = if class.super_name.is_empty() { "Ljava/lang/Object;".to_string() } else { format!("L{};", class.super_name) };
         self.intern_type(&type_name);
         self.intern_type(&super_name);
 
@@ -112,12 +111,7 @@ impl DexWriter {
             self.intern_proto(&mref.descriptor);
             self.methods.push(mref);
         }
-        self.classes.push(ClassDef {
-            type_name,
-            super_name,
-            access_flags: u32::from(class.access_flags),
-            methods: method_indices,
-        });
+        self.classes.push(ClassDef { type_name, super_name, access_flags: u32::from(class.access_flags), methods: method_indices });
         let _ = class_idx;
         Ok(())
     }
@@ -252,16 +246,13 @@ impl DexWriter {
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&(self.methods.len() as u32).to_le_bytes());
-        let method_ids_off =
-            HEADER_SIZE + self.strings.len() as u32 * 4 + self.types.len() as u32 * 4 + self.protos.len() as u32 * 12;
+        let method_ids_off = HEADER_SIZE + self.strings.len() as u32 * 4 + self.types.len() as u32 * 4 + self.protos.len() as u32 * 12;
         out.extend_from_slice(&method_ids_off.to_le_bytes());
         out.extend_from_slice(&(self.classes.len() as u32).to_le_bytes());
         let class_defs_off = method_ids_off + self.methods.len() as u32 * 8;
         out.extend_from_slice(&class_defs_off.to_le_bytes());
         let data_off = class_defs_off + self.classes.len() as u32 * 32;
-        out.extend_from_slice(
-            &(string_data.len() as u32 + class_data_items.len() as u32 + code_items.len() as u32).to_le_bytes(),
-        );
+        out.extend_from_slice(&(string_data.len() as u32 + class_data_items.len() as u32 + code_items.len() as u32).to_le_bytes());
         out.extend_from_slice(&data_off.to_le_bytes());
 
         for id in &string_ids {

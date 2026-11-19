@@ -39,7 +39,14 @@ impl<'config> VLangBuilder<'config> {
 
     fn build_item(&self, node: RedNode<VLangLanguage>, source: &str) -> VItem {
         // Simple implementation - in a real implementation, this would parse the actual structure
-        VItem::Function(VFunction { name: "unknown".to_string(), is_pub: false, receiver: None, params: Vec::new(), return_type: None, body: Vec::new() })
+        VItem::Function(VFunction {
+            name: "unknown".to_string(),
+            is_pub: false,
+            receiver: None,
+            params: Vec::new(),
+            return_type: None,
+            body: Vec::new(),
+        })
     }
 
     fn get_text<'a>(&self, span: Range<usize>, source: &'a str) -> &'a str {
@@ -53,7 +60,12 @@ impl<'config> VLangBuilder<'config> {
 }
 
 impl<'config> Builder<VLangLanguage> for VLangBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::parser::ParseCache<VLangLanguage>) -> BuildOutput<VLangLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::parser::ParseCache<VLangLanguage>,
+    ) -> BuildOutput<VLangLanguage> {
         let parser = crate::parser::VLangParser::new(self.language);
         let output = parser.parse(text, edits, cache);
 

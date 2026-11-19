@@ -6,7 +6,7 @@ pub use element_type::AdaElementType;
 
 use crate::{language::AdaLanguage, lexer::AdaTokenType};
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{Parser, ParserState},
     source::Source,
 };
@@ -135,7 +135,12 @@ impl<'config> AdaParser<'config> {
 }
 
 impl<'config> Parser<AdaLanguage> for AdaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<AdaLanguage>) -> data_text_core::ParseOutput<'a, AdaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<AdaLanguage>,
+    ) -> data_text_core::ParseOutput<'a, AdaLanguage> {
         let lexer = crate::lexer::AdaLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -79,9 +79,26 @@ impl TokenType for TomlTokenKind {
         match self {
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
-            Self::BasicString | Self::LiteralString | Self::String | Self::Integer | Self::Float | Self::Boolean | Self::OffsetDateTime | Self::LocalDateTime | Self::LocalDate | Self::LocalTime => UniversalTokenRole::Literal,
+            Self::BasicString
+            | Self::LiteralString
+            | Self::String
+            | Self::Integer
+            | Self::Float
+            | Self::Boolean
+            | Self::OffsetDateTime
+            | Self::LocalDateTime
+            | Self::LocalDate
+            | Self::LocalTime => UniversalTokenRole::Literal,
             Self::BareKey | Self::Identifier => UniversalTokenRole::Name,
-            Self::Equal | Self::Dot | Self::Comma | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::DoubleLeftBracket | Self::DoubleRightBracket => UniversalTokenRole::Punctuation,
+            Self::Equal
+            | Self::Dot
+            | Self::Comma
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::DoubleLeftBracket
+            | Self::DoubleRightBracket => UniversalTokenRole::Punctuation,
             Self::Root => UniversalTokenRole::None,
             Self::Error => UniversalTokenRole::Error,
             Self::Eof => UniversalTokenRole::None,

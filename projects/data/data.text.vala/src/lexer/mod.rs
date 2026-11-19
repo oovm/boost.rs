@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, ValaLanguage>;
 
 static VALA_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static VALA_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
+static VALA_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
 static VALA_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 static VALA_CHAR: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['\''], escape: Some('\\') });
 
@@ -24,7 +25,12 @@ pub struct ValaLexer<'config> {
 }
 
 impl<'config> Lexer<ValaLanguage> for ValaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<ValaLanguage>) -> LexOutput<ValaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<ValaLanguage>,
+    ) -> LexOutput<ValaLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

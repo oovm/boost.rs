@@ -547,7 +547,17 @@ impl TokenType for JasmTokenType {
             | Self::New => Keyword,
             Self::String | Self::Number => Literal,
             Self::Identifier => Name,
-            Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::Colon | Self::Semicolon | Self::Dot | Self::Comma | Self::Slash => Punctuation,
+            Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Colon
+            | Self::Semicolon
+            | Self::Dot
+            | Self::Comma
+            | Self::Slash => Punctuation,
             Self::Whitespace | Self::Newline => Whitespace,
             Self::Comment => Comment,
             _ => None,

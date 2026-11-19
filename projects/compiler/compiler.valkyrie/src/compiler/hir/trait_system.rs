@@ -231,8 +231,7 @@ impl TraitModuleView {
         self.declarations
             .iter()
             .find(|(_, definition)| {
-                definition.name == name
-                    && definition.declaring_namespace.parts().iter().map(|part| part.as_str()).eq(namespace.iter().copied())
+                definition.name == name && definition.declaring_namespace.parts().iter().map(|part| part.as_str()).eq(namespace.iter().copied())
             })
             .map(|(identity, _)| *identity)
     }
@@ -260,12 +259,7 @@ impl TraitModuleView {
             Some(declaration) => (declaration, identity),
             None => (self.declaration_identity(&reference)?, reference),
         };
-        Some(HirTraitBound {
-            declaration: Some(declaration),
-            trait_path,
-            type_arguments: Vec::new(),
-            associated_types: Vec::new(),
-        })
+        Some(HirTraitBound { declaration: Some(declaration), trait_path, type_arguments: Vec::new(), associated_types: Vec::new() })
     }
 
     /// 按「声明命名空间 + 短名」的声明身份查 trait；同名多身份时保持不唯一。
@@ -292,99 +286,99 @@ impl TraitModuleView {
             .map_err(|error| TraitModuleError::Satisfaction { error })
     }
 
-/// impl 头部对具体候选的结构统一：impl 泛型形参由 receiver 与 trait 实参固定。
-///
-/// 按完整类型相等比较时，泛型 impl（如 `imply ArrayIterator<T>: Iterator`）对
-/// 实例化目标（`ArrayIterator<i32>`）永远失配，使一切泛型实现的 evidence 退化成
-/// 「没有实现」。改为结构统一后，关联类型与成员签名可以用同一份代入归一化。
-fn impl_header_substitution(
-    view: &TraitModuleView,
-    implementation: &HirImpl,
-    candidate: &ValkyrieType,
-    bound_arguments: &[ValkyrieType],
-) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
-    Self::impl_header_substitution_at(view, implementation, candidate, bound_arguments, 0)
-}
+    /// impl 头部对具体候选的结构统一：impl 泛型形参由 receiver 与 trait 实参固定。
+    ///
+    /// 按完整类型相等比较时，泛型 impl（如 `imply ArrayIterator<T>: Iterator`）对
+    /// 实例化目标（`ArrayIterator<i32>`）永远失配，使一切泛型实现的 evidence 退化成
+    /// 「没有实现」。改为结构统一后，关联类型与成员签名可以用同一份代入归一化。
+    fn impl_header_substitution(
+        view: &TraitModuleView,
+        implementation: &HirImpl,
+        candidate: &ValkyrieType,
+        bound_arguments: &[ValkyrieType],
+    ) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
+        Self::impl_header_substitution_at(view, implementation, candidate, bound_arguments, 0)
+    }
 
-fn impl_header_substitution_at(
-    view: &TraitModuleView,
-    implementation: &HirImpl,
-    candidate: &ValkyrieType,
-    bound_arguments: &[ValkyrieType],
-    depth: usize,
-) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
-    if depth > 8 || implementation.trait_arguments.len() != bound_arguments.len() {
-        return None;
-    }
-    let mut substitution = BTreeMap::new();
-    if !unify_instantiation(&implementation.target, candidate, &mut substitution) {
-        return None;
-    }
-    for (declared, actual) in implementation.trait_arguments.iter().zip(bound_arguments) {
-        if !unify_instantiation(declared, actual, &mut substitution) {
+    fn impl_header_substitution_at(
+        view: &TraitModuleView,
+        implementation: &HirImpl,
+        candidate: &ValkyrieType,
+        bound_arguments: &[ValkyrieType],
+        depth: usize,
+    ) -> Option<BTreeMap<GenericBinderId, ValkyrieType>> {
+        if depth > 8 || implementation.trait_arguments.len() != bound_arguments.len() {
             return None;
         }
-    }
-    // impl 头部 bounds 必须真解：blanket 只有在当次代入后义务仍成立时才是候选。
-    // 解不出来（含代入后仍是开放泛型）就整体不参与，不用任何优先级兜底。
-    for constraint in &implementation.where_constraints {
-        let target = substitute_type_vars(&constraint.target, &substitution);
-        if crate::compiler::hir::overload::has_unresolved_generic_arguments(&target) {
+        let mut substitution = BTreeMap::new();
+        if !unify_instantiation(&implementation.target, candidate, &mut substitution) {
             return None;
         }
-        for bound in &constraint.bounds {
-            if bound.declaration.is_none() {
+        for (declared, actual) in implementation.trait_arguments.iter().zip(bound_arguments) {
+            if !unify_instantiation(declared, actual, &mut substitution) {
                 return None;
             }
-            view.satisfy_explicit_type_at(&target, bound, depth + 1).ok()?;
         }
+        // impl 头部 bounds 必须真解：blanket 只有在当次代入后义务仍成立时才是候选。
+        // 解不出来（含代入后仍是开放泛型）就整体不参与，不用任何优先级兜底。
+        for constraint in &implementation.where_constraints {
+            let target = substitute_type_vars(&constraint.target, &substitution);
+            if crate::compiler::hir::overload::has_unresolved_generic_arguments(&target) {
+                return None;
+            }
+            for bound in &constraint.bounds {
+                if bound.declaration.is_none() {
+                    return None;
+                }
+                view.satisfy_explicit_type_at(&target, bound, depth + 1).ok()?;
+            }
+        }
+        Some(substitution)
     }
-    Some(substitution)
-}
 
-/// 把 impl 成员签名归一化到被检查的具体类型：先代入 impl 形参，再把 `Self`
-/// 与关联类型投影落到同一目标上。
-fn normalize_impl_member_type(
-    ty: &ValkyrieType,
-    target: &ValkyrieType,
-    substitution: &BTreeMap<GenericBinderId, ValkyrieType>,
-    associated_types: &BTreeMap<Identifier, ValkyrieType>,
-) -> ValkyrieType {
-    let substituted = substitute_type_vars(ty, substitution);
-    substitute_associated_equations(&substitute_type_self(&substituted, target), target, associated_types)
-}
+    /// 把 impl 成员签名归一化到被检查的具体类型：先代入 impl 形参，再把 `Self`
+    /// 与关联类型投影落到同一目标上。
+    fn normalize_impl_member_type(
+        ty: &ValkyrieType,
+        target: &ValkyrieType,
+        substitution: &BTreeMap<GenericBinderId, ValkyrieType>,
+        associated_types: &BTreeMap<Identifier, ValkyrieType>,
+    ) -> ValkyrieType {
+        let substituted = substitute_type_vars(ty, substitution);
+        substitute_associated_equations(&substitute_type_self(&substituted, target), target, associated_types)
+    }
 
-/// trait 声明的期望签名同样归一化到该目标类型上。
-fn normalize_trait_member_type(
-    ty: &ValkyrieType,
-    target: &ValkyrieType,
-    associated_types: &BTreeMap<Identifier, ValkyrieType>,
-) -> ValkyrieType {
-    substitute_associated_equations(&substitute_type_self(ty, target), target, associated_types)
-}
+    /// trait 声明的期望签名同样归一化到该目标类型上。
+    fn normalize_trait_member_type(
+        ty: &ValkyrieType,
+        target: &ValkyrieType,
+        associated_types: &BTreeMap<Identifier, ValkyrieType>,
+    ) -> ValkyrieType {
+        substitute_associated_equations(&substitute_type_self(ty, target), target, associated_types)
+    }
 
-/// 方法级泛型 binder 的 alpha 归一映射。
-///
-/// 泛型形参的身份只在其声明作用域内有效：impl 成员的 `<I>` 与 trait 方法槽的
-/// `<I>` 是同一方法模板的两份声明，binder owner 不同并不代表类型不同。签名
-/// 核对前把各自方法声明的类型形参换成同名、同种类的无名占位，再按结构比较。
-fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<GenericBinderId, ValkyrieType> {
-    generics
-        .iter()
-        .filter_map(|generic| {
-            let binder = generic.binder?;
-            Some((
-                binder,
-                ValkyrieType::Generic(GenericType {
-                    binder: None,
-                    name: generic.name.clone(),
-                    kind: generic.kind.clone(),
-                    bounds: generic.bounds.clone(),
-                }),
-            ))
-        })
-        .collect()
-}
+    /// 方法级泛型 binder 的 alpha 归一映射。
+    ///
+    /// 泛型形参的身份只在其声明作用域内有效：impl 成员的 `<I>` 与 trait 方法槽的
+    /// `<I>` 是同一方法模板的两份声明，binder owner 不同并不代表类型不同。签名
+    /// 核对前把各自方法声明的类型形参换成同名、同种类的无名占位，再按结构比较。
+    fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<GenericBinderId, ValkyrieType> {
+        generics
+            .iter()
+            .filter_map(|generic| {
+                let binder = generic.binder?;
+                Some((
+                    binder,
+                    ValkyrieType::Generic(GenericType {
+                        binder: None,
+                        name: generic.name.clone(),
+                        kind: generic.kind.clone(),
+                        bounds: generic.bounds.clone(),
+                    }),
+                ))
+            })
+            .collect()
+    }
 
     /// 关联等式判等前把 `Named` 表面名归一到已冻结的 `Nominal` 表示。
     ///
@@ -404,20 +398,14 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
                 Box::new(self.canonical_member_type(callee)),
                 arguments.iter().map(|argument| self.canonical_member_type(argument)).collect(),
             ),
-            HirType::Tuple(elements) => {
-                HirType::Tuple(elements.iter().map(|element| self.canonical_member_type(element)).collect())
-            }
+            HirType::Tuple(elements) => HirType::Tuple(elements.iter().map(|element| self.canonical_member_type(element)).collect()),
             HirType::Array(element) => HirType::Array(Box::new(self.canonical_member_type(element))),
             HirType::FixedArray { element, length } => {
                 HirType::FixedArray { element: Box::new(self.canonical_member_type(element)), length: *length }
             }
             HirType::Nullable(inner) => HirType::Nullable(Box::new(self.canonical_member_type(inner))),
-            HirType::Union(members) => {
-                HirType::Union(members.iter().map(|member| self.canonical_member_type(member)).collect())
-            }
-            HirType::Intersection(members) => {
-                HirType::Intersection(members.iter().map(|member| self.canonical_member_type(member)).collect())
-            }
+            HirType::Union(members) => HirType::Union(members.iter().map(|member| self.canonical_member_type(member)).collect()),
+            HirType::Intersection(members) => HirType::Intersection(members.iter().map(|member| self.canonical_member_type(member)).collect()),
             _ => ty.clone(),
         }
     }
@@ -435,11 +423,7 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
             })
         });
         let enum_type = self.enums.get(name).and_then(|item| {
-            item.declaration.map(|declaration| HirType::Nominal {
-                declaration,
-                arguments: Vec::new(),
-                primitive_identity: None,
-            })
+            item.declaration.map(|declaration| HirType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None })
         });
         let primitive_type = canonical_builtin_type(name.as_str());
         // 多来源只有在解析出同一个值时才折叠：同名 `[primitive]` struct 与内建是同一身份
@@ -483,11 +467,7 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
             .get(&declaration)
             .ok_or_else(|| TraitModuleError::UnknownTrait { name: bound.trait_path.parts().last().cloned().unwrap_or_default() })?;
         if let Some(start) = chain.iter().position(|item| *item == declaration) {
-            let mut cycle = chain[start..]
-                .iter()
-                .filter_map(|item| self.declarations.get(item))
-                .map(trait_identity_path)
-                .collect::<Vec<_>>();
+            let mut cycle = chain[start..].iter().filter_map(|item| self.declarations.get(item)).map(trait_identity_path).collect::<Vec<_>>();
             cycle.push(bound.trait_path.clone());
             return Err(TraitModuleError::Satisfaction {
                 error: TraitSatisfactionError::CyclicSuperTraits { trait_path: bound.trait_path.clone(), cycle },
@@ -499,8 +479,7 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
             .iter()
             .filter(|item| item.trait_declaration == Some(declaration))
             .filter_map(|item| {
-                Self::impl_header_substitution_at(self, item, candidate, &bound.type_arguments, depth)
-                    .map(|substitution| (item, substitution))
+                Self::impl_header_substitution_at(self, item, candidate, &bound.type_arguments, depth).map(|substitution| (item, substitution))
             })
             .collect::<Vec<_>>();
         // 具体度排序：只保留「不被任何其他匹配更具体」的候选。具体 impl 因此优先于
@@ -633,9 +612,7 @@ fn alpha_method_binder_substitution(generics: &[GenericType]) -> BTreeMap<Generi
             .impls
             .iter()
             .filter(|item| item.trait_declaration == Some(declaration))
-            .filter_map(|item| {
-                Self::impl_header_substitution(self, item, candidate, trait_arguments).map(|substitution| (item, substitution))
-            })
+            .filter_map(|item| Self::impl_header_substitution(self, item, candidate, trait_arguments).map(|substitution| (item, substitution)))
             .collect::<Vec<_>>();
         // 与 witness 路径同一套具体度判据：具体 impl 优先 blanket，同具体度保持不唯一。
         let mut matches = (0..matches.len())

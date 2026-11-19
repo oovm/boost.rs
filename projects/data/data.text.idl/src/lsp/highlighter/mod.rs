@@ -1,7 +1,9 @@
 #![doc = include_str!("readme.md")]
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
 use data_text_core::{Language, errors::ParseResult};
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 
 pub struct IdlHighlighter {
     use_parser: bool,
@@ -21,7 +23,9 @@ impl HighlightSource for IdlHighlighter {
             let config = crate::language::IdlLanguage::default();
             let parser = crate::parser::IdlParser::new(&config);
             let lexer = crate::lexer::IdlLexer::new(&config);
-            highlighter.highlight_with_language::<crate::language::IdlLanguage, crate::parser::IdlParser<'_>, crate::lexer::IdlLexer<'_>>(source, theme, &parser, &lexer)
+            highlighter.highlight_with_language::<crate::language::IdlLanguage, crate::parser::IdlParser<'_>, crate::lexer::IdlLexer<'_>>(
+                source, theme, &parser, &lexer,
+            )
         }
         else {
             highlighter.highlight(source, crate::language::IdlLanguage::NAME, theme)

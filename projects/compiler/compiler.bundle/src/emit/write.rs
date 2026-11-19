@@ -13,8 +13,7 @@
 //! 且不触碰缓存目录与其它外来文件（如 Node 侧 `package.json`、宿主自行放进
 //! `assets/` 的非指纹文件）。
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 use crate::diag::PackDiagnostic;
 
@@ -44,12 +43,7 @@ pub fn write_emit_with(sink: &dyn OutputSink, plan: &EmitPlan, out_dir: &Path) -
 }
 
 /// 增量写出：`reuse = true` 时跳过内容逐字节相同的既有文件。
-pub fn write_emit_incremental_with(
-    sink: &dyn OutputSink,
-    plan: &EmitPlan,
-    out_dir: &Path,
-    reuse: bool,
-) -> Result<(), Vec<PackDiagnostic>> {
+pub fn write_emit_incremental_with(sink: &dyn OutputSink, plan: &EmitPlan, out_dir: &Path, reuse: bool) -> Result<(), Vec<PackDiagnostic>> {
     let mut diagnostics: Vec<PackDiagnostic> = Vec::new();
     if let Err(err) = sink.create_dir_all(out_dir) {
         diagnostics.push(write_failed(out_dir, &err));
@@ -120,7 +114,8 @@ fn sweep_orphans(sink: &dyn OutputSink, out_dir: &Path, expected: &BTreeSet<Stri
         // 防御性拒绝：根路径不允许被当作产物目录清理。
         return;
     }
-    let Ok(entries) = sink.list(out_dir) else {
+    let Ok(entries) = sink.list(out_dir)
+    else {
         return;
     };
     for (name, is_file) in entries {
@@ -141,7 +136,8 @@ fn sweep_orphans(sink: &dyn OutputSink, out_dir: &Path, expected: &BTreeSet<Stri
 }
 
 fn sweep_dir_files(sink: &dyn OutputSink, dir: &Path, prefix: &str, expected: &BTreeSet<String>, diagnostics: &mut Vec<PackDiagnostic>) {
-    let Ok(entries) = sink.list(dir) else {
+    let Ok(entries) = sink.list(dir)
+    else {
         return;
     };
     for (file_name, is_file) in entries {

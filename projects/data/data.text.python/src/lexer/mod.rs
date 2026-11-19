@@ -20,7 +20,12 @@ pub struct PythonLexer<'config> {
 }
 
 impl<'config> Lexer<PythonLanguage> for PythonLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<PythonLanguage>) -> LexOutput<PythonLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<PythonLanguage>,
+    ) -> LexOutput<PythonLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -132,7 +137,8 @@ impl<'config> PythonLexer<'config> {
         state.advance(1); // Skip first quote
 
         // Check if it's a triple-quoted string
-        let is_triple = if let (Some(c1), Some(c2)) = (state.peek_next_n(0), state.peek_next_n(1)) { c1 == quote_char && c2 == quote_char } else { false };
+        let is_triple =
+            if let (Some(c1), Some(c2)) = (state.peek_next_n(0), state.peek_next_n(1)) { c1 == quote_char && c2 == quote_char } else { false };
 
         if is_triple {
             state.advance(2); // Skip remaining two quotes

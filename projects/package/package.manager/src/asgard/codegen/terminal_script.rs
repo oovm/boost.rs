@@ -20,9 +20,7 @@ pub struct ScriptFacts {
 impl ScriptFacts {
     /// 用正式 parser 解析脚本；任何语法诊断都拒绝生成，不做错误恢复后再消费。
     pub fn parse(script: &str) -> AsgardResult<Self> {
-        let root = parse_source(script).map_err(|error| {
-            AsgardError::msg(report!("<script> 不是合法 V 源码，生成器拒绝消费：{error}"))
-        })?;
+        let root = parse_source(script).map_err(|error| AsgardError::msg(report!("<script> 不是合法 V 源码，生成器拒绝消费：{error}")))?;
         Ok(Self { source: script.to_string(), root })
     }
 
@@ -31,9 +29,7 @@ impl ScriptFacts {
         fn walk<'a>(items: &'a [StatementNode], name: &str) -> Option<&'a MicroDeclaration> {
             items.iter().find_map(|item| match item {
                 StatementNode::Micro(micro) if micro.name.name == name => Some(micro.as_ref()),
-                StatementNode::Namespace(namespace) => {
-                    walk(namespace.body.as_ref().map(|body| body.items.as_slice()).unwrap_or(&[]), name)
-                }
+                StatementNode::Namespace(namespace) => walk(namespace.body.as_ref().map(|body| body.items.as_slice()).unwrap_or(&[]), name),
                 _ => None,
             })
         }
@@ -48,9 +44,7 @@ impl ScriptFacts {
                     Pattern::Variable(variable) if variable.name.name == name => declaration.expr.as_ref(),
                     _ => None,
                 },
-                StatementNode::Namespace(namespace) => {
-                    walk(namespace.body.as_ref().map(|body| body.items.as_slice()).unwrap_or(&[]), name)
-                }
+                StatementNode::Namespace(namespace) => walk(namespace.body.as_ref().map(|body| body.items.as_slice()).unwrap_or(&[]), name),
                 _ => None,
             })
         }
@@ -85,8 +79,8 @@ pub fn parse_expression_fragment(fragment: &str) -> AsgardResult<FragmentFacts> 
         return Err(AsgardError::msg("表达式片段为空，没有可解析的表达式事实"));
     }
     let source = format!("let __awsl_probe = {trimmed};");
-    let root = parse_source(&source)
-        .map_err(|error| AsgardError::msg(report!("表达式片段 `{trimmed}` 不是合法 V 表达式，拒绝消费：{error}")))?;
+    let root =
+        parse_source(&source).map_err(|error| AsgardError::msg(report!("表达式片段 `{trimmed}` 不是合法 V 表达式，拒绝消费：{error}")))?;
     for item in &root.items {
         if let StatementNode::Let(declaration) = item {
             if let Some(expr) = &declaration.expr {

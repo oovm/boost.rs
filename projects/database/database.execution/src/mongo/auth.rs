@@ -18,8 +18,7 @@ use unicode_stringprep::SaslprepError;
 
 use crate::mongo::{
     authorization::{
-        self, Privilege, RoleRef, StoreRoleResolver, expand_roles, is_valid_action,
-        normalize_privileges, privileges_to_value, roles_to_value,
+        self, Privilege, RoleRef, StoreRoleResolver, expand_roles, is_valid_action, normalize_privileges, privileges_to_value, roles_to_value,
     },
     commands,
     cursor::CursorStore,
@@ -96,9 +95,7 @@ pub struct SystemEntropy {
 impl SystemEntropy {
     /// 创建系统熵源。
     pub fn new() -> Self {
-        Self {
-            inner: boost_random::Secure::system(),
-        }
+        Self { inner: boost_random::Secure::system() }
     }
 }
 
@@ -123,10 +120,7 @@ pub struct ScriptedEntropy {
 impl ScriptedEntropy {
     /// 以给定字节序列创建熵源，`fill_bytes` 从头部顺序消耗。
     pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
-        Self {
-            bytes: bytes.into(),
-            position: 0,
-        }
+        Self { bytes: bytes.into(), position: 0 }
     }
 }
 
@@ -203,18 +197,8 @@ pub struct AuthSession<'a> {
 
 impl<'a> AuthSession<'a> {
     /// 以调用方持有的存储、游标表、认证状态与熵源创建执行上下文。
-    pub fn new(
-        store: &'a dyn MongoStorage,
-        cursors: &'a mut CursorStore,
-        auth: &'a mut AuthState,
-        entropy: &'a mut dyn Entropy,
-    ) -> Self {
-        Self {
-            store,
-            cursors,
-            auth,
-            entropy,
-        }
+    pub fn new(store: &'a dyn MongoStorage, cursors: &'a mut CursorStore, auth: &'a mut AuthState, entropy: &'a mut dyn Entropy) -> Self {
+        Self { store, cursors, auth, entropy }
     }
 }
 
@@ -241,7 +225,10 @@ pub fn verify_client_final(
     let nonce = server_first.get(2..nonce_end).unwrap_or("");
     let mut fields: Vec<(&str, &str)> = Vec::new();
     for part in client_final.split(',') {
-        let Some(equals) = part.find('=') else { continue };
+        let Some(equals) = part.find('=')
+        else {
+            continue;
+        };
         if equals == 0 {
             continue;
         }
@@ -253,7 +240,8 @@ pub fn verify_client_final(
         }
     }
     let value_of = |key: &str| fields.iter().find(|(name, _)| *name == key).map(|(_, value)| *value);
-    let Some(proof_text) = value_of("p") else {
+    let Some(proof_text) = value_of("p")
+    else {
         return Err(ScramVerifyError::AuthenticationFailed);
     };
     if value_of("r") != Some(nonce) {
@@ -264,72 +252,54 @@ pub fn verify_client_final(
     let r = value_of("r").unwrap_or("undefined");
     let without_proof = format!("c={channel},r={r}");
     let auth_message = format!("{client_first_bare},{server_first},{without_proof}");
-    let Some(client_signature) = mac(mechanism, stored_key, auth_message.as_bytes()) else {
+    let Some(client_signature) = mac(mechanism, stored_key, auth_message.as_bytes())
+    else {
         return Err(ScramVerifyError::AuthenticationFailed);
     };
-    let Ok(proof) = base64_decode(proof_text) else {
+    let Ok(proof) = base64_decode(proof_text)
+    else {
         return Err(ScramVerifyError::AuthenticationFailed);
     };
     if proof.len() != mechanism.key_length() {
         return Err(ScramVerifyError::AuthenticationFailed);
     }
-    let client_key: Vec<u8> = proof
-        .iter()
-        .zip(client_signature.iter())
-        .map(|(left, right)| left ^ right)
-        .collect();
+    let client_key: Vec<u8> = proof.iter().zip(client_signature.iter()).map(|(left, right)| left ^ right).collect();
     if digest(mechanism, &client_key) != stored_key {
         return Err(ScramVerifyError::AuthenticationFailed);
     }
-    mac(mechanism, server_key, auth_message.as_bytes())
-        .ok_or(ScramVerifyError::AuthenticationFailed)
+    mac(mechanism, server_key, auth_message.as_bytes()).ok_or(ScramVerifyError::AuthenticationFailed)
 }
 
 /// `createUser` 命令。
 pub fn create_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDocument {
     let db = database_of(command);
-    let Some(BsonValue::String(name)) = command.get("createUser") else {
+    let Some(BsonValue::String(name)) = command.get("createUser")
+    else {
         return bad_value("createUser must be a string");
     };
-    let Some(BsonValue::String(password)) = command.get("pwd") else {
-        return auth_error(
-            40_414,
-            "IDLFailedToParse",
-            "BSON field 'createUser.pwd' is missing but a required field",
-        );
+    let Some(BsonValue::String(password)) = command.get("pwd")
+    else {
+        return auth_error(40_414, "IDLFailedToParse", "BSON field 'createUser.pwd' is missing but a required field");
     };
-    let Some(BsonValue::Array(roles)) = command.get("roles") else {
-        return auth_error(
-            40_414,
-            "IDLFailedToParse",
-            "BSON field 'createUser.roles' is missing but a required field",
-        );
+    let Some(BsonValue::Array(roles)) = command.get("roles")
+    else {
+        return auth_error(40_414, "IDLFailedToParse", "BSON field 'createUser.roles' is missing but a required field");
     };
     if find_user(session, &db, name).is_some() {
-        return auth_error(
-            51_003,
-            "Location51003",
-            format!("User \"{name}@{db}\" already exists"),
-        );
+        return auth_error(51_003, "Location51003", format!("User \"{name}@{db}\" already exists"));
     }
 
     let mechanisms: Vec<ScramMechanism> = match command.get("mechanisms") {
         Some(BsonValue::Array(requested)) => {
             let mut parsed: Vec<ScramMechanism> = Vec::new();
             for entry in requested {
-                let BsonValue::String(text) = entry else {
-                    return auth_error(
-                        2,
-                        "BadValue",
-                        format!("Unknown auth mechanism '{}'", value_to_text(entry)),
-                    );
+                let BsonValue::String(text) = entry
+                else {
+                    return auth_error(2, "BadValue", format!("Unknown auth mechanism '{}'", value_to_text(entry)));
                 };
-                let Some(mechanism) = ScramMechanism::parse(text) else {
-                    return auth_error(
-                        2,
-                        "BadValue",
-                        format!("Unknown auth mechanism '{text}'"),
-                    );
+                let Some(mechanism) = ScramMechanism::parse(text)
+                else {
+                    return auth_error(2, "BadValue", format!("Unknown auth mechanism '{text}'"));
                 };
                 parsed.push(mechanism);
             }
@@ -348,11 +318,7 @@ pub fn create_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
             Err(error) => return error,
         };
         if !role_exists(session.store, &role) {
-            return auth_error(
-                31,
-                "RoleNotFound",
-                format!("Could not find role: {}@{}", role.role, role.db),
-            );
+            return auth_error(31, "RoleNotFound", format!("Could not find role: {}@{}", role.role, role.db));
         }
         granted.push(role);
     }
@@ -366,11 +332,7 @@ pub fn create_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
                     SaslprepError::Bidi => "CHECK_BIDI",
                     SaslprepError::Prohibited => "PROHIBITED",
                 };
-                return auth_error(
-                    50_692,
-                    "Location50692",
-                    format!("Error preflighting normalization: U_STRINGPREP_{label}_ERROR"),
-                );
+                return auth_error(50_692, "Location50692", format!("Error preflighting normalization: U_STRINGPREP_{label}_ERROR"));
             }
             Err(CredentialError::Other) => {
                 return auth_error(18, "AuthenticationFailed", "Authentication failed.");
@@ -391,11 +353,7 @@ pub fn create_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
     user_document.push("roles", roles_to_value(&granted));
     let reply = insert_one(session.store, "system.users", &db, user_document);
     if has_write_errors(&reply) {
-        return auth_error(
-            51_003,
-            "Location51003",
-            format!("User \"{name}@{db}\" already exists"),
-        );
+        return auth_error(51_003, "Location51003", format!("User \"{name}@{db}\" already exists"));
     }
     ok_reply()
 }
@@ -403,15 +361,12 @@ pub fn create_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
 /// `dropUser` 命令。
 pub fn drop_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDocument {
     let db = database_of(command);
-    let Some(BsonValue::String(name)) = command.get("dropUser") else {
+    let Some(BsonValue::String(name)) = command.get("dropUser")
+    else {
         return bad_value("dropUser must be a string");
     };
     if find_user(session, &db, name).is_none() {
-        return auth_error(
-            11,
-            "UserNotFound",
-            format!("User '{name}@{db}' not found"),
-        );
+        return auth_error(11, "UserNotFound", format!("User '{name}@{db}' not found"));
     }
     let mut filter = BsonDocument::new();
     filter.push("user", BsonValue::String(name.clone()));
@@ -419,12 +374,7 @@ pub fn drop_user(session: &mut AuthSession, command: &BsonDocument) -> BsonDocum
     ok_reply()
 }
 
-const CREATE_ROLE_FIELDS: [&str; 4] = [
-    "createRole",
-    "privileges",
-    "roles",
-    "authenticationRestrictions",
-];
+const CREATE_ROLE_FIELDS: [&str; 4] = ["createRole", "privileges", "roles", "authenticationRestrictions"];
 
 const COMMON_COMMAND_FIELDS: [&str; 23] = [
     "$db",
@@ -460,48 +410,39 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
         other => return type_mismatch("createRole.createRole", type_name(other), "string"),
     };
     for (key, _) in &command.fields {
-        if !CREATE_ROLE_FIELDS.contains(&key.as_str())
-            && !COMMON_COMMAND_FIELDS.contains(&key.as_str())
-        {
+        if !CREATE_ROLE_FIELDS.contains(&key.as_str()) && !COMMON_COMMAND_FIELDS.contains(&key.as_str()) {
             return idl_unknown(&format!("createRole.{key}"));
         }
     }
-    let Some(privileges_value) = command.get("privileges") else {
+    let Some(privileges_value) = command.get("privileges")
+    else {
         return idl_missing("createRole.privileges");
     };
-    let Some(roles_value) = command.get("roles") else {
+    let Some(roles_value) = command.get("roles")
+    else {
         return idl_missing("createRole.roles");
     };
-    let BsonValue::Array(privilege_entries) = privileges_value else {
+    let BsonValue::Array(privilege_entries) = privileges_value
+    else {
         return type_mismatch("createRole.privileges", type_name(Some(privileges_value)), "array");
     };
-    let BsonValue::Array(role_entries) = roles_value else {
+    let BsonValue::Array(role_entries) = roles_value
+    else {
         return type_mismatch("createRole.roles", type_name(Some(roles_value)), "array");
     };
     if let Some(restrictions) = command.get("authenticationRestrictions") {
         if !matches!(restrictions, BsonValue::Array(_)) {
-            return type_mismatch(
-                "createRole.authenticationRestrictions",
-                type_name(Some(restrictions)),
-                "array",
-            );
+            return type_mismatch("createRole.authenticationRestrictions", type_name(Some(restrictions)), "array");
         }
     }
     if name.is_empty() {
         return bad_value("Role name must be non-empty");
     }
-    if authorization::builtin_role_names()
-        .iter()
-        .any(|builtin| builtin == &name)
-    {
+    if authorization::builtin_role_names().iter().any(|builtin| builtin == &name) {
         return bad_value("Cannot create roles with the same name as a built-in role");
     }
     if find_role(session, &db, &name).is_some() {
-        return auth_error(
-            51_002,
-            "Location51002",
-            format!("Role \"{name}@{db}\" already exists"),
-        );
+        return auth_error(51_002, "Location51002", format!("Role \"{name}@{db}\" already exists"));
     }
 
     let mut granted: Vec<RoleRef> = Vec::new();
@@ -511,11 +452,7 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
             Err(error) => return error,
         };
         if role.role == name && role.db == db {
-            return auth_error(
-                49,
-                "InvalidRoleModification",
-                format!("Cannot grant role {name}@{db} to itself."),
-            );
+            return auth_error(49, "InvalidRoleModification", format!("Cannot grant role {name}@{db} to itself."));
         }
         if db != "admin" && role.db != db {
             return auth_error(
@@ -528,28 +465,19 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
             return auth_error(
                 31,
                 "RoleNotFound",
-                format!(
-                    "Cannot grant roles to '{name}@{db}': Could not find role: {}@{}",
-                    role.role, role.db
-                ),
+                format!("Cannot grant roles to '{name}@{db}': Could not find role: {}@{}", role.role, role.db),
             );
         }
-        if !granted
-            .iter()
-            .any(|entry| entry.db == role.db && entry.role == role.role)
-        {
+        if !granted.iter().any(|entry| entry.db == role.db && entry.role == role.role) {
             granted.push(role);
         }
     }
 
     let mut privileges: Vec<Privilege> = Vec::new();
     for (index, entry) in privilege_entries.iter().enumerate() {
-        let BsonValue::Document(entry_document) = entry else {
-            return type_mismatch(
-                &format!("createRole.privileges.{index}"),
-                type_name(Some(entry)),
-                "object",
-            );
+        let BsonValue::Document(entry_document) = entry
+        else {
+            return type_mismatch(&format!("createRole.privileges.{index}"), type_name(Some(entry)), "object");
         };
         if entry_document.get("resource").is_none() {
             return idl_missing("createRole.privileges.resource");
@@ -557,12 +485,9 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
         if entry_document.get("actions").is_none() {
             return idl_missing("createRole.privileges.actions");
         }
-        let Some(BsonValue::Array(action_entries)) = entry_document.get("actions") else {
-            return type_mismatch(
-                "createRole.privileges.actions",
-                type_name(entry_document.get("actions")),
-                "array",
-            );
+        let Some(BsonValue::Array(action_entries)) = entry_document.get("actions")
+        else {
+            return type_mismatch("createRole.privileges.actions", type_name(entry_document.get("actions")), "array");
         };
         if let Some(error) = validate_resource_shape(entry_document.get("resource").unwrap()) {
             return error;
@@ -571,19 +496,14 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
             return auth_error(
                 49,
                 "InvalidRoleModification",
-                format!(
-                    "Roles on the '{db}' database cannot be granted privileges that target other databases or the cluster"
-                ),
+                format!("Roles on the '{db}' database cannot be granted privileges that target other databases or the cluster"),
             );
         }
         let mut actions: Vec<String> = Vec::new();
         for (position, action_value) in action_entries.iter().enumerate() {
-            let BsonValue::String(action) = action_value else {
-                return type_mismatch(
-                    &format!("createRole.privileges.actions.{position}"),
-                    type_name(Some(action_value)),
-                    "string",
-                );
+            let BsonValue::String(action) = action_value
+            else {
+                return type_mismatch(&format!("createRole.privileges.actions.{position}"), type_name(Some(action_value)), "string");
             };
             if !is_valid_action(action) {
                 return bad_value(format!("Unknown action type in privilege set: '{action}'"));
@@ -604,19 +524,13 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
     role_document.push("_id", BsonValue::String(format!("{db}.{name}")));
     role_document.push("role", BsonValue::String(name.clone()));
     role_document.push("db", BsonValue::String(db.clone()));
-    role_document.push(
-        "privileges",
-        privileges_to_value(&normalize_privileges(&privileges)),
-    );
+    role_document.push("privileges", privileges_to_value(&normalize_privileges(&privileges)));
     role_document.push("roles", roles_to_value(&granted));
     if let Some(BsonValue::Array(restrictions)) = command.get("authenticationRestrictions") {
         for entry in restrictions {
-            let BsonValue::Document(entry_document) = entry else {
-                return type_mismatch(
-                    "createRole.authenticationRestrictions",
-                    type_name(Some(entry)),
-                    "object",
-                );
+            let BsonValue::Document(entry_document) = entry
+            else {
+                return type_mismatch("createRole.authenticationRestrictions", type_name(Some(entry)), "object");
             };
             for (key, _) in &entry_document.fields {
                 if key != "clientSource" && key != "serverAddress" {
@@ -626,27 +540,16 @@ pub fn create_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDoc
             for key in ["clientSource", "serverAddress"] {
                 if let Some(value) = entry_document.get(key) {
                     if !matches!(value, BsonValue::Array(_)) {
-                        return type_mismatch(
-                            &format!("createRole.authenticationRestrictions.{key}"),
-                            type_name(Some(value)),
-                            "array",
-                        );
+                        return type_mismatch(&format!("createRole.authenticationRestrictions.{key}"), type_name(Some(value)), "array");
                     }
                 }
             }
         }
-        role_document.push(
-            "authenticationRestrictions",
-            BsonValue::Array(restrictions.clone()),
-        );
+        role_document.push("authenticationRestrictions", BsonValue::Array(restrictions.clone()));
     }
     let reply = insert_one(session.store, "system.roles", &db, role_document);
     if has_write_errors(&reply) {
-        return auth_error(
-            51_002,
-            "Location51002",
-            format!("Role \"{name}@{db}\" already exists"),
-        );
+        return auth_error(51_002, "Location51002", format!("Role \"{name}@{db}\" already exists"));
     }
     ok_reply()
 }
@@ -663,18 +566,11 @@ pub fn drop_role(session: &mut AuthSession, command: &BsonDocument) -> BsonDocum
             return idl_unknown(&format!("dropRole.{key}"));
         }
     }
-    if authorization::builtin_role_names()
-        .iter()
-        .any(|builtin| builtin == &name)
-    {
+    if authorization::builtin_role_names().iter().any(|builtin| builtin == &name) {
         return bad_value(format!("{name}@{db} is a built-in role and cannot be modified"));
     }
     if find_role(session, &db, &name).is_none() {
-        return auth_error(
-            31,
-            "RoleNotFound",
-            format!("Could not find role: {name}@{db}"),
-        );
+        return auth_error(31, "RoleNotFound", format!("Could not find role: {name}@{db}"));
     }
     let mut filter = BsonDocument::new();
     filter.push("_id", BsonValue::String(format!("{db}.{name}")));
@@ -703,11 +599,13 @@ pub enum SupportedMechs {
 
 /// 解析 `hello.saslSupportedMechs`（`"db.user"` 形式）。
 pub fn sasl_supported_mechs(session: &mut AuthSession, value: &BsonValue) -> SupportedMechs {
-    let BsonValue::String(text) = value else {
+    let BsonValue::String(text) = value
+    else {
         return SupportedMechs::None;
     };
     let message = "UserName must contain a '.' separated database.user pair";
-    let Some(dot) = text.find('.') else {
+    let Some(dot) = text.find('.')
+    else {
         return SupportedMechs::Error(bad_value(message));
     };
     if dot == 0 || dot == text.len() - 1 {
@@ -737,16 +635,8 @@ pub fn sasl_continue(session: &mut AuthSession, command: &BsonDocument) -> BsonD
             Some(conversation) => conversation,
             None => return auth_error(17, "ProtocolError", "No SASL session state found"),
         };
-        if !session
-            .auth
-            .users
-            .iter()
-            .any(|entry| entry.user == conversation.user && entry.db == conversation.db)
-        {
-            session.auth.users.push(AuthIdentity {
-                user: conversation.user.clone(),
-                db: conversation.db.clone(),
-            });
+        if !session.auth.users.iter().any(|entry| entry.user == conversation.user && entry.db == conversation.db) {
+            session.auth.users.push(AuthIdentity { user: conversation.user.clone(), db: conversation.db.clone() });
             session.auth.roles.extend(conversation.roles.iter().cloned());
         }
         let mut reply = conversation_reply(true);
@@ -754,16 +644,14 @@ pub fn sasl_continue(session: &mut AuthSession, command: &BsonDocument) -> BsonD
         reply.push("ok", BsonValue::Double(1.0));
         return reply;
     }
-    let Some(payload) = payload_text(command.get("payload")) else {
+    let Some(payload) = payload_text(command.get("payload"))
+    else {
         session.auth.conversation = None;
-        return auth_error(
-            10_270,
-            "Location10270",
-            "Failed decoding SASL payload: invalid base64",
-        );
+        return auth_error(10_270, "Location10270", "Failed decoding SASL payload: invalid base64");
     };
     let result = {
-        let Some(conversation) = session.auth.conversation.as_ref() else {
+        let Some(conversation) = session.auth.conversation.as_ref()
+        else {
             return auth_error(17, "ProtocolError", "No SASL session state found");
         };
         verify_client_final(
@@ -785,10 +673,7 @@ pub fn sasl_continue(session: &mut AuthSession, command: &BsonDocument) -> BsonD
                 conversation.phase = Phase::Finish;
             }
             let mut reply = conversation_reply(false);
-            reply.push(
-                "payload",
-                binary_payload(&format!("v={}", base64_encode(&server_signature))),
-            );
+            reply.push("payload", binary_payload(&format!("v={}", base64_encode(&server_signature))));
             reply.push("ok", BsonValue::Double(1.0));
             reply
         }
@@ -806,10 +691,7 @@ pub fn logout(session: &mut AuthSession) -> BsonDocument {
 /// `usersInfo` 命令。
 pub fn users_info(session: &mut AuthSession, command: &BsonDocument) -> BsonDocument {
     let current_db = database_of(command);
-    let parsed = parse_user_selection(
-        command.get("usersInfo").unwrap_or(&BsonValue::Null),
-        &current_db,
-    );
+    let parsed = parse_user_selection(command.get("usersInfo").unwrap_or(&BsonValue::Null), &current_db);
     if let Selection::Error(error) = &parsed {
         return error.clone();
     }
@@ -849,12 +731,7 @@ pub fn users_info(session: &mut AuthSession, command: &BsonDocument) -> BsonDocu
     }
     let mut users: Vec<BsonValue> = Vec::new();
     for document in &documents {
-        users.push(BsonValue::Document(user_report(
-            session.store,
-            document,
-            show_credentials,
-            show_privileges,
-        )));
+        users.push(BsonValue::Document(user_report(session.store, document, show_credentials, show_privileges)));
     }
     let mut reply = BsonDocument::new();
     reply.push("users", BsonValue::Array(users));
@@ -864,27 +741,12 @@ pub fn users_info(session: &mut AuthSession, command: &BsonDocument) -> BsonDocu
 
 /// 未认证连接允许的命令集合。
 pub fn allowed_before_auth(name: &str) -> bool {
-    [
-        "hello",
-        "isMaster",
-        "ismaster",
-        "ping",
-        "buildInfo",
-        "connectionStatus",
-        "saslStart",
-        "saslContinue",
-        "authenticate",
-    ]
-    .contains(&name)
+    ["hello", "isMaster", "ismaster", "ping", "buildInfo", "connectionStatus", "saslStart", "saslContinue", "authenticate"].contains(&name)
 }
 
 /// 未认证连接执行受限命令时的固定错误。
 pub fn authentication_required(name: &str) -> BsonDocument {
-    auth_error(
-        13,
-        "Unauthorized",
-        format!("Command {name} requires authentication"),
-    )
+    auth_error(13, "Unauthorized", format!("Command {name} requires authentication"))
 }
 
 /// 任一库中是否存在至少一个用户（localhost exception 的判据）。
@@ -910,34 +772,22 @@ enum CredentialError {
 }
 
 fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> BsonDocument {
-    let Some(BsonValue::String(mechanism_text)) = command.get("mechanism") else {
-        return auth_error(
-            40_414,
-            "IDLFailedToParse",
-            "BSON field 'saslStart.mechanism' is missing but a required field",
-        );
+    let Some(BsonValue::String(mechanism_text)) = command.get("mechanism")
+    else {
+        return auth_error(40_414, "IDLFailedToParse", "BSON field 'saslStart.mechanism' is missing but a required field");
     };
-    let Some(mechanism) = ScramMechanism::parse(mechanism_text) else {
-        return auth_error(
-            334,
-            "MechanismUnavailable",
-            format!("Received authentication for mechanism {mechanism_text} which is not enabled"),
-        );
+    let Some(mechanism) = ScramMechanism::parse(mechanism_text)
+    else {
+        return auth_error(334, "MechanismUnavailable", format!("Received authentication for mechanism {mechanism_text} which is not enabled"));
     };
     let failed = || auth_error(18, "AuthenticationFailed", "Authentication failed.");
-    let Some(payload) = payload_text(command.get("payload")) else {
+    let Some(payload) = payload_text(command.get("payload"))
+    else {
         return if command.get("payload").is_none() {
-            auth_error(
-                40_414,
-                "IDLFailedToParse",
-                "BSON field 'saslStart.payload' is missing but a required field",
-            )
-        } else {
-            auth_error(
-                10_270,
-                "Location10270",
-                "Failed decoding SASL payload: invalid base64",
-            )
+            auth_error(40_414, "IDLFailedToParse", "BSON field 'saslStart.payload' is missing but a required field")
+        }
+        else {
+            auth_error(10_270, "Location10270", "Failed decoding SASL payload: invalid base64")
         };
     };
     let comma = match payload.find(',') {
@@ -951,14 +801,17 @@ fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> Bson
     let mut rest = &payload[comma + 1..];
     let mut authzid = "";
     if rest.starts_with("a=") {
-        let Some(separator) = rest.find(',') else {
+        let Some(separator) = rest.find(',')
+        else {
             return failed();
         };
         authzid = &rest[2..separator];
         rest = &rest[separator + 1..];
-    } else if rest.starts_with(',') {
+    }
+    else if rest.starts_with(',') {
         rest = &rest[1..];
-    } else {
+    }
+    else {
         return failed();
     }
     let client_first_bare = rest;
@@ -966,7 +819,8 @@ fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> Bson
         Some(bare) => bare,
         None => return failed(),
     };
-    let Some(second_comma) = bare.find(',') else {
+    let Some(second_comma) = bare.find(',')
+    else {
         return failed();
     };
     let user = &bare[..second_comma];
@@ -977,10 +831,9 @@ fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> Bson
     if user.is_empty() || (!authzid.is_empty() && authzid != user) {
         return failed();
     }
-    let db = string_of(command.get("db"))
-        .or_else(|| string_of(command.get("$db")))
-        .unwrap_or_else(|| "admin".to_string());
-    let Some(document) = find_user(session, &db, user) else {
+    let db = string_of(command.get("db")).or_else(|| string_of(command.get("$db"))).unwrap_or_else(|| "admin".to_string());
+    let Some(document) = find_user(session, &db, user)
+    else {
         return failed();
     };
     let credentials = match document.get("credentials") {
@@ -992,9 +845,7 @@ fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> Bson
             return auth_error(
                 334,
                 "MechanismUnavailable",
-                format!(
-                    "Unable to use {mechanism_text} based authentication for user without any {mechanism_text} credentials registered"
-                ),
+                format!("Unable to use {mechanism_text} based authentication for user without any {mechanism_text} credentials registered"),
             );
         }
         Some(value) => value,
@@ -1012,13 +863,8 @@ fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> Bson
     if session.entropy.fill_bytes(&mut extension).is_err() {
         return failed();
     }
-    let server_first = format!(
-        "r={}{},s={},i={}",
-        client_nonce,
-        base64_encode(&extension),
-        salt,
-        iterations.map_or_else(|| "NaN".to_string(), format_number)
-    );
+    let server_first =
+        format!("r={}{},s={},i={}", client_nonce, base64_encode(&extension), salt, iterations.map_or_else(|| "NaN".to_string(), format_number));
     session.auth.conversation = Some(ScramConversation {
         user: user.to_string(),
         db,
@@ -1036,23 +882,14 @@ fn start_conversation(session: &mut AuthSession, command: &BsonDocument) -> Bson
     reply
 }
 
-fn make_credentials(
-    mechanism: ScramMechanism,
-    user: &str,
-    password: &str,
-    entropy: &mut dyn Entropy,
-) -> Result<BsonDocument, CredentialError> {
+fn make_credentials(mechanism: ScramMechanism, user: &str, password: &str, entropy: &mut dyn Entropy) -> Result<BsonDocument, CredentialError> {
     let processed = processed_password(mechanism, user, password)?;
     let mut salt = vec![0u8; mechanism.salt_length()];
-    entropy
-        .fill_bytes(&mut salt)
-        .map_err(|_| CredentialError::Other)?;
+    entropy.fill_bytes(&mut salt).map_err(|_| CredentialError::Other)?;
     let rounds = mechanism.iterations();
     let mut salted = vec![0u8; mechanism.key_length()];
     match mechanism {
-        ScramMechanism::Sha256 => {
-            pbkdf2_hmac_sha256(processed.as_bytes(), &salt, rounds, &mut salted)
-        }
+        ScramMechanism::Sha256 => pbkdf2_hmac_sha256(processed.as_bytes(), &salt, rounds, &mut salted),
         ScramMechanism::Sha1 => pbkdf2_hmac_sha1(processed.as_bytes(), &salt, rounds, &mut salted),
     }
     .map_err(|_| CredentialError::Other)?;
@@ -1067,18 +904,12 @@ fn make_credentials(
     Ok(document)
 }
 
-fn processed_password(
-    mechanism: ScramMechanism,
-    user: &str,
-    password: &str,
-) -> Result<String, CredentialError> {
+fn processed_password(mechanism: ScramMechanism, user: &str, password: &str) -> Result<String, CredentialError> {
     let prepared = unicode_stringprep::saslprep(password).map_err(CredentialError::Saslprep)?;
     if mechanism == ScramMechanism::Sha256 {
         return Ok(prepared);
     }
-    Ok(hex_bytes(&md5(
-        format!("{user}:mongo:{prepared}").as_bytes(),
-    )))
+    Ok(hex_bytes(&md5(format!("{user}:mongo:{prepared}").as_bytes())))
 }
 
 fn digest(mechanism: ScramMechanism, data: &[u8]) -> Vec<u8> {
@@ -1097,75 +928,57 @@ fn mac(mechanism: ScramMechanism, key: &[u8], data: &[u8]) -> Option<Vec<u8>> {
 
 fn parse_role_name(requested: &BsonValue, db: &str) -> Result<RoleRef, BsonDocument> {
     match requested {
-        BsonValue::String(text) => Ok(RoleRef {
-            role: text.clone(),
-            db: db.to_string(),
-        }),
+        BsonValue::String(text) => Ok(RoleRef { role: text.clone(), db: db.to_string() }),
         BsonValue::Document(document) => {
-            let Some(role_value) = document.get("role") else {
+            let Some(role_value) = document.get("role")
+            else {
                 return Err(bad_value("RoleName must contain a field named: role"));
             };
-            let BsonValue::String(role_name) = role_value else {
+            let BsonValue::String(role_name) = role_value
+            else {
                 return Err(bad_value(format!(
                     "RoleName must contain a string field named: role. But, has type {}",
                     type_name(Some(role_value))
                 )));
             };
-            let Some(db_value) = document.get("db") else {
+            let Some(db_value) = document.get("db")
+            else {
                 return Err(bad_value("RoleName must contain a field named: db"));
             };
-            let BsonValue::String(db_name) = db_value else {
-                return Err(bad_value(format!(
-                    "RoleName must contain a string field named: db. But, has type {}",
-                    type_name(Some(db_value))
-                )));
+            let BsonValue::String(db_name) = db_value
+            else {
+                return Err(bad_value(format!("RoleName must contain a string field named: db. But, has type {}", type_name(Some(db_value)))));
             };
-            Ok(RoleRef {
-                role: role_name.clone(),
-                db: db_name.clone(),
-            })
+            Ok(RoleRef { role: role_name.clone(), db: db_name.clone() })
         }
         _ => Err(bad_value("Role name must be either a document or string")),
     }
 }
 
 fn validate_resource_shape(resource: &BsonValue) -> Option<BsonDocument> {
-    let BsonValue::Document(document) = resource else {
+    let BsonValue::Document(document) = resource
+    else {
         return None;
     };
     if document.get("systemBuckets").is_some() {
-        return Some(bad_value(
-            "resource pattern must contain 'collection' or 'systemBuckets' specifier",
-        ));
+        return Some(bad_value("resource pattern must contain 'collection' or 'systemBuckets' specifier"));
     }
     let cluster = matches!(document.get("cluster"), Some(BsonValue::Bool(true)));
     let any_resource = matches!(document.get("anyResource"), Some(BsonValue::Bool(true)));
     if cluster && document.get("db").is_some() {
-        return Some(bad_value(
-            "resource: {cluster: true} conflicts with resource type 'db'",
-        ));
+        return Some(bad_value("resource: {cluster: true} conflicts with resource type 'db'"));
     }
     if cluster && document.get("anyResource").is_some() {
-        return Some(bad_value(
-            "resource: {cluster: true} conflicts with resource type 'anyResource'",
-        ));
+        return Some(bad_value("resource: {cluster: true} conflicts with resource type 'anyResource'"));
     }
     if let Some(db_value) = document.get("db") {
         if !matches!(db_value, BsonValue::String(_)) {
-            return Some(type_mismatch(
-                "createRole.privileges.resource.db",
-                type_name(Some(db_value)),
-                "string",
-            ));
+            return Some(type_mismatch("createRole.privileges.resource.db", type_name(Some(db_value)), "string"));
         }
     }
     if let Some(collection) = document.get("collection") {
         if !matches!(collection, BsonValue::String(_)) {
-            return Some(type_mismatch(
-                "createRole.privileges.resource.collection",
-                type_name(Some(collection)),
-                "string",
-            ));
+            return Some(type_mismatch("createRole.privileges.resource.collection", type_name(Some(collection)), "string"));
         }
     }
     if cluster || any_resource {
@@ -1173,20 +986,14 @@ fn validate_resource_shape(resource: &BsonValue) -> Option<BsonDocument> {
     }
     if matches!(document.get("db"), Some(BsonValue::String(_))) {
         if !matches!(document.get("collection"), Some(BsonValue::String(_))) {
-            return Some(bad_value(
-                "resource pattern must contain 'collection' or 'systemBuckets' specifier",
-            ));
+            return Some(bad_value("resource pattern must contain 'collection' or 'systemBuckets' specifier"));
         }
         return None;
     }
     if document.get("collection").is_some() {
-        return Some(bad_value(
-            "resource {collection: '...'} must include 'db' field as well",
-        ));
+        return Some(bad_value("resource {collection: '...'} must include 'db' field as well"));
     }
-    Some(bad_value(
-        "resource pattern must contain 'collection' or 'systemBuckets' specifier",
-    ))
+    Some(bad_value("resource pattern must contain 'collection' or 'systemBuckets' specifier"))
 }
 
 fn resource_in_scope(resource: &BsonValue, role_db: &str) -> bool {
@@ -1200,15 +1007,9 @@ fn resource_in_scope(resource: &BsonValue, role_db: &str) -> bool {
     )
 }
 
-fn strip_role_reference(
-    session: &mut AuthSession,
-    collection: &str,
-    database: &str,
-    document: &BsonDocument,
-    name: &str,
-    role_db: &str,
-) {
-    let Some(BsonValue::Array(entries)) = document.get("roles") else {
+fn strip_role_reference(session: &mut AuthSession, collection: &str, database: &str, document: &BsonDocument, name: &str, role_db: &str) {
+    let Some(BsonValue::Array(entries)) = document.get("roles")
+    else {
         return;
     };
     let kept: Vec<BsonValue> = entries
@@ -1226,7 +1027,8 @@ fn strip_role_reference(
     if kept.len() == entries.len() {
         return;
     }
-    let Some(id_value) = document.get("_id") else {
+    let Some(id_value) = document.get("_id")
+    else {
         return;
     };
     let mut query = BsonDocument::new();
@@ -1278,7 +1080,8 @@ fn parse_user_selection(value: &BsonValue, current_db: &str) -> Selection {
             return Selection::Error(bad_value("UserName must be either a string or an object"));
         }
     }
-    let BsonValue::Document(document) = value else {
+    let BsonValue::Document(document) = value
+    else {
         return Selection::Error(bad_value("UserName must be either a string or an object"));
     };
     if matches!(document.get("forAllDBs"), Some(BsonValue::Bool(true))) {
@@ -1286,24 +1089,26 @@ fn parse_user_selection(value: &BsonValue, current_db: &str) -> Selection {
     }
     for (key, _) in &document.fields {
         if key != "user" && key != "db" {
-            return Selection::Error(bad_value(format!(
-                "UserName contains an unknown field named: '{key}"
-            )));
+            return Selection::Error(bad_value(format!("UserName contains an unknown field named: '{key}")));
         }
     }
-    let Some(user_value) = document.get("user") else {
+    let Some(user_value) = document.get("user")
+    else {
         return Selection::Error(bad_value("UserName must contain a field named: user"));
     };
-    let BsonValue::String(user) = user_value else {
+    let BsonValue::String(user) = user_value
+    else {
         return Selection::Error(bad_value(format!(
             "UserName must contain a string field named: user. But, has type {}",
             type_name(Some(user_value))
         )));
     };
-    let Some(db_value) = document.get("db") else {
+    let Some(db_value) = document.get("db")
+    else {
         return Selection::Error(bad_value("UserName must contain a field named: db"));
     };
-    let BsonValue::String(db) = db_value else {
+    let BsonValue::String(db) = db_value
+    else {
         return Selection::Error(bad_value(format!(
             "UserName must contain a string field named: db. But, has type {}",
             type_name(Some(db_value))
@@ -1312,12 +1117,7 @@ fn parse_user_selection(value: &BsonValue, current_db: &str) -> Selection {
     Selection::Single(vec![(db.clone(), user.clone())])
 }
 
-fn user_report(
-    store: &dyn MongoStorage,
-    document: &BsonDocument,
-    show_credentials: bool,
-    show_privileges: bool,
-) -> BsonDocument {
+fn user_report(store: &dyn MongoStorage, document: &BsonDocument, show_credentials: bool, show_privileges: bool) -> BsonDocument {
     let mut report = BsonDocument::new();
     for key in ["_id", "userId", "user", "db"] {
         if let Some(value) = document.get(key) {
@@ -1331,16 +1131,9 @@ fn user_report(
     let mechanisms: Vec<ScramMechanism> = USER_REPORT_MECHANISMS
         .iter()
         .copied()
-        .filter(|mechanism| {
-            credentials.is_some_and(|entry| entry.get(mechanism.name()).is_some())
-        })
+        .filter(|mechanism| credentials.is_some_and(|entry| entry.get(mechanism.name()).is_some()))
         .collect();
-    let mechanisms_value = BsonValue::Array(
-        mechanisms
-            .iter()
-            .map(|mechanism| BsonValue::String(mechanism.name().to_string()))
-            .collect(),
-    );
+    let mechanisms_value = BsonValue::Array(mechanisms.iter().map(|mechanism| BsonValue::String(mechanism.name().to_string())).collect());
     if show_privileges {
         report.push("mechanisms", mechanisms_value.clone());
     }
@@ -1363,20 +1156,15 @@ fn user_report(
     if show_privileges {
         let expansion = expand_roles(&roles, &StoreRoleResolver::new(store));
         report.push("inheritedRoles", roles_to_value(&expansion.inherited_roles));
-        report.push(
-            "inheritedPrivileges",
-            privileges_to_value(&expansion.privileges),
-        );
-        report.push(
-            "inheritedAuthenticationRestrictions",
-            BsonValue::Array(expansion.authentication_restrictions),
-        );
+        report.push("inheritedPrivileges", privileges_to_value(&expansion.privileges));
+        report.push("inheritedAuthenticationRestrictions", BsonValue::Array(expansion.authentication_restrictions));
     }
     report
 }
 
 fn roles_of(document: &BsonDocument) -> Vec<RoleRef> {
-    let Some(BsonValue::Array(entries)) = document.get("roles") else {
+    let Some(BsonValue::Array(entries)) = document.get("roles")
+    else {
         return Vec::new();
     };
     let user_db = match document.get("db") {
@@ -1388,20 +1176,12 @@ fn roles_of(document: &BsonDocument) -> Vec<RoleRef> {
         match entry {
             BsonValue::String(text) => {
                 if let Some(db) = &user_db {
-                    roles.push(RoleRef {
-                        role: text.clone(),
-                        db: db.clone(),
-                    });
+                    roles.push(RoleRef { role: text.clone(), db: db.clone() });
                 }
             }
             BsonValue::Document(inner) => {
-                if let (Some(BsonValue::String(role)), Some(BsonValue::String(db))) =
-                    (inner.get("role"), inner.get("db"))
-                {
-                    roles.push(RoleRef {
-                        role: role.clone(),
-                        db: db.clone(),
-                    });
+                if let (Some(BsonValue::String(role)), Some(BsonValue::String(db))) = (inner.get("role"), inner.get("db")) {
+                    roles.push(RoleRef { role: role.clone(), db: db.clone() });
                 }
             }
             _ => {}
@@ -1412,11 +1192,7 @@ fn roles_of(document: &BsonDocument) -> Vec<RoleRef> {
 
 fn sorted_roles(document: &BsonDocument) -> Vec<RoleRef> {
     let mut roles = roles_of(document);
-    roles.sort_by(|left, right| {
-        left.role
-            .cmp(&right.role)
-            .then_with(|| left.db.cmp(&right.db))
-    });
+    roles.sort_by(|left, right| left.role.cmp(&right.role).then_with(|| left.db.cmp(&right.db)));
     roles
 }
 
@@ -1452,12 +1228,7 @@ fn stored_roles(session: &mut AuthSession, db: &str) -> Vec<BsonDocument> {
     find_all(session, "system.roles", db)
 }
 
-fn find_one(
-    session: &mut AuthSession,
-    collection: &str,
-    db: &str,
-    filter: BsonDocument,
-) -> Option<BsonDocument> {
+fn find_one(session: &mut AuthSession, collection: &str, db: &str, filter: BsonDocument) -> Option<BsonDocument> {
     let mut command = find_command(collection, db, filter);
     command.push("limit", BsonValue::Int32(1));
     let reply = commands::find(&command, session.store, session.cursors).ok()?;
@@ -1481,10 +1252,12 @@ fn find_command(collection: &str, db: &str, filter: BsonDocument) -> BsonDocumen
 }
 
 fn batch_documents(reply: BsonDocument) -> Vec<BsonDocument> {
-    let Some(BsonValue::Document(cursor)) = reply.get("cursor") else {
+    let Some(BsonValue::Document(cursor)) = reply.get("cursor")
+    else {
         return Vec::new();
     };
-    let Some(BsonValue::Array(entries)) = cursor.get("firstBatch") else {
+    let Some(BsonValue::Array(entries)) = cursor.get("firstBatch")
+    else {
         return Vec::new();
     };
     entries
@@ -1496,12 +1269,7 @@ fn batch_documents(reply: BsonDocument) -> Vec<BsonDocument> {
         .collect()
 }
 
-fn insert_one(
-    store: &dyn MongoStorage,
-    collection: &str,
-    db: &str,
-    document: BsonDocument,
-) -> BsonDocument {
+fn insert_one(store: &dyn MongoStorage, collection: &str, db: &str, document: BsonDocument) -> BsonDocument {
     let mut command = BsonDocument::new();
     command.push("insert", BsonValue::String(collection.to_string()));
     command.push("documents", BsonValue::Array(vec![BsonValue::Document(document)]));
@@ -1521,10 +1289,12 @@ fn delete_one(store: &dyn MongoStorage, collection: &str, db: &str, filter: Bson
 }
 
 fn stored_databases(store: &dyn MongoStorage) -> Vec<String> {
-    let Ok(reply) = commands::list_databases(store) else {
+    let Ok(reply) = commands::list_databases(store)
+    else {
         return Vec::new();
     };
-    let Some(BsonValue::Array(entries)) = reply.get("databases") else {
+    let Some(BsonValue::Array(entries)) = reply.get("databases")
+    else {
         return Vec::new();
     };
     entries
@@ -1540,17 +1310,12 @@ fn stored_databases(store: &dyn MongoStorage) -> Vec<String> {
 }
 
 fn role_exists(store: &dyn MongoStorage, role: &RoleRef) -> bool {
-    authorization::builtin_role_exists(&role.role, &role.db)
-        || stored_role_exists(store, &role.db, &role.role)
+    authorization::builtin_role_exists(&role.role, &role.db) || stored_role_exists(store, &role.db, &role.role)
 }
 
 fn stored_role_exists(store: &dyn MongoStorage, db: &str, name: &str) -> bool {
     let key = value_to_key(&BsonValue::String(format!("{db}.{name}")));
-    store
-        .get(&format!("{db}.system.roles"), &key)
-        .ok()
-        .flatten()
-        .is_some()
+    store.get(&format!("{db}.system.roles"), &key).ok().flatten().is_some()
 }
 
 fn has_write_errors(reply: &BsonDocument) -> bool {
@@ -1560,9 +1325,7 @@ fn has_write_errors(reply: &BsonDocument) -> bool {
 fn payload_text(value: Option<&BsonValue>) -> Option<String> {
     match value? {
         BsonValue::Binary(data) => Some(String::from_utf8_lossy(&data.bytes).into_owned()),
-        BsonValue::String(text) => base64_decode(text)
-            .ok()
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+        BsonValue::String(text) => base64_decode(text).ok().map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
         _ => None,
     }
 }
@@ -1671,27 +1434,15 @@ fn bad_value(message: impl Into<String>) -> BsonDocument {
 }
 
 fn type_mismatch(field: &str, actual: &str, expected: &str) -> BsonDocument {
-    auth_error(
-        14,
-        "TypeMismatch",
-        format!("BSON field '{field}' is the wrong type '{actual}', expected type '{expected}'"),
-    )
+    auth_error(14, "TypeMismatch", format!("BSON field '{field}' is the wrong type '{actual}', expected type '{expected}'"))
 }
 
 fn idl_missing(field: &str) -> BsonDocument {
-    auth_error(
-        40_414,
-        "IDLFailedToParse",
-        format!("BSON field '{field}' is missing but a required field"),
-    )
+    auth_error(40_414, "IDLFailedToParse", format!("BSON field '{field}' is missing but a required field"))
 }
 
 fn idl_unknown(field: &str) -> BsonDocument {
-    auth_error(
-        40_415,
-        "IDLUnknownField",
-        format!("BSON field '{field}' is an unknown field."),
-    )
+    auth_error(40_415, "IDLUnknownField", format!("BSON field '{field}' is an unknown field."))
 }
 
 #[cfg(test)]
@@ -1717,15 +1468,8 @@ mod tests {
         let client_key = hmac_sha1(&salted, b"Client Key").unwrap();
         let stored_key = sha1(&client_key);
         let server_key = hmac_sha1(&salted, b"Server Key").unwrap();
-        let signature = verify_client_final(
-            ScramMechanism::Sha1,
-            &stored_key,
-            &server_key,
-            client_first_bare,
-            server_first,
-            client_final,
-        )
-        .expect("RFC 5802 transcript must verify");
+        let signature = verify_client_final(ScramMechanism::Sha1, &stored_key, &server_key, client_first_bare, server_first, client_final)
+            .expect("RFC 5802 transcript must verify");
         assert_eq!(signature, expected_v);
     }
 
@@ -1733,10 +1477,8 @@ mod tests {
     fn rfc7677_scram_sha256_vector() {
         // RFC 7677 §3 官方 transcript（user/pass = pencil）。
         let client_first_bare = "n=user,r=rOprNGfwEbeRWgbNEkqO";
-        let server_first =
-            "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096";
-        let client_final =
-            "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=";
+        let server_first = "r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096";
+        let client_final = "c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=";
         let expected_v = b64("6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4=");
         let salt = b64("W22ZaJ0SNY7soEsUEjb6gQ==");
         let processed = unicode_stringprep::saslprep("pencil").unwrap();
@@ -1745,15 +1487,8 @@ mod tests {
         let client_key = hmac_sha256(&salted, b"Client Key").unwrap();
         let stored_key = sha256(&client_key);
         let server_key = hmac_sha256(&salted, b"Server Key").unwrap();
-        let signature = verify_client_final(
-            ScramMechanism::Sha256,
-            &stored_key,
-            &server_key,
-            client_first_bare,
-            server_first,
-            client_final,
-        )
-        .expect("RFC 7677 transcript must verify");
+        let signature = verify_client_final(ScramMechanism::Sha256, &stored_key, &server_key, client_first_bare, server_first, client_final)
+            .expect("RFC 7677 transcript must verify");
         assert_eq!(signature, expected_v);
     }
 
@@ -1784,51 +1519,20 @@ mod tests {
     fn mongodb_scram_sha1_credentials_match_node_crypto() {
         // 期望值由 node:crypto 独立生成（见 auth-vectors.mjs）。
         let mut entropy = ScriptedEntropy::new((0u8..16).collect::<Vec<u8>>());
-        let credentials = make_credentials(ScramMechanism::Sha1, "alice", "s3cr3t", &mut entropy)
-            .expect("credentials");
-        assert_eq!(
-            credentials.get("iterationCount"),
-            Some(&BsonValue::Int32(10_000))
-        );
-        assert_eq!(
-            credentials.get("salt"),
-            Some(&BsonValue::String("AAECAwQFBgcICQoLDA0ODw==".to_string()))
-        );
-        assert_eq!(
-            credentials.get("storedKey"),
-            Some(&BsonValue::String(
-                "TT+VUHx/DKKjyYZvK10ouyUkQFs=".to_string()
-            ))
-        );
-        assert_eq!(
-            credentials.get("serverKey"),
-            Some(&BsonValue::String(
-                "DYpf4eJGN6j2BLSquRUtn3nH2YU=".to_string()
-            ))
-        );
+        let credentials = make_credentials(ScramMechanism::Sha1, "alice", "s3cr3t", &mut entropy).expect("credentials");
+        assert_eq!(credentials.get("iterationCount"), Some(&BsonValue::Int32(10_000)));
+        assert_eq!(credentials.get("salt"), Some(&BsonValue::String("AAECAwQFBgcICQoLDA0ODw==".to_string())));
+        assert_eq!(credentials.get("storedKey"), Some(&BsonValue::String("TT+VUHx/DKKjyYZvK10ouyUkQFs=".to_string())));
+        assert_eq!(credentials.get("serverKey"), Some(&BsonValue::String("DYpf4eJGN6j2BLSquRUtn3nH2YU=".to_string())));
     }
 
     #[test]
     fn mongodb_scram_sha256_credentials_match_node_crypto() {
         let mut entropy = ScriptedEntropy::new((0u8..24).collect::<Vec<u8>>());
-        let credentials =
-            make_credentials(ScramMechanism::Sha256, "alice", "s3cr3t", &mut entropy).unwrap();
-        assert_eq!(
-            credentials.get("iterationCount"),
-            Some(&BsonValue::Int32(15_000))
-        );
-        assert_eq!(
-            credentials.get("storedKey"),
-            Some(&BsonValue::String(
-                "r6YFkmZHrJJe/kVy0eFsKLYa6/5of3Bzo/sRub1TIFg=".to_string()
-            ))
-        );
-        assert_eq!(
-            credentials.get("serverKey"),
-            Some(&BsonValue::String(
-                "JIGWX8RxsxBP9fke5iqwaYsFBoxEzMv1zFO3nrFK87o=".to_string()
-            ))
-        );
+        let credentials = make_credentials(ScramMechanism::Sha256, "alice", "s3cr3t", &mut entropy).unwrap();
+        assert_eq!(credentials.get("iterationCount"), Some(&BsonValue::Int32(15_000)));
+        assert_eq!(credentials.get("storedKey"), Some(&BsonValue::String("r6YFkmZHrJJe/kVy0eFsKLYa6/5of3Bzo/sRub1TIFg=".to_string())));
+        assert_eq!(credentials.get("serverKey"), Some(&BsonValue::String("JIGWX8RxsxBP9fke5iqwaYsFBoxEzMv1zFO3nrFK87o=".to_string())));
     }
 
     #[test]

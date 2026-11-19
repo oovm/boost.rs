@@ -116,8 +116,7 @@ pub(super) fn lower_impl_method_functions(
 ) -> Vec<MirFunction> {
     let permits = |function: &HirFunction| {
         gate.is_none_or(|gate| {
-            gate.permits_declaration(function.declaration)
-                || function.instance.is_some_and(|instance| gate.permits_instance(Some(instance)))
+            gate.permits_declaration(function.declaration) || function.instance.is_some_and(|instance| gate.permits_instance(Some(instance)))
         })
     };
     // 固有方法的 `self` 是声明侧唯一身份的复原：`Array` owner 折成结构形态，其余结构折成 `Nominal`，

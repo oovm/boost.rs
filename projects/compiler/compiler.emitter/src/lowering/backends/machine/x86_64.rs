@@ -29,8 +29,8 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
-    lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
     emitter_backend_machine::{MachineImageKind, classify_machine_image},
+    lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::pe::{NativePeImage, NativePeWriter},
 };
@@ -39,7 +39,7 @@ use compiler_types::ItemInstanceId;
 
 use data_binary_pe::elf::{NativeElfImage, NativeElfWriter};
 
-use super::{X64CallConv, X64LoweredProgram, X64TextInstruction, X64ProgramFunction, encode_x64_program, x64_lir};
+use super::{X64CallConv, X64LoweredProgram, X64ProgramFunction, X64TextInstruction, encode_x64_program, x64_lir};
 
 /// 已冻结的 x86-64 operator 编码。
 ///
@@ -217,17 +217,15 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: X64CallConv, container: Co
     let plan = &submission.backend_plan;
     let reachable = collect_reachable_functions(submission);
     if reachable.is_empty() {
-        return Err(format!(
-            "x86_64 lowering 没有可达函数：片段既无导出也无入口操作，拒绝凭空生成 {}",
-            container.name()
-        ));
+        return Err(format!("x86_64 lowering 没有可达函数：片段既无导出也无入口操作，拒绝凭空生成 {}", container.name()));
     }
 
-    let entry = plan.entry_operation().ok_or_else(|| {
-        format!("x86_64 lowering 缺少入口操作：{} 入口点必须来自计划冻结的 `entry_operation`", container.name())
-    })?;
-    let entry_view =
-        plan.get_function(&entry).ok_or_else(|| format!("x86_64 lowering：入口操作 `{entry:?}` 没有函数体，不能作为 {} 入口", container.name()))?;
+    let entry = plan
+        .entry_operation()
+        .ok_or_else(|| format!("x86_64 lowering 缺少入口操作：{} 入口点必须来自计划冻结的 `entry_operation`", container.name()))?;
+    let entry_view = plan
+        .get_function(&entry)
+        .ok_or_else(|| format!("x86_64 lowering：入口操作 `{entry:?}` 没有函数体，不能作为 {} 入口", container.name()))?;
     validate_entry(&entry_view.function, container)?;
 
     let names = exe_symbol_names(&reachable);
@@ -282,10 +280,7 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: X64CallConv, container: Co
         ContainerKind::Elf => (MachineImageKind::Elf, BinaryArch::X64),
     };
     if facts.kind != expected_kind || facts.arch != expected_arch || facts.shared {
-        return Err(format!(
-            "x86_64 产物自检失败：期望 AMD64 可执行 {}，实际 {facts:?}",
-            container.name()
-        ));
+        return Err(format!("x86_64 产物自检失败：期望 AMD64 可执行 {}，实际 {facts:?}", container.name()));
     }
 
     Ok(X64LoweredProgram { executable, entry_offset, text_len })
@@ -318,10 +313,8 @@ fn append_elf_entry_exit_stub(mut text: Vec<u8>, entry_function: usize) -> Resul
 /// 两个容器都以 `rax` 作为进程退出码（PE loader 读取返回值，ELF 入口桩把它传给
 /// `exit`）；loader 不提供有意义的形参，因此入口只接受可直接作为退出码的标量返回。
 fn validate_entry(function: &MirFunction, container: ContainerKind) -> Result<()> {
-    let entry_block = function
-        .blocks
-        .get(function.entry.0 as usize)
-        .ok_or_else(|| format!("x86_64 lowering：入口函数 `{}` 缺少入口块", function.symbol))?;
+    let entry_block =
+        function.blocks.get(function.entry.0 as usize).ok_or_else(|| format!("x86_64 lowering：入口函数 `{}` 缺少入口块", function.symbol))?;
     if !entry_block.parameters.is_empty() || !function.param_types.is_empty() {
         return Err(format!(
             "x86_64 lowering：{} 入口函数 `{}` 必须无参数（loader 不传递形参），实际 {} 个",
@@ -392,7 +385,8 @@ pub(super) fn lower_function_to_text_program(
 ) -> Result<X64ProgramFunction> {
     let slots = ExecutableSlotPlan::plan_semantic(function);
     let local_count = u16::try_from(slots.local_types.len()).map_err(|_| "x86_64 lowering：局部槽数量超出 `u16`".to_string())?;
-    let mut lowerer = FunctionLowerer { submission, function, slots, reachable, names, abi, local_count, temps_used: 0, instructions: Vec::new() };
+    let mut lowerer =
+        FunctionLowerer { submission, function, slots, reachable, names, abi, local_count, temps_used: 0, instructions: Vec::new() };
     lowerer.store_entry_parameters()?;
 
     let mut order = vec![function.entry];
@@ -412,9 +406,7 @@ pub(super) fn lower_function_to_text_program(
     let temps = u16::try_from(lowerer.temps_used).map_err(|_| "x86_64 lowering：临时槽数量超出 `u16`".to_string())?;
     let slot_count = local_count.checked_add(temps).ok_or_else(|| "x86_64 lowering：帧槽数量溢出".to_string())?;
     Ok(X64ProgramFunction {
-        name: names.get(instance).expect("可达操作有符号名").clone(),
-        slot_count,
-        instructions: lowerer.instructions,
+        name: names.get(instance).expect("可达操作有符号名").clone(), slot_count, instructions: lowerer.instructions
     })
 }
 
@@ -709,12 +701,7 @@ impl FunctionLowerer<'_> {
                 .imports()
                 .get(&instance)
                 .ok_or_else(|| format!("x86_64 lowering：导入实例 `{instance:?}` 缺失: function={}", self.function.symbol))?;
-            let symbol = self
-                .submission
-                .backend_plan
-                .abi_name_for_instance(instance)
-                .map(|name| name.to_string())
-                .unwrap_or_default();
+            let symbol = self.submission.backend_plan.abi_name_for_instance(instance).map(|name| name.to_string()).unwrap_or_default();
             let binding = freeze_x86_64_operator(&import.link, instance, &symbol, &import.parameter_types, &import.return_type)?;
             (binding, import.link.clone())
         };
@@ -736,7 +723,9 @@ impl FunctionLowerer<'_> {
         if arguments.len() != plan.arity || plan.arity != code.arity() {
             return Err(format!(
                 "x86_64 目标 operator `{instance:?}` 实参数量与冻结 arity 不符: function={} expected={} actual={}",
-                self.function.symbol, plan.arity, arguments.len()
+                self.function.symbol,
+                plan.arity,
+                arguments.len()
             ));
         }
         if plan.recipe != TargetOperatorRecipe::Operands {
@@ -847,10 +836,7 @@ impl FunctionLowerer<'_> {
         if let Some(ty) = self.slots.local_types.get(local as usize)
             && !is_slot_type(ty)
         {
-            return Err(format!(
-                "x86_64 lowering：SSA 值 {:?} 的类型 `{ty}` 没有 x86_64 标量载体: function={}",
-                value, self.function.symbol
-            ));
+            return Err(format!("x86_64 lowering：SSA 值 {:?} 的类型 `{ty}` 没有 x86_64 标量载体: function={}", value, self.function.symbol));
         }
         Ok(local)
     }

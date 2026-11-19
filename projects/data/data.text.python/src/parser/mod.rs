@@ -27,7 +27,12 @@ impl<'config> PythonParser<'config> {
 }
 
 impl<'config> Parser<PythonLanguage> for PythonParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<PythonLanguage>) -> ParseOutput<'a, PythonLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<PythonLanguage>,
+    ) -> ParseOutput<'a, PythonLanguage> {
         let lexer = PythonLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

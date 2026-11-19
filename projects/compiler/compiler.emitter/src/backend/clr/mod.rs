@@ -5,8 +5,8 @@
 
 #![deny(missing_docs)]
 
-pub mod hosting;
 pub mod host_process;
+pub mod hosting;
 mod msil_text_writer;
 
 pub use crate::transitional::{
@@ -79,9 +79,12 @@ impl ClrBinaryBackend {
             return Err("CLR 后端至少需要一个全局方法".to_owned());
         }
         if image_kind(input) == ClrImageKind::Executable {
-            let entry = input.module.global_methods.iter().find(|method| method.is_entry_point).ok_or_else(|| {
-                "CLR 可执行镜像缺少 `is_entry_point` 方法：拒绝写出无法启动的 PE".to_owned()
-            })?;
+            let entry = input
+                .module
+                .global_methods
+                .iter()
+                .find(|method| method.is_entry_point)
+                .ok_or_else(|| "CLR 可执行镜像缺少 `is_entry_point` 方法：拒绝写出无法启动的 PE".to_owned())?;
             validate_clr_entry_signature(entry)?;
         }
         Ok(())
@@ -171,7 +174,8 @@ fn validate_clr_entry_signature(entry: &MsilMethodBody) -> Result<()> {
     if !parameters_ok {
         return Err(format!(
             "CLR 入口方法 `{}` 形参 `{}` 不符合 CLR entry 合同（只接受无参或 `string[]`）",
-            entry.method.name, entry.method.signature.parameter_list_text()
+            entry.method.name,
+            entry.method.signature.parameter_list_text()
         ));
     }
     Ok(())

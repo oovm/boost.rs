@@ -50,12 +50,19 @@ impl<'config> Pratt<ActionScriptLanguage> for ActionScriptParser<'config> {
         };
 
         match kind {
-            TT::Minus | TT::LogicalNot | TT::BitwiseNot => unary(state, kind, 13, ET::UnaryExpression.into(), |s, p| PrattParser::parse(s, p, self)),
+            TT::Minus | TT::LogicalNot | TT::BitwiseNot => {
+                unary(state, kind, 13, ET::UnaryExpression.into(), |s, p| PrattParser::parse(s, p, self))
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, ActionScriptLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, ActionScriptLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, ActionScriptLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, ActionScriptLanguage>> {
         use crate::{lexer::ActionScriptTokenType as TT, parser::element_type::ActionScriptElementType as ET};
         let kind = state.peek_kind()?;
 
@@ -302,7 +309,12 @@ impl<'config> ActionScriptParser<'config> {
 }
 
 impl<'config> Parser<ActionScriptLanguage> for ActionScriptParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ActionScriptLanguage>) -> ParseOutput<'a, ActionScriptLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ActionScriptLanguage>,
+    ) -> ParseOutput<'a, ActionScriptLanguage> {
         let lexer = ActionScriptLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

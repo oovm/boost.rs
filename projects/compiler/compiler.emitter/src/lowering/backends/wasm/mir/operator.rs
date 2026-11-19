@@ -4,12 +4,10 @@
 //! 逻辑导入链接，不再携带任何平台的冻结结果。计划构造阶段由本模块一次性冻结，
 //! 发射期只消费 [`WasmOperatorBinding`]，不得再从助记符字符串推断 arity 或配方。
 
-use data_binary_wasm::WasmOpcode;
 use compiler_types::{ItemInstanceId, SemanticType};
+use data_binary_wasm::WasmOpcode;
 
-use crate::target_operator::{
-    TargetOperatorPlan, WasmGcArrayOperation, WasmGcArrayOperatorPlan, operand_carrier, validate_frozen_operator,
-};
+use crate::target_operator::{TargetOperatorPlan, WasmGcArrayOperation, WasmGcArrayOperatorPlan, operand_carrier, validate_frozen_operator};
 
 use super::{array::freeze_wasm_array_binding, numeric::freeze_wasm_numeric_binding};
 
@@ -63,9 +61,7 @@ fn validate_frozen_array_operator(
 ) -> crate::Result<()> {
     use WasmGcArrayOperation::{Get, Length, New, Set};
     let fail = |reason: String| -> crate::Result<()> {
-        Err(format!(
-            "目标数组 operator 绑定 `{mnemonic}` 的声明签名与冻结计划不符: function={function} {reason} instance={instance:?}"
-        ))
+        Err(format!("目标数组 operator 绑定 `{mnemonic}` 的声明签名与冻结计划不符: function={function} {reason} instance={instance:?}"))
     };
     if parameter_types.len() != plan.arity {
         return fail(format!("expected arity={} actual={}", plan.arity, parameter_types.len()));

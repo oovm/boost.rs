@@ -1,11 +1,14 @@
 use crate::{ValkyrieLanguage, ast::*, lexer::token_type::ValkyrieTokenType};
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 /// Skip whitespace, newline, and comment nodes
 pub(crate) fn should_skip_node(node: &RedTree<ValkyrieLanguage>) -> bool {
     match node {
         RedTree::Leaf(t) => {
-            matches!(t.kind, ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment)
+            matches!(
+                t.kind,
+                ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment
+            )
         }
         RedTree::Node(n) => {
             matches!(
@@ -52,7 +55,12 @@ pub(crate) fn get_required_expr<S: Source + ?Sized>(
 }
 
 /// Get a required child node, or return an error if missing
-pub(crate) fn get_required_child<'a, S: Source + ?Sized>(node: &'a RedNode<'a, ValkyrieLanguage>, source: &S, error_msg: &str, span_start: usize) -> Result<RedTree<'a, ValkyrieLanguage>, TextError> {
+pub(crate) fn get_required_child<'a, S: Source + ?Sized>(
+    node: &'a RedNode<'a, ValkyrieLanguage>,
+    source: &S,
+    error_msg: &str,
+    span_start: usize,
+) -> Result<RedTree<'a, ValkyrieLanguage>, TextError> {
     for child in node.children() {
         if !should_skip_node(&child) {
             return Ok(child);
@@ -62,7 +70,11 @@ pub(crate) fn get_required_child<'a, S: Source + ?Sized>(node: &'a RedNode<'a, V
 }
 
 /// Build an identifier expression
-pub(crate) fn build_identifier<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, span: data_text_core::Range<usize>) -> Result<Identifier, TextError> {
+pub(crate) fn build_identifier<S: Source + ?Sized>(
+    node: &RedNode<ValkyrieLanguage>,
+    source: &S,
+    span: data_text_core::Range<usize>,
+) -> Result<Identifier, TextError> {
     let mut name = String::new();
     for child in node.children() {
         if let RedTree::Leaf(t) = child {
@@ -105,7 +117,11 @@ pub(crate) fn build_name_path<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguag
 }
 
 /// Build an argument list
-pub(crate) fn build_arg_list<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: &impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>) -> Result<Vec<TermExpression>, TextError> {
+pub(crate) fn build_arg_list<S: Source + ?Sized>(
+    node: &RedNode<ValkyrieLanguage>,
+    source: &S,
+    build_expr: &impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
+) -> Result<Vec<TermExpression>, TextError> {
     let mut args = Vec::new();
     for child in node.children() {
         if let RedTree::Node(arg_n) = child {
@@ -141,7 +157,10 @@ pub(crate) fn build_binary_expr<S: Source + ?Sized>(
                     op = Some(t.kind);
                     operator_end = Some(t.span.end);
                 }
-                else if op == Some(ValkyrieTokenType::GreaterThan) && t.kind == ValkyrieTokenType::GreaterThan && operator_end == Some(t.span.start) {
+                else if op == Some(ValkyrieTokenType::GreaterThan)
+                    && t.kind == ValkyrieTokenType::GreaterThan
+                    && operator_end == Some(t.span.start)
+                {
                     op = Some(ValkyrieTokenType::RightShift);
                 }
             }
@@ -198,7 +217,11 @@ pub(crate) fn build_unary_expr<S: Source + ?Sized>(
 }
 
 /// Shared helper to build field-access expressions
-pub(crate) fn build_field_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>) -> Result<(Box<TermExpression>, Identifier), TextError> {
+pub(crate) fn build_field_expr<S: Source + ?Sized>(
+    node: &RedNode<ValkyrieLanguage>,
+    source: &S,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
+) -> Result<(Box<TermExpression>, Identifier), TextError> {
     let span = node.span();
     let mut receiver = None;
     let mut field = None;
@@ -262,7 +285,11 @@ pub(crate) fn build_index_expr<S: Source + ?Sized>(
 }
 
 /// Shared helper to build call expressions
-pub(crate) fn build_call_expr<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>, source: &S, build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>) -> Result<(Box<TermExpression>, Vec<TermExpression>), TextError> {
+pub(crate) fn build_call_expr<S: Source + ?Sized>(
+    node: &RedNode<ValkyrieLanguage>,
+    source: &S,
+    build_expr: impl Fn(&RedNode<ValkyrieLanguage>, &S) -> Result<TermExpression, TextError>,
+) -> Result<(Box<TermExpression>, Vec<TermExpression>), TextError> {
     let span = node.span();
     let mut callee = None;
     let mut args = Vec::new();

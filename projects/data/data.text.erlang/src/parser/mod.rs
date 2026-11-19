@@ -161,7 +161,12 @@ impl<'config> ErlangParser<'config> {
 }
 
 impl<'config> Parser<ErlangLanguage> for ErlangParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ErlangLanguage>) -> ParseOutput<'a, ErlangLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ErlangLanguage>,
+    ) -> ParseOutput<'a, ErlangLanguage> {
         let lexer = ErlangLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -218,22 +223,46 @@ impl<'config> Pratt<ErlangLanguage> for ErlangParser<'config> {
         };
 
         match kind {
-            ErlangTokenType::Minus | ErlangTokenType::Plus | ErlangTokenType::Bnot | ErlangTokenType::Not => unary(state, kind, 12, ErlangElementType::Expr.into(), |s, p| PrattParser::parse(s, p, self)),
+            ErlangTokenType::Minus | ErlangTokenType::Plus | ErlangTokenType::Bnot | ErlangTokenType::Not => {
+                unary(state, kind, 12, ErlangElementType::Expr.into(), |s, p| PrattParser::parse(s, p, self))
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, ErlangLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, ErlangLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, ErlangLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, ErlangLanguage>> {
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
             ErlangTokenType::Colon => (13, Associativity::Left),
-            ErlangTokenType::Slash | ErlangTokenType::Star | ErlangTokenType::Div | ErlangTokenType::Rem | ErlangTokenType::Band | ErlangTokenType::And => (11, Associativity::Left),
-            ErlangTokenType::Plus | ErlangTokenType::Minus | ErlangTokenType::Bor | ErlangTokenType::Bxor | ErlangTokenType::Bsl | ErlangTokenType::Bsr | ErlangTokenType::Or | ErlangTokenType::Xor => (10, Associativity::Left),
+            ErlangTokenType::Slash
+            | ErlangTokenType::Star
+            | ErlangTokenType::Div
+            | ErlangTokenType::Rem
+            | ErlangTokenType::Band
+            | ErlangTokenType::And => (11, Associativity::Left),
+            ErlangTokenType::Plus
+            | ErlangTokenType::Minus
+            | ErlangTokenType::Bor
+            | ErlangTokenType::Bxor
+            | ErlangTokenType::Bsl
+            | ErlangTokenType::Bsr
+            | ErlangTokenType::Or
+            | ErlangTokenType::Xor => (10, Associativity::Left),
             ErlangTokenType::PlusPlus | ErlangTokenType::MinusMinus => (9, Associativity::Right),
-            ErlangTokenType::EqualEqual | ErlangTokenType::SlashEqual | ErlangTokenType::LessEqual | ErlangTokenType::Less | ErlangTokenType::GreaterEqual | ErlangTokenType::Greater | ErlangTokenType::EqualColonEqual | ErlangTokenType::EqualSlashEqual => {
-                (8, Associativity::Left)
-            }
+            ErlangTokenType::EqualEqual
+            | ErlangTokenType::SlashEqual
+            | ErlangTokenType::LessEqual
+            | ErlangTokenType::Less
+            | ErlangTokenType::GreaterEqual
+            | ErlangTokenType::Greater
+            | ErlangTokenType::EqualColonEqual
+            | ErlangTokenType::EqualSlashEqual => (8, Associativity::Left),
             ErlangTokenType::Andalso => (7, Associativity::Left),
             ErlangTokenType::Orelse => (6, Associativity::Left),
             ErlangTokenType::Exclamation => (5, Associativity::Right),

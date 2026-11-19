@@ -26,7 +26,13 @@ fn test_flowchart_token_kinds() -> Result<(), data_text_core::TextError> {
     let tokens = output.result.expect("lexing should succeed");
     let kinds: Vec<MermaidTokenType> = tokens.iter().filter(|token| !token.kind.is_ignored()).map(|token| token.kind).collect();
 
-    assert_eq!(kinds, vec![Graph, Direction, Newline, Id, Label, Arrow, Id, Label, Newline, Id, Arrow, Label, Id, Label, Newline, Id, Arrow, Id, Newline, Id, Arrow, Id, Newline, Eof]);
+    assert_eq!(
+        kinds,
+        vec![
+            Graph, Direction, Newline, Id, Label, Arrow, Id, Label, Newline, Id, Arrow, Label, Id, Label, Newline, Id, Arrow, Id, Newline, Id,
+            Arrow, Id, Newline, Eof
+        ]
+    );
     Ok(())
 }
 
@@ -36,7 +42,9 @@ fn test_state_and_er_token_kinds() -> Result<(), data_text_core::TextError> {
 
     let language = MermaidLanguage::default();
     let lexer = MermaidLexer::new(&language);
-    let source = SourceText::new("stateDiagram-v2\n    [*] --> Still\n    state Moving {\n        [*] --> Slow\n    }\nerDiagram\n    CUSTOMER ||--|{ ORDER : places\n");
+    let source = SourceText::new(
+        "stateDiagram-v2\n    [*] --> Still\n    state Moving {\n        [*] --> Slow\n    }\nerDiagram\n    CUSTOMER ||--|{ ORDER : places\n",
+    );
     let mut cache = data_text_core::parser::ParseSession::<MermaidLanguage>::default();
 
     let output = lexer.lex(&source, &[], &mut cache);
@@ -44,6 +52,12 @@ fn test_state_and_er_token_kinds() -> Result<(), data_text_core::TextError> {
     let tokens = output.result.expect("lexing should succeed");
     let kinds: Vec<MermaidTokenType> = tokens.iter().filter(|token| !token.kind.is_ignored()).map(|token| token.kind).collect();
 
-    assert_eq!(kinds, vec![Id, Newline, Label, Arrow, Id, Newline, Id, Id, LeftBrace, Newline, Label, Arrow, Id, Newline, RightBrace, Newline, Id, Newline, Id, Label, Arrow, Pipe, LeftBrace, Id, Colon, Id, Newline, Eof]);
+    assert_eq!(
+        kinds,
+        vec![
+            Id, Newline, Label, Arrow, Id, Newline, Id, Id, LeftBrace, Newline, Label, Arrow, Id, Newline, RightBrace, Newline, Id, Newline,
+            Id, Label, Arrow, Pipe, LeftBrace, Id, Colon, Id, Newline, Eof
+        ]
+    );
     Ok(())
 }

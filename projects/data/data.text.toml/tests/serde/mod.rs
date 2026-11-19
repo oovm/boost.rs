@@ -18,8 +18,12 @@ struct Address {
 #[ignore = "TOML serde round-trip deserialization is incomplete"]
 #[test]
 fn test_serialize_struct() {
-    let test_data =
-        TestStruct { name: "John Doe".to_string(), age: 30, hobbies: vec!["reading".to_string(), "hiking".to_string(), "coding".to_string()], address: Address { street: "123 Main St".to_string(), city: "New York".to_string(), zip: "10001".to_string() } };
+    let test_data = TestStruct {
+        name: "John Doe".to_string(),
+        age: 30,
+        hobbies: vec!["reading".to_string(), "hiking".to_string(), "coding".to_string()],
+        address: Address { street: "123 Main St".to_string(), city: "New York".to_string(), zip: "10001".to_string() },
+    };
 
     let toml = to_string(&test_data).unwrap();
     println!("Serialized TOML:\n{}", toml);

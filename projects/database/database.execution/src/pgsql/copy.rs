@@ -10,8 +10,10 @@ use std::sync::Arc;
 
 use database_query::{CopyFormat, PgUtilityStatement};
 
-use super::session::{PgsqlSqlRuntime, TransactionSession};
-use super::statement::{StatementError, run_statement};
+use super::{
+    session::{PgsqlSqlRuntime, TransactionSession},
+    statement::{StatementError, run_statement},
+};
 
 /// One `COPY ... FROM STDIN` target.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,8 +75,8 @@ impl CopyInState {
 
     /// Parses the stream and inserts every row, returning the affected count.
     pub fn finish(mut self, runtime: &Arc<PgsqlSqlRuntime>, session: &mut TransactionSession) -> Result<u64, StatementError> {
-        let text = String::from_utf8(std::mem::take(&mut self.buffer))
-            .map_err(|_| StatementError::new("22P04", "COPY data is not valid UTF-8"))?;
+        let text =
+            String::from_utf8(std::mem::take(&mut self.buffer)).map_err(|_| StatementError::new("22P04", "COPY data is not valid UTF-8"))?;
         let columns = self.resolve_columns(runtime)?;
         let mut rows = Vec::new();
         for line in text.split('\n') {
@@ -235,10 +237,7 @@ mod tests {
 
     #[test]
     fn text_lines_decode_escapes_and_null() {
-        assert_eq!(
-            parse_text_line("1\tab\\tc\t\\N", '\t').unwrap(),
-            vec![Some("1".to_owned()), Some("ab\tc".to_owned()), None]
-        );
+        assert_eq!(parse_text_line("1\tab\\tc\t\\N", '\t').unwrap(), vec![Some("1".to_owned()), Some("ab\tc".to_owned()), None]);
     }
 
     #[test]

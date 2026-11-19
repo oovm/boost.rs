@@ -1,5 +1,5 @@
 use crate::{ast::*, language::VampireLanguage, parser::VampireParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// AST builder for Vampire language
 #[derive(Clone)]
@@ -15,7 +15,12 @@ impl<'config> VampireBuilder<'config> {
 }
 
 impl<'config> Builder<VampireLanguage> for VampireBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<VampireLanguage>) -> data_text_core::builder::BuildOutput<VampireLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<VampireLanguage>,
+    ) -> data_text_core::builder::BuildOutput<VampireLanguage> {
         let parser = VampireParser::new(self.config);
 
         let parse_result = parser.parse(text, edits, cache);

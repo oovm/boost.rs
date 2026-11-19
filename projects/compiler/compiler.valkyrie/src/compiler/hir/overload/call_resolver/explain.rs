@@ -46,8 +46,7 @@ pub fn explain_unresolved_call(
     }
     match &peeled.kind {
         HirExprKind::FieldAccess { object, field, .. } => {
-            let receiver =
-                infer_expr_type(object, locals).or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names));
+            let receiver = infer_expr_type(object, locals).or_else(|| infer_scrutinee_type(object, locals, struct_fields, singleton_names));
             // 同名候选集与接收者推断无关：接收者未定时同样要点名，便于区分
             // 「没有该成员」与「有成员但接收者身份未定」。
             let named = candidates
@@ -108,11 +107,8 @@ fn explicit_generic_argument_mismatch(
     if expected_binders == explicit.len() {
         return None;
     }
-    let expected_kinds = first
-        .generic_binders
-        .iter()
-        .filter_map(|binder| first.generic_binder_kinds.get(binder).map(binder_kind_label))
-        .collect();
+    let expected_kinds =
+        first.generic_binders.iter().filter_map(|binder| first.generic_binder_kinds.get(binder).map(binder_kind_label)).collect();
     Some(HirCallResolutionFailureKind::ExplicitGenericArgumentsMismatch {
         expected_binders,
         expected_kinds,

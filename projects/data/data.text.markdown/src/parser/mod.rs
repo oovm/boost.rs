@@ -20,7 +20,12 @@ impl<'config> MarkdownParser<'config> {
 }
 
 impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl data_text_core::ParseCache<MarkdownLanguage>) -> data_text_core::ParseOutput<'a, MarkdownLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<MarkdownLanguage>,
+    ) -> data_text_core::ParseOutput<'a, MarkdownLanguage> {
         let lexer = crate::lexer::MarkdownLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -92,7 +97,12 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                 self.parse_paragraph(state);
                             }
                         }
-                        MarkdownTokenType::Heading1 | MarkdownTokenType::Heading2 | MarkdownTokenType::Heading3 | MarkdownTokenType::Heading4 | MarkdownTokenType::Heading5 | MarkdownTokenType::Heading6 => {
+                        MarkdownTokenType::Heading1
+                        | MarkdownTokenType::Heading2
+                        | MarkdownTokenType::Heading3
+                        | MarkdownTokenType::Heading4
+                        | MarkdownTokenType::Heading5
+                        | MarkdownTokenType::Heading6 => {
                             state.bump();
                             self.parse_inlines_until_newline(state);
                             state.finish_at(item_checkpoint, ET::from(kind));
@@ -108,7 +118,12 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
 
                             while state.not_at_end() {
                                 if let Some(MarkdownTokenType::ListMarker) = state.peek_kind() {
-                                    let current_is_ordered = if let Some(text) = state.peek_text() { text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) } else { false };
+                                    let current_is_ordered = if let Some(text) = state.peek_text() {
+                                        text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                                    }
+                                    else {
+                                        false
+                                    };
 
                                     if current_is_ordered != is_ordered && state.checkpoint() != list_checkpoint {
                                         break;
@@ -141,13 +156,25 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                                 }
                                                 // 递归解析嵌套列表
                                                 let nested_list_checkpoint = state.checkpoint();
-                                                let nested_is_ordered = if let Some(text) = state.peek_text() { text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) } else { false };
+                                                let nested_is_ordered = if let Some(text) = state.peek_text() {
+                                                    text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                                                }
+                                                else {
+                                                    false
+                                                };
 
                                                 while state.not_at_end() {
                                                     if let Some(MarkdownTokenType::ListMarker) = state.peek_kind() {
-                                                        let nested_current_is_ordered = if let Some(text) = state.peek_text() { text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) } else { false };
+                                                        let nested_current_is_ordered = if let Some(text) = state.peek_text() {
+                                                            text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                                                        }
+                                                        else {
+                                                            false
+                                                        };
 
-                                                        if nested_current_is_ordered != nested_is_ordered && state.checkpoint() != nested_list_checkpoint {
+                                                        if nested_current_is_ordered != nested_is_ordered
+                                                            && state.checkpoint() != nested_list_checkpoint
+                                                        {
                                                             break;
                                                         }
 
@@ -169,7 +196,9 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                                                     break;
                                                                 }
                                                             }
-                                                            if nested_indent_level <= indent_level || !matches!(state.peek_kind(), Some(MarkdownTokenType::ListMarker)) {
+                                                            if nested_indent_level <= indent_level
+                                                                || !matches!(state.peek_kind(), Some(MarkdownTokenType::ListMarker))
+                                                            {
                                                                 state.restore(nested_nl_checkpoint);
                                                                 break;
                                                             }
@@ -201,7 +230,12 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                             state.restore(nl_checkpoint);
                                             break;
                                         }
-                                        let next_is_ordered = if let Some(text) = state.peek_text() { text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) } else { false };
+                                        let next_is_ordered = if let Some(text) = state.peek_text() {
+                                            text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                                        }
+                                        else {
+                                            false
+                                        };
                                         if next_is_ordered != is_ordered {
                                             state.restore(nl_checkpoint);
                                             break;
@@ -276,11 +310,15 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                                                             if deeper_nested_next_kind == MarkdownTokenType::Newline {
                                                                                 state.bump();
                                                                                 if let Some(deeper_nested_after_nl) = state.peek_kind() {
-                                                                                    if deeper_nested_after_nl == MarkdownTokenType::BlockquoteMarker {
+                                                                                    if deeper_nested_after_nl
+                                                                                        == MarkdownTokenType::BlockquoteMarker
+                                                                                    {
                                                                                         state.bump();
                                                                                         continue;
                                                                                     }
-                                                                                    if deeper_nested_after_nl != MarkdownTokenType::Whitespace && deeper_nested_after_nl != MarkdownTokenType::Text {
+                                                                                    if deeper_nested_after_nl != MarkdownTokenType::Whitespace
+                                                                                        && deeper_nested_after_nl != MarkdownTokenType::Text
+                                                                                    {
                                                                                         break;
                                                                                     }
                                                                                 }
@@ -288,7 +326,10 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                                                                     break;
                                                                                 }
                                                                             }
-                                                                            else if self.is_block_start(deeper_nested_next_kind) && deeper_nested_next_kind != MarkdownTokenType::BlockquoteMarker {
+                                                                            else if self.is_block_start(deeper_nested_next_kind)
+                                                                                && deeper_nested_next_kind
+                                                                                    != MarkdownTokenType::BlockquoteMarker
+                                                                            {
                                                                                 break;
                                                                             }
                                                                         }
@@ -298,7 +339,9 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                                                     state.finish_at(deeper_nested_quote_checkpoint, ET::Blockquote);
                                                                     continue;
                                                                 }
-                                                                if nested_after_nl != MarkdownTokenType::Whitespace && nested_after_nl != MarkdownTokenType::Text {
+                                                                if nested_after_nl != MarkdownTokenType::Whitespace
+                                                                    && nested_after_nl != MarkdownTokenType::Text
+                                                                {
                                                                     break;
                                                                 }
                                                             }
@@ -306,7 +349,9 @@ impl<'config> Parser<MarkdownLanguage> for MarkdownParser<'config> {
                                                                 break;
                                                             }
                                                         }
-                                                        else if self.is_block_start(nested_next_kind) && nested_next_kind != MarkdownTokenType::BlockquoteMarker {
+                                                        else if self.is_block_start(nested_next_kind)
+                                                            && nested_next_kind != MarkdownTokenType::BlockquoteMarker
+                                                        {
                                                             break;
                                                         }
                                                     }
@@ -482,7 +527,15 @@ impl<'config> MarkdownParser<'config> {
     }
 
     fn is_heading(kind: MarkdownTokenType) -> bool {
-        matches!(kind, MarkdownTokenType::Heading1 | MarkdownTokenType::Heading2 | MarkdownTokenType::Heading3 | MarkdownTokenType::Heading4 | MarkdownTokenType::Heading5 | MarkdownTokenType::Heading6)
+        matches!(
+            kind,
+            MarkdownTokenType::Heading1
+                | MarkdownTokenType::Heading2
+                | MarkdownTokenType::Heading3
+                | MarkdownTokenType::Heading4
+                | MarkdownTokenType::Heading5
+                | MarkdownTokenType::Heading6
+        )
     }
 
     /// Parses a heading as a block child, used where a container such as a
@@ -578,7 +631,8 @@ impl<'config> MarkdownParser<'config> {
                 MarkdownTokenType::Emphasis | MarkdownTokenType::Strong | MarkdownTokenType::Strikethrough => {
                     let marker_kind = kind;
                     state.bump(); // Start marker
-                    while state.not_at_end() && state.peek_kind() != Some(marker_kind) && state.peek_kind() != Some(MarkdownTokenType::Newline) {
+                    while state.not_at_end() && state.peek_kind() != Some(marker_kind) && state.peek_kind() != Some(MarkdownTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(marker_kind) {
@@ -651,7 +705,8 @@ impl<'config> MarkdownParser<'config> {
                 MarkdownTokenType::Superscript | MarkdownTokenType::Subscript => {
                     let marker_kind = kind;
                     state.bump(); // Start marker
-                    while state.not_at_end() && state.peek_kind() != Some(marker_kind) && state.peek_kind() != Some(MarkdownTokenType::Newline) {
+                    while state.not_at_end() && state.peek_kind() != Some(marker_kind) && state.peek_kind() != Some(MarkdownTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(marker_kind) {

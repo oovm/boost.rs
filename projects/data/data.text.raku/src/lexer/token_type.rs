@@ -99,7 +99,9 @@ impl TokenType for RakuTokenType {
             Self::Identifier => UniversalTokenRole::Name,
             Self::Number => UniversalTokenRole::Literal,
             Self::String => UniversalTokenRole::Literal,
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => UniversalTokenRole::Punctuation,
+            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => {
+                UniversalTokenRole::Punctuation
+            }
             Self::Semicolon | Self::Comma | Self::Dot | Self::Colon | Self::Arrow | Self::FatArrow => UniversalTokenRole::Punctuation,
             Self::Operator => UniversalTokenRole::Operator,
             Self::Keyword

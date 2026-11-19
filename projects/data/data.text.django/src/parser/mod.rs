@@ -164,7 +164,10 @@ impl<'config> DjangoParser<'config> {
 
             state.advance();
             self.parse_binary_expression(state, precedence + 1)?;
-            state.finish_at(cp, if kind == DjangoTokenType::Pipe { DjangoElementType::FilterExpression } else { DjangoElementType::BinaryExpression });
+            state.finish_at(
+                cp,
+                if kind == DjangoTokenType::Pipe { DjangoElementType::FilterExpression } else { DjangoElementType::BinaryExpression },
+            );
         }
 
         Ok(())
@@ -212,7 +215,12 @@ impl<'config> DjangoParser<'config> {
 }
 
 impl<'config> Parser<DjangoLanguage> for DjangoParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<DjangoLanguage>) -> ParseOutput<'a, DjangoLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<DjangoLanguage>,
+    ) -> ParseOutput<'a, DjangoLanguage> {
         let lexer = DjangoLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

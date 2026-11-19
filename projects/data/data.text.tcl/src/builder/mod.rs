@@ -4,7 +4,9 @@ use crate::{
     lexer::{TclLexer, token_type::TclTokenType},
     parser::{TclParser, element_type::TclElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Lexer, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 
 /// AST builder for Tcl language
 #[derive(Clone)]
@@ -21,7 +23,12 @@ impl<'config> TclBuilder<'config> {
 }
 
 impl<'config> Builder<TclLanguage> for TclBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<TclLanguage>) -> data_text_core::builder::BuildOutput<TclLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<TclLanguage>,
+    ) -> data_text_core::builder::BuildOutput<TclLanguage> {
         let parser = TclParser::new(self.config);
         let lexer = TclLexer::new(&self.config);
 
@@ -78,7 +85,11 @@ impl<'config> TclBuilder<'config> {
 
         for child in node.children() {
             let kind = child.kind::<TclTokenType>();
-            if kind == TclElementType::SimpleWord.into() || kind == TclElementType::VariableWord.into() || kind == TclElementType::ScriptWord.into() || kind == TclElementType::BracedWord.into() {
+            if kind == TclElementType::SimpleWord.into()
+                || kind == TclElementType::VariableWord.into()
+                || kind == TclElementType::ScriptWord.into()
+                || kind == TclElementType::BracedWord.into()
+            {
                 if let Some(node) = child.as_node() {
                     words.push(self.build_word(node, source)?);
                 }

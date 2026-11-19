@@ -30,10 +30,9 @@ mod value_semantics;
 // IntrinsicOpcode 权威已删除 — 不得 `pub use` opcode 枚举。
 pub use value_semantics::{
     AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, InstanceLayout, LayoutId, LayoutKey, MirStorageKind, SumTypeLayout,
-    SumVariantLayout, compute_aggregate_layout_plan, ensure_layout_for_type, instance_layout_for_type, instantiate_fields, layout_id_for_type,
-    storage_kind_for_type,
+    SumVariantLayout, compute_aggregate_layout_plan, encoding_spelling_carrier, ensure_layout_for_type, instance_layout_for_type,
+    instantiate_fields, layout_id_for_type, storage_kind_for_type,
 };
-pub use value_semantics::encoding_spelling_carrier;
 
 // 集成测试入口：仅暴露被迁移的 `tests/` 目标所需的最小内部 item。
 #[doc(hidden)]
@@ -48,8 +47,7 @@ use builder::MirBuilder;
 use callable_types::CallableReturnTypes;
 use function_lowering::lower_function_semantic;
 use struct_facts::resolve_self_type_with_owner;
-pub use type_analysis::type_contains_non_monomorphic_signature_reference;
-pub use type_analysis::type_identity_table;
+pub use type_analysis::{type_contains_non_monomorphic_signature_reference, type_identity_table};
 
 // 以下导入同时是子模块通过 `super::` 或 `use super::*;` 依赖的名称，
 // 因此必须保留在本模块命名空间中。

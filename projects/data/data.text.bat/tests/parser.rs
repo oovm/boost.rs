@@ -4,7 +4,8 @@ use std::time::Duration;
 
 #[test]
 fn test_parser() {
-    let tester = ParserTester::new(r"e:\普遍优化\oaks\examples\oak-bat\tests\fixtures").with_extension(".bat").with_timeout(Duration::from_millis(1000));
+    let tester =
+        ParserTester::new(r"e:\普遍优化\oaks\examples\oak-bat\tests\fixtures").with_extension(".bat").with_timeout(Duration::from_millis(1000));
 
     let language = BatLanguage::default();
     let parser = BatParser::new(&language);

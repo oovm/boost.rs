@@ -515,7 +515,12 @@ impl<'config> LuaLexer<'config> {
 }
 
 impl<'config> Lexer<LuaLanguage> for LuaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<LuaLanguage>) -> LexOutput<LuaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<LuaLanguage>,
+    ) -> LexOutput<LuaLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -76,7 +76,5 @@ impl ZnCoefficientKernel {
 }
 
 fn coeff_mismatch() -> Diagnostic {
-    Diagnostic::new(DiagnosticCode::NumericDomainMismatch)
-        .detail("domain", "polynomial")
-        .detail("operation", "zn_coeff_integer_required")
+    Diagnostic::new(DiagnosticCode::NumericDomainMismatch).detail("domain", "polynomial").detail("operation", "zn_coeff_integer_required")
 }

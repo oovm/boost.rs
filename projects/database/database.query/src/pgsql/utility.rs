@@ -190,7 +190,8 @@ fn parse_copy(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
                 "DELIMITER" => {
                     let decoded = decode_copy_literal(value)?;
                     let mut characters = decoded.chars();
-                    let Some(character) = characters.next() else {
+                    let Some(character) = characters.next()
+                    else {
                         return Err(syntax("COPY DELIMITER must be one character"));
                     };
                     if characters.next().is_some() {
@@ -226,10 +227,12 @@ fn decode_copy_literal(value: &str) -> Result<String, SqlFrontendError> {
         Some(rest) => rest,
         None => trimmed,
     };
-    let Some(body) = body.strip_prefix('\'') else {
+    let Some(body) = body.strip_prefix('\'')
+    else {
         return Err(syntax("COPY option values must be string literals"));
     };
-    let Some(body) = body.strip_suffix('\'') else {
+    let Some(body) = body.strip_suffix('\'')
+    else {
         return Err(syntax("unterminated COPY option literal"));
     };
     let mut decoded = String::with_capacity(body.len());
@@ -284,10 +287,12 @@ fn parse_notify(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> {
         return Err(syntax("NOTIFY accepts `channel [, 'payload']`"));
     };
     let inner = inner.trim_start();
-    let Some(literal) = inner.strip_prefix('\'') else {
+    let Some(literal) = inner.strip_prefix('\'')
+    else {
         return Err(syntax("NOTIFY payload must be a string literal"));
     };
-    let Some(end) = literal.rfind('\'') else {
+    let Some(end) = literal.rfind('\'')
+    else {
         return Err(syntax("unterminated NOTIFY payload"));
     };
     if !literal[end + 1..].trim().is_empty() {
@@ -511,12 +516,15 @@ fn parse_deallocate(tail: &str) -> Result<PgUtilityStatement, SqlFrontendError> 
 /// Reads a bare or double-quoted identifier.
 fn take_name(source: &str) -> Result<(String, &str), SqlFrontendError> {
     if let Some(inner) = source.strip_prefix('"') {
-        let Some(end) = inner.find('"') else {
+        let Some(end) = inner.find('"')
+        else {
             return Err(syntax("unterminated quoted name"));
         };
         return Ok((inner[..end].to_owned(), &inner[end + 1..]));
     }
-    let end = source.find(|character: char| character.is_whitespace() || character == '(' || character == ',' || character == ')').unwrap_or(source.len());
+    let end = source
+        .find(|character: char| character.is_whitespace() || character == '(' || character == ',' || character == ')')
+        .unwrap_or(source.len());
     if end == 0 {
         return Err(syntax("expected a statement name"));
     }
@@ -644,18 +652,12 @@ mod tests {
                 arguments: vec!["1".to_owned(), "'a,b'".to_owned(), "(2 + 3)".to_owned()],
             })
         );
-        assert_eq!(
-            parse_pg_utility("EXECUTE p").unwrap(),
-            Some(PgUtilityStatement::Execute { name: "p".to_owned(), arguments: Vec::new() })
-        );
+        assert_eq!(parse_pg_utility("EXECUTE p").unwrap(), Some(PgUtilityStatement::Execute { name: "p".to_owned(), arguments: Vec::new() }));
     }
 
     #[test]
     fn deallocate_accepts_one_name_or_all() {
-        assert_eq!(
-            parse_pg_utility("DEALLOCATE PREPARE p").unwrap(),
-            Some(PgUtilityStatement::Deallocate { name: Some("p".to_owned()) })
-        );
+        assert_eq!(parse_pg_utility("DEALLOCATE PREPARE p").unwrap(), Some(PgUtilityStatement::Deallocate { name: Some("p".to_owned()) }));
         assert_eq!(parse_pg_utility("DEALLOCATE ALL").unwrap(), Some(PgUtilityStatement::Deallocate { name: None }));
     }
 

@@ -5,10 +5,14 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_namespace<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<NamespaceDeclaration, TextError> {
+    pub(crate) fn build_namespace<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<NamespaceDeclaration, TextError> {
         let span = node.span();
         let mut primary = false;
         let mut name = NamePath { parts: Vec::new(), span: Default::default() };
@@ -20,7 +24,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     // `namespace!`：`Bang` 位于名字之前，是主空间身份，不是名字的一部分。
                     ValkyrieTokenType::Bang if name.parts.is_empty() => {
                         primary = true;

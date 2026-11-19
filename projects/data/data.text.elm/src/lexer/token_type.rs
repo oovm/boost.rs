@@ -142,7 +142,24 @@ pub enum ElmTokenType {
 impl ElmTokenType {
     /// Returns true if the token is a keyword.
     pub fn is_keyword(self) -> bool {
-        matches!(self, Self::If | Self::Then | Self::Else | Self::Case | Self::Of | Self::Let | Self::In | Self::Type | Self::Alias | Self::Module | Self::Where | Self::Import | Self::Exposing | Self::As | Self::Port)
+        matches!(
+            self,
+            Self::If
+                | Self::Then
+                | Self::Else
+                | Self::Case
+                | Self::Of
+                | Self::Let
+                | Self::In
+                | Self::Type
+                | Self::Alias
+                | Self::Module
+                | Self::Where
+                | Self::Import
+                | Self::Exposing
+                | Self::As
+                | Self::Port
+        )
     }
 }
 
@@ -189,7 +206,17 @@ impl TokenType for ElmTokenType {
             | Self::Dot
             | Self::DoubleDot
             | Self::TripleDot => UniversalTokenRole::Operator,
-            Self::Comma | Self::Colon | Self::Semicolon | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Backslash | Self::Bar => UniversalTokenRole::Punctuation,
+            Self::Comma
+            | Self::Colon
+            | Self::Semicolon
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Backslash
+            | Self::Bar => UniversalTokenRole::Punctuation,
             _ => UniversalTokenRole::None,
         }
     }

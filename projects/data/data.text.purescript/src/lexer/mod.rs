@@ -13,7 +13,12 @@ pub struct PurescriptLexer<'config> {
 }
 
 impl<'config> Lexer<PurescriptLanguage> for PurescriptLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<PurescriptLanguage>) -> LexOutput<PurescriptLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<PurescriptLanguage>,
+    ) -> LexOutput<PurescriptLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

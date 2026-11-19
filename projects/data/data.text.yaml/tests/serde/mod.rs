@@ -18,8 +18,12 @@ struct Address {
 #[test]
 #[ignore = "YAML nested object/list round-trip deserialization is incomplete"]
 fn test_serialize_struct() {
-    let test_data =
-        TestStruct { name: "John Doe".to_string(), age: 30, hobbies: vec!["reading".to_string(), "hiking".to_string(), "coding".to_string()], address: Address { street: "123 Main St".to_string(), city: "New York".to_string(), zip: "10001".to_string() } };
+    let test_data = TestStruct {
+        name: "John Doe".to_string(),
+        age: 30,
+        hobbies: vec!["reading".to_string(), "hiking".to_string(), "coding".to_string()],
+        address: Address { street: "123 Main St".to_string(), city: "New York".to_string(), zip: "10001".to_string() },
+    };
 
     let yaml = to_string(&test_data).unwrap();
     println!("Serialized YAML:\n{}", yaml);

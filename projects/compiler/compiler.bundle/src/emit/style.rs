@@ -13,17 +13,19 @@
 //!   读不到即显式拒绝，不猜 URL、不静默保留错误路径。
 //! - `@import` 跨文件级联未实现：显式拒绝，禁止静默拼接错误顺序。
 
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    path::PathBuf,
+};
 
-use crate::chunk::ChunkPlan;
-use crate::diag::PackDiagnostic;
-use crate::graph::{ModuleGraph, NodeKind};
-use crate::source::SourceReader;
+use crate::{
+    chunk::ChunkPlan,
+    diag::PackDiagnostic,
+    graph::{ModuleGraph, NodeKind},
+    source::SourceReader,
+};
 
-use super::assemble::apply_replacements;
-use super::manifest::hex;
-use super::{AssetArtifact, EmitOptions, StyleArtifact, lexical_join, normalize_path};
+use super::{AssetArtifact, EmitOptions, StyleArtifact, assemble::apply_replacements, lexical_join, manifest::hex, normalize_path};
 
 /// 按 chunk 聚合 CSS 产物；失败（读取、`@import`、`url()` 不可解析）推入
 /// `errors`，该 chunk 不产出条目。资产缓存与 `collect_assets` 共享，
@@ -49,33 +51,37 @@ pub(crate) fn collect_styles(
         let mut modules: Vec<String> = Vec::new();
         let mut failed = false;
         for &member in &chunk.modules {
-            let Some(member_node) = graph.nodes.get(member) else { continue };
+            let Some(member_node) = graph.nodes.get(member)
+            else {
+                continue;
+            };
             if member_node.kind != NodeKind::Js {
                 continue;
             }
             let member_path = normalize_path(&member_node.resolved.path);
             for edge in &member_node.static_edges {
-                let Ok(id) = edge.target.as_ref() else { continue };
-                let Some(target) = graph.index_of(id) else { continue };
+                let Ok(id) = edge.target.as_ref()
+                else {
+                    continue;
+                };
+                let Some(target) = graph.index_of(id)
+                else {
+                    continue;
+                };
                 if !retained.get(target).copied().unwrap_or(false) {
                     continue;
                 }
-                let Some(target_node) = graph.nodes.get(target) else { continue };
+                let Some(target_node) = graph.nodes.get(target)
+                else {
+                    continue;
+                };
                 if target_node.kind != NodeKind::Style {
                     continue;
                 }
                 let rewritten = match cache.get(&target) {
                     Some(cached) => cached.clone(),
                     None => {
-                        let built = rewrite_style_file(
-                            graph,
-                            target,
-                            asset_index,
-                            by_disk,
-                            options,
-                            reader,
-                            errors,
-                        );
+                        let built = rewrite_style_file(graph, target, asset_index, by_disk, options, reader, errors);
                         cache.insert(target, built.clone());
                         built
                     }
@@ -125,29 +131,22 @@ fn rewrite_style_file(
     let text = match reader.read_to_string(path) {
         Ok(text) => text,
         Err(err) => {
-            errors.push(
-                PackDiagnostic::new(
-                    "vmz::pack::emit::read_failed",
-                    format!("cannot re-read style file: {err}"),
-                )
-                .with_path(path_display),
-            );
+            errors
+                .push(PackDiagnostic::new("vmz::pack::emit::read_failed", format!("cannot re-read style file: {err}")).with_path(path_display));
             return None;
         }
     };
     let scan = scan_css(text.as_bytes());
     if let Some(span) = scan.import {
         errors.push(
-            PackDiagnostic::new(
-                "vmz::pack::emit::style_import_unsupported",
-                "CSS `@import` 跨文件级联未实现，显式拒绝；不静默拼接错误顺序",
-            )
-            .with_path(path_display.clone())
-            .with_span(span),
+            PackDiagnostic::new("vmz::pack::emit::style_import_unsupported", "CSS `@import` 跨文件级联未实现，显式拒绝；不静默拼接错误顺序")
+                .with_path(path_display.clone())
+                .with_span(span),
         );
         return None;
     }
-    let Some(dir) = path.parent() else {
+    let Some(dir) = path.parent()
+    else {
         return Some(text);
     };
     let mut replacements: BTreeMap<(usize, usize), String> = BTreeMap::new();
@@ -170,10 +169,7 @@ fn rewrite_style_file(
                                 errors.push(
                                     PackDiagnostic::new(
                                         "vmz::pack::emit::style_asset_unresolved",
-                                        format!(
-                                            "CSS `url()` 资源 `{value}` 无法解析为可读文件: {}: {err}",
-                                            disk.display()
-                                        ),
+                                        format!("CSS `url()` 资源 `{value}` 无法解析为可读文件: {}: {err}", disk.display()),
                                     )
                                     .with_path(path_display.clone())
                                     .with_span(url_ref.value_span),
@@ -181,14 +177,8 @@ fn rewrite_style_file(
                                 continue;
                             }
                         };
-                        let stem = disk
-                            .file_stem()
-                            .map(|value| value.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "asset".to_string());
-                        let extension = disk
-                            .extension()
-                            .map(|value| format!(".{}", value.to_string_lossy()))
-                            .unwrap_or_default();
+                        let stem = disk.file_stem().map(|value| value.to_string_lossy().to_string()).unwrap_or_else(|| "asset".to_string());
+                        let extension = disk.extension().map(|value| format!(".{}", value.to_string_lossy())).unwrap_or_default();
                         let file_name = format!("assets/{stem}-{}{extension}", hex(&bytes, 16));
                         let url = format!("{}{file_name}", options.public_base);
                         by_disk.insert(disk.clone(), (file_name.clone(), url.clone()));
@@ -255,10 +245,7 @@ fn scan_css(bytes: &[u8]) -> Scan {
                 i = skip_string(bytes, i, quote);
             }
             b'@' => {
-                if import.is_none()
-                    && matches_ignore_case(bytes, i + 1, b"import")
-                    && !bytes.get(i + 7).is_some_and(|b| is_ident_byte(*b))
-                {
+                if import.is_none() && matches_ignore_case(bytes, i + 1, b"import") && !bytes.get(i + 7).is_some_and(|b| is_ident_byte(*b)) {
                     import = Some((i, i + 7));
                 }
                 i += 1;
@@ -355,8 +342,7 @@ fn is_relocatable(value: &str) -> bool {
 }
 
 fn matches_ignore_case(bytes: &[u8], at: usize, word: &[u8]) -> bool {
-    at + word.len() <= bytes.len()
-        && bytes[at..at + word.len()].iter().zip(word).all(|(a, b)| a.eq_ignore_ascii_case(b))
+    at + word.len() <= bytes.len() && bytes[at..at + word.len()].iter().zip(word).all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 fn skip_ws(bytes: &[u8], mut i: usize) -> usize {

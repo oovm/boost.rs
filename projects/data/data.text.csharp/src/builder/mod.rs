@@ -146,7 +146,16 @@ impl<'config> CSharpBuilder<'config> {
             }
         }
 
-        ClassDeclaration { name, attributes, modifiers, base_types: Vec::new(), type_parameters: Vec::new(), constraints: Vec::new(), members, span: node.span() }
+        ClassDeclaration {
+            name,
+            attributes,
+            modifiers,
+            base_types: Vec::new(),
+            type_parameters: Vec::new(),
+            constraints: Vec::new(),
+            members,
+            span: node.span(),
+        }
     }
 
     fn build_interface(&self, node: RedNode<CSharpLanguage>, source: &str) -> InterfaceDeclaration {
@@ -208,7 +217,15 @@ impl<'config> CSharpBuilder<'config> {
         let name = self.extract_identifier(node.clone(), source);
         let modifiers = self.extract_modifiers(node.clone(), source);
         let attributes = self.extract_attributes(node.clone(), source);
-        DelegateDeclaration { name, attributes, modifiers, return_type: "void".to_string(), type_parameters: Vec::new(), parameters: Vec::new(), span: node.span() }
+        DelegateDeclaration {
+            name,
+            attributes,
+            modifiers,
+            return_type: "void".to_string(),
+            type_parameters: Vec::new(),
+            parameters: Vec::new(),
+            span: node.span(),
+        }
     }
 
     fn extract_modifiers(&self, node: RedNode<CSharpLanguage>, source: &str) -> Vec<String> {
@@ -218,7 +235,8 @@ impl<'config> CSharpBuilder<'config> {
                 if leaf.kind.is_keyword() {
                     let text = self.get_text(leaf.span, source).trim();
                     match text {
-                        "public" | "private" | "protected" | "internal" | "static" | "readonly" | "abstract" | "virtual" | "override" | "async" | "volatile" | "sealed" | "extern" | "partial" | "new" | "unsafe" => modifiers.push(text.to_string()),
+                        "public" | "private" | "protected" | "internal" | "static" | "readonly" | "abstract" | "virtual" | "override"
+                        | "async" | "volatile" | "sealed" | "extern" | "partial" | "new" | "unsafe" => modifiers.push(text.to_string()),
                         _ => {}
                     }
                 }
@@ -368,7 +386,11 @@ impl<'config> CSharpBuilder<'config> {
             }
             CSharpElementType::IfStatement => {
                 // Simplified
-                Some(Statement::If { condition: Expression::Literal(Literal::Boolean(true)), then_branch: Box::new(Statement::Block(Vec::new())), else_branch: None })
+                Some(Statement::If {
+                    condition: Expression::Literal(Literal::Boolean(true)),
+                    then_branch: Box::new(Statement::Block(Vec::new())),
+                    else_branch: None,
+                })
             }
             CSharpElementType::BreakStatement => Some(Statement::Break),
             CSharpElementType::ContinueStatement => Some(Statement::Continue),
@@ -413,7 +435,12 @@ impl<'config> CSharpBuilder<'config> {
 }
 
 impl<'config> Builder<CSharpLanguage> for CSharpBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CSharpLanguage>) -> BuildOutput<CSharpLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CSharpLanguage>,
+    ) -> BuildOutput<CSharpLanguage> {
         let mut session = data_text_core::parser::ParseSession::<CSharpLanguage>::default();
         let parser = crate::parser::CSharpParser::new(self.language);
         let output = parser.parse(source, edits, &mut session);

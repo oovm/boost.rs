@@ -201,12 +201,10 @@ impl IndexMaintenance {
     /// 值无法编码时摘掉完备标记，让所有读路径退回整表扫描。
     fn deactivate(&mut self) {
         self.broken = true;
-        self.deletes.extend(self.indexes.iter().map(|index| {
-            KeyValueCommand {
-                namespace: Namespace(index.namespace.clone()),
-                key: database_query::sql_index::READY_KEY.to_vec(),
-                action: KeyValueAction::Delete,
-            }
+        self.deletes.extend(self.indexes.iter().map(|index| KeyValueCommand {
+            namespace: Namespace(index.namespace.clone()),
+            key: database_query::sql_index::READY_KEY.to_vec(),
+            action: KeyValueAction::Delete,
         }));
     }
 }

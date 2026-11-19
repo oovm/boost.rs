@@ -154,13 +154,7 @@ fn unstyled_block_content_stays_normal_serif() {
     graph.push_block(Block::Section { level: 2, title: vec![text("Plain heading")], children: Vec::new() });
     graph.push_block(Block::List {
         ordered: true,
-        items: vec![ListItem {
-            content: vec![text("plain item")],
-            children: Vec::new(),
-            number: Some(1),
-            is_task: false,
-            is_checked: None,
-        }],
+        items: vec![ListItem { content: vec![text("plain item")], children: Vec::new(), number: Some(1), is_task: false, is_checked: None }],
     });
     let quote = graph.push_block(Block::Paragraph { content: vec![text("plain quote")] });
     graph.push_block(Block::Quote { children: vec![quote] });
@@ -216,13 +210,7 @@ fn wrapped_list_content_keeps_the_content_indent() {
         47,
         Block::List {
             ordered: false,
-            items: vec![ListItem {
-                content: vec![text(body.trim())],
-                children: Vec::new(),
-                number: None,
-                is_task: false,
-                is_checked: None,
-            }],
+            items: vec![ListItem { content: vec![text(body.trim())], children: Vec::new(), number: None, is_task: false, is_checked: None }],
         },
     );
     let plan = layout_with_hint(&graph, &hint);
@@ -248,10 +236,7 @@ fn table_row_height_follows_the_tallest_wrapped_cell() {
     graph.push_block(Block::Table {
         caption: None,
         head: Vec::new(),
-        body: vec![
-            TableRow { cells: vec![cell(first), cell(short)] },
-            TableRow { cells: vec![cell(next), cell(value)] },
-        ],
+        body: vec![TableRow { cells: vec![cell(first), cell(short)] }, TableRow { cells: vec![cell(next), cell(value)] }],
         foot: Vec::new(),
     });
     let plan = layout_with_hint(&graph, &hint);
@@ -276,10 +261,7 @@ fn tall_inline_formula_grows_the_quote_rule() {
         vec![
             text("before "),
             Inline::InlineMath {
-                formula: document_formats::lower_tex_formula_source(
-                    "\\frac{\\frac{a}{b}}{\\frac{c}{d}}",
-                    document_ir::MathDisplay::Inline,
-                ),
+                formula: document_formats::lower_tex_formula_source("\\frac{\\frac{a}{b}}{\\frac{c}{d}}", document_ir::MathDisplay::Inline),
             },
             text(" after"),
         ],
@@ -296,10 +278,6 @@ fn tall_inline_formula_grows_the_quote_rule() {
     let baseline = run_with(&text_runs(&plan.pages[0]), "before ").y;
     let line_box = hint.base_font_size * hint.line_height;
 
-    assert!(
-        baseline - rule.0 > 0.5 * hint.base_font_size,
-        "the raised formula pushes the text baseline down: {}",
-        baseline - rule.0
-    );
+    assert!(baseline - rule.0 > 0.5 * hint.base_font_size, "the raised formula pushes the text baseline down: {}", baseline - rule.0);
     assert!(rule.1 - rule.0 > line_box, "the rule covers the raised line: {} vs {line_box}", rule.1 - rule.0);
 }

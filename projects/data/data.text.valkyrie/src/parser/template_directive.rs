@@ -23,7 +23,9 @@ pub(crate) fn directive_first_keyword(tokens: &[Token<ValkyrieTokenType>]) -> Op
 
 /// `<% else if %>`。
 pub(crate) fn is_else_if_directive(tokens: &[Token<ValkyrieTokenType>]) -> bool {
-    tokens.len() >= 2 && tokens[0].kind == ValkyrieTokenType::Keyword(ValkyrieKeywords::Else) && tokens[1].kind == ValkyrieTokenType::Keyword(ValkyrieKeywords::If)
+    tokens.len() >= 2
+        && tokens[0].kind == ValkyrieTokenType::Keyword(ValkyrieKeywords::Else)
+        && tokens[1].kind == ValkyrieTokenType::Keyword(ValkyrieKeywords::If)
 }
 
 /// 关键词之后的 payload token（仍为词法 token 流，不是源码子串）。
@@ -33,7 +35,11 @@ pub(crate) fn directive_payload_tokens(directive: &ParsedTemplateDirective) -> V
     }
     else {
         match directive_first_keyword(&directive.tokens) {
-            Some(ValkyrieKeywords::If) | Some(ValkyrieKeywords::Loop) | Some(ValkyrieKeywords::Match) | Some(ValkyrieKeywords::Case) | Some(ValkyrieKeywords::End) => 1,
+            Some(ValkyrieKeywords::If)
+            | Some(ValkyrieKeywords::Loop)
+            | Some(ValkyrieKeywords::Match)
+            | Some(ValkyrieKeywords::Case)
+            | Some(ValkyrieKeywords::End) => 1,
             Some(ValkyrieKeywords::Else) => directive.tokens.len(),
             _ => 0,
         }

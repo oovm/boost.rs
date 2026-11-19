@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::GraphQLLanguage, lexer::token_type::GraphQLTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, TextEdit,
+    Lexer, LexerCache, LexerState, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, GraphQLLanguage>;
 
 static GRAPHQL_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static GRAPHQL_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "", block_end: "", nested_blocks: false });
+static GRAPHQL_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "", block_end: "", nested_blocks: false });
 static GRAPHQL_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// A lexer for GraphQL source files.
@@ -23,7 +24,12 @@ pub struct GraphQLLexer<'config> {
 }
 
 impl<'config> Lexer<GraphQLLanguage> for GraphQLLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<GraphQLLanguage>) -> LexOutput<GraphQLLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<GraphQLLanguage>,
+    ) -> LexOutput<GraphQLLanguage> {
         let mut state = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

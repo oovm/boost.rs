@@ -1,8 +1,7 @@
 #![doc = include_str!("readme.md")]
 
-
-use language_highlight::syntax::{HighlightSegment, HighlightSource};
 use crate::ast::GoRoot;
+use language_highlight::syntax::{HighlightSegment, HighlightSource};
 
 /// Go syntax highlighter.
 pub struct GoHighlighter;

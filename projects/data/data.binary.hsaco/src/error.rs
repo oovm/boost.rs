@@ -246,30 +246,16 @@ impl Display for HsacoLayoutError {
                 write!(f, "HSACO object at {} is ELF class {class}, only ELF64 (2) is accepted", evidence.location())
             }
             Self::UnsupportedEndianness { data, evidence } => {
-                write!(
-                    f,
-                    "HSACO object at {} declares data encoding {data}, only little endian (1) is accepted",
-                    evidence.location()
-                )
+                write!(f, "HSACO object at {} declares data encoding {data}, only little endian (1) is accepted", evidence.location())
             }
             Self::MachineMismatch { machine, evidence } => {
                 write!(f, "HSACO object at {} declares machine {machine}, only AMDGPU (224) is accepted", evidence.location())
             }
             Self::HeaderTableOverflow { table, count, entry_bytes, evidence } => {
-                write!(
-                    f,
-                    "HSACO {} at {} overflows: {count} entries of {entry_bytes} bytes",
-                    table.label(),
-                    evidence.location()
-                )
+                write!(f, "HSACO {} at {} overflows: {count} entries of {entry_bytes} bytes", table.label(), evidence.location())
             }
             Self::HeaderEntryTooSmall { table, entry_bytes, minimum, evidence } => {
-                write!(
-                    f,
-                    "HSACO {} entry size {entry_bytes} at {} is below the {minimum}-byte minimum",
-                    table.label(),
-                    evidence.location()
-                )
+                write!(f, "HSACO {} entry size {entry_bytes} at {} is below the {minimum}-byte minimum", table.label(), evidence.location())
             }
             Self::HeaderTableOutOfBounds { table, count, table_bytes, available_bytes, offset, evidence } => {
                 write!(
@@ -288,11 +274,7 @@ impl Display for HsacoLayoutError {
                 )
             }
             Self::SectionNameTableOutOfBounds { index, section_count, evidence } => {
-                write!(
-                    f,
-                    "HSACO section name table index {index} at {} addresses {section_count} sections",
-                    evidence.location()
-                )
+                write!(f, "HSACO section name table index {index} at {} addresses {section_count} sections", evidence.location())
             }
             Self::SectionOutOfBounds { section_index, offset, size, object_bytes, evidence } => {
                 write!(

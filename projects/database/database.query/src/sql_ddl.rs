@@ -853,18 +853,7 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(DdlColumn {
-            name,
-            sql_type,
-            not_null,
-            inline_primary_key,
-            inline_unique,
-            auto_increment,
-            default,
-            check,
-            reference,
-            generated,
-        })
+        Ok(DdlColumn { name, sql_type, not_null, inline_primary_key, inline_unique, auto_increment, default, check, reference, generated })
     }
 
     /// Captures one balanced parenthesised group as re-parseable SQL text.
@@ -907,10 +896,7 @@ impl Parser {
         let table = self.table_name()?;
         let column = if self.peek_punct('(') {
             let columns = self.column_list()?;
-            let column = columns
-                .into_iter()
-                .next()
-                .ok_or_else(|| SqlFrontendError::syntax("`REFERENCES` requires at least one column"))?;
+            let column = columns.into_iter().next().ok_or_else(|| SqlFrontendError::syntax("`REFERENCES` requires at least one column"))?;
             Some(column)
         }
         else {

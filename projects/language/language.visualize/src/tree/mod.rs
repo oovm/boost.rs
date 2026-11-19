@@ -332,7 +332,15 @@ impl TreeLayout {
         }
     }
 
-    fn position_layered_node(&self, node: &TreeNode, level: usize, _parent_x: f64, level_widths: &HashMap<usize, f64>, current_positions: &mut HashMap<usize, f64>, node_positions: &mut HashMap<String, (Point, Size, String, String)>) {
+    fn position_layered_node(
+        &self,
+        node: &TreeNode,
+        level: usize,
+        _parent_x: f64,
+        level_widths: &HashMap<usize, f64>,
+        current_positions: &mut HashMap<usize, f64>,
+        node_positions: &mut HashMap<String, (Point, Size, String, String)>,
+    ) {
         let node_size = self.get_node_size(node);
         let level_width = level_widths.get(&level).unwrap_or(&0.0);
         let default_x = -level_width / 2.0;
@@ -356,7 +364,16 @@ impl TreeLayout {
         }
     }
 
-    fn position_radial_children(&self, children: &[TreeNode], center: Point, radius: f64, start_angle: f64, angle_span: f64, level: usize, node_positions: &mut HashMap<String, (Point, Size, String, String)>) {
+    fn position_radial_children(
+        &self,
+        children: &[TreeNode],
+        center: Point,
+        radius: f64,
+        start_angle: f64,
+        angle_span: f64,
+        level: usize,
+        node_positions: &mut HashMap<String, (Point, Size, String, String)>,
+    ) {
         if children.is_empty() {
             return;
         }
@@ -374,7 +391,15 @@ impl TreeLayout {
             if !child.children.is_empty() {
                 let child_radius = radius + self.config.level_distance;
                 let child_angle_span = angle_step * 0.8; // Reduce angle span for children
-                self.position_radial_children(&child.children, child_pos, child_radius, angle - child_angle_span / 2.0, child_angle_span, level + 1, node_positions);
+                self.position_radial_children(
+                    &child.children,
+                    child_pos,
+                    child_radius,
+                    angle - child_angle_span / 2.0,
+                    child_angle_span,
+                    level + 1,
+                    node_positions,
+                );
             }
         }
     }
@@ -390,15 +415,35 @@ impl TreeLayout {
             positioned_children.push(positioned_child);
         }
 
-        let subtree_width = if positioned_children.is_empty() { size.width } else { positioned_children.iter().map(|c| c.subtree_width).sum::<f64>() + (positioned_children.len() - 1) as f64 * self.config.sibling_distance };
+        let subtree_width = if positioned_children.is_empty() {
+            size.width
+        }
+        else {
+            positioned_children.iter().map(|c| c.subtree_width).sum::<f64>()
+                + (positioned_children.len() - 1) as f64 * self.config.sibling_distance
+        };
 
         // Center the node over its children
         let node_x = if positioned_children.is_empty() { x } else { x + subtree_width / 2.0 - size.width / 2.0 };
 
-        PositionedTreeNode { id: node.id.clone(), label: node.label.clone(), node_type: node.node_type.clone(), position: Point::new(node_x, y), size, subtree_width, children: positioned_children }
+        PositionedTreeNode {
+            id: node.id.clone(),
+            label: node.label.clone(),
+            node_type: node.node_type.clone(),
+            position: Point::new(node_x, y),
+            size,
+            subtree_width,
+            children: positioned_children,
+        }
     }
 
-    fn position_balloon_children(&self, children: &[TreeNode], center: Point, radius: f64, node_positions: &mut HashMap<String, (Point, Size, String, String)>) {
+    fn position_balloon_children(
+        &self,
+        children: &[TreeNode],
+        center: Point,
+        radius: f64,
+        node_positions: &mut HashMap<String, (Point, Size, String, String)>,
+    ) {
         if children.is_empty() {
             return;
         }
@@ -422,7 +467,10 @@ impl TreeLayout {
     }
 
     fn extract_positions(&self, positioned_node: &PositionedTreeNode, positions: &mut HashMap<String, (Point, Size, String, String)>) {
-        positions.insert(positioned_node.id.clone(), (positioned_node.position, positioned_node.size, positioned_node.label.clone(), positioned_node.node_type.clone()));
+        positions.insert(
+            positioned_node.id.clone(),
+            (positioned_node.position, positioned_node.size, positioned_node.label.clone(), positioned_node.node_type.clone()),
+        );
 
         for child in &positioned_node.children {
             self.extract_positions(child, positions);

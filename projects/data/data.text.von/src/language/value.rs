@@ -213,8 +213,12 @@ pub fn from_ast(value: &crate::ast::VonValue) -> VonValue {
         crate::ast::VonValue::String(s) => VonValue::String(s.value.clone()),
         crate::ast::VonValue::Array(a) => VonValue::Array(VonArray { elements: a.elements.iter().map(from_ast).collect() }),
         crate::ast::VonValue::Tuple(t) => VonValue::Tuple(VonTuple { elements: t.elements.iter().map(from_ast).collect() }),
-        crate::ast::VonValue::Object(o) => VonValue::Object(VonObject { fields: o.fields.iter().map(|field| VonField { name: field.name.clone(), value: from_ast(&field.value) }).collect() }),
-        crate::ast::VonValue::Enum(e) => VonValue::Enum(VonEnum { variant: e.variant.clone(), payload: e.payload.as_ref().map(|p| Box::new(from_ast(p))) }),
+        crate::ast::VonValue::Object(o) => VonValue::Object(VonObject {
+            fields: o.fields.iter().map(|field| VonField { name: field.name.clone(), value: from_ast(&field.value) }).collect(),
+        }),
+        crate::ast::VonValue::Enum(e) => {
+            VonValue::Enum(VonEnum { variant: e.variant.clone(), payload: e.payload.as_ref().map(|p| Box::new(from_ast(p))) })
+        }
         crate::ast::VonValue::Undefined(_) => VonValue::Undefined,
         crate::ast::VonValue::Inf(_) => VonValue::Inf,
         crate::ast::VonValue::Nan(_) => VonValue::Nan,
@@ -223,16 +227,33 @@ pub fn from_ast(value: &crate::ast::VonValue) -> VonValue {
 
 /// Converts from pure VonValue to AST VonValue.
 pub fn to_ast(value: &VonValue) -> crate::ast::VonValue {
-    use crate::ast::{VonBoolean, VonEnum, VonInf, VonNan, VonNull, VonNumber, VonObject, VonString, VonTuple, VonUndefined, VonValue as AstVonValue};
+    use crate::ast::{
+        VonBoolean, VonEnum, VonInf, VonNan, VonNull, VonNumber, VonObject, VonString, VonTuple, VonUndefined, VonValue as AstVonValue,
+    };
     match value {
         VonValue::Null => AstVonValue::Null(VonNull { span: (0..0).into() }),
         VonValue::Boolean(b) => AstVonValue::Boolean(VonBoolean { span: (0..0).into(), value: *b }),
         VonValue::Number(n) => AstVonValue::Number(VonNumber { span: (0..0).into(), value: *n }),
         VonValue::String(s) => AstVonValue::String(VonString { span: (0..0).into(), value: s.clone() }),
-        VonValue::Array(a) => AstVonValue::Array(crate::ast::VonArray { elements: a.elements.iter().map(to_ast).collect(), span: (0..0).into() }),
-        VonValue::Tuple(t) => AstVonValue::Tuple(crate::ast::VonTuple { elements: t.elements.iter().map(to_ast).collect(), span: (0..0).into() }),
-        VonValue::Object(o) => AstVonValue::Object(crate::ast::VonObject { fields: o.fields.iter().map(|field| crate::ast::VonField { span: (0..0).into(), name: field.name.clone(), value: to_ast(&field.value) }).collect(), span: (0..0).into() }),
-        VonValue::Enum(e) => AstVonValue::Enum(crate::ast::VonEnum { span: (0..0).into(), variant: e.variant.clone(), payload: e.payload.as_ref().map(|p| Box::new(to_ast(p))) }),
+        VonValue::Array(a) => {
+            AstVonValue::Array(crate::ast::VonArray { elements: a.elements.iter().map(to_ast).collect(), span: (0..0).into() })
+        }
+        VonValue::Tuple(t) => {
+            AstVonValue::Tuple(crate::ast::VonTuple { elements: t.elements.iter().map(to_ast).collect(), span: (0..0).into() })
+        }
+        VonValue::Object(o) => AstVonValue::Object(crate::ast::VonObject {
+            fields: o
+                .fields
+                .iter()
+                .map(|field| crate::ast::VonField { span: (0..0).into(), name: field.name.clone(), value: to_ast(&field.value) })
+                .collect(),
+            span: (0..0).into(),
+        }),
+        VonValue::Enum(e) => AstVonValue::Enum(crate::ast::VonEnum {
+            span: (0..0).into(),
+            variant: e.variant.clone(),
+            payload: e.payload.as_ref().map(|p| Box::new(to_ast(p))),
+        }),
         VonValue::Undefined => AstVonValue::Undefined(VonUndefined { span: (0..0).into() }),
         VonValue::Inf => AstVonValue::Inf(VonInf { span: (0..0).into() }),
         VonValue::Nan => AstVonValue::Nan(VonNan { span: (0..0).into() }),

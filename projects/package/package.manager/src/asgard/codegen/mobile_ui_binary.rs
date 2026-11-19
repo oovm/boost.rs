@@ -212,9 +212,10 @@ impl WireIrDecoder {
                 }
                 else {
                     let widget = if node_kind == TemplateNodeKind::Intrinsic {
-                        Some(crate::asgard::awsl::render_ir::IntrinsicWidget::from_wire_tag(widget_tag).ok_or_else(|| {
-                            DecodeError::InvalidFormat(format!("unknown intrinsic widget identity {widget_tag}"))
-                        })?)
+                        Some(
+                            crate::asgard::awsl::render_ir::IntrinsicWidget::from_wire_tag(widget_tag)
+                                .ok_or_else(|| DecodeError::InvalidFormat(format!("unknown intrinsic widget identity {widget_tag}")))?,
+                        )
                     }
                     else {
                         if widget_tag != 0 {
@@ -224,7 +225,14 @@ impl WireIrDecoder {
                         }
                         None
                     };
-                    RenderNode::Element(crate::asgard::awsl::render_ir::RenderElement { tag, kind: node_kind, widget, attrs, children, span: 0..0 })
+                    RenderNode::Element(crate::asgard::awsl::render_ir::RenderElement {
+                        tag,
+                        kind: node_kind,
+                        widget,
+                        attrs,
+                        children,
+                        span: 0..0,
+                    })
                 };
                 self.module.nodes.push(node);
             }

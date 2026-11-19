@@ -335,7 +335,21 @@ impl GsglElementType {
 
     /// Checks if the kind is a data type.
     pub fn is_type(self) -> bool {
-        matches!(self, Self::Float | Self::Int | Self::Bool | Self::Vec2 | Self::Vec3 | Self::Vec4 | Self::Mat2 | Self::Mat3 | Self::Mat4 | Self::Sampler2D | Self::SamplerCube | Self::Void)
+        matches!(
+            self,
+            Self::Float
+                | Self::Int
+                | Self::Bool
+                | Self::Vec2
+                | Self::Vec3
+                | Self::Vec4
+                | Self::Mat2
+                | Self::Mat3
+                | Self::Mat4
+                | Self::Sampler2D
+                | Self::SamplerCube
+                | Self::Void
+        )
     }
 
     /// Checks if the kind is an operator.
@@ -514,7 +528,9 @@ impl ElementType for GsglElementType {
             Self::IfStatement => UniversalElementRole::Statement,
             Self::ForStatement | Self::WhileStatement => UniversalElementRole::Statement,
             Self::ReturnStatement => UniversalElementRole::Statement,
-            Self::Expression | Self::BinaryExpr | Self::UnaryExpr | Self::AssignmentExpr | Self::ConditionalExpr => UniversalElementRole::Expression,
+            Self::Expression | Self::BinaryExpr | Self::UnaryExpr | Self::AssignmentExpr | Self::ConditionalExpr => {
+                UniversalElementRole::Expression
+            }
             Self::Statement => UniversalElementRole::Statement,
             _ => UniversalElementRole::None,
         }

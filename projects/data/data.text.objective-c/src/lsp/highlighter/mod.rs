@@ -123,7 +123,9 @@ impl ObjectiveCHighlighter {
                 let absolute_pos = start + pos;
                 let end_pos = absolute_pos + keyword.len();
 
-                let is_word_boundary_before = absolute_pos == 0 || !text.chars().nth(absolute_pos - 1).unwrap_or(' ').is_alphanumeric() && text.chars().nth(absolute_pos - 1).unwrap_or(' ') != '@';
+                let is_word_boundary_before = absolute_pos == 0
+                    || !text.chars().nth(absolute_pos - 1).unwrap_or(' ').is_alphanumeric()
+                        && text.chars().nth(absolute_pos - 1).unwrap_or(' ') != '@';
                 let is_word_boundary_after = end_pos >= text.len() || !text.chars().nth(end_pos).unwrap_or(' ').is_alphanumeric();
 
                 if is_word_boundary_before && is_word_boundary_after {

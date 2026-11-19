@@ -13,7 +13,12 @@ pub use token_type::TokenType;
 pub struct Lexer;
 
 impl CoreLexer<RacketLanguage> for Lexer {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl LexerCache<RacketLanguage>) -> LexOutput<RacketLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<RacketLanguage>,
+    ) -> LexOutput<RacketLanguage> {
         let mut state = LexerState::new_with_cache(text, edits.last().map(|edit| edit.span.start).unwrap_or(0), cache);
 
         while state.not_at_end() {

@@ -7,8 +7,6 @@ fn test_ini_lexer() -> Result<(), data_text_core::TextError> {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
     let language = IniLanguage::default();
     let lexer = IniLexer::new(&language);
-    let test_runner = LexerTester::new(here.join("tests/lexer"))
-        .with_extension("ini")
-        .with_timeout(Duration::from_secs(5));
+    let test_runner = LexerTester::new(here.join("tests/lexer")).with_extension("ini").with_timeout(Duration::from_secs(5));
     test_runner.run_tests(&lexer)
 }

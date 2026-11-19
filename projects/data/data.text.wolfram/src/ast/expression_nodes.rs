@@ -122,7 +122,14 @@ impl Expression {
     pub fn span(&self) -> Span {
         match self {
             Self::Symbol(id) => id.span.clone(),
-            Self::Literal { span, .. } | Self::List { span, .. } | Self::Call { span, .. } | Self::Part { span, .. } | Self::Blank { span, .. } | Self::Pattern { span, .. } | Self::Grouped { span, .. } | Self::Error { span } => span.clone(),
+            Self::Literal { span, .. }
+            | Self::List { span, .. }
+            | Self::Call { span, .. }
+            | Self::Part { span, .. }
+            | Self::Blank { span, .. }
+            | Self::Pattern { span, .. }
+            | Self::Grouped { span, .. }
+            | Self::Error { span } => span.clone(),
             Self::Binary(b) => b.span.clone(),
             Self::Prefix(u) | Self::Postfix(u) => u.span.clone(),
         }

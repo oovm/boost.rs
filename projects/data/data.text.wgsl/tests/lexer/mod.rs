@@ -1,5 +1,5 @@
-use language_testing::lexing::LexerTester;
 use data_text_wgsl::{WgslLanguage, WgslLexer};
+use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]

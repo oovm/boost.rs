@@ -26,7 +26,12 @@ impl<'config> VomlBuilder<'config> {
 }
 
 impl<'config> Builder<VomlLanguage> for VomlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl ParseCache<VomlLanguage>) -> BuildOutput<VomlLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl ParseCache<VomlLanguage>,
+    ) -> BuildOutput<VomlLanguage> {
         let parser = VomlParser::new(self.config);
         let parse_output = parser.parse(source, edits, cache);
 

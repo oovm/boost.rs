@@ -5,9 +5,13 @@
 //! stdin-source claim), and the factory seam through which hosts wire a real
 //! engine into `run`. No prompt state machine lives here.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use commander_types::{ActionRequiredDescriptor, CommanderError, NextAction, SecretString, error_id};
 
@@ -183,11 +187,7 @@ pub struct AwaitActionRequest {
 impl AwaitActionRequest {
     /// Builds an await request from the action id and instruction key.
     pub fn new(action_id: impl Into<String>, instructions_key: impl Into<String>) -> Self {
-        Self {
-            action_id: action_id.into(),
-            instructions_key: instructions_key.into(),
-            ..Self::default()
-        }
+        Self { action_id: action_id.into(), instructions_key: instructions_key.into(), ..Self::default() }
     }
 
     /// Sets the persisted-state reference.

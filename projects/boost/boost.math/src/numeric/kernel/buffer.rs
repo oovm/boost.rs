@@ -2,7 +2,10 @@
 
 use alloc::{vec, vec::Vec};
 
-use crate::numeric::{budget::ExecutionBudget, kernel::error::{KernelError, Result}};
+use crate::numeric::{
+    budget::ExecutionBudget,
+    kernel::error::{KernelError, Result},
+};
 
 use crate::numeric::kernel::portable::effective_len;
 

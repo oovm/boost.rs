@@ -1,5 +1,5 @@
 use crate::{SqlElementType, SqlLanguage, ast::*, builder::SqlBuilder, lexer::token_type::SqlTokenType};
-use data_text_core::{TextError, Range, RedNode, RedTree, SourceText, TokenType};
+use data_text_core::{Range, RedNode, RedTree, SourceText, TextError, TokenType};
 use std::sync::Arc;
 
 impl<'config> SqlBuilder<'config> {
@@ -12,7 +12,12 @@ impl<'config> SqlBuilder<'config> {
     ///
     /// It uses a "precedence climbing" algorithm to correctly structure binary operations
     /// when the input CST is flat or partially structured.
-    fn build_expression_with_precedence<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText, min_precedence: u8) -> Result<Expression, TextError> {
+    fn build_expression_with_precedence<'a>(
+        &self,
+        node: RedNode<'a, SqlLanguage>,
+        source: &SourceText,
+        min_precedence: u8,
+    ) -> Result<Expression, TextError> {
         let children = node.children().collect::<Vec<_>>();
 
         // Handle parentheses — only unwrap when there is a single inner expression.
@@ -22,7 +27,10 @@ impl<'config> SqlBuilder<'config> {
         if children.len() >= 3 {
             if let (RedTree::Leaf(l), RedTree::Leaf(r)) = (&children[0], &children[children.len() - 1]) {
                 if l.kind == SqlTokenType::LeftParen && r.kind == SqlTokenType::RightParen {
-                    let expr_count = children[1..children.len() - 1].iter().filter(|c| matches!(c, RedTree::Node(n) if n.green.kind == SqlElementType::Expression)).count();
+                    let expr_count = children[1..children.len() - 1]
+                        .iter()
+                        .filter(|c| matches!(c, RedTree::Node(n) if n.green.kind == SqlElementType::Expression))
+                        .count();
                     if expr_count == 1 {
                         for child in &children[1..children.len() - 1] {
                             if let RedTree::Node(n) = child {
@@ -138,7 +146,13 @@ impl<'config> SqlBuilder<'config> {
                                     if let Some(RedTree::Node(high_node)) = children.get(i) {
                                         let high = Box::new(self.build_expression_with_precedence(high_node.clone(), source, 6)?);
                                         let span = Range { start: left.span().start, end: high.span().end };
-                                        left = Expression::Between { expr: Box::new(left), low: Box::new(low), high, negated: negated_operator, span };
+                                        left = Expression::Between {
+                                            expr: Box::new(left),
+                                            low: Box::new(low),
+                                            high,
+                                            negated: negated_operator,
+                                            span,
+                                        };
                                         negated_operator = false;
                                         continue;
                                     }
@@ -177,7 +191,9 @@ impl<'config> SqlBuilder<'config> {
                                 Expression::Literal(Literal::Boolean(value, _)) => Expression::IsTruth { expr, value: *value, negated, span },
                                 // `IS UNKNOWN` is not lowered yet, and folding it into a
                                 // comparison would silently change three-valued logic.
-                                Expression::Identifier(identifier) if identifier.name.eq_ignore_ascii_case("UNKNOWN") => return Err(TextError::custom_error("`IS UNKNOWN` is not supported")),
+                                Expression::Identifier(identifier) if identifier.name.eq_ignore_ascii_case("UNKNOWN") => {
+                                    return Err(TextError::custom_error("`IS UNKNOWN` is not supported"));
+                                }
                                 _ => return Err(TextError::custom_error("`IS` requires `NULL`, `TRUE`, or `FALSE`")),
                             };
                             continue;
@@ -221,12 +237,20 @@ impl<'config> SqlBuilder<'config> {
                                     match &children[i] {
                                         RedTree::Node(n) => {
                                             if n.green.kind == SqlElementType::Expression || n.green.kind == SqlElementType::Identifier {
-                                                next_operand = Some(self.build_expression_with_precedence(n.clone(), source, precedence + 1)?);
+                                                next_operand =
+                                                    Some(self.build_expression_with_precedence(n.clone(), source, precedence + 1)?);
                                                 break;
                                             }
                                         }
                                         RedTree::Leaf(t) => {
-                                            if matches!(t.kind, SqlTokenType::NumberLiteral | SqlTokenType::StringLiteral | SqlTokenType::True | SqlTokenType::False | SqlTokenType::Null) {
+                                            if matches!(
+                                                t.kind,
+                                                SqlTokenType::NumberLiteral
+                                                    | SqlTokenType::StringLiteral
+                                                    | SqlTokenType::True
+                                                    | SqlTokenType::False
+                                                    | SqlTokenType::Null
+                                            ) {
                                                 next_operand = Some(self.build_primary_expression_from_leaf(t, source)?);
                                                 break;
                                             }
@@ -306,7 +330,11 @@ impl<'config> SqlBuilder<'config> {
         Err(TextError::custom_error("Failed to build primary expression"))
     }
 
-    fn build_primary_expression_from_leaf(&self, t: &data_text_core::RedLeaf<SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
+    fn build_primary_expression_from_leaf(
+        &self,
+        t: &data_text_core::RedLeaf<SqlLanguage>,
+        source: &SourceText,
+    ) -> Result<Expression, TextError> {
         match t.kind {
             SqlTokenType::NumberLiteral | SqlTokenType::FloatLiteral => {
                 let text = self.get_text(t.span.clone(), source);
@@ -317,12 +345,20 @@ impl<'config> SqlBuilder<'config> {
             SqlTokenType::StringLiteral => {
                 let text = self.get_text(t.span.clone(), source);
                 let trimmed = text.trim();
-                let content = if (trimmed.starts_with('\'') && trimmed.ends_with('\'')) || (trimmed.starts_with('"') && trimmed.ends_with('"')) { if trimmed.len() >= 2 { &trimmed[1..trimmed.len() - 1] } else { "" } } else { trimmed };
+                let content = if (trimmed.starts_with('\'') && trimmed.ends_with('\'')) || (trimmed.starts_with('"') && trimmed.ends_with('"'))
+                {
+                    if trimmed.len() >= 2 { &trimmed[1..trimmed.len() - 1] } else { "" }
+                }
+                else {
+                    trimmed
+                };
                 Ok(Expression::Literal(Literal::String(Arc::from(content), t.span.clone())))
             }
             SqlTokenType::True | SqlTokenType::False => Ok(Expression::Literal(Literal::Boolean(t.kind == SqlTokenType::True, t.span.clone()))),
             SqlTokenType::Null => Ok(Expression::Literal(Literal::Null(t.span.clone()))),
-            SqlTokenType::Identifier_ => Ok(Expression::Identifier(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() })),
+            SqlTokenType::Identifier_ => {
+                Ok(Expression::Identifier(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() }))
+            }
             _ => Err(TextError::custom_error("Not a primary expression leaf")),
         }
     }
@@ -476,7 +512,9 @@ impl<'config> SqlBuilder<'config> {
             RedTree::Leaf(l) => {
                 // Bare literal / identifier leaf — wrap it directly.
                 match l.kind {
-                    SqlTokenType::NumberLiteral => Ok(Expression::Literal(Literal::Number(self.get_text(l.span.clone(), source), l.span.clone()))),
+                    SqlTokenType::NumberLiteral => {
+                        Ok(Expression::Literal(Literal::Number(self.get_text(l.span.clone(), source), l.span.clone())))
+                    }
                     SqlTokenType::StringLiteral => {
                         let text = self.get_text(l.span.clone(), source);
                         let content = text.trim_matches('\'');
@@ -485,7 +523,9 @@ impl<'config> SqlBuilder<'config> {
                     SqlTokenType::True => Ok(Expression::Literal(Literal::Boolean(true, l.span.clone()))),
                     SqlTokenType::False => Ok(Expression::Literal(Literal::Boolean(false, l.span.clone()))),
                     SqlTokenType::Null => Ok(Expression::Literal(Literal::Null(l.span.clone()))),
-                    SqlTokenType::Identifier_ => Ok(Expression::Identifier(Identifier { name: self.get_text(l.span.clone(), source), span: l.span.clone() })),
+                    SqlTokenType::Identifier_ => {
+                        Ok(Expression::Identifier(Identifier { name: self.get_text(l.span.clone(), source), span: l.span.clone() }))
+                    }
                     _ => Err(TextError::custom_error(format!("Expected expression in CASE/CAST, got {:?}", l.kind))),
                 }
             }
@@ -518,7 +558,13 @@ impl<'config> SqlBuilder<'config> {
         match kind {
             SqlTokenType::Or => 1,
             SqlTokenType::And => 2,
-            SqlTokenType::Equal | SqlTokenType::NotEqual | SqlTokenType::Less | SqlTokenType::Greater | SqlTokenType::LessEqual | SqlTokenType::GreaterEqual | SqlTokenType::Like => 4,
+            SqlTokenType::Equal
+            | SqlTokenType::NotEqual
+            | SqlTokenType::Less
+            | SqlTokenType::Greater
+            | SqlTokenType::LessEqual
+            | SqlTokenType::GreaterEqual
+            | SqlTokenType::Like => 4,
             SqlTokenType::Between | SqlTokenType::In | SqlTokenType::Is => 5,
             SqlTokenType::Concat => 12,
             SqlTokenType::Plus | SqlTokenType::Minus => 10,
@@ -575,7 +621,13 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        Ok(Expression::FunctionCall { name: name.ok_or_else(|| TextError::custom_error("Missing function name"))?, args, distinct, window, span: node.span() })
+        Ok(Expression::FunctionCall {
+            name: name.ok_or_else(|| TextError::custom_error("Missing function name"))?,
+            args,
+            distinct,
+            window,
+            span: node.span(),
+        })
     }
 
     /// Lowers an `OVER (...)` node into a [`WindowSpec`].

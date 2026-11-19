@@ -3,11 +3,7 @@
 //! 状态只保存「每张表走到哪里」，不保存数据本身。写入是「临时文件 + 替换」，
 //! 且所有写入都可重放（upsert），因此进程在任意批次之间被杀掉都不会损坏数据。
 
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::Path,
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -60,14 +56,9 @@ impl MigrationState {
             return Ok(Self::default());
         }
         let text = fs::read_to_string(path).map_err(|error| Error::State(format!("read {}: {error}", path.display())))?;
-        let state: Self = serde_json::from_str(&text)
-            .map_err(|error| Error::State(format!("parse {}: {error}", path.display())))?;
+        let state: Self = serde_json::from_str(&text).map_err(|error| Error::State(format!("parse {}: {error}", path.display())))?;
         if state.format != FORMAT {
-            return Err(Error::State(format!(
-                "{} uses state format {} but this build reads {FORMAT}",
-                path.display(),
-                state.format
-            )));
+            return Err(Error::State(format!("{} uses state format {} but this build reads {FORMAT}", path.display(), state.format)));
         }
         Ok(state)
     }

@@ -1,5 +1,7 @@
 use crate::{IniParser, ast::*, language::IniLanguage, lexer::token_type::IniTokenType, parser::element_type::IniElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 
 /// INI AST builder implementation.
 pub struct IniBuilder<'config> {
@@ -15,7 +17,12 @@ impl<'config> IniBuilder<'config> {
 }
 
 impl<'config> Builder<IniLanguage> for IniBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<IniLanguage>) -> TextDiagnostics<IniRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<IniLanguage>,
+    ) -> TextDiagnostics<IniRoot> {
         let parser = IniParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<IniLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -68,7 +75,10 @@ impl<'config> IniBuilder<'config> {
                 RedTree::Node(n) if n.green.kind == IniElementType::Key && name.is_empty() => {
                     name = source.get_text_in(n.span().into()).trim().to_string();
                 }
-                RedTree::Leaf(t) if name.is_empty() && matches!(t.kind, IniTokenType::Identifier | IniTokenType::String | IniTokenType::Integer | IniTokenType::Float) => {
+                RedTree::Leaf(t)
+                    if name.is_empty()
+                        && matches!(t.kind, IniTokenType::Identifier | IniTokenType::String | IniTokenType::Integer | IniTokenType::Float) =>
+                {
                     name = source.get_text_in(t.span.clone().into()).trim().to_string();
                 }
                 RedTree::Node(n) if n.green.kind == IniElementType::KeyValue => properties.push(self.build_property(n, source)?),

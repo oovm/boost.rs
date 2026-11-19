@@ -14,7 +14,12 @@ impl<'config> ObjectiveCBuilder<'config> {
 }
 
 impl<'config> Builder<ObjectiveCLanguage> for ObjectiveCBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ObjectiveCLanguage>) -> data_text_core::builder::BuildOutput<ObjectiveCLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ObjectiveCLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ObjectiveCLanguage> {
         // Simple implementation for now
         let mut session = data_text_core::parser::session::ParseSession::<ObjectiveCLanguage>::default();
         let lexer = crate::lexer::ObjectiveCLexer::new(&self.config);

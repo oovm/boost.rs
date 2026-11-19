@@ -86,8 +86,7 @@ impl MirLowerer {
         let permits_declaration = |function: &crate::compiler::types::hir::HirFunction| {
             !function.is_abstract
                 && gate.is_none_or(|gate| {
-                    gate.permits_declaration(function.declaration)
-                        && crate::compiler::hir::lowering::declaration_body_is_closed(function)
+                    gate.permits_declaration(function.declaration) && crate::compiler::hir::lowering::declaration_body_is_closed(function)
                 })
         };
         for function in module.functions.iter().filter(|function| permits_declaration(function)) {

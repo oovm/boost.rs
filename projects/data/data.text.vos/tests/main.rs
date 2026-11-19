@@ -1,13 +1,23 @@
-use data_text_vos::{VosBinaryOp, VosDeclarationKind, VosExpr, VosLiteral, VosPathSep, VosProjItem, VosStmt, VosSyntaxElement, VosTokenType, VosTypeArgument, VosTypeSyntax, parse, parse_program};
+use data_text_vos::{
+    VosBinaryOp, VosDeclarationKind, VosExpr, VosLiteral, VosPathSep, VosProjItem, VosStmt, VosSyntaxElement, VosTokenType, VosTypeArgument,
+    VosTypeSyntax, parse, parse_program,
+};
 
 #[test]
 fn parses_vos_schema_through_oak() {
-    let root = parse("namespace demo::identity\n table User { @@id: uuid, embedding: vec<3>, asset: file, }").expect("Oak parses the VOS surface");
+    let root =
+        parse("namespace demo::identity\n table User { @@id: uuid, embedding: vec<3>, asset: file, }").expect("Oak parses the VOS surface");
 
     assert!(root.source.contains("table User"));
     assert_eq!(root.declarations.iter().filter(|item| item.kind == VosDeclarationKind::Table).count(), 1);
-    assert_eq!(root.declarations.iter().find(|item| item.kind == VosDeclarationKind::Table).and_then(|item| item.name.as_deref()), Some("User"));
-    assert_eq!(root.declarations.iter().find(|item| item.kind == VosDeclarationKind::Namespace).and_then(|item| item.path.as_deref()), Some(["demo".to_owned(), "identity".to_owned()].as_slice()));
+    assert_eq!(
+        root.declarations.iter().find(|item| item.kind == VosDeclarationKind::Table).and_then(|item| item.name.as_deref()),
+        Some("User")
+    );
+    assert_eq!(
+        root.declarations.iter().find(|item| item.kind == VosDeclarationKind::Namespace).and_then(|item| item.path.as_deref()),
+        Some(["demo".to_owned(), "identity".to_owned()].as_slice())
+    );
 }
 
 #[test]
@@ -29,7 +39,8 @@ fn preserves_vos_macro_authoring_surface() {
 
 #[test]
 fn classifies_query_and_udf_declarations() {
-    let root = parse("query active_users() { table User } udf normalize(value: utf8) -> utf8 { value }").expect("Oak recognizes VOS query and udf declarations");
+    let root = parse("query active_users() { table User } udf normalize(value: utf8) -> utf8 { value }")
+        .expect("Oak recognizes VOS query and udf declarations");
 
     assert_eq!(root.declarations[0].kind, VosDeclarationKind::Query);
     assert_eq!(root.declarations[0].name.as_deref(), Some("active_users"));
@@ -90,7 +101,11 @@ fn rejects_unterminated_string() {
 
 #[test]
 fn rejects_malformed_operation_parameters() {
-    for source in ["query missing_colon(value utf8) { value }", "query missing_type(value:) { value }", "query missing_comma(first: utf8 second: utf8) { first }"] {
+    for source in [
+        "query missing_colon(value utf8) { value }",
+        "query missing_type(value:) { value }",
+        "query missing_comma(first: utf8 second: utf8) { first }",
+    ] {
         assert!(parse(source).is_err(), "accepted malformed operation: {source}");
     }
 }
@@ -218,7 +233,16 @@ fn class_fields_support_newlines_comments_and_nested_types() {
 
 #[test]
 fn rejects_incomplete_field_syntax() {
-    for source in ["table T { id uuid }", "table T { id: }", "class T { [primary] : uuid }", "class T { id: utf8 = }", "table T { id: vec<> }", "table T { id: list<utf8 }", "table T { id: & }", "table T { id: uuid = -true }"] {
+    for source in [
+        "table T { id uuid }",
+        "table T { id: }",
+        "class T { [primary] : uuid }",
+        "class T { id: utf8 = }",
+        "table T { id: vec<> }",
+        "table T { id: list<utf8 }",
+        "table T { id: & }",
+        "table T { id: uuid = -true }",
+    ] {
         assert!(parse(source).is_err(), "accepted incomplete field: {source}");
     }
 }
@@ -243,18 +267,33 @@ fn typed_fields_do_not_change_lossless_cst() {
 
 #[test]
 fn builder_projects_structured_type_syntax_without_resolving_names() {
-    let source = "table User { id: uuid, manager: &shared::User?, tags: [utf8]?, embedding: vector<3>, rows: list<&User>, instant: DateTime<UTC>, }";
+    let source =
+        "table User { id: uuid, manager: &shared::User?, tags: [utf8]?, embedding: vector<3>, rows: list<&User>, instant: DateTime<UTC>, }";
     let root = parse(source).unwrap();
     let fields = &root.declarations[0].fields;
     assert!(matches!(&fields[0].type_expr, VosTypeSyntax::Named { path, .. } if path == &["uuid"]));
-    assert!(matches!(&fields[1].type_expr, VosTypeSyntax::Optional { inner, .. } if matches!(inner.as_ref(), VosTypeSyntax::Reference { target, .. } if matches!(target.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["shared", "User"]))));
-    assert!(matches!(&fields[2].type_expr, VosTypeSyntax::Optional { inner, .. } if matches!(inner.as_ref(), VosTypeSyntax::List { element, .. } if matches!(element.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["utf8"]))));
-    assert!(matches!(&fields[3].type_expr, VosTypeSyntax::Generic { path, arguments, .. } if path == &["vector"] && matches!(&arguments[0], VosTypeArgument::Literal(value) if value.text == "3")));
-    assert!(matches!(&fields[4].type_expr, VosTypeSyntax::Generic { path, arguments, .. } if path == &["list"] && matches!(&arguments[0], VosTypeArgument::Type(VosTypeSyntax::Reference { .. }))));
-    assert!(matches!(&fields[5].type_expr, VosTypeSyntax::Generic { path, arguments, .. } if path == &["DateTime"] && matches!(&arguments[0], VosTypeArgument::Type(VosTypeSyntax::Named { path, .. }) if path == &["UTC"])));
+    assert!(
+        matches!(&fields[1].type_expr, VosTypeSyntax::Optional { inner, .. } if matches!(inner.as_ref(), VosTypeSyntax::Reference { target, .. } if matches!(target.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["shared", "User"])))
+    );
+    assert!(
+        matches!(&fields[2].type_expr, VosTypeSyntax::Optional { inner, .. } if matches!(inner.as_ref(), VosTypeSyntax::List { element, .. } if matches!(element.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["utf8"])))
+    );
+    assert!(
+        matches!(&fields[3].type_expr, VosTypeSyntax::Generic { path, arguments, .. } if path == &["vector"] && matches!(&arguments[0], VosTypeArgument::Literal(value) if value.text == "3"))
+    );
+    assert!(
+        matches!(&fields[4].type_expr, VosTypeSyntax::Generic { path, arguments, .. } if path == &["list"] && matches!(&arguments[0], VosTypeArgument::Type(VosTypeSyntax::Reference { .. })))
+    );
+    assert!(
+        matches!(&fields[5].type_expr, VosTypeSyntax::Generic { path, arguments, .. } if path == &["DateTime"] && matches!(&arguments[0], VosTypeArgument::Type(VosTypeSyntax::Named { path, .. }) if path == &["UTC"]))
+    );
     for field in fields {
         let span = match &field.type_expr {
-            VosTypeSyntax::Named { span, .. } | VosTypeSyntax::Reference { span, .. } | VosTypeSyntax::Optional { span, .. } | VosTypeSyntax::List { span, .. } | VosTypeSyntax::Generic { span, .. } => span,
+            VosTypeSyntax::Named { span, .. }
+            | VosTypeSyntax::Reference { span, .. }
+            | VosTypeSyntax::Optional { span, .. }
+            | VosTypeSyntax::List { span, .. }
+            | VosTypeSyntax::Generic { span, .. } => span,
         };
         assert_eq!(&source[span.clone()], field.type_syntax.text);
     }
@@ -262,7 +301,9 @@ fn builder_projects_structured_type_syntax_without_resolving_names() {
 
 #[test]
 fn structured_type_syntax_rejects_empty_or_malformed_generic_arguments() {
-    for source in ["table T { id: vector<> }", "table T { id: list<utf8 }", "table T { id: [utf8 }", "table T { id: & }", "table T { id: shared:: }"] {
+    for source in
+        ["table T { id: vector<> }", "table T { id: list<utf8 }", "table T { id: [utf8 }", "table T { id: & }", "table T { id: shared:: }"]
+    {
         assert!(parse(source).is_err(), "accepted malformed type: {source}");
     }
 }
@@ -408,7 +449,8 @@ fn projects_typed_object_construction_and_write_boundary() {
 
 #[test]
 fn projects_lists_static_paths_try_and_star_projection() {
-    let program = parse_program("let rows = [User { id: 1 }, User { id: 2 }]\nUser::find(rows?).*").expect("Oak projects static paths and projections");
+    let program =
+        parse_program("let rows = [User { id: 1 }, User { id: 2 }]\nUser::find(rows?).*").expect("Oak projects static paths and projections");
     assert_eq!(program.statements.len(), 1);
     let Some(VosExpr::StarProj { receiver, .. }) = program.result
     else {
@@ -525,7 +567,9 @@ fn service_projects_multiple_methods_and_server_streams() {
 
     let list = methods[0].return_type.as_ref().unwrap();
     assert!(!list.stream);
-    assert!(matches!(&list.type_expr, VosTypeSyntax::List { element, .. } if matches!(element.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["Feed".to_owned()])));
+    assert!(
+        matches!(&list.type_expr, VosTypeSyntax::List { element, .. } if matches!(element.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["Feed".to_owned()]))
+    );
 
     let subscribe = methods[1].return_type.as_ref().unwrap();
     assert!(subscribe.stream);
@@ -591,12 +635,16 @@ fn service_methods_project_nested_generic_parameter_types() {
     };
     assert_eq!(path, &["map".to_owned()]);
     assert_eq!(inner.len(), 2);
-    assert!(matches!(&inner[1], VosTypeArgument::Type(VosTypeSyntax::Generic { path, arguments, .. }) if path == &["vector".to_owned()] && matches!(&arguments[0], VosTypeArgument::Literal(value) if value.text == "3")));
+    assert!(
+        matches!(&inner[1], VosTypeArgument::Type(VosTypeSyntax::Generic { path, arguments, .. }) if path == &["vector".to_owned()] && matches!(&arguments[0], VosTypeArgument::Literal(value) if value.text == "3"))
+    );
 
     let return_type = method.return_type.as_ref().unwrap();
     assert!(return_type.stream);
     assert_eq!(return_type.type_syntax.text, "-> stream<[User?]>");
-    assert!(matches!(&return_type.type_expr, VosTypeSyntax::List { element, .. } if matches!(element.as_ref(), VosTypeSyntax::Optional { inner, .. } if matches!(inner.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["User".to_owned()]))));
+    assert!(
+        matches!(&return_type.type_expr, VosTypeSyntax::List { element, .. } if matches!(element.as_ref(), VosTypeSyntax::Optional { inner, .. } if matches!(inner.as_ref(), VosTypeSyntax::Named { path, .. } if path == &["User".to_owned()])))
+    );
 }
 
 #[test]
@@ -625,8 +673,7 @@ fn append_text(node: &data_text_vos::VosSyntaxNode, text: &mut String) {
 
 #[test]
 fn service_surface_round_trips_through_lossless_cst() {
-    let source =
-        "# service surface\n@route(\"/identity\")\nservice IdentityService {\n  # method\n  @authorize(\"admin\")\n  create(request: CreateRequest) -> Identity\n\n  subscribe(topic: utf8) -> stream<Feed>; # trailing\n}\n\ntable User { id: uuid, }\n";
+    let source = "# service surface\n@route(\"/identity\")\nservice IdentityService {\n  # method\n  @authorize(\"admin\")\n  create(request: CreateRequest) -> Identity\n\n  subscribe(topic: utf8) -> stream<Feed>; # trailing\n}\n\ntable User { id: uuid, }\n";
     let root = parse(source).expect("Oak preserves the service surface");
     assert_eq!(root.declarations.len(), 2);
     assert_eq!(root.declarations[0].methods.len(), 2);
@@ -669,7 +716,11 @@ fn type_depth_has_process_bound() {
         }
         return;
     }
-    let mut child = Command::new(std::env::current_exe().unwrap()).args(["--exact", "type_depth_has_process_bound", "--nocapture"]).env(CHILD_ENV, "1").spawn().expect("spawn bounded parser test");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "type_depth_has_process_bound", "--nocapture"])
+        .env(CHILD_ENV, "1")
+        .spawn()
+        .expect("spawn bounded parser test");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         match child.try_wait() {

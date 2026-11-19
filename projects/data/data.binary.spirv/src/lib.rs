@@ -25,8 +25,7 @@ pub use bytes::{SpirvByteError, validate_spirv_bytes};
 pub use error::{SpirvEvidence, SpirvLayoutError};
 /// Header constants and the recorded id bound.
 pub use header::{
-    SPIRV_HEADER_BYTES, SPIRV_HEADER_WORDS, SPIRV_ID_BOUND_CEILING, SPIRV_MAGIC, SPIRV_WORD_BYTES, SpirvBoundSuspicion,
-    SpirvHeader,
+    SPIRV_HEADER_BYTES, SPIRV_HEADER_WORDS, SPIRV_ID_BOUND_CEILING, SPIRV_MAGIC, SPIRV_WORD_BYTES, SpirvBoundSuspicion, SpirvHeader,
 };
 /// Instruction layout and the lazy instruction walk.
 pub use instruction::{SpirvInstruction, SpirvInstructions};

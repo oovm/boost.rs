@@ -23,7 +23,12 @@ impl GsglParser {
 }
 
 impl Parser<GsglLanguage> for GsglParser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<GsglLanguage>) -> ParseOutput<'a, GsglLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<GsglLanguage>,
+    ) -> ParseOutput<'a, GsglLanguage> {
         let lexer = crate::lexer::GsglLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -49,7 +54,10 @@ impl Parser<GsglLanguage> for GsglParser {
 
 impl GsglParser {
     fn skip_trivia<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
-        while state.at(crate::lexer::token_type::GsglTokenType::Whitespace) || state.at(crate::lexer::token_type::GsglTokenType::Newline) || state.at(crate::lexer::token_type::GsglTokenType::Comment) {
+        while state.at(crate::lexer::token_type::GsglTokenType::Whitespace)
+            || state.at(crate::lexer::token_type::GsglTokenType::Newline)
+            || state.at(crate::lexer::token_type::GsglTokenType::Comment)
+        {
             state.bump();
         }
     }
@@ -202,7 +210,10 @@ impl GsglParser {
             self.parse_block(state);
         }
         else {
-            while state.not_at_end() && !state.at(crate::lexer::token_type::GsglTokenType::Semicolon) && !state.at(crate::lexer::token_type::GsglTokenType::RightBrace) {
+            while state.not_at_end()
+                && !state.at(crate::lexer::token_type::GsglTokenType::Semicolon)
+                && !state.at(crate::lexer::token_type::GsglTokenType::RightBrace)
+            {
                 state.bump();
             }
             if state.at(crate::lexer::token_type::GsglTokenType::Semicolon) {

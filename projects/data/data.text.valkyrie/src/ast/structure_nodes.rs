@@ -4,7 +4,10 @@
 //! Anonymous `structure { ... }` literals use [`AnonymousStructure`].
 //! Anonymous `class { ... }` literals use [`AnonymousClass`](crate::ast::class_nodes::AnonymousClass).
 
-use crate::ast::{Attribute, Block, GenericParam, Identifier, Param, Parent, Span, TermExpression, TypeExpression, template_nodes::TemplateNode, trait_nodes::AssociatedType};
+use crate::ast::{
+    Attribute, Block, GenericParam, Identifier, Param, Parent, Span, TermExpression, TypeExpression, template_nodes::TemplateNode,
+    trait_nodes::AssociatedType,
+};
 
 /// Named value-type declaration keyword (`struct` / `structure`).
 ///

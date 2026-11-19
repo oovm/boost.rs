@@ -24,7 +24,12 @@ impl HandlebarsLanguage {
 
 impl Default for HandlebarsLanguage {
     fn default() -> Self {
-        Self { variable_start: "{{".to_string(), variable_end: "}}".to_string(), unescaped_start: "{{{".to_string(), unescaped_end: "}}}".to_string() }
+        Self {
+            variable_start: "{{".to_string(),
+            variable_end: "}}".to_string(),
+            unescaped_start: "{{{".to_string(),
+            unescaped_end: "}}}".to_string(),
+        }
     }
 }
 

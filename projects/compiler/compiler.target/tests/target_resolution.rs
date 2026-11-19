@@ -116,14 +116,8 @@ fn python_host_probe_requires_host_supplied_config() {
     assert_eq!(windows.platform.specification, CanonicalSpecification::Windows);
     assert_eq!(windows.config.import_library.as_deref(), Some("python312.dll"));
 
-    assert!(
-        PythonHostProbe::from_tokens("win32", "AMD64", ".cp312-win_amd64.pyd", None).is_err(),
-        "Windows 导入库名不能由编译器猜"
-    );
-    assert!(
-        PythonHostProbe::from_tokens("linux", "x86_64", "", None).is_err(),
-        "扩展后缀不能只凭 OS 推导"
-    );
+    assert!(PythonHostProbe::from_tokens("win32", "AMD64", ".cp312-win_amd64.pyd", None).is_err(), "Windows 导入库名不能由编译器猜");
+    assert!(PythonHostProbe::from_tokens("linux", "x86_64", "", None).is_err(), "扩展后缀不能只凭 OS 推导");
 }
 
 #[test]

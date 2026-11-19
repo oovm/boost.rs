@@ -99,17 +99,7 @@ fn write_entry(output: &mut Vec<u8>, entry: &TarEntryDraft) -> Result<(), TarWri
         entry.link_name.clone()
     };
 
-    let header = build_header(
-        &name,
-        &prefix,
-        entry.mode,
-        entry.uid,
-        entry.gid,
-        size,
-        entry.modified_unix,
-        entry.kind.typeflag(),
-        &link_name,
-    );
+    let header = build_header(&name, &prefix, entry.mode, entry.uid, entry.gid, size, entry.modified_unix, entry.kind.typeflag(), &link_name);
     output.extend_from_slice(&header);
     if entry.kind.has_data() {
         output.extend_from_slice(&entry.data);

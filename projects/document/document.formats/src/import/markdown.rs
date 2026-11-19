@@ -1,11 +1,11 @@
 use std::{collections::HashMap, path::Path};
 
+use data_text_core::{GreenNode, Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
+use data_text_markdown::{MarkdownLanguage, MarkdownParser, lexer::token_type::MarkdownTokenType, parser::element_type::MarkdownElementType};
 use document_ir::{
     Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, RelationEndpoint, SemanticStatus,
     SourceSpan, TableCell, TableRow,
 };
-use data_text_core::{GreenNode, Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
-use data_text_markdown::{MarkdownLanguage, MarkdownParser, lexer::token_type::MarkdownTokenType, parser::element_type::MarkdownElementType};
 
 use super::{
     common::{cell_children, decode_escaped_text, register_image_assets},
@@ -120,11 +120,13 @@ fn mask_fenced_code_angles(text: &str) -> String {
         if is_fence_line(line) {
             in_fence = !in_fence;
             masked.push_str(line);
-        } else if in_fence {
+        }
+        else if in_fence {
             for character in line.chars() {
                 masked.push(if character == '<' { 'x' } else { character });
             }
-        } else {
+        }
+        else {
             masked.push_str(line);
         }
         if line_end >= length {
@@ -133,7 +135,8 @@ fn mask_fenced_code_angles(text: &str) -> String {
         if rest[line_end - offset..].starts_with("\r\n") {
             masked.push_str("\r\n");
             offset = line_end + 2;
-        } else {
+        }
+        else {
             masked.push(rest[line_end - offset..].chars().next().unwrap_or('\n'));
             offset = line_end + 1;
         }
@@ -151,7 +154,8 @@ fn is_fence_line(line: &str) -> bool {
         return false;
     }
     let rest = &line[indent..];
-    let Some(character) = rest.chars().next() else {
+    let Some(character) = rest.chars().next()
+    else {
         return false;
     };
     if character != '`' && character != '~' {
@@ -181,7 +185,8 @@ fn lower_markdown_tree(
     let mut list_stack: Vec<OpenList> = Vec::new();
     while let Some(child) = children.get(index).copied() {
         index += 1;
-        let RedTree::Node(node) = child else {
+        let RedTree::Node(node) = child
+        else {
             continue;
         };
         // A list run is the only construct that can continue onto the next
@@ -418,7 +423,8 @@ fn setext_heading(
     }
     let marker = underline.text(source);
     let marker = marker.trim();
-    let Some(marker_byte) = marker.bytes().next() else {
+    let Some(marker_byte) = marker.bytes().next()
+    else {
         return None;
     };
     if marker_byte != b'-' && marker_byte != b'=' {
@@ -581,7 +587,8 @@ fn lower_block_node(
             let text = node.text(source);
             if is_link_definition_only(&text) {
                 BlockOutcome::Skip
-            } else {
+            }
+            else {
                 let mut content = collect_inlines(node, source, context);
                 trim_trailing_line_break(&mut content);
                 if content.is_empty() {
@@ -647,10 +654,12 @@ fn collect_heading_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText,
         return inlines;
     }
 
-    let Some(Inline::Text { text }) = inlines.first_mut() else {
+    let Some(Inline::Text { text }) = inlines.first_mut()
+    else {
         return inlines;
     };
-    let Some(rest) = text.strip_prefix(&"#".repeat(marker_length)) else {
+    let Some(rest) = text.strip_prefix(&"#".repeat(marker_length))
+    else {
         return inlines;
     };
     *text = rest.trim_start_matches([' ', '\t']).to_string();
@@ -694,7 +703,8 @@ fn collect_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText, context
                                     display: vec![Inline::Text { text: display }],
                                     title: None,
                                 })
-                            } else {
+                            }
+                            else {
                                 let span = leaf.span();
                                 context
                                     .losses
@@ -740,7 +750,8 @@ fn merge_adjacent_text(inlines: &mut Vec<Inline>) {
                 continue;
             }
             merged.push(Inline::Text { text });
-        } else {
+        }
+        else {
             merged.push(inline);
         }
     }
@@ -834,7 +845,8 @@ fn push_text_inline(inlines: &mut Vec<Inline>, raw: &str) {
             // so the hard-break markup is still attached to the previous text.
             let kind = resolve_break_kind(inlines);
             inlines.push(Inline::Break { kind });
-        } else {
+        }
+        else {
             let (text, hard) = split_hard_break(segment);
             if !text.is_empty() {
                 push_inline(inlines, Inline::Text { text: text.to_string() });
@@ -852,7 +864,8 @@ fn push_text_inline(inlines: &mut Vec<Inline>, raw: &str) {
 /// Decide the break kind for a line ending that arrived as its own token, and
 /// strip the hard-break markup off the text that precedes it.
 fn resolve_break_kind(inlines: &mut Vec<Inline>) -> BreakKind {
-    let Some(Inline::Text { text }) = inlines.last_mut() else {
+    let Some(Inline::Text { text }) = inlines.last_mut()
+    else {
         return BreakKind::Soft;
     };
     let (trimmed, hard) = split_hard_break(text);
@@ -907,7 +920,8 @@ fn decode_one_entity(tail: &str) -> Option<(char, usize)> {
     if let Some(body) = body.strip_prefix('#') {
         let value = if let Some(hex) = body.strip_prefix('x').or_else(|| body.strip_prefix('X')) {
             u32::from_str_radix(hex, 16).ok()?
-        } else {
+        }
+        else {
             body.parse::<u32>().ok()?
         };
         return char::from_u32(value).map(|character| (character, consumed));
@@ -1004,14 +1018,17 @@ fn trim_trailing_line_break(inlines: &mut Vec<Inline>) {
         inlines.pop();
         return;
     }
-    let Some(Inline::Text { text }) = inlines.last_mut() else {
+    let Some(Inline::Text { text }) = inlines.last_mut()
+    else {
         return;
     };
     let trim = if text.ends_with("\r\n") {
         2
-    } else if text.ends_with('\n') || text.ends_with('\r') {
+    }
+    else if text.ends_with('\n') || text.ends_with('\r') {
         1
-    } else {
+    }
+    else {
         0
     };
     if trim > 0 {
@@ -1033,7 +1050,8 @@ fn inline_code_text(raw: &str) -> String {
     if delimiter == 0 {
         return trimmed.to_string();
     }
-    let Some(inner) = trimmed.get(delimiter..trimmed.len().saturating_sub(delimiter)) else {
+    let Some(inner) = trimmed.get(delimiter..trimmed.len().saturating_sub(delimiter))
+    else {
         return trimmed.to_string();
     };
     if inner.len() >= 2 && inner.starts_with(' ') && inner.ends_with(' ') && !inner.trim().is_empty() {
@@ -1056,7 +1074,8 @@ fn parse_inline_image(node: RedNode<MarkdownLanguage>, source: &SourceText, cont
     let raw = node.text(source);
     let span = node.span();
     let site = SourceSpan { start: span.start as u32, end: span.end as u32 };
-    let Some((alt, url, title)) = resolve_link_destination(raw.as_ref(), context, site) else {
+    let Some((alt, url, title)) = resolve_link_destination(raw.as_ref(), context, site)
+    else {
         return Some(Inline::Text { text: decode_escaped_text(raw.trim_end()) });
     };
     Some(Inline::Image { source: url, alt: vec![Inline::Text { text: alt }], title, asset: None })
@@ -1144,7 +1163,8 @@ fn outer_label_end(raw: &str) -> Option<usize> {
 /// case of that. Images resolve inline destinations and reference labels
 /// against the same document definitions as any other image token.
 fn link_display(raw: &str, context: &mut LinkContext) -> Vec<Inline> {
-    let Some(end) = outer_label_end(raw) else {
+    let Some(end) = outer_label_end(raw)
+    else {
         return vec![Inline::Text { text: decode_escaped_text(raw.trim_end()) }];
     };
     let label = raw[..end].trim();
@@ -1164,7 +1184,8 @@ fn link_label_inlines(label: &str, context: &mut LinkContext) -> Vec<Inline> {
     let mut cursor = 0;
     let mut text_start = 0;
     while cursor < label.len() {
-        let Some(offset) = label[cursor..].find("![") else {
+        let Some(offset) = label[cursor..].find("![")
+        else {
             break;
         };
         let start = cursor + offset;
@@ -1174,7 +1195,8 @@ fn link_label_inlines(label: &str, context: &mut LinkContext) -> Vec<Inline> {
             let definition = context.definitions.get(&normalize_link_label(&reference))?;
             Some((alt, definition.destination.clone(), definition.title.clone()))
         });
-        let (Some((alt, url, title)), Some(length)) = (resolved, image_token_length(slice)) else {
+        let (Some((alt, url, title)), Some(length)) = (resolved, image_token_length(slice))
+        else {
             cursor = start + 2;
             continue;
         };
@@ -1272,11 +1294,13 @@ fn strip_math_delimiters(text: &str, delimiter: &str) -> String {
 }
 
 fn trailing_link_whitespace(raw: &str) -> String {
-    let Some(end) = outer_label_end(raw) else {
+    let Some(end) = outer_label_end(raw)
+    else {
         return raw[raw.trim_end_matches([' ', '\t']).len()..].to_string();
     };
     let destination = raw.get(end + 1..).and_then(|rest| rest.strip_prefix('(')).unwrap_or("");
-    let Some(close) = link_destination_close(destination) else {
+    let Some(close) = link_destination_close(destination)
+    else {
         return String::new();
     };
     destination[close + 1..].chars().take_while(|character| character.is_whitespace()).collect()
@@ -1431,9 +1455,11 @@ fn find_closing_fence(source: &SourceText, from: usize, opening: FenceRun) -> Op
             if run.character == opening.character && run.length >= opening.length && remainder.trim().is_empty() {
                 let after = if line_end >= length {
                     line_end
-                } else if rest[line_end - offset..].starts_with("\r\n") {
+                }
+                else if rest[line_end - offset..].starts_with("\r\n") {
                     line_end + 2
-                } else {
+                }
+                else {
                     line_end + 1
                 };
                 return Some((offset, after.min(length)));
@@ -1450,7 +1476,8 @@ fn find_closing_fence(source: &SourceText, from: usize, opening: FenceRun) -> Op
 /// A fence body starts on the line after the opening fence and its info
 /// string, and ends before the line break that precedes the closing fence.
 fn strip_fence_line_remainder(text: &str) -> &str {
-    let Some(index) = text.find(['\r', '\n']) else {
+    let Some(index) = text.find(['\r', '\n'])
+    else {
         return "";
     };
     let text = strip_leading_line_break(&text[index..]);
@@ -1495,7 +1522,8 @@ fn append_footnote_continuation(
     if !(after_break.starts_with("    ") || after_break.starts_with('\t')) {
         return false;
     }
-    let Some(Block::Opaque { payload_hint, .. }) = graph.blocks.get_mut(block_index).map(|item| &mut item.block) else {
+    let Some(Block::Opaque { payload_hint, .. }) = graph.blocks.get_mut(block_index).map(|item| &mut item.block)
+    else {
         return false;
     };
     payload_hint.push('\n');
@@ -1581,7 +1609,8 @@ fn attach_list_to_last_item(graph: &mut DocumentGraph, parent: NodeId, child: No
 /// sequence before the levels are reconstructed.
 fn collect_list_items(node: RedNode<MarkdownLanguage>, source: &SourceText, context: &mut LinkContext, out: &mut Vec<FlatItem>) {
     for child in node.children() {
-        let RedTree::Node(item_node) = child else {
+        let RedTree::Node(item_node) = child
+        else {
             continue;
         };
         if item_node.element_type() != MarkdownElementType::ListItem {
@@ -1594,7 +1623,8 @@ fn collect_list_items(node: RedNode<MarkdownLanguage>, source: &SourceText, cont
                 .as_deref()
                 .map(|value| value.chars().take_while(char::is_ascii_digit).collect::<String>())
                 .and_then(|digits| digits.parse::<u32>().ok())
-        } else {
+        }
+        else {
             None
         };
         let indent = item_indent(item_node, source);
@@ -1622,7 +1652,8 @@ fn place_flat_items(graph: &mut DocumentGraph, stack: &mut Vec<OpenList>, flat: 
             Some(open) if open.indent == item.indent => {
                 if open.ordered == item.ordered {
                     Some(open.id)
-                } else {
+                }
+                else {
                     stack.pop();
                     None
                 }
@@ -1657,7 +1688,8 @@ fn place_flat_items(graph: &mut DocumentGraph, stack: &mut Vec<OpenList>, flat: 
 /// Returns `(is_task, is_checked)`. A plain list item yields `(false, None)`.
 fn extract_task_marker(node: RedNode<MarkdownLanguage>, source: &SourceText) -> (bool, Option<bool>) {
     for child in node.children() {
-        let RedTree::Node(child_node) = child else {
+        let RedTree::Node(child_node) = child
+        else {
             continue;
         };
         if child_node.element_type() == MarkdownElementType::TaskMarker {
@@ -1708,11 +1740,13 @@ fn lower_list_item<'a>(
                     // `extract_task_marker`. Do not push its text into content
                     // and skip the trailing whitespace that follows it.
                     skip_marker_space = true;
-                } else if child_node.element_type() == MarkdownElementType::List {
+                }
+                else if child_node.element_type() == MarkdownElementType::List {
                     // Nested lists are flattened and rebuilt by indentation, so
                     // they are handed back instead of becoming child blocks here.
                     children.push(child_node);
-                } else if let Some(inline) = lower_inline_node(child_node, source, context) {
+                }
+                else if let Some(inline) = lower_inline_node(child_node, source, context) {
                     push_inline(&mut content, inline);
                 }
             }
@@ -1779,7 +1813,8 @@ fn is_authored_html_tag(text: &str) -> bool {
     if text.contains('\n') {
         return false;
     }
-    let Some(rest) = text.strip_prefix('<') else {
+    let Some(rest) = text.strip_prefix('<')
+    else {
         return false;
     };
     match rest.chars().next() {
@@ -2162,7 +2197,8 @@ fn lower_blockquote_inlines(node: RedNode<MarkdownLanguage>, source: &SourceText
                         push_soft_break(&mut inlines);
                         let nested = if child_node.element_type() == MarkdownElementType::Blockquote {
                             lower_blockquote_inlines(child_node, source, context)
-                        } else {
+                        }
+                        else {
                             let mut content = collect_inlines(child_node, source, context);
                             trim_trailing_line_break(&mut content);
                             content
@@ -2193,7 +2229,8 @@ fn extract_table(
     let mut body = Vec::new();
     let mut header_pending = true;
     for child in node.children() {
-        let RedTree::Node(row_node) = child else {
+        let RedTree::Node(row_node) = child
+        else {
             continue;
         };
         if row_node.element_type() != MarkdownElementType::TableRow {
@@ -2201,7 +2238,8 @@ fn extract_table(
         }
         let mut contents = Vec::new();
         for cell_child in row_node.children() {
-            let RedTree::Node(cell_node) = cell_child else {
+            let RedTree::Node(cell_node) = cell_child
+            else {
                 continue;
             };
             if cell_node.element_type() != MarkdownElementType::TableCell {
@@ -2232,7 +2270,8 @@ fn extract_table(
         if header_pending {
             head.push(row);
             header_pending = false;
-        } else {
+        }
+        else {
             body.push(row);
         }
     }

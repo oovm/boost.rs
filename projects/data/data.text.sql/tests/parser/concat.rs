@@ -25,7 +25,10 @@ fn build_expression(sql: &str) -> Expression {
 
 fn span_of(expression: &Expression) -> (usize, usize) {
     let range = match expression {
-        Expression::Binary { span, .. } | Expression::Unary { span, .. } | Expression::FunctionCall { span, .. } | Expression::Vector { span, .. } => span,
+        Expression::Binary { span, .. }
+        | Expression::Unary { span, .. }
+        | Expression::FunctionCall { span, .. }
+        | Expression::Vector { span, .. } => span,
         Expression::Literal(Literal::Number(_, span) | Literal::String(_, span) | Literal::Boolean(_, span) | Literal::Null(span)) => span,
         Expression::Identifier(Identifier { span, .. }) => span,
         other => panic!("no span available for {other:?}"),
@@ -164,7 +167,18 @@ fn shape(expr: &Expression) -> String {
 }
 #[test]
 fn test_concat_pretty_round_trip() {
-    for sql in ["select 1 || 'x'", "select 'a' || 'b' || 'c'", "select a || b from t", "select a || 'x' || 1", "select 1 || 2 * 3", "select 3 + 4 || 5", "select (a + b) || c", "select a || (b || c)", "select (a || b) * 2", "select 'a' || 'b' = 'ab'"] {
+    for sql in [
+        "select 1 || 'x'",
+        "select 'a' || 'b' || 'c'",
+        "select a || b from t",
+        "select a || 'x' || 1",
+        "select 1 || 2 * 3",
+        "select 3 + 4 || 5",
+        "select (a + b) || c",
+        "select a || (b || c)",
+        "select (a || b) * 2",
+        "select 'a' || 'b' = 'ab'",
+    ] {
         let expression = build_expression(sql);
         let rendered = expression.as_document(&()).render();
         assert!(rendered.contains("||"), "{sql} rendered without `||`: {rendered}");

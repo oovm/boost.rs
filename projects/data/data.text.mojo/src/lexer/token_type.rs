@@ -177,7 +177,9 @@ impl data_text_core::TokenType for MojoTokenType {
             | MojoTokenType::Semicolon
             | MojoTokenType::Arrow => UniversalTokenRole::Punctuation,
 
-            MojoTokenType::Whitespace | MojoTokenType::Newline | MojoTokenType::Comment | MojoTokenType::Indent | MojoTokenType::Dedent => UniversalTokenRole::Whitespace,
+            MojoTokenType::Whitespace | MojoTokenType::Newline | MojoTokenType::Comment | MojoTokenType::Indent | MojoTokenType::Dedent => {
+                UniversalTokenRole::Whitespace
+            }
 
             MojoTokenType::EndOfStream => UniversalTokenRole::Eof,
             MojoTokenType::Error => UniversalTokenRole::Error,

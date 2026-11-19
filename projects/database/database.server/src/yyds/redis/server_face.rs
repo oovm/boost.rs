@@ -1188,11 +1188,7 @@ const HOST_EFFECT_OPTIONS: &[&str] = &["appendfsync", "requirepass", "notify-key
 /// `CONFIG GET pattern [pattern ...]` 与 `CONFIG SET name value [name value ...]`。
 ///
 /// 返回本次生效且宿主需要镜像的选项；`CONFIG GET` 与失败分支返回空表。
-pub(crate) fn handle_config(
-    stream: &mut dyn Write,
-    request: &Request<'_>,
-    registry: &ClientRegistry,
-) -> io::Result<Vec<(String, String)>> {
+pub(crate) fn handle_config(stream: &mut dyn Write, request: &Request<'_>, registry: &ClientRegistry) -> io::Result<Vec<(String, String)>> {
     let count = request.arguments.len();
     if count < 2 {
         return write_arity(stream, "config").map(|()| Vec::new());
@@ -1527,7 +1523,13 @@ impl EmbeddedServerFace {
     /// `WAIT` / `LATENCY`。命令语义属于宿主的族（数据族、`CONFIG` 的本地选项、
     /// streams）返回 `handled = false`，由宿主自己运行或排队。`replaying` 表示这条
     /// 命令来自 `EXEC` 复放：`WAIT` 立即回 0，与真机在事务内不复挂起的语义一致。
-    pub fn execute(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor, replaying: bool) -> io::Result<SessionOutcome> {
+    pub fn execute(
+        &mut self,
+        stream: &mut dyn Write,
+        arguments: &[&[u8]],
+        executor: &dyn KeyValueExecutor,
+        replaying: bool,
+    ) -> io::Result<SessionOutcome> {
         let mut outcome = SessionOutcome::default();
         outcome.in_multi = self.state.session.in_multi();
         let request = Request { arguments: arguments.to_vec(), consumed: 0 };
@@ -1755,7 +1757,13 @@ impl EmbeddedServerFace {
         Ok(outcome)
     }
 
-    fn handle_watch(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor, mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+    fn handle_watch(
+        &mut self,
+        stream: &mut dyn Write,
+        arguments: &[&[u8]],
+        executor: &dyn KeyValueExecutor,
+        mut outcome: SessionOutcome,
+    ) -> io::Result<SessionOutcome> {
         if arguments.len() < 2 {
             self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'watch' command".to_owned()))?;
             return Ok(outcome);
@@ -1776,7 +1784,13 @@ impl EmbeddedServerFace {
         Ok(outcome)
     }
 
-    fn handle_exec(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], executor: &dyn KeyValueExecutor, mut outcome: SessionOutcome) -> io::Result<SessionOutcome> {
+    fn handle_exec(
+        &mut self,
+        stream: &mut dyn Write,
+        arguments: &[&[u8]],
+        executor: &dyn KeyValueExecutor,
+        mut outcome: SessionOutcome,
+    ) -> io::Result<SessionOutcome> {
         if arguments.len() != 1 {
             self.answer_error(stream, &mut outcome, CommandError::Failed("wrong number of arguments for 'exec' command".to_owned()))?;
             return Ok(outcome);
@@ -1791,7 +1805,11 @@ impl EmbeddedServerFace {
         self.state.record.set_multi(None);
         outcome.in_multi = false;
         if dirty {
-            self.answer_error(stream, &mut outcome, CommandError::Coded("EXECABORT Transaction discarded because of previous errors.".to_owned()))?;
+            self.answer_error(
+                stream,
+                &mut outcome,
+                CommandError::Coded("EXECABORT Transaction discarded because of previous errors.".to_owned()),
+            )?;
             return Ok(outcome);
         }
         if !watched.is_empty() && watched_keys_modified(executor, &watched).map_err(io::Error::other)? {
@@ -1833,7 +1851,13 @@ impl EmbeddedServerFace {
         Ok(outcome)
     }
 
-    fn handle_wait(&mut self, stream: &mut dyn Write, arguments: &[&[u8]], mut outcome: SessionOutcome, replaying: bool) -> io::Result<SessionOutcome> {
+    fn handle_wait(
+        &mut self,
+        stream: &mut dyn Write,
+        arguments: &[&[u8]],
+        mut outcome: SessionOutcome,
+        replaying: bool,
+    ) -> io::Result<SessionOutcome> {
         match introspection::plan_wait(arguments) {
             Ok(WaitPlan::Immediate(reply)) => {
                 self.answer(stream, &mut outcome, reply)?;
@@ -1988,9 +2012,7 @@ fn subscriber_gate_error(command: &[u8], arguments: &[&[u8]]) -> String {
         }
         context = format!("pubsub|{subcommand}");
     }
-    format!(
-        "ERR Can't execute '{context}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context"
-    )
+    format!("ERR Can't execute '{context}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context")
 }
 
 /// 上游校验表覆盖不到的命令族：让宿主自行校验与排队。

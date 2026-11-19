@@ -203,7 +203,14 @@ impl Graph {
         cycles
     }
 
-    fn dfs_cycles(&self, node: &str, visited: &mut HashSet<String>, rec_stack: &mut HashSet<String>, path: &mut Vec<String>, cycles: &mut Vec<Vec<String>>) {
+    fn dfs_cycles(
+        &self,
+        node: &str,
+        visited: &mut HashSet<String>,
+        rec_stack: &mut HashSet<String>,
+        path: &mut Vec<String>,
+        cycles: &mut Vec<Vec<String>>,
+    ) {
         visited.insert(node.to_string());
         rec_stack.insert(node.to_string());
         path.push(node.to_string());
@@ -374,7 +381,9 @@ impl GraphLayout {
 
             // Update positions
             for node_id in graph.nodes.keys() {
-                if let (Some(force), Some(velocity), Some(position)) = (forces.get(node_id), velocities.get_mut(node_id), positions.get_mut(node_id)) {
+                if let (Some(force), Some(velocity), Some(position)) =
+                    (forces.get(node_id), velocities.get_mut(node_id), positions.get_mut(node_id))
+                {
                     *velocity = Point::new(velocity.x * self.config.damping + force.x, velocity.y * self.config.damping + force.y);
 
                     // Limit velocity
@@ -408,7 +417,8 @@ impl GraphLayout {
         // Add edges
         for edge in &graph.edges {
             if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
-                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                let layout_edge =
+                    Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
                 layout.add_edge(layout_edge);
             }
         }
@@ -445,7 +455,8 @@ impl GraphLayout {
         // Add edges
         for edge in &graph.edges {
             if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
-                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                let layout_edge =
+                    Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
                 layout.add_edge(layout_edge);
             }
         }
@@ -488,7 +499,8 @@ impl GraphLayout {
         // Add edges
         for edge in &graph.edges {
             if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
-                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                let layout_edge =
+                    Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
                 layout.add_edge(layout_edge);
             }
         }
@@ -527,7 +539,8 @@ impl GraphLayout {
         // Add edges
         for edge in &graph.edges {
             if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
-                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                let layout_edge =
+                    Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
                 layout.add_edge(layout_edge);
             }
         }
@@ -593,7 +606,19 @@ pub struct GraphLayoutConfig {
 
 impl Default for GraphLayoutConfig {
     fn default() -> Self {
-        Self { node_width: 80.0, node_height: 40.0, node_spacing: 20.0, layer_distance: 100.0, circle_radius: 200.0, iterations: 100, spring_strength: 0.1, repulsion_strength: 1000.0, damping: 0.9, max_velocity: 10.0, ideal_edge_length: 100.0 }
+        Self {
+            node_width: 80.0,
+            node_height: 40.0,
+            node_spacing: 20.0,
+            layer_distance: 100.0,
+            circle_radius: 200.0,
+            iterations: 100,
+            spring_strength: 0.1,
+            repulsion_strength: 1000.0,
+            damping: 0.9,
+            max_velocity: 10.0,
+            ideal_edge_length: 100.0,
+        }
     }
 }
 

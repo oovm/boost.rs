@@ -6,8 +6,7 @@
 //! 事实，不读布局注册表——布局缺失必须作为目标层的 missing 事实失败闭合，不能
 //! 反过来成为 raw 的依据。
 
-use super::representation::TextRepresentation;
-use super::{ValkyrieMirConstant, ValkyrieMirOperation, ValkyrieMirProgram};
+use super::{ValkyrieMirConstant, ValkyrieMirOperation, ValkyrieMirProgram, representation::TextRepresentation};
 use compiler_types::{CanonicalPrimitiveType, CanonicalTypeKind, TypeId};
 
 /// 由 canonical 声明与值类型事实判定程序级文本表示。

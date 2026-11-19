@@ -22,7 +22,11 @@ fn sample_document() -> HtmlDocument {
                     attributes: Vec::new(),
                     children: vec![HtmlNode::Element(Element {
                         tag_name: "a".to_string(),
-                        attributes: vec![Attribute { name: "href".to_string(), value: Some("/docs/start".to_string()), span: Range::from(0..0) }],
+                        attributes: vec![Attribute {
+                            name: "href".to_string(),
+                            value: Some("/docs/start".to_string()),
+                            span: Range::from(0..0),
+                        }],
                         children: Vec::new(),
                         span: Range::from(0..0),
                     })],
@@ -57,8 +61,18 @@ fn selects_adjacent_sibling() {
             tag_name: "article".to_string(),
             attributes: Vec::new(),
             children: vec![
-                HtmlNode::Element(Element { tag_name: "h1".to_string(), attributes: Vec::new(), children: vec![HtmlNode::Text(Text { content: "Title".to_string(), span: Range::from(0..0) })], span: Range::from(0..0) }),
-                HtmlNode::Element(Element { tag_name: "p".to_string(), attributes: Vec::new(), children: vec![HtmlNode::Text(Text { content: "Body".to_string(), span: Range::from(0..0) })], span: Range::from(0..0) }),
+                HtmlNode::Element(Element {
+                    tag_name: "h1".to_string(),
+                    attributes: Vec::new(),
+                    children: vec![HtmlNode::Text(Text { content: "Title".to_string(), span: Range::from(0..0) })],
+                    span: Range::from(0..0),
+                }),
+                HtmlNode::Element(Element {
+                    tag_name: "p".to_string(),
+                    attributes: Vec::new(),
+                    children: vec![HtmlNode::Text(Text { content: "Body".to_string(), span: Range::from(0..0) })],
+                    span: Range::from(0..0),
+                }),
             ],
             span: Range::from(0..0),
         })],

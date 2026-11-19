@@ -17,7 +17,12 @@ fn sample_root() -> XmlRoot {
                     children: vec![XmlValue::Text("hello".to_string())],
                     span: Range::from(0..0),
                 }),
-                XmlValue::Element(XmlElement { name: "w:p".to_string(), attributes: Vec::new(), children: Vec::new(), span: Range::from(0..0) }),
+                XmlValue::Element(XmlElement {
+                    name: "w:p".to_string(),
+                    attributes: Vec::new(),
+                    children: Vec::new(),
+                    span: Range::from(0..0),
+                }),
             ],
             span: Range::from(0..0),
         }),

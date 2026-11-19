@@ -1,15 +1,15 @@
 use std::path::Path;
 
-use compiler_target::{
-    BackendInputKind, BinaryTarget, HostProjectionBoundary, PartitionBackendRequirement, ReferenceManagement, TargetLane,
-    backends::CompilationOptions,
-};
 use compiler_emitter::{
     LoweredBackendInput,
     emitter_backend_jvm::{
         JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
     },
     emitter_backend_wasi::WasmBinaryModule,
+};
+use compiler_target::{
+    BackendInputKind, BinaryTarget, HostProjectionBoundary, PartitionBackendRequirement, ReferenceManagement, TargetLane,
+    backends::CompilationOptions,
 };
 
 fn encode_uleb128(mut value: u32, out: &mut Vec<u8>) {

@@ -193,11 +193,14 @@ pub struct WasmGcArrayOperatorPlan {
 #[cfg(test)]
 mod frozen_operator_tests {
     use super::TargetOperandType;
-    use crate::lowering::backends::clr::mir::freeze_clr_operator_binding;
-    use crate::lowering::backends::jvm::JvmOperatorCode;
-    use crate::lowering::backends::jvm::recipe::freeze_jvm_operator_binding;
-    use crate::lowering::backends::machine::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding};
-    use crate::transitional::msil::MsilOpcode;
+    use crate::{
+        lowering::backends::{
+            clr::mir::freeze_clr_operator_binding,
+            jvm::{JvmOperatorCode, recipe::freeze_jvm_operator_binding},
+            machine::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding},
+        },
+        transitional::msil::MsilOpcode,
+    };
 
     /// `u64` 无符号小于的托管目标配方：CLR 冻结为原生 `clt.un`，JVM 冻结为符号位
     /// 翻转展开码；操作数载体 `I64`、结果槽 `I32`，与 `__u64_lt` 的声明签名一致。

@@ -10,14 +10,14 @@
 
 use std::collections::BTreeMap;
 
+use compiler_emitter::js::{SourceMapSegment, source_map_json};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use compiler_emitter::js::{SourceMapSegment, source_map_json};
 
-use super::assemble::ChunkSegment;
-use super::cache::{EmitCache, PackDigests};
 use super::{
     AssetArtifact, ChunkArtifact, EmitContext, EmitOptions, EmitPlan, StyleArtifact,
+    assemble::ChunkSegment,
+    cache::{EmitCache, PackDigests},
     normalize_path, placeholder,
 };
 
@@ -33,10 +33,7 @@ pub(crate) fn hex(bytes: &[u8], digits: usize) -> String {
 
 /// chunk id → 文件名 slug：非 `[A-Za-z0-9._-]` 一律换 `-`，超 80 截断。
 pub(crate) fn slug(chunk_id: &str) -> String {
-    let mut out: String = chunk_id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' })
-        .collect();
+    let mut out: String = chunk_id.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' }).collect();
     out.truncate(80);
     out
 }
@@ -64,13 +61,7 @@ fn chunk_key(
     hasher.update(text.as_bytes());
     hasher.update([0u8]);
     for segment in segments {
-        hasher.update(
-            format!(
-                "{}|{}|{}|{}\0",
-                segment.gen_line, segment.source, segment.src_line, segment.src_col
-            )
-            .as_bytes(),
-        );
+        hasher.update(format!("{}|{}|{}|{}\0", segment.gen_line, segment.source, segment.src_line, segment.src_col).as_bytes());
     }
     for source in sources {
         hasher.update(source.as_bytes());
@@ -81,11 +72,7 @@ fn chunk_key(
         hasher.update([0u8]);
     }
     let digest = hasher.finalize();
-    digest
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 0x0F])
-        .map(|nibble| char::from_digit(u32::from(nibble), 16).unwrap_or('0'))
-        .collect()
+    digest.iter().flat_map(|byte| [byte >> 4, byte & 0x0F]).map(|nibble| char::from_digit(u32::from(nibble), 16).unwrap_or('0')).collect()
 }
 
 /// 第二遍：按第一遍文本定指纹与文件名；第三遍：占位符整串替换为
@@ -108,9 +95,7 @@ pub(crate) fn finalize(
     let file_names: Vec<String> = codes
         .iter()
         .enumerate()
-        .map(|(index, code)| {
-            format!("{}-{}.js", slug(&context.chunks.chunks[index].id), hex(code.as_bytes(), 8))
-        })
+        .map(|(index, code)| format!("{}-{}.js", slug(&context.chunks.chunks[index].id), hex(code.as_bytes(), 8)))
         .collect();
     let codes: Vec<String> = codes
         .iter()
@@ -133,82 +118,49 @@ pub(crate) fn finalize(
     let mut final_codes: Vec<String> = Vec::with_capacity(file_names.len());
     let mut source_maps: Vec<String> = Vec::with_capacity(file_names.len());
     for (index, chunk) in context.chunks.chunks.iter().enumerate() {
-        let sources: Vec<String> = chunk
-            .modules
-            .iter()
-            .map(|&node| normalize_path(&context.graph.nodes[node].resolved.path))
-            .collect();
-        let sources_content: Vec<String> =
-            chunk.modules.iter().map(|&node| context.sources[&node].clone()).collect();
-        let key = chunk_key(
-            &chunk.id,
-            &file_names[index],
-            options,
-            &codes[index],
-            &segments[index],
-            &sources,
-            &sources_content,
-        );
+        let sources: Vec<String> = chunk.modules.iter().map(|&node| normalize_path(&context.graph.nodes[node].resolved.path)).collect();
+        let sources_content: Vec<String> = chunk.modules.iter().map(|&node| context.sources[&node].clone()).collect();
+        let key = chunk_key(&chunk.id, &file_names[index], options, &codes[index], &segments[index], &sources, &sources_content);
         let (text, map_json) = match cache.lookup(&chunk.id, &key) {
             Some(hit) => hit,
             None => {
-                let src_index_of: BTreeMap<&str, u32> =
-                    sources.iter().enumerate().map(|(i, path)| (path.as_str(), i as u32)).collect();
+                let src_index_of: BTreeMap<&str, u32> = sources.iter().enumerate().map(|(i, path)| (path.as_str(), i as u32)).collect();
                 let mut line_map: BTreeMap<u32, (u32, u32, u32)> = BTreeMap::new();
                 for segment in &segments[index] {
                     line_map.insert(
                         segment.gen_line,
-                        (
-                            src_index_of.get(segment.source.as_str()).copied().unwrap_or(0),
-                            segment.src_line,
-                            segment.src_col,
-                        ),
+                        (src_index_of.get(segment.source.as_str()).copied().unwrap_or(0), segment.src_line, segment.src_col),
                     );
                 }
                 let mut text = codes[index].clone();
                 let mut mapped: Vec<SourceMapSegment> = if options.minify {
                     let (minified, tokens) = compiler_emitter::js::minify_source(&codes[index])
-                        .map_err(|error| {
-                            vec![
-                                PackDiagnostic::new("vmz::pack::emit::minify_failed", error)
-                                    .with_path(&file_names[index]),
-                            ]
-                        })?;
+                        .map_err(|error| vec![PackDiagnostic::new("vmz::pack::emit::minify_failed", error).with_path(&file_names[index])])?;
                     // 压缩段把压缩文本 token 位置映射回 chunk 文本行，再经装配行映射
                     // 复合到原模块：生成侧列精确到 token，源侧列仍是行级切片起点列。
                     text = minified;
                     tokens
                         .iter()
                         .filter_map(|token| {
-                            let &(src_index, src_line, src_col) =
-                                line_map.range(..=token.src_line).next_back()?.1;
-                            Some(SourceMapSegment {
-                                gen_line: token.gen_line,
-                                gen_col: token.gen_col,
-                                src_index,
-                                src_line,
-                                src_col,
-                            })
+                            let &(src_index, src_line, src_col) = line_map.range(..=token.src_line).next_back()?.1;
+                            Some(SourceMapSegment { gen_line: token.gen_line, gen_col: token.gen_col, src_index, src_line, src_col })
                         })
                         .collect()
-                } else {
+                }
+                else {
                     segments[index]
                         .iter()
                         .map(|segment| SourceMapSegment {
                             gen_line: segment.gen_line,
                             gen_col: 0,
-                            src_index: src_index_of
-                                .get(segment.source.as_str())
-                                .copied()
-                                .unwrap_or(0),
+                            src_index: src_index_of.get(segment.source.as_str()).copied().unwrap_or(0),
                             src_line: segment.src_line,
                             src_col: segment.src_col,
                         })
                         .collect()
                 };
                 mapped.sort_by_key(|segment| (segment.gen_line, segment.gen_col));
-                let map_json =
-                    source_map_json(&file_names[index], &sources, &sources_content, &mapped);
+                let map_json = source_map_json(&file_names[index], &sources, &sources_content, &mapped);
                 if !text.ends_with('\n') {
                     text.push('\n');
                 }
@@ -222,12 +174,11 @@ pub(crate) fn finalize(
     }
 
     // 动态边界 → 每个 chunk 的动态目标文件名 + 全局动态文件映射。
-    let mut dynamic_of_chunk: Vec<std::collections::BTreeSet<String>> =
-        vec![std::collections::BTreeSet::new(); file_names.len()];
-    let mut dynamic_files: std::collections::BTreeSet<(String, String)> =
-        std::collections::BTreeSet::new();
+    let mut dynamic_of_chunk: Vec<std::collections::BTreeSet<String>> = vec![std::collections::BTreeSet::new(); file_names.len()];
+    let mut dynamic_files: std::collections::BTreeSet<(String, String)> = std::collections::BTreeSet::new();
     for (source_node, target_chunk) in &context.chunks.dynamic_boundaries {
-        let Some(source_chunk) = context.node_chunk.get(*source_node).copied().flatten() else {
+        let Some(source_chunk) = context.node_chunk.get(*source_node).copied().flatten()
+        else {
             continue;
         };
         if *target_chunk >= file_names.len() {
@@ -248,28 +199,19 @@ pub(crate) fn finalize(
             chunk_id: chunk.id.clone(),
             file_name: file_names[index].clone(),
             code: final_codes[index].clone(),
-            modules: chunk
-                .modules
-                .iter()
-                .map(|&node| normalize_path(&context.graph.nodes[node].resolved.path))
-                .collect(),
+            modules: chunk.modules.iter().map(|&node| normalize_path(&context.graph.nodes[node].resolved.path)).collect(),
             imports: chunk.depends_on.iter().map(|&dep| file_names[dep].clone()).collect(),
             dynamic: dynamic_of_chunk[index].clone().into_iter().collect(),
             source_map: source_maps[index].clone(),
         })
         .collect();
 
-    let entry_files: Vec<(String, String)> = context
-        .chunks
-        .entry_chunks
-        .iter()
-        .map(|(logical, chunk_index)| (logical.clone(), file_names[*chunk_index].clone()))
-        .collect();
+    let entry_files: Vec<(String, String)> =
+        context.chunks.entry_chunks.iter().map(|(logical, chunk_index)| (logical.clone(), file_names[*chunk_index].clone())).collect();
 
     let assets: Vec<AssetArtifact> = context.asset_index.values().cloned().collect();
 
-    let manifest_json =
-        render_manifest(&artifacts, &map_file_names, &entry_files, &assets, digests);
+    let manifest_json = render_manifest(&artifacts, &map_file_names, &entry_files, &assets, digests);
     Ok(EmitPlan {
         artifacts,
         styles,
@@ -347,18 +289,10 @@ fn render_manifest(
                 source_map: &map_file_names[index],
             })
             .collect(),
-        entries: entry_files
-            .iter()
-            .map(|(logical, file)| ManifestEntry { logical, file })
-            .collect(),
+        entries: entry_files.iter().map(|(logical, file)| ManifestEntry { logical, file }).collect(),
         assets: assets
             .iter()
-            .map(|asset| ManifestAsset {
-                module: &asset.module_path,
-                specifier: &asset.specifier,
-                file: &asset.file_name,
-                url: &asset.url,
-            })
+            .map(|asset| ManifestAsset { module: &asset.module_path, specifier: &asset.specifier, file: &asset.file_name, url: &asset.url })
             .collect(),
     };
     let mut json = serde_json::to_string_pretty(&manifest).expect("manifest 结构序列化不可能失败");

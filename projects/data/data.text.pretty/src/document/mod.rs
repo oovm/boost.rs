@@ -74,7 +74,8 @@ impl<'a> Document<'a> {
     ///     Document::HardLine,
     ///     Document::text("world"),
     /// ]);
-    /// let output = doc.render_with_config(PrinterConfig::default().with_line_ending(LineEnding::Unix));
+    /// let output =
+    ///     doc.render_with_config(PrinterConfig::default().with_line_ending(LineEnding::Unix));
     /// assert_eq!(output, "hello\nworld\n");
     /// ```
     pub fn render(&self) -> String {

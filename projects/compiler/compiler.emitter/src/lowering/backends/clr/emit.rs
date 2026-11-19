@@ -634,7 +634,9 @@ fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &SemanticType
                 return Err(format!("CLR 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 CLR 载体合同"));
             }
         }
-        SemanticType::Array(inner) | SemanticType::FixedArray { element: inner, .. } => MsilType::sz_array(msil_array_element_type(layouts, inner)?),
+        SemanticType::Array(inner) | SemanticType::FixedArray { element: inner, .. } => {
+            MsilType::sz_array(msil_array_element_type(layouts, inner)?)
+        }
         // 可空元素只能复用引用载体（`null` 表示空）；标量需要 sum 表示。
         SemanticType::Nullable(inner) => {
             let ty = msil_array_element_type(layouts, inner)?;

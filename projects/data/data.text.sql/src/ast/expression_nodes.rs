@@ -347,7 +347,18 @@ pub(crate) fn needs_is_operand_parentheses(expr: &Expression) -> bool {
     match expr {
         Expression::Unary { op: UnaryOperator::Not, .. } => true,
         Expression::Binary { op, .. } => {
-            matches!(op, BinaryOperator::Or | BinaryOperator::And | BinaryOperator::Equal | BinaryOperator::NotEqual | BinaryOperator::Less | BinaryOperator::Greater | BinaryOperator::LessEqual | BinaryOperator::GreaterEqual | BinaryOperator::Like)
+            matches!(
+                op,
+                BinaryOperator::Or
+                    | BinaryOperator::And
+                    | BinaryOperator::Equal
+                    | BinaryOperator::NotEqual
+                    | BinaryOperator::Less
+                    | BinaryOperator::Greater
+                    | BinaryOperator::LessEqual
+                    | BinaryOperator::GreaterEqual
+                    | BinaryOperator::Like
+            )
         }
         _ => false,
     }

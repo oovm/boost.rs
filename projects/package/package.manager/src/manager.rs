@@ -13,8 +13,8 @@ use package_resolve::{
 };
 
 use crate::{
-    LoginResult, ManagerError, ManagerServices, RegistrySourceManager, Result, ScriptResult, ScriptRunner, SecurityAudit,
-    SecurityAuditResult, VendorManager,
+    LoginResult, ManagerError, ManagerServices, RegistrySourceManager, Result, ScriptResult, ScriptRunner, SecurityAudit, SecurityAuditResult,
+    VendorManager,
 };
 
 /// 已安装 / 查询到的包摘要。
@@ -502,7 +502,8 @@ impl PackageManager {
         let mut jobs = Vec::new();
 
         for (path, manifest) in packages {
-            let registry_targets: Vec<_> = manifest.publish.iter().filter(|target| self.is_registry_target(&target.format_type)).cloned().collect();
+            let registry_targets: Vec<_> =
+                manifest.publish.iter().filter(|target| self.is_registry_target(&target.format_type)).cloned().collect();
 
             if registry_targets.is_empty() {
                 return Err(ManagerError::message(format!(
@@ -745,9 +746,7 @@ impl PackageManager {
                     copy_dir(&resolved, &package_path)?;
                 }
                 else {
-                    return Err(ManagerError::message(format!(
-                        "offline install failed: missing cached package {package_name}@{version}"
-                    )));
+                    return Err(ManagerError::message(format!("offline install failed: missing cached package {package_name}@{version}")));
                 }
             }
             else {

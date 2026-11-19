@@ -2,7 +2,10 @@
 use crate::ast::{XmlAttribute, XmlElement, XmlValue};
 use serde::{
     de::{self, Visitor},
-    ser::{self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple, SerializeTupleStruct, SerializeTupleVariant},
+    ser::{
+        self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple, SerializeTupleStruct,
+        SerializeTupleVariant,
+    },
 };
 use std::fmt;
 
@@ -133,7 +136,13 @@ impl serde::Serializer for Serializer {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(self, _name: &'static str, _variant_index: u32, variant: &'static str, value: &T) -> Result<Self::Ok, Self::Error> {
+    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
         let mut children = Vec::new();
         children.push(value.serialize(self)?);
         Ok(XmlValue::Element(XmlElement { name: variant.to_string(), attributes: Vec::new(), children, span: (0..0).into() }))
@@ -151,7 +160,13 @@ impl serde::Serializer for Serializer {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Ok(SerializeVariant { name: variant.to_string(), elements: Vec::new() })
     }
 
@@ -163,7 +178,13 @@ impl serde::Serializer for Serializer {
         Ok(SerializeObject { name: name.to_string(), attributes: Vec::new(), children: Vec::new(), current_key: None })
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Ok(SerializeVariant { name: variant.to_string(), elements: Vec::new() })
     }
 }
@@ -235,7 +256,12 @@ impl SerializeStructVariant for SerializeVariant {
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error> {
         let val = value.serialize(Serializer)?;
-        self.elements.push(XmlValue::Element(XmlElement { name: key.to_string(), attributes: Vec::new(), children: vec![val], span: (0..0).into() }));
+        self.elements.push(XmlValue::Element(XmlElement {
+            name: key.to_string(),
+            attributes: Vec::new(),
+            children: vec![val],
+            span: (0..0).into(),
+        }));
         Ok(())
     }
 
@@ -292,13 +318,23 @@ impl SerializeMap for SerializeObject {
                                 self.children.push(XmlValue::Element(e));
                             }
                             _ => {
-                                self.children.push(XmlValue::Element(XmlElement { name: key.clone(), attributes: Vec::new(), children: vec![element], span: (0..0).into() }));
+                                self.children.push(XmlValue::Element(XmlElement {
+                                    name: key.clone(),
+                                    attributes: Vec::new(),
+                                    children: vec![element],
+                                    span: (0..0).into(),
+                                }));
                             }
                         }
                     }
                 }
                 _ => {
-                    self.children.push(XmlValue::Element(XmlElement { name: key.clone(), attributes: Vec::new(), children: vec![val], span: (0..0).into() }));
+                    self.children.push(XmlValue::Element(XmlElement {
+                        name: key.clone(),
+                        attributes: Vec::new(),
+                        children: vec![val],
+                        span: (0..0).into(),
+                    }));
                 }
             }
         }
@@ -345,13 +381,23 @@ impl SerializeStruct for SerializeObject {
                                 self.children.push(XmlValue::Element(e));
                             }
                             _ => {
-                                self.children.push(XmlValue::Element(XmlElement { name: key.to_string(), attributes: Vec::new(), children: vec![element], span: (0..0).into() }));
+                                self.children.push(XmlValue::Element(XmlElement {
+                                    name: key.to_string(),
+                                    attributes: Vec::new(),
+                                    children: vec![element],
+                                    span: (0..0).into(),
+                                }));
                             }
                         }
                     }
                 }
                 _ => {
-                    self.children.push(XmlValue::Element(XmlElement { name: key.to_string(), attributes: Vec::new(), children: vec![val], span: (0..0).into() }));
+                    self.children.push(XmlValue::Element(XmlElement {
+                        name: key.to_string(),
+                        attributes: Vec::new(),
+                        children: vec![val],
+                        span: (0..0).into(),
+                    }));
                 }
             }
         }
@@ -436,7 +482,13 @@ impl ser::Serializer for StringSerializer {
     fn serialize_newtype_struct<T: ?Sized + Serialize>(self, _name: &'static str, value: &T) -> Result<Self::Ok, Self::Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: ?Sized + Serialize>(self, _name: &'static str, _variant_index: u32, variant: &'static str, _value: &T) -> Result<Self::Ok, Self::Error> {
+    fn serialize_newtype_variant<T: ?Sized + Serialize>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        _value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
         Ok(variant.to_string())
     }
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -448,7 +500,13 @@ impl ser::Serializer for StringSerializer {
     fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct, Self::Error> {
         Err(ser::Error::custom("Impossible"))
     }
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Err(ser::Error::custom("Impossible"))
     }
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -457,7 +515,13 @@ impl ser::Serializer for StringSerializer {
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct, Self::Error> {
         Err(ser::Error::custom("Impossible"))
     }
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Err(ser::Error::custom("Impossible"))
     }
 }

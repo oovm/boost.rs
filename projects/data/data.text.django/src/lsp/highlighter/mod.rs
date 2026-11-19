@@ -1,8 +1,10 @@
 #![doc = include_str!("readme.md")]
 
 use data_text_core::errors::ParseResult;
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 /// Django syntax highlighter.
 ///
 /// This module provides syntax highlighting for Django source code, supporting keywords, tags, filters, comments, etc.

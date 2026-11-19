@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source,
+    Lexer, LexerCache, LexerState, Source, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
 };
 pub mod token_type;
@@ -21,7 +21,12 @@ pub struct IniLexer<'config> {
 }
 
 impl<'config> Lexer<IniLanguage> for IniLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<IniLanguage>) -> LexOutput<IniLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<IniLanguage>,
+    ) -> LexOutput<IniLanguage> {
         let mut state: State<'_, S> = State::new(source);
         let mut pending_line_value = false;
         let result = self.run(&mut state, &mut pending_line_value);

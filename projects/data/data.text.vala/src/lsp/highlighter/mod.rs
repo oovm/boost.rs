@@ -1,8 +1,10 @@
 #![doc = include_str!("readme.md")]
 
 use data_text_core::errors::ParseResult;
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 /// Vala syntax highlighter.
 pub struct ValaHighlighter;
 

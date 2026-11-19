@@ -81,7 +81,12 @@ impl JavaHighlighter {
             | JavaTokenType::Volatile
             | JavaTokenType::While => Some(HighlightKind::Keyword),
 
-            JavaTokenType::IntegerLiteral | JavaTokenType::FloatingPointLiteral | JavaTokenType::BooleanLiteral | JavaTokenType::CharacterLiteral | JavaTokenType::StringLiteral | JavaTokenType::NullLiteral => Some(HighlightKind::Literal),
+            JavaTokenType::IntegerLiteral
+            | JavaTokenType::FloatingPointLiteral
+            | JavaTokenType::BooleanLiteral
+            | JavaTokenType::CharacterLiteral
+            | JavaTokenType::StringLiteral
+            | JavaTokenType::NullLiteral => Some(HighlightKind::Literal),
 
             JavaTokenType::Identifier => Some(HighlightKind::Identifier),
 

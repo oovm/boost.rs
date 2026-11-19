@@ -22,8 +22,10 @@ use database_types::cluster::{Error as ClusterError, Namespace};
 
 use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 
-use super::Error;
-use super::catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, LOCK_FILE, catalog_shard_id, drop_lock, encode_catalog_bytes, take_lock, write_atomic};
+use super::{
+    Error,
+    catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, LOCK_FILE, catalog_shard_id, drop_lock, encode_catalog_bytes, take_lock, write_atomic},
+};
 
 fn io_error(error: impl std::fmt::Display) -> Error {
     Error::Io(error.to_string())

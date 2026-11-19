@@ -41,7 +41,9 @@ fn top_level_elements(source: &str, language: MarkdownLanguage) -> Vec<MarkdownE
 }
 
 fn has_tag(tokens: &[(MarkdownTokenType, String, usize, usize)]) -> bool {
-    tokens.iter().any(|(kind, ..)| matches!(kind, MarkdownTokenType::HtmlTag | MarkdownTokenType::XmlTag | MarkdownTokenType::HtmlComment | MarkdownTokenType::XmlComment))
+    tokens.iter().any(|(kind, ..)| {
+        matches!(kind, MarkdownTokenType::HtmlTag | MarkdownTokenType::XmlTag | MarkdownTokenType::HtmlComment | MarkdownTokenType::XmlComment)
+    })
 }
 
 /// A lone `<` must not swallow the rest of the document when a later line contains `>`.
@@ -104,7 +106,10 @@ fn intraword_underscore_stays_text() {
     let source = "snake_case_name\n";
     let tokens = lex_tokens(source, MarkdownLanguage::common_mark());
 
-    assert!(!tokens.iter().any(|(kind, ..)| matches!(kind, MarkdownTokenType::Emphasis | MarkdownTokenType::Strong)), "an intraword underscore must not become a delimiter: {tokens:#?}");
+    assert!(
+        !tokens.iter().any(|(kind, ..)| matches!(kind, MarkdownTokenType::Emphasis | MarkdownTokenType::Strong)),
+        "an intraword underscore must not become a delimiter: {tokens:#?}"
+    );
     let text: String = tokens.iter().map(|(_, text, ..)| text.as_str()).collect();
     assert_eq!(text.trim_end(), "snake_case_name", "the underscores must stay literal: {tokens:#?}");
 }
@@ -164,7 +169,10 @@ fn fence_content_keeps_hash_out_of_heading_tokens() {
 
     for (kind, text, start, end) in &tokens {
         if *start >= fences[0].3 && *end <= fences[1].2 {
-            assert!(matches!(*kind, MarkdownTokenType::CodeBlock | MarkdownTokenType::CodeLanguage), "the fence body must only contain code tokens, found {kind:?} {text:?}: {tokens:#?}");
+            assert!(
+                matches!(*kind, MarkdownTokenType::CodeBlock | MarkdownTokenType::CodeLanguage),
+                "the fence body must only contain code tokens, found {kind:?} {text:?}: {tokens:#?}"
+            );
         }
     }
 }
@@ -191,7 +199,10 @@ fn top_level_fence_body_keeps_greater_than_as_code() {
     let source = "```\n> not a quote\n```\n";
     let tokens = lex_tokens(source, MarkdownLanguage::github_flavored());
 
-    assert!(!tokens.iter().any(|(kind, ..)| *kind == MarkdownTokenType::BlockquoteMarker), "a top-level fence body must keep `>` as code: {tokens:#?}");
+    assert!(
+        !tokens.iter().any(|(kind, ..)| *kind == MarkdownTokenType::BlockquoteMarker),
+        "a top-level fence body must keep `>` as code: {tokens:#?}"
+    );
 
     let body: Vec<_> = tokens.iter().filter(|(kind, ..)| *kind == MarkdownTokenType::CodeBlock).collect();
     assert_eq!(body.len(), 1, "the body must stay one code token: {tokens:#?}");
@@ -209,11 +220,18 @@ fn fence_body_emits_no_block_level_tokens() {
 
     let body: Vec<_> = tokens.iter().filter(|(kind, ..)| *kind == MarkdownTokenType::CodeBlock).collect();
     assert_eq!(body.len(), 5, "each non-empty body line must be one code token: {tokens:#?}");
-    assert_eq!(body.iter().map(|(_, text, ..)| text.as_str()).collect::<Vec<_>>(), vec!["# heading", "- item", "---", "**strong**", "<div>"], "the body must stay verbatim: {tokens:#?}");
+    assert_eq!(
+        body.iter().map(|(_, text, ..)| text.as_str()).collect::<Vec<_>>(),
+        vec!["# heading", "- item", "---", "**strong**", "<div>"],
+        "the body must stay verbatim: {tokens:#?}"
+    );
 
     for (kind, text, start, end) in &tokens {
         if *start >= fences[0].3 && *end <= fences[1].2 {
-            assert!(matches!(*kind, MarkdownTokenType::CodeBlock | MarkdownTokenType::CodeLanguage), "block rule escaped the fence: {kind:?} {text:?} in {tokens:#?}");
+            assert!(
+                matches!(*kind, MarkdownTokenType::CodeBlock | MarkdownTokenType::CodeLanguage),
+                "block rule escaped the fence: {kind:?} {text:?} in {tokens:#?}"
+            );
         }
     }
 }
@@ -240,7 +258,11 @@ fn blockquote_fence_stays_inside_the_quote() {
     let source = "## Blockquotes\n> ```\n> Code block in blockquote\n> ```\n\n## Tables\n";
     let elements = top_level_elements(source, MarkdownLanguage::github_flavored());
 
-    assert_eq!(&elements[..3], &[MarkdownElementType::Heading2, MarkdownElementType::Blockquote, MarkdownElementType::Heading2], "the code block must stay inside the quote: {elements:?}");
+    assert_eq!(
+        &elements[..3],
+        &[MarkdownElementType::Heading2, MarkdownElementType::Blockquote, MarkdownElementType::Heading2],
+        "the code block must stay inside the quote: {elements:?}"
+    );
 }
 
 /// A heading after a blockquote marker is still a heading block.
@@ -255,7 +277,15 @@ fn blockquote_heading_lexes_at_its_marker() {
 }
 
 fn is_heading(kind: MarkdownTokenType) -> bool {
-    matches!(kind, MarkdownTokenType::Heading1 | MarkdownTokenType::Heading2 | MarkdownTokenType::Heading3 | MarkdownTokenType::Heading4 | MarkdownTokenType::Heading5 | MarkdownTokenType::Heading6)
+    matches!(
+        kind,
+        MarkdownTokenType::Heading1
+            | MarkdownTokenType::Heading2
+            | MarkdownTokenType::Heading3
+            | MarkdownTokenType::Heading4
+            | MarkdownTokenType::Heading5
+            | MarkdownTokenType::Heading6
+    )
 }
 
 /// A real multi-line JSX component still lexes as one MDX component.

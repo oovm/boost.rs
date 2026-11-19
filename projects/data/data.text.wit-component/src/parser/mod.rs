@@ -31,7 +31,12 @@ impl<'config> WitParser<'config> {
 }
 
 impl<'config> Parser<WitLanguage> for WitParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<WitLanguage>) -> data_text_core::ParseOutput<'a, WitLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<WitLanguage>,
+    ) -> data_text_core::ParseOutput<'a, WitLanguage> {
         let lexer = WitLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

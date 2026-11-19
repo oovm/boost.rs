@@ -90,16 +90,39 @@ impl SourceMapBuilder {
     /// Adds a mapping.
     ///
     /// All line and column values are 0-indexed.
-    pub fn add_mapping(&mut self, generated_line: u32, generated_column: u32, source_index: Option<u32>, original_line: Option<u32>, original_column: Option<u32>, name_index: Option<u32>) {
+    pub fn add_mapping(
+        &mut self,
+        generated_line: u32,
+        generated_column: u32,
+        source_index: Option<u32>,
+        original_line: Option<u32>,
+        original_column: Option<u32>,
+        name_index: Option<u32>,
+    ) {
         while self.mappings.len() <= generated_line as usize {
             self.mappings.push(Vec::new());
         }
 
-        self.mappings[generated_line as usize].push(Mapping { generated_line, generated_column, source_index, original_line, original_column, name_index });
+        self.mappings[generated_line as usize].push(Mapping {
+            generated_line,
+            generated_column,
+            source_index,
+            original_line,
+            original_column,
+            name_index,
+        });
     }
 
     /// Adds a segment (more convenient API for simple cases).
-    pub fn add_segment(&mut self, generated_line: u32, generated_column: u32, source: Option<&str>, original_line: Option<u32>, original_column: Option<u32>, name: Option<&str>) {
+    pub fn add_segment(
+        &mut self,
+        generated_line: u32,
+        generated_column: u32,
+        source: Option<&str>,
+        original_line: Option<u32>,
+        original_column: Option<u32>,
+        name: Option<&str>,
+    ) {
         let source_index = source.map(|s| self.add_source(s));
         let name_index = name.map(|n| self.add_name(n));
 
@@ -110,7 +133,16 @@ impl SourceMapBuilder {
     pub fn build(self) -> SourceMap {
         let mappings = self.encode_mappings();
 
-        SourceMap { version: SOURCE_MAP_VERSION, sources: self.sources, sources_content: self.sources_content, names: self.names, mappings, file: self.file, source_root: self.source_root, sections: Vec::new() }
+        SourceMap {
+            version: SOURCE_MAP_VERSION,
+            sources: self.sources,
+            sources_content: self.sources_content,
+            names: self.names,
+            mappings,
+            file: self.file,
+            source_root: self.source_root,
+            sections: Vec::new(),
+        }
     }
 
     fn encode_mappings(&self) -> String {

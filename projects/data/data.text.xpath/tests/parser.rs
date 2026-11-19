@@ -17,8 +17,16 @@ fn parses_child_path() {
             paths: vec![PathExpr {
                 absolute: false,
                 steps: vec![
-                    Step { axis: Axis::Child, test: NodeTest::Name(QName { prefix: Some("w".to_string()), local: "body".to_string() }), predicates: Vec::new() },
-                    Step { axis: Axis::Child, test: NodeTest::Name(QName { prefix: Some("w".to_string()), local: "p".to_string() }), predicates: Vec::new() },
+                    Step {
+                        axis: Axis::Child,
+                        test: NodeTest::Name(QName { prefix: Some("w".to_string()), local: "body".to_string() }),
+                        predicates: Vec::new()
+                    },
+                    Step {
+                        axis: Axis::Child,
+                        test: NodeTest::Name(QName { prefix: Some("w".to_string()), local: "p".to_string() }),
+                        predicates: Vec::new()
+                    },
                 ],
             }],
         }
@@ -38,7 +46,10 @@ fn parses_absolute_and_descendant() {
 fn parses_attribute_predicate() {
     let expr = parse_xpath("w:p[@w14:paraId=\"abc\"]").expect("parse");
     let predicates = &expr.paths[0].steps[0].predicates;
-    assert_eq!(predicates, &[Predicate::AttributeEquals(QName { prefix: Some("w14".to_string()), local: "paraId".to_string() }, "abc".to_string(),)]);
+    assert_eq!(
+        predicates,
+        &[Predicate::AttributeEquals(QName { prefix: Some("w14".to_string()), local: "paraId".to_string() }, "abc".to_string(),)]
+    );
 }
 
 #[test]

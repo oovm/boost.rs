@@ -438,7 +438,8 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
             // 声明级序列视图：投影为 `Array` + 逐层容器构造合同。每层的
             // `struct.new` / 字段 accessor 导出名由该层冻结布局身份派生。
             let project_level = |level: &crate::abi_structure::SequenceLevel| -> std::result::Result<WasmAbiSequenceLevel, String> {
-                let Some(aggregate_layout) = layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == level.layout)) else {
+                let Some(aggregate_layout) = layouts.and_then(|plan| plan.layouts.iter().find(|item| item.id == level.layout))
+                else {
                     return Err(format!("序列层布局 `{}` 未注册", level.layout));
                 };
                 let accessors =
@@ -461,11 +462,15 @@ fn project_structure(structure: &crate::abi_structure::AbiStructure, layouts: Op
             }
             let element = project_structure(&sequence.element, layouts);
             if let Some(reason) = element.unsupported_reason() {
-                return WasmAbiType::Unsupported { reason: format!("序列容器 `{}::{}` 的元素类型没有 Wasm ABI 合同: {reason}", sequence.module_path, sequence.name) };
+                return WasmAbiType::Unsupported {
+                    reason: format!("序列容器 `{}::{}` 的元素类型没有 Wasm ABI 合同: {reason}", sequence.module_path, sequence.name),
+                };
             }
             let length_type = project_structure(&sequence.length_ty, layouts);
             if let Some(reason) = length_type.unsupported_reason() {
-                return WasmAbiType::Unsupported { reason: format!("序列容器 `{}::{}` 的计数字段没有 Wasm ABI 合同: {reason}", sequence.module_path, sequence.name) };
+                return WasmAbiType::Unsupported {
+                    reason: format!("序列容器 `{}::{}` 的计数字段没有 Wasm ABI 合同: {reason}", sequence.module_path, sequence.name),
+                };
             }
             WasmAbiType::Array {
                 element: Box::new(element),
@@ -722,7 +727,8 @@ mod tests {
         // 上游 `type_surface_spellings` 只在**声明** TypeId 上登记拼写；实例 TypeId 自身
         // 没有单独 spelling，`lower_type` 回落到声明取 qualified 基类型，因此这里必须
         // 用真实拼写 `std::collections::ArrayList`，不能再用裸简单名。
-        let arraylist_i64 = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")]);
+        let arraylist_i64 =
+            SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")]);
         let schema = abi_schema_for_type(&arraylist_i64);
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, generic_args, .. } => {
@@ -739,8 +745,10 @@ mod tests {
         // 同名、同泛型实参但不同 namespace 的两个 aggregate 必须产生不同
         // NamedAggregate：宿主注册表按 module_path + name + generic_args 区分，
         // module_path 相同会把两者错误地命中同一条 marshal 合同。
-        let alpha = abi_schema_for_type(&SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("alpha::Box"))), vec![named_type("i64")]));
-        let beta = abi_schema_for_type(&SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("beta::Box"))), vec![named_type("i64")]));
+        let alpha =
+            abi_schema_for_type(&SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("alpha::Box"))), vec![named_type("i64")]));
+        let beta =
+            abi_schema_for_type(&SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("beta::Box"))), vec![named_type("i64")]));
         match (&alpha, &beta) {
             (
                 WasmAbiType::NamedAggregate { name: left_name, module_path: left_path, generic_args: left_args, .. },
@@ -760,7 +768,8 @@ mod tests {
     #[test]
     fn module_path_extracted_from_qualified_identifier() {
         // 如果上游给了完整路径 "std::collections::ArrayList"
-        let qualified = SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")]);
+        let qualified =
+            SemanticType::Apply(Box::new(SemanticType::Named(Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")]);
         let schema = abi_schema_for_type(&qualified);
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, .. } => {
@@ -791,7 +800,8 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_array() {
-        let schema = WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&named_type("i64")), container: None };
+        let schema =
+            WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&named_type("i64")), container: None };
         let json = serde_json::to_string(&schema).unwrap();
         let back: WasmAbiType = serde_json::from_str(&json).unwrap();
         assert_eq!(back, schema);

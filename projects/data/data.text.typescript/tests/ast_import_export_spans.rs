@@ -2,7 +2,7 @@
 //! their spans slice back to the source text and `export * from` stays
 //! distinguishable from `export {} from`.
 
-use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{ExportSpecifier, ImportSpecifier, Statement, TypeScriptRoot},

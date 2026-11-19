@@ -25,14 +25,20 @@ fn optional_method_signatures_keep_marker_and_return_type_attached() {
 
 #[test]
 fn optional_properties_and_parameters_stay_tight() {
-    for source in ["class A { foo?: number; }", "interface A { foo?: string }", "function f(x?: number): void {}", "type A = { foo?: () => void };"] {
+    for source in
+        ["class A { foo?: number; }", "interface A { foo?: string }", "function f(x?: number): void {}", "type A = { foo?: () => void };"]
+    {
         assert_eq!(format(source), source, "optional property or parameter changed: {source:?}");
     }
 }
 
 #[test]
 fn required_return_type_keeps_the_space_after_the_colon() {
-    for source in ["class A { foo(x: number): void; }", "interface Store { read(key: string): Promise<void>; }", "function f(x: number): string { return String(x); }"] {
+    for source in [
+        "class A { foo(x: number): void; }",
+        "interface Store { read(key: string): Promise<void>; }",
+        "function f(x: number): string { return String(x); }",
+    ] {
         assert_eq!(format(source), source, "return type spacing changed: {source:?}");
     }
 }
@@ -76,7 +82,11 @@ fn reserved_words_in_expression_position_keep_their_space() {
 
 #[test]
 fn ternaries_with_parenthesized_branches_keep_their_spaces() {
-    for (source, expected) in [("const x = flag ? (a) : b;", "const x = flag ? (a) : b;"), ("const x = flag?(a):b;", "const x = flag ? (a) : b;"), ("const x = flag ? (a + b) : c;", "const x = flag ? (a + b) : c;")] {
+    for (source, expected) in [
+        ("const x = flag ? (a) : b;", "const x = flag ? (a) : b;"),
+        ("const x = flag?(a):b;", "const x = flag ? (a) : b;"),
+        ("const x = flag ? (a + b) : c;", "const x = flag ? (a + b) : c;"),
+    ] {
         assert_eq!(format(source), expected, "ternary spacing changed: {source:?}");
     }
 }
@@ -125,13 +135,31 @@ fn optional_chaining_stays_attached() {
 fn generic_return_types_with_commas_keep_function_bodies() {
     for (source, expected) in [
         ("function f(x: number): Record<string, unknown> { if (x) {} }", "function f(x: number): Record<string, unknown> { if (x) {} }"),
-        ("function f(x: number): Promise<Record<string, unknown>> { if (x) {} }", "function f(x: number): Promise<Record<string, unknown>> { if (x) {} }"),
-        ("function f(x: number): Map<string, GithubAuthor> { return (x); }", "function f(x: number): Map<string, GithubAuthor> { return (x); }"),
-        ("function f(x: number): Record<string, string> { for (const y of x) {} }", "function f(x: number): Record<string, string> { for (const y of x) {} }"),
-        ("function f(x: number): Promise<Record<string, unknown>> { switch (x) { case 1: break; } }", "function f(x: number): Promise<Record<string, unknown>> { switch (x) { case 1: break; } }"),
-        ("function f(x: number): Promise<Record<string, unknown>> { return (x); }", "function f(x: number): Promise<Record<string, unknown>> { return (x); }"),
+        (
+            "function f(x: number): Promise<Record<string, unknown>> { if (x) {} }",
+            "function f(x: number): Promise<Record<string, unknown>> { if (x) {} }",
+        ),
+        (
+            "function f(x: number): Map<string, GithubAuthor> { return (x); }",
+            "function f(x: number): Map<string, GithubAuthor> { return (x); }",
+        ),
+        (
+            "function f(x: number): Record<string, string> { for (const y of x) {} }",
+            "function f(x: number): Record<string, string> { for (const y of x) {} }",
+        ),
+        (
+            "function f(x: number): Promise<Record<string, unknown>> { switch (x) { case 1: break; } }",
+            "function f(x: number): Promise<Record<string, unknown>> { switch (x) { case 1: break; } }",
+        ),
+        (
+            "function f(x: number): Promise<Record<string, unknown>> { return (x); }",
+            "function f(x: number): Promise<Record<string, unknown>> { return (x); }",
+        ),
         ("class A { m(x: number): Record<string, unknown> { if (x) {} } }", "class A { m(x: number): Record<string, unknown> { if (x) {} } }"),
-        ("const f = (x: number): Promise<Record<string, unknown>> => { if (x) {} };", "const f = (x: number): Promise<Record<string, unknown>> => { if (x) {} };"),
+        (
+            "const f = (x: number): Promise<Record<string, unknown>> => { if (x) {} };",
+            "const f = (x: number): Promise<Record<string, unknown>> => { if (x) {} };",
+        ),
     ] {
         assert_eq!(format(source), expected, "type argument comma broke the function body: {source:?}");
     }

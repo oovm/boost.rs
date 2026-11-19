@@ -5,7 +5,9 @@ use crate::{
     lexer::token_type::RTokenType,
     parser::element_type::RElementType,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+};
 
 /// Builder for constructing the R language AST from a green tree.
 #[derive(Clone)]
@@ -51,9 +53,15 @@ impl<'config> RBuilder<'config> {
                     match child {
                         GreenTree::Node(sub_node) => {
                             if sub_node.kind == RElementType::Identifier {
-                                name = Some(Identifier { name: source.get_text_in((current_offset..current_offset + child_len).into()).to_string(), span: (current_offset..current_offset + child_len).into() });
+                                name = Some(Identifier {
+                                    name: source.get_text_in((current_offset..current_offset + child_len).into()).to_string(),
+                                    span: (current_offset..current_offset + child_len).into(),
+                                });
                             }
-                            else if sub_node.kind == RElementType::LiteralExpression || sub_node.kind == RElementType::IdentifierExpression || sub_node.kind == RElementType::CallExpression {
+                            else if sub_node.kind == RElementType::LiteralExpression
+                                || sub_node.kind == RElementType::IdentifierExpression
+                                || sub_node.kind == RElementType::CallExpression
+                            {
                                 expr = Some(self.build_expression(sub_node, current_offset, source)?)
                             }
                         }
@@ -62,7 +70,12 @@ impl<'config> RBuilder<'config> {
                     current_offset += child_len
                 }
 
-                if let (Some(n), Some(e)) = (name, expr) { Ok(Some(Statement::Assignment { name: n, expr: e, span: (offset..current_offset).into() })) } else { Ok(None) }
+                if let (Some(n), Some(e)) = (name, expr) {
+                    Ok(Some(Statement::Assignment { name: n, expr: e, span: (offset..current_offset).into() }))
+                }
+                else {
+                    Ok(None)
+                }
             }
             RElementType::Function => {
                 let name = Identifier { name: "anonymous".to_string(), span: (offset..offset).into() };
@@ -74,7 +87,10 @@ impl<'config> RBuilder<'config> {
                     let child_len = child.len() as usize;
                     if let GreenTree::Node(sub_node) = child {
                         match sub_node.kind {
-                            RElementType::Identifier => params.push(Identifier { name: source.get_text_in((current_offset..current_offset + child_len).into()).to_string(), span: (current_offset..current_offset + child_len).into() }),
+                            RElementType::Identifier => params.push(Identifier {
+                                name: source.get_text_in((current_offset..current_offset + child_len).into()).to_string(),
+                                span: (current_offset..current_offset + child_len).into(),
+                            }),
                             RElementType::BlockExpression => {
                                 let mut block_offset = current_offset;
                                 for block_child in sub_node.children() {
@@ -108,7 +124,10 @@ impl<'config> RBuilder<'config> {
 
     fn build_expression(&self, node: &GreenNode<RLanguage>, offset: usize, source: &SourceText) -> Result<Expr, TextError> {
         match node.kind {
-            RElementType::IdentifierExpression | RElementType::Identifier => Ok(Expr::Ident(Identifier { name: source.get_text_in((offset..offset + node.text_len() as usize).into()).to_string(), span: (offset..offset + node.text_len() as usize).into() })),
+            RElementType::IdentifierExpression | RElementType::Identifier => Ok(Expr::Ident(Identifier {
+                name: source.get_text_in((offset..offset + node.text_len() as usize).into()).to_string(),
+                span: (offset..offset + node.text_len() as usize).into(),
+            })),
             RElementType::LiteralExpression => {
                 let text = source.get_text_in((offset..offset + node.text_len() as usize).into()).to_string();
                 if text == "TRUE" || text == "FALSE" {
@@ -129,17 +148,28 @@ impl<'config> RBuilder<'config> {
                 for child in node.children() {
                     let child_len = child.len() as usize;
                     if let GreenTree::Node(sub_node) = child {
-                        if callee.is_none() && (sub_node.kind == RElementType::Identifier || sub_node.kind == RElementType::IdentifierExpression) {
+                        if callee.is_none()
+                            && (sub_node.kind == RElementType::Identifier || sub_node.kind == RElementType::IdentifierExpression)
+                        {
                             callee = Some(Box::new(self.build_expression(sub_node, current_offset, source)?))
                         }
-                        else if sub_node.kind != RElementType::LeftParen && sub_node.kind != RElementType::RightParen && sub_node.kind != RElementType::Comma && !sub_node.kind.is_trivia() {
+                        else if sub_node.kind != RElementType::LeftParen
+                            && sub_node.kind != RElementType::RightParen
+                            && sub_node.kind != RElementType::Comma
+                            && !sub_node.kind.is_trivia()
+                        {
                             args.push(self.build_expression(sub_node, current_offset, source)?)
                         }
                     }
                     current_offset += child_len
                 }
 
-                if let Some(c) = callee { Ok(Expr::Call { callee: c, args, span: (offset..offset + node.text_len() as usize).into() }) } else { Err(TextError::custom_error(format!("Unexpected token at offset {}", offset))) }
+                if let Some(c) = callee {
+                    Ok(Expr::Call { callee: c, args, span: (offset..offset + node.text_len() as usize).into() })
+                }
+                else {
+                    Err(TextError::custom_error(format!("Unexpected token at offset {}", offset)))
+                }
             }
             _ => Err(TextError::custom_error(format!("Unexpected token at offset {}", offset))),
         }
@@ -147,7 +177,12 @@ impl<'config> RBuilder<'config> {
 }
 
 impl<'config> Builder<RLanguage> for RBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RLanguage>) -> BuildOutput<RLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<RLanguage>,
+    ) -> BuildOutput<RLanguage> {
         let parser = RParser::new(self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<RLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);

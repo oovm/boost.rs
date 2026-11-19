@@ -70,7 +70,8 @@ pub const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 pub const SEC_MS_GEC_VERSION: &str = "2-143.0.3650.75";
 const WSS_BASE: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 const ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
+const USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
 const OUTPUT_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
 /// 声明输出格式的比特率；CBR 偏移补偿的前提。
 const MP3_BITRATE_BPS: u64 = 48_000;
@@ -308,7 +309,9 @@ impl Client {
         let timestamp = js_date(unix_now() + self.clock_skew_seconds);
         session.send(&speech_config(request.word_boundaries, &timestamp)).map_err(|error| error.to_string())?;
         let request_id = random_hex(false).map_err(|error| error.to_string())?;
-        session.send(&ssml_request(&request_id, &timestamp, &build_ssml(&request.voice, request.rate_percent, chunk))).map_err(|error| error.to_string())?;
+        session
+            .send(&ssml_request(&request_id, &timestamp, &build_ssml(&request.voice, request.rate_percent, chunk)))
+            .map_err(|error| error.to_string())?;
         loop {
             match session.recv().map_err(|error| error.to_string())? {
                 SessionMessage::Binary(bytes) => {
@@ -601,7 +604,10 @@ fn utf8_safe_split(text: &[u8], limit: usize) -> usize {
 /// 把切点移到未闭合 `&` 之前，实体保持完整。
 fn adjust_for_entity(text: &[u8], mut split_at: usize) -> usize {
     while split_at > 0 {
-        let Some(ampersand) = text[..split_at].iter().rposition(|byte| *byte == b'&') else { break };
+        let Some(ampersand) = text[..split_at].iter().rposition(|byte| *byte == b'&')
+        else {
+            break;
+        };
         if text[ampersand..split_at].contains(&b';') {
             break;
         }
@@ -757,17 +763,16 @@ mod tests {
     }
 
     fn metadata_frame(text: &str) -> SessionMessage {
-        SessionMessage::Text(format!("Path:audio.metadata\r\n\r\n{{\"Metadata\":[{{\"Type\":\"WordBoundary\",\"Data\":{{\"Offset\":0,\"Duration\":10000000,\"text\":{{\"Text\":\"{text}\"}}}}}}]}}"))
+        SessionMessage::Text(format!(
+            "Path:audio.metadata\r\n\r\n{{\"Metadata\":[{{\"Type\":\"WordBoundary\",\"Data\":{{\"Offset\":0,\"Duration\":10000000,\"text\":{{\"Text\":\"{text}\"}}}}}}]}}"
+        ))
     }
 
     #[test]
     fn the_token_matches_an_independent_reference_implementation() {
         // The same timestamp hashed by a verbatim port of MsEdgeTTS's
         // production TypeScript (`SecMsGec.ts`), outside this crate.
-        assert_eq!(
-            sec_ms_gec(1_750_000_000.0),
-            "B029A7426816F097-4579D112DC47FC3BF432B499C0A282F427C659474AF9BF5FA33CE2C003F9E9C2"
-        );
+        assert_eq!(sec_ms_gec(1_750_000_000.0), "B029A7426816F097-4579D112DC47FC3BF432B499C0A282F427C659474AF9BF5FA33CE2C003F9E9C2");
     }
 
     #[test]
@@ -884,8 +889,16 @@ mod tests {
     fn the_second_chunk_is_shifted_by_the_first_chunks_audio() {
         let long = format!("{} {}", "a".repeat(4000), "b".repeat(4000));
         let connector = ScriptedConnector::new(vec![
-            vec![SessionMessage::Binary(audio_frame(&vec![b'A'; 20_000])), metadata_frame("c1"), SessionMessage::Text("Path:turn.end\r\n\r\n".to_owned())],
-            vec![SessionMessage::Binary(audio_frame(&vec![b'A'; 20_000])), metadata_frame("c2"), SessionMessage::Text("Path:turn.end\r\n\r\n".to_owned())],
+            vec![
+                SessionMessage::Binary(audio_frame(&vec![b'A'; 20_000])),
+                metadata_frame("c1"),
+                SessionMessage::Text("Path:turn.end\r\n\r\n".to_owned()),
+            ],
+            vec![
+                SessionMessage::Binary(audio_frame(&vec![b'A'; 20_000])),
+                metadata_frame("c2"),
+                SessionMessage::Text("Path:turn.end\r\n\r\n".to_owned()),
+            ],
         ]);
         let connects = connector.connects.clone();
         let outcome = Client::new().with_connector(Box::new(connector)).synthesize(&request(&long)).expect("two-chunk synthesis");
@@ -930,7 +943,10 @@ mod tests {
 
     #[test]
     fn the_clock_skew_is_an_explicit_caller_input() {
-        let connector = ScriptedConnector::new(vec![vec![SessionMessage::Binary(audio_frame(b"CCCC")), SessionMessage::Text("Path:turn.end\r\n\r\n".to_owned())]]);
+        let connector = ScriptedConnector::new(vec![vec![
+            SessionMessage::Binary(audio_frame(b"CCCC")),
+            SessionMessage::Text("Path:turn.end\r\n\r\n".to_owned()),
+        ]]);
         let skews = connector.skews.clone();
         let outcome =
             Client::new().with_clock_skew(45.0).with_connector(Box::new(connector)).synthesize(&request("hello")).expect("no local error");

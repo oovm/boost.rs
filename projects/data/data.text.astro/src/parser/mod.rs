@@ -2,12 +2,12 @@
 
 pub mod element_type;
 use crate::{language::SvelteLanguage, lexer::token_type::SvelteTokenType};
-pub use element_type::SvelteElementType;
 use data_text_core::{
     errors::TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
+pub use element_type::SvelteElementType;
 
 pub(crate) type State<'a, S> = ParserState<'a, SvelteLanguage, S>;
 
@@ -189,7 +189,12 @@ impl<'config> SvelteParser<'config> {
 }
 
 impl<'config> Parser<SvelteLanguage> for SvelteParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<SvelteLanguage>) -> ParseOutput<'a, SvelteLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<SvelteLanguage>,
+    ) -> ParseOutput<'a, SvelteLanguage> {
         let lexer = crate::lexer::SvelteLexer::new(self.language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

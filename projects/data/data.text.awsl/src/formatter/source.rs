@@ -18,8 +18,10 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let right = &pair[1];
         let span = core::range::Range { start: left.span.end, end: right.span.start };
         let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
+        let left_text =
+            source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text =
+            source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let constraint = awsl_gap_constraint(left_text, gap, right_text);
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
     }
@@ -123,7 +125,12 @@ fn is_punct(ch: char) -> bool {
 }
 
 fn should_preserve_gap(left: &str, gap: &str, right: &str) -> bool {
-    gap.contains('\n') || left.starts_with("<!--") || right.starts_with("<!--") || gap.contains("<!--") || left.starts_with('#') || right.starts_with('#')
+    gap.contains('\n')
+        || left.starts_with("<!--")
+        || right.starts_with("<!--")
+        || gap.contains("<!--")
+        || left.starts_with('#')
+        || right.starts_with('#')
 }
 
 fn awsl_gap_constraint(left: &str, gap: &str, right: &str) -> GapConstraint {
@@ -181,7 +188,12 @@ fn validate_delimiters(source: &str, tokens: &[ScannedToken]) -> Result<(), data
             _ => {}
         }
     }
-    if stack.is_empty() { Ok(()) } else { Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
+    if stack.is_empty() {
+        Ok(())
+    }
+    else {
+        Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}")))
+    }
 }
 
 fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::TextError> {

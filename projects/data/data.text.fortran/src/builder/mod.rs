@@ -1,7 +1,7 @@
 use crate::{ast::*, language::FortranLanguage};
 use core::range::Range;
 use data_text_core::{
-    GreenNode, TextError, Parser, Source, TextEdit,
+    GreenNode, Parser, Source, TextEdit, TextError,
     builder::{BuildOutput, Builder, BuilderCache},
     tree::red_tree::{RedNode, RedTree},
 };
@@ -33,7 +33,12 @@ impl<'config> FortranBuilder<'config> {
 }
 
 impl<'config> Builder<FortranLanguage> for FortranBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<FortranLanguage>) -> BuildOutput<FortranLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<FortranLanguage>,
+    ) -> BuildOutput<FortranLanguage> {
         let mut session = data_text_core::parser::ParseSession::<FortranLanguage>::default();
         let parser = crate::parser::FortranParser::new(self.language);
         let output = parser.parse(source, edits, &mut session);

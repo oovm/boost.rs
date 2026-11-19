@@ -120,10 +120,7 @@ fn diff_kern_corner(ours: &MathGlyphInfo, theirs: Option<ttf_parser::math::KernI
             assert_eq!(ours.kern_values.len() as u16, count + 1, "{what}: glyph {glyph_id} kern count");
             for index in 0..=count {
                 let expected = kern.kern(index).expect("ttf-parser kern").value as f32;
-                assert_eq!(
-                    ours.kern_values[index as usize], expected,
-                    "{what}: glyph {glyph_id} kern {index} differs from ttf-parser"
-                );
+                assert_eq!(ours.kern_values[index as usize], expected, "{what}: glyph {glyph_id} kern {index} differs from ttf-parser");
             }
         }
     }
@@ -173,10 +170,7 @@ fn diff_constructions(
                 for index in 0..part_count {
                     let part = assembly.parts.get(index).expect("ttf-parser part");
                     let ours_part = &ours_assembly.parts[index as usize];
-                    assert_eq!(
-                        ours_part.glyph_id, part.glyph_id.0,
-                        "{what}: glyph {glyph_id} part {index} glyph differs from ttf-parser"
-                    );
+                    assert_eq!(ours_part.glyph_id, part.glyph_id.0, "{what}: glyph {glyph_id} part {index} glyph differs from ttf-parser");
                     assert_eq!(
                         ours_part.start_connector_length, part.start_connector_length as f32,
                         "{what}: glyph {glyph_id} part {index} start connector differs from ttf-parser"
@@ -189,10 +183,7 @@ fn diff_constructions(
                         ours_part.full_advance, part.full_advance as f32,
                         "{what}: glyph {glyph_id} part {index} full advance differs from ttf-parser"
                     );
-                    assert_eq!(
-                        ours_part.part_flags, part.part_flags.0,
-                        "{what}: glyph {glyph_id} part {index} flags differ from ttf-parser"
-                    );
+                    assert_eq!(ours_part.part_flags, part.part_flags.0, "{what}: glyph {glyph_id} part {index} flags differ from ttf-parser");
                 }
             }
             _ => panic!("{what}: glyph {glyph_id} assembly presence differs from ttf-parser"),
@@ -210,22 +201,14 @@ fn diff_font(data: &[u8], face_index: u32) {
 
     let glyph_info = theirs.glyph_info.expect("ttf-parser MathGlyphInfo");
     diff_math_values(&ours.glyph_info.italic_correction, glyph_info.italic_corrections, num_glyphs, "italic correction");
-    diff_math_values(
-        &ours.glyph_info.top_accent_attachment,
-        glyph_info.top_accent_attachments,
-        num_glyphs,
-        "top accent attachment",
-    );
+    diff_math_values(&ours.glyph_info.top_accent_attachment, glyph_info.top_accent_attachments, num_glyphs, "top accent attachment");
     diff_extended_shapes(&ours.glyph_info.extended_shapes, glyph_info.extended_shapes, num_glyphs);
     for corner in [Corner::TopRight, Corner::TopLeft, Corner::BottomRight, Corner::BottomLeft] {
         diff_kern_corner(&ours.glyph_info, glyph_info.kern_infos, num_glyphs, corner);
     }
 
     let variants = theirs.variants.expect("ttf-parser MathVariants");
-    assert_eq!(
-        ours.variants.min_connector_overlap, variants.min_connector_overlap as f32,
-        "MinConnectorOverlap differs from ttf-parser"
-    );
+    assert_eq!(ours.variants.min_connector_overlap, variants.min_connector_overlap as f32, "MinConnectorOverlap differs from ttf-parser");
     diff_constructions(
         &ours.variants.vert_constructions,
         &ours.variants.vert_coverages,
@@ -567,10 +550,7 @@ fn bounded_rejects_out_of_range_left_kern_offset() {
         glyph_info.clear();
         glyph_info.extend_from_slice(&u16s(&list));
         let data = math_with_glyph_info(&glyph_info);
-        assert!(
-            matches!(MathTable::parse(&data), Err(ParseMathError::Malformed(_))),
-            "corner {corner} must reject an offset past the table"
-        );
+        assert!(matches!(MathTable::parse(&data), Err(ParseMathError::Malformed(_))), "corner {corner} must reject an offset past the table");
     }
 }
 

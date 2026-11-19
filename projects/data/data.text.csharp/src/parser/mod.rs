@@ -3,7 +3,6 @@
 use crate::language::CSharpLanguage;
 /// Element types for the C# parser.
 pub mod element_type;
-pub use element_type::CSharpElementType;
 use data_text_core::{
     GreenNode, TextError,
     parser::{
@@ -12,6 +11,7 @@ use data_text_core::{
     },
     source::{Source, TextEdit},
 };
+pub use element_type::CSharpElementType;
 
 pub(crate) type State<'a, S> = ParserState<'a, CSharpLanguage, S>;
 
@@ -24,7 +24,10 @@ pub struct CSharpParser<'config> {
 }
 
 impl<'config> Pratt<CSharpLanguage> for CSharpParser<'config> {
-    fn primary<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, CSharpLanguage, S>) -> &'a GreenNode<'a, CSharpLanguage> {
+    fn primary<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, CSharpLanguage, S>,
+    ) -> &'a GreenNode<'a, CSharpLanguage> {
         use crate::lexer::token_type::CSharpTokenType;
         let cp = state.checkpoint();
         match state.peek_kind() {
@@ -73,11 +76,19 @@ impl<'config> Pratt<CSharpLanguage> for CSharpParser<'config> {
         }
     }
 
-    fn prefix<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, CSharpLanguage, S>) -> &'a GreenNode<'a, CSharpLanguage> {
+    fn prefix<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, CSharpLanguage, S>,
+    ) -> &'a GreenNode<'a, CSharpLanguage> {
         self.primary(state)
     }
 
-    fn infix<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, CSharpLanguage, S>, left: &'a GreenNode<'a, CSharpLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, CSharpLanguage>> {
+    fn infix<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, CSharpLanguage, S>,
+        left: &'a GreenNode<'a, CSharpLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, CSharpLanguage>> {
         use crate::{lexer::token_type::CSharpTokenType, parser::CSharpElementType::*};
         let kind = state.peek_kind()?;
 
@@ -97,9 +108,14 @@ impl<'config> Pratt<CSharpLanguage> for CSharpParser<'config> {
             CSharpTokenType::Lambda => (2, Associativity::Right),
             CSharpTokenType::LogicalOr => (3, Associativity::Left),
             CSharpTokenType::LogicalAnd => (4, Associativity::Left),
-            CSharpTokenType::Equal | CSharpTokenType::NotEqual | CSharpTokenType::Less | CSharpTokenType::Greater | CSharpTokenType::LessEqual | CSharpTokenType::GreaterEqual | CSharpTokenType::IsKeyword | CSharpTokenType::AsKeyword => {
-                (5, Associativity::Left)
-            }
+            CSharpTokenType::Equal
+            | CSharpTokenType::NotEqual
+            | CSharpTokenType::Less
+            | CSharpTokenType::Greater
+            | CSharpTokenType::LessEqual
+            | CSharpTokenType::GreaterEqual
+            | CSharpTokenType::IsKeyword
+            | CSharpTokenType::AsKeyword => (5, Associativity::Left),
             CSharpTokenType::Plus | CSharpTokenType::Minus => (10, Associativity::Left),
             CSharpTokenType::Star | CSharpTokenType::Slash | CSharpTokenType::Percent => (11, Associativity::Left),
             CSharpTokenType::LeftParen | CSharpTokenType::LeftBracket | CSharpTokenType::Dot => (15, Associativity::Left),
@@ -162,7 +178,9 @@ impl<'config> Pratt<CSharpLanguage> for CSharpParser<'config> {
             | CSharpTokenType::XorAssign
             | CSharpTokenType::LeftShiftAssign
             | CSharpTokenType::RightShiftAssign
-            | CSharpTokenType::QuestionQuestionAssign => Some(binary(state, left, kind, prec, assoc, AssignmentExpression, |s, p| PrattParser::parse(s, p, self))),
+            | CSharpTokenType::QuestionQuestionAssign => {
+                Some(binary(state, left, kind, prec, assoc, AssignmentExpression, |s, p| PrattParser::parse(s, p, self)))
+            }
             _ => Some(binary(state, left, kind, prec, assoc, BinaryExpression, |s, p| PrattParser::parse(s, p, self))),
         }
     }
@@ -285,7 +303,10 @@ impl<'config> CSharpParser<'config> {
         state.expect(CSharpTokenType::LeftBrace).ok();
         while state.not_at_end() && !state.at(CSharpTokenType::RightBrace) {
             match state.peek_kind() {
-                Some(CSharpTokenType::GetKeyword) | Some(CSharpTokenType::SetKeyword) | Some(CSharpTokenType::AddKeyword) | Some(CSharpTokenType::RemoveKeyword) => {
+                Some(CSharpTokenType::GetKeyword)
+                | Some(CSharpTokenType::SetKeyword)
+                | Some(CSharpTokenType::AddKeyword)
+                | Some(CSharpTokenType::RemoveKeyword) => {
                     state.bump();
                     if state.at(CSharpTokenType::LeftBrace) {
                         self.parse_block(state)?;
@@ -407,7 +428,11 @@ impl<'config> CSharpParser<'config> {
                 // Property, Method, or Field
                 // Simplified processing
                 state.bump(); // Type
-                while state.not_at_end() && !state.at(CSharpTokenType::Semicolon) && !state.at(CSharpTokenType::LeftBrace) && !state.at(CSharpTokenType::LeftParen) {
+                while state.not_at_end()
+                    && !state.at(CSharpTokenType::Semicolon)
+                    && !state.at(CSharpTokenType::LeftBrace)
+                    && !state.at(CSharpTokenType::LeftParen)
+                {
                     state.bump();
                 }
 
@@ -564,7 +589,11 @@ impl<'config> CSharpParser<'config> {
                     state.bump();
                     PrattParser::parse(state, 0, self);
                     state.expect(CSharpTokenType::Colon).ok();
-                    while state.not_at_end() && !state.at(CSharpTokenType::Case) && !state.at(CSharpTokenType::Default) && !state.at(CSharpTokenType::RightBrace) {
+                    while state.not_at_end()
+                        && !state.at(CSharpTokenType::Case)
+                        && !state.at(CSharpTokenType::Default)
+                        && !state.at(CSharpTokenType::RightBrace)
+                    {
                         self.parse_statement(state)?;
                     }
                 }
@@ -618,7 +647,12 @@ impl<'config> CSharpParser<'config> {
 }
 
 impl<'config> Parser<CSharpLanguage> for CSharpParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CSharpLanguage>) -> ParseOutput<'a, CSharpLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CSharpLanguage>,
+    ) -> ParseOutput<'a, CSharpLanguage> {
         let lexer = crate::lexer::CSharpLexer::new(self._language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

@@ -152,12 +152,8 @@ pub fn resolve_variant_pattern_constructor(
         .find(|candidate| matches!(candidate.symbol.parts(), [name] if name == &variant_name))?;
     let mut substitutions = BTreeMap::new();
     unify_call_type_binders(&candidate.signature.return_type, actual_type, &candidate.generic_binders, &mut substitutions, type_relations)?;
-    let parameter_types = candidate
-        .signature
-        .params
-        .iter()
-        .map(|parameter| substitute_type_vars(parameter, &substitutions))
-        .collect::<Vec<_>>();
+    let parameter_types =
+        candidate.signature.params.iter().map(|parameter| substitute_type_vars(parameter, &substitutions)).collect::<Vec<_>>();
     let payload_type = match parameter_types.as_slice() {
         [] => ValkyrieType::Unit,
         [single] => single.clone(),

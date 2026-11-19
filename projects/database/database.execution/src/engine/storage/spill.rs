@@ -74,11 +74,7 @@ pub(crate) fn encode_one(key: &str, value: &[u8]) -> (Vec<u8>, Vec<(String, Vec<
     let mut header = Vec::with_capacity(SPILL_MAGIC.len() + 8);
     header.extend_from_slice(SPILL_MAGIC);
     header.extend((value.len() as u64).to_le_bytes());
-    let chunks = value
-        .chunks(SPILL_CHUNK_BYTES)
-        .enumerate()
-        .map(|(index, chunk)| (chunk_key(key, index), chunk.to_vec()))
-        .collect();
+    let chunks = value.chunks(SPILL_CHUNK_BYTES).enumerate().map(|(index, chunk)| (chunk_key(key, index), chunk.to_vec())).collect();
     (header, chunks)
 }
 

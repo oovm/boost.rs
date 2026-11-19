@@ -132,14 +132,27 @@ impl<'config> FSharpParser<'config> {
             Some(FSharpTokenType::Identifier) => {
                 self.parse_identifier_expression(state, checkpoint)?;
             }
-            Some(FSharpTokenType::IntegerLiteral) | Some(FSharpTokenType::FloatLiteral) | Some(FSharpTokenType::StringLiteral) | Some(FSharpTokenType::CharLiteral) => {
+            Some(FSharpTokenType::IntegerLiteral)
+            | Some(FSharpTokenType::FloatLiteral)
+            | Some(FSharpTokenType::StringLiteral)
+            | Some(FSharpTokenType::CharLiteral) => {
                 self.parse_literal_expression(state, checkpoint)?;
             }
             _ => {
                 // Simple expression: consume until end of line or specific delimiters
                 while state.not_at_end() {
                     let kind = state.peek_kind();
-                    if matches!(kind, Some(FSharpTokenType::Newline | FSharpTokenType::Then | FSharpTokenType::Else | FSharpTokenType::In | FSharpTokenType::PipeRight | FSharpTokenType::PipeGreater)) {
+                    if matches!(
+                        kind,
+                        Some(
+                            FSharpTokenType::Newline
+                                | FSharpTokenType::Then
+                                | FSharpTokenType::Else
+                                | FSharpTokenType::In
+                                | FSharpTokenType::PipeRight
+                                | FSharpTokenType::PipeGreater
+                        )
+                    ) {
                         break;
                     }
                     state.bump()
@@ -326,7 +339,11 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_parenthesized_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
+    fn parse_parenthesized_expression<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        checkpoint: (usize, usize),
+    ) -> Result<(), TextError> {
         state.bump(); // LeftParen
         self.parse_expression(state)?;
         state.expect(FSharpTokenType::RightParen)?;
@@ -334,7 +351,11 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_list_or_array_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
+    fn parse_list_or_array_expression<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        checkpoint: (usize, usize),
+    ) -> Result<(), TextError> {
         state.bump(); // LeftBracket
 
         while state.not_at_end() && !state.at(FSharpTokenType::RightBracket) {
@@ -366,11 +387,27 @@ impl<'config> FSharpParser<'config> {
         Ok(())
     }
 
-    fn parse_identifier_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, checkpoint: (usize, usize)) -> Result<(), TextError> {
+    fn parse_identifier_expression<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        checkpoint: (usize, usize),
+    ) -> Result<(), TextError> {
         state.bump(); // Identifier
 
         // Check for function application
-        if state.not_at_end() && !matches!(state.peek_kind(), Some(FSharpTokenType::Newline | FSharpTokenType::Then | FSharpTokenType::Else | FSharpTokenType::In | FSharpTokenType::PipeRight | FSharpTokenType::PipeGreater)) {
+        if state.not_at_end()
+            && !matches!(
+                state.peek_kind(),
+                Some(
+                    FSharpTokenType::Newline
+                        | FSharpTokenType::Then
+                        | FSharpTokenType::Else
+                        | FSharpTokenType::In
+                        | FSharpTokenType::PipeRight
+                        | FSharpTokenType::PipeGreater
+                )
+            )
+        {
             self.parse_expression(state)?;
             state.finish_at(checkpoint, FSharpElementType::Application);
         }
@@ -396,7 +433,12 @@ impl<'config> FSharpParser<'config> {
 }
 
 impl<'config> Parser<FSharpLanguage> for FSharpParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<FSharpLanguage>) -> ParseOutput<'a, FSharpLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<FSharpLanguage>,
+    ) -> ParseOutput<'a, FSharpLanguage> {
         let lexer = FSharpLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = (0, 0); // Ensure the root node includes initial trivia skipped during state initialization

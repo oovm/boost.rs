@@ -5,7 +5,7 @@ use crate::{
     parser::{TypstParser, element_type::TypstElementType},
 };
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree,
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, TextDiagnostics, TextError,
     source::{Source, TextEdit},
 };
 
@@ -23,7 +23,12 @@ impl<'config> TypstBuilder<'config> {
 }
 
 impl<'config> Builder<TypstLanguage> for TypstBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<TypstLanguage>) -> TextDiagnostics<TypstRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<TypstLanguage>,
+    ) -> TextDiagnostics<TypstRoot> {
         let parser = TypstParser::new(self.config);
 
         let parse_result = parser.parse(source, edits, cache);

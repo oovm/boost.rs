@@ -1,7 +1,9 @@
 use crate::parser::DHallParser;
 #[doc = include_str!("../readme.md")]
 use crate::{ast::*, language::DHallLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+};
 
 /// DHall AST builder.
 #[derive(Clone)]
@@ -17,7 +19,12 @@ impl<'config> DHallBuilder<'config> {
 }
 
 impl<'config> Builder<DHallLanguage> for DHallBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DHallLanguage>) -> BuildOutput<DHallLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<DHallLanguage>,
+    ) -> BuildOutput<DHallLanguage> {
         let parser = DHallParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<DHallLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -67,7 +74,10 @@ impl<'config> DHallBuilder<'config> {
                 let name = source.get_text_in(span.clone()).to_string();
                 Ok(DHallExpr::Identifier { name, span })
             }
-            crate::parser::element_type::DHallElementType::Number | crate::parser::element_type::DHallElementType::String | crate::parser::element_type::DHallElementType::True | crate::parser::element_type::DHallElementType::False => {
+            crate::parser::element_type::DHallElementType::Number
+            | crate::parser::element_type::DHallElementType::String
+            | crate::parser::element_type::DHallElementType::True
+            | crate::parser::element_type::DHallElementType::False => {
                 let value = source.get_text_in(span.clone()).to_string();
                 Ok(DHallExpr::Literal { value, span })
             }

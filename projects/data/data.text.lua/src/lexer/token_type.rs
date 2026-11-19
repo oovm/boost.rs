@@ -63,7 +63,17 @@ impl TokenType for LuaTokenType {
             | Self::DotDot
             | Self::DotDotDot => UniversalTokenRole::Operator,
 
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::ColonColon | Self::Semicolon | Self::Colon | Self::Comma | Self::Dot => UniversalTokenRole::Punctuation,
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::ColonColon
+            | Self::Semicolon
+            | Self::Colon
+            | Self::Comma
+            | Self::Dot => UniversalTokenRole::Punctuation,
 
             Self::Comment => UniversalTokenRole::Comment,
             _ => UniversalTokenRole::None,

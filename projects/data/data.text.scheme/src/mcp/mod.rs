@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use crate::lsp::SchemeLanguageService;
-use language_server::MemoryVfs;
 use language_mcp::McpServer;
+use language_server::MemoryVfs;
 
 /// Start an MCP server for Scheme semantics (Stdio).
 pub async fn serve_scheme_mcp(vfs: MemoryVfs) {

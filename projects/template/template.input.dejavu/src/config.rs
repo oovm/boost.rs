@@ -39,8 +39,7 @@ impl DejavuConfig {
     pub fn load<P: Into<PathBuf>>(path: P) -> DejavuResult<Self> {
         let path = path.into();
         let text = std::fs::read_to_string(&path)?;
-        let config = toml::from_str(&text)
-            .map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))?;
+        let config = toml::from_str(&text).map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))?;
         Ok(config)
     }
 
@@ -62,9 +61,7 @@ impl DejavuConfig {
         }
         merge_env(&mut merged, "DEJAVU_");
 
-        merged
-            .try_into()
-            .map_err(|e| DejavuError::InvalidConfig(format!("invalid configuration: {e}")))
+        merged.try_into().map_err(|e| DejavuError::InvalidConfig(format!("invalid configuration: {e}")))
     }
 
     /// Save configuration to a TOML file
@@ -91,8 +88,7 @@ impl DejavuConfig {
 /// Read a TOML document into a value tree.
 fn read_toml(path: &Path) -> DejavuResult<TomlValue> {
     let text = std::fs::read_to_string(path)?;
-    text.parse::<TomlValue>()
-        .map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))
+    text.parse::<TomlValue>().map_err(|e| DejavuError::InvalidConfig(format!("failed to parse {}: {e}", path.display())))
 }
 
 /// Deep-merge `overlay` into `base`: tables merge key by key, every other value replaces.
@@ -127,10 +123,12 @@ fn merge_env(base: &mut TomlValue, prefix: &str) {
 }
 
 fn insert_path(base: &mut TomlValue, segments: &[&str], value: TomlValue) {
-    let Some((first, rest)) = segments.split_first() else {
+    let Some((first, rest)) = segments.split_first()
+    else {
         return;
     };
-    let TomlValue::Table(table) = base else {
+    let TomlValue::Table(table) = base
+    else {
         return;
     };
     if rest.is_empty() {

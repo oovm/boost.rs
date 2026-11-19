@@ -39,7 +39,12 @@ impl<'config> VbNetParser<'config> {
 }
 
 impl<'config> Parser<VbNetLanguage> for VbNetParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VbNetLanguage>) -> ParseOutput<'a, VbNetLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VbNetLanguage>,
+    ) -> ParseOutput<'a, VbNetLanguage> {
         let lexer = crate::lexer::VbNetLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = (0, 0);

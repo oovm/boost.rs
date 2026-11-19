@@ -103,14 +103,34 @@ impl ElementType for PlantUmlElementType {
             Self::Root => UniversalElementRole::Root,
             Self::ClassDeclaration | Self::ParticipantDeclaration => UniversalElementRole::Definition,
             Self::ClassMemberBlock | Self::ActivityDiagram | Self::StateDiagram | Self::ComponentDiagram => UniversalElementRole::Container,
-            Self::ClassRelation | Self::SequenceMessage | Self::Activate | Self::Deactivate | Self::ActivityStatement | Self::StateStatement | Self::ComponentStatement => UniversalElementRole::Statement,
+            Self::ClassRelation
+            | Self::SequenceMessage
+            | Self::Activate
+            | Self::Deactivate
+            | Self::ActivityStatement
+            | Self::StateStatement
+            | Self::ComponentStatement => UniversalElementRole::Statement,
             Self::ClassMember => UniversalElementRole::Attribute,
             Self::Comment => UniversalElementRole::Documentation,
             Self::StartMarker | Self::EndMarker | Self::Trivia => UniversalElementRole::Metadata,
-            Self::Class | Self::Interface | Self::Abstract | Self::Enum | Self::Participant | Self::Actor | Self::As => UniversalElementRole::Metadata,
-            Self::Arrow | Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::Plus | Self::Minus | Self::Hash | Self::Tilde | Self::Colon | Self::Identifier | Self::String | Self::Text | Self::Error | Self::Eof => {
+            Self::Class | Self::Interface | Self::Abstract | Self::Enum | Self::Participant | Self::Actor | Self::As => {
                 UniversalElementRole::Metadata
             }
+            Self::Arrow
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::Plus
+            | Self::Minus
+            | Self::Hash
+            | Self::Tilde
+            | Self::Colon
+            | Self::Identifier
+            | Self::String
+            | Self::Text
+            | Self::Error
+            | Self::Eof => UniversalElementRole::Metadata,
         }
     }
 }

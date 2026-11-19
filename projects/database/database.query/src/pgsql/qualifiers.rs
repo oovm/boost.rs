@@ -135,10 +135,7 @@ mod tests {
     fn a_qualified_temp_reference_is_reduced_to_the_bare_name() {
         let sql = rewrite_pg_temp_references("SELECT * FROM pg_temp.staged WHERE pg_temp.staged.id > 1", |name| name == "staged");
         assert_eq!(sql, "SELECT * FROM staged WHERE staged.id > 1");
-        assert_eq!(
-            rewrite_pg_temp_references("INSERT INTO pg_temp_12.staged (id) VALUES (1)", |_| true),
-            "INSERT INTO staged (id) VALUES (1)"
-        );
+        assert_eq!(rewrite_pg_temp_references("INSERT INTO pg_temp_12.staged (id) VALUES (1)", |_| true), "INSERT INTO staged (id) VALUES (1)");
     }
 
     #[test]

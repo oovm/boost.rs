@@ -66,7 +66,13 @@ pub struct EjsLanguage {
 
 impl Default for EjsLanguage {
     fn default() -> Self {
-        Self { open_delimiter: "<%".to_string(), close_delimiter: "%>".to_string(), output_escape: "=".to_string(), output_raw: "-".to_string(), comment_marker: "#".to_string() }
+        Self {
+            open_delimiter: "<%".to_string(),
+            close_delimiter: "%>".to_string(),
+            output_escape: "=".to_string(),
+            output_raw: "-".to_string(),
+            comment_marker: "#".to_string(),
+        }
     }
 }
 

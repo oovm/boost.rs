@@ -90,7 +90,13 @@ impl From<OsvVuln> for Advisory {
             .unwrap_or("unknown")
             .to_string();
         let fixed_version = vuln.affected.as_ref().and_then(|affected| extract_fixed_version(affected));
-        let url = vuln.references.as_ref().and_then(|refs| refs.first()).and_then(|reference| reference.get("url")).and_then(|value| value.as_str()).map(str::to_string);
+        let url = vuln
+            .references
+            .as_ref()
+            .and_then(|refs| refs.first())
+            .and_then(|reference| reference.get("url"))
+            .and_then(|value| value.as_str())
+            .map(str::to_string);
         Self { id, summary: vuln.summary.unwrap_or_default(), severity, fixed_version, url }
     }
 }

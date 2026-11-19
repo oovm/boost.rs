@@ -1,4 +1,4 @@
-use data_text_core::{Builder, TextError, TextErrorKind, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, TextError, TextErrorKind, parser::session::ParseSession};
 use data_text_dot::{
     DotBuilder, DotLanguage,
     ast::{AttributeTarget, Compass, EdgeOp, EdgeOperand, GraphType, RecordItem, Statement},
@@ -34,7 +34,10 @@ fn test_builds_digraph() {
     assert!(graph.strict);
     assert_eq!(graph.graph_type, GraphType::Digraph);
     assert_eq!(graph.id.as_deref(), Some("G"));
-    assert_eq!(&source[graph.span.start..graph.span.end], "strict digraph G { rankdir=LR; A [label=\"Start\", shape=diamond]; A:s -> B:n [label=\"go\"]; }");
+    assert_eq!(
+        &source[graph.span.start..graph.span.end],
+        "strict digraph G { rankdir=LR; A [label=\"Start\", shape=diamond]; A:s -> B:n [label=\"go\"]; }"
+    );
 
     assert_eq!(graph.statements.len(), 3);
 
@@ -259,7 +262,14 @@ fn test_builds_record_fields_and_ports() {
             RecordItem::Group(_) => panic!("expected flat fields"),
         })
         .collect();
-    assert_eq!(ports, [(Some("f0".to_string()), "left".to_string()), (Some("f1".to_string()), "mid".to_string()), (Some("f2".to_string()), "right".to_string())]);
+    assert_eq!(
+        ports,
+        [
+            (Some("f0".to_string()), "left".to_string()),
+            (Some("f1".to_string()), "mid".to_string()),
+            (Some("f2".to_string()), "right".to_string())
+        ]
+    );
 
     let RecordItem::Field(first) = &record.items[0]
     else {

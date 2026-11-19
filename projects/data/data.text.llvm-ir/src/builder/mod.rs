@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::LLvmTokenType,
     parser::{LLirParser, element_type::LLvmElementType},
 };
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// A builder for converting LLVM IR green trees into an AST.
 pub struct LLirBuilder<'config> {
@@ -20,7 +20,12 @@ impl<'config> LLirBuilder<'config> {
 }
 
 impl<'config> Builder<LLvmLanguage> for LLirBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<LLvmLanguage>) -> TextDiagnostics<LLirRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<LLvmLanguage>,
+    ) -> TextDiagnostics<LLirRoot> {
         let parser = LLirParser::new(self.config);
         let parse_result = parser.parse(source, edits, cache);
 
@@ -156,7 +161,12 @@ impl<'config> LLirBuilder<'config> {
                             match b_child {
                                 RedTree::Leaf(leaf) => {
                                     let text = source.get_text_in(leaf.span());
-                                    if (leaf.kind == LLvmTokenType::Identifier || leaf.kind == LLvmTokenType::LocalVar || leaf.kind == LLvmTokenType::Number || leaf.kind == LLvmTokenType::Keyword) && label.is_none() {
+                                    if (leaf.kind == LLvmTokenType::Identifier
+                                        || leaf.kind == LLvmTokenType::LocalVar
+                                        || leaf.kind == LLvmTokenType::Number
+                                        || leaf.kind == LLvmTokenType::Keyword)
+                                        && label.is_none()
+                                    {
                                         // Check if the next token is a colon to be sure it's a label
                                         let mut is_label = false;
                                         let mut children = node.children();

@@ -28,7 +28,11 @@ pub fn select_xpath<'a>(document: &XmlDocumentView<'a>, selector: &str, budget: 
 }
 
 /// Executes XPath and maps matches back to source AST elements.
-pub fn select_xpath_elements<'a>(document: &XmlDocumentView<'a>, selector: &str, budget: QueryBudget) -> Result<(SelectorResult, Vec<&'a crate::ast::XmlElement>), XpathParseError> {
+pub fn select_xpath_elements<'a>(
+    document: &XmlDocumentView<'a>,
+    selector: &str,
+    budget: QueryBudget,
+) -> Result<(SelectorResult, Vec<&'a crate::ast::XmlElement>), XpathParseError> {
     let result = select_xpath(document, selector, budget)?;
     let elements = document.source_elements(&result.matches);
     Ok((result, elements))
@@ -59,7 +63,13 @@ fn root_elements<'a>(document: &XmlDocumentView<'a>) -> Vec<ElementRef> {
     document.all_elements().into_iter().filter(|reference| document.node(reference.node_id).is_some_and(|node| node.parent.is_none())).collect()
 }
 
-fn evaluate_path<'a>(document: &XmlDocumentView<'a>, path: &PathExpr, context: &[ElementRef], budget: QueryBudget, predicates_used: &mut usize) -> Vec<ElementRef> {
+fn evaluate_path<'a>(
+    document: &XmlDocumentView<'a>,
+    path: &PathExpr,
+    context: &[ElementRef],
+    budget: QueryBudget,
+    predicates_used: &mut usize,
+) -> Vec<ElementRef> {
     if path.steps.is_empty() {
         return context.to_vec();
     }
@@ -75,7 +85,14 @@ fn evaluate_path<'a>(document: &XmlDocumentView<'a>, path: &PathExpr, context: &
     current
 }
 
-fn evaluate_step<'a>(document: &XmlDocumentView<'a>, step: &Step, context: &[ElementRef], budget: QueryBudget, predicates_used: &mut usize, first_absolute: bool) -> Vec<ElementRef> {
+fn evaluate_step<'a>(
+    document: &XmlDocumentView<'a>,
+    step: &Step,
+    context: &[ElementRef],
+    budget: QueryBudget,
+    predicates_used: &mut usize,
+    first_absolute: bool,
+) -> Vec<ElementRef> {
     if matches!(step.axis, Axis::Attribute) {
         return Vec::new();
     }
@@ -138,7 +155,13 @@ fn node_test_matches(node: &XmlNodeData, test: &NodeTest) -> bool {
     }
 }
 
-fn predicates_match<'a>(document: &XmlDocumentView<'a>, view: &XmlElementView<'a>, predicates: &[Predicate], budget: QueryBudget, predicates_used: &mut usize) -> bool {
+fn predicates_match<'a>(
+    document: &XmlDocumentView<'a>,
+    view: &XmlElementView<'a>,
+    predicates: &[Predicate],
+    budget: QueryBudget,
+    predicates_used: &mut usize,
+) -> bool {
     for predicate in predicates {
         *predicates_used += 1;
         if *predicates_used > budget.max_predicates {
@@ -169,7 +192,10 @@ fn predicates_match<'a>(document: &XmlDocumentView<'a>, view: &XmlElementView<'a
 }
 
 fn sibling_elements<'a>(document: &XmlDocumentView<'a>, reference: ElementRef) -> Vec<ElementRef> {
-    let parent = document.element(reference.node_id).and_then(|view| view.parent()).or_else(|| if document.node(reference.node_id).is_some_and(|node| node.parent.is_none()) { None } else { None });
+    let parent = document
+        .element(reference.node_id)
+        .and_then(|view| view.parent())
+        .or_else(|| if document.node(reference.node_id).is_some_and(|node| node.parent.is_none()) { None } else { None });
 
     match parent {
         Some(parent_ref) => document.element(parent_ref.node_id).map(|view| view.element_children()).unwrap_or_default(),

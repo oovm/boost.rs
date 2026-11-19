@@ -243,12 +243,7 @@ impl HirCallResolutionFailureKind {
             Self::GenericsUnresolved => "explicit generic arguments still contain open binders".to_string(),
             Self::ExplicitGenericArgumentsMismatch { expected_binders, expected_kinds, actual_arguments } => {
                 let actual = if actual_arguments.is_empty() { "none".to_string() } else { actual_arguments.join(", ") };
-                let kinds = if expected_kinds.is_empty() {
-                    String::new()
-                }
-                else {
-                    format!(" ({})", expected_kinds.join(", "))
-                };
+                let kinds = if expected_kinds.is_empty() { String::new() } else { format!(" ({})", expected_kinds.join(", ")) };
                 format!(
                     "explicit generic arguments do not match the declaration: expected {expected_binders} binder(s){kinds}, got {} explicit argument(s) ({actual})",
                     actual_arguments.len()
@@ -258,9 +253,9 @@ impl HirCallResolutionFailureKind {
             Self::InstanceNotClosed => {
                 "candidate is bound, but `where` evidence rejected the concrete substitution, so the instance never closed".to_string()
             }
-            Self::ForInProtocolUnsatisfied { source } => format!(
-                "for-in source `{source}` lacks trait evidence: it does not implement `std.iterator::IntoIterator`"
-            ),
+            Self::ForInProtocolUnsatisfied { source } => {
+                format!("for-in source `{source}` lacks trait evidence: it does not implement `std.iterator::IntoIterator`")
+            }
             Self::AmbiguousExplicitImpls { candidates } => {
                 format!("{candidates} explicit impl candidates share the same specificity, so no unique witness can be selected")
             }

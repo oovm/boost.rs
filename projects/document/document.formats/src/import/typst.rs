@@ -14,12 +14,12 @@
 
 use std::path::Path;
 
-use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus, SourceSpan};
 use data_text_core::{Builder, SourceText, parser::session::ParseSession};
 use data_text_typst::{
     TypstBuilder, TypstLanguage,
     ast::{TypstHeading, TypstItem, TypstLink, TypstRoot},
 };
+use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, NodeId, RelationEndpoint, SemanticStatus, SourceSpan};
 
 use super::common::register_image_assets;
 use crate::FormatError;

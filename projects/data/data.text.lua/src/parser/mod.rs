@@ -4,7 +4,7 @@ pub use element_type::LuaElementType;
 
 use crate::{language::LuaLanguage, lexer::LuaLexer};
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -354,7 +354,12 @@ impl<'config> Pratt<LuaLanguage> for LuaParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, LuaLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, LuaLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, LuaLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, LuaLanguage>> {
         use crate::{lexer::LuaTokenType as TT, parser::element_type::LuaElementType as ET};
         let kind = state.peek_kind()?;
 
@@ -426,7 +431,12 @@ impl<'config> Pratt<LuaLanguage> for LuaParser<'config> {
 }
 
 impl<'config> Parser<LuaLanguage> for LuaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<LuaLanguage>) -> ParseOutput<'a, LuaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<LuaLanguage>,
+    ) -> ParseOutput<'a, LuaLanguage> {
         let lexer = LuaLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             use crate::lexer::LuaTokenType::*;

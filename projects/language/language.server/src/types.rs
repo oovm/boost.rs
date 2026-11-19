@@ -595,11 +595,24 @@ impl From<UniversalElementRole> for SymbolKind {
 
 impl From<data_text_symbols::SymbolInformation> for WorkspaceSymbol {
     fn from(s: data_text_symbols::SymbolInformation) -> Self {
-        Self { name: s.name, kind: SymbolKind::from(s.role), location: LocationRange { uri: s.uri, range: s.range }, container_name: s.container_name }
+        Self {
+            name: s.name,
+            kind: SymbolKind::from(s.role),
+            location: LocationRange { uri: s.uri, range: s.range },
+            container_name: s.container_name,
+        }
     }
 }
 
 /// 把符号信息投影为结构项。
 pub(crate) fn structure_item_from_symbol(s: data_text_symbols::SymbolInformation) -> StructureItem {
-    StructureItem { name: s.name, detail: None, role: s.role, range: s.range.clone(), selection_range: s.range, deprecated: false, children: vec![] }
+    StructureItem {
+        name: s.name,
+        detail: None,
+        role: s.role,
+        range: s.range.clone(),
+        selection_range: s.range,
+        deprecated: false,
+        children: vec![],
+    }
 }

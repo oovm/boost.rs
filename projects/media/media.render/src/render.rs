@@ -312,16 +312,8 @@ fn fnv1a(bytes: &[u8]) -> String {
 /// available, so a fixed `media-foundation` label would make a portable
 /// delivery look like a Media Foundation one.
 fn backend_label(has_audio: bool, audio_codec: &str) -> String {
-    let container = if media_codec::Capabilities::of_current_platform().h264_encode {
-        "media-foundation+h264"
-    } else {
-        "portable+mjpeg"
-    };
-    if has_audio && !audio_codec.is_empty() {
-        format!("{container}+{audio_codec}")
-    } else {
-        container.to_string()
-    }
+    let container = if media_codec::Capabilities::of_current_platform().h264_encode { "media-foundation+h264" } else { "portable+mjpeg" };
+    if has_audio && !audio_codec.is_empty() { format!("{container}+{audio_codec}") } else { container.to_string() }
 }
 
 /// Draws the cue covering `frame` near the bottom of the picture.
@@ -330,7 +322,8 @@ fn backend_label(has_audio: bool, audio_codec: &str) -> String {
 /// the same frame the encoder receives, so the burned file and the exported
 /// subtitle file show the same words at the same time.
 fn paint_burned_subtitles(fonts: &mut Fonts, frame: &mut Frame, frame_index: u32, cues: &[BurnInCue]) {
-    let Some(cue) = cues.iter().find(|cue| frame_index >= cue.range[0] && frame_index < cue.range[1]) else {
+    let Some(cue) = cues.iter().find(|cue| frame_index >= cue.range[0] && frame_index < cue.range[1])
+    else {
         return;
     };
     if cue.lines.is_empty() {
@@ -422,11 +415,8 @@ pub fn render_project_with(
         for (index, value) in floats.iter().enumerate() {
             audio[index] = (value * i16::MAX as f32).round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
-        limiter = Some(LimiterStats {
-            max_reduction_db: report.max_reduction_db,
-            output_peak_db: report.output_peak_db,
-            limited: report.limited,
-        });
+        limiter =
+            Some(LimiterStats { max_reduction_db: report.max_reduction_db, output_peak_db: report.output_peak_db, limited: report.limited });
     }
     let audio_level = has_audio.then(|| media_harness::measure_pcm16(&audio));
     if options.cancelled() {
@@ -2320,7 +2310,8 @@ mod tests {
         if media_codec::Capabilities::of_current_platform().h264_encode {
             assert_eq!(label, "media-foundation+h264+pcm");
             assert_eq!(super::backend_label(false, ""), "media-foundation+h264");
-        } else {
+        }
+        else {
             assert_eq!(label, "portable+mjpeg+pcm");
             assert_eq!(super::backend_label(false, ""), "portable+mjpeg");
         }
@@ -3361,11 +3352,6 @@ mod tests {
         let (_, _, plain) = preview_pixels(&film(None).to_string(), 0, "ss-1.png");
         let (_, _, richer) = preview_pixels(&film(Some(2.0)).to_string(), 0, "ss-2.png");
         assert!(partial(&plain) > 0, "a sloped stroke already feathers at 1x");
-        assert!(
-            partial(&richer) > partial(&plain),
-            "supersampling must widen the feathered edge: {} vs {}",
-            partial(&richer),
-            partial(&plain)
-        );
+        assert!(partial(&richer) > partial(&plain), "supersampling must widen the feathered edge: {} vs {}", partial(&richer), partial(&plain));
     }
 }

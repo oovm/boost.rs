@@ -23,7 +23,12 @@ impl CobolLexer {
 }
 
 impl Lexer<CobolLanguage> for CobolLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<CobolLanguage>) -> LexOutput<CobolLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<CobolLanguage>,
+    ) -> LexOutput<CobolLanguage> {
         let mut state = LexerState::new_with_cache(source, 0, cache);
         // Minimal implementation: just return EOF
         state.add_eof();

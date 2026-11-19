@@ -57,7 +57,13 @@ impl ElementType for CppElementType {
         match self {
             Self::SourceFile => UniversalElementRole::Root,
             Self::FunctionDefinition | Self::ClassDefinition | Self::NamespaceDefinition => UniversalElementRole::Definition,
-            Self::DeclarationStatement | Self::ExpressionStatement | Self::CompoundStatement | Self::IfStatement | Self::WhileStatement | Self::ForStatement | Self::ReturnStatement => UniversalElementRole::Statement,
+            Self::DeclarationStatement
+            | Self::ExpressionStatement
+            | Self::CompoundStatement
+            | Self::IfStatement
+            | Self::WhileStatement
+            | Self::ForStatement
+            | Self::ReturnStatement => UniversalElementRole::Statement,
             Self::Error => UniversalElementRole::Error,
             _ => UniversalElementRole::Container,
         }

@@ -98,7 +98,11 @@ impl<'config> MsilParser<'config> {
         self.skip_trivia(state);
 
         // Skip modifiers
-        while state.at(MsilTokenType::PublicKeyword) || state.at(MsilTokenType::PrivateKeyword) || state.at(MsilTokenType::StaticKeyword) || state.at(MsilTokenType::Keyword) {
+        while state.at(MsilTokenType::PublicKeyword)
+            || state.at(MsilTokenType::PrivateKeyword)
+            || state.at(MsilTokenType::StaticKeyword)
+            || state.at(MsilTokenType::Keyword)
+        {
             state.bump();
             self.skip_trivia(state);
         }
@@ -149,7 +153,11 @@ impl<'config> MsilParser<'config> {
 
         // Parse method modifiers
         while state.not_at_end() && !state.at(MsilTokenType::LeftBrace) {
-            if state.at(MsilTokenType::PublicKeyword) || state.at(MsilTokenType::PrivateKeyword) || state.at(MsilTokenType::StaticKeyword) || state.at(MsilTokenType::Keyword) {
+            if state.at(MsilTokenType::PublicKeyword)
+                || state.at(MsilTokenType::PrivateKeyword)
+                || state.at(MsilTokenType::StaticKeyword)
+                || state.at(MsilTokenType::Keyword)
+            {
                 state.bump();
                 self.skip_trivia(state);
             }
@@ -205,7 +213,11 @@ impl<'config> MsilParser<'config> {
                         let dir_cp = state.checkpoint();
                         state.bump();
                         self.skip_trivia(state);
-                        while state.not_at_end() && !state.at(MsilTokenType::Semicolon) && !state.at(MsilTokenType::LeftBrace) && !state.at(MsilTokenType::RightBrace) {
+                        while state.not_at_end()
+                            && !state.at(MsilTokenType::Semicolon)
+                            && !state.at(MsilTokenType::LeftBrace)
+                            && !state.at(MsilTokenType::RightBrace)
+                        {
                             state.bump();
                         }
                         if state.at(MsilTokenType::Semicolon) {
@@ -229,7 +241,11 @@ impl<'config> MsilParser<'config> {
                         self.skip_trivia(state);
                         // Parse instruction operands
                         while state.not_at_end() && !state.at(MsilTokenType::Semicolon) && !state.at(MsilTokenType::RightBrace) {
-                            if state.at(MsilTokenType::IdentifierToken) || state.at(MsilTokenType::NumberToken) || state.at(MsilTokenType::StringToken) || state.at(MsilTokenType::LeftBracket) {
+                            if state.at(MsilTokenType::IdentifierToken)
+                                || state.at(MsilTokenType::NumberToken)
+                                || state.at(MsilTokenType::StringToken)
+                                || state.at(MsilTokenType::LeftBracket)
+                            {
                                 state.bump();
                             }
                             else {
@@ -254,7 +270,12 @@ impl<'config> MsilParser<'config> {
 }
 
 impl<'config> Parser<MsilLanguage> for MsilParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<MsilLanguage>) -> data_text_core::ParseOutput<'a, MsilLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<MsilLanguage>,
+    ) -> data_text_core::ParseOutput<'a, MsilLanguage> {
         let lexer = MsilLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

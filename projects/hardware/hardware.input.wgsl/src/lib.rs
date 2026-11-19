@@ -1,6 +1,7 @@
 //! WGSL input: `data-text-wgsl` syntax tree to neutral shader syntax.
 #![warn(missing_docs)]
 
+use data_text_wgsl::ast as w;
 use hardware_frontend::{
     FrontendError, LoweredShader,
     ast::{
@@ -9,7 +10,6 @@ use hardware_frontend::{
     },
     lower_module,
 };
-use data_text_wgsl::ast as w;
 
 /// Parses WGSL text and lowers it into UCF IR.
 pub fn lower_wgsl(source: &str) -> Result<LoweredShader, FrontendError> {

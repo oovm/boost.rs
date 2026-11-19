@@ -5,7 +5,7 @@ pub use crate::lexer::token_type::TomlTokenType;
 
 use crate::{language::TomlLanguage, lexer::token_type::TomlTokenKind as TomlSyntaxKind};
 use data_text_core::{
-    Lexer, LexerState, TextError, TextEdit,
+    Lexer, LexerState, TextEdit, TextError,
     lexer::{LexOutput, LexerCache},
     source::Source,
 };
@@ -22,7 +22,12 @@ pub struct TomlLexer<'config> {
 }
 
 impl<'config> Lexer<TomlLanguage> for TomlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<TomlLanguage>) -> LexOutput<TomlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<TomlLanguage>,
+    ) -> LexOutput<TomlLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

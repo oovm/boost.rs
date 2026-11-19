@@ -1,5 +1,8 @@
-use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{TextError, RedNode, RedTree, Source, SourceText, TokenType};
+use crate::{
+    ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType,
+    parser::element_type::TypeScriptElementType,
+};
+use data_text_core::{RedNode, RedTree, Source, SourceText, TextError, TokenType};
 
 impl<'config> TypeScriptBuilder<'config> {
     pub(crate) fn build_expression(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<Expression>, TextError> {
@@ -86,13 +89,22 @@ impl<'config> TypeScriptBuilder<'config> {
                 }
 
                 if let (Some(l), Some(r)) = (left, right) {
-                    let is_assignment = matches!(operator.as_str(), "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "|=" | "^=" | "&&=" | "||=" | "??=");
+                    let is_assignment = matches!(
+                        operator.as_str(),
+                        "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "|=" | "^=" | "&&=" | "||=" | "??="
+                    );
 
                     if is_assignment {
-                        Ok(Some(Expression::new(ExpressionKind::AssignmentExpression { left: Box::new(l), operator, right: Box::new(r) }, span.into())))
+                        Ok(Some(Expression::new(
+                            ExpressionKind::AssignmentExpression { left: Box::new(l), operator, right: Box::new(r) },
+                            span.into(),
+                        )))
                     }
                     else {
-                        Ok(Some(Expression::new(ExpressionKind::BinaryExpression { left: Box::new(l), operator, right: Box::new(r) }, span.into())))
+                        Ok(Some(Expression::new(
+                            ExpressionKind::BinaryExpression { left: Box::new(l), operator, right: Box::new(r) },
+                            span.into(),
+                        )))
                     }
                 }
                 else {
@@ -168,13 +180,22 @@ impl<'config> TypeScriptBuilder<'config> {
                 }
 
                 if let (Some(l), Some(r)) = (left, right) {
-                    let is_assignment = matches!(operator.as_str(), "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "|=" | "^=" | "&&=" | "||=" | "??=");
+                    let is_assignment = matches!(
+                        operator.as_str(),
+                        "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "<<=" | ">>=" | ">>>=" | "&=" | "|=" | "^=" | "&&=" | "||=" | "??="
+                    );
 
                     if is_assignment {
-                        Ok(Some(Expression::new(ExpressionKind::AssignmentExpression { left: Box::new(l), operator, right: Box::new(r) }, span.into())))
+                        Ok(Some(Expression::new(
+                            ExpressionKind::AssignmentExpression { left: Box::new(l), operator, right: Box::new(r) },
+                            span.into(),
+                        )))
                     }
                     else {
-                        Ok(Some(Expression::new(ExpressionKind::BinaryExpression { left: Box::new(l), operator, right: Box::new(r) }, span.into())))
+                        Ok(Some(Expression::new(
+                            ExpressionKind::BinaryExpression { left: Box::new(l), operator, right: Box::new(r) },
+                            span.into(),
+                        )))
                     }
                 }
                 else {
@@ -192,7 +213,12 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let Some(arg) = argument { Ok(Some(Expression::new(ExpressionKind::UnaryExpression { operator, argument: Box::new(arg) }, span.into()))) } else { Ok(None) }
+                if let Some(arg) = argument {
+                    Ok(Some(Expression::new(ExpressionKind::UnaryExpression { operator, argument: Box::new(arg) }, span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::CallExpression => {
                 let mut func = None;
@@ -224,7 +250,12 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let Some(f) = func { Ok(Some(Expression::new(ExpressionKind::CallExpression { func: Box::new(f), args }, span.into()))) } else { Ok(None) }
+                if let Some(f) = func {
+                    Ok(Some(Expression::new(ExpressionKind::CallExpression { func: Box::new(f), args }, span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::MemberExpression => {
                 let mut object = None;
@@ -254,7 +285,11 @@ impl<'config> TypeScriptBuilder<'config> {
                             _ => {
                                 // Property names may be keywords: `map.get(k)`, `reader.read()`,
                                 // `obj.type`. Any non-trivia leaf after the object becomes the property.
-                                if !leaf.kind.is_ignored() && object.is_some() && property.is_none() && !matches!(leaf.kind, TypeScriptTokenType::Dot) {
+                                if !leaf.kind.is_ignored()
+                                    && object.is_some()
+                                    && property.is_none()
+                                    && !matches!(leaf.kind, TypeScriptTokenType::Dot)
+                                {
                                     let name = source.get_text_in(leaf.span.into()).trim().to_string();
                                     property = Some(Expression::new(ExpressionKind::Identifier(name), leaf.span.into()));
                                 }
@@ -263,7 +298,20 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if object.is_some() && property.is_some() { Ok(Some(Expression::new(ExpressionKind::MemberExpression { object: Box::new(object.unwrap()), property: Box::new(property.unwrap()), computed, optional }, span.into()))) } else { Ok(None) }
+                if object.is_some() && property.is_some() {
+                    Ok(Some(Expression::new(
+                        ExpressionKind::MemberExpression {
+                            object: Box::new(object.unwrap()),
+                            property: Box::new(property.unwrap()),
+                            computed,
+                            optional,
+                        },
+                        span.into(),
+                    )))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::ImportExpression => {
                 let mut module_specifier = None;
@@ -275,7 +323,10 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
                 match module_specifier {
-                    Some(module_specifier) => Ok(Some(Expression::new(ExpressionKind::ImportExpression { module_specifier: Box::new(module_specifier) }, span.into()))),
+                    Some(module_specifier) => Ok(Some(Expression::new(
+                        ExpressionKind::ImportExpression { module_specifier: Box::new(module_specifier) },
+                        span.into(),
+                    ))),
                     None => Ok(None),
                 }
             }
@@ -286,7 +337,12 @@ impl<'config> TypeScriptBuilder<'config> {
                         argument = self.build_expression(&child_node, source)?
                     }
                 }
-                if let Some(arg) = argument { Ok(Some(Expression::new(ExpressionKind::AwaitExpression(Box::new(arg)), span.into()))) } else { Ok(None) }
+                if let Some(arg) = argument {
+                    Ok(Some(Expression::new(ExpressionKind::AwaitExpression(Box::new(arg)), span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::MetaProperty => {
                 let mut meta = String::new();
@@ -346,7 +402,8 @@ impl<'config> TypeScriptBuilder<'config> {
                                             if !after_colon && name.is_empty() {
                                                 let raw = source.get_text_in(key.span.into());
                                                 name = match key.kind {
-                                                    TypeScriptTokenType::StringLiteral => decode_string_literal_text(&raw).unwrap_or_else(|_| raw.trim_matches(['"', '\'']).to_string()),
+                                                    TypeScriptTokenType::StringLiteral => decode_string_literal_text(&raw)
+                                                        .unwrap_or_else(|_| raw.trim_matches(['"', '\'']).to_string()),
                                                     _ => raw.trim().to_string(),
                                                 };
                                             }
@@ -402,10 +459,15 @@ impl<'config> TypeScriptBuilder<'config> {
                                         TypeScriptTokenType::Set => modifiers.push(Modifier::new(ModifierKind::Set, leaf.span)),
                                         TypeScriptTokenType::Star => generator = true,
                                         TypeScriptTokenType::LeftParen => past_paren = true,
-                                        TypeScriptTokenType::IdentifierName | TypeScriptTokenType::StringLiteral | TypeScriptTokenType::NumericLiteral if !past_paren && name.is_empty() => {
+                                        TypeScriptTokenType::IdentifierName
+                                        | TypeScriptTokenType::StringLiteral
+                                        | TypeScriptTokenType::NumericLiteral
+                                            if !past_paren && name.is_empty() =>
+                                        {
                                             let raw = source.get_text_in(leaf.span.into());
                                             name = match leaf.kind {
-                                                TypeScriptTokenType::StringLiteral => decode_string_literal_text(&raw).unwrap_or_else(|_| raw.trim_matches(['"', '\'']).to_string()),
+                                                TypeScriptTokenType::StringLiteral => decode_string_literal_text(&raw)
+                                                    .unwrap_or_else(|_| raw.trim_matches(['"', '\'']).to_string()),
                                                 _ => raw.trim().to_string(),
                                             };
                                         }
@@ -440,7 +502,15 @@ impl<'config> TypeScriptBuilder<'config> {
                                     },
                                 }
                             }
-                            properties.push(ObjectProperty::Method { name, params, return_type, body, modifiers, generator, span: m_span.into() });
+                            properties.push(ObjectProperty::Method {
+                                name,
+                                params,
+                                return_type,
+                                body,
+                                modifiers,
+                                generator,
+                                span: m_span.into(),
+                            });
                         }
                         else if child_kind == TypeScriptElementType::SpreadElement {
                             for spread_child in child_node.children() {
@@ -504,7 +574,8 @@ impl<'config> TypeScriptBuilder<'config> {
                                         *body = Some(Box::new(stmt));
                                     }
                                     else if let Some(expr) = builder.build_expression(&child_node, source)? {
-                                        let expr_stmt = ExpressionStatement { decorators: Vec::new(), expression: expr, span: child_node.span().into() };
+                                        let expr_stmt =
+                                            ExpressionStatement { decorators: Vec::new(), expression: expr, span: child_node.span().into() };
                                         *body = Some(Box::new(Statement::ExpressionStatement(expr_stmt)));
                                     }
                                 }
@@ -521,7 +592,12 @@ impl<'config> TypeScriptBuilder<'config> {
 
                 collect_arrow_parts(self, node, source, &mut type_params, &mut params, &mut return_type, &mut body, &mut async_)?;
 
-                if let Some(b) = body { Ok(Some(Expression::new(ExpressionKind::ArrowFunction { type_params, params, return_type, body: b, async_ }, span.into()))) } else { Ok(None) }
+                if let Some(b) = body {
+                    Ok(Some(Expression::new(ExpressionKind::ArrowFunction { type_params, params, return_type, body: b, async_ }, span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::FunctionExpression => {
                 // `function [name](params)[: T] { body }` 与声明共用同一份
@@ -587,7 +663,10 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                Ok(Some(Expression::new(ExpressionKind::FunctionExpression { name, type_params, params, return_type, body, async_, generator }, span.into())))
+                Ok(Some(Expression::new(
+                    ExpressionKind::FunctionExpression { name, type_params, params, return_type, body, async_, generator },
+                    span.into(),
+                )))
             }
             TypeScriptElementType::AsExpression => {
                 let mut expression = None;
@@ -595,11 +674,21 @@ impl<'config> TypeScriptBuilder<'config> {
 
                 for child in node.children() {
                     if let RedTree::Node(child_node) = child {
-                        if expression.is_none() { expression = self.build_expression(&child_node, source)? } else { type_annotation = self.build_type_annotation(&child_node, source)? }
+                        if expression.is_none() {
+                            expression = self.build_expression(&child_node, source)?
+                        }
+                        else {
+                            type_annotation = self.build_type_annotation(&child_node, source)?
+                        }
                     }
                 }
 
-                if let (Some(expr), Some(ty)) = (expression, type_annotation) { Ok(Some(Expression::new(ExpressionKind::AsExpression { expression: Box::new(expr), type_annotation: ty }, span.into()))) } else { Ok(None) }
+                if let (Some(expr), Some(ty)) = (expression, type_annotation) {
+                    Ok(Some(Expression::new(ExpressionKind::AsExpression { expression: Box::new(expr), type_annotation: ty }, span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::SatisfiesExpression => {
                 let mut expression = None;
@@ -607,11 +696,24 @@ impl<'config> TypeScriptBuilder<'config> {
 
                 for child in node.children() {
                     if let RedTree::Node(child_node) = child {
-                        if expression.is_none() { expression = self.build_expression(&child_node, source)? } else { type_annotation = self.build_type_annotation(&child_node, source)? }
+                        if expression.is_none() {
+                            expression = self.build_expression(&child_node, source)?
+                        }
+                        else {
+                            type_annotation = self.build_type_annotation(&child_node, source)?
+                        }
                     }
                 }
 
-                if let (Some(expr), Some(ty)) = (expression, type_annotation) { Ok(Some(Expression::new(ExpressionKind::SatisfiesExpression { expression: Box::new(expr), type_annotation: ty }, span.into()))) } else { Ok(None) }
+                if let (Some(expr), Some(ty)) = (expression, type_annotation) {
+                    Ok(Some(Expression::new(
+                        ExpressionKind::SatisfiesExpression { expression: Box::new(expr), type_annotation: ty },
+                        span.into(),
+                    )))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::TypeAssertionExpression => {
                 // Prefix assertion `<T>expr`: the type child comes first, the
@@ -630,7 +732,15 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let (Some(expr), Some(ty)) = (expression, type_annotation) { Ok(Some(Expression::new(ExpressionKind::TypeAssertionExpression { expression: Box::new(expr), type_annotation: ty }, span.into()))) } else { Ok(None) }
+                if let (Some(expr), Some(ty)) = (expression, type_annotation) {
+                    Ok(Some(Expression::new(
+                        ExpressionKind::TypeAssertionExpression { expression: Box::new(expr), type_annotation: ty },
+                        span.into(),
+                    )))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::JsxElement => {
                 if let Some(e) = self.build_jsx_element(node, source)? {
@@ -675,7 +785,15 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let (Some(t), Some(tpl)) = (tag, template) { Ok(Some(Expression::new(ExpressionKind::TaggedTemplateExpression { tag: Box::new(t), template: Box::new(tpl) }, span.into()))) } else { Ok(None) }
+                if let (Some(t), Some(tpl)) = (tag, template) {
+                    Ok(Some(Expression::new(
+                        ExpressionKind::TaggedTemplateExpression { tag: Box::new(t), template: Box::new(tpl) },
+                        span.into(),
+                    )))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::SequenceExpression => {
                 let mut expressions = Vec::new();
@@ -707,7 +825,15 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let (Some(t), Some(c), Some(a)) = (test, consequent, alternate) { Ok(Some(Expression::new(ExpressionKind::ConditionalExpression { test: Box::new(t), consequent: Box::new(c), alternate: Box::new(a) }, span.into()))) } else { Ok(None) }
+                if let (Some(t), Some(c), Some(a)) = (test, consequent, alternate) {
+                    Ok(Some(Expression::new(
+                        ExpressionKind::ConditionalExpression { test: Box::new(t), consequent: Box::new(c), alternate: Box::new(a) },
+                        span.into(),
+                    )))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::NewExpression => {
                 let mut func = None;
@@ -733,7 +859,12 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let Some(f) = func { Ok(Some(Expression::new(ExpressionKind::NewExpression { func: Box::new(f), args }, span.into()))) } else { Ok(None) }
+                if let Some(f) = func {
+                    Ok(Some(Expression::new(ExpressionKind::NewExpression { func: Box::new(f), args }, span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::ClassExpression => {
                 let mut name = None;
@@ -814,7 +945,12 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let Some(arg) = argument { Ok(Some(Expression::new(ExpressionKind::UpdateExpression { operator, argument: Box::new(arg), prefix }, span.into()))) } else { Ok(None) }
+                if let Some(arg) = argument {
+                    Ok(Some(Expression::new(ExpressionKind::UpdateExpression { operator, argument: Box::new(arg), prefix }, span.into())))
+                }
+                else {
+                    Ok(None)
+                }
             }
             _ => {
                 for child in node.children() {

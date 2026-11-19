@@ -1,14 +1,14 @@
 #![doc = include_str!("readme.md")]
+pub mod formatter;
 #[cfg(feature = "language-highlight")]
 pub mod highlighter;
-pub mod formatter;
 
 use crate::language::ValkyrieLanguage;
 use core::range::Range;
 use data_text_core::tree::RedNode;
 
 #[cfg(feature = "lsp")]
-use {futures::Future, language_server::service::LanguageService, language_server::types::Hover as LspHover, language_server::Vfs};
+use {futures::Future, language_server::Vfs, language_server::service::LanguageService, language_server::types::Hover as LspHover};
 
 #[cfg(feature = "lsp")]
 pub struct ValkyrieLanguageService<V: Vfs> {

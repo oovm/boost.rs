@@ -65,8 +65,7 @@ impl A64Encoder {
 
     /// 估算编码后 `.text` 长度（标签不占空间）。
     pub fn estimated_text_len(&self) -> u32 {
-        u32::try_from(self.instructions.iter().filter(|insn| !matches!(insn, A64Instruction::Label(_))).count() * 4)
-            .unwrap_or(0)
+        u32::try_from(self.instructions.iter().filter(|insn| !matches!(insn, A64Instruction::Label(_))).count() * 4).unwrap_or(0)
     }
 
     /// 完成第一遍编码。
@@ -87,12 +86,8 @@ impl A64Encoder {
                 A64Instruction::Adr { dst, label } => {
                     let offset = u32::try_from(module.text.len()).unwrap_or(0);
                     emit_adr_placeholder(&mut module.text, dst);
-                    let kind = if label.starts_with("bss_") {
-                        A64FixupKind::BssRelative { label }
-                    }
-                    else {
-                        A64FixupKind::RodataRelative { label }
-                    };
+                    let kind =
+                        if label.starts_with("bss_") { A64FixupKind::BssRelative { label } } else { A64FixupKind::RodataRelative { label } };
                     module.fixups.push(A64Fixup { offset, kind });
                 }
                 A64Instruction::AddImm12 { dst, src, imm } => emit_add_imm12(&mut module.text, dst, src, imm),

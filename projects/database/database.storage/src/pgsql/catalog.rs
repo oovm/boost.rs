@@ -110,9 +110,7 @@ fn legacy_catalog_bytes(bytes: &[u8]) -> bool {
 /// is busy, parent sync. The PostgreSQL catalog does not keep a private
 /// `.tmp → rename` sequence of its own.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
-    crate::local::publish::publish_atomic(path, bytes)
-        .map(|_receipt| ())
-        .map_err(|error| io_error(format!("{}: {error}", path.display())))
+    crate::local::publish::publish_atomic(path, bytes).map(|_receipt| ()).map_err(|error| io_error(format!("{}: {error}", path.display())))
 }
 
 /// Takes the `postmaster.pid` lease of `dir` for the current process.

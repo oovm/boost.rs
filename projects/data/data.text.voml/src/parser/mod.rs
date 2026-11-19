@@ -22,7 +22,12 @@ impl<'config> VomlParser<'config> {
 }
 
 impl<'config> Parser<VomlLanguage> for VomlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VomlLanguage>) -> ParseOutput<'a, VomlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VomlLanguage>,
+    ) -> ParseOutput<'a, VomlLanguage> {
         let lexer = VomlLexer::new(self.config);
         parse_with_lexer(&lexer, source, edits, cache, |state| {
             let checkpoint = state.checkpoint();

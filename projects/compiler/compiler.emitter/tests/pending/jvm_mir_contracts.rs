@@ -1,11 +1,11 @@
 //! JVM MIR contract tests. Included bodies construct [`ExecutableFunction`] directly
 //! (no frontend MIR), so this crate root re-exports driver modules as `crate::*`.
 
-pub use compiler_target::{Identifier, QualifiedName};
 pub use compiler_emitter::{
     FragmentSubmission,
     emitter_backend_jvm::{JvmInstruction, JvmMethodDescriptor, JvmTypeDescriptor},
 };
+pub use compiler_target::{Identifier, QualifiedName};
 pub use ordered_float;
 
 pub mod contracts {

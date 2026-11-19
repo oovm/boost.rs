@@ -180,7 +180,12 @@ impl RbqExpr {
                         }
                     }
                 }
-                if let (Some(left), Some(right)) = (left, right) { RbqExprKind::Binary { left, op, right } } else { RbqExprKind::Identifier(source[span.clone()].to_string()) }
+                if let (Some(left), Some(right)) = (left, right) {
+                    RbqExprKind::Binary { left, op, right }
+                }
+                else {
+                    RbqExprKind::Identifier(source[span.clone()].to_string())
+                }
             }
             RbqElementType::UnaryExpr => {
                 let mut op = String::new();
@@ -214,7 +219,12 @@ impl RbqExpr {
                         _ => {}
                     }
                 }
-                if let Some(callee) = callee { RbqExprKind::Call { callee, args } } else { RbqExprKind::Identifier(source[span.clone()].to_string()) }
+                if let Some(callee) = callee {
+                    RbqExprKind::Call { callee, args }
+                }
+                else {
+                    RbqExprKind::Identifier(source[span.clone()].to_string())
+                }
             }
             RbqElementType::MemberExpr => {
                 let mut object = None;
@@ -226,7 +236,12 @@ impl RbqExpr {
                         _ => {}
                     }
                 }
-                if let Some(object) = object { RbqExprKind::Member { object, property } } else { RbqExprKind::Identifier(source[span.clone()].to_string()) }
+                if let Some(object) = object {
+                    RbqExprKind::Member { object, property }
+                }
+                else {
+                    RbqExprKind::Identifier(source[span.clone()].to_string())
+                }
             }
             RbqElementType::QueryPipeline => {
                 let mut base = None;
@@ -245,7 +260,12 @@ impl RbqExpr {
                         _ => {}
                     }
                 }
-                if let Some(base) = base { RbqExprKind::Pipeline { base, steps } } else { RbqExprKind::Identifier(source[span.clone()].to_string()) }
+                if let Some(base) = base {
+                    RbqExprKind::Pipeline { base, steps }
+                }
+                else {
+                    RbqExprKind::Identifier(source[span.clone()].to_string())
+                }
             }
             RbqElementType::Closure => {
                 let mut args = Vec::new();

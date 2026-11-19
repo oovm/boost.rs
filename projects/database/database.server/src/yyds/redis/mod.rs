@@ -89,8 +89,7 @@ pub fn execute_list_command(
 ) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
     let registry = blocking::BlockingRegistry::new();
-    collections::handle_list(&request, Some(executor), namespace, protocol, &registry, false)
-        .unwrap_or_else(|error| error.to_reply())
+    collections::handle_list(&request, Some(executor), namespace, protocol, &registry, false).unwrap_or_else(|error| error.to_reply())
 }
 
 /// Executes one zset-family request against an external executor and returns the typed reply.
@@ -117,8 +116,7 @@ pub fn execute_hyperloglog_command(
     namespace: &database_types::cluster::Namespace,
 ) -> database_protocol_redis::codec::Reply {
     let request = resp::Request { arguments: arguments.to_vec(), consumed: 0 };
-    collections::handle_hyperloglog(&request, Some(executor), namespace)
-        .unwrap_or_else(|error| error.to_reply())
+    collections::handle_hyperloglog(&request, Some(executor), namespace).unwrap_or_else(|error| error.to_reply())
 }
 
 /// Banner shown when a disguise server starts.

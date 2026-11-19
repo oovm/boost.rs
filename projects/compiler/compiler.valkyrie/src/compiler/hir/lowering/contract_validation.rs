@@ -3,7 +3,10 @@ use compiler_types::{DiagnosticArg, DiagnosticOwner, DiagnosticPhase, Diagnostic
 use crate::compiler::{
     diagnostics::pending::{self, CompileDiagnostic},
     driver::validation::validate_semantic_module,
-    hir::{lowering::errors::HirError, overload::{has_unresolved_generic_arguments, owner_type_generic_binders}},
+    hir::{
+        lowering::errors::HirError,
+        overload::{has_unresolved_generic_arguments, owner_type_generic_binders},
+    },
     types::hir::{
         EXPORT_CASES, HirBlock, HirCallableDomain, HirExpr, HirExprKind, HirFunction, HirModule, HirResolvedCall, HirStatementKind,
         invalid_export_case_argument,
@@ -80,9 +83,8 @@ pub fn validate_export_case_annotations(hir: &HirModule) -> Result<(), HirError>
         .with_arg("value", DiagnosticArg::String(value.clone()))
         .with_arg("allowed", DiagnosticArg::String(EXPORT_CASES.join(",")));
         // 定位由渲染层从 `source` + `span` 展开，展示文本不再重复定位后缀。
-        let message = format!(
-            "`[export]` annotation `case` value `{value}` is not in the contract set; allowed values are `camelCase` and `snake_case`"
-        );
+        let message =
+            format!("`[export]` annotation `case` value `{value}` is not in the contract set; allowed values are `camelCase` and `snake_case`");
         pending::push_compile_diagnostic(CompileDiagnostic::new(row, message));
     }
     Err(first)
@@ -125,11 +127,7 @@ fn collect_function_export_case(module: &HirModule, function: &HirFunction, sour
     else {
         return;
     };
-    errors.push(HirError::InvalidExportCase {
-        value,
-        source: expr_diagnostic_source(module, expr, source),
-        span: expr_diagnostic_span(expr),
-    });
+    errors.push(HirError::InvalidExportCase { value, source: expr_diagnostic_source(module, expr, source), span: expr_diagnostic_span(expr) });
 }
 
 /// Semantic MIR may only be produced from calls carrying an overload-selected
@@ -184,7 +182,9 @@ fn compile_diagnostic_from_call_error(error: &HirError) -> Option<CompileDiagnos
         _ => return None,
     };
     let message = match error {
-        HirError::UnresolvedCall { selector, context, reason, .. } => format!("unresolved call `{selector}` in {context}: {}", reason.describe()),
+        HirError::UnresolvedCall { selector, context, reason, .. } => {
+            format!("unresolved call `{selector}` in {context}: {}", reason.describe())
+        }
         HirError::UnresolvedConstructor { name, context, .. } => format!("unresolved constructor `{name}` in {context}"),
         _ => unreachable!("the row match above already filtered to call diagnostics"),
     };
@@ -322,8 +322,7 @@ fn resolved_call_leaves_open_binders(resolved: Option<&HirResolvedCall>, require
         && call.trait_dispatch.is_none()
         && call.declaration.is_some()
         && !matches!(call.domain, HirCallableDomain::Constructor)
-        && (has_unresolved_generic_arguments(&call.return_type)
-            || call.parameter_types.iter().any(has_unresolved_generic_arguments))
+        && (has_unresolved_generic_arguments(&call.return_type) || call.parameter_types.iter().any(has_unresolved_generic_arguments))
 }
 
 /// 前序遍历表达式树，收集全部未解析调用/构造；顺序与旧的首次失败遍历一致，
@@ -415,12 +414,16 @@ fn collect_expr_call_contracts(
                 collect_expr_call_contracts(module, item, function, source, errors, require_closed_instance);
             }
         }
-        HirExprKind::FieldAccess { object, .. } => collect_expr_call_contracts(module, object, function, source, errors, require_closed_instance),
+        HirExprKind::FieldAccess { object, .. } => {
+            collect_expr_call_contracts(module, object, function, source, errors, require_closed_instance)
+        }
         HirExprKind::StoreField { object, value, .. } => {
             collect_expr_call_contracts(module, object, function, source, errors, require_closed_instance);
             collect_expr_call_contracts(module, value, function, source, errors, require_closed_instance);
         }
-        HirExprKind::GenericApply { callee, .. } => collect_expr_call_contracts(module, callee, function, source, errors, require_closed_instance),
+        HirExprKind::GenericApply { callee, .. } => {
+            collect_expr_call_contracts(module, callee, function, source, errors, require_closed_instance)
+        }
         HirExprKind::Block(block) => collect_block_call_contracts(module, block, function, source, errors, require_closed_instance),
         HirExprKind::Lambda { body, .. } => collect_block_call_contracts(module, body, function, source, errors, require_closed_instance),
         HirExprKind::AnonymousClass { fields, methods, .. } => {

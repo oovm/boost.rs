@@ -155,4 +155,3 @@ pub fn is_write_call(expr: &VosExpr) -> bool {
         )
     )
 }
-

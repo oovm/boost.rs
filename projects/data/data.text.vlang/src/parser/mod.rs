@@ -20,7 +20,12 @@ impl<'config> VLangParser<'config> {
 }
 
 impl<'config> Parser<VLangLanguage> for VLangParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VLangLanguage>) -> data_text_core::ParseOutput<'a, VLangLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VLangLanguage>,
+    ) -> data_text_core::ParseOutput<'a, VLangLanguage> {
         let lexer = VLangLexer::new(&self.config);
         parse_with_lexer(&lexer, source, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -1,11 +1,15 @@
-use std::string::{String, ToString};
-use std::vec::Vec;
+use std::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::range::ByteRange;
 
-use super::capabilities::SourceCapabilities;
-use super::identity::ContentIdentity;
-use super::read::{ReadOutcome, ReadResult};
+use super::{
+    capabilities::SourceCapabilities,
+    identity::ContentIdentity,
+    read::{ReadOutcome, ReadResult},
+};
 
 /// Random-access byte source contract.
 pub trait ByteSource {

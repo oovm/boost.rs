@@ -67,7 +67,10 @@ impl<'config> JinjaLexer<'config> {
         let start = state.get_position();
         while let Some(ch) = state.peek() {
             let rest = state.rest();
-            if rest.starts_with(&self.config.variable_start) || rest.starts_with(&self.config.tag_start) || rest.starts_with(&self.config.comment_start) {
+            if rest.starts_with(&self.config.variable_start)
+                || rest.starts_with(&self.config.tag_start)
+                || rest.starts_with(&self.config.comment_start)
+            {
                 break;
             }
             state.advance(ch.len_utf8());
@@ -307,7 +310,12 @@ impl<'config> JinjaLexer<'config> {
 }
 
 impl<'config> Lexer<JinjaLanguage> for JinjaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<JinjaLanguage>) -> LexOutput<JinjaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<JinjaLanguage>,
+    ) -> LexOutput<JinjaLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -1,8 +1,6 @@
 use boost_source::binary::MemorySource;
 use data_binary_core::Budget;
-use data_binary_tar::{
-    StreamChunk, TarEntryDraft, TarEntryStream, TarGzError, TarGzStream, TarWriter, index_tar_bytes, read_member_payload,
-};
+use data_binary_tar::{StreamChunk, TarEntryDraft, TarEntryStream, TarGzError, TarGzStream, TarWriter, index_tar_bytes, read_member_payload};
 use data_compression::{CodecError, CodecLimits};
 
 fn sample_tar() -> Vec<u8> {
@@ -104,8 +102,7 @@ fn tar_gz_stream_matches_the_index() {
 #[test]
 fn tar_gz_stream_skips_an_unconsumed_payload() {
     let gz = data_binary_tar::TarGz::encode(&sample_tar());
-    let mut stream =
-        TarGzStream::with_chunk_size(MemorySource::from_bytes("sample.tar.gz", gz), CodecLimits::new(), 33).expect("open");
+    let mut stream = TarGzStream::with_chunk_size(MemorySource::from_bytes("sample.tar.gz", gz), CodecLimits::new(), 33).expect("open");
 
     let directory = stream.next_entry().expect("first").expect("directory");
     assert_eq!(directory.entry().kind, data_binary_tar::TarEntryKind::Directory);

@@ -96,7 +96,16 @@ impl ElementType for VomlElementType {
         match self {
             Self::Root | Self::SourceFile => UniversalElementRole::Root,
             Self::Module | Self::Function | Self::Memory | Self::Export | Self::Import => UniversalElementRole::Statement,
-            Self::Int | Self::Uint | Self::F32 | Self::F64 | Self::String | Self::Rune | Self::Byte | Self::Voidptr | Self::Char | Self::Bool => UniversalElementRole::Typing,
+            Self::Int
+            | Self::Uint
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Rune
+            | Self::Byte
+            | Self::Voidptr
+            | Self::Char
+            | Self::Bool => UniversalElementRole::Typing,
             Self::Identifier => UniversalElementRole::Reference,
             Self::Number | Self::Boolean => UniversalElementRole::Value,
             Self::Error => UniversalElementRole::Error,

@@ -2,12 +2,12 @@
 pub mod element_type;
 
 use crate::{language::WgslLanguage, lexer::token_type::WgslTokenType};
-use element_type::WgslElementType;
 use data_text_core::{
     GreenNode, TextError, TokenType, UniversalTokenRole,
     parser::{Parser, ParserState, parse_with_lexer},
     source::{Source, TextEdit},
 };
+use element_type::WgslElementType;
 
 /// A parser state for the WGSL language.
 pub(crate) type State<'a, S> = ParserState<'a, WgslLanguage, S>;
@@ -53,7 +53,12 @@ impl<'config> WgslParser<'config> {
 }
 
 impl<'config> Parser<WgslLanguage> for WgslParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<WgslLanguage>) -> data_text_core::ParseOutput<'a, WgslLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<WgslLanguage>,
+    ) -> data_text_core::ParseOutput<'a, WgslLanguage> {
         let lexer = crate::lexer::WgslLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -683,7 +688,10 @@ impl<'config> WgslParser<'config> {
         let cp = state.checkpoint();
 
         match state.peek_kind() {
-            Some(WgslTokenType::IntegerLiteral) | Some(WgslTokenType::FloatLiteral) | Some(WgslTokenType::BoolLiteral) | Some(WgslTokenType::StringLiteral) => {
+            Some(WgslTokenType::IntegerLiteral)
+            | Some(WgslTokenType::FloatLiteral)
+            | Some(WgslTokenType::BoolLiteral)
+            | Some(WgslTokenType::StringLiteral) => {
                 state.bump();
                 state.finish_at(cp, WgslElementType::Expr)
             }
@@ -742,7 +750,16 @@ fn is_type_token(kind: WgslTokenType) -> bool {
 
 /// Returns `true` for tokens that terminate a type position.
 fn is_type_terminator(kind: WgslTokenType) -> bool {
-    matches!(kind, WgslTokenType::Comma | WgslTokenType::RightParen | WgslTokenType::RightBrace | WgslTokenType::RightBracket | WgslTokenType::Gt | WgslTokenType::Semicolon | WgslTokenType::Assign)
+    matches!(
+        kind,
+        WgslTokenType::Comma
+            | WgslTokenType::RightParen
+            | WgslTokenType::RightBrace
+            | WgslTokenType::RightBracket
+            | WgslTokenType::Gt
+            | WgslTokenType::Semicolon
+            | WgslTokenType::Assign
+    )
 }
 
 /// Detects `name<...>(` so that `vec3<f32>(...)` is parsed as a generic

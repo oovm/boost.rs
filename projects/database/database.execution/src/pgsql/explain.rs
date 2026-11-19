@@ -12,8 +12,10 @@ use database_query::{
     plan_statement_for_dialect,
 };
 
-use super::session::{PgsqlSqlRuntime, TransactionSession};
-use super::statement::{ExecutionOutcome, StatementError, StatementOutcome, statement_error};
+use super::{
+    session::{PgsqlSqlRuntime, TransactionSession},
+    statement::{ExecutionOutcome, StatementError, StatementOutcome, statement_error},
+};
 
 /// Builds the `EXPLAIN` result set for one statement.
 pub fn execute_explain(
@@ -79,12 +81,7 @@ fn plan_lines(plan: &SqlExecutionPlan, catalog: &SqlCatalog) -> Vec<String> {
             if scan.group_by.is_some() {
                 lines.push("HashAggregate".to_owned());
             }
-            lines.push(if scan.index.is_some() {
-                format!("Index Scan on {table}")
-            }
-            else {
-                format!("Seq Scan on {table}")
-            });
+            lines.push(if scan.index.is_some() { format!("Index Scan on {table}") } else { format!("Seq Scan on {table}") });
             if scan.remaining_predicate.is_some() {
                 lines.push("  Filter: (row predicate)".to_owned());
             }

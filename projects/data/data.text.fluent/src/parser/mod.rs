@@ -15,10 +15,18 @@ use crate::{ast::FluentPattern, language::FluentLanguage};
 pub struct FluentParser;
 
 impl Parser<FluentLanguage> for FluentParser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<FluentLanguage>) -> ParseOutput<'a, FluentLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<FluentLanguage>,
+    ) -> ParseOutput<'a, FluentLanguage> {
         // Implementation will be added here
         // For now, return an empty result
-        let diagnostics = data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Not implemented")), diagnostics: vec![] };
+        let diagnostics = data_text_core::errors::TextDiagnostics {
+            result: Err(data_text_core::errors::TextError::custom_error("Not implemented")),
+            diagnostics: vec![],
+        };
         diagnostics
     }
 }
@@ -54,7 +62,12 @@ pub fn parse(input: &str) -> Result<crate::ast::FluentRoot, data_text_core::erro
                     current_value = Some(pattern);
                 }
 
-                messages.push(FluentMessage { id: current_id.clone(), value: current_value.clone(), attributes: Vec::new(), variants: Vec::new() });
+                messages.push(FluentMessage {
+                    id: current_id.clone(),
+                    value: current_value.clone(),
+                    attributes: Vec::new(),
+                    variants: Vec::new(),
+                });
             }
 
             // Start a new message
@@ -226,11 +239,21 @@ fn parse_pattern(input: &str) -> FluentPattern {
                                 let key = if key_str.starts_with('*') {
                                     // Default variant
                                     let actual_key = key_str[1..].trim();
-                                    if actual_key.parse::<i64>().is_ok() { FluentVariantKey::Number(actual_key.parse::<i64>().unwrap()) } else { FluentVariantKey::String(actual_key.to_string()) }
+                                    if actual_key.parse::<i64>().is_ok() {
+                                        FluentVariantKey::Number(actual_key.parse::<i64>().unwrap())
+                                    }
+                                    else {
+                                        FluentVariantKey::String(actual_key.to_string())
+                                    }
                                 }
                                 else {
                                     // Regular variant
-                                    if key_str.parse::<i64>().is_ok() { FluentVariantKey::Number(key_str.parse::<i64>().unwrap()) } else { FluentVariantKey::String(key_str.to_string()) }
+                                    if key_str.parse::<i64>().is_ok() {
+                                        FluentVariantKey::Number(key_str.parse::<i64>().unwrap())
+                                    }
+                                    else {
+                                        FluentVariantKey::String(key_str.to_string())
+                                    }
                                 };
 
                                 // Parse variant value

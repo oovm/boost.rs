@@ -1,9 +1,12 @@
 use core::range::Range;
 
-use data_text_core::{GreenNode, GreenTree, TextError, Source, SourceText, TokenType};
+use data_text_core::{GreenNode, GreenTree, Source, SourceText, TextError, TokenType};
 
 use crate::{
-    ast::{VosBinaryOp, VosExpr, VosFieldInit, VosFnDecl, VosFnKind, VosLambda, VosLet, VosLiteral, VosParameter, VosPathSep, VosProgram, VosProjItem, VosRoot, VosStmt, VosSyntaxElement, VosSyntaxSlice, VosTypeSyntax, VosUnaryOp},
+    ast::{
+        VosBinaryOp, VosExpr, VosFieldInit, VosFnDecl, VosFnKind, VosLambda, VosLet, VosLiteral, VosParameter, VosPathSep, VosProgram,
+        VosProjItem, VosRoot, VosStmt, VosSyntaxElement, VosSyntaxSlice, VosTypeSyntax, VosUnaryOp,
+    },
     language::VosLanguage,
     lexer::VosTokenType,
 };
@@ -87,7 +90,9 @@ impl VosBuilder {
         let span_start = tokens.first().map(|token| token.1.start)?;
         let span_end = tokens.last().map(|token| token.1.end)?;
         let inner = match tokens.first().map(|token| token.0) {
-            Some(VosTokenType::LeftBrace) if tokens.last().map(|token| token.0) == Some(VosTokenType::RightBrace) => tokens[1..tokens.len() - 1].to_vec(),
+            Some(VosTokenType::LeftBrace) if tokens.last().map(|token| token.0) == Some(VosTokenType::RightBrace) => {
+                tokens[1..tokens.len() - 1].to_vec()
+            }
             _ => tokens,
         };
         ProgramParser::new(self, source, inner, span_start, span_end).parse_program(false).ok()
@@ -283,7 +288,13 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
             let type_index = self.index;
             let type_expr = self.parse_type()?;
             let type_syntax = self.slice_tokens(type_index, self.index);
-            parameters.push(VosParameter { name: parameter_name, name_span: parameter_name_span, type_syntax, type_expr, span: (parameter_start..self.last_end()).into() });
+            parameters.push(VosParameter {
+                name: parameter_name,
+                name_span: parameter_name_span,
+                type_syntax,
+                type_expr,
+                span: (parameter_start..self.last_end()).into(),
+            });
             if self.eat(VosTokenType::Comma) {
                 continue;
             }
@@ -333,7 +344,12 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         while self.eat_text("||") {
             let right = self.parse_and()?;
             let span_start = Self::expr_start(&left);
-            left = VosExpr::Binary { op: VosBinaryOp::Or, left: Box::new(left), right: Box::new(right), span: (span_start..self.last_end()).into() };
+            left = VosExpr::Binary {
+                op: VosBinaryOp::Or,
+                left: Box::new(left),
+                right: Box::new(right),
+                span: (span_start..self.last_end()).into(),
+            };
         }
         Ok(left)
     }
@@ -343,7 +359,12 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         while self.eat_text("&&") {
             let right = self.parse_cmp()?;
             let span_start = Self::expr_start(&left);
-            left = VosExpr::Binary { op: VosBinaryOp::And, left: Box::new(left), right: Box::new(right), span: (span_start..self.last_end()).into() };
+            left = VosExpr::Binary {
+                op: VosBinaryOp::And,
+                left: Box::new(left),
+                right: Box::new(right),
+                span: (span_start..self.last_end()).into(),
+            };
         }
         Ok(left)
     }
@@ -507,7 +528,9 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
             VosTokenType::LeftParen => self.parse_parenthesized(),
             VosTokenType::LeftBracket => self.parse_list(),
             VosTokenType::LeftBrace => self.parse_anon_object(),
-            VosTokenType::NullLiteral | VosTokenType::BooleanLiteral | VosTokenType::StringLiteral | VosTokenType::NumberLiteral => self.parse_literal(),
+            VosTokenType::NullLiteral | VosTokenType::BooleanLiteral | VosTokenType::StringLiteral | VosTokenType::NumberLiteral => {
+                self.parse_literal()
+            }
             _ if Self::is_name(kind) => self.parse_name_expression(),
             _ => Err(self.unexpected("expected VOS expression")),
         }
@@ -553,7 +576,9 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
             return None;
         }
         match self.parse_lambda_body() {
-            Ok(body) => Some(VosExpr::Lambda(VosLambda { params, param_spans, body: Box::new(body), span: (span_start..self.last_end()).into() })),
+            Ok(body) => {
+                Some(VosExpr::Lambda(VosLambda { params, param_spans, body: Box::new(body), span: (span_start..self.last_end()).into() }))
+            }
             Err(_) => {
                 self.index = checkpoint;
                 None
@@ -565,7 +590,12 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
         let (name, name_span) = self.expect_name("expected VOS expression")?;
         if self.eat_text("=>") {
             let body = self.parse_lambda_body()?;
-            return Ok(VosExpr::Lambda(VosLambda { params: vec![name], param_spans: vec![name_span.clone()], body: Box::new(body), span: (name_span.start..self.last_end()).into() }));
+            return Ok(VosExpr::Lambda(VosLambda {
+                params: vec![name],
+                param_spans: vec![name_span.clone()],
+                body: Box::new(body),
+                span: (name_span.start..self.last_end()).into(),
+            }));
         }
         if self.at(VosTokenType::LeftBrace) {
             let fields = self.parse_field_init_block()?;
@@ -586,7 +616,10 @@ impl<'a, 'b> ProgramParser<'a, 'b> {
             VosTokenType::NullLiteral => VosLiteral::Null,
             VosTokenType::BooleanLiteral => VosLiteral::Bool(text == "true"),
             VosTokenType::StringLiteral => {
-                let inner = text.strip_prefix('"').and_then(|value| value.strip_suffix('"')).or_else(|| text.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')));
+                let inner = text
+                    .strip_prefix('"')
+                    .and_then(|value| value.strip_suffix('"'))
+                    .or_else(|| text.strip_prefix('\'').and_then(|value| value.strip_suffix('\'')));
                 VosLiteral::String(inner.unwrap_or(text.as_str()).to_owned())
             }
             _ => {

@@ -1,5 +1,7 @@
 use crate::{VhdlParser, ast::*, language::VhdlLanguage, lexer::token_type::VhdlTokenType, parser::element_type::VhdlElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, Source, SourceText, TextEdit, builder::BuildOutput};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, Source, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+};
 
 /// AST builder for the VHDL language.
 #[derive(Clone, Copy)]
@@ -16,7 +18,12 @@ impl<'config> VhdlBuilder<'config> {
 }
 
 impl<'config> Builder<VhdlLanguage> for VhdlBuilder<'config> {
-    fn build<'a, S: data_text_core::source::Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<VhdlLanguage>) -> BuildOutput<VhdlLanguage> {
+    fn build<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<VhdlLanguage>,
+    ) -> BuildOutput<VhdlLanguage> {
         let parser = VhdlParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<VhdlLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);
@@ -36,7 +43,11 @@ impl<'config> Builder<VhdlLanguage> for VhdlBuilder<'config> {
 }
 
 impl<'config> VhdlBuilder<'config> {
-    fn build_root<S: data_text_core::source::Source + ?Sized>(&self, green_tree: &GreenNode<VhdlLanguage>, source: &S) -> Result<VhdlRoot, TextError> {
+    fn build_root<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        green_tree: &GreenNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<VhdlRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut units = Vec::new();
 
@@ -60,7 +71,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(VhdlRoot { units })
     }
 
-    fn build_entity<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<EntityDeclaration, TextError> {
+    fn build_entity<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<EntityDeclaration, TextError> {
         let mut name = String::new();
         let mut ports = Vec::new();
 
@@ -83,7 +98,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(EntityDeclaration { name, ports })
     }
 
-    fn build_port_clause<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<Vec<PortDeclaration>, TextError> {
+    fn build_port_clause<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<Vec<PortDeclaration>, TextError> {
         let mut ports = Vec::new();
         for child in node.children() {
             if let RedTree::Node(n) = child {
@@ -95,7 +114,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(ports)
     }
 
-    fn build_port_declaration<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<PortDeclaration, TextError> {
+    fn build_port_declaration<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<PortDeclaration, TextError> {
         let mut name = String::new();
         let mut direction = PortDirection::In;
         let mut data_type = String::new();
@@ -134,7 +157,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(PortDeclaration { name, direction, data_type })
     }
 
-    fn build_architecture<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<ArchitectureBody, TextError> {
+    fn build_architecture<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<ArchitectureBody, TextError> {
         let mut name = String::new();
         let mut entity_name = String::new();
         let mut items = Vec::new();
@@ -169,7 +196,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(ArchitectureBody { name, entity_name, items })
     }
 
-    fn build_signal<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<SignalDeclaration, TextError> {
+    fn build_signal<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<SignalDeclaration, TextError> {
         let mut name = String::new();
         let mut data_type = String::new();
 
@@ -189,7 +220,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(SignalDeclaration { name, data_type })
     }
 
-    fn build_process<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<ProcessStatement, TextError> {
+    fn build_process<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<ProcessStatement, TextError> {
         let mut label = None;
         let sensitivity_list = Vec::new();
         let body = String::new();
@@ -208,7 +243,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(ProcessStatement { label, sensitivity_list, body })
     }
 
-    fn build_component<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<ComponentDeclaration, TextError> {
+    fn build_component<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<ComponentDeclaration, TextError> {
         let mut name = String::new();
         let mut ports = Vec::new();
 
@@ -231,7 +270,11 @@ impl<'config> VhdlBuilder<'config> {
         Ok(ComponentDeclaration { name, ports })
     }
 
-    fn build_package<S: data_text_core::source::Source + ?Sized>(&self, node: RedNode<VhdlLanguage>, source: &S) -> Result<PackageDeclaration, TextError> {
+    fn build_package<S: data_text_core::source::Source + ?Sized>(
+        &self,
+        node: RedNode<VhdlLanguage>,
+        source: &S,
+    ) -> Result<PackageDeclaration, TextError> {
         let mut name = String::new();
         let items = Vec::new();
 

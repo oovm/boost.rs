@@ -23,7 +23,12 @@ impl<'config> DHallParser<'config> {
 }
 
 impl<'config> Parser<DHallLanguage> for DHallParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<DHallLanguage>) -> ParseOutput<'a, DHallLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<DHallLanguage>,
+    ) -> ParseOutput<'a, DHallLanguage> {
         let lexer = DHallLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -3,8 +3,8 @@
 //! (`sqlite-conformance`).
 
 use database_formats::sqlite::{
-    DEFAULT_PAGE_SIZE, ENGINE_LIBRARY_VERSION, MAGIC, RecordLimits, RecordValue, TextEncoding, WriteValue, blank_database, decode_library_version,
-    decode_record, encode_record, validate_database,
+    DEFAULT_PAGE_SIZE, ENGINE_LIBRARY_VERSION, MAGIC, RecordLimits, RecordValue, TextEncoding, WriteValue, blank_database,
+    decode_library_version, decode_record, encode_record, validate_database,
 };
 
 #[test]

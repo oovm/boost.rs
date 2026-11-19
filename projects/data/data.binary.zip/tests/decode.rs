@@ -124,8 +124,7 @@ fn decode_facts_report_crc_and_full_consumption() {
     let index = index_zip_bytes("deflate.zip", bytes.clone()).expect("index");
     let member = &index.members[0];
     let source = MemorySource::from_bytes("deflate.zip", bytes);
-    let (_decoded, facts) =
-        decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect("facts");
+    let (_decoded, facts) = decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect("facts");
     assert!(facts.fully_consumed);
     assert_eq!(facts.crc32_expected, facts.crc32_actual);
     assert!(facts.checksum_ok());
@@ -140,8 +139,7 @@ fn empty_member_decodes_to_empty_payload() {
     assert_eq!(member.compressed_size, 0);
     assert_eq!(member.uncompressed_size, 0);
     let source = MemorySource::from_bytes("empty.zip", bytes);
-    let (_decoded, facts) =
-        decode_member_with_facts("e", source, member, &mut BudgetTracker::new(Budget::default())).expect("facts");
+    let (_decoded, facts) = decode_member_with_facts("e", source, member, &mut BudgetTracker::new(Budget::default())).expect("facts");
     assert_eq!(facts.decoded_size, 0);
     assert_eq!(facts.crc32_actual, 0);
     assert!(facts.checksum_ok());
@@ -172,13 +170,11 @@ fn oversized_declared_uncompressed_size_is_rejected_before_reading() {
 #[test]
 fn declared_uncompressed_size_mismatch_is_rejected() {
     let payload = b"xy";
-    let bytes =
-        deflate_zip_declaring(b"b", &Deflate::encode(payload, DeflateLevel::Default), payload.len() as u32 + 1, crc32(payload));
+    let bytes = deflate_zip_declaring(b"b", &Deflate::encode(payload, DeflateLevel::Default), payload.len() as u32 + 1, crc32(payload));
     let index = index_zip_bytes("deflate.zip", bytes.clone()).expect("index");
     let member = &index.members[0];
     let source = MemorySource::from_bytes("deflate.zip", bytes);
-    let error =
-        decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("must reject");
+    let error = decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("must reject");
     assert_eq!(error, ZipViewError::SizeMismatch);
 }
 
@@ -189,8 +185,7 @@ fn zero_declared_size_rejects_non_empty_payload() {
     let index = index_zip_bytes("deflate.zip", bytes.clone()).expect("index");
     let member = &index.members[0];
     let source = MemorySource::from_bytes("deflate.zip", bytes);
-    let error =
-        decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("must reject");
+    let error = decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("must reject");
     assert_eq!(error, ZipViewError::SizeMismatch);
 }
 
@@ -203,8 +198,7 @@ fn truncated_deflate_payload_preserves_codec_category() {
     let index = index_zip_bytes("deflate.zip", bytes.clone()).expect("index");
     let member = &index.members[0];
     let source = MemorySource::from_bytes("deflate.zip", bytes);
-    let error =
-        decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("must reject");
+    let error = decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("must reject");
     match error {
         ZipViewError::Codec(codec_error) => {
             assert!(
@@ -224,8 +218,8 @@ fn member_decode_reports_a_range_that_can_be_supplied() {
     let payload = member.payload_range;
 
     let partial = RangeMapSource::new("deflate.zip", vec![]).with_total_length(bytes.len() as u64);
-    let error = decode_member_with_facts("m", partial, member, &mut BudgetTracker::new(Budget::default()))
-        .expect_err("payload was not fetched");
+    let error =
+        decode_member_with_facts("m", partial, member, &mut BudgetTracker::new(Budget::default())).expect_err("payload was not fetched");
     match error {
         ZipViewError::NeedRange { range } => {
             assert_eq!(range, ByteExtent::new_allowing_empty(payload.start, payload.len).expect("range"));
@@ -237,8 +231,7 @@ fn member_decode_reports_a_range_that_can_be_supplied() {
     let mut partial = RangeMapSource::new("deflate.zip", vec![]).with_total_length(bytes.len() as u64);
     partial.provide_range(payload.start, fetched).expect("supply the fetched payload");
 
-    let (decoded, facts) =
-        decode_member_with_facts("m", partial, member, &mut BudgetTracker::new(Budget::default())).expect("decode");
+    let (decoded, facts) = decode_member_with_facts("m", partial, member, &mut BudgetTracker::new(Budget::default())).expect("decode");
     assert!(facts.checksum_ok());
     assert_eq!(decoded.length(), Some(2));
 }
@@ -289,29 +282,24 @@ fn a_missing_member_range_becomes_a_core_range_request() {
     let member = &index.members[0];
 
     let partial = RangeMapSource::new("deflate.zip", vec![]).with_total_length(bytes.len() as u64);
-    let error = decode_member_with_facts("m", partial, member, &mut BudgetTracker::new(Budget::default()))
-        .expect_err("payload was not fetched");
+    let error =
+        decode_member_with_facts("m", partial, member, &mut BudgetTracker::new(Budget::default())).expect_err("payload was not fetched");
 
     let request = error.need_range(AddressSpaceId(0), "fetch the member payload").expect("range request");
     assert_eq!(request.space, AddressSpaceId(0));
-    assert_eq!(
-        request.range,
-        ByteExtent::new_allowing_empty(member.payload_range.start, member.payload_range.len).expect("range")
-    );
+    assert_eq!(request.range, ByteExtent::new_allowing_empty(member.payload_range.start, member.payload_range.len).expect("range"));
     assert_eq!(request.reason, "fetch the member payload");
 }
 
 #[test]
 fn reports_a_member_crc_mismatch() {
     let payload = b"xy";
-    let bytes =
-        deflate_zip_declaring(b"b", &Deflate::encode(payload, DeflateLevel::Default), payload.len() as u32, crc32(b"other"));
+    let bytes = deflate_zip_declaring(b"b", &Deflate::encode(payload, DeflateLevel::Default), payload.len() as u32, crc32(b"other"));
     let index = index_zip_bytes("deflate.zip", bytes.clone()).expect("index");
     let member = &index.members[0];
 
     let source = MemorySource::from_bytes("deflate.zip", bytes);
-    let error =
-        decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("crc mismatch");
+    let error = decode_member_with_facts("m", source, member, &mut BudgetTracker::new(Budget::default())).expect_err("crc mismatch");
     match error {
         ZipViewError::CrcMismatch { expected, actual } => {
             assert_eq!(expected, crc32(b"other"));

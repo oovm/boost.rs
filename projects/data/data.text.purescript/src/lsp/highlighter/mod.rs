@@ -34,8 +34,8 @@ impl PurescriptHighlighter {
     fn highlight_keywords(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
         let keywords = [
-            "ado", "as", "case", "class", "data", "derive", "do", "else", "false", "forall", "foreign", "hiding", "if", "import", "in", "infix", "infixl", "infixr", "instance", "let", "module", "newtype", "nominal", "of", "role", "then", "true", "type",
-            "where",
+            "ado", "as", "case", "class", "data", "derive", "do", "else", "false", "forall", "foreign", "hiding", "if", "import", "in",
+            "infix", "infixl", "infixr", "instance", "let", "module", "newtype", "nominal", "of", "role", "then", "true", "type", "where",
         ];
 
         for keyword in &keywords {

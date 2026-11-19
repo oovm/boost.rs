@@ -1,5 +1,7 @@
 use crate::{LessParser, ast::LessRoot, language::LessLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, SourceText, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source,
+};
 
 /// A builder for Less documents that coordinates parsing and AST construction.
 #[derive(Clone)]
@@ -15,7 +17,12 @@ impl LessBuilder {
 }
 
 impl Builder<LessLanguage> for LessBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<LessLanguage>) -> BuildOutput<LessLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<LessLanguage>,
+    ) -> BuildOutput<LessLanguage> {
         let parser = LessParser::new(&self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<LessLanguage>::default();

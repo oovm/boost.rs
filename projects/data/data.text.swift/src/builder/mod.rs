@@ -4,7 +4,9 @@ use crate::{
     lexer::token_type::SwiftTokenType,
     parser::{SwiftParser, element_type::SwiftElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+};
 
 /// AST builder for Swift language that constructs typed AST nodes from green tree.
 #[derive(Clone)]
@@ -20,7 +22,12 @@ impl<'config> SwiftBuilder<'config> {
 }
 
 impl<'config> Builder<SwiftLanguage> for SwiftBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<SwiftLanguage>) -> BuildOutput<SwiftLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<SwiftLanguage>,
+    ) -> BuildOutput<SwiftLanguage> {
         let parser = SwiftParser::new(self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<SwiftLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);
@@ -83,11 +90,13 @@ impl<'config> SwiftBuilder<'config> {
                         GreenTree::Leaf(leaf) => {
                             if leaf.kind == SwiftTokenType::Identifier {
                                 if name.is_empty() {
-                                    name = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
+                                    name =
+                                        source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
                                     eprintln!("Found identifier: '{}' at {}", name, current_offset);
                                 }
                                 else if found_arrow && return_type.is_none() {
-                                    let t = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
+                                    let t =
+                                        source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
                                     return_type = Some(Type { name: t });
                                 }
                             }
@@ -123,10 +132,12 @@ impl<'config> SwiftBuilder<'config> {
                             SwiftTokenType::Var => is_mutable = true,
                             SwiftTokenType::Identifier => {
                                 if name.is_empty() {
-                                    name = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
+                                    name =
+                                        source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
                                 }
                                 else if found_colon && type_annotation.is_none() {
-                                    let t = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
+                                    let t =
+                                        source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string();
                                     type_annotation = Some(Type { name: t });
                                 }
                             }

@@ -6,7 +6,12 @@ use data_text_core::{
 };
 
 impl<'config> GoBuilder<'config> {
-    pub(crate) fn extract_function(&self, node: RedNode<GoLanguage>, source: &data_text_core::SourceText, cache: &mut impl data_text_core::BuilderCache<GoLanguage>) -> Result<ast::Function, TextError> {
+    pub(crate) fn extract_function(
+        &self,
+        node: RedNode<GoLanguage>,
+        source: &data_text_core::SourceText,
+        cache: &mut impl data_text_core::BuilderCache<GoLanguage>,
+    ) -> Result<ast::Function, TextError> {
         // if let Some(cached) = cache.get_typed_node::<ast::Function>(&node.green) {
         //    return Ok(cached);
         // }

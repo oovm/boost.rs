@@ -15,7 +15,8 @@ use crate::asgard::error::{AsgardError, AsgardResult};
 pub fn compile_awsl_source(source: &str, file_stem: &str, source_path: &str, options: &LoweringOptions) -> AsgardResult<LoweredComponent> {
     let root = AwslParser::parse_root_with_options(source, options.strict_mode)
         .map_err(|error| AsgardError::msg(report!("AWSL parse failed {}: {}", source_path, error.message)))?;
-    validate_component_contract(&root, file_stem).map_err(|error| AsgardError::msg(report!("AWSL contract validation failed {}: {}", source_path, error.message)))?;
+    validate_component_contract(&root, file_stem)
+        .map_err(|error| AsgardError::msg(report!("AWSL contract validation failed {}: {}", source_path, error.message)))?;
     let component = lower_component(&root, file_stem, source_path, options)?;
     if let Some(contract) = &component.style_contract {
         crate::asgard::style::web::validate_for_dom(contract)?;

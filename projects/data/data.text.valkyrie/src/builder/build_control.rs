@@ -1,14 +1,16 @@
 use crate::{
     ValkyrieLanguage,
     ast::{
-        pattern_nodes::{AlternativePattern, ArrayPattern, ClassPattern, ElsePattern, LiteralPattern, TypePattern, VariablePattern, WildcardPattern},
+        pattern_nodes::{
+            AlternativePattern, ArrayPattern, ClassPattern, ElsePattern, LiteralPattern, TypePattern, VariablePattern, WildcardPattern,
+        },
         term_nodes::{Break, Continue, Raise, Resume, Return},
         *,
     },
     builder::ValkyrieBuilder,
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     pub(crate) fn build_if<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
@@ -21,7 +23,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -50,7 +55,15 @@ impl<'config> ValkyrieBuilder<'config> {
                     crate::parser::element_type::ValkyrieElementType::IfExpression => {
                         let nested_span = n.span();
                         let nested = self.build_if(n, source)?;
-                        else_branch = Some(Block { statements: vec![Statement::Expression(Box::new(ExprStmt { expr: nested, semi: false, annotations: Vec::new(), span: nested_span }))], span: nested_span });
+                        else_branch = Some(Block {
+                            statements: vec![Statement::Expression(Box::new(ExprStmt {
+                                expr: nested,
+                                semi: false,
+                                annotations: Vec::new(),
+                                span: nested_span,
+                            }))],
+                            span: nested_span,
+                        });
                     }
                     _ => {
                         if condition.is_none() {
@@ -75,7 +88,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -111,10 +127,15 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Keyword(ValkyrieKeywords::Else) => else_span = Some(t.span.clone()),
                     // `default` 臂与 `else` 同形：标识符叶节点文本判定。
-                    ValkyrieTokenType::Identifier if crate::builder::text(source, t.span.clone()) == "default" => else_span = Some(t.span.clone()),
+                    ValkyrieTokenType::Identifier if crate::builder::text(source, t.span.clone()) == "default" => {
+                        else_span = Some(t.span.clone())
+                    }
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -122,7 +143,8 @@ impl<'config> ValkyrieBuilder<'config> {
                     | crate::parser::element_type::ValkyrieElementType::Newline
                     | crate::parser::element_type::ValkyrieElementType::LineComment
                     | crate::parser::element_type::ValkyrieElementType::BlockComment => continue,
-                    crate::parser::element_type::ValkyrieElementType::Pattern | crate::parser::element_type::ValkyrieElementType::AlternativePattern => {
+                    crate::parser::element_type::ValkyrieElementType::Pattern
+                    | crate::parser::element_type::ValkyrieElementType::AlternativePattern => {
                         pattern = Some(self.build_pattern(n, source)?);
                     }
                     _ => expressions.push(self.build_expr(n, source)?),
@@ -164,7 +186,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Label => {
                         label = Some(crate::builder::text(source, t.span));
                     }
@@ -208,7 +233,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -236,7 +264,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Label => {
                         label = Some(crate::builder::text(source, t.span));
                     }
@@ -266,7 +297,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
                 match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Label => {
                         label = Some(crate::builder::text(source, t.span));
                     }
@@ -286,7 +320,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -313,7 +350,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -342,7 +382,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -384,7 +427,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     }
                 },
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
             }
@@ -424,7 +470,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::BracketL => {
                         saw_bracket = true;
                     }
@@ -444,7 +493,11 @@ impl<'config> ValkyrieBuilder<'config> {
                             lone_identifier = Some((Identifier { name, span: t.span }, t.span));
                         }
                     }
-                    ValkyrieTokenType::IntegerLiteral | ValkyrieTokenType::FloatLiteral | ValkyrieTokenType::BoolLiteral | ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral => {
+                    ValkyrieTokenType::IntegerLiteral
+                    | ValkyrieTokenType::FloatLiteral
+                    | ValkyrieTokenType::BoolLiteral
+                    | ValkyrieTokenType::StringLiteral
+                    | ValkyrieTokenType::CharLiteral => {
                         // 字面量可以是完整模式（`case 60`），也可以是构造/数组模式的
                         // 位置子模式（`case Some(60)` / `case [head, 0]`）：前者整臂即
                         // Literal，后者按位置落入嵌套/数组序列，不得丢弃成 Wildcard。
@@ -518,7 +571,11 @@ impl<'config> ValkyrieBuilder<'config> {
                 return Ok(Pattern::Class(Box::new(ClassPattern { name, fields, span })));
             }
             if !nested_patterns.is_empty() {
-                return Ok(Pattern::Class(Box::new(ClassPattern { name, fields: Self::positional_variant_fields(&nested_patterns, span), span })));
+                return Ok(Pattern::Class(Box::new(ClassPattern {
+                    name,
+                    fields: Self::positional_variant_fields(&nested_patterns, span),
+                    span,
+                })));
             }
             return Ok(Pattern::Type(Box::new(TypePattern { name, span })));
         }
@@ -526,7 +583,11 @@ impl<'config> ValkyrieBuilder<'config> {
         if let Some((identifier, id_span)) = lone_identifier {
             if !nested_patterns.is_empty() {
                 let name = NamePath { parts: vec![identifier], span: id_span };
-                return Ok(Pattern::Class(Box::new(ClassPattern { name, fields: Self::positional_variant_fields(&nested_patterns, span), span })));
+                return Ok(Pattern::Class(Box::new(ClassPattern {
+                    name,
+                    fields: Self::positional_variant_fields(&nested_patterns, span),
+                    span,
+                })));
             }
             if identifier.name.chars().next().is_some_and(|ch| ch.is_uppercase()) {
                 return Ok(Pattern::Type(Box::new(TypePattern { name: NamePath { parts: vec![identifier], span: id_span }, span })));
@@ -553,7 +614,11 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// Supports both new syntax (`:` separator) and deprecated syntax (`=` separator).
     /// When the deprecated `=` syntax is detected, a warning is logged.
-    fn build_pattern_fields<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<(Identifier, Option<Pattern>)>, TextError> {
+    fn build_pattern_fields<S: Source + ?Sized>(
+        &self,
+        node: &RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Vec<(Identifier, Option<Pattern>)>, TextError> {
         let mut fields = Vec::new();
 
         for child in node.children() {
@@ -563,7 +628,8 @@ impl<'config> ValkyrieBuilder<'config> {
                     | crate::parser::element_type::ValkyrieElementType::Newline
                     | crate::parser::element_type::ValkyrieElementType::LineComment
                     | crate::parser::element_type::ValkyrieElementType::BlockComment => continue,
-                    crate::parser::element_type::ValkyrieElementType::ExprStatement | crate::parser::element_type::ValkyrieElementType::BinaryExpression => {
+                    crate::parser::element_type::ValkyrieElementType::ExprStatement
+                    | crate::parser::element_type::ValkyrieElementType::BinaryExpression => {
                         if let Some(field) = self.extract_pattern_field(&stmt_n, source)? {
                             fields.push(field);
                         }
@@ -588,7 +654,11 @@ impl<'config> ValkyrieBuilder<'config> {
     /// Extracts a pattern field from a binary expression or statement.
     ///
     /// Supports both new syntax (`:` separator) and deprecated syntax (`=` separator).
-    fn extract_pattern_field<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Option<(Identifier, Option<Pattern>)>, TextError> {
+    fn extract_pattern_field<S: Source + ?Sized>(
+        &self,
+        node: &RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Option<(Identifier, Option<Pattern>)>, TextError> {
         let mut field_name = None;
         let mut field_pattern = None;
         let mut separator_found = false;
@@ -597,7 +667,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Eq => {
                         if !separator_found {
                             separator_found = true;
@@ -644,7 +717,10 @@ impl<'config> ValkyrieBuilder<'config> {
 
         if uses_deprecated_syntax {
             if let Some(ref name) = field_name {
-                eprintln!("Warning: Use of deprecated '=' syntax in pattern field at offset {}. Use ':' instead. Field: '{}'", name.span.start, name.name);
+                eprintln!(
+                    "Warning: Use of deprecated '=' syntax in pattern field at offset {}. Use ':' instead. Field: '{}'",
+                    name.span.start, name.name
+                );
             }
         }
 
@@ -658,7 +734,7 @@ mod soft_identifier_pattern_tests {
         ValkyrieBuilder, ValkyrieLanguage, ValkyrieRoot,
         ast::{Pattern, StatementNode},
     };
-    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();

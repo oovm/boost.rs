@@ -1,8 +1,10 @@
 #![doc = include_str!("readme.md")]
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
 use crate::{language::HaskellLanguage, lexer::HaskellLexer, parser::HaskellParser};
 use data_text_core::{Language, errors::ParseResult};
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 
 /// Haskell syntax highlighter.
 pub struct HaskellHighlighter {

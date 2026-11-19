@@ -9,8 +9,10 @@ use super::{
     errors::Result as LocalResult,
     models::{escape_vos_str, *},
 };
-use odm_adapter::odm_types::{Planner, Row, RowWrite, Value};
-use odm_adapter::connector_local::LocalSource;
+use odm_adapter::{
+    connector_local::LocalSource,
+    odm_types::{Planner, Row, RowWrite, Value},
+};
 
 // --- Thin generated client (TS-parity shim; not knife-B GeneratedCall) ---------
 // Prefer these delegates over hand-written VOS strings / RowWrite. Escape hatch:

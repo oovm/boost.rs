@@ -15,11 +15,7 @@ use super::{
 /// 算法由 `boost-math` 的共享图论核提供，本函数只负责把 `GraphObject` 投影成
 /// 借用视图、映射权重域与节点身份，并按领域合同生成完整证书（距离表、
 /// 前驱表、边权表与松弛次数均来自共享核的真实输出）。
-pub fn shortest_path_non_negative(
-    graph: &GraphObject,
-    source: GraphNodeId,
-    target: GraphNodeId,
-) -> Result<ShortestPathResult, Diagnostic> {
+pub fn shortest_path_non_negative(graph: &GraphObject, source: GraphNodeId, target: GraphNodeId) -> Result<ShortestPathResult, Diagnostic> {
     validate_weight_domain(graph)?;
     let n = graph.node_count();
     if source.0 >= n || target.0 >= n {
@@ -47,8 +43,7 @@ pub fn shortest_path_non_negative(
     })?;
 
     let edge_weights = collect_edge_weights(&graph.memory, unit_weight);
-    let predecessors: Vec<Option<GraphNodeId>> =
-        found.predecessors.iter().map(|previous| previous.as_ref().map(|id| (*id).clone())).collect();
+    let predecessors: Vec<Option<GraphNodeId>> = found.predecessors.iter().map(|previous| previous.as_ref().map(|id| (*id).clone())).collect();
 
     let Some(distance) = found.distance
     else {

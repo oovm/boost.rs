@@ -398,7 +398,10 @@ pub fn canonical_type_spelling(ty: &SemanticType) -> String {
 
 /// 布局字段是否为整数计数字段候选。
 fn is_integer_layout_type(ty: &SemanticType) -> bool {
-    matches!(ty, SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } | SemanticType::Integer64 { .. })
+    matches!(
+        ty,
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } | SemanticType::Integer64 { .. }
+    )
 }
 
 /// 字段类型解析出的布局身份（名义字段自带；`Apply` 走 canonical 冻结索引）。
@@ -438,26 +441,36 @@ fn host_sequence_projection(
         if levels.len() >= HOST_PROJECTION_MAX_DEPTH {
             return unsupported(format!("嵌套存储深度超过上限 {HOST_PROJECTION_MAX_DEPTH}"));
         }
-        let items_slots: Vec<usize> = current.fields.iter().enumerate().filter(|(_, field)| matches!(field.ty, SemanticType::Array(_))).map(|(index, _)| index).collect();
+        let items_slots: Vec<usize> =
+            current.fields.iter().enumerate().filter(|(_, field)| matches!(field.ty, SemanticType::Array(_))).map(|(index, _)| index).collect();
         if items_slots.len() > 1 {
             return unsupported("同一层存在多个数组字段，无法唯一确定 backing array".to_string());
         }
-        let length_slots: Vec<usize> = current.fields.iter().enumerate().filter(|(_, field)| is_integer_layout_type(&field.ty)).map(|(index, _)| index).collect();
+        let length_slots: Vec<usize> =
+            current.fields.iter().enumerate().filter(|(_, field)| is_integer_layout_type(&field.ty)).map(|(index, _)| index).collect();
         if length_slots.len() > 1 {
             return unsupported("同一层存在多个整数字段，无法唯一确定计数槽位".to_string());
         }
         let length_slot = length_slots.first().copied();
         if let Some(items_slot) = items_slots.first().copied() {
             // 叶子层：backing array 就在本层。
-            levels.push(SequenceLevel { layout: current.id, field_count: current.fields.len(), items_slot: Some(items_slot), length_slot, inner_slot: None });
-            let SemanticType::Array(element) = &current.fields[items_slot].ty else {
+            levels.push(SequenceLevel {
+                layout: current.id,
+                field_count: current.fields.len(),
+                items_slot: Some(items_slot),
+                length_slot,
+                inner_slot: None,
+            });
+            let SemanticType::Array(element) = &current.fields[items_slot].ty
+            else {
                 return unsupported("叶子层 backing array 字段事实缺失".to_string());
             };
             let element_structure = abi_structure_for_type_with_layouts(element, layouts, layout_by_type, sums);
             if let Some(reason) = element_structure.unsupported_reason() {
                 return unsupported(format!("元素类型没有 ABI 合同: {reason}"));
             }
-            let Some(root_length_slot) = levels[0].length_slot else {
+            let Some(root_length_slot) = levels[0].length_slot
+            else {
                 return unsupported("根层没有整数计数字段，无法读回长度".to_string());
             };
             let length_ty_structure = abi_structure_for_type_with_layouts(&root.fields[root_length_slot].ty, layouts, layout_by_type, sums);
@@ -486,8 +499,15 @@ fn host_sequence_projection(
             return unsupported(format!("层 `{}` 既无 backing array，也没有可唯一定位的嵌套存储字段（字段：{spellings}）", current.id));
         }
         let (inner_slot, inner_layout) = inner_slots[0];
-        levels.push(SequenceLevel { layout: current.id, field_count: current.fields.len(), items_slot: None, length_slot, inner_slot: Some(inner_slot) });
-        let Some(next) = layouts.layouts.iter().find(|item| item.id == inner_layout) else {
+        levels.push(SequenceLevel {
+            layout: current.id,
+            field_count: current.fields.len(),
+            items_slot: None,
+            length_slot,
+            inner_slot: Some(inner_slot),
+        });
+        let Some(next) = layouts.layouts.iter().find(|item| item.id == inner_layout)
+        else {
             return unsupported(format!("嵌套存储字段的布局 `{inner_layout}` 未注册"));
         };
         current = next;

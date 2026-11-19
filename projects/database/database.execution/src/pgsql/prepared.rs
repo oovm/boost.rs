@@ -8,8 +8,10 @@ use std::sync::Arc;
 
 use database_query::{PgUtilityStatement, SqlParameterStyle, SqlValue, substitute_sql_parameters};
 
-use super::session::{PreparedSqlStatement, PgsqlSqlRuntime, TransactionSession};
-use super::statement::{StatementError, StatementOutcome, run_statement};
+use super::{
+    session::{PgsqlSqlRuntime, PreparedSqlStatement, TransactionSession},
+    statement::{StatementError, StatementOutcome, run_statement},
+};
 
 /// Applies one parsed utility statement.
 pub fn execute_utility(
@@ -55,9 +57,7 @@ pub fn execute_utility(
             session.notify(runtime, channel, payload, std::process::id());
             Ok(StatementOutcome::Command("NOTIFY"))
         }
-        PgUtilityStatement::CopyFromStdin { .. } => {
-            Err(StatementError::new("0A000", "COPY FROM STDIN requires the wire CopyIn protocol"))
-        }
+        PgUtilityStatement::CopyFromStdin { .. } => Err(StatementError::new("0A000", "COPY FROM STDIN requires the wire CopyIn protocol")),
         PgUtilityStatement::Deallocate { name } => {
             let removed = session.deallocate_statement(name.as_deref());
             if let Some(name) = name {
@@ -71,7 +71,8 @@ pub fn execute_utility(
             }
         }
         PgUtilityStatement::Execute { name, arguments } => {
-            let Some(statement) = session.prepared_statement(name) else {
+            let Some(statement) = session.prepared_statement(name)
+            else {
                 return Err(StatementError::new("26000", format!("prepared statement \"{name}\" does not exist")));
             };
             let sql = statement.sql.clone();
@@ -90,12 +91,11 @@ pub fn execute_utility(
             for argument in arguments {
                 values.push(parse_argument(argument)?);
             }
-            let rendered = substitute_sql_parameters(&sql, &values, SqlParameterStyle::DollarNumber).map_err(|error| {
-                StatementError::new("08P01", format!("SQL parameter error: {}", error.message))
-            })?;
-            run_statement(&rendered, runtime, session).map(StatementOutcome::Result).map_err(|(sqlstate, message)| {
-                StatementError::new(sqlstate, message)
-            })
+            let rendered = substitute_sql_parameters(&sql, &values, SqlParameterStyle::DollarNumber)
+                .map_err(|error| StatementError::new("08P01", format!("SQL parameter error: {}", error.message)))?;
+            run_statement(&rendered, runtime, session)
+                .map(StatementOutcome::Result)
+                .map_err(|(sqlstate, message)| StatementError::new(sqlstate, message))
         }
     }
 }
@@ -114,7 +114,8 @@ fn parse_argument(source: &str) -> Result<SqlValue, StatementError> {
         return Ok(SqlValue::Boolean(false));
     }
     if let Some(inner) = text.strip_prefix('\'') {
-        let Some(inner) = inner.strip_suffix('\'') else {
+        let Some(inner) = inner.strip_suffix('\'')
+        else {
             return Err(StatementError::new("42601", format!("unterminated string argument: {text}")));
         };
         return Ok(SqlValue::String(inner.replace("''", "'")));

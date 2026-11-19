@@ -5,18 +5,17 @@
 //! module owns the document-tree pass that turns a parsed red tree into styled
 //! segments.
 
-use std::borrow::Cow;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
-use data_text_core::Range;
-use data_text_core::errors::ParseResult;
-use data_text_core::language::{ElementRole, Language, LanguageCategory, TokenRole, UniversalElementRole, UniversalTokenRole};
-use data_text_core::parser::Parser;
-use data_text_core::parser::session::ParseSession;
-use data_text_core::source::SourceText;
-use data_text_core::tree::{RedLeaf, RedNode, RedTree};
-use data_text_core::visitor::Visitor;
-use data_text_core::{Lexer, TokenType};
+use data_text_core::{
+    Lexer, Range, TokenType,
+    errors::ParseResult,
+    language::{ElementRole, Language, LanguageCategory, TokenRole, UniversalElementRole, UniversalTokenRole},
+    parser::{Parser, session::ParseSession},
+    source::SourceText,
+    tree::{RedLeaf, RedNode, RedTree},
+    visitor::Visitor,
+};
 
 /// Highlight style configuration for a visual text segment.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,7 +60,10 @@ impl Default for HighlightTheme {
         styles.insert("comment".to_string(), HighlightStyle { color: Some("#808080".to_string()), italic: true, ..Default::default() });
         styles.insert("punctuation.whitespace".to_string(), HighlightStyle::default());
 
-        styles.insert("entity.name.function".to_string(), HighlightStyle { color: Some("#795E26".to_string()), bold: true, ..Default::default() });
+        styles.insert(
+            "entity.name.function".to_string(),
+            HighlightStyle { color: Some("#795E26".to_string()), bold: true, ..Default::default() },
+        );
         styles.insert("entity.name.type".to_string(), HighlightStyle { color: Some("#267F99".to_string()), ..Default::default() });
         styles.insert("variable.other.declaration".to_string(), HighlightStyle { color: Some("#795E26".to_string()), ..Default::default() });
         styles.insert(
@@ -70,7 +72,8 @@ impl Default for HighlightTheme {
         );
         styles.insert("meta.preprocessor".to_string(), HighlightStyle { color: Some("#AF00DB".to_string()), ..Default::default() });
         styles.insert("entity.other.attribute-name".to_string(), HighlightStyle { color: Some("#AF00DB".to_string()), ..Default::default() });
-        styles.insert("entity.other.attribute-name.key".to_string(), HighlightStyle { color: Some("#001080".to_string()), ..Default::default() });
+        styles
+            .insert("entity.other.attribute-name.key".to_string(), HighlightStyle { color: Some("#001080".to_string()), ..Default::default() });
 
         styles.insert(
             "invalid".to_string(),

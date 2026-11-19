@@ -102,7 +102,11 @@ impl<'config> LiquidParser<'config> {
         }
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?; // if
         self.parse_expression(state)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -129,13 +133,18 @@ impl<'config> LiquidParser<'config> {
                 state.expect(LiquidTokenType::LeftBracePercent)?;
                 state.expect(LiquidTokenType::Identifier)?; // else
                 state.expect(LiquidTokenType::PercentRightBrace)?;
-                while state.not_at_end() && !(state.at(LiquidTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false)) {
+                while state.not_at_end()
+                    && !(state.at(LiquidTokenType::LeftBracePercent)
+                        && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false))
+                {
                     self.parse_node(state)?;
                 }
             }
         }
 
-        if state.at(LiquidTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false) {
+        if state.at(LiquidTokenType::LeftBracePercent)
+            && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false)
+        {
             state.expect(LiquidTokenType::LeftBracePercent)?;
             state.expect(LiquidTokenType::Identifier)?; // endif
             state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -145,7 +154,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?; // for
         self.parse_expression(state)?; // x
         // Liquid for syntax: for x in y
@@ -158,7 +171,10 @@ impl<'config> LiquidParser<'config> {
         }
         state.expect(LiquidTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(LiquidTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endfor").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(LiquidTokenType::LeftBracePercent)
+                && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endfor").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -170,12 +186,19 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_block_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?; // block
         state.expect(LiquidTokenType::Identifier)?; // name
         state.expect(LiquidTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(LiquidTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endblock").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(LiquidTokenType::LeftBracePercent)
+                && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endblock").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -190,7 +213,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_macro_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_macro_definition<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::Identifier)?;
 
@@ -209,7 +236,10 @@ impl<'config> LiquidParser<'config> {
 
         state.expect(LiquidTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(LiquidTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endmacro").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(LiquidTokenType::LeftBracePercent)
+                && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endmacro").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -221,7 +251,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_assign_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_assign_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::Eq)?;
@@ -231,7 +265,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_capture_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_capture_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -255,7 +293,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_case_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_case_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -279,7 +321,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_include_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_include_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -287,7 +333,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_render_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_render_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -295,7 +345,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_unless_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_unless_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
@@ -345,7 +399,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_raw_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_raw_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
 
@@ -368,21 +426,33 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_break_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_break_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
         state.finish_at(cp, LiquidElementType::Break);
         Ok(())
     }
 
-    fn parse_continue_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_continue_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         state.expect(LiquidTokenType::PercentRightBrace)?;
         state.finish_at(cp, LiquidElementType::Continue);
         Ok(())
     }
 
-    fn parse_cycle_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_cycle_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         while state.not_at_end() && !state.at(LiquidTokenType::PercentRightBrace) {
             state.advance();
@@ -392,7 +462,11 @@ impl<'config> LiquidParser<'config> {
         Ok(())
     }
 
-    fn parse_tablerow_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_tablerow_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(LiquidTokenType::Identifier)?;
         self.parse_expression(state)?;
         if state.peek_text().map(|t| t == "in").unwrap_or(false) {
@@ -427,7 +501,11 @@ impl<'config> LiquidParser<'config> {
         self.parse_binary_expression(state, 0)
     }
 
-    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), data_text_core::TextError> {
+    fn parse_binary_expression<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        min_precedence: i32,
+    ) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         self.parse_primary_expression(state)?;
 
@@ -449,7 +527,12 @@ impl<'config> LiquidParser<'config> {
         match kind {
             LiquidTokenType::Or => 0,
             LiquidTokenType::And => 1,
-            LiquidTokenType::EqEq | LiquidTokenType::Neq | LiquidTokenType::Lt | LiquidTokenType::Gt | LiquidTokenType::LtEq | LiquidTokenType::GtEq => 3,
+            LiquidTokenType::EqEq
+            | LiquidTokenType::Neq
+            | LiquidTokenType::Lt
+            | LiquidTokenType::Gt
+            | LiquidTokenType::LtEq
+            | LiquidTokenType::GtEq => 3,
             LiquidTokenType::Pipe => 4,
             LiquidTokenType::Plus | LiquidTokenType::Minus => 5,
             LiquidTokenType::Star | LiquidTokenType::Slash => 6,
@@ -521,7 +604,12 @@ impl<'config> LiquidParser<'config> {
                 self.parse_primary_expression(state)?;
             }
             _ => {
-                while state.not_at_end() && !state.at(LiquidTokenType::PercentRightBrace) && !state.at(LiquidTokenType::DoubleRightBrace) && !state.at(LiquidTokenType::RightParen) && !state.at(LiquidTokenType::Comma) {
+                while state.not_at_end()
+                    && !state.at(LiquidTokenType::PercentRightBrace)
+                    && !state.at(LiquidTokenType::DoubleRightBrace)
+                    && !state.at(LiquidTokenType::RightParen)
+                    && !state.at(LiquidTokenType::Comma)
+                {
                     state.advance();
                 }
             }
@@ -531,7 +619,12 @@ impl<'config> LiquidParser<'config> {
 }
 
 impl<'config> Parser<LiquidLanguage> for LiquidParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<LiquidLanguage>) -> ParseOutput<'a, LiquidLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<LiquidLanguage>,
+    ) -> ParseOutput<'a, LiquidLanguage> {
         let lexer = LiquidLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

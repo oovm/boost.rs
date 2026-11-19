@@ -1566,7 +1566,9 @@ fn bind_select_statement(select: &data_text_sql::ast::SelectStatement) -> Result
                             return Err(SqlFrontendError::unsupported("GROUP BY ordinal position is outside the projection list"));
                         }
                     },
-                    data_text_sql::ast::GroupByItem::GroupingSets(_) | data_text_sql::ast::GroupByItem::Rollup(_) | data_text_sql::ast::GroupByItem::Cube(_) => {
+                    data_text_sql::ast::GroupByItem::GroupingSets(_)
+                    | data_text_sql::ast::GroupByItem::Rollup(_)
+                    | data_text_sql::ast::GroupByItem::Cube(_) => {
                         return Err(SqlFrontendError::unsupported(
                             "GROUPING SETS, ROLLUP and CUBE are not yet supported by the cluster gateway",
                         ));

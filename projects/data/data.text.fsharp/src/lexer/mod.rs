@@ -3,7 +3,7 @@ pub mod token_type;
 
 use crate::{language::FSharpLanguage, lexer::token_type::FSharpTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Range, Source, TextEdit,
+    Lexer, LexerCache, LexerState, Range, Source, TextEdit, TextError,
     lexer::{LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -19,7 +19,12 @@ pub struct FSharpLexer<'config> {
 }
 
 impl<'config> Lexer<FSharpLanguage> for FSharpLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<FSharpLanguage>) -> LexOutput<FSharpLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<FSharpLanguage>,
+    ) -> LexOutput<FSharpLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

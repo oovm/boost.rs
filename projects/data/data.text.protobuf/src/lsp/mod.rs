@@ -19,7 +19,9 @@ impl HoverProvider<ProtobufLanguage> for ProtobufHoverProvider {
     fn hover(&self, node: &RedNode<ProtobufLanguage>, _range: Range<usize>) -> Option<ProviderHover> {
         let kind = node.green.kind;
         let contents = match kind {
-            ProtobufElementType::MessageDef => "### Protobuf Message\nA message is a collection of fields. It's the primary way to define data structures in Protobuf.",
+            ProtobufElementType::MessageDef => {
+                "### Protobuf Message\nA message is a collection of fields. It's the primary way to define data structures in Protobuf."
+            }
             ProtobufElementType::EnumDef => "### Protobuf Enum\nAn enum is a set of named integer constants.",
             ProtobufElementType::ServiceDef => "### Protobuf Service\nA service defines a set of RPC methods that can be called remotely.",
             _ => return None,

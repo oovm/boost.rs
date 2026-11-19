@@ -3,7 +3,10 @@
 pub mod element_type;
 
 use crate::{
-    ast::{TailwindArbitraryValue, TailwindClass, TailwindClassKind, TailwindComment, TailwindDirective, TailwindModifier, TailwindNode, TailwindRoot, TailwindUtility},
+    ast::{
+        TailwindArbitraryValue, TailwindClass, TailwindClassKind, TailwindComment, TailwindDirective, TailwindModifier, TailwindNode,
+        TailwindRoot, TailwindUtility,
+    },
     language::TailwindLanguage,
     lexer::{TailwindLexer, token_type::TailwindTokenType},
     parser::element_type::TailwindElementType,
@@ -36,7 +39,10 @@ impl TailwindParser {
                 let directive = self.parse_directive(state)?;
                 Ok(Some(TailwindNode::Directive(directive)))
             }
-            Some(TailwindTokenType::Modifier) | Some(TailwindTokenType::Utility) | Some(TailwindTokenType::Important) | Some(TailwindTokenType::ArbitraryValue) => {
+            Some(TailwindTokenType::Modifier)
+            | Some(TailwindTokenType::Utility)
+            | Some(TailwindTokenType::Important)
+            | Some(TailwindTokenType::ArbitraryValue) => {
                 let class = self.parse_class(state)?;
                 Ok(Some(TailwindNode::Class(class)))
             }
@@ -109,7 +115,10 @@ impl TailwindParser {
         }
         else {
             // Fallback for incomplete class
-            TailwindClassKind::Utility(TailwindUtility { span: Range { start: state.current_offset(), end: state.current_offset() }, name: String::new() })
+            TailwindClassKind::Utility(TailwindUtility {
+                span: Range { start: state.current_offset(), end: state.current_offset() },
+                name: String::new(),
+            })
         };
 
         // Optional important flag at end
@@ -153,7 +162,12 @@ impl TailwindParser {
 
 impl Parser<TailwindLanguage> for TailwindParser {
     /// Parses the source text into a Tailwind syntax tree.
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<TailwindLanguage>) -> ParseOutput<'a, TailwindLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<TailwindLanguage>,
+    ) -> ParseOutput<'a, TailwindLanguage> {
         let lexer = TailwindLexer::new(self.config);
         let mut ast_nodes = Vec::new();
 

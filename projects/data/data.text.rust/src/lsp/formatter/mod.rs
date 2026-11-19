@@ -331,7 +331,15 @@ impl RustFormatter {
     /// Basic formatting (simple implementation)
     fn basic_format(&self, source: &str) -> String {
         // Simple formatting: add appropriate spaces and line breaks
-        source.replace("{", " {\n").replace("}", "\n}").replace(";", ";\n").lines().map(|line| line.trim()).filter(|line| !line.is_empty()).collect::<Vec<_>>().join("\n")
+        source
+            .replace("{", " {\n")
+            .replace("}", "\n}")
+            .replace(";", ";\n")
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     // Placeholder methods - these need to be implemented based on specific requirements
@@ -365,7 +373,13 @@ impl RustFormatter {
 
     fn format_static(&self, static_item: &Static) -> String {
         let mut_keyword = if static_item.mutable { "mut " } else { "" };
-        format!("static {}{}: {} = {}", mut_keyword, static_item.name.name, self.format_type(&static_item.ty), self.format_expr(&static_item.expr))
+        format!(
+            "static {}{}: {} = {}",
+            mut_keyword,
+            static_item.name.name,
+            self.format_type(&static_item.ty),
+            self.format_expr(&static_item.expr)
+        )
     }
 
     fn format_type_alias(&self, type_alias: &TypeAlias) -> String {

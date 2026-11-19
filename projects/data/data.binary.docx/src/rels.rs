@@ -12,8 +12,7 @@ use crate::{
 pub const ROOT_RELS_PATH: &str = "_rels/.rels";
 
 /// Office main document relationship type URI.
-pub const OFFICE_DOCUMENT_RELATIONSHIP_TYPE: &str =
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+pub const OFFICE_DOCUMENT_RELATIONSHIP_TYPE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 
 /// One OPC relationship entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,18 +33,12 @@ pub fn parse_relationships(xml: &[u8]) -> Result<Vec<OpcRelationship>, OpcError>
     let root = document_root(&value).map_err(OpcError::Parse)?;
     let mut relationships = Vec::new();
     for relationship in elements_by_local_name(root, "Relationship") {
-        let id = attribute_value(relationship, "Id")
-            .ok_or_else(|| OpcError::Parse("relationship is missing Id attribute".into()))?;
-        let relationship_type = attribute_value(relationship, "Type")
-            .ok_or_else(|| OpcError::Parse(format!("relationship {id} is missing Type attribute")))?;
-        let target = attribute_value(relationship, "Target")
-            .ok_or_else(|| OpcError::Parse(format!("relationship {id} is missing Target attribute")))?;
-        relationships.push(OpcRelationship {
-            id,
-            relationship_type,
-            target,
-            target_mode: attribute_value(relationship, "TargetMode"),
-        });
+        let id = attribute_value(relationship, "Id").ok_or_else(|| OpcError::Parse("relationship is missing Id attribute".into()))?;
+        let relationship_type =
+            attribute_value(relationship, "Type").ok_or_else(|| OpcError::Parse(format!("relationship {id} is missing Type attribute")))?;
+        let target =
+            attribute_value(relationship, "Target").ok_or_else(|| OpcError::Parse(format!("relationship {id} is missing Target attribute")))?;
+        relationships.push(OpcRelationship { id, relationship_type, target, target_mode: attribute_value(relationship, "TargetMode") });
     }
     Ok(relationships)
 }
@@ -78,11 +71,7 @@ impl OpcPackage {
     }
 
     /// Reads relationship targets keyed by id, returning an empty map when the part is absent.
-    pub fn read_relationship_targets(
-        &self,
-        path: &str,
-        ledger: &mut BudgetTracker,
-    ) -> Result<HashMap<String, String>, OpcError> {
+    pub fn read_relationship_targets(&self, path: &str, ledger: &mut BudgetTracker) -> Result<HashMap<String, String>, OpcError> {
         match self.read_part(path, ledger) {
             Ok(xml) => parse_relationship_targets(&xml),
             Err(OpcError::PartNotFound(_)) => Ok(HashMap::new()),

@@ -25,12 +25,33 @@ pub struct Mapping {
 impl Mapping {
     /// Creates a new mapping with only generated position.
     pub fn generated_only(line: u32, column: u32) -> Self {
-        Self { generated_line: line, generated_column: column, source_index: None, original_line: None, original_column: None, name_index: None }
+        Self {
+            generated_line: line,
+            generated_column: column,
+            source_index: None,
+            original_line: None,
+            original_column: None,
+            name_index: None,
+        }
     }
 
     /// Creates a new mapping with full information.
-    pub fn full(generated_line: u32, generated_column: u32, source_index: u32, original_line: u32, original_column: u32, name_index: Option<u32>) -> Self {
-        Self { generated_line, generated_column, source_index: Some(source_index), original_line: Some(original_line), original_column: Some(original_column), name_index }
+    pub fn full(
+        generated_line: u32,
+        generated_column: u32,
+        source_index: u32,
+        original_line: u32,
+        original_column: u32,
+        name_index: Option<u32>,
+    ) -> Self {
+        Self {
+            generated_line,
+            generated_column,
+            source_index: Some(source_index),
+            original_line: Some(original_line),
+            original_column: Some(original_column),
+            name_index,
+        }
     }
 
     /// Checks if this mapping has source information.
@@ -101,7 +122,13 @@ impl Segment {
 
     /// Creates a new full segment.
     pub fn full(generated_column: i32, source_index: i32, original_line: i32, original_column: i32, name_index: Option<i32>) -> Self {
-        Self { generated_column, source_index: Some(source_index), original_line: Some(original_line), original_column: Some(original_column), name_index }
+        Self {
+            generated_column,
+            source_index: Some(source_index),
+            original_line: Some(original_line),
+            original_column: Some(original_column),
+            name_index,
+        }
     }
 
     /// Checks if this segment has source information.

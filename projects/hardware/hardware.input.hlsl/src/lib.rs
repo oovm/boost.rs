@@ -1,6 +1,7 @@
 //! HLSL input: `data-text-hlsl` syntax tree to neutral shader syntax.
 #![warn(missing_docs)]
 
+use data_text_hlsl::ast as h;
 use hardware_frontend::{
     FrontendError, LoweredShader,
     ast::{
@@ -9,7 +10,6 @@ use hardware_frontend::{
     },
     lower_module,
 };
-use data_text_hlsl::ast as h;
 
 /// Parses HLSL text and lowers it into UCF IR.
 pub fn lower_hlsl(source: &str) -> Result<LoweredShader, FrontendError> {

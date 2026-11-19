@@ -2,7 +2,7 @@
 
 pub mod token_type;
 use crate::{language::SvelteLanguage, lexer::token_type::SvelteTokenType};
-use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, TextError, Source};
+use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, Source, TextError};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, SvelteLanguage>;
 
@@ -158,7 +158,12 @@ impl<'config> SvelteLexer<'config> {
 }
 
 impl<'config> Lexer<SvelteLanguage> for SvelteLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<SvelteLanguage>) -> LexOutput<SvelteLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<SvelteLanguage>,
+    ) -> LexOutput<SvelteLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::StylusLanguage, parser::element_type::StylusElementType};
 use data_text_core::{
-    Builder, BuilderCache, TextDiagnostics, TextError, TextEdit,
+    Builder, BuilderCache, TextDiagnostics, TextEdit, TextError,
     source::{Source, SourceText},
     tree::GreenNode,
 };
@@ -19,7 +19,12 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds the Stylus AST root from a green tree.
-    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, StylusLanguage>, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusRoot, TextError> {
+    fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, StylusLanguage>,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusRoot, TextError> {
         let mut items = Vec::new();
         let mut current_offset = 0;
 
@@ -45,7 +50,13 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus item from a green node.
-    fn build_item<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<Option<StylusItem>, TextError> {
+    fn build_item<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<Option<StylusItem>, TextError> {
         use StylusElementType::*;
 
         match node.kind {
@@ -56,7 +67,13 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus rule from a green node.
-    fn build_rule<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusRule, TextError> {
+    fn build_rule<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusRule, TextError> {
         let mut selector = String::new();
         let mut properties = Vec::new();
         let mut current_offset = offset;
@@ -87,13 +104,23 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus comment from a green node.
-    fn build_comment<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText) -> Result<StylusComment, TextError> {
+    fn build_comment<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<StylusComment, TextError> {
         let text = source.slice((offset..offset + node.byte_length as usize).into()).to_string();
         Ok(StylusComment { span: (offset..offset + node.byte_length as usize).into(), text: text.trim().to_string() })
     }
 
     /// Builds a Stylus property from a green node.
-    fn build_property<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText) -> Result<Option<StylusProperty>, TextError> {
+    fn build_property<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<StylusProperty>, TextError> {
         let mut name = String::new();
         let mut value = String::new();
         let mut current_offset = offset;
@@ -118,11 +145,22 @@ impl<'config> StylusBuilder<'config> {
             }
         }
 
-        if !name.is_empty() { Ok(Some(StylusProperty { span: (offset..current_offset).into(), name: name.trim().to_string(), value: value.trim().to_string() })) } else { Ok(None) }
+        if !name.is_empty() {
+            Ok(Some(StylusProperty { span: (offset..current_offset).into(), name: name.trim().to_string(), value: value.trim().to_string() }))
+        }
+        else {
+            Ok(None)
+        }
     }
 
     /// Builds a Stylus mixin from a green node.
-    fn build_mixin<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusMixin, TextError> {
+    fn build_mixin<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusMixin, TextError> {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut body = Vec::new();
@@ -154,7 +192,12 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus variable from a green node.
-    fn build_variable<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText) -> Result<StylusVariable, TextError> {
+    fn build_variable<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<StylusVariable, TextError> {
         let mut name = String::new();
         let mut value = String::new();
         let mut current_offset = offset;
@@ -205,7 +248,13 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus function from a green node.
-    fn build_function<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusFunction, TextError> {
+    fn build_function<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusFunction, TextError> {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut body = Vec::new();
@@ -225,7 +274,13 @@ impl<'config> StylusBuilder<'config> {
                             }
                         }
                         StylusElementType::Value => {
-                            return_value = Some(source.slice((current_offset..current_offset + child_node.byte_length as usize).into()).to_string().trim().to_string());
+                            return_value = Some(
+                                source
+                                    .slice((current_offset..current_offset + child_node.byte_length as usize).into())
+                                    .to_string()
+                                    .trim()
+                                    .to_string(),
+                            );
                         }
                         _ => {}
                     }
@@ -241,7 +296,13 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus if statement from a green node.
-    fn build_if<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusIf, TextError> {
+    fn build_if<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusIf, TextError> {
         let mut condition = String::new();
         let mut body = Vec::new();
         let mut else_clause: Option<Vec<StylusItem>> = None;
@@ -278,7 +339,13 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus for loop from a green node.
-    fn build_for<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusFor, TextError> {
+    fn build_for<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusFor, TextError> {
         let mut variable = String::new();
         let mut range = String::new();
         let mut body = Vec::new();
@@ -313,7 +380,13 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus while loop from a green node.
-    fn build_while<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<StylusWhile, TextError> {
+    fn build_while<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<StylusWhile, TextError> {
         let mut condition = String::new();
         let mut body = Vec::new();
         let mut current_offset = offset;
@@ -344,7 +417,12 @@ impl<'config> StylusBuilder<'config> {
     }
 
     /// Builds a Stylus parameter from a green node.
-    fn build_param<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText) -> Result<Option<StylusParam>, TextError> {
+    fn build_param<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<StylusParam>, TextError> {
         let mut name = String::new();
         let mut default = None;
         let mut current_offset = offset;
@@ -357,7 +435,13 @@ impl<'config> StylusBuilder<'config> {
                             name = source.slice((current_offset..current_offset + child_node.byte_length as usize).into()).to_string();
                         }
                         StylusElementType::Value => {
-                            default = Some(source.slice((current_offset..current_offset + child_node.byte_length as usize).into()).to_string().trim().to_string());
+                            default = Some(
+                                source
+                                    .slice((current_offset..current_offset + child_node.byte_length as usize).into())
+                                    .to_string()
+                                    .trim()
+                                    .to_string(),
+                            );
                         }
                         _ => {}
                     }
@@ -369,11 +453,22 @@ impl<'config> StylusBuilder<'config> {
             }
         }
 
-        if !name.is_empty() { Ok(Some(StylusParam { span: (offset..current_offset).into(), name: name.trim().to_string(), default })) } else { Ok(None) }
+        if !name.is_empty() {
+            Ok(Some(StylusParam { span: (offset..current_offset).into(), name: name.trim().to_string(), default }))
+        }
+        else {
+            Ok(None)
+        }
     }
 
     /// Builds a Stylus block from a green node.
-    fn build_block<'a>(&self, node: &'a GreenNode<'a, StylusLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<StylusLanguage>) -> Result<Option<Vec<StylusItem>>, TextError> {
+    fn build_block<'a>(
+        &self,
+        node: &'a GreenNode<'a, StylusLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<StylusLanguage>,
+    ) -> Result<Option<Vec<StylusItem>>, TextError> {
         let mut items = Vec::new();
         let mut current_offset = offset;
 
@@ -396,7 +491,12 @@ impl<'config> StylusBuilder<'config> {
 }
 
 impl<'config> Builder<StylusLanguage> for StylusBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<StylusLanguage>) -> data_text_core::builder::BuildOutput<StylusLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<StylusLanguage>,
+    ) -> data_text_core::builder::BuildOutput<StylusLanguage> {
         let parser = crate::parser::StylusParser::new(self.config);
         let lexer = crate::lexer::StylusLexer::new(&self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<StylusLanguage>::default();

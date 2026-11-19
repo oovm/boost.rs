@@ -16,23 +16,11 @@ use crate::{
 };
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan<MsilOpcode> {
-    TargetOperatorPlan {
-        arity: 2,
-        operand_type,
-        result_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: opcode,
-    }
+    TargetOperatorPlan { arity: 2, operand_type, result_type, recipe: TargetOperatorRecipe::Operands, encoding: opcode }
 }
 
 const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan<MsilOpcode> {
-    TargetOperatorPlan {
-        arity: 1,
-        operand_type,
-        result_type: operand_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: opcode,
-    }
+    TargetOperatorPlan { arity: 1, operand_type, result_type: operand_type, recipe: TargetOperatorRecipe::Operands, encoding: opcode }
 }
 
 /// `i64` 移位：MSIL `shl`/`shr` 的位移量操作数必须是 `int32`；声明签名携带 `i64`

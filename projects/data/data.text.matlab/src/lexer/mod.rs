@@ -18,7 +18,12 @@ pub struct MatlabLexer<'config> {
 }
 
 impl<'config> Lexer<MatlabLanguage> for MatlabLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<MatlabLanguage>) -> LexOutput<MatlabLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<MatlabLanguage>,
+    ) -> LexOutput<MatlabLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -227,7 +232,18 @@ impl<'config> MatlabLexer<'config> {
     /// `'` is transpose when the preceding non-trivia token ends an expression primary.
     fn apostrophe_is_transpose(state: &State<'_, impl Source + ?Sized>) -> bool {
         let prev = state.get_tokens().iter().rev().find(|t| !t.kind.is_ignored()).map(|t| t.kind);
-        matches!(prev, Some(MatlabTokenType::Identifier | MatlabTokenType::Number | MatlabTokenType::RightParen | MatlabTokenType::RightBracket | MatlabTokenType::RightBrace | MatlabTokenType::Transpose | MatlabTokenType::DotTranspose))
+        matches!(
+            prev,
+            Some(
+                MatlabTokenType::Identifier
+                    | MatlabTokenType::Number
+                    | MatlabTokenType::RightParen
+                    | MatlabTokenType::RightBracket
+                    | MatlabTokenType::RightBrace
+                    | MatlabTokenType::Transpose
+                    | MatlabTokenType::DotTranspose
+            )
+        )
     }
 
     fn lex_comment<'s, S: Source + ?Sized>(&self, state: &mut State<'s, S>) -> bool {

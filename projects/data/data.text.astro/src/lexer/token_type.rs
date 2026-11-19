@@ -141,14 +141,42 @@ impl TokenType for SvelteTokenType {
 
     fn role(&self) -> Self::Role {
         match self {
-            Self::Import | Self::Export | Self::Default | Self::Const | Self::Let | Self::Var | Self::Function | Self::If | Self::Else | Self::While | Self::For | Self::Return | Self::True | Self::False | Self::Null => UniversalTokenRole::Keyword,
+            Self::Import
+            | Self::Export
+            | Self::Default
+            | Self::Const
+            | Self::Let
+            | Self::Var
+            | Self::Function
+            | Self::If
+            | Self::Else
+            | Self::While
+            | Self::For
+            | Self::Return
+            | Self::True
+            | Self::False
+            | Self::Null => UniversalTokenRole::Keyword,
             Self::Identifier => UniversalTokenRole::Name,
             Self::StringLiteral => UniversalTokenRole::Literal,
             Self::NumberLiteral => UniversalTokenRole::Literal,
             Self::Text => UniversalTokenRole::Literal,
-            Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Eq | Self::Dot | Self::Colon | Self::Comma | Self::Semicolon | Self::Hash | Self::At => UniversalTokenRole::Operator,
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBraceBracket => UniversalTokenRole::Punctuation,
-            Self::HashBrace | Self::SlashBrace | Self::ColonBrace | Self::Lt | Self::Gt | Self::SlashGt | Self::LtSlash => UniversalTokenRole::Punctuation,
+            Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Eq
+            | Self::Dot
+            | Self::Colon
+            | Self::Comma
+            | Self::Semicolon
+            | Self::Hash
+            | Self::At => UniversalTokenRole::Operator,
+            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBraceBracket => {
+                UniversalTokenRole::Punctuation
+            }
+            Self::HashBrace | Self::SlashBrace | Self::ColonBrace | Self::Lt | Self::Gt | Self::SlashGt | Self::LtSlash => {
+                UniversalTokenRole::Punctuation
+            }
             Self::Whitespace => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
             Self::Error => UniversalTokenRole::Error,

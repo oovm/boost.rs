@@ -1,9 +1,11 @@
 #![doc = include_str!("readme.md")]
-use language_server::{Vfs, service::LanguageService};
 use language_mcp::McpServer;
+use language_server::{Vfs, service::LanguageService};
 
 /// Serves CSS MCP.
-pub async fn serve_css_mcp<V: Vfs + Send + Sync + 'static + language_server::DocumentSession>(vfs: V) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+pub async fn serve_css_mcp<V: Vfs + Send + Sync + 'static + language_server::DocumentSession>(
+    vfs: V,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     crate::lsp::CssLanguageService<V>: LanguageService,
 {

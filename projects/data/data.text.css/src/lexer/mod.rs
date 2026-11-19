@@ -463,7 +463,12 @@ impl<'config> CssLexer<'config> {
 
 impl<'config> Lexer<CssLanguage> for CssLexer<'config> {
     /// Tokenizes the source code into a stream of CSS tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], mut cache: &'a mut impl data_text_core::lexer::LexerCache<CssLanguage>) -> LexOutput<CssLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        mut cache: &'a mut impl data_text_core::lexer::LexerCache<CssLanguage>,
+    ) -> LexOutput<CssLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

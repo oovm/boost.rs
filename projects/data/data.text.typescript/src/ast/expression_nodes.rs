@@ -1,4 +1,6 @@
-use crate::ast::{ClassMember, FunctionParam, JsxElement, JsxFragment, JsxSelfClosingElement, Modifier, Statement, TypeAnnotation, TypeParameter};
+use crate::ast::{
+    ClassMember, FunctionParam, JsxElement, JsxFragment, JsxSelfClosingElement, Modifier, Statement, TypeAnnotation, TypeParameter,
+};
 use core::range::Range;
 
 /// Represents a TypeScript expression.

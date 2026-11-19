@@ -49,11 +49,7 @@ impl MirSumVariant {
         match self.fields.as_slice() {
             [] => None,
             [field] => Some(field.ty.clone()),
-            _ => self.declaration.map(|declaration| ValkyrieType::Nominal {
-                declaration,
-                arguments: Vec::new(),
-                primitive_identity: None,
-            }),
+            _ => self.declaration.map(|declaration| ValkyrieType::Nominal { declaration, arguments: Vec::new(), primitive_identity: None }),
         }
     }
 }
@@ -70,8 +66,12 @@ impl MirSumDeclaration {
     /// 记录身份只来自 `variant.declaration`；同一枚举的不同变体各自命中不同记录，
     /// 不会共享一个身份。禁止按变体短名回查。
     pub fn find_record_variant<'a>(declarations: &'a [Self], declaration: compiler_types::ItemId) -> Option<(&'a Self, &'a MirSumVariant)> {
-        let matches: Vec<(&Self, &MirSumVariant)> =
-            declarations.iter().flat_map(|sum| sum.variants.iter().filter(move |variant| variant.declaration == Some(declaration)).map(move |variant| (sum, variant))).collect();
+        let matches: Vec<(&Self, &MirSumVariant)> = declarations
+            .iter()
+            .flat_map(|sum| {
+                sum.variants.iter().filter(move |variant| variant.declaration == Some(declaration)).map(move |variant| (sum, variant))
+            })
+            .collect();
         if matches.len() == 1 { Some(matches[0]) } else { None }
     }
 
@@ -145,11 +145,7 @@ pub fn record_payload_layout(record: &ValkyrieType, layouts: &AggregateLayoutPla
     let key = ValkyrieType::Nominal { declaration: *declaration, arguments: Vec::new(), primitive_identity: None };
     let layout_id = crate::compiler::mir::layout_id_for_type(&key, layouts)?;
     let layout = layouts.layouts.iter().find(|layout| layout.id == layout_id)?;
-    let qualified = if layout.namespace.is_empty() {
-        layout.name.clone()
-    }
-    else {
-        format!("{}::{}", layout.namespace.replace('.', "::"), layout.name)
-    };
+    let qualified =
+        if layout.namespace.is_empty() { layout.name.clone() } else { format!("{}::{}", layout.namespace.replace('.', "::"), layout.name) };
     Some(SemanticType::Nominal { layout: layout_id, spelling: Identifier::new(&qualified) })
 }

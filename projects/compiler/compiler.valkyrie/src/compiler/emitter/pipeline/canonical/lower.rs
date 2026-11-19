@@ -14,8 +14,10 @@ use crate::compiler::{
     types::hir::ValkyrieType,
 };
 
-use super::errors::{error_without_module, type_id};
-use super::identities::VariantRecordBinding;
+use super::{
+    errors::{error_without_module, type_id},
+    identities::VariantRecordBinding,
+};
 
 pub fn lower_function(
     function: &MirFunction,
@@ -37,13 +39,7 @@ pub fn lower_function(
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     // 多字段 SumNew 需要为记录值分配一个新的 canonical SSA 值；编号必须来自
     // 函数内已冻结的 SSA 值集合，避免与任何 MIR 结果/参数撞身份。
-    let mut next_value = function
-        .value_types
-        .keys()
-        .map(|value| value.0)
-        .max()
-        .map(|index| index + 1)
-        .unwrap_or(0);
+    let mut next_value = function.value_types.keys().map(|value| value.0).max().map(|index| index + 1).unwrap_or(0);
     let (parameters, parameter_names) = canonical_entry_parameters(function, ids)?;
     let blocks = function
         .blocks
@@ -213,8 +209,7 @@ fn lower_instruction_set(
                     format!("变体记录 payload 字段数 {} 与已登记字段数 {} 不一致", payloads.len(), binding.fields.len()),
                 ));
             }
-            let record_value =
-                MirValueId::from_index(*next_value).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
+            let record_value = MirValueId::from_index(*next_value).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
             *next_value = (*next_value).checked_add(1).ok_or_else(|| error_without_module("CAN004", "SSA value identity 溢出"))?;
             value_types.insert(record_value, binding.ty);
             let record_instruction = next_instruction_id(next_instruction)?;

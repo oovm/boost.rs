@@ -7,9 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use database_formats::yy::yykv::{
-    DeltaOp, KV_MAGIC, Key, Record, StoredValue, decode_shard_image, encode_delta_frame, encode_snapshot,
-};
+use database_formats::yy::yykv::{DeltaOp, KV_MAGIC, Key, Record, StoredValue, decode_shard_image, encode_delta_frame, encode_snapshot};
 use database_types::cluster::{Error, Namespace, Result, SweepReport};
 
 /// Smallest delta area kept before a commit compacts the shard back into one base snapshot.
@@ -394,8 +392,13 @@ impl FileShard {
         match self.batch.as_mut() {
             Some(batch) => batch.depth += 1,
             None => {
-                self.batch =
-                    Some(WriteBatch { start_revision: self.next_revision, pre_images: CommitJournal::new(), staged: BTreeMap::new(), depth: 1, owner: std::thread::current().id() });
+                self.batch = Some(WriteBatch {
+                    start_revision: self.next_revision,
+                    pre_images: CommitJournal::new(),
+                    staged: BTreeMap::new(),
+                    depth: 1,
+                    owner: std::thread::current().id(),
+                });
             }
         }
     }

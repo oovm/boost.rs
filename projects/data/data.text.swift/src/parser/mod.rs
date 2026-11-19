@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::language::SwiftLanguage;
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -199,12 +199,18 @@ impl<'config> Pratt<SwiftLanguage> for SwiftParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, SwiftLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, SwiftLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, SwiftLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, SwiftLanguage>> {
         use crate::lexer::token_type::SwiftTokenType::*;
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
-            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign => (1, Associativity::Right),
+            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign | AndAssign | OrAssign | XorAssign
+            | LeftShiftAssign | RightShiftAssign => (1, Associativity::Right),
             LogicalOr => (2, Associativity::Left),
             LogicalAnd => (3, Associativity::Left),
             Less | Greater | LessEqual | GreaterEqual | Equal | NotEqual | As | Is => (5, Associativity::Left),
@@ -252,7 +258,12 @@ impl<'config> Pratt<SwiftLanguage> for SwiftParser<'config> {
 }
 
 impl<'config> Parser<SwiftLanguage> for SwiftParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<SwiftLanguage>) -> ParseOutput<'a, SwiftLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<SwiftLanguage>,
+    ) -> ParseOutput<'a, SwiftLanguage> {
         let lexer = crate::lexer::SwiftLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             use crate::lexer::SwiftTokenType::*;

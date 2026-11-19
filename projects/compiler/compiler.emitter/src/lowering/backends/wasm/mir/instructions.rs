@@ -1019,12 +1019,14 @@ fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate
                 WASM_F64_CONVERT_I64_U
             }
         }
-        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => match (*signed, to_f32) {
-            (true, true) => WASM_F32_CONVERT_I32_S,
-            (true, false) => WASM_F64_CONVERT_I32_S,
-            (false, true) => WASM_F32_CONVERT_I32_U,
-            (false, false) => WASM_F64_CONVERT_I32_U,
-        },
+        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => {
+            match (*signed, to_f32) {
+                (true, true) => WASM_F32_CONVERT_I32_S,
+                (true, false) => WASM_F64_CONVERT_I32_S,
+                (false, true) => WASM_F32_CONVERT_I32_U,
+                (false, false) => WASM_F64_CONVERT_I32_U,
+            }
+        }
         // Unicode 码点恒非负。
         SemanticType::Character => {
             if to_f32 {
@@ -1126,19 +1128,31 @@ mod tests {
             cast(SemanticType::Character, SemanticType::Integer16 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
-        assert_eq!(cast(SemanticType::Character, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
+        assert_eq!(
+            cast(SemanticType::Character, SemanticType::Integer64 { signed: true }),
+            vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]
+        );
         assert_eq!(cast(SemanticType::Integer16 { signed: false }, SemanticType::Character), Vec::new());
-        assert_eq!(cast(SemanticType::Integer64 { signed: true }, SemanticType::Character), vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]);
+        assert_eq!(
+            cast(SemanticType::Integer64 { signed: true }, SemanticType::Character),
+            vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]
+        );
     }
 
     #[test]
     fn integer_to_float_picks_opcode_by_signedness_and_carrier() {
         // 64 位源：有符号与无符号必须选不同的 convert 指令。
         assert_eq!(cast(SemanticType::Integer64 { signed: true }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_S)]);
-        assert_eq!(cast(SemanticType::Integer64 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_U)]);
+        assert_eq!(
+            cast(SemanticType::Integer64 { signed: false }, SemanticType::Float64),
+            vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_U)]
+        );
         // 32 位载体同理。
         assert_eq!(cast(SemanticType::Integer32 { signed: true }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_S)]);
-        assert_eq!(cast(SemanticType::Integer32 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(
+            cast(SemanticType::Integer32 { signed: false }, SemanticType::Float64),
+            vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]
+        );
         // 窄无符号在 i32 载体上已是掩码后的非负值，无需再规范化。
         assert_eq!(cast(SemanticType::Integer8 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
         // 码点恒非负。
@@ -1168,7 +1182,10 @@ mod tests {
         assert_eq!(cast(SemanticType::Float64, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]);
         // 整数↔f32 直接用 f32.convert_* / trunc_f32_*，不先经 f64（避免 double rounding）。
         assert_eq!(cast(SemanticType::Integer32 { signed: true }, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_S)]);
-        assert_eq!(cast(SemanticType::Integer64 { signed: false }, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I64_U)]);
+        assert_eq!(
+            cast(SemanticType::Integer64 { signed: false }, SemanticType::Float32),
+            vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I64_U)]
+        );
         assert_eq!(cast(SemanticType::Character, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_U)]);
         assert_eq!(cast(SemanticType::Float32, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F32_S)]);
         assert_eq!(cast(SemanticType::Float32, SemanticType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F32_U)]);

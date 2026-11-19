@@ -33,8 +33,12 @@ impl<'config> TexParser<'config> {
             Some(TexTokenType::BeginKeyword) => self.parse_environment(state),
             Some(TexTokenType::Dollar) => self.parse_math_delimiter(state, TexTokenType::Dollar, TexElementType::InlineMath),
             Some(TexTokenType::DoubleDollar) => self.parse_math_delimiter(state, TexTokenType::DoubleDollar, TexElementType::DisplayMath),
-            Some(TexTokenType::ParenInlineMathDelim) => self.parse_math_delimiter(state, TexTokenType::ParenInlineMathDelim, TexElementType::ParenInlineMath),
-            Some(TexTokenType::BracketDisplayMathDelim) => self.parse_math_delimiter(state, TexTokenType::BracketDisplayMathDelim, TexElementType::BracketDisplayMath),
+            Some(TexTokenType::ParenInlineMathDelim) => {
+                self.parse_math_delimiter(state, TexTokenType::ParenInlineMathDelim, TexElementType::ParenInlineMath)
+            }
+            Some(TexTokenType::BracketDisplayMathDelim) => {
+                self.parse_math_delimiter(state, TexTokenType::BracketDisplayMathDelim, TexElementType::BracketDisplayMath)
+            }
             Some(TexTokenType::LeftCommand) => self.parse_left_right(state),
             Some(TexTokenType::Limits) | Some(TexTokenType::Nolimits) => self.parse_limits(state),
             Some(kind) if self.is_command_like(kind) => self.parse_command(state),
@@ -109,7 +113,20 @@ impl<'config> TexParser<'config> {
         // starred variant (`alignedat*`) is part of the name token but does
         // not change the argument grammar, so match on the unstarred name.
         let grammar_name = name.strip_suffix('*').unwrap_or(name.as_str());
-        let takes_optional = matches!(grammar_name, "matrix" | "pmatrix" | "bmatrix" | "Bmatrix" | "vmatrix" | "Vmatrix" | "smallmatrix" | "alignedat" | "alignat" | "array" | "tabular");
+        let takes_optional = matches!(
+            grammar_name,
+            "matrix"
+                | "pmatrix"
+                | "bmatrix"
+                | "Bmatrix"
+                | "vmatrix"
+                | "Vmatrix"
+                | "smallmatrix"
+                | "alignedat"
+                | "alignat"
+                | "array"
+                | "tabular"
+        );
         let takes_required = matches!(grammar_name, "alignedat" | "alignat" | "array" | "tabular");
         if takes_optional && state.at(TexTokenType::LeftBracket) {
             self.parse_optional_argument(state)?;
@@ -166,7 +183,11 @@ impl<'config> TexParser<'config> {
     /// separator, row break or the closing `\end`.
     fn parse_environment_cell<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
-        while state.not_at_end() && !state.at(TexTokenType::Ampersand) && !state.at(TexTokenType::RowBreak) && !state.at(TexTokenType::EndKeyword) {
+        while state.not_at_end()
+            && !state.at(TexTokenType::Ampersand)
+            && !state.at(TexTokenType::RowBreak)
+            && !state.at(TexTokenType::EndKeyword)
+        {
             self.parse_item(state)?;
         }
         state.finish_at(checkpoint, TexElementType::Cell);
@@ -227,7 +248,16 @@ impl<'config> TexParser<'config> {
         // Preserve specific command element kinds for known commands,
         // otherwise fall back to the generic Command element.
         let _node_kind = match kind {
-            TexTokenType::Frac | TexTokenType::Sqrt | TexTokenType::Sum | TexTokenType::Int | TexTokenType::Lim | TexTokenType::Alpha | TexTokenType::Beta | TexTokenType::Gamma | TexTokenType::Delta | TexTokenType::Epsilon => kind,
+            TexTokenType::Frac
+            | TexTokenType::Sqrt
+            | TexTokenType::Sum
+            | TexTokenType::Int
+            | TexTokenType::Lim
+            | TexTokenType::Alpha
+            | TexTokenType::Beta
+            | TexTokenType::Gamma
+            | TexTokenType::Delta
+            | TexTokenType::Epsilon => kind,
             _ => TexTokenType::Command,
         };
 
@@ -249,7 +279,12 @@ impl<'config> TexParser<'config> {
     /// Parse a math block delimited by `$...$`, `$$...$$`, `\(...\)` or
     /// `\[...\]`. The same lexed token kind is used for opening and
     /// closing, so we match on that.
-    fn parse_math_delimiter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, open_kind: TexTokenType, element_kind: TexElementType) -> Result<(), TextError> {
+    fn parse_math_delimiter<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        open_kind: TexTokenType,
+        element_kind: TexElementType,
+    ) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
         state.bump(); // consume opening delimiter
         while state.not_at_end() && !state.at(open_kind) {
@@ -361,7 +396,12 @@ impl<'config> TexParser<'config> {
 }
 
 impl<'config> Parser<TexLanguage> for TexParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<TexLanguage>) -> ParseOutput<'a, TexLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<TexLanguage>,
+    ) -> ParseOutput<'a, TexLanguage> {
         let lexer = TexLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

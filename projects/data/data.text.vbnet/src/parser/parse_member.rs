@@ -423,7 +423,9 @@ impl<'config> VbNetParser<'config> {
                     state.bump();
                     if state.at(VbNetTokenType::Of) {
                         state.bump();
-                        while state.not_at_end() && (state.at(VbNetTokenType::Identifier) || state.at(VbNetTokenType::Dot) || state.at(VbNetTokenType::Comma)) {
+                        while state.not_at_end()
+                            && (state.at(VbNetTokenType::Identifier) || state.at(VbNetTokenType::Dot) || state.at(VbNetTokenType::Comma))
+                        {
                             if state.at(VbNetTokenType::Identifier) {
                                 state.bump();
                             }

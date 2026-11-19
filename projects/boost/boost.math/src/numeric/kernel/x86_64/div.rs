@@ -9,11 +9,12 @@ use crate::numeric::kernel::error::Result;
 
 use crate::numeric::{
     algorithm::DivStrategy,
+    budget::ExecutionBudget,
     kernel::{
-        LimbBuffer, ScratchWorkspace, error::KernelError,
+        LimbBuffer, ScratchWorkspace,
+        error::KernelError,
         portable::{self, LimbKernel, PortableLimbKernel, cmp_slice, effective_len, is_zero},
     },
-    budget::ExecutionBudget,
 };
 
 use super::{adc_chain, addmul_1_inplace_isa, submul_1_inplace_isa};

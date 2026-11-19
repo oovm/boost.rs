@@ -6,7 +6,7 @@ use crate::{
     parser::{parse_items::parse_item, parse_modifiers::is_declaration_keyword},
 };
 use data_text_core::{
-    TextError, Parser, Source, TextEdit,
+    Parser, Source, TextEdit, TextError,
     parser::{ParseCache, ParserState},
 };
 
@@ -20,7 +20,12 @@ pub struct ValkyrieParser<'config> {
 }
 
 impl<'config> Parser<ValkyrieLanguage> for ValkyrieParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ValkyrieLanguage>) -> data_text_core::parser::ParseOutput<'a, ValkyrieLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ValkyrieLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, ValkyrieLanguage> {
         data_text_core::parser::parse_with_lexer(&ValkyrieLexer::new(self.config), text, edits, cache, |state| {
             let cp = state.sink.checkpoint();
             while state.not_at_end() {
@@ -52,7 +57,10 @@ impl<'config> Parser<ValkyrieLanguage> for ValkyrieParser<'config> {
 fn recover_failed_item<S: Source + ?Sized>(state: &mut ParserState<ValkyrieLanguage, S>, item_start: (usize, usize), error: TextError) {
     // `expect`/`ParserState::syntax_error` 在出错时已记录同一错误；由
     // `Source::syntax_error` 直接构造的错误尚未记录，按 (offset, message) 去重后补记。
-    let already_recorded = state.errors.last().is_some_and(|recorded| recorded.source_offset() == error.source_offset() && recorded.to_string() == error.to_string());
+    let already_recorded = state
+        .errors
+        .last()
+        .is_some_and(|recorded| recorded.source_offset() == error.source_offset() && recorded.to_string() == error.to_string());
     if !already_recorded {
         state.errors.push(error);
     }
@@ -109,7 +117,7 @@ impl<'config> ValkyrieParser<'config> {
 mod recovery_tests {
     use super::*;
     use crate::{ValkyrieBuilder, ValkyrieRoot, ast::StatementNode};
-    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
@@ -211,7 +219,7 @@ mod array_pattern_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{Pattern, Statement, StatementNode, TermExpression},
     };
-    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
@@ -346,7 +354,7 @@ mod trait_member_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{ImplyDeclaration, MethodDeclaration, StatementNode, Trait},
     };
-    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
@@ -383,7 +391,12 @@ mod trait_member_tests {
     }
 
     fn method<'a>(trait_decl: &'a Trait, name: &str) -> &'a MethodDeclaration {
-        trait_decl.body.methods.iter().find(|method| method.name.name == name).unwrap_or_else(|| panic!("expected method {name}, got {:?}", trait_decl.body.methods.iter().map(|method| method.name.name.as_str()).collect::<Vec<_>>()))
+        trait_decl.body.methods.iter().find(|method| method.name.name == name).unwrap_or_else(|| {
+            panic!(
+                "expected method {name}, got {:?}",
+                trait_decl.body.methods.iter().map(|method| method.name.name.as_str()).collect::<Vec<_>>()
+            )
+        })
     }
 
     fn annotations(method: &MethodDeclaration) -> Vec<&str> {
@@ -395,7 +408,12 @@ mod trait_member_tests {
     fn operator_member_without_body_stays_a_declaration() {
         let root = root("trait Equal {\n    infix `==`(self, other: Self): bool\n}\n");
         let equal = trait_of(&root, "Equal");
-        assert_eq!(equal.body.methods.len(), 1, "`infix` must not become a method name: {:?}", equal.body.methods.iter().map(|method| method.name.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(
+            equal.body.methods.len(),
+            1,
+            "`infix` must not become a method name: {:?}",
+            equal.body.methods.iter().map(|method| method.name.name.as_str()).collect::<Vec<_>>()
+        );
         let equals = method(equal, "==");
         assert_eq!(annotations(equals), ["infix"]);
         assert_eq!(equals.parameters.len(), 2);
@@ -418,7 +436,9 @@ mod trait_member_tests {
     /// 判据主用例：普通方法成员与算子成员都能带 `{ ... }` 默认体，且体内容完整进 AST。
     #[test]
     fn trait_members_accept_default_bodies() {
-        let root = root("trait Comparable: Equal {\n    micro compare(self, other: Self): Ordering\n    infix `<`(self, other: Self): bool { return compare(self, other) == Ordering.Less }\n}\n");
+        let root = root(
+            "trait Comparable: Equal {\n    micro compare(self, other: Self): Ordering\n    infix `<`(self, other: Self): bool { return compare(self, other) == Ordering.Less }\n}\n",
+        );
         let comparable = trait_of(&root, "Comparable");
         let names: Vec<&str> = comparable.body.methods.iter().map(|method| method.name.name.as_str()).collect();
         assert_eq!(names, ["compare", "<"], "member names must not leak modifiers or body identifiers");
@@ -449,7 +469,9 @@ mod trait_member_tests {
     /// imply 侧同样带体（算子与 `micro` 两种写法）。
     #[test]
     fn imply_members_keep_bodies() {
-        let root = root("imply Utf8Text: Equal {\n    infix `<`(self, other: Self): bool { return self.length() == 0 }\n    micro length(self) -> i32 { return 1 }\n}\n");
+        let root = root(
+            "imply Utf8Text: Equal {\n    infix `<`(self, other: Self): bool { return self.length() == 0 }\n    micro length(self) -> i32 { return 1 }\n}\n",
+        );
         let imply = imply_of(&root);
         let names: Vec<&str> = imply.methods.iter().map(|method| method.name.name.as_str()).collect();
         assert_eq!(names, ["<", "length"]);
@@ -457,7 +479,10 @@ mod trait_member_tests {
         assert_eq!(annotations(less), ["infix"]);
         assert!(!less.body.as_ref().expect("implementation body").statements.is_empty(), "implementation body must keep its statements");
         let length = imply.methods.iter().find(|method| method.name.name == "length").expect("`length` implementation");
-        assert!(!length.body.as_ref().expect("implementation body").statements.is_empty(), "micro implementation body must keep its statements");
+        assert!(
+            !length.body.as_ref().expect("implementation body").statements.is_empty(),
+            "micro implementation body must keep its statements"
+        );
     }
 
     /// `&` 连接的多 supertrait：每个 bound 都是独立 `Type` 节点，按源序进 AST。
@@ -485,7 +510,7 @@ mod spaceship_operator_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{Statement, StatementNode, TermExpression},
     };
-    use data_text_core::{Builder, GreenTree, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, GreenTree, SourceText, TextDiagnostics, parser::ParseSession};
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
@@ -570,9 +595,13 @@ mod spaceship_operator_tests {
     #[test]
     fn spaceship_lexes_as_a_single_three_byte_token() {
         let kinds = leaves("micro f() { a <=> b }\n");
-        let spaceship_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::LessEqGreater).map(|(_, length)| *length).collect();
+        let spaceship_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::LessEqGreater).map(|(_, length)| *length).collect();
         assert_eq!(spaceship_lengths, [3], "spaceship must be one three-byte token, leaves: {kinds:?}");
-        assert!(!kinds.iter().any(|(kind, _)| matches!(kind, ValkyrieTokenType::LessEq | ValkyrieTokenType::GreaterThan)), "spaceship must not leave comparison remnants: {kinds:?}");
+        assert!(
+            !kinds.iter().any(|(kind, _)| matches!(kind, ValkyrieTokenType::LessEq | ValkyrieTokenType::GreaterThan)),
+            "spaceship must not leave comparison remnants: {kinds:?}"
+        );
     }
 
     /// 反例：`a <= b > c` 仍是两个比较算子，贪婪匹配不得吞成 `<=>`。
@@ -580,9 +609,11 @@ mod spaceship_operator_tests {
     fn adjacent_comparisons_are_not_greedy() {
         let kinds = leaves("micro f() { a <= b > c }\n");
         assert!(!kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::LessEqGreater), "`<=` followed by `>` must not merge: {kinds:?}");
-        let less_eq_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::LessEq).map(|(_, length)| *length).collect();
+        let less_eq_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::LessEq).map(|(_, length)| *length).collect();
         assert_eq!(less_eq_lengths, [2], "`<=` must stay a two-byte token, leaves: {kinds:?}");
-        let greater_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::GreaterThan).map(|(_, length)| *length).collect();
+        let greater_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::GreaterThan).map(|(_, length)| *length).collect();
         assert_eq!(greater_lengths, [1], "`>` must stay a one-byte token, leaves: {kinds:?}");
     }
 
@@ -590,7 +621,8 @@ mod spaceship_operator_tests {
     #[test]
     fn left_shift_stays_a_single_token() {
         let kinds = leaves("micro f() { a << b }\n");
-        let shift_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::LeftShift).map(|(_, length)| *length).collect();
+        let shift_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::LeftShift).map(|(_, length)| *length).collect();
         assert_eq!(shift_lengths, [2], "`<<` must stay a two-byte token, leaves: {kinds:?}");
         assert!(!kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::LessEqGreater), "`<<` must not merge into spaceship: {kinds:?}");
     }
@@ -599,7 +631,8 @@ mod spaceship_operator_tests {
     #[test]
     fn concat_operator_lexes_as_a_single_two_byte_token() {
         let kinds = leaves("micro f() { a ++ b }\n");
-        let concat_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::PlusPlus).map(|(_, length)| *length).collect();
+        let concat_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::PlusPlus).map(|(_, length)| *length).collect();
         assert_eq!(concat_lengths, [2], "`++` must be one two-byte token, leaves: {kinds:?}");
         assert!(!kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::Plus), "`++` must not leave an arithmetic plus: {kinds:?}");
 
@@ -625,11 +658,13 @@ mod spaceship_operator_tests {
     #[test]
     fn numeric_type_suffix_stays_inside_the_literal_token() {
         let floats = leaves("micro f() { let x: f64 = 0.1f64 }\n");
-        let float_lengths: Vec<u32> = floats.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral).map(|(_, length)| *length).collect();
+        let float_lengths: Vec<u32> =
+            floats.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral).map(|(_, length)| *length).collect();
         assert_eq!(float_lengths, [6], "`0.1f64` must be one six-byte float token, leaves: {floats:?}");
 
         let integers = leaves("micro f() { let x: i64 = 42i64 }\n");
-        let integer_lengths: Vec<u32> = integers.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
+        let integer_lengths: Vec<u32> =
+            integers.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
         assert_eq!(integer_lengths, [5], "`42i64` must be one five-byte integer token, leaves: {integers:?}");
     }
 
@@ -637,7 +672,8 @@ mod spaceship_operator_tests {
     #[test]
     fn radix_literal_letters_are_not_treated_as_suffix() {
         let kinds = leaves("micro f() { let x: i64 = 0x1f64 }\n");
-        let hex_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
+        let hex_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
         assert!(hex_lengths.contains(&6), "`0x1f64` must stay one six-byte integer token, leaves: {kinds:?}");
     }
 
@@ -686,7 +722,8 @@ mod spaceship_operator_tests {
     /// 格式化往返：CST token-gap 格式化保留 `<=>`，重解析仍是三向比较算子。
     #[test]
     fn formatter_roundtrip_preserves_spaceship() {
-        let formatted = crate::formatter::format_source("micro f(){a<=>b}\n", &crate::formatter::FormatOptions::default()).expect("formatting must succeed");
+        let formatted = crate::formatter::format_source("micro f(){a<=>b}\n", &crate::formatter::FormatOptions::default())
+            .expect("formatting must succeed");
         assert!(formatted.contains("<=>"), "formatted output must keep the operator: {formatted:?}");
         let expr = single_micro_body_expr(&formatted);
         assert_eq!(operator_of(&expr), Some(ValkyrieTokenType::LessEqGreater), "reparsed expression: {expr:?}");
@@ -697,9 +734,13 @@ mod spaceship_operator_tests {
     fn tuple_index_member_parses_as_field_expression() {
         for source in ["micro f() { pair.0 }\n", "micro f() { pair.1 }\n"] {
             let kinds = leaves(source);
-            let integer_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
+            let integer_lengths: Vec<u32> =
+                kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
             assert_eq!(integer_lengths, [1], "index member must be a one-byte integer token, leaves: {kinds:?}");
-            assert!(!kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral), "`.` after an identifier must not start a float token: {kinds:?}");
+            assert!(
+                !kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral),
+                "`.` after an identifier must not start a float token: {kinds:?}"
+            );
         }
 
         let expr = single_micro_body_expr("micro f() { pair.1 }\n");
@@ -715,9 +756,13 @@ mod spaceship_operator_tests {
     #[test]
     fn tuple_index_member_chains_with_named_members() {
         let kinds = leaves("micro f() { a.0.b }\n");
-        let integer_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
+        let integer_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
         assert_eq!(integer_lengths, [1], "`0` must stay a one-byte integer token, leaves: {kinds:?}");
-        assert!(!kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral), "trailing `.` before `b` must not form a float: {kinds:?}");
+        assert!(
+            !kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral),
+            "trailing `.` before `b` must not form a float: {kinds:?}"
+        );
 
         let expr = single_micro_body_expr("micro f() { a.0.b }\n");
         let TermExpression::DotCall { receiver, field, .. } = &expr
@@ -738,7 +783,8 @@ mod spaceship_operator_tests {
     fn trailing_dot_without_digit_stays_member_path() {
         let kinds = leaves("micro f() { 1.x }\n");
         assert!(!kinds.iter().any(|(kind, _)| *kind == ValkyrieTokenType::FloatLiteral), "`1.` must not be absorbed into a float: {kinds:?}");
-        let integer_lengths: Vec<u32> = kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
+        let integer_lengths: Vec<u32> =
+            kinds.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::IntegerLiteral).map(|(_, length)| *length).collect();
         assert_eq!(integer_lengths, [1], "`1` must stay a one-byte integer token, leaves: {kinds:?}");
 
         let expr = single_micro_body_expr("micro f() { 1.x }\n");
@@ -752,7 +798,8 @@ mod spaceship_operator_tests {
     /// 格式化往返：CST token-gap 格式化保留 `.0`，重解析仍是数字成员 DotCall。
     #[test]
     fn formatter_roundtrip_preserves_tuple_index_member() {
-        let formatted = crate::formatter::format_source("micro f(){pair.0}\n", &crate::formatter::FormatOptions::default()).expect("formatting must succeed");
+        let formatted = crate::formatter::format_source("micro f(){pair.0}\n", &crate::formatter::FormatOptions::default())
+            .expect("formatting must succeed");
         assert!(formatted.contains("pair.0"), "formatted output must keep the index member: {formatted:?}");
         let expr = single_micro_body_expr(&formatted);
         let TermExpression::DotCall { field, .. } = &expr
@@ -770,11 +817,10 @@ mod trait_template_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{Statement, StatementNode, TemplateNode, Trait},
     };
-    use data_text_core::{Builder, GreenTree, TextDiagnostics, SourceText, Token, parser::ParseSession};
+    use data_text_core::{Builder, GreenTree, SourceText, TextDiagnostics, Token, parser::ParseSession};
 
     /// 与 std 消费端同构：trait 体内按 target 分派成员。
-    const TARGET_TRAIT: &str =
-        "trait Iterator {\n    <% match arch %>\n    <% case wasm %>\n    micro filter_map(self, predicate: micro(i32) -> bool): i32\n    <% case native %>\n    micro take_while(self, predicate: micro(i32) -> bool): i32\n    <% end %>\n}\n";
+    const TARGET_TRAIT: &str = "trait Iterator {\n    <% match arch %>\n    <% case wasm %>\n    micro filter_map(self, predicate: micro(i32) -> bool): i32\n    <% case native %>\n    micro take_while(self, predicate: micro(i32) -> bool): i32\n    <% end %>\n}\n";
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
@@ -892,7 +938,8 @@ mod trait_template_tests {
     /// 正例：CST 格式化往返保留模板原文，重解析仍得到同一批分支成员。
     #[test]
     fn formatter_roundtrip_preserves_trait_body_template() {
-        let formatted = crate::formatter::format_source(TARGET_TRAIT, &crate::formatter::FormatOptions::default()).expect("formatting must succeed");
+        let formatted =
+            crate::formatter::format_source(TARGET_TRAIT, &crate::formatter::FormatOptions::default()).expect("formatting must succeed");
         assert!(formatted.contains("<% match arch %>"), "formatted output must keep the directive: {formatted:?}");
         let root = root(&formatted);
         let iterator = trait_of(&root, "Iterator");
@@ -911,7 +958,11 @@ mod trait_template_tests {
         assert_eq!(output.diagnostics.len(), 1, "diagnostics: {:?}", output.diagnostics);
         assert!(output.diagnostics[0].to_string().contains("unclosed `<% match %>` block"), "diagnostics: {:?}", output.diagnostics);
         let root = output.result.unwrap_or_else(|error| panic!("recovery must keep the build alive, got {error:?}"));
-        assert!(!root.items.iter().any(|item| matches!(item, StatementNode::Trait(_))), "broken trait must not reach the AST: {:?}", root.items);
+        assert!(
+            !root.items.iter().any(|item| matches!(item, StatementNode::Trait(_))),
+            "broken trait must not reach the AST: {:?}",
+            root.items
+        );
     }
 
     /// 反例：`%>` 缺失必须报结构化语法错误。
@@ -938,7 +989,7 @@ mod inclusive_range_and_member_attribute_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{ClassDeclaration, Statement, StatementNode, TermExpression},
     };
-    use data_text_core::{Builder, GreenTree, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, GreenTree, SourceText, TextDiagnostics, parser::ParseSession};
 
     fn build(source: &str) -> TextDiagnostics<ValkyrieRoot> {
         let language = ValkyrieLanguage::default();
@@ -1055,7 +1106,12 @@ mod inclusive_range_and_member_attribute_tests {
         assert_eq!(field.annotations.len(), 1, "field annotations: {:?}", field.annotations);
         assert_eq!(field.annotations[0].name.name, "export", "field annotations: {:?}", field.annotations);
         assert_eq!(field.annotations[0].args.len(), 1, "attribute args: {:?}", field.annotations[0].args);
-        assert_eq!(field.annotations[0].args[0].key.as_ref().map(|key| key.name.as_str()), Some("case"), "attribute args: {:?}", field.annotations[0].args);
+        assert_eq!(
+            field.annotations[0].args[0].key.as_ref().map(|key| key.name.as_str()),
+            Some("case"),
+            "attribute args: {:?}",
+            field.annotations[0].args
+        );
     }
 
     /// 正例：`@export` 成员属性同样只落到成员，不并进类注解。
@@ -1076,7 +1132,7 @@ mod soft_keyword_name_tests {
         ValkyrieBuilder, ValkyrieRoot,
         ast::{ClassDeclaration, Statement, StatementNode, StructureDeclaration, TermExpression},
     };
-    use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+    use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 
     /// 名字位置上是标识符的软关键字；硬关键字不在此列。
     const SOFT_NAMES: [&str; 4] = ["flags", "union", "by", "when"];

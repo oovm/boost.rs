@@ -29,7 +29,18 @@ pub struct FSharpLanguage {
 
 impl Default for FSharpLanguage {
     fn default() -> Self {
-        Self { fsharp_4_0: true, fsharp_4_1: true, fsharp_4_5: true, fsharp_5_0: true, fsharp_6_0: true, fsharp_7_0: true, computation_expressions: true, type_providers: true, async_workflows: true, query_expressions: true }
+        Self {
+            fsharp_4_0: true,
+            fsharp_4_1: true,
+            fsharp_4_5: true,
+            fsharp_5_0: true,
+            fsharp_6_0: true,
+            fsharp_7_0: true,
+            computation_expressions: true,
+            type_providers: true,
+            async_workflows: true,
+            query_expressions: true,
+        }
     }
 }
 

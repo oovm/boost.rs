@@ -27,7 +27,11 @@ impl<'config> StylusParser<'config> {
     /// Parse a node.
     fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
-            Some(StylusTokenType::Identifier) | Some(StylusTokenType::Dot) | Some(StylusTokenType::Hash) | Some(StylusTokenType::Ampersand) | Some(StylusTokenType::Star) => {
+            Some(StylusTokenType::Identifier)
+            | Some(StylusTokenType::Dot)
+            | Some(StylusTokenType::Hash)
+            | Some(StylusTokenType::Ampersand)
+            | Some(StylusTokenType::Star) => {
                 if self.is_declaration(state) {
                     self.parse_declaration(state)
                 }
@@ -69,7 +73,11 @@ impl<'config> StylusParser<'config> {
         }
 
         let val_cp = state.checkpoint();
-        while state.not_at_end() && !state.at(StylusTokenType::Newline) && !state.at(StylusTokenType::Semicolon) && !state.at(StylusTokenType::RightBrace) {
+        while state.not_at_end()
+            && !state.at(StylusTokenType::Newline)
+            && !state.at(StylusTokenType::Semicolon)
+            && !state.at(StylusTokenType::RightBrace)
+        {
             state.advance();
         }
         state.finish_at(val_cp, StylusElementType::Value);
@@ -117,7 +125,12 @@ impl<'config> StylusParser<'config> {
 }
 
 impl<'config> Parser<StylusLanguage> for StylusParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<StylusLanguage>) -> ParseOutput<'a, StylusLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<StylusLanguage>,
+    ) -> ParseOutput<'a, StylusLanguage> {
         let lexer = StylusLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

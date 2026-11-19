@@ -49,7 +49,8 @@ fn lexes_nested_nav_closing_tags() {
     let lexer = HtmlLexer::new(&language);
     let mut cache = ParseSession::<HtmlLanguage>::default();
     let tokens = lexer.lex(&source, &[], &mut cache).result.expect("lex");
-    let rendered = tokens.iter().map(|token| format!("{:?}:{}", token.kind, source.get_text_in(token.span.clone()))).collect::<Vec<_>>().join("\n");
+    let rendered =
+        tokens.iter().map(|token| format!("{:?}:{}", token.kind, source.get_text_in(token.span.clone()))).collect::<Vec<_>>().join("\n");
     assert!(rendered.contains("TagSlashOpen:</"), "missing closing tags in token stream:\n{rendered}");
     assert!(rendered.contains("Text:Part One"), "missing anchor text token:\n{rendered}");
 }
@@ -166,7 +167,8 @@ fn builder_lowers_nested_nav_anchor_text() {
     let tree_dump = dump(nav, 0);
     assert_eq!(count_tag(nav, "a"), 2, "expected two anchors in nav tree:\n{tree_dump}");
     let view = data_text_html::query::HtmlDocumentView::from_document(&document);
-    let (_, anchors) = data_text_html::query::select_css_elements(&view, "nav a[href]", data_text_core::query::QueryBudget::default()).expect("css selector");
+    let (_, anchors) =
+        data_text_html::query::select_css_elements(&view, "nav a[href]", data_text_core::query::QueryBudget::default()).expect("css selector");
     assert_eq!(anchors.len(), 2);
     let labels = anchors
         .iter()

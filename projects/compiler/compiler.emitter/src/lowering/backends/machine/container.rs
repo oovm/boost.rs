@@ -8,12 +8,13 @@
 //! 数据段重定位里的 `X64DataTarget::Function` 是适配器意图，不是容器输入：
 //! 文本程序装配器必须在产出镜像前把它解析成 `.text` 偏移，容器不解析名字。
 
-use data_binary_pe::elf::{
-    SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec, SharedElfWriter,
-    SharedObjectExport,
+use data_binary_pe::{
+    elf::{
+        SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec,
+        SharedElfWriter, SharedObjectExport,
+    },
+    pe::{NativeDataRelocation, NativeDataSection, NativeDataTarget as PeDataTarget, NativeExport, NativePeImage, NativePeWriter},
 };
-use data_binary_pe::pe::{NativeDataRelocation, NativeDataSection, NativeExport, NativePeImage, NativePeWriter};
-use data_binary_pe::pe::NativeDataTarget as PeDataTarget;
 
 use super::{X64DataTarget, X64Platform, X64ProgramImage};
 use crate::Result;
@@ -62,8 +63,10 @@ fn write_pe_library(image: &X64ProgramImage) -> Result<Vec<u8>> {
 
 /// 写成 `ELF64 ET_DYN`：宿主 `dlopen` + `dlsym`。
 fn write_elf_shared(image: &X64ProgramImage) -> Result<Vec<u8>> {
-    let exports: Vec<SharedObjectExport> = image.symbols.iter().map(|(name, offset)| SharedObjectExport { name: name.clone(), text_offset: *offset }).collect();
-    let calls: Vec<SharedElfImportCall> = image.elf_got_fixups.iter().map(|(field, import)| SharedElfImportCall { rel32_field: *field, import: *import }).collect();
+    let exports: Vec<SharedObjectExport> =
+        image.symbols.iter().map(|(name, offset)| SharedObjectExport { name: name.clone(), text_offset: *offset }).collect();
+    let calls: Vec<SharedElfImportCall> =
+        image.elf_got_fixups.iter().map(|(field, import)| SharedElfImportCall { rel32_field: *field, import: *import }).collect();
     let data_relocations: Vec<SharedElfDataRelocation> = image
         .data_relocations
         .iter()
@@ -78,8 +81,11 @@ fn write_elf_shared(image: &X64ProgramImage) -> Result<Vec<u8>> {
             Ok(SharedElfDataRelocation { offset: *offset, target })
         })
         .collect::<Result<_>>()?;
-    let data_references: Vec<SharedElfDataReference> =
-        image.data_references.iter().map(|(field, data_offset)| SharedElfDataReference { rel32_field: *field, data_offset: *data_offset }).collect();
+    let data_references: Vec<SharedElfDataReference> = image
+        .data_references
+        .iter()
+        .map(|(field, data_offset)| SharedElfDataReference { rel32_field: *field, data_offset: *data_offset })
+        .collect();
     let elf_image = SharedElfImage { text: image.text.clone(), rodata: Vec::new(), data: image.data.clone(), bss: Vec::new() };
     SharedElfWriter::write_x86_64_shared(&SharedElfSpec {
         image: &elf_image,

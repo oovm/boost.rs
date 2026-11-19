@@ -3,11 +3,11 @@ use std::{
     fs,
 };
 
+use compiler_target::CanonicalTarget;
 use compiler_valkyrie::compiler::{
     semantic::closure::{DeclarationIndexEntry, DeclarationIndexes, DeclarationKey, ReferencePath, index_parsed_root},
     syntax::surface::parse_source_with_identity,
 };
-use compiler_target::CanonicalTarget;
 
 use super::{
     capability::{provider_matches_target, target_host_capability_space},

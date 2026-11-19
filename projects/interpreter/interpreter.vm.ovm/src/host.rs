@@ -1,8 +1,8 @@
 //! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
 
 use crate::error::OdinRuntimeError;
-use interpreter_gc::{ObjectHeap, ObjectPayload};
 use data_binary_odin::OdinImport;
+use interpreter_gc::{ObjectHeap, ObjectPayload};
 
 use crate::{array_runtime, dom_runtime, output_runtime, random_runtime, text_runtime, time_runtime, value::Value};
 

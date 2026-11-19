@@ -52,14 +52,7 @@ impl RuntimeFamily {
             Self::Windows => RuntimeTemplate { command: "{artifact}".into(), args: Vec::new() },
             Self::Wasi => RuntimeTemplate {
                 command: "wasmtime".into(),
-                args: vec![
-                    "run".into(),
-                    "-W".into(),
-                    "gc".into(),
-                    "-W".into(),
-                    "max-memory-size=16777216".into(),
-                    "{artifact}".into(),
-                ],
+                args: vec!["run".into(), "-W".into(), "gc".into(), "-W".into(), "max-memory-size=16777216".into(), "{artifact}".into()],
             },
             Self::Ovm => RuntimeTemplate { command: "{artifact}".into(), args: Vec::new() },
         }

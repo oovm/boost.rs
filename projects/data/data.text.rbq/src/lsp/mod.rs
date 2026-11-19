@@ -69,7 +69,14 @@ pub struct RbqLanguageService<V: Vfs> {
 impl<V: Vfs> RbqLanguageService<V> {
     /// Creates a new RBQ language service.
     pub fn new(vfs: V) -> Self {
-        Self { vfs, workspace: language_server::workspace::WorkspaceManager::default(), hover_provider: RbqHoverProvider, folding_provider: RbqFoldingProvider, semantic_tokens_provider: RbqSemanticTokensProvider, caches: DashMap::new() }
+        Self {
+            vfs,
+            workspace: language_server::workspace::WorkspaceManager::default(),
+            hover_provider: RbqHoverProvider,
+            folding_provider: RbqFoldingProvider,
+            semantic_tokens_provider: RbqSemanticTokensProvider,
+            caches: DashMap::new(),
+        }
     }
 }
 impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> LanguageService for RbqLanguageService<V> {
@@ -110,7 +117,11 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
                 Err(_) => return vec![],
             };
             let root = RedNode { green: root_green, offset: 0 };
-            self.folding_provider.folding_ranges(&root).into_iter().map(|f| language_server::FoldingRange { range: f.range, kind: f.kind }).collect()
+            self.folding_provider
+                .folding_ranges(&root)
+                .into_iter()
+                .map(|f| language_server::FoldingRange { range: f.range, kind: f.kind })
+                .collect()
         }
     }
     fn semantic_tokens<'a>(&'a self, uri: &'a str) -> impl Future<Output = Option<language_server::SemanticTokens>> + Send + 'a {
@@ -127,7 +138,16 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             let tokens = self.semantic_tokens_provider.semantic_tokens(&root, &source, &line_map);
             Some(language_server::SemanticTokens {
                 result_id: None,
-                data: tokens.into_iter().map(|t| language_server::types::SemanticToken { delta_line: t.delta_line, delta_start: t.delta_start, length: t.length, token_type: t.token_type, token_modifiers_bitset: t.token_modifiers_bitset }).collect(),
+                data: tokens
+                    .into_iter()
+                    .map(|t| language_server::types::SemanticToken {
+                        delta_line: t.delta_line,
+                        delta_start: t.delta_start,
+                        length: t.length,
+                        token_type: t.token_type,
+                        token_modifiers_bitset: t.token_modifiers_bitset,
+                    })
+                    .collect(),
             })
         }
     }

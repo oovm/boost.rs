@@ -15,7 +15,12 @@ impl PrologBuilder {
 }
 
 impl Builder<PrologLanguage> for PrologBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PrologLanguage>) -> data_text_core::builder::BuildOutput<PrologLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<PrologLanguage>,
+    ) -> data_text_core::builder::BuildOutput<PrologLanguage> {
         let parser = PrologParser::new(&self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<PrologLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

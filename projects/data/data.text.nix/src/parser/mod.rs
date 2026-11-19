@@ -103,7 +103,12 @@ impl<'a> NixParser<'a> {
 }
 
 impl<'config> Parser<NixLanguage> for NixParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<NixLanguage>) -> ParseOutput<'a, NixLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<NixLanguage>,
+    ) -> ParseOutput<'a, NixLanguage> {
         let lexer = NixLexer::new(self.language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

@@ -1,5 +1,7 @@
 use crate::{ast::*, language::NixLanguage, parser::element_type::NixElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Range, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Range, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+};
 
 /// Builder for Nix language structures.
 #[derive(Clone)]
@@ -15,7 +17,12 @@ impl<'config> NixBuilder<'config> {
 }
 
 impl<'config> Builder<NixLanguage> for NixBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<NixLanguage>) -> BuildOutput<NixLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<NixLanguage>,
+    ) -> BuildOutput<NixLanguage> {
         let parser = crate::parser::NixParser::new(self.config);
         let lexer = crate::lexer::NixLexer::new(&self.config);
 

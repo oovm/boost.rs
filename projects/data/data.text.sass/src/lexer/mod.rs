@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::SassLanguage, lexer::token_type::SassTokenType};
 use data_text_core::{
-    Lexer, LexerState, TextError, TextEdit,
+    Lexer, LexerState, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 type State<'s, S> = LexerState<'s, S, SassLanguage>;
 
 static SASS_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static SASS_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: false });
+static SASS_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: false });
 static SASS_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 static SASS_CHAR: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['\''], escape: Some('\\') });
 
@@ -25,7 +26,12 @@ pub struct SassLexer<'config> {
 
 impl<'config> Lexer<SassLanguage> for SassLexer<'config> {
     /// Tokenizes the source text into a sequence of Sass tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<SassLanguage>) -> LexOutput<SassLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<SassLanguage>,
+    ) -> LexOutput<SassLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -267,7 +273,8 @@ impl<'config> SassLexer<'config> {
         let start = state.get_position();
 
         // Multi-character operators
-        let patterns: &[(&str, SassTokenType)] = &[("==", SassTokenType::EqEq), ("!=", SassTokenType::Ne), ("<=", SassTokenType::Le), (">=", SassTokenType::Ge)];
+        let patterns: &[(&str, SassTokenType)] =
+            &[("==", SassTokenType::EqEq), ("!=", SassTokenType::Ne), ("<=", SassTokenType::Le), (">=", SassTokenType::Ge)];
 
         for (pat, kind) in patterns {
             if state.source().get_text_from(start).as_ref().starts_with(pat) {

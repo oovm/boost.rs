@@ -137,7 +137,13 @@ impl Iter {
             let metadata = entry.metadata().ok();
             #[cfg(not(windows))]
             let metadata = None;
-            children.push(PendingEntry { path: child_path, depth: depth + 1, ancestors: ancestors.clone(), file_type: Some(file_type), metadata });
+            children.push(PendingEntry {
+                path: child_path,
+                depth: depth + 1,
+                ancestors: ancestors.clone(),
+                file_type: Some(file_type),
+                metadata,
+            });
         }
 
         if self.sort_by_file_name {

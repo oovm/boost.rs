@@ -96,7 +96,11 @@ pub(super) fn wasm_param_value_type_for(
 /// 边界准入已由 `validate_text_encoding_projection` 按
 /// `declared_text_projection` 判定（`WasiComponent` 在到达这里前被拒绝）。
 /// GC 聚合字段槽仍走 `wasm_gc_field_type_byte`，继续拒绝 `utf16`。
-pub(super) fn wasm_js_glue_abi_value_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
+pub(super) fn wasm_js_glue_abi_value_type(
+    ctx: &ExecutableLoweringContext,
+    ty: &SemanticType,
+    js_glue_utf8_as_anyref: bool,
+) -> crate::Result<u8> {
     if matches!(ty, SemanticType::Utf16) {
         return wasm_js_glue_value_carrier_valtype(ty)
             .ok_or_else(|| crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string());

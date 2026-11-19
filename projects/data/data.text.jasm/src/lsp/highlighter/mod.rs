@@ -1,7 +1,9 @@
 #![doc = include_str!("readme.md")]
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
 use data_text_core::{Language, errors::ParseResult};
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 
 /// JASM syntax highlighter.
 pub struct JasmHighlighter {
@@ -23,7 +25,9 @@ impl HighlightSource for JasmHighlighter {
             let config = crate::language::JasmLanguage::default();
             let parser = crate::parser::JasmParser::new(&config);
             let lexer = crate::lexer::JasmLexer::new(&config);
-            highlighter.highlight_with_language::<crate::language::JasmLanguage, crate::parser::JasmParser<'_>, crate::lexer::JasmLexer>(source, theme, &parser, &lexer)
+            highlighter.highlight_with_language::<crate::language::JasmLanguage, crate::parser::JasmParser<'_>, crate::lexer::JasmLexer>(
+                source, theme, &parser, &lexer,
+            )
         }
         else {
             highlighter.highlight(source, crate::language::JasmLanguage::NAME, theme)

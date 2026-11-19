@@ -1,9 +1,11 @@
 #![doc = include_str!("readme.md")]
-use language_server::{Vfs, service::LanguageService};
 use language_mcp::McpServer;
+use language_server::{Vfs, service::LanguageService};
 
 /// Serves Less MCP.
-pub async fn serve_less_mcp<V: Vfs + Send + Sync + 'static + language_server::DocumentSession>(vfs: V) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+pub async fn serve_less_mcp<V: Vfs + Send + Sync + 'static + language_server::DocumentSession>(
+    vfs: V,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     crate::lsp::LessLanguageService<V>: LanguageService,
 {

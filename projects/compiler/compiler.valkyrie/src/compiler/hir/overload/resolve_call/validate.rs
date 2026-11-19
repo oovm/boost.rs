@@ -22,10 +22,10 @@ use crate::compiler::hir::overload::candidates::collect_module_candidates;
 
 use crate::compiler::hir::overload::{
     call_resolver::{
-        candidate_has_receiver_parameter, match_singleton_method_candidate, overload_symbol_path,
-        peel_explicit_generic_arguments, try_resolve_constructor, try_resolve_constructor_call, try_resolve_instance_method,
-        try_resolve_nullary_constructor, try_resolve_pattern_extractor, try_resolve_qualified_free_function, try_resolve_singleton_method,
-        try_resolve_try_propagate_ok_variant, try_resolve_type_static_method,
+        candidate_has_receiver_parameter, match_singleton_method_candidate, overload_symbol_path, peel_explicit_generic_arguments,
+        try_resolve_constructor, try_resolve_constructor_call, try_resolve_instance_method, try_resolve_nullary_constructor,
+        try_resolve_pattern_extractor, try_resolve_qualified_free_function, try_resolve_singleton_method, try_resolve_try_propagate_ok_variant,
+        try_resolve_type_static_method,
     },
     diagnostics::{OverloadCandidate, OverloadResolutionError},
     expr_position::ExprPosition,
@@ -100,7 +100,9 @@ fn compile_diagnostic_from_parse_error(
 ) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
     use compiler_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSpan};
     let span = match error {
-        crate::compiler::syntax::surface::ParseError::Invalid { span: Some(range), .. } => DiagnosticSpan { start: range.start, end: range.end },
+        crate::compiler::syntax::surface::ParseError::Invalid { span: Some(range), .. } => {
+            DiagnosticSpan { start: range.start, end: range.end }
+        }
         _ => DiagnosticSpan { start: 0, end: 0 },
     };
     let code = crate::compiler::hir::lowering::errors::HirError::from(crate::compiler::syntax::surface::ParseError::Invalid {

@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 type State<'s, S> = LexerState<'s, S, PascalLanguage>;
 
 static PASCAL_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static PASCAL_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "{", block_end: "}", nested_blocks: false });
+static PASCAL_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "{", block_end: "}", nested_blocks: false });
 
 /// A lexer for Pascal source files.
 #[derive(Clone, Debug)]
@@ -317,7 +318,12 @@ impl<'config> PascalLexer<'config> {
 }
 
 impl Lexer<PascalLanguage> for PascalLexer<'_> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<PascalLanguage>) -> LexOutput<PascalLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<PascalLanguage>,
+    ) -> LexOutput<PascalLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

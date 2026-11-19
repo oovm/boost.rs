@@ -3,7 +3,10 @@ use crate::{
     lexer::{keywords::ValkyrieKeywords, token_type::ValkyrieTokenType},
     parser::{
         element_type::ValkyrieElementType,
-        parse_modifiers::{at_identifier_like, dispatch_prefixed_declaration, is_declaration_keyword, is_member_name_token, is_raw_id_follower, parse_field_modifiers, parse_modifiers, parse_modifiers_followed_by},
+        parse_modifiers::{
+            at_identifier_like, dispatch_prefixed_declaration, is_declaration_keyword, is_member_name_token, is_raw_id_follower,
+            parse_field_modifiers, parse_modifiers, parse_modifiers_followed_by,
+        },
     },
 };
 use data_text_core::parser::ParserState;
@@ -59,7 +62,9 @@ pub(crate) fn parse_item<S: data_text_core::Source + ?Sized>(state: &mut State<'
             ValkyrieTokenType::Keyword(ValkyrieKeywords::Mezzo) => parse_mezzo(state),
             ValkyrieTokenType::Keyword(ValkyrieKeywords::Namespace) => parse_namespace(state),
             ValkyrieTokenType::Keyword(ValkyrieKeywords::Class) => parse_class(state),
-            ValkyrieTokenType::Keyword(ValkyrieKeywords::Struct) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Structure) => parse_struct(state),
+            ValkyrieTokenType::Keyword(ValkyrieKeywords::Struct) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Structure) => {
+                parse_struct(state)
+            }
             ValkyrieTokenType::Keyword(ValkyrieKeywords::Enums) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Unity) => parse_enums(state),
             ValkyrieTokenType::Keyword(ValkyrieKeywords::Enum) => parse_enum(state),
             ValkyrieTokenType::Keyword(ValkyrieKeywords::Flags) => parse_flags(state),
@@ -139,7 +144,10 @@ pub(crate) fn parse_micro<S: data_text_core::Source + ?Sized>(state: &mut State<
 /// `implicit_empty_body` 保留历史上的恢复体：顶层与类成员的宿主声明（`micro write(message: utf8): unit`）
 /// 依赖一个空 `BlockExpression` 表示“已声明但无实现”。声明容器（trait）传 `false`，
 /// 让无体成员保持 `body: None`，与 `;` 结尾的纯声明形态一致。
-fn parse_micro_member<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, implicit_empty_body: bool) -> Result<(), data_text_core::TextError> {
+fn parse_micro_member<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    implicit_empty_body: bool,
+) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     parse_modifiers(state)?;
     state.bump();
@@ -915,7 +923,9 @@ pub(crate) fn parse_attribute_item<S: data_text_core::Source + ?Sized>(state: &m
 }
 
 /// Parse a bracket attribute list like `[export(name: "answer"), main]`.
-pub(crate) fn parse_bracket_attribute_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_bracket_attribute_list<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     state.bump();
     state.skip_trivia();
     while state.not_at_end() && !state.at(ValkyrieTokenType::BracketR) {
@@ -1027,15 +1037,21 @@ pub(crate) fn parse_name_path<S: data_text_core::Source + ?Sized>(state: &mut St
 }
 
 // Functions below are defined in other modules
-pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_types::parse_micro_generic_parameter_clause(state)
 }
 
-pub(crate) fn parse_term_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_term_generic_parameter_clause<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_types::parse_term_generic_parameter_clause(state)
 }
 
-pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_types::parse_generic_parameter_list(state)
 }
 

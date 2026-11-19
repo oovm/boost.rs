@@ -173,13 +173,7 @@ fn build_idata_section(imports: &[NativeDllImport]) -> Result<IdataSection> {
     }
 
     for (dll_index, _) in imports.iter().enumerate() {
-        write_descriptor(
-            &mut bytes,
-            dll_index * 20,
-            ilt_offsets[dll_index],
-            dll_name_offsets[dll_index],
-            iat_offsets[dll_index],
-        );
+        write_descriptor(&mut bytes, dll_index * 20, ilt_offsets[dll_index], dll_name_offsets[dll_index], iat_offsets[dll_index]);
     }
 
     Ok(IdataSection { bytes, slot_offsets })
@@ -205,12 +199,7 @@ fn write_descriptor(bytes: &mut [u8], offset: usize, ilt_rva: u32, name_rva: u32
 }
 
 fn normalize_dll_name(dll: &str) -> String {
-    if dll.to_ascii_lowercase().ends_with(".dll") {
-        dll.to_ascii_lowercase()
-    }
-    else {
-        format!("{}.dll", dll.to_ascii_lowercase())
-    }
+    if dll.to_ascii_lowercase().ends_with(".dll") { dll.to_ascii_lowercase() } else { format!("{}.dll", dll.to_ascii_lowercase()) }
 }
 
 fn align2(bytes: &mut Vec<u8>) {

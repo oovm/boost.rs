@@ -102,7 +102,9 @@ impl ElementType for MsilElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::Root => UniversalElementRole::Root,
-            Self::Assembly | Self::AssemblyExtern | Self::Module | Self::Class | Self::Method | Self::Directive => UniversalElementRole::Definition,
+            Self::Assembly | Self::AssemblyExtern | Self::Module | Self::Class | Self::Method | Self::Directive => {
+                UniversalElementRole::Definition
+            }
             Self::Instruction => UniversalElementRole::Statement,
             Self::Type | Self::Identifier => UniversalElementRole::Typing,
             Self::Number | Self::String => UniversalElementRole::Value,

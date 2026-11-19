@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use super::operation::{
     ValkyrieMir, ValkyrieMirArrayInitialization, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirError,
-    ValkyrieMirOperation, ValkyrieMirOperand, ValkyrieMirTerminator,
+    ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirTerminator,
 };
 
 impl ValkyrieMir {
@@ -408,10 +408,7 @@ impl ValkyrieMir {
                             match environment {
                                 Some(ValkyrieMirOperand::Value(value)) => vec![*value],
                                 Some(ValkyrieMirOperand::Constant(_)) => {
-                                    return Err(ValkyrieMirError::FunctionEnvironmentNotValue {
-                                        function: *key,
-                                        instruction: instruction.id,
-                                    });
+                                    return Err(ValkyrieMirError::FunctionEnvironmentNotValue { function: *key, instruction: instruction.id });
                                 }
                                 None => Vec::new(),
                             }
@@ -439,10 +436,9 @@ impl ValkyrieMir {
                                 // 文本载荷允许「内建编码基元 ↔ 登记载体名义类型」：两者是同一值空间
                                 // 的不同形态（`type utf8 = Utf8Text`），与调用实参合同同口径。
                                 (Some(expected), Some(value))
-                                    if function
-                                        .value_types
-                                        .get(value)
-                                        .is_some_and(|actual| *actual == expected || canonical_text_encoding_compatible(linked, *actual, expected)) =>
+                                    if function.value_types.get(value).is_some_and(|actual| {
+                                        *actual == expected || canonical_text_encoding_compatible(linked, *actual, expected)
+                                    }) =>
                                 {
                                     vec![*value]
                                 }
@@ -717,7 +713,15 @@ impl ValkyrieMir {
                                 return Err(ValkyrieMirError::OperationOperandTypeMismatch {
                                     function: *key,
                                     instruction: instruction.id,
-                                    value: *elements.iter().find(|value| function.value_types.get(value).is_some_and(|actual| !matches_declared_type(linked, *actual, *element))).unwrap(),
+                                    value: *elements
+                                        .iter()
+                                        .find(|value| {
+                                            function
+                                                .value_types
+                                                .get(value)
+                                                .is_some_and(|actual| !matches_declared_type(linked, *actual, *element))
+                                        })
+                                        .unwrap(),
                                 });
                             }
                             elements.clone()
@@ -833,13 +837,10 @@ impl ValkyrieMir {
                             // `LabeledTuple`，但元素类型必须与 `element_types` 逐一相等。
                             let kind_matches = match linked.types.get(result).map(|row| &row.kind) {
                                 Some(CanonicalTypeKind::Tuple(members)) => members == element_types,
-                                Some(CanonicalTypeKind::LabeledTuple { fields }) => {
-                                    fields.iter().map(|(_, ty)| ty).eq(element_types.iter())
-                                }
+                                Some(CanonicalTypeKind::LabeledTuple { fields }) => fields.iter().map(|(_, ty)| ty).eq(element_types.iter()),
                                 _ => false,
                             };
-                            if instruction.results.len() != 1 || !kind_matches
-                            {
+                            if instruction.results.len() != 1 || !kind_matches {
                                 return Err(if instruction.results.len() == 1 {
                                     ValkyrieMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id }
                                 }
@@ -866,10 +867,7 @@ impl ValkyrieMir {
                                 Some(CanonicalTypeKind::Tuple(members)) => members.len(),
                                 Some(CanonicalTypeKind::LabeledTuple { fields }) => fields.len(),
                                 _ => {
-                                    return Err(ValkyrieMirError::OperationResultTypeMismatch {
-                                        function: *key,
-                                        instruction: instruction.id,
-                                    });
+                                    return Err(ValkyrieMirError::OperationResultTypeMismatch { function: *key, instruction: instruction.id });
                                 }
                             };
                             if (*index as usize) >= arity {
@@ -901,11 +899,7 @@ impl ValkyrieMir {
                             return Err(ValkyrieMirError::DuplicateDefinition { function: *key, value: *result });
                         }
                         if !function.value_types.contains_key(result) {
-                            return Err(ValkyrieMirError::ValueTypeMismatch {
-                                function: *key,
-                                value: *result,
-                                expected: function.return_type,
-                            });
+                            return Err(ValkyrieMirError::ValueTypeMismatch { function: *key, value: *result, expected: function.return_type });
                         }
                     }
                 }
@@ -977,7 +971,9 @@ impl ValkyrieMir {
                             // （调用签名、`StoreVar`、`Return`）共用 `canonical_text_encoding_compatible`
                             // 事实，SSA 合并块的块参数与入边实参不得因两种文本表示判为类型不符。
                             let actual = function.value_types.get(value);
-                            if actual != Some(expected) && !actual.is_some_and(|actual| canonical_text_encoding_compatible(linked, *actual, *expected)) {
+                            if actual != Some(expected)
+                                && !actual.is_some_and(|actual| canonical_text_encoding_compatible(linked, *actual, *expected))
+                            {
                                 return Err(ValkyrieMirError::BlockParameterTypeMismatch { function: *key, block: target, value: *value });
                             }
                         }
@@ -1168,9 +1164,7 @@ pub fn canonical_types_compatible(linked: &LinkedSemanticProgram, actual: TypeId
 pub fn canonical_text_encoding_compatible(linked: &LinkedSemanticProgram, left: TypeId, right: TypeId) -> bool {
     fn encoding(linked: &LinkedSemanticProgram, ty: TypeId) -> Option<CanonicalPrimitiveType> {
         match linked.types.get(&ty).map(|record| &record.kind) {
-            Some(CanonicalTypeKind::Primitive(primitive @ (CanonicalPrimitiveType::Utf8 | CanonicalPrimitiveType::Utf16))) => {
-                Some(*primitive)
-            }
+            Some(CanonicalTypeKind::Primitive(primitive @ (CanonicalPrimitiveType::Utf8 | CanonicalPrimitiveType::Utf16))) => Some(*primitive),
             _ => linked.text_encoding_types.get(&ty).copied(),
         }
     }
@@ -1224,7 +1218,9 @@ fn shadowed_named_residue<'a>(linked: &LinkedSemanticProgram, ty: &'a SemanticTy
             .iter()
             .find_map(|parameter| shadowed_named_residue(linked, parameter))
             .or_else(|| shadowed_named_residue(linked, &function.return_type)),
-        SemanticType::Tuple(elements) | SemanticType::Union(elements) => elements.iter().find_map(|element| shadowed_named_residue(linked, element)),
+        SemanticType::Tuple(elements) | SemanticType::Union(elements) => {
+            elements.iter().find_map(|element| shadowed_named_residue(linked, element))
+        }
         SemanticType::Array(element) | SemanticType::Nullable(element) => shadowed_named_residue(linked, element),
         SemanticType::FixedArray { element, .. } => shadowed_named_residue(linked, element),
         SemanticType::TraitObject(object) => object.type_arguments.iter().find_map(|argument| shadowed_named_residue(linked, argument)),
@@ -1282,9 +1278,7 @@ pub fn validate_linked_types(linked: &LinkedSemanticProgram) -> Result<(), Valky
                 }
                 Vec::new()
             }
-            CanonicalTypeKind::Nominal { declaration, arguments } => {
-                std::iter::once(*declaration).chain(arguments.iter().copied()).collect()
-            }
+            CanonicalTypeKind::Nominal { declaration, arguments } => std::iter::once(*declaration).chain(arguments.iter().copied()).collect(),
             CanonicalTypeKind::Tuple(members) | CanonicalTypeKind::Union(members) | CanonicalTypeKind::Intersection(members) => members.clone(),
             CanonicalTypeKind::LabeledTuple { fields } => fields.iter().map(|(_, ty)| *ty).collect(),
             CanonicalTypeKind::Array { element, .. } | CanonicalTypeKind::Nullable(element) => {

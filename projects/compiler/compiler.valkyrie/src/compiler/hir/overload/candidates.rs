@@ -15,8 +15,7 @@ use super::{
     substitution::{substitute_associated_equations, substitute_type_self},
     types::struct_apply_type,
 };
-use crate::compiler::hir::lowering::array_owner_declaration;
-use crate::compiler::hir::trait_system::TraitModuleView;
+use crate::compiler::hir::{lowering::array_owner_declaration, trait_system::TraitModuleView};
 
 fn build_function_candidate(module_name: &NamePath, function: &HirFunction, imported_dependency_export: bool) -> OverloadCandidate {
     let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(module_name, function);
@@ -225,11 +224,7 @@ pub fn specialize_method_candidate(
 /// impl 头部声明的关联等式（`type Item = T`）。这是 impl 自己在冻结期就持有的
 /// 语义，不依赖任何成员签名的形状推断。
 fn frozen_impl_equations(implementation: &HirImpl) -> BTreeMap<Identifier, ValkyrieType> {
-    implementation
-        .associated_type_impls
-        .iter()
-        .map(|associated| (associated.name.clone(), associated.concrete_type.clone()))
-        .collect()
+    implementation.associated_type_impls.iter().map(|associated| (associated.name.clone(), associated.concrete_type.clone())).collect()
 }
 
 /// 候选冻结时把 impl 头部等式代入成员签名（`Self::Item` → impl 声明的具体类型），
@@ -280,7 +275,8 @@ fn append_trait_default_candidates(
         }
         let mut candidate =
             specialize_method_candidate(build_method_candidate(method, owner.clone(), Some(trait_ref)), target, &implementation.generics);
-        candidate.signature.params = candidate.signature.params.iter().map(|ty| substitute_associated_equations(ty, target, &equations)).collect();
+        candidate.signature.params =
+            candidate.signature.params.iter().map(|ty| substitute_associated_equations(ty, target, &equations)).collect();
         candidate.signature.return_type = substitute_associated_equations(&candidate.signature.return_type, target, &equations);
         for param in &mut candidate.param_specs {
             param.ty = substitute_associated_equations(&param.ty, target, &equations);
@@ -327,7 +323,11 @@ fn collect_declared_candidates(module: &HirModule, trait_view: &TraitModuleView)
     }
     for item in &module.structs {
         candidates.extend(item.methods.iter().map(|method| {
-            specialize_method_candidate(build_method_candidate(method, Some(item.name.clone()), None), &struct_apply_type(item, array_owner), &item.generics)
+            specialize_method_candidate(
+                build_method_candidate(method, Some(item.name.clone()), None),
+                &struct_apply_type(item, array_owner),
+                &item.generics,
+            )
         }));
     }
     for item in &module.singletons {

@@ -68,6 +68,10 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
     }
     fn hover(&self, uri: &str, range: Range<usize>) -> impl std::future::Future<Output = Option<LspHover>> + Send + '_ {
         let uri = uri.to_string();
-        async move { self.with_root(&uri, |root| self.hover_provider.hover(&root, range).map(|h| LspHover { contents: h.contents, range: h.range })).await.flatten() }
+        async move {
+            self.with_root(&uri, |root| self.hover_provider.hover(&root, range).map(|h| LspHover { contents: h.contents, range: h.range }))
+                .await
+                .flatten()
+        }
     }
 }

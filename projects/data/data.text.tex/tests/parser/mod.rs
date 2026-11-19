@@ -1,11 +1,11 @@
 use data_text_core::errors::TextError;
-use language_testing::parsing::ParserTester;
 use data_text_tex::{
     ast::{MathDelimiter, TexArgument, TexCell, TexEnvironment, TexItem, TexRow},
     builder::TexBuilder,
     language::TexLanguage,
     parser::TexParser,
 };
+use language_testing::parsing::ParserTester;
 use std::{path::Path, time::Duration};
 
 #[test]
@@ -219,7 +219,11 @@ fn math_environment_body_is_rows_of_cells() {
         panic!("expected an environment, got {:?}", ast.items[0])
     };
 
-    assert!(environment.content.items.iter().all(|item| matches!(item, TexItem::Row(_))), "an environment body only contains rows: {:?}", environment.content.items);
+    assert!(
+        environment.content.items.iter().all(|item| matches!(item, TexItem::Row(_))),
+        "an environment body only contains rows: {:?}",
+        environment.content.items
+    );
     let rows = environment_rows(environment);
     assert_eq!(rows.len(), 2, "two authored rows, got {rows:?}");
     assert_eq!(rows[0].cells.len(), 2, "`1 & x > 0` has two cells");
@@ -309,7 +313,11 @@ fn starred_alignedat_declares_its_column_pairs_as_environment_arguments() {
 #[test]
 fn row_break_outside_an_environment_stays_a_command() {
     let ast = parse_to_ast(r#"first \\ second"#);
-    assert!(ast.items.iter().any(|item| matches!(item, TexItem::Command(command) if command.name == "\\")), "a text-mode row break must stay the `\\\\` command: {:?}", ast.items);
+    assert!(
+        ast.items.iter().any(|item| matches!(item, TexItem::Command(command) if command.name == "\\")),
+        "a text-mode row break must stay the `\\\\` command: {:?}",
+        ast.items
+    );
 }
 
 // --- left right pair -------------------------------------------------------

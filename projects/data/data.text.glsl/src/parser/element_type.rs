@@ -373,7 +373,11 @@ impl ElementType for GlslElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::Root => UniversalElementRole::Root,
-            Self::FunctionDeclaration | Self::StructDeclaration | Self::VariableDeclaration | Self::GlobalConstDeclaration | Self::TypeAliasDeclaration => UniversalElementRole::Definition,
+            Self::FunctionDeclaration
+            | Self::StructDeclaration
+            | Self::VariableDeclaration
+            | Self::GlobalConstDeclaration
+            | Self::TypeAliasDeclaration => UniversalElementRole::Definition,
             Self::Block => UniversalElementRole::Container,
             Self::TypeReference => UniversalElementRole::Typing,
             Self::LayoutQualifier => UniversalElementRole::Attribute,
@@ -389,7 +393,9 @@ impl ElementType for GlslElementType {
             | Self::ReturnStatement
             | Self::DiscardStatement
             | Self::ExpressionStatement => UniversalElementRole::Statement,
-            Self::Expr | Self::ExprUnary | Self::ExprBinary | Self::ExprMember | Self::ExprIndex | Self::ExprParen => UniversalElementRole::Expression,
+            Self::Expr | Self::ExprUnary | Self::ExprBinary | Self::ExprMember | Self::ExprIndex | Self::ExprParen => {
+                UniversalElementRole::Expression
+            }
             Self::ExprCall => UniversalElementRole::Call,
             _ => UniversalElementRole::None,
         }

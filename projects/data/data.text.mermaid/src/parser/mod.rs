@@ -7,7 +7,7 @@ use crate::{
     parser::element_type::MermaidElementType,
 };
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::Source,
 };
@@ -22,17 +22,55 @@ pub(crate) type State<'a, S> = ParserState<'a, MermaidLanguage, S>;
 const FLOWCHART_SKIPPED_KEYWORDS: &[&str] = &["direction", "style", "classDef", "class", "linkStyle", "click", "accTitle", "accDescr"];
 
 /// sequence diagram 中暂不建模、需要整行跳过的语句（片段、注释、激活等）。
-const SEQUENCE_SKIPPED_KEYWORDS: &[&str] =
-    &["title", "acctitle", "accTitle", "accDescr", "note", "Note", "loop", "alt", "else", "opt", "par", "critical", "break", "rect", "end", "activate", "deactivate", "autonumber", "box", "create", "destroy", "link", "linkStyle"];
+const SEQUENCE_SKIPPED_KEYWORDS: &[&str] = &[
+    "title",
+    "acctitle",
+    "accTitle",
+    "accDescr",
+    "note",
+    "Note",
+    "loop",
+    "alt",
+    "else",
+    "opt",
+    "par",
+    "critical",
+    "break",
+    "rect",
+    "end",
+    "activate",
+    "deactivate",
+    "autonumber",
+    "box",
+    "create",
+    "destroy",
+    "link",
+    "linkStyle",
+];
 
 /// class diagram 中暂不建模、需要整行跳过的语句。
 ///
 /// `class` 不在此列表中：它是类声明关键字，由
 /// [`MermaidParser::parse_class_declaration`] 处理。
-const CLASS_SKIPPED_KEYWORDS: &[&str] = &["direction", "note", "Note", "style", "cssClass", "linkStyle", "namespace", "click", "acctitle", "accTitle", "accDescr", "callback", "link"];
+const CLASS_SKIPPED_KEYWORDS: &[&str] = &[
+    "direction",
+    "note",
+    "Note",
+    "style",
+    "cssClass",
+    "linkStyle",
+    "namespace",
+    "click",
+    "acctitle",
+    "accTitle",
+    "accDescr",
+    "callback",
+    "link",
+];
 
 /// state diagram 中暂不建模、需要整行跳过的语句。
-const STATE_SKIPPED_KEYWORDS: &[&str] = &["direction", "note", "Note", "style", "classDef", "class", "click", "linkStyle", "title", "accTitle", "accDescr"];
+const STATE_SKIPPED_KEYWORDS: &[&str] =
+    &["direction", "note", "Note", "style", "classDef", "class", "click", "linkStyle", "title", "accTitle", "accDescr"];
 
 /// 其他 Mermaid 图表头。遇到它们时结束当前 flowchart 段落，避免把
 /// 序列图/类图的内容误当成 flowchart 节点。
@@ -685,7 +723,11 @@ impl<'a> MermaidParser<'a> {
 
         if text == "--" {
             // 起始 `--` 与结束箭头之间的文本由 builder 从 green tree 还原。
-            while state.not_at_end() && !state.at(MermaidTokenType::Arrow) && !state.at(MermaidTokenType::Newline) && !state.at(MermaidTokenType::Eof) {
+            while state.not_at_end()
+                && !state.at(MermaidTokenType::Arrow)
+                && !state.at(MermaidTokenType::Newline)
+                && !state.at(MermaidTokenType::Eof)
+            {
                 state.bump();
             }
             if !state.at(MermaidTokenType::Arrow) {
@@ -727,7 +769,12 @@ impl<'a> MermaidParser<'a> {
 }
 
 impl<'p> Parser<MermaidLanguage> for MermaidParser<'p> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<MermaidLanguage>) -> ParseOutput<'a, MermaidLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<MermaidLanguage>,
+    ) -> ParseOutput<'a, MermaidLanguage> {
         let lexer = MermaidLexer::new(self._language);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -9,18 +9,22 @@ fn format(source: &str) -> String {
 
 #[test]
 fn inequality_operators_keep_the_space_before_them() {
-    for (source, expected) in
-        [("const value = a != null;", "const value = a != null;"), ("const value = a!==null;", "const value = a !== null;"), ("if (left != right) { run(); }", "if (left != right) { run(); }"), ("const ok = !done && a != b;", "const ok = !done && a != b;")]
-    {
+    for (source, expected) in [
+        ("const value = a != null;", "const value = a != null;"),
+        ("const value = a!==null;", "const value = a !== null;"),
+        ("if (left != right) { run(); }", "if (left != right) { run(); }"),
+        ("const ok = !done && a != b;", "const ok = !done && a != b;"),
+    ] {
         assert_eq!(format(source), expected, "source={source:?}");
     }
 }
 
 #[test]
 fn nested_generic_close_stays_one_token_before_assignment() {
-    for (source, expected) in
-        [("const map: Record<string, Record<string, unknown>> = {};", "const map: Record<string, Record<string, unknown>> = {};"), ("const deep: Map<string, Set<number>> = new Map();", "const deep: Map<string, Set<number>> = new Map();")]
-    {
+    for (source, expected) in [
+        ("const map: Record<string, Record<string, unknown>> = {};", "const map: Record<string, Record<string, unknown>> = {};"),
+        ("const deep: Map<string, Set<number>> = new Map();", "const deep: Map<string, Set<number>> = new Map();"),
+    ] {
         assert_eq!(format(source), expected, "source={source:?}");
     }
 }
@@ -40,7 +44,12 @@ fn numeric_separators_stay_inside_one_literal() {
 
 #[test]
 fn regex_literals_start_after_logical_operators() {
-    for source in [r"const a = /x/.test(v) || /\.\.\.]/.test(v);", r"const b = /^a$/.test(v) && /[\]]/.test(v);", r"const c = /a/.test(v) ?? /b/.test(v);", r#"if (/\bfrom\s+['"]\.\/(?!\.\.)/.test(js)) { fail(); }"#] {
+    for source in [
+        r"const a = /x/.test(v) || /\.\.\.]/.test(v);",
+        r"const b = /^a$/.test(v) && /[\]]/.test(v);",
+        r"const c = /a/.test(v) ?? /b/.test(v);",
+        r#"if (/\bfrom\s+['"]\.\/(?!\.\.)/.test(js)) { fail(); }"#,
+    ] {
         assert_eq!(format(source), source, "source={source:?}");
     }
 }
@@ -59,14 +68,22 @@ fn keyword_prefixes_keep_the_space_before_them() {
 
 #[test]
 fn division_operators_keep_the_space_on_both_sides() {
-    for (source, expected) in [("const x = a / b;", "const x = a / b;"), ("const pct = Math.round((i + 1) /total * 100);", "const pct = Math.round((i + 1) / total * 100);"), ("const ratio = (a) /b;", "const ratio = (a) / b;")] {
+    for (source, expected) in [
+        ("const x = a / b;", "const x = a / b;"),
+        ("const pct = Math.round((i + 1) /total * 100);", "const pct = Math.round((i + 1) / total * 100);"),
+        ("const ratio = (a) /b;", "const ratio = (a) / b;"),
+    ] {
         assert_eq!(format(source), expected, "source={source:?}");
     }
 }
 
 #[test]
 fn nested_template_interpolations_stay_one_token() {
-    for source in ["const message = `outer ${ok ? `inner ${value}` : \"\"}`;", "const path = `${base}/${name}`;", "const nested = `a ${ { b: `c ${d}` } } e`;"] {
+    for source in [
+        "const message = `outer ${ok ? `inner ${value}` : \"\"}`;",
+        "const path = `${base}/${name}`;",
+        "const nested = `a ${ { b: `c ${d}` } } e`;",
+    ] {
         assert_eq!(format(source), source, "source={source:?}");
     }
 }
@@ -89,7 +106,10 @@ fn statement_and_operator_spacing_stays_canonical() {
 #[test]
 fn generic_defaults_and_statement_bodies_stay_readable() {
     for (source, expected) in [
-        ("export function readAsync<T = unknown>(file: string): Promise<T> { return load(file) as Promise<T>; }", "export function readAsync<T = unknown>(file: string): Promise<T> { return load(file) as Promise<T>; }"),
+        (
+            "export function readAsync<T = unknown>(file: string): Promise<T> { return load(file) as Promise<T>; }",
+            "export function readAsync<T = unknown>(file: string): Promise<T> { return load(file) as Promise<T>; }",
+        ),
         ("if (ready)(handler)();", "if (ready) (handler)();"),
         ("const el = <div class=\"x\">text</div>;", "const el = <div class=\"x\">text</div>;"),
     ] {
@@ -99,7 +119,10 @@ fn generic_defaults_and_statement_bodies_stay_readable() {
 
 #[test]
 fn triple_nested_type_arguments_stay_tight() {
-    for source in ["const params: Record<string, Array<Record<string, string>>> = {};", "class Store { staticParams?: Record<string, Array<Record<string, string>>>; }"] {
+    for source in [
+        "const params: Record<string, Array<Record<string, string>>> = {};",
+        "class Store { staticParams?: Record<string, Array<Record<string, string>>>; }",
+    ] {
         assert_eq!(format(source), source, "source={source:?}");
     }
 }
@@ -107,7 +130,8 @@ fn triple_nested_type_arguments_stay_tight() {
 #[test]
 fn ternary_colons_after_braced_types_keep_the_space() {
     let braced = "const sources = condition ? (table.profiles[table.default] as { sources?: unknown } | undefined)?.sources : null;";
-    let callback = "const shopLayout = Array.isArray(layouts) ? layouts.find((l: { bump?: () => void }) => typeof l?.bump === 'function') : null;";
+    let callback =
+        "const shopLayout = Array.isArray(layouts) ? layouts.find((l: { bump?: () => void }) => typeof l?.bump === 'function') : null;";
     for source in [braced, callback] {
         assert_eq!(format(source), source, "source={source:?}");
     }
@@ -115,7 +139,11 @@ fn ternary_colons_after_braced_types_keep_the_space() {
 
 #[test]
 fn member_calls_and_private_names_keep_their_boundaries() {
-    for source in ["async #render(): Promise<void> { this.#run(); }", "const sync = EditorView.updateListener.of((u) => { run(u); });", "class Store { static #count = 0; readonly items: readonly [string, string][] = []; }"] {
+    for source in [
+        "async #render(): Promise<void> { this.#run(); }",
+        "const sync = EditorView.updateListener.of((u) => { run(u); });",
+        "class Store { static #count = 0; readonly items: readonly [string, string][] = []; }",
+    ] {
         assert_eq!(format(source), source, "source={source:?}");
     }
 }
@@ -138,7 +166,11 @@ fn operators_and_type_arguments_stay_separated() {
 // --- Bug 1: generics get spaces inside ---
 #[test]
 fn deeply_nested_generics_with_bracket_access_keep_tight() {
-    for source in ["type Open = ReturnType<ReturnType<typeof Object>['valueOf']>;", "async query<T = Record<string, unknown>>(source: string): Promise<T[]> {}", "Promise<{ version: number; document: string } | null>"] {
+    for source in [
+        "type Open = ReturnType<ReturnType<typeof Object>['valueOf']>;",
+        "async query<T = Record<string, unknown>>(source: string): Promise<T[]> {}",
+        "Promise<{ version: number; document: string } | null>",
+    ] {
         assert_eq!(format(source), source, "generics gained spaces: {source:?}");
     }
 }
@@ -146,7 +178,9 @@ fn deeply_nested_generics_with_bracket_access_keep_tight() {
 // --- Bug 2: delete reserved-word method gets space ---
 #[test]
 fn async_delete_method_stays_attached() {
-    for source in ["async delete(key: string): Promise<void> { this.native.delete(key); }", "class Store { async delete(key: string): Promise<void> {} }"] {
+    for source in
+        ["async delete(key: string): Promise<void> { this.native.delete(key); }", "class Store { async delete(key: string): Promise<void> {} }"]
+    {
         assert_eq!(format(source), source, "delete method gained a space: {source:?}");
     }
 }
@@ -154,7 +188,11 @@ fn async_delete_method_stays_attached() {
 // --- Bug 3: bitwise shift loses spacing ---
 #[test]
 fn bitwise_shift_operators_keep_spaces() {
-    for source in ["return (value >> 8) & 0xff;", "pushU32(out, version >>> 0);", "out.push(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);"] {
+    for source in [
+        "return (value >> 8) & 0xff;",
+        "pushU32(out, version >>> 0);",
+        "out.push(value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff);",
+    ] {
         assert_eq!(format(source), source, "shift lost spaces: {source:?}");
     }
 }
@@ -177,7 +215,12 @@ fn comparison_operators_are_not_type_arguments() {
 
 #[test]
 fn type_arguments_stay_tight_next_to_comparisons() {
-    for source in ["const items = make<Item>(value);", "function read<T = unknown>(file: string): T { return load(file) as T; }", "type Fixed = Box<-1>;", "const pair = a < b && c > d;"] {
+    for source in [
+        "const items = make<Item>(value);",
+        "function read<T = unknown>(file: string): T { return load(file) as T; }",
+        "type Fixed = Box<-1>;",
+        "const pair = a < b && c > d;",
+    ] {
         assert_eq!(format(source), source, "type arguments lost their shape: {source:?}");
     }
 }
@@ -186,7 +229,9 @@ fn type_arguments_stay_tight_next_to_comparisons() {
 fn shifts_inside_parenthesised_operands_are_not_type_argument_closes() {
     // A `>>`/`>>>` cannot close more angle brackets than the scan has opened, so
     // it must reject instead of subtracting below zero.
-    for (source, expected) in [("if (a<(b>>>c)) { run(); }", "if (a < (b >>> c)) { run(); }"), ("if (a<(b>>c)) { run(); }", "if (a < (b >> c)) { run(); }")] {
+    for (source, expected) in
+        [("if (a<(b>>>c)) { run(); }", "if (a < (b >>> c)) { run(); }"), ("if (a<(b>>c)) { run(); }", "if (a < (b >> c)) { run(); }")]
+    {
         assert_eq!(format(source), expected, "shift inside brackets: {source:?}");
     }
 }
@@ -218,9 +263,13 @@ fn unary_signs_after_comparisons_bind_to_their_operands() {
 fn quote_style_options_keep_literal_text_intact() {
     for quote_style in [QuoteStyle::Single, QuoteStyle::Double, QuoteStyle::Preserve] {
         let options = FormatOptions { quote_style, ..FormatOptions::default() };
-        for (source, expected) in
-            [("const a = 'x';", "const a = 'x';"), ("const a = \"x\";", "const a = \"x\";"), ("const a = 'it\\'s';", "const a = 'it\\'s';"), ("const a = `keep '${value}'`;", "const a = `keep '${value}'`;"), ("const a = /'x'/;", "const a = /'x'/;")]
-        {
+        for (source, expected) in [
+            ("const a = 'x';", "const a = 'x';"),
+            ("const a = \"x\";", "const a = \"x\";"),
+            ("const a = 'it\\'s';", "const a = 'it\\'s';"),
+            ("const a = `keep '${value}'`;", "const a = `keep '${value}'`;"),
+            ("const a = /'x'/;", "const a = /'x'/;"),
+        ] {
             assert_eq!(format_source(source, &options).expect("format"), expected, "quote literal rewritten under {quote_style:?}: {source:?}");
         }
     }
@@ -238,7 +287,10 @@ fn non_null_assertion_stays_separate_from_inequality() {
 // --- Bug 9: comments between members hid the member position ---
 #[test]
 fn members_after_comments_stay_attached() {
-    for source in ["interface Store {\n    /** Delete one record. */\n    delete(key: string): Promise<void>;\n}", "class Store {\n    // native handle\n    async delete(key: string): Promise<void> { this.native.delete(key); }\n}"] {
+    for source in [
+        "interface Store {\n    /** Delete one record. */\n    delete(key: string): Promise<void>;\n}",
+        "class Store {\n    // native handle\n    async delete(key: string): Promise<void> { this.native.delete(key); }\n}",
+    ] {
         assert_eq!(format(source), source, "member after a comment gained a space: {source:?}");
     }
 }
@@ -246,9 +298,12 @@ fn members_after_comments_stay_attached() {
 // --- Bug 10: `case X: {` blocks were read as object literal bodies ---
 #[test]
 fn case_clause_blocks_keep_keyword_spacing() {
-    for source in
-        ["switch (tag) { case 1: { if (x) { y(); } break; } }", "switch (tag) { case 1: { for (let i = 0; i < n; i += 1) { y(); } break; } }", "switch (tag) { default: { if (x) { y(); } break; } }", "const o = { a: { delete(key) { return key; } } };"]
-    {
+    for source in [
+        "switch (tag) { case 1: { if (x) { y(); } break; } }",
+        "switch (tag) { case 1: { for (let i = 0; i < n; i += 1) { y(); } break; } }",
+        "switch (tag) { default: { if (x) { y(); } break; } }",
+        "const o = { a: { delete(key) { return key; } } };",
+    ] {
         assert_eq!(format(source), source, "case block keyword spacing changed: {source:?}");
     }
 }

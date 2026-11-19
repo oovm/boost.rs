@@ -1,7 +1,7 @@
 //! Instruction-level layout and the lazy instruction walk.
 
-use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::ByteSource;
+use data_binary_core::{BudgetTracker, ByteExtent};
 
 use crate::{
     error::{SpirvEvidence, SpirvLayoutError},
@@ -74,10 +74,7 @@ impl<S: ByteSource + ?Sized> Iterator for SpirvInstructions<'_, '_, S> {
             return Some(Err(SpirvLayoutError::InstructionOutOfBounds {
                 word_count,
                 available_words: self.remaining_words,
-                evidence: SpirvEvidence::new(
-                    word_offset,
-                    ByteExtent { start: byte_start, len: self.remaining_words * SPIRV_WORD_BYTES },
-                ),
+                evidence: SpirvEvidence::new(word_offset, ByteExtent { start: byte_start, len: self.remaining_words * SPIRV_WORD_BYTES }),
             }));
         }
 

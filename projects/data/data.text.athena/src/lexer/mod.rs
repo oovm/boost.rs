@@ -23,7 +23,12 @@ pub struct AthenaLexer<'config> {
 }
 
 impl<'config> Lexer<AthenaLanguage> for AthenaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<AthenaLanguage>) -> LexOutput<AthenaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<AthenaLanguage>,
+    ) -> LexOutput<AthenaLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -1,8 +1,8 @@
 use boost_source::binary::MemorySource;
 use data_binary_core::{Budget, BudgetTracker};
 use data_binary_zip::{
-    Zip64Mode, ZipCompression, ZipDateTime, ZipDosDateTime, ZipEntry, ZipNameEncoding, ZipWriteError, ZipWriter,
-    index_zip_bytes, read_member_payload,
+    Zip64Mode, ZipCompression, ZipDateTime, ZipDosDateTime, ZipEntry, ZipNameEncoding, ZipWriteError, ZipWriter, index_zip_bytes,
+    read_member_payload,
 };
 
 #[test]

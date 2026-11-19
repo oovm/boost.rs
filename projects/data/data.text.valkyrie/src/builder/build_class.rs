@@ -1,14 +1,15 @@
 use crate::{
     ValkyrieLanguage,
     ast::{
-        AssociatedType, ClassDeclaration, EnumVariant, Enums, EnumsKind, FieldDeclaration, Flags, Identifier, ImplyDeclaration, Parent, SingletonDeclaration, StatementNode, StructureBody, StructureDeclaration, StructureKind, Trait, TypeExpression,
-        UnionBody, UnionDeclaration, Variant, VariantCase, WidgetDeclaration,
+        AssociatedType, ClassDeclaration, EnumVariant, Enums, EnumsKind, FieldDeclaration, Flags, Identifier, ImplyDeclaration, Parent,
+        SingletonDeclaration, StatementNode, StructureBody, StructureDeclaration, StructureKind, Trait, TypeExpression, UnionBody,
+        UnionDeclaration, Variant, VariantCase, WidgetDeclaration,
     },
     builder::{ValkyrieBuilder, text},
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     pub(crate) fn build_class<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<ClassDeclaration, TextError> {
@@ -24,7 +25,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         let t_text = text(source, t.span);
                         name = Identifier { name: t_text, span: t.span };
@@ -98,7 +102,14 @@ impl<'config> ValkyrieBuilder<'config> {
         if !pending_annotations.is_empty() {
             return Err(source.syntax_error("Attribute is not attached to a class member".to_string(), span.end));
         }
-        Ok(ClassDeclaration { name, annotations, generics, parents, body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span }, span })
+        Ok(ClassDeclaration {
+            name,
+            annotations,
+            generics,
+            parents,
+            body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span },
+            span,
+        })
     }
 
     pub(crate) fn build_flags<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Flags, TextError> {
@@ -110,7 +121,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         let t_text = text(source, t.span);
                         name = Identifier { name: t_text, span: t.span };
@@ -152,7 +166,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         let t_text = text(source, t.span);
                         name = Identifier { name: t_text, span: t.span }
@@ -205,7 +222,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         let t_text = text(source, t.span);
                         name = Identifier { name: t_text, span: t.span };
@@ -241,7 +261,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ if t.kind.is_soft_identifier() => {
                         if name.name.is_empty() {
                             name = Identifier { name: text(source, t.span), span: t.span };
@@ -279,7 +302,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         let t_text = text(source, t.span);
                         name = Identifier { name: t_text, span: t.span };
@@ -311,11 +337,17 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Pattern => {
                         pattern = Some(self.build_pattern(n, source)?);
                     }
@@ -347,7 +379,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -424,7 +459,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         let t_text = text(source, t.span);
                         name = Identifier { name: t_text, span: t.span };
@@ -451,7 +489,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     }
                     // 体级模板（`<% match arch %>` 等）在 AST 有独立存储位，成员文本留在
                     // 各分支的 `body` 里，模板展开由消费方负责。
-                    ValkyrieElementType::TemplateIfStatement | ValkyrieElementType::TemplateLoop | ValkyrieElementType::TemplateMatch | ValkyrieElementType::TemplateStatement => {
+                    ValkyrieElementType::TemplateIfStatement
+                    | ValkyrieElementType::TemplateLoop
+                    | ValkyrieElementType::TemplateMatch
+                    | ValkyrieElementType::TemplateStatement => {
                         if let StatementNode::Template(template) = self.build_template_item(n, source)? {
                             templates.push(*template);
                         }
@@ -479,10 +520,21 @@ impl<'config> ValkyrieBuilder<'config> {
                 },
             }
         }
-        Ok(Trait { name, generics, annotations, super_traits, body: StructureBody { fields: Vec::new(), methods, associated_types, templates, span }, span })
+        Ok(Trait {
+            name,
+            generics,
+            annotations,
+            super_traits,
+            body: StructureBody { fields: Vec::new(), methods, associated_types, templates, span },
+            span,
+        })
     }
 
-    pub(crate) fn build_trait_associated_type<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<AssociatedType, TextError> {
+    pub(crate) fn build_trait_associated_type<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<AssociatedType, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut bounds = Vec::new();
@@ -493,7 +545,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Eq => {
                         saw_equals = true;
                     }
@@ -533,7 +588,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         if name.name.is_empty() {
                             name = Identifier { name: crate::builder::identifier_text(source, t.span), span: t.span };
@@ -579,7 +637,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         name = Identifier { name: text(source, t.span), span: t.span };
                     }
@@ -661,7 +722,11 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(WidgetDeclaration { name, generics, items, annotations, span })
     }
 
-    pub(crate) fn build_singleton<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<SingletonDeclaration, TextError> {
+    pub(crate) fn build_singleton<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<SingletonDeclaration, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut generics = Vec::new();
@@ -673,7 +738,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         name = Identifier { name: text(source, t.span), span: t.span };
                     }
@@ -716,10 +784,21 @@ impl<'config> ValkyrieBuilder<'config> {
                 },
             }
         }
-        Ok(SingletonDeclaration { name, annotations, generics, parents, body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span }, span })
+        Ok(SingletonDeclaration {
+            name,
+            annotations,
+            generics,
+            parents,
+            body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span },
+            span,
+        })
     }
 
-    pub(crate) fn build_struct<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<StructureDeclaration, TextError> {
+    pub(crate) fn build_struct<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<StructureDeclaration, TextError> {
         let span = node.span();
         let mut kind = StructureKind::Structure;
         let mut name = Identifier { name: String::new(), span: Default::default() };
@@ -732,7 +811,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Keyword(ValkyrieKeywords::Struct) => {
                         kind = StructureKind::Struct;
                     }
@@ -800,6 +882,14 @@ impl<'config> ValkyrieBuilder<'config> {
                 },
             }
         }
-        Ok(StructureDeclaration { kind, name, annotations, generics, parents, body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span }, span })
+        Ok(StructureDeclaration {
+            kind,
+            name,
+            annotations,
+            generics,
+            parents,
+            body: StructureBody { fields, methods, associated_types: Vec::new(), templates: Vec::new(), span },
+            span,
+        })
     }
 }

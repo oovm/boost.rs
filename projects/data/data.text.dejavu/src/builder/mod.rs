@@ -1,6 +1,6 @@
 use crate::DejavuLanguage;
 use data_text_core::{
-    Builder, TextDiagnostics, Source, TextEdit,
+    Builder, Source, TextDiagnostics, TextEdit,
     builder::{BuildOutput, BuilderCache},
 };
 
@@ -17,7 +17,12 @@ impl<'config> DejavuBuilder<'config> {
 }
 
 impl<'config> Builder<DejavuLanguage> for DejavuBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl BuilderCache<DejavuLanguage>) -> BuildOutput<DejavuLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<DejavuLanguage>,
+    ) -> BuildOutput<DejavuLanguage> {
         let parse_output = data_text_core::parser::parse_one_pass(&crate::DejavuParser::new(self.language), text, cache);
 
         let root = parse_output.result.and_then(|green_node| self.build_root(green_node, text));

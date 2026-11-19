@@ -36,8 +36,10 @@ use database_types::{
 
 use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, StoredValue};
 
-use super::Error;
-use super::catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, catalog_shard_id, encode_catalog_bytes, write_atomic};
+use super::{
+    Error,
+    catalog::{CATALOG_FILE, LEGACY_CATALOG_FILE, catalog_shard_id, encode_catalog_bytes, write_atomic},
+};
 
 fn io_error(error: impl std::fmt::Display) -> Error {
     Error::Io(error.to_string())

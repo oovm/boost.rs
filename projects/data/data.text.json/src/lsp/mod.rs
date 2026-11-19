@@ -48,7 +48,14 @@ impl<V: Vfs> JsonLanguageService<V> {
     pub fn new(vfs: V) -> Self {
         Self { vfs, workspace: language_server::workspace::WorkspaceManager::default(), hover_provider: JsonHoverProvider }
     }
-    fn collect_definitions(&self, node: &RedNode<JsonLanguage>, name: &str, source: &V::Source, uri: &str, definitions: &mut Vec<language_server::LocationRange>) {
+    fn collect_definitions(
+        &self,
+        node: &RedNode<JsonLanguage>,
+        name: &str,
+        source: &V::Source,
+        uri: &str,
+        definitions: &mut Vec<language_server::LocationRange>,
+    ) {
         use data_text_core::{
             language::{ElementType, UniversalElementRole, UniversalTokenRole},
             tree::RedTree,
@@ -174,7 +181,12 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             all_refs
         }
     }
-    fn rename<'a>(&'a self, uri: &'a str, range: Range<usize>, new_name: String) -> impl Future<Output = Option<language_server::WorkspaceEdit>> + Send + 'a {
+    fn rename<'a>(
+        &'a self,
+        uri: &'a str,
+        range: Range<usize>,
+        new_name: String,
+    ) -> impl Future<Output = Option<language_server::WorkspaceEdit>> + Send + 'a {
         let uri = uri.to_string();
         async move {
             let refs = self.references(&uri, range).await;
@@ -190,7 +202,10 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
                 };
                 let old_text = source.get_text_in(r.range.clone());
                 let formatted_new_name = if old_text.starts_with('"') { format!("\"{}\"", new_name) } else { new_name.clone() };
-                changes.entry(r.uri.to_string()).or_insert_with(Vec::new).push(language_server::TextEdit { range: r.range, new_text: formatted_new_name });
+                changes
+                    .entry(r.uri.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(language_server::TextEdit { range: r.range, new_text: formatted_new_name });
             }
             Some(language_server::WorkspaceEdit { changes })
         }

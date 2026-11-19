@@ -302,7 +302,19 @@ pub enum RustTokenType {
 impl RustTokenType {
     /// Returns `true` if the token is a literal.
     pub fn is_literal(&self) -> bool {
-        matches!(self, Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::ByteLiteral | Self::ByteStringLiteral | Self::RawStringLiteral | Self::BoolLiteral | Self::True | Self::False)
+        matches!(
+            self,
+            Self::IntegerLiteral
+                | Self::FloatLiteral
+                | Self::StringLiteral
+                | Self::CharLiteral
+                | Self::ByteLiteral
+                | Self::ByteStringLiteral
+                | Self::RawStringLiteral
+                | Self::BoolLiteral
+                | Self::True
+                | Self::False
+        )
     }
 }
 
@@ -358,7 +370,14 @@ impl TokenType for RustTokenType {
             | Self::Where
             | Self::While => UniversalTokenRole::Keyword,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::ByteLiteral | Self::ByteStringLiteral | Self::RawStringLiteral | Self::BoolLiteral => UniversalTokenRole::Literal,
+            Self::IntegerLiteral
+            | Self::FloatLiteral
+            | Self::StringLiteral
+            | Self::CharLiteral
+            | Self::ByteLiteral
+            | Self::ByteStringLiteral
+            | Self::RawStringLiteral
+            | Self::BoolLiteral => UniversalTokenRole::Literal,
             _ => UniversalTokenRole::None,
         }
     }

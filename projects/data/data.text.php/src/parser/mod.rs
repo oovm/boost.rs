@@ -57,12 +57,18 @@ impl<'config> Pratt<PhpLanguage> for PhpParser<'config> {
         self.primary(state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, PhpLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, PhpLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, PhpLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, PhpLanguage>> {
         use crate::lexer::PhpTokenType::*;
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
-            Assign | PlusAssign | MinusAssign | MultiplyAssign | DivideAssign | ModuloAssign | PowerAssign | ConcatAssign | BitwiseAndAssign | BitwiseOrAssign | BitwiseXorAssign | LeftShiftAssign | RightShiftAssign | NullCoalesceAssign => {
+            Assign | PlusAssign | MinusAssign | MultiplyAssign | DivideAssign | ModuloAssign | PowerAssign | ConcatAssign
+            | BitwiseAndAssign | BitwiseOrAssign | BitwiseXorAssign | LeftShiftAssign | RightShiftAssign | NullCoalesceAssign => {
                 (1, Associativity::Right)
             }
             LogicalOr => (2, Associativity::Left),
@@ -117,7 +123,8 @@ impl<'config> PhpParser<'config> {
         match state.peek_kind() {
             Some(Namespace) => self.parse_namespace_def(state),
             Some(Use) => self.parse_use_statement(state),
-            Some(Class) | Some(Interface) | Some(Trait) | Some(Abstract) | Some(Final) | Some(Public) | Some(Private) | Some(Protected) | Some(Static) => self.parse_declaration(state),
+            Some(Class) | Some(Interface) | Some(Trait) | Some(Abstract) | Some(Final) | Some(Public) | Some(Private) | Some(Protected)
+            | Some(Static) => self.parse_declaration(state),
             Some(Function) => self.parse_function_def(state),
             Some(If) => self.parse_if_statement(state),
             Some(While) => self.parse_while_statement(state),
@@ -173,7 +180,9 @@ impl<'config> PhpParser<'config> {
     fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::PhpTokenType::*;
         let cp = state.checkpoint();
-        while state.not_at_end() && matches!(state.peek_kind(), Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Abstract) | Some(Final)) {
+        while state.not_at_end()
+            && matches!(state.peek_kind(), Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Abstract) | Some(Final))
+        {
             state.bump();
         }
 
@@ -287,7 +296,12 @@ impl<'config> PhpParser<'config> {
 }
 
 impl<'config> Parser<PhpLanguage> for PhpParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<PhpLanguage>) -> ParseOutput<'a, PhpLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<PhpLanguage>,
+    ) -> ParseOutput<'a, PhpLanguage> {
         let lexer = crate::lexer::PhpLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

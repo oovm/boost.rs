@@ -57,8 +57,7 @@ type Substitution = BTreeMap<GenericBinderId, ValkyrieType>;
 /// `function.generics` 里；只看后者会把 `ArrayList<T>::new` 这类成员的声明期空代入
 /// 误判成具体实例，铸造出永远不会闭合的开放克隆。
 fn declaration_has_no_generic_binders(declaration: &CallableDeclaration) -> bool {
-    declaration.function.generics.is_empty()
-        && declaration.owner_type.as_ref().is_none_or(|owner| owner_type_generic_binders(owner).is_empty())
+    declaration.function.generics.is_empty() && declaration.owner_type.as_ref().is_none_or(|owner| owner_type_generic_binders(owner).is_empty())
 }
 
 /// 一个固定点实例请求的完整身份。
@@ -138,7 +137,10 @@ fn instantiation_limit_error(
     ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
     let top_growth =
         ranked.iter().take(TOP_GROWTH_REPORT).map(|(index, count)| (declaration_label(declarations, *index).0, *count)).collect::<Vec<_>>();
-    let span = ranked.first().map(|(index, _)| declaration_label(declarations, *index).1).unwrap_or(compiler_types::DiagnosticSpan { start: 0, end: 0 });
+    let span = ranked
+        .first()
+        .map(|(index, _)| declaration_label(declarations, *index).1)
+        .unwrap_or(compiler_types::DiagnosticSpan { start: 0, end: 0 });
     HirError::GenericInstantiationLimitExceeded {
         kind,
         limit,
@@ -243,7 +245,8 @@ fn resolve_trait_default_override(
         if declaration.function.name.as_str() != member_name.as_str() {
             continue;
         }
-        let Some(substitution) = derive_witness_substitution(declaration, call, &BTreeMap::new()) else {
+        let Some(substitution) = derive_witness_substitution(declaration, call, &BTreeMap::new())
+        else {
             continue;
         };
         if matched.is_some() {
@@ -271,10 +274,7 @@ fn declaration_equations(
     else {
         return BTreeMap::new();
     };
-    trait_views
-        .get(declaration.module)
-        .and_then(|view| view.associated_type_equations(trait_declaration, self_type, &[]))
-        .unwrap_or_default()
+    trait_views.get(declaration.module).and_then(|view| view.associated_type_equations(trait_declaration, self_type, &[])).unwrap_or_default()
 }
 
 /// witness 候选的精确代入：impl owner 必须与 witness 冻结的接收者实例结构化同一，
@@ -313,8 +313,7 @@ fn derive_witness_substitution(
             return None;
         }
     }
-    let declared_return =
-        substitute_associated_equations(&declared_type(&declaration.function.return_type, Some(owner)), owner, equations);
+    let declared_return = substitute_associated_equations(&declared_type(&declaration.function.return_type, Some(owner)), owner, equations);
     if !unify_instantiation(&declared_return, &call.return_type, &mut substitution) {
         return None;
     }
@@ -431,8 +430,7 @@ pub fn instantiate_generic_callables(
                     else {
                         return;
                     };
-                    let self_type_closed =
-                        self_type.as_ref().is_none_or(|self_type| !has_unresolved_generic_arguments(self_type));
+                    let self_type_closed = self_type.as_ref().is_none_or(|self_type| !has_unresolved_generic_arguments(self_type));
                     if (!substitution.is_empty() || declaration_has_no_generic_binders(declaration))
                         && self_type_closed
                         && !substitution.values().any(has_unresolved_generic_arguments)
@@ -497,7 +495,8 @@ pub fn instantiate_generic_callables(
             else {
                 continue;
             };
-            let equations = self_type.as_ref().map_or_else(BTreeMap::new, |self_type| declaration_equations(declaration, self_type, &trait_views));
+            let equations =
+                self_type.as_ref().map_or_else(BTreeMap::new, |self_type| declaration_equations(declaration, self_type, &trait_views));
             // 解析期对开放目标延后的义务必须在这里按具体代入结算：证据缺失则
             // 不铸造实例，调用点保持未闭合，由既有合同验证结构化失败。
             // 证据按整个程序闭包结算，不按声明所在模块结算：调用点所属模块先看到
@@ -511,9 +510,7 @@ pub fn instantiate_generic_callables(
             }
             // 铸造前再守一次闭合：开放代入说明调用方仍是泛型上下文，克隆体签名会
             // 残留开放 binder，既不能发射也不能登记为合同；留给具体调用点收口。
-            if substitution.values().any(has_unresolved_generic_arguments)
-                || self_type.as_ref().is_some_and(has_unresolved_generic_arguments)
-            {
+            if substitution.values().any(has_unresolved_generic_arguments) || self_type.as_ref().is_some_and(has_unresolved_generic_arguments) {
                 continue;
             }
             let Some(instance) = compiler_types::ItemInstanceId::from_index(*next_instance)
@@ -571,9 +568,7 @@ pub fn instantiate_generic_callables(
                         if substitution.values().any(has_unresolved_generic_arguments) {
                             return;
                         }
-                        if let Some(instance) =
-                            instances.get(&InstanceRequest { declaration: index, substitution, self_type: None })
-                        {
+                        if let Some(instance) = instances.get(&InstanceRequest { declaration: index, substitution, self_type: None }) {
                             identity.instance = Some(*instance);
                         }
                         return;
@@ -829,9 +824,7 @@ fn derive_lambda_substitution(
         .generics
         .iter()
         .all(|generic| {
-            generic.binder.is_some_and(|binder| {
-                substitution.get(&binder).is_some_and(|bound| !has_unresolved_generic_arguments(bound))
-            })
+            generic.binder.is_some_and(|binder| substitution.get(&binder).is_some_and(|bound| !has_unresolved_generic_arguments(bound)))
         })
         .then_some(substitution)
 }
@@ -1389,9 +1382,8 @@ fn visit_module_calls(
     gate: Option<&crate::compiler::hir::reachability::HirMaterializationGate>,
     visit: &mut impl FnMut(CallableRequest<'_>),
 ) {
-    let permits = |function: &HirFunction| {
-        gate.is_none_or(|gate| gate.permits_declaration(function.declaration)) && declaration_body_is_closed(function)
-    };
+    let permits =
+        |function: &HirFunction| gate.is_none_or(|gate| gate.permits_declaration(function.declaration)) && declaration_body_is_closed(function);
     for function in &mut module.functions {
         if permits(function) {
             visit_block(&mut function.body, visit);

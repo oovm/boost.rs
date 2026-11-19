@@ -24,9 +24,7 @@ use crate::{
 };
 
 use database_execution::sqlite::session::SqliteSession;
-use database_storage::sqlite::{
-    OpenWritableError, OpenWritableOptions, PublishMode, WriterLock, journal, lock::LockError, open_writable,
-};
+use database_storage::sqlite::{OpenWritableError, OpenWritableOptions, PublishMode, WriterLock, journal, lock::LockError, open_writable};
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 
 pub use database_execution::sqlite::cursor::{CursorBatch, CursorOpen};
@@ -241,9 +239,8 @@ impl Connection {
                     if !path.exists() {
                         return Err(not_found(path));
                     }
-                    let pages =
-                        journal::recover(path, true, options.journal_mode == JournalMode::Truncate, options.synchronous)
-                            .map_err(storage_failure)?;
+                    let pages = journal::recover(path, true, options.journal_mode == JournalMode::Truncate, options.synchronous)
+                        .map_err(storage_failure)?;
                     SqliteWriter::from_pages(pages).map_err(storage_failure)?
                 }
                 false => {

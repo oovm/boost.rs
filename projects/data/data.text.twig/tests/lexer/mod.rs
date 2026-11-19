@@ -1,5 +1,5 @@
-use language_testing::lexing::LexerTester;
 use data_text_twig::{language::TwigLanguage, lexer::TwigLexer};
+use language_testing::lexing::LexerTester;
 use std::time::Duration;
 
 #[test]

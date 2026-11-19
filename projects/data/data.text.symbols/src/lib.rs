@@ -64,7 +64,14 @@ impl UniversalSymbolProvider {
     /// * `symbols` - The list to collect symbols into.
     /// * `container_name` - The name of the containing symbol, if any.
     /// * `source` - The source text provider.
-    fn collect_symbols<L: Language, S: Source + ?Sized>(&self, uri: &str, node: &RedNode<L>, symbols: &mut Vec<SymbolInformation>, container_name: Option<String>, source: &S) {
+    fn collect_symbols<L: Language, S: Source + ?Sized>(
+        &self,
+        uri: &str,
+        node: &RedNode<L>,
+        symbols: &mut Vec<SymbolInformation>,
+        container_name: Option<String>,
+        source: &S,
+    ) {
         let role = node.green.kind.role();
 
         if role.universal() == UniversalElementRole::Definition {
@@ -85,7 +92,13 @@ impl UniversalSymbolProvider {
 
             let name = name.unwrap_or_else(|| format!("<{:?}>", node.green.kind));
 
-            symbols.push(SymbolInformation { name: name.clone(), role: role.universal(), uri: uri.to_string().into(), range: node.span(), container_name: container_name.clone() });
+            symbols.push(SymbolInformation {
+                name: name.clone(),
+                role: role.universal(),
+                uri: uri.to_string().into(),
+                range: node.span(),
+                container_name: container_name.clone(),
+            });
 
             // Recurse with this definition as the container
             for child in node.children() {

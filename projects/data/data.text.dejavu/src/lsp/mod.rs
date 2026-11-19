@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
+pub mod formatter;
 #[cfg(feature = "language-highlight")]
 pub mod highlighter;
-pub mod formatter;
 
 use crate::language::DejavuLanguage;
 use core::range::Range;

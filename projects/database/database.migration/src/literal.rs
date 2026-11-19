@@ -10,7 +10,8 @@ use crate::ddl::quote_literal;
 
 /// Renders `value` as a literal for `target_type`, or SQL `NULL` for `None`.
 pub fn sql_literal(target_type: &str, value: Option<&str>) -> String {
-    let Some(text) = value else {
+    let Some(text) = value
+    else {
         return "NULL".to_owned();
     };
     let normalized = target_type.trim().to_ascii_lowercase();

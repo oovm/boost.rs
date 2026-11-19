@@ -209,7 +209,10 @@ impl<'a> Parser<'a> {
         let mut digits = 0usize;
         while let Some(ch) = self.peek() {
             if let Some(digit) = ch.to_digit(10) {
-                value = value.checked_mul(10).and_then(|next| next.checked_add(digit)).ok_or_else(|| XpathParseError::unsupported_predicate("numeric overflow", start))?;
+                value = value
+                    .checked_mul(10)
+                    .and_then(|next| next.checked_add(digit))
+                    .ok_or_else(|| XpathParseError::unsupported_predicate("numeric overflow", start))?;
                 digits += 1;
                 self.pos += 1;
             }

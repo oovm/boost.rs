@@ -99,7 +99,12 @@ impl<'config> TclParser<'config> {
 }
 
 impl<'config> Parser<TclLanguage> for TclParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<TclLanguage>) -> ParseOutput<'a, TclLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<TclLanguage>,
+    ) -> ParseOutput<'a, TclLanguage> {
         let lexer = TclLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

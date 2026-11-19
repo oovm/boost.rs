@@ -5,7 +5,7 @@ pub use element_type::CElementType;
 
 use crate::{language::CLanguage, lexer::CTokenType};
 use data_text_core::{
-    GreenNode, TextError, Source,
+    GreenNode, Source, TextError,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer},
     source::TextEdit,
 };
@@ -34,7 +34,8 @@ impl<'config> CParser<'config> {
             Some(For) => self.parse_for_statement(state)?,
             Some(Return) => self.parse_return_statement(state)?,
             Some(LeftBrace) => self.parse_compound_statement(state)?,
-            Some(Struct) | Some(Union) | Some(Enum) | Some(Typedef) | Some(Extern) | Some(Static) | Some(Int) | Some(Char) | Some(Void) | Some(Float) | Some(Double) | Some(Long) | Some(Short) | Some(Signed) | Some(Unsigned) | Some(Bool) | Some(Const)
+            Some(Struct) | Some(Union) | Some(Enum) | Some(Typedef) | Some(Extern) | Some(Static) | Some(Int) | Some(Char) | Some(Void)
+            | Some(Float) | Some(Double) | Some(Long) | Some(Short) | Some(Signed) | Some(Unsigned) | Some(Bool) | Some(Const)
             | Some(Restrict) | Some(Volatile) => self.parse_declaration(state)?,
             Some(Preprocessor) => {
                 // Skip preprocessor directives
@@ -175,7 +176,8 @@ impl<'config> CParser<'config> {
                     state.bump();
                 }
                 // Type specifiers
-                Some(Void) | Some(Char) | Some(Short) | Some(Int) | Some(Long) | Some(Float) | Some(Double) | Some(Signed) | Some(Unsigned) | Some(Bool) => {
+                Some(Void) | Some(Char) | Some(Short) | Some(Int) | Some(Long) | Some(Float) | Some(Double) | Some(Signed) | Some(Unsigned)
+                | Some(Bool) => {
                     state.bump();
                 }
                 Some(Struct) => {
@@ -541,13 +543,19 @@ impl<'config> Pratt<CLanguage> for CParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, CLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, CLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, CLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, CLanguage>> {
         use crate::lexer::CTokenType::*;
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
-            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign => (1, Associativity::Right),
+            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign | AndAssign | OrAssign | XorAssign
+            | LeftShiftAssign | RightShiftAssign => (1, Associativity::Right),
             LogicalOr => (2, Associativity::Left),
             LogicalAnd => (3, Associativity::Left),
             Equal | NotEqual | Less | Greater | LessEqual | GreaterEqual => (4, Associativity::Left),
@@ -599,7 +607,12 @@ impl<'config> Pratt<CLanguage> for CParser<'config> {
 }
 
 impl<'config> Parser<CLanguage> for CParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CLanguage>) -> ParseOutput<'a, CLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CLanguage>,
+    ) -> ParseOutput<'a, CLanguage> {
         let lexer = crate::lexer::CLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

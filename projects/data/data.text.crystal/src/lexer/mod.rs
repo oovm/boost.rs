@@ -2,7 +2,7 @@
 
 pub mod token_type;
 use crate::language::CrystalLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 pub use token_type::CrystalTokenType;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, CrystalLanguage>;
@@ -15,7 +15,12 @@ pub struct CrystalLexer<'config> {
 }
 
 impl<'config> Lexer<CrystalLanguage> for CrystalLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], mut cache: &'a mut impl LexerCache<CrystalLanguage>) -> LexOutput<CrystalLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        mut cache: &'a mut impl LexerCache<CrystalLanguage>,
+    ) -> LexOutput<CrystalLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

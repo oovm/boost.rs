@@ -487,7 +487,17 @@ impl CrystalElementType {
 
     /// Check if the syntax kind is a delimiter
     pub fn is_delimiter(self) -> bool {
-        matches!(self, Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Comma | Self::Semicolon)
+        matches!(
+            self,
+            Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBrace
+                | Self::RightBrace
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::Comma
+                | Self::Semicolon
+        )
     }
 }
 

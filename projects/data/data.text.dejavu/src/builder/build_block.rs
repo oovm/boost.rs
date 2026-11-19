@@ -4,7 +4,7 @@ use crate::{
     builder::DejavuBuilder,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     pub(crate) fn build_block<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<BlockNode, TextError> {
@@ -24,7 +24,12 @@ impl<'config> DejavuBuilder<'config> {
                     _ => {
                         // Handle expression as statement if not explicitly an ExprStatement
                         if let Ok(expr) = self.build_expr(n.clone(), source) {
-                            statements.push(StatementNode::Expr(ExpressionStatement { annotations: vec![], expr, semi: false, span: n.span() }));
+                            statements.push(StatementNode::Expr(ExpressionStatement {
+                                annotations: vec![],
+                                expr,
+                                semi: false,
+                                span: n.span(),
+                            }));
                         }
                     }
                 },

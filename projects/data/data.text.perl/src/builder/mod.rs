@@ -1,5 +1,5 @@
 use crate::{ast::PerlRoot, language::PerlLanguage, parser::PerlParser};
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, Parser, Source, SourceText, TextEdit, parser::session::ParseSession};
+use data_text_core::{Builder, BuilderCache, Parser, Source, SourceText, TextDiagnostics, TextEdit, parser::session::ParseSession};
 
 /// Builder for Perl AST nodes.
 ///
@@ -17,7 +17,12 @@ impl<'config> PerlBuilder<'config> {
 }
 
 impl<'config> Builder<PerlLanguage> for PerlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PerlLanguage>) -> TextDiagnostics<PerlRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<PerlLanguage>,
+    ) -> TextDiagnostics<PerlRoot> {
         let parser = PerlParser::new(self.config);
 
         let mut parse_cache = ParseSession::<PerlLanguage>::default();

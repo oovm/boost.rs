@@ -84,7 +84,12 @@ impl<'config> CoqParser<'config> {
 }
 
 impl<'config> Parser<CoqLanguage> for CoqParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CoqLanguage>) -> ParseOutput<'a, CoqLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CoqLanguage>,
+    ) -> ParseOutput<'a, CoqLanguage> {
         let lexer = CoqLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

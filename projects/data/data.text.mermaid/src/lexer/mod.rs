@@ -34,7 +34,12 @@ pub struct MermaidLexer<'config> {
 }
 
 impl<'config> Lexer<MermaidLanguage> for MermaidLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<MermaidLanguage>) -> LexOutput<MermaidLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<MermaidLanguage>,
+    ) -> LexOutput<MermaidLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

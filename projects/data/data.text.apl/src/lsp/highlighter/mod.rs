@@ -42,7 +42,10 @@ impl AplHighlighter {
     /// Highlights APL symbols (as keywords).
     fn highlight_symbols(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
-        let symbols = ['←', '→', '⋄', '⎕', '⍞', '⍴', '⍳', '⍬', '⍣', '⍤', '⍛', '⍢', '⌸', '⌺', '⌼', '⍠', '⌻', '⍃', '⍄', '⍈', '⍐', '⍗', '⍇', '⍈', '⍌', '⍍', '⍏', '⍖'];
+        let symbols = [
+            '←', '→', '⋄', '⎕', '⍞', '⍴', '⍳', '⍬', '⍣', '⍤', '⍛', '⍢', '⌸', '⌺', '⌼', '⍠', '⌻', '⍃', '⍄', '⍈', '⍐', '⍗', '⍇', '⍈', '⍌', '⍍',
+            '⍏', '⍖',
+        ];
 
         for (i, ch) in text.char_indices() {
             if symbols.contains(&ch) {

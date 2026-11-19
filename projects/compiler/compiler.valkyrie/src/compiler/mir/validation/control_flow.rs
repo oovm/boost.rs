@@ -42,14 +42,17 @@ pub(super) fn validate_jump_target(
     block_map: &BTreeMap<MirBlockRef, &MirBlock>,
 ) -> Result<(), MirValidationError> {
     validate_jump_shape(&function.display_symbol, block.label.as_str(), target, arguments.len(), blocks)?;
-    let Some(target_block) = block_map.get(&target) else {
+    let Some(target_block) = block_map.get(&target)
+    else {
         return Ok(());
     };
     for (index, (argument, parameter)) in arguments.iter().zip(target_block.parameters.iter()).enumerate() {
-        let Some(argument_type) = infer_operand_static_type(function, argument) else {
+        let Some(argument_type) = infer_operand_static_type(function, argument)
+        else {
             continue;
         };
-        let Some(parameter_type) = function.value_types.get(parameter) else {
+        let Some(parameter_type) = function.value_types.get(parameter)
+        else {
             continue;
         };
         if argument_type != *parameter_type {
@@ -72,7 +75,8 @@ pub(super) fn validate_jump_shape(
     argument_count: usize,
     blocks: &BTreeMap<MirBlockRef, usize>,
 ) -> Result<(), MirValidationError> {
-    let Some(expected_parameter_count) = blocks.get(&target).copied() else {
+    let Some(expected_parameter_count) = blocks.get(&target).copied()
+    else {
         return Err(MirValidationError::JumpTargetMissing { function: function_name.to_string(), block: block_label.to_string() });
     };
     if expected_parameter_count != argument_count {
@@ -94,7 +98,8 @@ pub(super) fn ensure_target_exists(
 ) -> Result<(), MirValidationError> {
     if blocks.contains_key(&target) {
         Ok(())
-    } else {
+    }
+    else {
         Err(MirValidationError::TargetBlockMissing { function: function_name.to_string(), block: block_label.to_string() })
     }
 }

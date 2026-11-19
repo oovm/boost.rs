@@ -63,7 +63,15 @@ impl Default for PrinterConfig {
             IndentStyle::Tabs => ("\t".into(), 4),
         };
 
-        Self { indent_style, indent_text, line_ending: LineEnding::default(), max_width: 100, insert_final_newline: true, trim_trailing_whitespace: true, indent_size }
+        Self {
+            indent_style,
+            indent_text,
+            line_ending: LineEnding::default(),
+            max_width: 100,
+            insert_final_newline: true,
+            trim_trailing_whitespace: true,
+            indent_size,
+        }
     }
 }
 

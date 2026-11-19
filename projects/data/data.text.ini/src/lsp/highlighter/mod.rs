@@ -1,7 +1,9 @@
 #![doc = include_str!("readme.md")]
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
 use data_text_core::{Language, errors::ParseResult};
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 
 /// Highlighter implementation for INI.
 pub struct IniHighlighter {
@@ -25,7 +27,9 @@ impl HighlightSource for IniHighlighter {
             let config = crate::language::IniLanguage::default();
             let parser = crate::parser::IniParser::new(&config);
             let lexer = crate::lexer::IniLexer::new(&config);
-            highlighter.highlight_with_language::<crate::language::IniLanguage, crate::parser::IniParser<'_>, crate::lexer::IniLexer>(source, theme, &parser, &lexer)
+            highlighter.highlight_with_language::<crate::language::IniLanguage, crate::parser::IniParser<'_>, crate::lexer::IniLexer>(
+                source, theme, &parser, &lexer,
+            )
         }
         else {
             highlighter.highlight(source, crate::language::IniLanguage::NAME, theme)

@@ -35,8 +35,8 @@
 use crate::numeric::kernel::error::Result;
 
 use crate::numeric::{
-    kernel::{LimbBuffer, ScratchWorkspace},
     budget::ExecutionBudget,
+    kernel::{LimbBuffer, ScratchWorkspace},
 };
 
 use super::{

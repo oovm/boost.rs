@@ -765,7 +765,8 @@ impl<'config> RstLexer<'config> {
             if let Some(ch) = state.peek() {
                 // Stop when encountering special characters
                 match ch {
-                    ' ' | '\t' | '\n' | '\r' | '.' | '=' | '-' | '~' | '^' | '#' | '@' | '|' | '*' | '+' | '`' | '_' | '[' | ']' | '(' | ')' | ':' | '!' | '\\' => break,
+                    ' ' | '\t' | '\n' | '\r' | '.' | '=' | '-' | '~' | '^' | '#' | '@' | '|' | '*' | '+' | '`' | '_' | '[' | ']' | '('
+                    | ')' | ':' | '!' | '\\' => break,
                     _ => {
                         state.advance(ch.len_utf8());
                     }
@@ -895,7 +896,12 @@ impl<'config> RstLexer<'config> {
 }
 
 impl<'config> Lexer<RstLanguage> for RstLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<RstLanguage>) -> LexOutput<RstLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<RstLanguage>,
+    ) -> LexOutput<RstLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

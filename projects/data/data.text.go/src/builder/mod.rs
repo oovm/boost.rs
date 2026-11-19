@@ -7,7 +7,7 @@ use crate::{
     parser::{GoParser, element_type::GoElementType},
 };
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, ParseSession, Parser, SourceText, TextEdit, TokenType,
+    Builder, BuilderCache, GreenNode, Lexer, ParseSession, Parser, SourceText, TextDiagnostics, TextEdit, TextError, TokenType,
     builder::BuildOutput,
     source::Source,
     tree::{RedNode, RedTree},
@@ -22,7 +22,12 @@ pub struct GoBuilder<'config> {
 }
 
 impl<'config> Builder<GoLanguage> for GoBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<GoLanguage>) -> BuildOutput<GoLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<GoLanguage>,
+    ) -> BuildOutput<GoLanguage> {
         let parser = GoParser::new(self.config);
         let cache_ptr = cache as *mut _;
         let output = parser.parse(text, edits, unsafe { &mut *cache_ptr });
@@ -180,7 +185,10 @@ impl<'config> GoBuilder<'config> {
                                 // Handle else if
                                 let inner_if = self.extract_statement(n, source)?;
                                 if let Some(ast::Statement::If { condition, then_block, else_block: inner_else, span }) = inner_if {
-                                    else_block = Some(ast::Block { statements: vec![ast::Statement::If { condition, then_block, else_block: inner_else, span }], span });
+                                    else_block = Some(ast::Block {
+                                        statements: vec![ast::Statement::If { condition, then_block, else_block: inner_else, span }],
+                                        span,
+                                    });
                                 }
                             }
                             _ => {}
@@ -218,7 +226,10 @@ impl<'config> GoBuilder<'config> {
                 }
                 Ok(Some(ast::Statement::For { init, condition, post, body, span: node.span() }))
             }
-            GoElementType::AssignmentStatement | GoElementType::ShortVarDecl | GoElementType::VariableDeclaration | GoElementType::VariableSpec => {
+            GoElementType::AssignmentStatement
+            | GoElementType::ShortVarDecl
+            | GoElementType::VariableDeclaration
+            | GoElementType::VariableSpec => {
                 // Support multiple assignment
                 let mut targets = vec![];
                 let mut values = vec![];
@@ -281,7 +292,10 @@ impl<'config> GoBuilder<'config> {
                     }
                     Ok(ast::Expression::Identifier { name, span: leaf.span })
                 }
-                else if leaf.kind == GoTokenType::IntLiteral || leaf.kind == GoTokenType::StringLiteral || leaf.kind == GoTokenType::BoolLiteral {
+                else if leaf.kind == GoTokenType::IntLiteral
+                    || leaf.kind == GoTokenType::StringLiteral
+                    || leaf.kind == GoTokenType::BoolLiteral
+                {
                     Ok(ast::Expression::Literal { value: source.get_text_in(leaf.span).to_string(), span: leaf.span })
                 }
                 else {
@@ -316,14 +330,22 @@ impl<'config> GoBuilder<'config> {
                         for (i, child) in node.children().enumerate() {
                             match child {
                                 RedTree::Node(n) => println!("    child {}: Node kind={:?}, span={:?}", i, n.green.kind, n.span()),
-                                RedTree::Leaf(l) => println!("    child {}: Leaf kind={:?}, span={:?}, text={:?}", i, l.kind, l.span, source.get_text_in(l.span)),
+                                RedTree::Leaf(l) => println!(
+                                    "    child {}: Leaf kind={:?}, span={:?}, text={:?}",
+                                    i,
+                                    l.kind,
+                                    l.span,
+                                    source.get_text_in(l.span)
+                                ),
                             }
                         }
                         return Err(TextError::parse_error(format!("Empty identifier at {:?}", node.span())));
                     }
                     Ok(ast::Expression::Identifier { name, span: node.span() })
                 }
-                GoElementType::IntLiteral | GoElementType::StringLiteral | GoElementType::BoolLiteral => Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).trim().to_string(), span: node.span() }),
+                GoElementType::IntLiteral | GoElementType::StringLiteral | GoElementType::BoolLiteral => {
+                    Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).trim().to_string(), span: node.span() })
+                }
                 GoElementType::BinaryExpression => {
                     let mut left = None;
                     let mut op = String::new();
@@ -342,10 +364,16 @@ impl<'config> GoBuilder<'config> {
                             RedTree::Leaf(leaf) => {
                                 if leaf.kind == GoTokenType::Identifier {
                                     if left.is_none() {
-                                        left = Some(Box::new(ast::Expression::Identifier { name: source.get_text_in(leaf.span).trim().to_string(), span: leaf.span }));
+                                        left = Some(Box::new(ast::Expression::Identifier {
+                                            name: source.get_text_in(leaf.span).trim().to_string(),
+                                            span: leaf.span,
+                                        }));
                                     }
                                     else {
-                                        right = Some(Box::new(ast::Expression::Identifier { name: source.get_text_in(leaf.span).trim().to_string(), span: leaf.span }));
+                                        right = Some(Box::new(ast::Expression::Identifier {
+                                            name: source.get_text_in(leaf.span).trim().to_string(),
+                                            span: leaf.span,
+                                        }));
                                     }
                                 }
                                 else if TokenType::role(&leaf.kind) == data_text_core::UniversalTokenRole::Operator {
@@ -355,7 +383,12 @@ impl<'config> GoBuilder<'config> {
                         }
                     }
 
-                    if let (Some(left), Some(right)) = (left, right) { Ok(ast::Expression::Binary { left, op, right, span: node.span() }) } else { Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).to_string(), span: node.span() }) }
+                    if let (Some(left), Some(right)) = (left, right) {
+                        Ok(ast::Expression::Binary { left, op, right, span: node.span() })
+                    }
+                    else {
+                        Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).to_string(), span: node.span() })
+                    }
                 }
                 GoElementType::CallExpression => {
                     let mut func = None;
@@ -385,24 +418,40 @@ impl<'config> GoBuilder<'config> {
                             }
                             RedTree::Leaf(leaf) if leaf.kind == GoTokenType::Identifier => {
                                 if func.is_none() {
-                                    func = Some(Box::new(ast::Expression::Identifier { name: source.get_text_in(leaf.span).trim().to_string(), span: leaf.span }));
+                                    func = Some(Box::new(ast::Expression::Identifier {
+                                        name: source.get_text_in(leaf.span).trim().to_string(),
+                                        span: leaf.span,
+                                    }));
                                 }
                                 else {
-                                    args.push(ast::Expression::Identifier { name: source.get_text_in(leaf.span).trim().to_string(), span: leaf.span });
+                                    args.push(ast::Expression::Identifier {
+                                        name: source.get_text_in(leaf.span).trim().to_string(),
+                                        span: leaf.span,
+                                    });
                                 }
                             }
                             _ => {}
                         }
                     }
 
-                    if let Some(func) = func { Ok(ast::Expression::Call { func, args, span: node.span() }) } else { Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).to_string(), span: node.span() }) }
+                    if let Some(func) = func {
+                        Ok(ast::Expression::Call { func, args, span: node.span() })
+                    }
+                    else {
+                        Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).to_string(), span: node.span() })
+                    }
                 }
                 _ => Ok(ast::Expression::Literal { value: source.get_text_in(node.span()).to_string(), span: node.span() }),
             },
         }
     }
 
-    fn extract_variables(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, TextError> {
+    fn extract_variables(
+        &self,
+        node: RedNode<GoLanguage>,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<GoLanguage>,
+    ) -> Result<Vec<Declaration>, TextError> {
         if let Some(cached) = cache.get_typed_node::<Vec<Declaration>>(&node.green) {
             return Ok(cached);
         }
@@ -443,7 +492,12 @@ impl<'config> GoBuilder<'config> {
         Ok(vars)
     }
 
-    fn extract_consts(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, TextError> {
+    fn extract_consts(
+        &self,
+        node: RedNode<GoLanguage>,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<GoLanguage>,
+    ) -> Result<Vec<Declaration>, TextError> {
         if let Some(cached) = cache.get_typed_node::<Vec<Declaration>>(&node.green) {
             return Ok(cached);
         }
@@ -484,7 +538,12 @@ impl<'config> GoBuilder<'config> {
         Ok(consts)
     }
 
-    fn extract_types(&self, node: RedNode<GoLanguage>, source: &SourceText, cache: &mut impl BuilderCache<GoLanguage>) -> Result<Vec<Declaration>, TextError> {
+    fn extract_types(
+        &self,
+        node: RedNode<GoLanguage>,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<GoLanguage>,
+    ) -> Result<Vec<Declaration>, TextError> {
         if let Some(cached) = cache.get_typed_node::<Vec<Declaration>>(&node.green) {
             return Ok(cached);
         }

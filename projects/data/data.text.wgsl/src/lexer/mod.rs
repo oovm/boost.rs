@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::WgslLanguage, lexer::token_type::WgslTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, WgslLanguage>;
 
@@ -645,7 +645,12 @@ impl<'config> WgslLexer<'config> {
 }
 
 impl<'config> Lexer<WgslLanguage> for WgslLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<WgslLanguage>) -> LexOutput<WgslLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<WgslLanguage>,
+    ) -> LexOutput<WgslLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

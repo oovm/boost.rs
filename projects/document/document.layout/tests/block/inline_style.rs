@@ -169,10 +169,7 @@ fn styled_runs_still_wrap_inside_the_content_width() {
     assert!(baselines.len() > 1, "wrapped styled runs must sit on distinct baselines: {bold:#?}");
 
     assert!(runs.iter().all(|run| run.x >= hint.margin.left - 1e-9), "runs start inside the left margin");
-    assert!(
-        runs.iter().all(|run| run.x <= hint.page_width - hint.margin.right + 1e-9),
-        "runs never start past the right margin: {runs:#?}"
-    );
+    assert!(runs.iter().all(|run| run.x <= hint.page_width - hint.margin.right + 1e-9), "runs never start past the right margin: {runs:#?}");
 
     // The unstyled lead and tail keep their own runs.
     assert!(runs.iter().any(|run| run.style == FontStyle::Normal && run.text.starts_with("Lead")));
@@ -218,10 +215,7 @@ fn strike_span_emits_a_rule_across_the_run() {
     // The run after the span starts where the strike glyphs end, so the
     // decoration spans exactly the measured run width.
     assert!((rule.x1 - strike_run.x).abs() < 1e-9, "the rule starts at the run: {rule:?}");
-    assert!(
-        (rule.x2 - rule.x1 - (tail.x - strike_run.x)).abs() < 1e-9,
-        "rule {rule:?} must cover the run {strike_run:?} up to {tail:?}"
-    );
+    assert!((rule.x2 - rule.x1 - (tail.x - strike_run.x)).abs() < 1e-9, "rule {rule:?} must cover the run {strike_run:?} up to {tail:?}");
 }
 
 #[test]
@@ -263,11 +257,7 @@ fn external_link_text_run_carries_href() {
 
 #[test]
 fn internal_link_text_run_carries_an_anchor_not_a_href() {
-    let graph = paragraph(vec![Inline::Link {
-        target: RelationEndpoint::Node(NodeId(7)),
-        display: vec![text("Section seven")],
-        title: None,
-    }]);
+    let graph = paragraph(vec![Inline::Link { target: RelationEndpoint::Node(NodeId(7)), display: vec![text("Section seven")], title: None }]);
     let plan = layout(&graph);
     let runs = text_runs(&plan.pages[0]);
 
@@ -281,14 +271,9 @@ fn internal_link_text_run_carries_an_anchor_not_a_href() {
 fn headings_place_slug_anchors_and_targeted_sections_add_a_node_anchor() {
     let mut graph = DocumentGraph::new(DocumentId(21));
     let body = graph.push_block(Block::Paragraph { content: vec![text("Body.")] });
-    let section =
-        graph.push_block(Block::Section { level: 1, title: vec![text("Intro")], children: vec![body] });
+    let section = graph.push_block(Block::Section { level: 1, title: vec![text("Intro")], children: vec![body] });
     graph.push_block(Block::Paragraph {
-        content: vec![Inline::Link {
-            target: RelationEndpoint::Node(section),
-            display: vec![text("jump")],
-            title: None,
-        }],
+        content: vec![Inline::Link { target: RelationEndpoint::Node(section), display: vec![text("jump")], title: None }],
     });
 
     let plan = layout(&graph);

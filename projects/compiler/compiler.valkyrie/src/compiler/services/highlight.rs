@@ -6,11 +6,11 @@
 
 use std::collections::HashMap;
 
+use data_text_core::{Lexer, NoLexerCache, SourceText, Token, TokenType};
+use data_text_valkyrie::{ValkyrieLanguage, ValkyrieLexer, lexer::ValkyrieTokenType};
 use language_highlight::{
     HighlightKind, HighlightRequest, HighlightSpan, Highlighter, HighlighterKind, HighlighterProvider, render_spans_html,
 };
-use data_text_core::{Lexer, NoLexerCache, SourceText, Token, TokenType};
-use data_text_valkyrie::{ValkyrieLanguage, ValkyrieLexer, lexer::ValkyrieTokenType};
 
 /// 兼容别名：默认指词法高亮器。
 pub type ValkyrieHighlighter = ValkyrieLexicalHighlighter;

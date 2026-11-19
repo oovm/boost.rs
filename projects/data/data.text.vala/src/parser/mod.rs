@@ -21,7 +21,12 @@ impl<'config> ValaParser<'config> {
 }
 
 impl<'config> Parser<ValaLanguage> for ValaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ValaLanguage>) -> ParseOutput<'a, ValaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ValaLanguage>,
+    ) -> ParseOutput<'a, ValaLanguage> {
         let lexer = ValaLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

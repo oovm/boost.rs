@@ -4,7 +4,9 @@ use crate::{
     lexer::token_type::WitTokenType,
     parser::{WitParser, element_type::WitElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, Source, SourceText, TextEdit, builder::BuildOutput};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, Source, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+};
 
 /// AST builder for the WIT Component format.
 #[derive(Clone, Copy)]
@@ -21,7 +23,12 @@ impl<'config> WitBuilder<'config> {
 }
 
 impl<'config> Builder<WitLanguage> for WitBuilder<'config> {
-    fn build<'a, S: data_text_core::source::Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<WitLanguage>) -> BuildOutput<WitLanguage> {
+    fn build<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<WitLanguage>,
+    ) -> BuildOutput<WitLanguage> {
         let parser = WitParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<WitLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);

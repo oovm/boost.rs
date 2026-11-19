@@ -2,8 +2,7 @@
 
 use crate::{
     model::{
-        OdinConstant, OdinExport, OdinFunction, OdinGlobal, OdinImport, OdinLayout, OdinModuleData, OdinSectionKind,
-        OdinWitnessDispatchEntry,
+        OdinConstant, OdinExport, OdinFunction, OdinGlobal, OdinImport, OdinLayout, OdinModuleData, OdinSectionKind, OdinWitnessDispatchEntry,
     },
     opcode::{HEADER_SIZE, ODIN_MAGIC, SECTION_HEADER_SIZE},
 };

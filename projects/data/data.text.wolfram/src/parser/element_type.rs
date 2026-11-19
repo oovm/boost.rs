@@ -66,7 +66,9 @@ impl From<crate::lexer::token_type::WolframTokenType> for WolframElementType {
         match token {
             crate::lexer::token_type::WolframTokenType::Root => Self::Root,
             crate::lexer::token_type::WolframTokenType::Identifier => Self::Symbol,
-            crate::lexer::token_type::WolframTokenType::Integer | crate::lexer::token_type::WolframTokenType::Real | crate::lexer::token_type::WolframTokenType::String => Self::Literal,
+            crate::lexer::token_type::WolframTokenType::Integer
+            | crate::lexer::token_type::WolframTokenType::Real
+            | crate::lexer::token_type::WolframTokenType::String => Self::Literal,
             _ => Self::Error,
         }
     }

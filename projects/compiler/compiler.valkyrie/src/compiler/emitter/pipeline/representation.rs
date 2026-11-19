@@ -7,7 +7,7 @@ use compiler_types::{CanonicalTypeKind, NominalValueSemantics, ValueIdentity};
 use crate::compiler::valkyrie_mir::pipeline::{CompileStage, StageResult};
 
 use crate::compiler::valkyrie_mir::{
-    AdtRepresentation, InvokeLowering, RepresentationPlan, ValueRepresentation, ValkyrieMirOperation, ValkyrieMirProgram,
+    AdtRepresentation, InvokeLowering, RepresentationPlan, ValkyrieMirOperation, ValkyrieMirProgram, ValueRepresentation,
     pipeline::RepresentationPlanStage,
 };
 

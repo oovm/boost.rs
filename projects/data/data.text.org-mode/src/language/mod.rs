@@ -20,7 +20,11 @@ pub struct OrgModeLanguage {
 impl OrgModeLanguage {
     /// Creates a new `OrgModeLanguage`.
     pub fn new() -> Self {
-        Self { todo_keywords: vec!["TODO".to_string(), "NEXT".to_string(), "WAITING".to_string()], done_keywords: vec!["DONE".to_string(), "CANCELLED".to_string()], strict_mode: false }
+        Self {
+            todo_keywords: vec!["TODO".to_string(), "NEXT".to_string(), "WAITING".to_string()],
+            done_keywords: vec!["DONE".to_string(), "CANCELLED".to_string()],
+            strict_mode: false,
+        }
     }
 
     /// Sets TODO keywords.
@@ -44,7 +48,11 @@ impl OrgModeLanguage {
 
 impl Default for OrgModeLanguage {
     fn default() -> Self {
-        Self { todo_keywords: vec!["TODO".to_string(), "NEXT".to_string(), "WAITING".to_string()], done_keywords: vec!["DONE".to_string(), "CANCELLED".to_string()], strict_mode: false }
+        Self {
+            todo_keywords: vec!["TODO".to_string(), "NEXT".to_string(), "WAITING".to_string()],
+            done_keywords: vec!["DONE".to_string(), "CANCELLED".to_string()],
+            strict_mode: false,
+        }
     }
 }
 

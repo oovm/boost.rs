@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::KotlinRoot, language::KotlinLanguage, lexer::KotlinLexer, parser::KotlinParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, Parser, SourceText, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// A builder for the Kotlin language that constructs an AST from a green tree.
 pub struct KotlinBuilder<'config> {
@@ -16,7 +16,12 @@ impl<'config> KotlinBuilder<'config> {
 }
 
 impl<'config> Builder<KotlinLanguage> for KotlinBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<KotlinLanguage>) -> TextDiagnostics<KotlinRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<KotlinLanguage>,
+    ) -> TextDiagnostics<KotlinRoot> {
         let parser = KotlinParser::new(self.config);
         let lexer = KotlinLexer::new(&self.config);
 
@@ -58,7 +63,12 @@ impl<'config> KotlinBuilder<'config> {
         Ok(KotlinRoot { span: (0.._source.length()).into(), declarations })
     }
 
-    fn build_declaration(&self, node: &data_text_core::GreenNode<KotlinLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Declaration> {
+    fn build_declaration(
+        &self,
+        node: &data_text_core::GreenNode<KotlinLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Declaration> {
         use crate::{lexer::token_type::KotlinTokenType, parser::element_type::KotlinElementType};
         let kind: KotlinElementType = node.kind;
         let start = offset;
@@ -166,7 +176,12 @@ impl<'config> KotlinBuilder<'config> {
         }
     }
 
-    fn build_parameter(&self, node: &data_text_core::GreenNode<KotlinLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Parameter> {
+    fn build_parameter(
+        &self,
+        node: &data_text_core::GreenNode<KotlinLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Parameter> {
         use crate::lexer::token_type::KotlinTokenType;
         let mut name = "p".to_string();
         let mut inner_offset = offset;
@@ -182,7 +197,12 @@ impl<'config> KotlinBuilder<'config> {
         Some(crate::ast::Parameter { name, type_name: None, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_statement(&self, node: &data_text_core::GreenNode<KotlinLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Statement> {
+    fn build_statement(
+        &self,
+        node: &data_text_core::GreenNode<KotlinLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Statement> {
         use crate::{lexer::token_type::KotlinTokenType, parser::element_type::KotlinElementType};
         let kind: KotlinElementType = node.kind;
 

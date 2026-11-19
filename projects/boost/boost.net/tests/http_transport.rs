@@ -104,7 +104,9 @@ fn routes_plain_http_through_proxy_with_absolute_form() {
 
 #[test]
 fn no_proxy_entries_skip_the_proxy() {
-    let proxy = boost_net::http::ProxyConfig::parse("http://127.0.0.1:1").unwrap().with_no_proxy(["localhost".to_string(), ".internal.test".to_string()]);
+    let proxy = boost_net::http::ProxyConfig::parse("http://127.0.0.1:1")
+        .unwrap()
+        .with_no_proxy(["localhost".to_string(), ".internal.test".to_string()]);
     assert!(proxy.bypasses("localhost"));
     assert!(proxy.bypasses("build.internal.test"));
     assert!(proxy.bypasses("internal.test"));

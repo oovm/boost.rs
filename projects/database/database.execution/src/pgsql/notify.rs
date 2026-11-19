@@ -116,10 +116,7 @@ impl NotificationHub {
 
     /// Whether `sink` is subscribed to `channel`.
     pub fn is_listening(&self, sink: u64, channel: &str) -> bool {
-        self.lock()
-            .subscribers
-            .get(channel)
-            .is_some_and(|subscribers| subscribers.contains(&sink))
+        self.lock().subscribers.get(channel).is_some_and(|subscribers| subscribers.contains(&sink))
     }
 
     fn lock(&self) -> MutexGuard<'_, HubState> {

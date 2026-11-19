@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::JavaScriptLanguage, lexer::token_type::JavaScriptTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 use std::simd::prelude::*;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, JavaScriptLanguage>;
@@ -21,7 +21,12 @@ impl<'config> JavaScriptLexer<'config> {
     }
 
     fn safe_check<'a, S: Source + ?Sized>(&self, state: &State<'a, S>) -> Result<(), TextError> {
-        if state.get_position() <= state.get_length() { Ok(()) } else { Err(TextError::custom_error(format!("Lexer out-of-bounds: pos={}, len={}", state.get_position(), state.get_length()))) }
+        if state.get_position() <= state.get_length() {
+            Ok(())
+        }
+        else {
+            Err(TextError::custom_error(format!("Lexer out-of-bounds: pos={}, len={}", state.get_position(), state.get_length())))
+        }
     }
 
     /// Main lexer run method.
@@ -73,7 +78,8 @@ impl<'config> JavaScriptLexer<'config> {
                     'a'..='z' | 'A'..='Z' | '_' | '$' => {
                         self.lex_identifier_or_keyword(state);
                     }
-                    '+' | '-' | '*' | '%' | '<' | '>' | '=' | '!' | '&' | '|' | '^' | '~' | '?' | '(' | ')' | '{' | '}' | '[' | ']' | ';' | ',' | ':' => {
+                    '+' | '-' | '*' | '%' | '<' | '>' | '=' | '!' | '&' | '|' | '^' | '~' | '?' | '(' | ')' | '{' | '}' | '[' | ']' | ';'
+                    | ',' | ':' => {
                         self.lex_operator_or_punctuation(state);
                     }
                     _ => {
@@ -747,7 +753,12 @@ impl<'config> JavaScriptLexer<'config> {
 }
 
 impl<'config> Lexer<JavaScriptLanguage> for JavaScriptLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<JavaScriptLanguage>) -> LexOutput<JavaScriptLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<JavaScriptLanguage>,
+    ) -> LexOutput<JavaScriptLanguage> {
         let mut state = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

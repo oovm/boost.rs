@@ -60,7 +60,9 @@ impl MirBuilder {
                 if pre_bindings.get(&name).is_some_and(|previous| previous != &operand) {
                     self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                         span: body.span.clone(),
-                        kind: format!("try scope writes outer binding `{name}` while `?` can exit before the write; value is not threaded to `try_exit`"),
+                        kind: format!(
+                            "try scope writes outer binding `{name}` while `?` can exit before the write; value is not threaded to `try_exit`"
+                        ),
                     });
                 }
             }

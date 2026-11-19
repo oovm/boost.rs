@@ -65,7 +65,14 @@ impl TokenType for IniTokenType {
         match self {
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
-            Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::DoubleLeftBracket | Self::DoubleRightBracket | Self::Comma | Self::Dot => UniversalTokenRole::Punctuation,
+            Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::DoubleLeftBracket
+            | Self::DoubleRightBracket
+            | Self::Comma
+            | Self::Dot => UniversalTokenRole::Punctuation,
             Self::Equal => UniversalTokenRole::Operator,
             Self::Identifier => UniversalTokenRole::Name,
             Self::String | Self::Integer | Self::Float | Self::Boolean | Self::DateTime => UniversalTokenRole::Literal,

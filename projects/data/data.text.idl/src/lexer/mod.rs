@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::IdlLanguage, lexer::token_type::IdlTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source,
+    Lexer, LexerCache, LexerState, Source, TextError,
     lexer::{LexOutput, WhitespaceConfig},
     source::TextEdit,
 };
@@ -21,7 +21,12 @@ pub struct IdlLexer<'config> {
 }
 
 impl<'config> Lexer<IdlLanguage> for IdlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<IdlLanguage>) -> LexOutput<IdlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<IdlLanguage>,
+    ) -> LexOutput<IdlLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

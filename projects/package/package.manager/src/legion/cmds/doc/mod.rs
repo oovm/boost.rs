@@ -67,16 +67,15 @@ pub fn run(args: &DocArgs) -> LegionResult<ExitCode> {
 
 /// 读取站点资产；缺失时明确指出目录，不回退内嵌兜底。
 fn load_assets(directory: &Path) -> LegionResult<assets::DocAssets> {
-    assets::DocAssets::load(directory)
-        .map_err(|e| LegionError::msg(format!("{e}: 读取文档站点资产失败（{}，需要 base.css / layout.awsl / doc-page.awsl / hub.awsl）", directory.display())))
+    assets::DocAssets::load(directory).map_err(|e| {
+        LegionError::msg(format!(
+            "{e}: 读取文档站点资产失败（{}，需要 base.css / layout.awsl / doc-page.awsl / hub.awsl）",
+            directory.display()
+        ))
+    })
 }
 
-fn run_workspace_doc(
-    workspace: &WorkspaceResolver,
-    output_dir: &Path,
-    doc_assets: &assets::DocAssets,
-    verbose: bool,
-) -> LegionResult<()> {
+fn run_workspace_doc(workspace: &WorkspaceResolver, output_dir: &Path, doc_assets: &assets::DocAssets, verbose: bool) -> LegionResult<()> {
     let members = workspace.member_manifest_dirs();
     if members.is_empty() {
         return Err(LegionError::msg(report!("workspace 中无成员项目")));

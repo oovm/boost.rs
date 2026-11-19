@@ -6,7 +6,7 @@ use core::range::Range;
 #[cfg(feature = "lsp")]
 use data_text_core::tree::RedNode;
 #[cfg(feature = "lsp")]
-use {futures::Future, language_server::service::LanguageService, language_server::types::Hover as LspHover, language_server::Vfs};
+use {futures::Future, language_server::Vfs, language_server::service::LanguageService, language_server::types::Hover as LspHover};
 
 #[cfg(feature = "lsp")]
 /// Language service for the Svelte framework.

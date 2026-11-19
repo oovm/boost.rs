@@ -163,5 +163,8 @@ fn self_closing_svg_root_does_not_swallow_following_siblings() {
 #[test]
 fn self_closing_math_children_do_not_swallow_following_siblings() {
     const SOURCE: &str = r#"<p>a<math><mi>x</mi><mspace width="1em"/></math>b</p><p>c</p>"#;
-    assert_eq!(top_level_element_texts(SOURCE), vec![r#"<p>a<math><mi>x</mi><mspace width="1em"/></math>b</p>"#.to_string(), "<p>c</p>".to_string()]);
+    assert_eq!(
+        top_level_element_texts(SOURCE),
+        vec![r#"<p>a<math><mi>x</mi><mspace width="1em"/></math>b</p>"#.to_string(), "<p>c</p>".to_string()]
+    );
 }

@@ -8,7 +8,7 @@ use crate::{
     lexer::{ValkyrieKeywords, token_type::ValkyrieTokenType},
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 fn wrap_optional_type(inner: TypeExpression, nullable: bool, span: Span) -> TypeExpression {
     if nullable { TypeExpression::Optional(Box::new(OptionalType { inner: Box::new(inner), span })) } else { inner }
@@ -28,7 +28,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         name.name = crate::builder::identifier_text(source, t.span);
                         name.span = t.span;
@@ -79,7 +82,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Keyword(ValkyrieKeywords::Micro) => continue,
                     ValkyrieTokenType::Semicolon => {
                         // Semicolon-only declarations (`micro foo(): T;`) have no BlockExpression →
@@ -95,7 +101,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Modifier => {
                         let modifier = self.build_modifier(n, source)?;
                         if modifier.name.name == "abstract" {
@@ -129,21 +138,36 @@ impl<'config> ValkyrieBuilder<'config> {
             }
         }
 
-        let body = if is_abstract { Block { statements: Vec::new(), span: span.clone() } } else { body.ok_or_else(|| source.syntax_error(format!("Missing micro body at {:?}", span), span.start))? };
+        let body = if is_abstract {
+            Block { statements: Vec::new(), span: span.clone() }
+        }
+        else {
+            body.ok_or_else(|| source.syntax_error(format!("Missing micro body at {:?}", span), span.start))?
+        };
 
         Ok(MicroDeclaration { where_constraints, name, generics, annotations, params, return_type, body, span, is_abstract, is_final })
     }
 
-    pub(crate) fn build_generic_params<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<GenericParam>, TextError> {
+    pub(crate) fn build_generic_params<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Vec<GenericParam>, TextError> {
         let mut params = Vec::new();
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::GenericParameter => params.push(self.build_generic_param(n, source)?),
                     _ => {}
                 },
@@ -152,7 +176,11 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(params)
     }
 
-    pub(crate) fn build_generic_param<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<GenericParam, TextError> {
+    pub(crate) fn build_generic_param<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<GenericParam, TextError> {
         let span = node.span();
         let mut name = Identifier { name: String::new(), span: Default::default() };
         let mut constraints = Vec::new();
@@ -161,7 +189,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Identifier => {
                         if name.name.is_empty() {
                             name.name = crate::builder::identifier_text(source, t.span);
@@ -171,7 +202,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Type => {
                         if default.is_none() {
                             constraints.push(self.build_type(n, source)?);
@@ -199,7 +233,9 @@ impl<'config> ValkyrieBuilder<'config> {
                 )
             )
         });
-        if !is_micro_function_type && node.children().any(|child| matches!(child, RedTree::Leaf(t) if t.kind == ValkyrieTokenType::ParenthesisL)) {
+        if !is_micro_function_type
+            && node.children().any(|child| matches!(child, RedTree::Leaf(t) if t.kind == ValkyrieTokenType::ParenthesisL))
+        {
             return self.build_paren_tuple_type(node, source);
         }
         let mut base_ident: Option<Identifier> = None;
@@ -215,7 +251,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Question => nullable = true,
                     ValkyrieTokenType::Arrow => has_arrow = true,
                     ValkyrieTokenType::Keyword(ValkyrieKeywords::Micro) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Mezzo) => {
@@ -240,7 +279,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::NamePath => {
                         if base_ident.is_none() && base_namepath.is_none() && !has_arrow {
                             base_namepath = Some(self.build_name_path(n, source)?);
@@ -271,7 +313,16 @@ impl<'config> ValkyrieBuilder<'config> {
             return Ok(wrap_optional_type(TypeExpression::AssociatedType(Box::new(AssociatedType { base, name, span })), nullable, span));
         }
         if let Some(path) = base_namepath {
-            let inner = if generic_arguments.is_empty() { TypeExpression::Namepath(Box::new(path)) } else { TypeExpression::Apply(Box::new(ApplyType { base: TypeExpression::Namepath(Box::new(path)), arguments: generic_arguments, span })) };
+            let inner = if generic_arguments.is_empty() {
+                TypeExpression::Namepath(Box::new(path))
+            }
+            else {
+                TypeExpression::Apply(Box::new(ApplyType {
+                    base: TypeExpression::Namepath(Box::new(path)),
+                    arguments: generic_arguments,
+                    span,
+                }))
+            };
             return Ok(wrap_optional_type(inner, nullable, span));
         }
         if let Some(base) = base_ident {
@@ -279,7 +330,11 @@ impl<'config> ValkyrieBuilder<'config> {
                 TypeExpression::Namepath(Box::new(NamePath { parts: vec![base], span }))
             }
             else {
-                TypeExpression::Apply(Box::new(ApplyType { base: TypeExpression::Namepath(Box::new(NamePath { parts: vec![base], span })), arguments: generic_arguments, span }))
+                TypeExpression::Apply(Box::new(ApplyType {
+                    base: TypeExpression::Namepath(Box::new(NamePath { parts: vec![base], span })),
+                    arguments: generic_arguments,
+                    span,
+                }))
             };
             return Ok(wrap_optional_type(inner, nullable, span));
         }
@@ -310,7 +365,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Type => {
                         let element_span = n.span();
                         let ty = self.build_type(n, source)?;
@@ -331,13 +389,22 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Type => element_type = Some(self.build_type(n, source)?),
-                    ValkyrieElementType::LiteralExpression | ValkyrieElementType::IdentifierExpression | ValkyrieElementType::BinaryExpression | ValkyrieElementType::UnaryExpression => {
+                    ValkyrieElementType::LiteralExpression
+                    | ValkyrieElementType::IdentifierExpression
+                    | ValkyrieElementType::BinaryExpression
+                    | ValkyrieElementType::UnaryExpression => {
                         // Array length expression errors must propagate; swallowing them left an
                         // array type without a length that no consumer could report.
                         length = Some(self.build_expr(n, source)?);
@@ -356,11 +423,17 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Parameter => params.push(self.build_param(n, source)?),
                     _ => {}
                 },
@@ -378,7 +451,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ if t.kind.is_soft_identifier() => {
                         if name.is_none() {
                             name = Some(Identifier { name: text(source, t.span), span: t.span });
@@ -389,7 +465,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    ValkyrieElementType::Whitespace | ValkyrieElementType::Newline | ValkyrieElementType::LineComment | ValkyrieElementType::BlockComment => continue,
+                    ValkyrieElementType::Whitespace
+                    | ValkyrieElementType::Newline
+                    | ValkyrieElementType::LineComment
+                    | ValkyrieElementType::BlockComment => continue,
                     ValkyrieElementType::Modifier => {
                         let modifier = self.build_modifier(n, source)?;
                         annotations.push(ValkyrieBuilder::modifier_to_attribute(modifier));
@@ -403,6 +482,11 @@ impl<'config> ValkyrieBuilder<'config> {
                 },
             }
         }
-        if let Some(name) = name { Ok(Param { name, ty, default, annotations, span }) } else { Err(source.syntax_error(format!("Missing name in parameter at {:?}", span), span.start)) }
+        if let Some(name) = name {
+            Ok(Param { name, ty, default, annotations, span })
+        }
+        else {
+            Err(source.syntax_error(format!("Missing name in parameter at {:?}", span), span.start))
+        }
     }
 }

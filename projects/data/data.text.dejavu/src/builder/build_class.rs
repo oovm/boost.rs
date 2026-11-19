@@ -1,11 +1,13 @@
 use crate::{
     DejavuLanguage,
-    ast::{ClassDeclaration, EnumDeclaration, FlagsDeclaration, IdentifierNode, ItemNode, TraitDeclaration, VariantDefinition, WidgetDeclaration},
+    ast::{
+        ClassDeclaration, EnumDeclaration, FlagsDeclaration, IdentifierNode, ItemNode, TraitDeclaration, VariantDefinition, WidgetDeclaration,
+    },
     builder::{DejavuBuilder, text},
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     pub(crate) fn build_class<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ClassDeclaration, TextError> {

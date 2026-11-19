@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::KokaRoot, language::KokaLanguage, lexer::KokaLexer, parser::KokaParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, Parser, SourceText, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// A builder for the Koka language that constructs an AST from a green tree.
 pub struct KokaBuilder<'config> {
@@ -16,7 +16,12 @@ impl<'config> KokaBuilder<'config> {
 }
 
 impl<'config> Builder<KokaLanguage> for KokaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<KokaLanguage>) -> TextDiagnostics<KokaRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<KokaLanguage>,
+    ) -> TextDiagnostics<KokaRoot> {
         let parser = KokaParser::new(self.config);
         let lexer = KokaLexer::new(&self.config);
 
@@ -58,7 +63,12 @@ impl<'config> KokaBuilder<'config> {
         Ok(KokaRoot { span: (0.._source.length()).into(), declarations })
     }
 
-    fn build_declaration(&self, node: &data_text_core::GreenNode<KokaLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Declaration> {
+    fn build_declaration(
+        &self,
+        node: &data_text_core::GreenNode<KokaLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Declaration> {
         use crate::{lexer::token_type::KokaTokenType, parser::element_type::KokaElementType};
         let kind: KokaElementType = node.kind;
         let start = offset;
@@ -166,7 +176,12 @@ impl<'config> KokaBuilder<'config> {
         }
     }
 
-    fn build_parameter(&self, node: &data_text_core::GreenNode<KokaLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Parameter> {
+    fn build_parameter(
+        &self,
+        node: &data_text_core::GreenNode<KokaLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Parameter> {
         use crate::lexer::token_type::KokaTokenType;
         let mut name = "p".to_string();
         let mut inner_offset = offset;
@@ -182,7 +197,12 @@ impl<'config> KokaBuilder<'config> {
         Some(crate::ast::Parameter { name, type_name: None, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_statement(&self, node: &data_text_core::GreenNode<KokaLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Statement> {
+    fn build_statement(
+        &self,
+        node: &data_text_core::GreenNode<KokaLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Statement> {
         use crate::{lexer::token_type::KokaTokenType, parser::element_type::KokaElementType};
         let kind: KokaElementType = node.kind;
 

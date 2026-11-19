@@ -26,7 +26,11 @@ impl Translator {
     }
 
     /// Generates a cache key for translation.
-    fn generate_cache_key(&self, id: &str, args: &std::collections::HashMap<String, String>) -> (String, String, Option<Vec<(String, String)>>) {
+    fn generate_cache_key(
+        &self,
+        id: &str,
+        args: &std::collections::HashMap<String, String>,
+    ) -> (String, String, Option<Vec<(String, String)>>) {
         if args.is_empty() {
             (id.to_string(), "".to_string(), None)
         }
@@ -85,12 +89,22 @@ impl Translator {
     }
 
     /// Translates a message.
-    fn translate_message(&self, message: &FluentMessage, args: &std::collections::HashMap<String, String>, visited: &mut std::collections::HashSet<String>) -> Option<String> {
+    fn translate_message(
+        &self,
+        message: &FluentMessage,
+        args: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Option<String> {
         message.value.as_ref().and_then(|pattern| self.translate_pattern(pattern, args, visited))
     }
 
     /// Translates a pattern.
-    fn translate_pattern(&self, pattern: &FluentPattern, args: &std::collections::HashMap<String, String>, visited: &mut std::collections::HashSet<String>) -> Option<String> {
+    fn translate_pattern(
+        &self,
+        pattern: &FluentPattern,
+        args: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Option<String> {
         let mut result = String::new();
 
         for element in &pattern.elements {
@@ -103,7 +117,12 @@ impl Translator {
     }
 
     /// Translates a pattern element.
-    fn translate_pattern_element(&self, element: &FluentPatternElement, args: &std::collections::HashMap<String, String>, visited: &mut std::collections::HashSet<String>) -> Option<String> {
+    fn translate_pattern_element(
+        &self,
+        element: &FluentPatternElement,
+        args: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Option<String> {
         match element {
             FluentPatternElement::Text(text) => Some(text.clone()),
             FluentPatternElement::VariableReference(name) => args.get(name).cloned(),
@@ -116,7 +135,8 @@ impl Translator {
                 // Add current message to visited set
                 visited.insert(id.to_string());
 
-                let result = if let Some(attribute) = attribute { self.translate_with_attribute(id, attribute, args) } else { self.translate(id, args) };
+                let result =
+                    if let Some(attribute) = attribute { self.translate_with_attribute(id, attribute, args) } else { self.translate(id, args) };
 
                 // Remove current message from visited set
                 visited.remove(id);
@@ -131,7 +151,12 @@ impl Translator {
     }
 
     /// Evaluates an expression.
-    fn evaluate_expression(&self, expr: &FluentExpression, args: &std::collections::HashMap<String, String>, visited: &mut std::collections::HashSet<String>) -> Option<String> {
+    fn evaluate_expression(
+        &self,
+        expr: &FluentExpression,
+        args: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Option<String> {
         match expr {
             FluentExpression::VariableReference(name) => args.get(name).cloned(),
             FluentExpression::MessageReference(id, attribute) => {
@@ -143,7 +168,8 @@ impl Translator {
                 // Add current message to visited set
                 visited.insert(id.to_string());
 
-                let result = if let Some(attribute) = attribute { self.translate_with_attribute(id, attribute, args) } else { self.translate(id, args) };
+                let result =
+                    if let Some(attribute) = attribute { self.translate_with_attribute(id, attribute, args) } else { self.translate(id, args) };
 
                 // Remove current message from visited set
                 visited.remove(id);
@@ -155,7 +181,13 @@ impl Translator {
     }
 
     /// Selects a variant based on the value.
-    fn select_variant(&self, variants: &[FluentVariant], value: &str, args: &std::collections::HashMap<String, String>, visited: &mut std::collections::HashSet<String>) -> Option<String> {
+    fn select_variant(
+        &self,
+        variants: &[FluentVariant],
+        value: &str,
+        args: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Option<String> {
         // Try to handle plural forms first
         if let Ok(number) = value.parse::<i64>() {
             for variant in variants {

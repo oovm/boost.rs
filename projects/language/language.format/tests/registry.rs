@@ -2,8 +2,10 @@
 
 use std::any::Any;
 
-use language_format::contract::{FormatError, FormatOptions, PrintStyle, Printer};
-use language_format::printer::{print_document, register_printer};
+use language_format::{
+    contract::{FormatError, FormatOptions, PrintStyle, Printer},
+    printer::{print_document, register_printer},
+};
 
 struct Marker(String);
 

@@ -46,8 +46,8 @@ use std::collections::HashMap;
 use core::range::Range;
 
 use crate::ast::{
-    ClassMember, Decorator, ExportDeclaration, ExportSpecifier, Expression, ExpressionKind, FunctionParam, ImportDeclaration, ImportSpecifier, ObjectProperty, Statement, TemplateElement, TypeAnnotation, TypeParameter, TypeScriptRoot, VariableDeclaration,
-    VariableKind,
+    ClassMember, Decorator, ExportDeclaration, ExportSpecifier, Expression, ExpressionKind, FunctionParam, ImportDeclaration, ImportSpecifier,
+    ObjectProperty, Statement, TemplateElement, TypeAnnotation, TypeParameter, TypeScriptRoot, VariableDeclaration, VariableKind,
 };
 
 /// Module-level facts about the bindings of one [`TypeScriptRoot`].
@@ -182,7 +182,12 @@ struct ScopeWalker {
 
 impl ScopeWalker {
     fn new() -> Self {
-        Self { bindings: Vec::new(), binding_index: HashMap::new(), frames: vec![Frame { kind: FrameKind::Module, entries: Vec::new() }], incomplete_reasons: Vec::new() }
+        Self {
+            bindings: Vec::new(),
+            binding_index: HashMap::new(),
+            frames: vec![Frame { kind: FrameKind::Module, entries: Vec::new() }],
+            incomplete_reasons: Vec::new(),
+        }
     }
 
     /// Records `reason` once, in first-seen order.
@@ -290,7 +295,15 @@ impl ScopeWalker {
             return;
         }
         let index = self.bindings.len();
-        self.bindings.push(ModuleBindingFacts { name: name.to_string(), kind, declaration: declaration.clone(), references: Vec::new(), has_type_references: false, rename_unsafe: false, shorthand_reference_spans: Vec::new() });
+        self.bindings.push(ModuleBindingFacts {
+            name: name.to_string(),
+            kind,
+            declaration: declaration.clone(),
+            references: Vec::new(),
+            has_type_references: false,
+            rename_unsafe: false,
+            shorthand_reference_spans: Vec::new(),
+        });
         self.binding_index.insert(name.to_string(), index);
         let frame = &mut self.frames[0];
         match frame.entries.iter_mut().find(|(entry_name, _)| entry_name == name) {
@@ -339,7 +352,9 @@ impl ScopeWalker {
         for specifier in &declaration.specifiers {
             match specifier {
                 ImportSpecifier::Default { local, span } => self.add_module_binding(local, ModuleBindingKind::ImportDefault, span),
-                ImportSpecifier::Namespace { local, local_span, .. } => self.add_module_binding(local, ModuleBindingKind::ImportNamespace, local_span),
+                ImportSpecifier::Namespace { local, local_span, .. } => {
+                    self.add_module_binding(local, ModuleBindingKind::ImportNamespace, local_span)
+                }
                 ImportSpecifier::Named { local, local_span, type_modifier, .. } => {
                     if type_modifier.is_some() {
                         self.register(local.as_str(), None);
@@ -354,8 +369,12 @@ impl ScopeWalker {
 
     fn module_statement(&mut self, statement: &Statement) {
         match statement {
-            Statement::FunctionDeclaration(declaration) => self.declared_binding(&declaration.name, ModuleBindingKind::Function, &declaration.name_span),
-            Statement::ClassDeclaration(declaration) => self.declared_binding(&declaration.name, ModuleBindingKind::Class, &declaration.name_span),
+            Statement::FunctionDeclaration(declaration) => {
+                self.declared_binding(&declaration.name, ModuleBindingKind::Function, &declaration.name_span)
+            }
+            Statement::ClassDeclaration(declaration) => {
+                self.declared_binding(&declaration.name, ModuleBindingKind::Class, &declaration.name_span)
+            }
             Statement::Enum(declaration) => self.declared_binding(&declaration.name, ModuleBindingKind::Enum, &declaration.name_span),
             Statement::VariableDeclaration(declaration) => self.variable_bindings(declaration),
             Statement::ImportDeclaration(declaration) => self.import_bindings(declaration),
@@ -608,7 +627,14 @@ impl ScopeWalker {
         }
     }
 
-    fn enter_function(&mut self, name_shadow: Option<&str>, type_params: &[TypeParameter], params: &[FunctionParam], return_type: Option<&TypeAnnotation>, body: &[Statement]) {
+    fn enter_function(
+        &mut self,
+        name_shadow: Option<&str>,
+        type_params: &[TypeParameter],
+        params: &[FunctionParam],
+        return_type: Option<&TypeAnnotation>,
+        body: &[Statement],
+    ) {
         self.push(FrameKind::Function);
         if let Some(name) = name_shadow {
             if !name.is_empty() {
@@ -653,7 +679,14 @@ impl ScopeWalker {
         self.pop();
     }
 
-    fn enter_class(&mut self, name_shadow: Option<&str>, type_params: &[TypeParameter], extends: Option<&TypeAnnotation>, implements: &[TypeAnnotation], members: &[ClassMember]) {
+    fn enter_class(
+        &mut self,
+        name_shadow: Option<&str>,
+        type_params: &[TypeParameter],
+        extends: Option<&TypeAnnotation>,
+        implements: &[TypeAnnotation],
+        members: &[ClassMember],
+    ) {
         self.push(FrameKind::Block);
         if let Some(name) = name_shadow {
             if !name.is_empty() {
@@ -755,7 +788,9 @@ impl ScopeWalker {
                     self.mark(ScopeIncompleteReason::TemplateInterpolation);
                 }
             }
-            ExpressionKind::UnaryExpression { argument, .. } | ExpressionKind::UpdateExpression { argument, .. } => self.walk_expression(argument),
+            ExpressionKind::UnaryExpression { argument, .. } | ExpressionKind::UpdateExpression { argument, .. } => {
+                self.walk_expression(argument)
+            }
             ExpressionKind::BinaryExpression { left, right, .. } => {
                 self.walk_expression(left);
                 self.walk_expression(right);
@@ -832,7 +867,9 @@ impl ScopeWalker {
                     self.walk_expression(element);
                 }
             }
-            ExpressionKind::SpreadElement(inner) | ExpressionKind::AwaitExpression(inner) | ExpressionKind::NonNullExpression(inner) => self.walk_expression(inner),
+            ExpressionKind::SpreadElement(inner) | ExpressionKind::AwaitExpression(inner) | ExpressionKind::NonNullExpression(inner) => {
+                self.walk_expression(inner)
+            }
             ExpressionKind::YieldExpression(inner) => {
                 if let Some(inner) = inner {
                     self.walk_expression(inner);

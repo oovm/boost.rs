@@ -90,27 +90,47 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                Statement::If { condition: condition.unwrap_or(Expression::Literal(Literal::Boolean(true))), then_branch: then_branch.unwrap_or(Box::new(Statement::Block(vec![]))), else_branch }
+                Statement::If {
+                    condition: condition.unwrap_or(Expression::Literal(Literal::Boolean(true))),
+                    then_branch: then_branch.unwrap_or(Box::new(Statement::Block(vec![]))),
+                    else_branch,
+                }
             }
             JavaElementType::WhileStatement => {
                 let mut condition = None;
                 let mut body = None;
                 for child in node.children() {
                     if let RedTree::Node(sub_node) = child {
-                        if condition.is_none() { condition = Some(self.build_expression(sub_node, source)) } else { body = Some(Box::new(self.build_statement(sub_node, source))) }
+                        if condition.is_none() {
+                            condition = Some(self.build_expression(sub_node, source))
+                        }
+                        else {
+                            body = Some(Box::new(self.build_statement(sub_node, source)))
+                        }
                     }
                 }
-                Statement::While { condition: condition.unwrap_or(Expression::Literal(Literal::Boolean(true))), body: body.unwrap_or(Box::new(Statement::Block(vec![]))) }
+                Statement::While {
+                    condition: condition.unwrap_or(Expression::Literal(Literal::Boolean(true))),
+                    body: body.unwrap_or(Box::new(Statement::Block(vec![]))),
+                }
             }
             JavaElementType::DoWhileStatement => {
                 let mut condition = None;
                 let mut body = None;
                 for child in node.children() {
                     if let RedTree::Node(sub_node) = child {
-                        if body.is_none() { body = Some(Box::new(self.build_statement(sub_node, source))) } else { condition = Some(self.build_expression(sub_node, source)) }
+                        if body.is_none() {
+                            body = Some(Box::new(self.build_statement(sub_node, source)))
+                        }
+                        else {
+                            condition = Some(self.build_expression(sub_node, source))
+                        }
                     }
                 }
-                Statement::DoWhile { condition: condition.unwrap_or(Expression::Literal(Literal::Boolean(true))), body: body.unwrap_or(Box::new(Statement::Block(vec![]))) }
+                Statement::DoWhile {
+                    condition: condition.unwrap_or(Expression::Literal(Literal::Boolean(true))),
+                    body: body.unwrap_or(Box::new(Statement::Block(vec![]))),
+                }
             }
             JavaElementType::ForStatement => {
                 let mut init = None;
@@ -216,7 +236,15 @@ impl<'config> JavaBuilder<'config> {
                                     name = self.get_text(leaf.span, source).to_string()
                                 }
                             }
-                            JavaTokenType::Int | JavaTokenType::Boolean | JavaTokenType::Void | JavaTokenType::Long | JavaTokenType::Float | JavaTokenType::Double | JavaTokenType::Char | JavaTokenType::Byte | JavaTokenType::Short => {
+                            JavaTokenType::Int
+                            | JavaTokenType::Boolean
+                            | JavaTokenType::Void
+                            | JavaTokenType::Long
+                            | JavaTokenType::Float
+                            | JavaTokenType::Double
+                            | JavaTokenType::Char
+                            | JavaTokenType::Byte
+                            | JavaTokenType::Short => {
                                 if r#type.is_empty() {
                                     r#type = self.get_text(leaf.span, source).to_string()
                                 }

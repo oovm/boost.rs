@@ -216,10 +216,8 @@ pub fn inspect_delivery(path: &Path, probes: usize, sample_rate: u32) -> Result<
             suspects.push(format!("audio peak {:.1} dBFS leaves no delivery headroom", audio.peak_db));
         }
         if audio.true_peak_db > threshold::HEADROOM_PEAK_DB && audio.peak_db <= threshold::HEADROOM_PEAK_DB {
-            suspects.push(format!(
-                "inter-sample peak reaches {:.1} dBFS while sample peaks stay at {:.1} dBFS",
-                audio.true_peak_db, audio.peak_db
-            ));
+            suspects
+                .push(format!("inter-sample peak reaches {:.1} dBFS while sample peaks stay at {:.1} dBFS", audio.true_peak_db, audio.peak_db));
         }
     }
 
@@ -303,11 +301,7 @@ mod tests {
 
         let report = inspect_delivery(&out, 6, 44_100).expect("inspect");
         assert!(report.samples.iter().any(|sample| sample.jump > threshold::JUMP_LUMA), "{:?}", report.samples);
-        assert!(
-            report.suspects.iter().any(|suspect| suspect.contains("jumps") && suspect.contains("threshold")),
-            "{:?}",
-            report.suspects
-        );
+        assert!(report.suspects.iter().any(|suspect| suspect.contains("jumps") && suspect.contains("threshold")), "{:?}", report.suspects);
     }
 
     #[test]
@@ -329,11 +323,7 @@ mod tests {
         let report = inspect_delivery(&out, 4, media_types::SAMPLE_RATE).expect("inspect");
         assert!(report.audio.is_some(), "the silent track is still a track");
         assert!(report.span_seconds.is_some(), "a track gives the samples a real span");
-        assert!(
-            report.suspects.iter().any(|suspect| suspect.contains("silence threshold")),
-            "{:?}",
-            report.suspects
-        );
+        assert!(report.suspects.iter().any(|suspect| suspect.contains("silence threshold")), "{:?}", report.suspects);
 
         // The declared length is a separate check from decoding: a short or
         // truncated delivery is named with both numbers, not guessed at.

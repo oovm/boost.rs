@@ -6,10 +6,10 @@
 
 use std::any::Any;
 
+use data_text_valkyrie::ast::ValkyrieRoot;
 use language_format::contract::{
     FormatError, FormatOptions, FormattedOutput, PrintStyle, Printer, PrinterProvider, SourceFormatter, SourceFormatterProvider,
 };
-use data_text_valkyrie::ast::ValkyrieRoot;
 
 /// Valkyrie 源码 formatter 的 provider（`.v` / `.vx`）。
 pub struct ValkyrieSourceFormatterProvider;
@@ -97,7 +97,11 @@ fn map_print_style(style: PrintStyle) -> data_text_valkyrie::printer::PrintStyle
 }
 
 fn map_print_options(style: PrintStyle, options: &FormatOptions) -> data_text_valkyrie::printer::PrintOptions {
-    data_text_valkyrie::printer::PrintOptions { style: map_print_style(style), indent_width: options.indent_width, max_width: options.max_width }
+    data_text_valkyrie::printer::PrintOptions {
+        style: map_print_style(style),
+        indent_width: options.indent_width,
+        max_width: options.max_width,
+    }
 }
 
 fn map_print_error(error: data_text_valkyrie::printer::PrintError) -> FormatError {

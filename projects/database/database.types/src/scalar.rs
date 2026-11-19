@@ -737,7 +737,15 @@ pub fn tagged_value_json(value: &crate::Value) -> Option<serde_json::Value> {
         }
         crate::Value::U64(u) if *u > HOST_EXACT_U64_MAX => Some(serde_json::json!({ "$database": "u64", "value": u.to_string() })),
         crate::Value::F64(value) if !value.is_finite() => {
-            let spelling = if value.is_nan() { "NaN" } else if *value > 0.0 { "Infinity" } else { "-Infinity" };
+            let spelling = if value.is_nan() {
+                "NaN"
+            }
+            else if *value > 0.0 {
+                "Infinity"
+            }
+            else {
+                "-Infinity"
+            };
             Some(serde_json::json!({ "$database": "f64", "value": spelling }))
         }
         crate::Value::Uuid(id) => Some(serde_json::json!({ "$database": "uuid", "value": id.to_string() })),

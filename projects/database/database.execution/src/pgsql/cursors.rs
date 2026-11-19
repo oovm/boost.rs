@@ -9,8 +9,10 @@ use std::sync::Arc;
 
 use database_query::{FetchDirection, PgUtilityStatement};
 
-use super::session::{PgsqlSqlRuntime, SessionCursor, TransactionSession};
-use super::statement::{ExecutionOutcome, StatementError, StatementOutcome, run_statement};
+use super::{
+    session::{PgsqlSqlRuntime, SessionCursor, TransactionSession},
+    statement::{ExecutionOutcome, StatementError, StatementOutcome, run_statement},
+};
 
 /// Applies one cursor utility statement.
 pub fn execute_cursor_utility(
@@ -63,14 +65,7 @@ pub fn execute_cursor_utility(
 /// Advances `cursor` by `direction` and returns the rows that fetch observes.
 fn fetch_rows(cursor: &mut SessionCursor, direction: FetchDirection) -> Vec<Vec<database_query::SqlValue>> {
     let total = cursor.rows.len();
-    let clamp = |position: i64| -> Option<usize> {
-        if position < 0 || position as usize >= total {
-            None
-        }
-        else {
-            Some(position as usize)
-        }
-    };
+    let clamp = |position: i64| -> Option<usize> { if position < 0 || position as usize >= total { None } else { Some(position as usize) } };
     match direction {
         FetchDirection::Next => take(&cursor.rows, &mut cursor.position, 1),
         FetchDirection::All => {

@@ -102,10 +102,12 @@ impl UniqueIndex {
             }
             let mut entries = std::collections::HashMap::new();
             for existing in load_table(records, table)? {
-                let Some(pk) = existing.get(pk_field) else {
+                let Some(pk) = existing.get(pk_field)
+                else {
                     continue;
                 };
-                let Ok(existing_pk) = value_text(pk) else {
+                let Ok(existing_pk) = value_text(pk)
+                else {
                     continue;
                 };
                 for constraint in &applicable {
@@ -121,7 +123,8 @@ impl UniqueIndex {
             retract_keys(index, &applicable, old_row, pk_text);
         }
         for constraint in &applicable {
-            let Some(key) = entry_key(row, constraint) else {
+            let Some(key) = entry_key(row, constraint)
+            else {
                 continue;
             };
             if let Some(owner) = index.entries.get(&key)
@@ -206,7 +209,8 @@ pub fn from_contract(contract: &ResolvedContract) -> Result<Vec<TableUniqueConst
                         let (columns, declared) = groups.entry(group.clone()).or_default();
                         if columns.is_empty() {
                             *declared = predicate.clone();
-                        } else if *declared != predicate {
+                        }
+                        else if *declared != predicate {
                             return Err(Error::Schema {
                                 message: format!("unique group `{group}` spells conflicting predicates on table `{table}`"),
                             });
@@ -259,9 +263,7 @@ pub fn unique_attribute_rule(syntax: &str) -> Result<(Option<String>, Option<Par
     else {
         return Ok((None, None));
     };
-    let close = syntax
-        .rfind(')')
-        .ok_or_else(|| Error::Schema { message: format!("malformed unique attribute `{syntax}`: missing `)`") })?;
+    let close = syntax.rfind(')').ok_or_else(|| Error::Schema { message: format!("malformed unique attribute `{syntax}`: missing `)`") })?;
     if close <= open + 1 {
         return Err(Error::Schema { message: format!("malformed unique attribute `{syntax}`: empty group name") });
     }
@@ -271,7 +273,8 @@ pub fn unique_attribute_rule(syntax: &str) -> Result<(Option<String>, Option<Par
     if name.is_empty() || !name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_') {
         return Err(Error::Schema { message: format!("invalid unique group name `{raw}`: use ASCII letters, digits and `_`") });
     }
-    let Some(predicate_body) = predicate_part else {
+    let Some(predicate_body) = predicate_part
+    else {
         return Ok((Some(name.to_owned()), None));
     };
     let tokens = lex_unique_attribute_body(predicate_body, syntax)?;
@@ -347,7 +350,8 @@ fn lex_unique_attribute_body(body: &str, syntax: &str) -> Result<Vec<UniqueAttri
                     break;
                 }
                 if current == '\\' {
-                    let escape = characters.get(index).copied().ok_or_else(|| malformed("string literal ends with a dangling `\\`".to_owned()))?;
+                    let escape =
+                        characters.get(index).copied().ok_or_else(|| malformed("string literal ends with a dangling `\\`".to_owned()))?;
                     if escape != '\'' && escape != '"' && escape != '\\' {
                         return Err(malformed(format!("string literal escape `\\{escape}` is not one of `\\'`, `\\\"`, `\\\\`")));
                     }
@@ -371,10 +375,12 @@ fn lex_unique_attribute_body(body: &str, syntax: &str) -> Result<Vec<UniqueAttri
                 let current = characters[index];
                 if current.is_ascii_digit() {
                     index += 1;
-                } else if current == '.' && !seen_dot && characters.get(index + 1).is_some_and(|next| next.is_ascii_digit()) {
+                }
+                else if current == '.' && !seen_dot && characters.get(index + 1).is_some_and(|next| next.is_ascii_digit()) {
                     seen_dot = true;
                     index += 1;
-                } else {
+                }
+                else {
                     break;
                 }
             }
@@ -440,7 +446,8 @@ impl UniqueAttributeCursor {
                     text.parse::<f64>()
                         .map(Value::F64)
                         .map_err(|_| self.malformed(format!("numeric literal `{text}` is not a valid 64-bit float")))
-                } else {
+                }
+                else {
                     text.parse::<i64>()
                         .map(Value::I64)
                         .map_err(|_| self.malformed(format!("numeric literal `{text}` is not a valid 64-bit integer")))
@@ -454,7 +461,8 @@ impl UniqueAttributeCursor {
     }
 
     fn condition(&mut self) -> Result<PredicateCondition> {
-        let Some(UniqueAttributeToken::Word(column)) = self.peek().cloned() else {
+        let Some(UniqueAttributeToken::Word(column)) = self.peek().cloned()
+        else {
             return Err(self.malformed("expected a column name".to_owned()));
         };
         self.position += 1;
@@ -526,20 +534,38 @@ pub fn validate_unique_predicate(fields: &[ResolvedFieldContract], predicate: &P
             declared = inner;
         }
         if matches!(declared, schema_types::ResolvedCanonicalType::Reference(_)) {
-            return Err(Error::Schema { message: format!("unique predicate column `{column}` is a reference: only `is not null` is supported") });
+            return Err(Error::Schema {
+                message: format!("unique predicate column `{column}` is a reference: only `is not null` is supported"),
+            });
         }
         for value in literals {
             let matches = match (declared, value) {
                 (schema_types::ResolvedCanonicalType::Scalar(scalar), Value::I64(_)) => {
-                    matches!(scalar, CanonicalScalar::I8 | CanonicalScalar::I16 | CanonicalScalar::I32 | CanonicalScalar::I64 | CanonicalScalar::U8 | CanonicalScalar::U16 | CanonicalScalar::U32 | CanonicalScalar::U64)
+                    matches!(
+                        scalar,
+                        CanonicalScalar::I8
+                            | CanonicalScalar::I16
+                            | CanonicalScalar::I32
+                            | CanonicalScalar::I64
+                            | CanonicalScalar::U8
+                            | CanonicalScalar::U16
+                            | CanonicalScalar::U32
+                            | CanonicalScalar::U64
+                    )
                 }
-                (schema_types::ResolvedCanonicalType::Scalar(scalar), Value::F64(_)) => matches!(scalar, CanonicalScalar::F32 | CanonicalScalar::F64),
+                (schema_types::ResolvedCanonicalType::Scalar(scalar), Value::F64(_)) => {
+                    matches!(scalar, CanonicalScalar::F32 | CanonicalScalar::F64)
+                }
                 (schema_types::ResolvedCanonicalType::Scalar(CanonicalScalar::Bool), Value::Bool(_)) => true,
-                (schema_types::ResolvedCanonicalType::Scalar(scalar), Value::Text(_)) => matches!(scalar, CanonicalScalar::Utf8 | CanonicalScalar::Utf16),
+                (schema_types::ResolvedCanonicalType::Scalar(scalar), Value::Text(_)) => {
+                    matches!(scalar, CanonicalScalar::Utf8 | CanonicalScalar::Utf16)
+                }
                 _ => false,
             };
             if !matches {
-                return Err(Error::Schema { message: format!("unique predicate literal for column `{column}` does not match the declared type") });
+                return Err(Error::Schema {
+                    message: format!("unique predicate literal for column `{column}` does not match the declared type"),
+                });
             }
         }
     }

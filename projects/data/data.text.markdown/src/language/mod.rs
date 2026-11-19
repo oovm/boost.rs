@@ -161,7 +161,14 @@ impl MarkdownLanguage {
 
     /// [`common_mark`] plus tables, task lists, strikethrough, bare links, and HTML tag filtering.
     pub fn github_flavored() -> Self {
-        Self { allow_tables: true, allow_task_lists: true, allow_strikethrough: true, allow_barelinks: true, allow_html_tag_filter: true, ..Self::common_mark() }
+        Self {
+            allow_tables: true,
+            allow_task_lists: true,
+            allow_strikethrough: true,
+            allow_barelinks: true,
+            allow_html_tag_filter: true,
+            ..Self::common_mark()
+        }
     }
 }
 

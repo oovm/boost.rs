@@ -6,7 +6,7 @@ pub mod element_type;
 
 use crate::{language::EjsLanguage, lexer::token_type::EjsTokenType, parser::element_type::EjsElementType};
 use data_text_core::{
-    TextError, ParseCache, TextEdit,
+    ParseCache, TextEdit, TextError,
     parser::{Parser, ParserState},
     source::Source,
 };
@@ -184,7 +184,12 @@ impl<'config> EjsParser<'config> {
 }
 
 impl<'config> Parser<EjsLanguage> for EjsParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<EjsLanguage>) -> data_text_core::parser::ParseOutput<'a, EjsLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<EjsLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, EjsLanguage> {
         let lexer = crate::lexer::EjsLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

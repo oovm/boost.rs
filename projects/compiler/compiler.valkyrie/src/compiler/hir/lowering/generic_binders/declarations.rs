@@ -12,8 +12,8 @@ use crate::compiler::{
         Identifier, NamePath,
         hir::{
             GenericBinderId, GenericType, HirBlock, HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField, HirFlagMember, HirFunction,
-            HirImpl, HirModule, HirParent, HirSingleton, HirStatementKind, HirStruct, HirTrait, HirVariant, HirVisibility,
-            HirWhereConstraint, ValkyrieType, primitive_identity_builtin_type,
+            HirImpl, HirModule, HirParent, HirSingleton, HirStatementKind, HirStruct, HirTrait, HirVariant, HirVisibility, HirWhereConstraint,
+            ValkyrieType, primitive_identity_builtin_type,
         },
     },
 };
@@ -180,7 +180,8 @@ pub fn bind_declared_nominal_types(module: &mut HirModule) -> Result<(), HirErro
                         arguments: Vec::new(),
                         primitive_identity,
                     });
-                } else {
+                }
+                else {
                     reject_unbound_primitive_spelling(name)?;
                 }
             }
@@ -805,8 +806,9 @@ pub fn register_function_declarations(module: &mut HirModule, next: &mut u32, ne
         *next = following;
         if owner_monomorphic {
             let following = next_instance.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?;
-            function.instance =
-                Some(compiler_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?);
+            function.instance = Some(
+                compiler_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?,
+            );
             *next_instance = following;
         }
         Ok(())
@@ -823,8 +825,9 @@ pub fn register_function_declarations(module: &mut HirModule, next: &mut u32, ne
             Some(compiler_types::ItemId::from_index(*next).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?);
         *next = next.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?;
         if structure.generics.is_empty() {
-            structure.constructor_instance =
-                Some(compiler_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?);
+            structure.constructor_instance = Some(
+                compiler_types::ItemInstanceId::from_index(*next_instance).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?,
+            );
             *next_instance = next_instance.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::ItemInstance, &owner))?;
         }
         for method in &mut structure.methods {
@@ -843,7 +846,8 @@ pub fn register_function_declarations(module: &mut HirModule, next: &mut u32, ne
             if variant.declaration.is_some() || variant.instance.is_some() {
                 return Err(identity_duplicated(IndexSpace::Item, &variant_owner));
             }
-            variant.declaration = Some(compiler_types::ItemId::from_index(*next).ok_or_else(|| index_exhausted(IndexSpace::Item, &variant_owner))?);
+            variant.declaration =
+                Some(compiler_types::ItemId::from_index(*next).ok_or_else(|| index_exhausted(IndexSpace::Item, &variant_owner))?);
             *next = next.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::Item, &variant_owner))?;
             if enum_definition.generics.is_empty() {
                 variant.instance = Some(
@@ -876,7 +880,8 @@ pub fn register_function_declarations(module: &mut HirModule, next: &mut u32, ne
         if trait_definition.declaration.is_some() {
             return Err(identity_duplicated(IndexSpace::Item, &owner));
         }
-        trait_definition.declaration = Some(compiler_types::ItemId::from_index(*next).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?);
+        trait_definition.declaration =
+            Some(compiler_types::ItemId::from_index(*next).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?);
         *next = next.checked_add(1).ok_or_else(|| index_exhausted(IndexSpace::Item, &owner))?;
         for method in trait_definition.methods.iter_mut() {
             register(method, next, next_instance, false)?;

@@ -5,7 +5,7 @@ use crate::{
 };
 use core::range::Range;
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source,
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, Source, TextDiagnostics, TextError,
     builder::BuildOutput,
     source::{SourceText, TextEdit},
 };
@@ -54,7 +54,12 @@ impl XmlBuilder {
             }
         }
 
-        let value = if children.len() == 1 { XmlValue::Element(children.remove(0)) } else { children.into_iter().next().map(XmlValue::Element).unwrap_or(XmlValue::Text(String::new())) };
+        let value = if children.len() == 1 {
+            XmlValue::Element(children.remove(0))
+        }
+        else {
+            children.into_iter().next().map(XmlValue::Element).unwrap_or(XmlValue::Text(String::new()))
+        };
 
         Ok(XmlRoot { value })
     }
@@ -75,7 +80,9 @@ impl XmlBuilder {
                                 match sub_child {
                                     GreenTree::Leaf(t) if t.kind == XmlTokenType::Identifier => {
                                         if name.is_empty() {
-                                            name = source.get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize }).to_string();
+                                            name = source
+                                                .get_text_in(Range { start: sub_offset, end: sub_offset + t.length as usize })
+                                                .to_string();
                                         }
                                     }
                                     GreenTree::Node(attr_node) if attr_node.kind == XmlElementType::Attribute => {
@@ -149,7 +156,12 @@ impl XmlBuilder {
 }
 
 impl Builder<XmlLanguage> for XmlBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<XmlLanguage>) -> BuildOutput<XmlLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<XmlLanguage>,
+    ) -> BuildOutput<XmlLanguage> {
         let source = SourceText::new(text.get_text_in(Range { start: 0, end: text.length() }).to_string());
         let config = XmlLanguage::default();
         let parser = crate::parser::XmlParser::new(&config);

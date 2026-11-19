@@ -13,7 +13,7 @@ use crate::{
     parser::element_type::JavaElementType,
 };
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{
         ParseCache, Parser, ParserState,
         pratt::{Pratt, PrattParser},
@@ -105,7 +105,12 @@ impl<'config> Pratt<JavaLanguage> for JavaParser<'config> {
         parse_expression::prefix(self, state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, JavaLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, JavaLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, JavaLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, JavaLanguage>> {
         parse_expression::infix(self, state, left, min_precedence)
     }
 }
@@ -137,7 +142,12 @@ impl<'config> Parser<JavaLanguage> for JavaParser<'config> {
     /// let result = parser.parse(&source, &[], &mut cache);
     /// println!("Parse success: {}", result.is_success());
     /// ```
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JavaLanguage>) -> data_text_core::parser::ParseOutput<'a, JavaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JavaLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, JavaLanguage> {
         let lexer = JavaLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -55,9 +55,7 @@ impl DirectoryEntry {
             right: read_u32(raw, 0x48)?,
             child: read_u32(raw, 0x4C)?,
             start_sector: read_u32(raw, 0x74)?,
-            stream_size: u64::from_le_bytes([
-                raw[0x78], raw[0x79], raw[0x7A], raw[0x7B], raw[0x7C], raw[0x7D], raw[0x7E], raw[0x7F],
-            ]),
+            stream_size: u64::from_le_bytes([raw[0x78], raw[0x79], raw[0x7A], raw[0x7B], raw[0x7C], raw[0x7D], raw[0x7E], raw[0x7F]]),
         })
     }
 }
@@ -70,8 +68,7 @@ pub(crate) fn find_stream_entry<'a>(entries: &'a [DirectoryEntry], path: &str) -
 
     let mut current = 0usize;
     for segment in segments {
-        let child_sid =
-            find_child(entries, current, segment).ok_or_else(|| CfbError::StreamNotFound { path: path.to_string() })?;
+        let child_sid = find_child(entries, current, segment).ok_or_else(|| CfbError::StreamNotFound { path: path.to_string() })?;
         current = child_sid;
     }
 
@@ -135,11 +132,7 @@ enum Ordering {
 fn compare_entry_name(left: &str, right: &str) -> Ordering {
     let left = left.trim_end_matches('\0');
     let right = right.trim_end_matches('\0');
-    left.to_ascii_uppercase()
-        .cmp(&right.to_ascii_uppercase())
-        .then_with(|| left.len().cmp(&right.len()))
-        .then_with(|| left.cmp(right))
-        .into()
+    left.to_ascii_uppercase().cmp(&right.to_ascii_uppercase()).then_with(|| left.len().cmp(&right.len())).then_with(|| left.cmp(right)).into()
 }
 
 impl From<std::cmp::Ordering> for Ordering {
@@ -186,10 +179,7 @@ pub(crate) fn load_directory(
             let offset = index * 128;
             entries.push(DirectoryEntry::parse(&sector[offset..offset + 128])?);
         }
-        sector_id = fat
-            .get(sector_id as usize)
-            .copied()
-            .ok_or_else(|| CfbError::UnexpectedEndOfChain { context: "directory".to_string() })?;
+        sector_id = fat.get(sector_id as usize).copied().ok_or_else(|| CfbError::UnexpectedEndOfChain { context: "directory".to_string() })?;
         sectors_read += 1;
     }
 
@@ -201,10 +191,7 @@ fn read_sector(bytes: &[u8], sector_size: usize, sector_id: u32, fat: &[u32]) ->
     let start = (sector_id as usize + 1) * sector_size;
     let end = start + sector_size;
     if end > bytes.len() {
-        return Err(CfbError::SectorOutOfRange {
-            sector_id,
-            max_sector: ((bytes.len() / sector_size).saturating_sub(1)) as u32,
-        });
+        return Err(CfbError::SectorOutOfRange { sector_id, max_sector: ((bytes.len() / sector_size).saturating_sub(1)) as u32 });
     }
     Ok(bytes[start..end].to_vec())
 }

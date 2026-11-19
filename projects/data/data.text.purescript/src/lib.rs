@@ -11,7 +11,9 @@ pub mod lexer;
 pub mod lsp;
 pub mod parser;
 
-pub use crate::{ast::PurescriptRoot, builder::PurescriptBuilder, language::PurescriptLanguage, lexer::PurescriptLexer, parser::PurescriptParser};
+pub use crate::{
+    ast::PurescriptRoot, builder::PurescriptBuilder, language::PurescriptLanguage, lexer::PurescriptLexer, parser::PurescriptParser,
+};
 
 #[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::PurescriptHighlighter;

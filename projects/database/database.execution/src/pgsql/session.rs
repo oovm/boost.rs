@@ -13,8 +13,10 @@ use std::{
     time::Duration,
 };
 
-use crate::cluster::{KeyValueExecutor, TransactionHandle};
-use crate::sql_schema::{SqlSchemaCheckpoint, SqlSchemaRegistry};
+use crate::{
+    cluster::{KeyValueExecutor, TransactionHandle},
+    sql_schema::{SqlSchemaCheckpoint, SqlSchemaRegistry},
+};
 use database_query::{OnCommit, SqlCatalog, SqlColumn, SqlDdlStatement, SqlValue};
 
 /// Type-identity lane temporary tables own, so a session-local table never
@@ -512,7 +514,10 @@ impl TransactionSession {
     }
 
     /// Applies one DDL statement to the session's temporary registry.
-    pub fn apply_temp_ddl(&mut self, statement: &SqlDdlStatement) -> Result<crate::sql_schema::SqlDdlOutcome, database_query::SqlFrontendError> {
+    pub fn apply_temp_ddl(
+        &mut self,
+        statement: &SqlDdlStatement,
+    ) -> Result<crate::sql_schema::SqlDdlOutcome, database_query::SqlFrontendError> {
         let in_block = self.in_transaction();
         let temp = self.temp.get_or_insert_with(TempTables::new);
         // A block that only creates its first temporary table still needs the
@@ -562,12 +567,8 @@ impl TransactionSession {
             return base;
         }
         let shadowed: BTreeSet<&str> = temp_catalog.tables().iter().map(|table| table.name.as_str()).collect();
-        let tables = temp_catalog
-            .tables()
-            .iter()
-            .chain(base.tables().iter().filter(|table| !shadowed.contains(table.name.as_str())))
-            .cloned()
-            .collect();
+        let tables =
+            temp_catalog.tables().iter().chain(base.tables().iter().filter(|table| !shadowed.contains(table.name.as_str()))).cloned().collect();
         SqlCatalog::from_tables(base.schema_version(), tables).unwrap_or(base)
     }
 
@@ -694,11 +695,7 @@ impl TransactionSession {
 
     /// Queues one notification for every subscriber of `channel`.
     pub fn notify(&self, runtime: &PgsqlSqlRuntime, channel: &str, payload: &str, process_id: u32) {
-        runtime.notifications.notify(super::notify::Notification {
-            process_id,
-            channel: channel.to_owned(),
-            payload: payload.to_owned(),
-        });
+        runtime.notifications.notify(super::notify::Notification { process_id, channel: channel.to_owned(), payload: payload.to_owned() });
     }
 
     /// Drains the notifications queued for this session.

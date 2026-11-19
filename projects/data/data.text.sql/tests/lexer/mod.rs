@@ -20,7 +20,11 @@ fn lex(input: &str) -> Vec<(SqlTokenType, String)> {
     let mut cache = ParseSession::<SqlLanguage>::default();
     let output = lexer.lex(&source, &[], &mut cache);
     let tokens = output.result.unwrap_or_else(|error| panic!("{input}: {error:?}"));
-    tokens.iter().filter(|token| !token.kind.is_ignored() && token.kind != SqlTokenType::Eof).map(|token| (token.kind, source.get_text_in(token.span.clone()).into_owned())).collect()
+    tokens
+        .iter()
+        .filter(|token| !token.kind.is_ignored() && token.kind != SqlTokenType::Eof)
+        .map(|token| (token.kind, source.get_text_in(token.span.clone()).into_owned()))
+        .collect()
 }
 
 #[test]

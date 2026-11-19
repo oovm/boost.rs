@@ -1,9 +1,11 @@
 //! 报告混合岛构建：hydrated 图表走 WASM + asgard glue（模板来自 VOA 工程 AWSL）。
 use crate::{
-    asgard::error::{AsgardError, AsgardResult},
+    asgard::{
+        error::{AsgardError, AsgardResult},
+        report::{HydratedChartSpec, series_to_init_literal},
+    },
     legion::CanonicalTarget,
 };
-use crate::asgard::report::{HydratedChartSpec, series_to_init_literal};
 use data_text_awsl::widget_name_from_stem;
 use std::{
     fs,
@@ -50,8 +52,7 @@ pub fn emit_report_chart_islands(
         let (_, series_declaration) = extract_title_series_lets(&wrapper)?;
         let series_element = parse_series_element_type(&series_declaration, &chart.route)?;
         series_packages.insert(series_element.package);
-        let title_lit = encode_v_text_literal(&chart.title)
-            .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
+        let title_lit = encode_v_text_literal(&chart.title).map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
         let series_lit = series_to_init_literal(&chart.series, &series_element.path)
             .map_err(|error| AsgardError::msg(report!("chart {}: {error}", chart.route)))?;
         let filled = fill_chart_placeholders(&wrapper, &title_lit, &series_lit);
@@ -89,8 +90,7 @@ pub fn emit_report_chart_islands(
     }
     // 标量载体形态先于生成源码判定：std 可见时生成单元只导入，否则随组提交独立载体文件。
     let awsl_v = build_awsl_wasm_source(&components, scalar_bootstrap_for(&resolved.groups, &extra_dependency_keys))?;
-    let generated =
-        GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v.source, extra_sources: &awsl_v.extra_sources };
+    let generated = GeneratedSource { producer: "asgard.awsl.report-island", source: &awsl_v.source, extra_sources: &awsl_v.extra_sources };
     // 报告图表岛走非入口执行路径：岛包源码组只作为依赖，入口身份唯一来自生成组的显式 `[export]`。
     let wasm_built = match compile_wasm_bundle(
         &resolved.groups,
@@ -121,7 +121,8 @@ pub fn emit_report_chart_islands(
                 .collect::<Vec<_>>();
             let closure_note = if missing.is_empty() {
                 String::new()
-            } else {
+            }
+            else {
                 format!(
                     "（图表岛闭包缺少 series 元素类型所属包 `{}`；当前依赖闭包为：{closure}。\
                      需要该包支持当前 target，或把契约类型移入可构建包）",
@@ -188,10 +189,7 @@ fn fill_chart_placeholders(wrapper: &str, title_lit: &str, series_lit: &str) -> 
 #[doc(hidden)]
 pub fn encode_v_text_literal(text: &str) -> AsgardResult<String> {
     if let Some(ch) = text.chars().find(|ch| ch.is_control() && !matches!(ch, '\n' | '\t')) {
-        return Err(AsgardError::msg(report!(
-            "chart title contains control character U+{:04X}, which has no VX literal form",
-            ch as u32
-        )));
+        return Err(AsgardError::msg(report!("chart title contains control character U+{:04X}, which has no VX literal form", ch as u32)));
     }
     if text.starts_with('"') || text.ends_with('"') {
         return Err(AsgardError::msg(report!(
@@ -204,7 +202,8 @@ pub fn encode_v_text_literal(text: &str) -> AsgardResult<String> {
             if ch == '"' {
                 let next = current + 1;
                 (longest.max(next), next)
-            } else {
+            }
+            else {
                 (longest, 0)
             }
         })
@@ -267,12 +266,10 @@ fn parse_series_element_type(declaration: &str, route: &str) -> AsgardResult<Ser
         .strip_prefix(':')
         .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` declaration must carry an element type `[package::Type]`")))?
         .trim_start();
-    let array = rest
-        .strip_prefix('[')
-        .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` declaration must use array element type `[T]`, found `{rest}`")))?;
-    let close = array
-        .find(']')
-        .ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` array element type is not closed")))?;
+    let array = rest.strip_prefix('[').ok_or_else(|| {
+        AsgardError::msg(report!("chart {route}: `let series` declaration must use array element type `[T]`, found `{rest}`"))
+    })?;
+    let close = array.find(']').ok_or_else(|| AsgardError::msg(report!("chart {route}: `let series` array element type is not closed")))?;
     let element = array[..close].trim();
     let tail = array[close + 1..].trim_start();
     if !(tail.is_empty() || tail.starts_with('=')) {
@@ -285,7 +282,9 @@ fn parse_series_element_type(declaration: &str, route: &str) -> AsgardResult<Ser
         )));
     };
     if !is_package_path(package) || !is_type_identifier(name) {
-        return Err(AsgardError::msg(report!("chart {route}: `let series` element type `{element}` is not a valid package-qualified type path")));
+        return Err(AsgardError::msg(report!(
+            "chart {route}: `let series` element type `{element}` is not a valid package-qualified type path"
+        )));
     }
     Ok(SeriesElementType { path: element.to_string(), package: package.to_string() })
 }

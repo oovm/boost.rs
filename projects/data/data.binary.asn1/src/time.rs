@@ -85,11 +85,7 @@ impl DateTime {
 
 impl fmt::Display for DateTime {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
-            self.year, self.month, self.day, self.hour, self.minute, self.second
-        )
+        write!(formatter, "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", self.year, self.month, self.day, self.hour, self.minute, self.second)
     }
 }
 

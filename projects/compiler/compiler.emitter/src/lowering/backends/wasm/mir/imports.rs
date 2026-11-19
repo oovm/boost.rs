@@ -9,11 +9,10 @@ use crate::{
     },
     emitter_backend_wasi::WasiPreview,
 };
-use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
 use compiler_types::{ItemInstanceId, SemanticType};
+use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
 
 use super::{
-    WasmOperatorBinding, freeze_wasm_operator_binding,
     super::{
         super::{
             executable::ExecutableLoweringContext,
@@ -21,6 +20,7 @@ use super::{
         },
         sections::wasm_function_type,
     },
+    WasmOperatorBinding, freeze_wasm_operator_binding,
     representation::{wasm_js_glue_abi_value_type, wasm_param_value_type},
 };
 

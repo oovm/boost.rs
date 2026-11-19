@@ -1,7 +1,7 @@
 use std::io::{Cursor, Write};
 
-use data_binary_cfb::CompoundFile;
 use cfb::CompoundFile as OracleCompoundFile;
+use data_binary_cfb::CompoundFile;
 
 fn build_oracle_fixture() -> Vec<u8> {
     let mut buffer = Cursor::new(Vec::new());

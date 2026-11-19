@@ -11,8 +11,12 @@ impl TokenType for StylusTokenType {
         match self {
             Self::Identifier => UniversalTokenRole::Name,
             Self::Number | Self::String | Self::Color => UniversalTokenRole::Literal,
-            Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::Colon | Self::Semicolon | Self::Comma => UniversalTokenRole::Punctuation,
-            Self::Dot | Self::Hash | Self::Ampersand | Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Equal => UniversalTokenRole::Operator,
+            Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::Colon | Self::Semicolon | Self::Comma => {
+                UniversalTokenRole::Punctuation
+            }
+            Self::Dot | Self::Hash | Self::Ampersand | Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Equal => {
+                UniversalTokenRole::Operator
+            }
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
             Self::Error => UniversalTokenRole::Error,
@@ -29,7 +33,15 @@ impl StylusTokenType {
 
     /// Checks if it is an operator.
     pub fn is_operator(self) -> bool {
-        matches!(self, StylusTokenType::Plus | StylusTokenType::Minus | StylusTokenType::Star | StylusTokenType::Slash | StylusTokenType::Percent | StylusTokenType::Equal)
+        matches!(
+            self,
+            StylusTokenType::Plus
+                | StylusTokenType::Minus
+                | StylusTokenType::Star
+                | StylusTokenType::Slash
+                | StylusTokenType::Percent
+                | StylusTokenType::Equal
+        )
     }
 }
 

@@ -190,12 +190,7 @@ impl DwarfCustomSections {
 
     /// 获取 DWARF 段
     pub fn get_dwarf_section(&self, section_type: CustomSectionType) -> Option<&CustomSection> {
-        if section_type.is_dwarf_section() {
-            self.sections.get(section_type.name())
-        }
-        else {
-            None
-        }
+        if section_type.is_dwarf_section() { self.sections.get(section_type.name()) } else { None }
     }
 
     /// 获取所有 DWARF 段
@@ -246,8 +241,7 @@ impl DwarfCustomSections {
 
         // 添加 .debug_str 段
         if !dwarf_info.string_table.strings.is_empty() {
-            let section =
-                CustomSection::new_dwarf_section(CustomSectionType::DebugStr, dwarf_info.string_table.strings.clone());
+            let section = CustomSection::new_dwarf_section(CustomSectionType::DebugStr, dwarf_info.string_table.strings.clone());
             sections.add_section(section);
         }
 

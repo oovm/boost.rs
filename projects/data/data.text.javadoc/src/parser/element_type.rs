@@ -55,7 +55,19 @@ impl From<crate::lexer::token_type::JavadocTokenType> for JavadocElementType {
             T::Text => Self::Text,
             T::Error => Self::Error,
             T::CommentStart | T::CommentEnd | T::Asterisk => Self::Whitespace,
-            T::HtmlTag | T::HtmlEndTag | T::HtmlPTag | T::HtmlBrTag | T::HtmlCodeTag | T::HtmlPreTag | T::HtmlBTag | T::HtmlITag | T::HtmlEmTag | T::HtmlStrongTag | T::HtmlUlTag | T::HtmlOlTag | T::HtmlLiTag => Self::HtmlElement,
+            T::HtmlTag
+            | T::HtmlEndTag
+            | T::HtmlPTag
+            | T::HtmlBrTag
+            | T::HtmlCodeTag
+            | T::HtmlPreTag
+            | T::HtmlBTag
+            | T::HtmlITag
+            | T::HtmlEmTag
+            | T::HtmlStrongTag
+            | T::HtmlUlTag
+            | T::HtmlOlTag
+            | T::HtmlLiTag => Self::HtmlElement,
             _ => Self::Tag,
         }
     }

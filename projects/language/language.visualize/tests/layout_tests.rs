@@ -1,6 +1,9 @@
 use language_visualize::{
     geometry::Size,
-    layout::{EdgeType, ForceDirectedLayout, HierarchicalLayout, Layout, LayoutConfig, LayoutDirection, LayoutEdge, LayoutEngine, LayoutNode, NodeType},
+    layout::{
+        EdgeType, ForceDirectedLayout, HierarchicalLayout, Layout, LayoutConfig, LayoutDirection, LayoutEdge, LayoutEngine, LayoutNode,
+        NodeType,
+    },
 };
 
 #[test]
@@ -58,7 +61,11 @@ fn test_layout_edge_creation() {
 
 #[test]
 fn test_hierarchical_layout() {
-    let nodes = vec![LayoutNode::new("root".to_string(), "Root".to_string()), LayoutNode::new("child1".to_string(), "Child 1".to_string()), LayoutNode::new("child2".to_string(), "Child 2".to_string())];
+    let nodes = vec![
+        LayoutNode::new("root".to_string(), "Root".to_string()),
+        LayoutNode::new("child1".to_string(), "Child 1".to_string()),
+        LayoutNode::new("child2".to_string(), "Child 2".to_string()),
+    ];
 
     let edges = vec![LayoutEdge::new("root".to_string(), "child1".to_string()), LayoutEdge::new("root".to_string(), "child2".to_string())];
 
@@ -98,7 +105,11 @@ fn test_hierarchical_layout_directions() {
 
 #[test]
 fn test_force_directed_layout() {
-    let nodes = vec![LayoutNode::new("a".to_string(), "A".to_string()), LayoutNode::new("b".to_string(), "B".to_string()), LayoutNode::new("c".to_string(), "C".to_string())];
+    let nodes = vec![
+        LayoutNode::new("a".to_string(), "A".to_string()),
+        LayoutNode::new("b".to_string(), "B".to_string()),
+        LayoutNode::new("c".to_string(), "C".to_string()),
+    ];
 
     let edges = vec![LayoutEdge::new("a".to_string(), "b".to_string()), LayoutEdge::new("b".to_string(), "c".to_string())];
 
@@ -160,7 +171,8 @@ fn test_single_node_layout() {
 
 #[test]
 fn test_node_types() {
-    let node_types = vec![NodeType::Default, NodeType::Function, NodeType::Struct, NodeType::Enum, NodeType::Variable, NodeType::Constant, NodeType::Module];
+    let node_types =
+        vec![NodeType::Default, NodeType::Function, NodeType::Struct, NodeType::Enum, NodeType::Variable, NodeType::Constant, NodeType::Module];
 
     for (i, node_type) in node_types.iter().enumerate() {
         let node = LayoutNode::new(format!("node_{}", i), format!("Node {}", i)).with_type(*node_type);
@@ -170,7 +182,8 @@ fn test_node_types() {
 
 #[test]
 fn test_edge_types() {
-    let edge_types = vec![EdgeType::Default, EdgeType::Dependency, EdgeType::Inheritance, EdgeType::Association, EdgeType::Composition, EdgeType::Call];
+    let edge_types =
+        vec![EdgeType::Default, EdgeType::Dependency, EdgeType::Inheritance, EdgeType::Association, EdgeType::Composition, EdgeType::Call];
 
     for (i, edge_type) in edge_types.iter().enumerate() {
         let edge = LayoutEdge::new(format!("from_{}", i), format!("to_{}", i)).with_type(*edge_type);

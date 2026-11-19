@@ -76,11 +76,7 @@ fn smoke_lmm_math_constants() {
     // LMM stores ScriptPercentScaleDown as an integer percentage (Short = 70
     // and 50), not as a 0–1 fraction. We assert the raw parsed value.
     assert!((c.script_percent_scale_down - 70.0).abs() < 1.0, "script_percent={}", c.script_percent_scale_down);
-    assert!(
-        (c.script_script_percent_scale_down - 50.0).abs() < 1.0,
-        "scriptscript_percent={}",
-        c.script_script_percent_scale_down
-    );
+    assert!((c.script_script_percent_scale_down - 50.0).abs() < 1.0, "scriptscript_percent={}", c.script_script_percent_scale_down);
 }
 
 #[test]

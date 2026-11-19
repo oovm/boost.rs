@@ -4,7 +4,7 @@ use crate::{
     builder::{ValkyrieBuilder, text},
     lexer::{keywords::ValkyrieKeywords, token_type::ValkyrieTokenType},
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 /// Extracts the raw content of a quote capture by removing both delimiter runs.
 fn strip_delimiters(raw: &str, quote_count: usize) -> String {
@@ -21,7 +21,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             if let RedTree::Leaf(t) = child {
                 match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     // 紧邻的标识符前缀（`r`、`b` 等）只是捕获事实的携带者，语义由编译器解释。
                     ValkyrieTokenType::Identifier => {
                         let prefix_text = text(source, t.span);
@@ -64,7 +67,11 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::QuoteLiteral(QuoteLiteral { prefix, quote, quote_count: quote_count as u8, content, content_span, span }))
     }
 
-    pub(crate) fn build_bool_literal<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_bool_literal<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut value = false;
         for child in node.children() {
@@ -78,7 +85,11 @@ impl<'config> ValkyrieBuilder<'config> {
         Ok(TermExpression::BooleanLiteral { value, span })
     }
 
-    pub(crate) fn build_identifier_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_identifier_expr<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         let span = node.span();
         let identifier = crate::builder::utils::build_identifier(&node, source, span)?;
         Ok(TermExpression::NamePath(Box::new(NamePath { parts: vec![identifier.clone()], span: identifier.span })))

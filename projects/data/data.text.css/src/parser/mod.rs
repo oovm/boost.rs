@@ -5,12 +5,12 @@ use crate::{
     language::CssLanguage,
     lexer::{CssLexer, CssTokenType},
 };
-pub use element_type::CssElementType;
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
+pub use element_type::CssElementType;
 
 pub(crate) type State<'a, S> = ParserState<'a, CssLanguage, S>;
 
@@ -29,13 +29,23 @@ impl<'config> CssParser<'config> {
 
 impl<'config> Parser<CssLanguage> for CssParser<'config> {
     /// Parses the CSS source code into a green tree.
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CssLanguage>) -> ParseOutput<'a, CssLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CssLanguage>,
+    ) -> ParseOutput<'a, CssLanguage> {
         let lexer = CssLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
 
             while state.not_at_end() {
-                if state.at(CssTokenType::AtRule) || state.at(CssTokenType::AtImport) || state.at(CssTokenType::AtMedia) { self.parse_at_rule(state)? } else { self.parse_ruleset(state)? }
+                if state.at(CssTokenType::AtRule) || state.at(CssTokenType::AtImport) || state.at(CssTokenType::AtMedia) {
+                    self.parse_at_rule(state)?
+                }
+                else {
+                    self.parse_ruleset(state)?
+                }
             }
 
             Ok(state.finish_at(cp, CssElementType::SourceFile))
@@ -111,7 +121,8 @@ impl<'config> CssParser<'config> {
 
         // Property
         let cp_prop = state.checkpoint();
-        while state.not_at_end() && !state.at(CssTokenType::Colon) && !state.at(CssTokenType::Semicolon) && !state.at(CssTokenType::RightBrace) {
+        while state.not_at_end() && !state.at(CssTokenType::Colon) && !state.at(CssTokenType::Semicolon) && !state.at(CssTokenType::RightBrace)
+        {
             state.bump()
         }
         state.finish_at(cp_prop, CssElementType::Property);

@@ -27,7 +27,12 @@ impl<'config> PlantUmlParser<'config> {
 }
 
 impl Parser<PlantUmlLanguage> for PlantUmlParser<'_> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<PlantUmlLanguage>) -> ParseOutput<'a, PlantUmlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<PlantUmlLanguage>,
+    ) -> ParseOutput<'a, PlantUmlLanguage> {
         parse_with_lexer(&PlantUmlLexer::new(self._config), text, edits, cache, |state| {
             let root_checkpoint = state.checkpoint();
             let diagram = detect_diagram(state);
@@ -98,7 +103,11 @@ impl Parser<PlantUmlLanguage> for PlantUmlParser<'_> {
                                 parse_statement_line(state, PlantUmlElementType::ComponentStatement);
                             }
                             DiagramKind::Mixed { conflict } => {
-                                return Err(state.source.syntax_error("PlantUML source mixes class and sequence declarations, one diagram family per source is required".to_string(), conflict));
+                                return Err(state.source.syntax_error(
+                                    "PlantUML source mixes class and sequence declarations, one diagram family per source is required"
+                                        .to_string(),
+                                    conflict,
+                                ));
                             }
                         }
                     }
@@ -178,7 +187,23 @@ fn detect_diagram<S: Source + ?Sized>(state: &ParserState<'_, PlantUmlLanguage, 
             let text = state.peek_at(index).map(|token| state.source.get_text_in(token.span).into_owned()).unwrap_or_default();
             let head = text.to_ascii_lowercase();
 
-            if matches!(head.as_str(), "component" | "package" | "port" | "portin" | "portout" | "database" | "node" | "cloud" | "artifact" | "folder" | "frame" | "rectangle" | "queue" | "storage") {
+            if matches!(
+                head.as_str(),
+                "component"
+                    | "package"
+                    | "port"
+                    | "portin"
+                    | "portout"
+                    | "database"
+                    | "node"
+                    | "cloud"
+                    | "artifact"
+                    | "folder"
+                    | "frame"
+                    | "rectangle"
+                    | "queue"
+                    | "storage"
+            ) {
                 component_marker.get_or_insert(offset);
             }
             else if kind == PlantUmlTokenType::Text && text.starts_with('[') && text.ends_with(']') {
@@ -192,7 +217,22 @@ fn detect_diagram<S: Source + ?Sized>(state: &ParserState<'_, PlantUmlLanguage, 
             else if head == "state" && !next_is_arrow(state, index + 1) {
                 state_marker.get_or_insert(offset);
             }
-            else if matches!(head.as_str(), "start" | "stop" | "if" | "elseif" | "else" | "endif" | "fork" | "repeat" | "while" | "endwhile" | "partition" | "detach" | "kill") {
+            else if matches!(
+                head.as_str(),
+                "start"
+                    | "stop"
+                    | "if"
+                    | "elseif"
+                    | "else"
+                    | "endif"
+                    | "fork"
+                    | "repeat"
+                    | "while"
+                    | "endwhile"
+                    | "partition"
+                    | "detach"
+                    | "kill"
+            ) {
                 activity_marker.get_or_insert(offset);
             }
             else if kind == PlantUmlTokenType::Colon || kind == PlantUmlTokenType::LeftParen {
@@ -271,13 +311,20 @@ fn next_significant_is_left_brace<S: Source + ?Sized>(state: &ParserState<'_, Pl
     }
 }
 
-fn ensure_container<S: Source + ?Sized>(state: &mut ParserState<'_, PlantUmlLanguage, S>, container: &mut Option<((usize, usize), PlantUmlElementType)>, kind: PlantUmlElementType) {
+fn ensure_container<S: Source + ?Sized>(
+    state: &mut ParserState<'_, PlantUmlLanguage, S>,
+    container: &mut Option<((usize, usize), PlantUmlElementType)>,
+    kind: PlantUmlElementType,
+) {
     if container.is_none() {
         *container = Some((state.checkpoint(), kind));
     }
 }
 
-fn close_container<S: Source + ?Sized>(state: &mut ParserState<'_, PlantUmlLanguage, S>, container: &mut Option<((usize, usize), PlantUmlElementType)>) {
+fn close_container<S: Source + ?Sized>(
+    state: &mut ParserState<'_, PlantUmlLanguage, S>,
+    container: &mut Option<((usize, usize), PlantUmlElementType)>,
+) {
     if let Some((checkpoint, kind)) = container.take() {
         state.finish_at(checkpoint, kind);
     }
@@ -291,7 +338,9 @@ fn parse_statement_line<S: Source + ?Sized>(state: &mut ParserState<'_, PlantUml
 
 fn parse_class_line<S: Source + ?Sized>(state: &mut ParserState<'_, PlantUmlLanguage, S>) {
     match state.peek_kind() {
-        Some(PlantUmlTokenType::Class | PlantUmlTokenType::Interface | PlantUmlTokenType::Enum | PlantUmlTokenType::Abstract) => parse_class_declaration(state),
+        Some(PlantUmlTokenType::Class | PlantUmlTokenType::Interface | PlantUmlTokenType::Enum | PlantUmlTokenType::Abstract) => {
+            parse_class_declaration(state)
+        }
         Some(kind) if is_name_kind(kind) => parse_class_relation(state),
         Some(_) => parse_error_line(state, "unrecognized class diagram statement"),
         None => (),
@@ -416,7 +465,10 @@ fn parse_member_block<S: Source + ?Sized>(state: &mut ParserState<'_, PlantUmlLa
 fn parse_class_member<S: Source + ?Sized>(state: &mut ParserState<'_, PlantUmlLanguage, S>) {
     let checkpoint = state.checkpoint();
 
-    if !matches!(state.peek_kind(), Some(PlantUmlTokenType::Plus | PlantUmlTokenType::Minus | PlantUmlTokenType::Hash | PlantUmlTokenType::Tilde)) {
+    if !matches!(
+        state.peek_kind(),
+        Some(PlantUmlTokenType::Plus | PlantUmlTokenType::Minus | PlantUmlTokenType::Hash | PlantUmlTokenType::Tilde)
+    ) {
         state.syntax_error("class member must start with `+`, `-`, `#` or `~`");
         skip_to_line_end(state);
         state.finish_at(checkpoint, PlantUmlElementType::Error);

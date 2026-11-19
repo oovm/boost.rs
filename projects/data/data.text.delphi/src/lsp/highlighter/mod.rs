@@ -33,7 +33,27 @@ impl DelphiHighlighter {
     pub fn highlight(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
         // Simple implementation: match keywords only
-        let keywords = ["program", "unit", "interface", "implementation", "begin", "end", "var", "type", "procedure", "function", "if", "then", "else", "for", "to", "do", "while", "repeat", "until"];
+        let keywords = [
+            "program",
+            "unit",
+            "interface",
+            "implementation",
+            "begin",
+            "end",
+            "var",
+            "type",
+            "procedure",
+            "function",
+            "if",
+            "then",
+            "else",
+            "for",
+            "to",
+            "do",
+            "while",
+            "repeat",
+            "until",
+        ];
 
         for keyword in keywords {
             let mut start = 0;

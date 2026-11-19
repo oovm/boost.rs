@@ -3,10 +3,7 @@ use std::{
     io::Write as _,
 };
 
-use data_compression::{
-    CodecLimits,
-    {deflate::DeflateLevel, zlib::Zlib},
-};
+use data_compression::{CodecLimits, deflate::DeflateLevel, zlib::Zlib};
 
 use document_ir::{AssetId, AssetKind, Block, BreakKind, DocumentGraph, Inline, NodeId};
 

@@ -141,7 +141,11 @@ impl ElementType for TclElementType {
         match self {
             TclElementType::Root => UniversalElementRole::Root,
             TclElementType::Command => UniversalElementRole::Expression,
-            TclElementType::Word | TclElementType::SimpleWord | TclElementType::VariableWord | TclElementType::ScriptWord | TclElementType::BracedWord => UniversalElementRole::Expression,
+            TclElementType::Word
+            | TclElementType::SimpleWord
+            | TclElementType::VariableWord
+            | TclElementType::ScriptWord
+            | TclElementType::BracedWord => UniversalElementRole::Expression,
             TclElementType::Identifier => UniversalElementRole::Name,
             TclElementType::Number | TclElementType::StringLiteral => UniversalElementRole::Value,
             _ => UniversalElementRole::None,

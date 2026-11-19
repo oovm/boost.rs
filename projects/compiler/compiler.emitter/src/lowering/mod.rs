@@ -18,10 +18,10 @@ pub mod backends;
 pub mod features;
 pub(crate) mod shared;
 
-#[cfg(not(feature = "ovm-lane"))]
-use self::backends::{clr, jvm, wasm};
 #[cfg(feature = "ovm-lane")]
 use self::backends::{clr, jvm, ovm, wasm};
+#[cfg(not(feature = "ovm-lane"))]
+use self::backends::{clr, jvm, wasm};
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
     backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
@@ -52,8 +52,12 @@ pub(crate) fn testing_lower_fragment_to_jvm_class(submission: &FragmentSubmissio
 
 pub(crate) fn testing_lower_fragment_to_jvm_managed_surface(
     submission: &FragmentSubmission,
-) -> Result<(crate::emitter_backend_jvm::JvmClassFile, Vec<crate::emitter_backend_jvm::JvmClassFile>, Option<crate::ManagedAbiContract>, Option<String>)>
-{
+) -> Result<(
+    crate::emitter_backend_jvm::JvmClassFile,
+    Vec<crate::emitter_backend_jvm::JvmClassFile>,
+    Option<crate::ManagedAbiContract>,
+    Option<String>,
+)> {
     let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
     Ok((lowered.class_file, lowered.companion_classes, lowered.managed_abi, lowered.entry_launcher))
 }

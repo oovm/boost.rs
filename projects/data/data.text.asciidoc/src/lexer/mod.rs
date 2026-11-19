@@ -389,7 +389,8 @@ impl<'config> AsciidocLexer<'config> {
         while state.not_at_end() {
             if let Some(ch) = state.peek() {
                 match ch {
-                    ' ' | '\t' | '\n' | '\r' | '#' | '=' | '-' | '+' | '|' | '`' | '*' | '[' | ']' | '(' | ')' | '!' | '~' | '^' | '.' | ':' | '{' | '\\' => break,
+                    ' ' | '\t' | '\n' | '\r' | '#' | '=' | '-' | '+' | '|' | '`' | '*' | '[' | ']' | '(' | ')' | '!' | '~' | '^' | '.'
+                    | ':' | '{' | '\\' => break,
                     _ => {
                         state.advance(ch.len_utf8());
                     }
@@ -454,7 +455,12 @@ impl<'config> AsciidocLexer<'config> {
 }
 
 impl<'config> Lexer<AsciidocLanguage> for AsciidocLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<AsciidocLanguage>) -> LexOutput<AsciidocLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<AsciidocLanguage>,
+    ) -> LexOutput<AsciidocLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

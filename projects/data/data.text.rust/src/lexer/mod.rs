@@ -64,7 +64,12 @@ pub struct RustLexer<'config> {
 pub(crate) type State<'a, S> = LexerState<'a, S, RustLanguage>;
 
 impl<'config> Lexer<RustLanguage> for RustLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<RustLanguage>) -> LexOutput<RustLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<RustLanguage>,
+    ) -> LexOutput<RustLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

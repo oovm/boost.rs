@@ -30,7 +30,9 @@ fn test_sql_builder_session_statements() {
     let config = SqlLanguage::default();
     let builder = SqlBuilder::new(&config);
 
-    for (source, expected) in [("BEGIN", TransactionAction::Begin), ("COMMIT TRANSACTION", TransactionAction::Commit), ("ROLLBACK", TransactionAction::Rollback)] {
+    for (source, expected) in
+        [("BEGIN", TransactionAction::Begin), ("COMMIT TRANSACTION", TransactionAction::Commit), ("ROLLBACK", TransactionAction::Rollback)]
+    {
         let mut session = ParseSession::<SqlLanguage>::default();
         let result = builder.build(&SourceText::new(source), &[], &mut session);
         let root = result.result.unwrap_or_else(|error| panic!("{source}: {error:?} {:?}", result.diagnostics));
@@ -113,7 +115,10 @@ fn test_sql_builder_savepoint_round_trip() {
 fn test_sql_builder_savepoint_missing_name_is_rejected() {
     assert!(rejection_reason("SAVEPOINT;").contains("requires a name"), "SAVEPOINT without name must be rejected");
     assert!(rejection_reason("ROLLBACK TO;").contains("requires a savepoint name"), "ROLLBACK TO without name must be rejected");
-    assert!(rejection_reason("ROLLBACK TO SAVEPOINT;").contains("requires a savepoint name"), "ROLLBACK TO SAVEPOINT without name must be rejected");
+    assert!(
+        rejection_reason("ROLLBACK TO SAVEPOINT;").contains("requires a savepoint name"),
+        "ROLLBACK TO SAVEPOINT without name must be rejected"
+    );
     assert!(rejection_reason("RELEASE;").contains("requires a savepoint name"), "RELEASE without name must be rejected");
     assert!(rejection_reason("RELEASE SAVEPOINT;").contains("requires a savepoint name"), "RELEASE SAVEPOINT without name must be rejected");
 }
@@ -333,7 +338,10 @@ fn test_sql_builder_is_predicate_source_round_trip() {
         assert_eq!(source, expected, "{sql}");
         // The printed source must build the same predicate again.
         let rebuilt = build_where(&source);
-        assert!(matches!(rebuilt, Expression::Unary { .. } | Expression::IsNull { .. } | Expression::IsTruth { .. }), "unexpected rebuilt predicate for {sql}: {rebuilt:?}");
+        assert!(
+            matches!(rebuilt, Expression::Unary { .. } | Expression::IsNull { .. } | Expression::IsTruth { .. }),
+            "unexpected rebuilt predicate for {sql}: {rebuilt:?}"
+        );
     }
 }
 
@@ -597,7 +605,9 @@ fn test_sql_builder_in_subquery() {
     };
     assert!(matches!(expr.as_ref(), Expression::Identifier(identifier) if identifier.name.as_ref() == "a"));
     assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "u"));
-    assert!(matches!(&query.items[0], SelectItem::Expression { expr: Expression::Identifier(identifier), .. } if identifier.name.as_ref() == "b"));
+    assert!(
+        matches!(&query.items[0], SelectItem::Expression { expr: Expression::Identifier(identifier), .. } if identifier.name.as_ref() == "b")
+    );
 
     let Expression::InSubquery { negated: true, .. } = build_where("SELECT * FROM t WHERE a NOT IN (SELECT b FROM u);")
     else {
@@ -623,7 +633,9 @@ fn test_sql_builder_exists_predicate() {
         panic!("Expected EXISTS");
     };
     assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "u"));
-    assert!(matches!(&query.items[0], SelectItem::Expression { expr: Expression::Identifier(identifier), .. } if identifier.name.as_ref() == "b"));
+    assert!(
+        matches!(&query.items[0], SelectItem::Expression { expr: Expression::Identifier(identifier), .. } if identifier.name.as_ref() == "b")
+    );
 
     // `NOT EXISTS` is one predicate, not a unary `NOT` wrapped around `EXISTS`.
     let Expression::Exists { negated: true, .. } = build_where("SELECT * FROM t WHERE NOT EXISTS (SELECT b FROM u);")
@@ -811,10 +823,18 @@ fn test_sql_builder_group_by_items_and_having() {
     assert_eq!(*index, 1);
     assert_eq!(sql.get(span.start..span.end), Some("1"));
 
-    assert!(matches!(&group_by.items[2], GroupByItem::Expression(Expression::FunctionCall { .. })), "expected a function item, got {:?}", group_by.items[2]);
+    assert!(
+        matches!(&group_by.items[2], GroupByItem::Expression(Expression::FunctionCall { .. })),
+        "expected a function item, got {:?}",
+        group_by.items[2]
+    );
 
     let having = select.having.as_ref().unwrap_or_else(|| panic!("Missing HAVING"));
-    assert!(matches!(having.condition, Expression::Binary { op: BinaryOperator::Greater, .. }), "unexpected HAVING predicate {:?}", having.condition);
+    assert!(
+        matches!(having.condition, Expression::Binary { op: BinaryOperator::Greater, .. }),
+        "unexpected HAVING predicate {:?}",
+        having.condition
+    );
 
     assert_eq!(source, "SELECT dept,COUNT(*)FROM employees GROUP BY dept,1,LOWER(name)HAVING COUNT(*)>1;");
 }
@@ -1184,7 +1204,9 @@ fn test_sql_builder_insert_on_conflict_do_nothing() {
 
 #[test]
 fn test_sql_builder_insert_on_conflict_do_update() {
-    let (statement, _source) = build_statement("INSERT INTO users (id, name) VALUES (1, 'John') ON CONFLICT (id) DO UPDATE SET name = 'Jane' WHERE users.name IS NULL;");
+    let (statement, _source) = build_statement(
+        "INSERT INTO users (id, name) VALUES (1, 'John') ON CONFLICT (id) DO UPDATE SET name = 'Jane' WHERE users.name IS NULL;",
+    );
 
     let SqlStatement::Insert(insert) = &statement
     else {
@@ -1201,13 +1223,16 @@ fn test_sql_builder_insert_on_conflict_do_update() {
     assert!(selection.is_some());
 
     // Round trip through `ToSource` keeps the clause intact.
-    let (_, rendered) = build_statement("INSERT INTO users (id, name) VALUES (1, 'John') ON CONFLICT (id) DO UPDATE SET name = 'Jane' WHERE users.name IS NULL;");
+    let (_, rendered) = build_statement(
+        "INSERT INTO users (id, name) VALUES (1, 'John') ON CONFLICT (id) DO UPDATE SET name = 'Jane' WHERE users.name IS NULL;",
+    );
     let (reparsed, reparsed_source) = build_statement(&rendered);
     let SqlStatement::Insert(reparsed) = &reparsed
     else {
         panic!("Expected Insert statement after round trip, got {reparsed:?}");
     };
-    let reparsed_conflict = reparsed.on_conflict.as_ref().unwrap_or_else(|| panic!("Expected `ON CONFLICT` after round trip, got {reparsed:?}"));
+    let reparsed_conflict =
+        reparsed.on_conflict.as_ref().unwrap_or_else(|| panic!("Expected `ON CONFLICT` after round trip, got {reparsed:?}"));
     let OnConflictAction::DoUpdate { assignments, selection } = &reparsed_conflict.action
     else {
         panic!("Expected `DO UPDATE` after round trip, got {:?}", reparsed_conflict.action);
@@ -1314,7 +1339,10 @@ fn test_sql_builder_table_constraints() {
 
     assert!(matches!(&constraints[2], TableConstraint::Check { .. }), "Expected CHECK, got {:?}", constraints[2]);
 
-    assert_eq!(source, "CREATE TABLE orders(id INT,user_id INT,total INT,PRIMARY KEY(id DESC,user_id ASC) ON CONFLICT REPLACE,FOREIGN KEY(user_id) REFERENCES users(id),CHECK(total>=0));");
+    assert_eq!(
+        source,
+        "CREATE TABLE orders(id INT,user_id INT,total INT,PRIMARY KEY(id DESC,user_id ASC) ON CONFLICT REPLACE,FOREIGN KEY(user_id) REFERENCES users(id),CHECK(total>=0));"
+    );
 
     // The printed statement must parse back into the same constraints.
     let (reparsed, reparsed_source) = build_statement(&source);
@@ -1523,7 +1551,10 @@ fn test_sql_builder_table_aliases() {
     else {
         panic!("Expected Select statement, got {statement:?}");
     };
-    assert_eq!(named_table(select.from.as_ref().unwrap_or_else(|| panic!("Missing table"))).alias.as_ref().map(|alias| alias.name.as_ref()), Some("u"));
+    assert_eq!(
+        named_table(select.from.as_ref().unwrap_or_else(|| panic!("Missing table"))).alias.as_ref().map(|alias| alias.name.as_ref()),
+        Some("u")
+    );
     assert!(select.order_by.is_some());
 }
 
@@ -1743,7 +1774,11 @@ fn test_sql_builder_scalar_subquery_in_projection() {
     };
     assert_eq!(alias.as_ref().map(|alias| alias.name.as_ref()), Some("top"));
     assert!(matches!(query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "t"));
-    assert!(matches!(&query.items[0], SelectItem::Expression { expr: Expression::FunctionCall { name, .. }, .. } if name.name.as_ref() == "MAX"), "Expected `MAX(v)` in the subquery, got {:?}", query.items[0]);
+    assert!(
+        matches!(&query.items[0], SelectItem::Expression { expr: Expression::FunctionCall { name, .. }, .. } if name.name.as_ref() == "MAX"),
+        "Expected `MAX(v)` in the subquery, got {:?}",
+        query.items[0]
+    );
     assert_eq!(source, "SELECT(SELECT MAX(v)FROM t)AS top FROM x;");
 }
 
@@ -1806,7 +1841,8 @@ fn test_sql_cst_subquery_nodes() {
     // A parenthesized query in an expression position becomes an `Expression`
     // wrapping a `Subquery` whose child is the nested `SelectStatement`.
     let kinds = cst_node_kinds("SELECT (SELECT MAX(v) FROM t) FROM x;");
-    let subquery = kinds.iter().position(|kind| *kind == SqlElementType::Subquery).unwrap_or_else(|| panic!("Missing Subquery node in {kinds:?}"));
+    let subquery =
+        kinds.iter().position(|kind| *kind == SqlElementType::Subquery).unwrap_or_else(|| panic!("Missing Subquery node in {kinds:?}"));
     assert_eq!(kinds.get(subquery + 1), Some(&SqlElementType::SelectStatement));
 
     // `IN (SELECT ...)` and `EXISTS (SELECT ...)` keep producing `Subquery`
@@ -1894,11 +1930,21 @@ fn test_sql_builder_standalone_offset_keeps_offset_semantics() {
     };
     let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing OFFSET clause"));
     assert!(limit_clause.limit.is_none());
-    assert!(matches!(&limit_clause.offset, Some(Expression::Binary { .. })), "standalone OFFSET should accept a binary expression, got {:?}", limit_clause.offset);
+    assert!(
+        matches!(&limit_clause.offset, Some(Expression::Binary { .. })),
+        "standalone OFFSET should accept a binary expression, got {:?}",
+        limit_clause.offset
+    );
 
     // A clause keyword with no value at all is rejected with a clear message.
-    assert!(rejection_reason("SELECT a FROM t LIMIT;").contains("LIMIT/OFFSET clause requires at least one value"), "LIMIT without a value must name both keywords in the error");
-    assert!(rejection_reason("SELECT a FROM t OFFSET;").contains("LIMIT/OFFSET clause requires at least one value"), "OFFSET without a value must name both keywords in the error");
+    assert!(
+        rejection_reason("SELECT a FROM t LIMIT;").contains("LIMIT/OFFSET clause requires at least one value"),
+        "LIMIT without a value must name both keywords in the error"
+    );
+    assert!(
+        rejection_reason("SELECT a FROM t OFFSET;").contains("LIMIT/OFFSET clause requires at least one value"),
+        "OFFSET without a value must name both keywords in the error"
+    );
 }
 
 #[test]
@@ -1910,7 +1956,11 @@ fn test_sql_builder_limit_offset_expressions() {
         panic!("Expected Select statement");
     };
     let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
-    assert!(matches!(&limit_clause.limit, Some(Expression::Subquery { .. })), "LIMIT should accept a scalar subquery, got {:?}", limit_clause.limit);
+    assert!(
+        matches!(&limit_clause.limit, Some(Expression::Subquery { .. })),
+        "LIMIT should accept a scalar subquery, got {:?}",
+        limit_clause.limit
+    );
 
     // Expression (column reference + arithmetic) as OFFSET value.
     let (statement, _source) = build_statement("SELECT * FROM t LIMIT 10 OFFSET a + b;");
@@ -1920,7 +1970,11 @@ fn test_sql_builder_limit_offset_expressions() {
     };
     let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
     assert!(matches!(&limit_clause.limit, Some(Expression::Literal(Literal::Number(v, _))) if v.as_ref() == "10"));
-    assert!(matches!(&limit_clause.offset, Some(Expression::Binary { .. })), "OFFSET should accept a binary expression, got {:?}", limit_clause.offset);
+    assert!(
+        matches!(&limit_clause.offset, Some(Expression::Binary { .. })),
+        "OFFSET should accept a binary expression, got {:?}",
+        limit_clause.offset
+    );
 
     // Bare identifier as LIMIT value (resolved by semantic layer, parser accepts it).
     let (statement, _source) = build_statement("SELECT * FROM t LIMIT n;");
@@ -1929,7 +1983,10 @@ fn test_sql_builder_limit_offset_expressions() {
         panic!("Expected Select statement");
     };
     let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
-    assert!(matches!(&limit_clause.limit, Some(Expression::Identifier(id)) if id.name.as_ref() == "n"), "LIMIT should accept a bare identifier");
+    assert!(
+        matches!(&limit_clause.limit, Some(Expression::Identifier(id)) if id.name.as_ref() == "n"),
+        "LIMIT should accept a bare identifier"
+    );
 
     // Negative literal as LIMIT value (unary minus).
     let (statement, _source) = build_statement("SELECT * FROM t LIMIT -1;");
@@ -1938,5 +1995,8 @@ fn test_sql_builder_limit_offset_expressions() {
         panic!("Expected Select statement");
     };
     let limit_clause = select.limit.as_ref().unwrap_or_else(|| panic!("Missing LIMIT clause"));
-    assert!(matches!(&limit_clause.limit, Some(Expression::Unary { op: UnaryOperator::Minus, .. })), "LIMIT should accept unary minus expression");
+    assert!(
+        matches!(&limit_clause.limit, Some(Expression::Unary { op: UnaryOperator::Minus, .. })),
+        "LIMIT should accept unary minus expression"
+    );
 }

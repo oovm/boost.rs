@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::language::DLanguage;
-use data_text_core::{Builder, BuilderCache, GreenNode, TextError, Parser, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, SourceText, TextEdit, TextError, source::Source};
 
 /// D language AST builder
 #[derive(Clone)]
@@ -22,7 +22,12 @@ impl<'config> DBuilder<'config> {
 }
 
 impl<'config> Builder<DLanguage> for DBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DLanguage>) -> data_text_core::builder::BuildOutput<DLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<DLanguage>,
+    ) -> data_text_core::builder::BuildOutput<DLanguage> {
         let parser = crate::parser::DParser::new(self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<DLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);
@@ -31,7 +36,9 @@ impl<'config> Builder<DLanguage> for DBuilder<'config> {
             Ok(green_tree) => {
                 let source_text = SourceText::new(source.get_text_in((0..source.length()).into()).into_owned());
                 match self.build_root(green_tree, &source_text) {
-                    Ok(ast_root) => data_text_core::builder::BuildOutput::<DLanguage> { result: Ok(ast_root), diagnostics: parse_result.diagnostics },
+                    Ok(ast_root) => {
+                        data_text_core::builder::BuildOutput::<DLanguage> { result: Ok(ast_root), diagnostics: parse_result.diagnostics }
+                    }
                     Err(build_error) => {
                         let mut diagnostics = parse_result.diagnostics;
                         diagnostics.push(build_error.clone());
@@ -39,7 +46,9 @@ impl<'config> Builder<DLanguage> for DBuilder<'config> {
                     }
                 }
             }
-            Err(parse_error) => data_text_core::builder::BuildOutput::<DLanguage> { result: Err(parse_error), diagnostics: parse_result.diagnostics },
+            Err(parse_error) => {
+                data_text_core::builder::BuildOutput::<DLanguage> { result: Err(parse_error), diagnostics: parse_result.diagnostics }
+            }
         }
     }
 }

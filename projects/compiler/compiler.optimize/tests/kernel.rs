@@ -1,9 +1,8 @@
 use compiler_optimize::{
-    AlgebraicTerm, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicDimension, ObjectAlgebraicProgram, OptimizationRequest,
-    OptimizationSession, ProjectionPolicy, ReferenceManagement, RewriteEquation, RewritePhase, RewriteTheory, parse_term,
-    qualified_from_dotted,
+    AlgebraicTerm, CapabilityTag, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ObjectAlgebraicDimension,
+    ObjectAlgebraicProgram, OptimizationRequest, OptimizationSession, ProjectionPolicy, QualifiedName, ReferenceManagement, RewriteEquation,
+    RewritePhase, RewriteTheory, parse_term, qualified_from_dotted,
 };
-use compiler_optimize::{CapabilityTag, Identifier, QualifiedName};
 
 fn qualified(parts: &[&str]) -> QualifiedName {
     QualifiedName::new(parts.iter().map(|part| Identifier::new(part)).collect())

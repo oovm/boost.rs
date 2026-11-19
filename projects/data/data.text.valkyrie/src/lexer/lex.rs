@@ -14,7 +14,8 @@ pub(crate) type State<'a, S> = LexerState<'a, S, ValkyrieLanguage>;
 
 static VK_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
 // Valkyrie：行注释 `#`，块注释 `<# … #>`。不支持 `//` / `///` / `/* */`。
-static VK_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "<#", block_end: "#>", nested_blocks: true });
+static VK_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "<#", block_end: "#>", nested_blocks: true });
 
 impl crate::lexer::ValkyrieLexer<'_> {
     /// Runs the lexer on the given state.
@@ -249,7 +250,11 @@ impl crate::lexer::ValkyrieLexer<'_> {
             state.advance(c.len_utf8());
         }
         state.add_token(ValkyrieTokenType::Error, start, state.get_position());
-        state.add_error(data_text_core::TextError::syntax_error("unterminated quoted literal: opening run of 1 `'` requires a closing run of 1".to_string(), start, None));
+        state.add_error(data_text_core::TextError::syntax_error(
+            "unterminated quoted literal: opening run of 1 `'` requires a closing run of 1".to_string(),
+            start,
+            None,
+        ));
         true
     }
 
@@ -318,7 +323,11 @@ impl crate::lexer::ValkyrieLexer<'_> {
         }
 
         state.add_token(ValkyrieTokenType::Error, start, state.get_position());
-        state.add_error(data_text_core::TextError::syntax_error(format!("unterminated quoted literal: opening run of {quote_count} `{quote}` requires a closing run of {quote_count}"), start, None));
+        state.add_error(data_text_core::TextError::syntax_error(
+            format!("unterminated quoted literal: opening run of {quote_count} `{quote}` requires a closing run of {quote_count}"),
+            start,
+            None,
+        ));
         true
     }
 
@@ -352,7 +361,11 @@ impl crate::lexer::ValkyrieLexer<'_> {
                             break;
                         }
                     }
-                    state.add_token(if has_digit { ValkyrieTokenType::IntegerLiteral } else { ValkyrieTokenType::Error }, start, state.get_position());
+                    state.add_token(
+                        if has_digit { ValkyrieTokenType::IntegerLiteral } else { ValkyrieTokenType::Error },
+                        start,
+                        state.get_position(),
+                    );
                     return true;
                 }
                 state.advance(ch.len_utf8());
@@ -395,7 +408,11 @@ impl crate::lexer::ValkyrieLexer<'_> {
                     }
                     else {
                         state.add_token(ValkyrieTokenType::Error, start, state.get_position());
-                        state.add_error(data_text_core::TextError::syntax_error("float literal exponent requires at least one digit", start, None));
+                        state.add_error(data_text_core::TextError::syntax_error(
+                            "float literal exponent requires at least one digit",
+                            start,
+                            None,
+                        ));
                         return true;
                     }
                 }
@@ -410,7 +427,11 @@ impl crate::lexer::ValkyrieLexer<'_> {
                     _ => None,
                 };
                 if let Some(suffix) = suffix {
-                    let matches_suffix = suffix.chars().enumerate().all(|(offset, expected)| state.peek_next_n(offset).is_some_and(|ch| ch.eq_ignore_ascii_case(&expected))) && state.peek_next_n(suffix.len()).map_or(true, |ch| !is_xid_continue(ch));
+                    let matches_suffix = suffix
+                        .chars()
+                        .enumerate()
+                        .all(|(offset, expected)| state.peek_next_n(offset).is_some_and(|ch| ch.eq_ignore_ascii_case(&expected)))
+                        && state.peek_next_n(suffix.len()).map_or(true, |ch| !is_xid_continue(ch));
                     if matches_suffix {
                         state.advance(suffix.len());
                     }

@@ -399,8 +399,7 @@ impl<S: ByteSink> ZipStreamWriter<S> {
         let compressed = {
             let pending = self.pending.as_mut().expect("open member");
             pending.crc.update(chunk);
-            pending.uncompressed_size =
-                pending.uncompressed_size.checked_add(chunk.len() as u64).ok_or(ZipWriteError::SizeOverflow)?;
+            pending.uncompressed_size = pending.uncompressed_size.checked_add(chunk.len() as u64).ok_or(ZipWriteError::SizeOverflow)?;
             match pending.deflate.as_mut() {
                 Some(encoder) => {
                     let compressed = encoder.feed(chunk);
@@ -409,8 +408,7 @@ impl<S: ByteSink> ZipStreamWriter<S> {
                     Some(compressed)
                 }
                 None => {
-                    pending.compressed_size =
-                        pending.compressed_size.checked_add(chunk.len() as u64).ok_or(ZipWriteError::SizeOverflow)?;
+                    pending.compressed_size = pending.compressed_size.checked_add(chunk.len() as u64).ok_or(ZipWriteError::SizeOverflow)?;
                     None
                 }
             }
@@ -436,9 +434,7 @@ impl<S: ByteSink> ZipStreamWriter<S> {
         let zip64 = match self.zip64 {
             Zip64Mode::Always => true,
             Zip64Mode::Auto => {
-                pending.uncompressed_size >= u32::MAX as u64
-                    || pending.compressed_size >= u32::MAX as u64
-                    || pending.offset >= u32::MAX as u64
+                pending.uncompressed_size >= u32::MAX as u64 || pending.compressed_size >= u32::MAX as u64 || pending.offset >= u32::MAX as u64
             }
         };
         self.entries.push(PreparedEntry {
@@ -481,9 +477,7 @@ impl<S: ByteSink> ZipStreamWriter<S> {
         let needs_zip64 = match self.zip64 {
             Zip64Mode::Always => true,
             Zip64Mode::Auto => {
-                entry_count >= u16::MAX as u64
-                    || central_directory_size >= u32::MAX as u64
-                    || central_directory_offset >= u32::MAX as u64
+                entry_count >= u16::MAX as u64 || central_directory_size >= u32::MAX as u64 || central_directory_offset >= u32::MAX as u64
             }
         };
 
@@ -508,8 +502,7 @@ impl<S: ByteSink> ZipStreamWriter<S> {
     fn write_descriptor(&mut self, pending: &mut PendingEntry) -> Result<(), ZipWriteError> {
         if let Some(encoder) = pending.deflate.as_mut() {
             let tail = encoder.finish();
-            pending.compressed_size =
-                pending.compressed_size.checked_add(tail.len() as u64).ok_or(ZipWriteError::SizeOverflow)?;
+            pending.compressed_size = pending.compressed_size.checked_add(tail.len() as u64).ok_or(ZipWriteError::SizeOverflow)?;
             self.append(&tail)?;
         }
         let descriptor = data_descriptor(pending.crc.value(), pending.compressed_size, pending.uncompressed_size);
@@ -519,9 +512,7 @@ impl<S: ByteSink> ZipStreamWriter<S> {
     fn append(&mut self, bytes: &[u8]) -> Result<(), ZipWriteError> {
         match self.sink.append(bytes).map_err(ZipWriteError::Sink)? {
             WriteOutcome::Complete => Ok(()),
-            WriteOutcome::WouldExceedBudget { attempted, limit } => {
-                Err(ZipWriteError::Sink(WriteError::BudgetExceeded { attempted, limit }))
-            }
+            WriteOutcome::WouldExceedBudget { attempted, limit } => Err(ZipWriteError::Sink(WriteError::BudgetExceeded { attempted, limit })),
         }
     }
 }
@@ -571,9 +562,7 @@ fn write_archive(entries: Vec<ZipEntry>, zip64: Zip64Mode) -> Result<Vec<u8>, Zi
         let offset = output.len() as u64;
         let use_zip64 = match zip64 {
             Zip64Mode::Always => true,
-            Zip64Mode::Auto => {
-                uncompressed_size >= u32::MAX as u64 || compressed_size >= u32::MAX as u64 || offset >= u32::MAX as u64
-            }
+            Zip64Mode::Auto => uncompressed_size >= u32::MAX as u64 || compressed_size >= u32::MAX as u64 || offset >= u32::MAX as u64,
         };
         let flags = if entry.name_is_utf8 { FLAG_UTF8_NAME } else { 0 };
         let method = entry.compression.method();
@@ -629,9 +618,7 @@ fn write_archive(entries: Vec<ZipEntry>, zip64: Zip64Mode) -> Result<Vec<u8>, Zi
     let needs_zip64 = match zip64 {
         Zip64Mode::Always => true,
         Zip64Mode::Auto => {
-            entry_count >= u16::MAX as u64
-                || central_directory_size >= u32::MAX as u64
-                || central_directory_offset >= u32::MAX as u64
+            entry_count >= u16::MAX as u64 || central_directory_size >= u32::MAX as u64 || central_directory_offset >= u32::MAX as u64
         }
     };
 

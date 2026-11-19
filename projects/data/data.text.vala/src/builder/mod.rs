@@ -1,5 +1,5 @@
 use crate::{ast::*, language::ValaLanguage, parser::ValaParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for Vala language.
 pub struct ValaBuilder<'config> {
@@ -14,7 +14,12 @@ impl<'config> ValaBuilder<'config> {
 }
 
 impl<'config> Builder<ValaLanguage> for ValaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ValaLanguage>) -> data_text_core::builder::BuildOutput<ValaLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ValaLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ValaLanguage> {
         let parser = ValaParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<ValaLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

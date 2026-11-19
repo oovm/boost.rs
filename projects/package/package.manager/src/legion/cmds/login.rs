@@ -1,5 +1,7 @@
-use crate::legion::cmds::error::{LegionError, LegionResult};
-use crate::PackageManager;
+use crate::{
+    PackageManager,
+    legion::cmds::error::{LegionError, LegionResult},
+};
 use std::process::ExitCode;
 
 /// `legion login` arguments.

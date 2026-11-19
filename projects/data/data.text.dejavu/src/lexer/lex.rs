@@ -13,7 +13,8 @@ use unicode_ident::{is_xid_continue, is_xid_start};
 pub(crate) type State<'a, S> = LexerState<'a, S, DejavuLanguage>;
 
 static VK_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static VK_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "/*", block_end: "*/", nested_blocks: true });
+static VK_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "/*", block_end: "*/", nested_blocks: true });
 
 impl<'config> crate::lexer::DejavuLexer<'config> {
     /// Runs the lexer on the given state.
@@ -150,7 +151,12 @@ impl<'config> crate::lexer::DejavuLexer<'config> {
                 continue;
             }
 
-            let matched = self.lex_string_literal(state) || self.lex_char_literal(state) || self.lex_number_literal(state) || self.lex_identifier_or_keyword(state) || self.lex_operators(state) || self.lex_single_char_tokens(state);
+            let matched = self.lex_string_literal(state)
+                || self.lex_char_literal(state)
+                || self.lex_number_literal(state)
+                || self.lex_identifier_or_keyword(state)
+                || self.lex_operators(state)
+                || self.lex_single_char_tokens(state);
 
             if !matched {
                 if let Some(c) = state.current() {

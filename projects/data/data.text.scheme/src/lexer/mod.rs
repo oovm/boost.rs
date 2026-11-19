@@ -2,7 +2,7 @@
 use crate::{language::SchemeLanguage, lexer::token_type::SchemeTokenType};
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, Source, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -10,7 +10,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, SchemeLanguage>;
 
 static SCHEME_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static SCHEME_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: ";", block_start: "#|", block_end: "|#", nested_blocks: true });
+static SCHEME_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: ";", block_start: "#|", block_end: "|#", nested_blocks: true });
 static SCHEME_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 #[derive(Clone, Debug)]
@@ -20,7 +21,12 @@ pub struct SchemeLexer<'config> {
 }
 
 impl<'config> Lexer<SchemeLanguage> for SchemeLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<SchemeLanguage>) -> LexOutput<SchemeLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<SchemeLanguage>,
+    ) -> LexOutput<SchemeLanguage> {
         let mut state: State<'_, S> = LexerState::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)
@@ -207,8 +213,9 @@ impl<'config> SchemeLexer<'config> {
         let end = state.get_position();
 
         let kind = match text.as_str() {
-            "define" | "lambda" | "if" | "cond" | "case" | "and" | "or" | "not" | "let" | "let*" | "letrec" | "begin" | "do" | "quote" | "quasiquote" | "unquote" | "unquote-splicing" | "set!" | "delay" | "force" | "#t" | "#f" | "null" | "car" | "cdr"
-            | "cons" | "list" | "append" | "length" | "reverse" | "map" | "for-each" | "apply" => SchemeTokenType::Keyword,
+            "define" | "lambda" | "if" | "cond" | "case" | "and" | "or" | "not" | "let" | "let*" | "letrec" | "begin" | "do" | "quote"
+            | "quasiquote" | "unquote" | "unquote-splicing" | "set!" | "delay" | "force" | "#t" | "#f" | "null" | "car" | "cdr" | "cons"
+            | "list" | "append" | "length" | "reverse" | "map" | "for-each" | "apply" => SchemeTokenType::Keyword,
             _ => SchemeTokenType::Identifier,
         };
 

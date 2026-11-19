@@ -41,7 +41,14 @@ pub struct TemplateConfig {
 
 impl Default for TemplateConfig {
     fn default() -> Self {
-        Self { code_start: "<%".to_string(), code_end: "%>".to_string(), comment_start: "<#".to_string(), comment_end: "#>".to_string(), support_filter_pipe: false, legacy_for: false }
+        Self {
+            code_start: "<%".to_string(),
+            code_end: "%>".to_string(),
+            comment_start: "<#".to_string(),
+            comment_end: "#>".to_string(),
+            support_filter_pipe: false,
+            legacy_for: false,
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 //! Structural tests for the SPIR-V module layout adapter.
 
+use boost_source::binary::{ByteSource, ContentIdentity, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities};
 use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
-use boost_source::binary::{ByteSource, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, ContentIdentity};
 use data_binary_spirv::{
     SPIRV_ID_BOUND_CEILING, SPIRV_MAGIC, SpirvBoundSuspicion, SpirvByteError, SpirvLayoutError, SpirvModule, validate_spirv,
     validate_spirv_bytes,
@@ -331,12 +331,7 @@ fn short_header_read_keeps_the_requested_range() {
             let available = self.bytes.len() - offset;
             let to_copy = destination.len().min(available);
             destination[..to_copy].copy_from_slice(&self.bytes[offset..offset + to_copy]);
-            if to_copy == destination.len() {
-                Ok(ReadOutcome::Complete)
-            }
-            else {
-                Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 })
-            }
+            if to_copy == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 }) }
         }
 
         fn capabilities(&self) -> SourceCapabilities {
@@ -421,10 +416,7 @@ fn byte_slice_error_keeps_the_original_error() {
 #[test]
 fn byte_error_maps_layout_budget_and_source_failures() {
     assert_eq!(SpirvByteError::from(SpirvLayoutError::UnknownLength), SpirvByteError::Layout(SpirvLayoutError::UnknownLength));
-    assert_eq!(
-        SpirvByteError::from(SpirvLayoutError::Budget(BudgetError::ReadBytes)),
-        SpirvByteError::Budget(BudgetError::ReadBytes)
-    );
+    assert_eq!(SpirvByteError::from(SpirvLayoutError::Budget(BudgetError::ReadBytes)), SpirvByteError::Budget(BudgetError::ReadBytes));
     assert_eq!(SpirvByteError::from(BudgetError::ScanBytes), SpirvByteError::Budget(BudgetError::ScanBytes));
     assert_eq!(SpirvByteError::from(ReadError::Eof), SpirvByteError::Source(ReadError::Eof));
 }

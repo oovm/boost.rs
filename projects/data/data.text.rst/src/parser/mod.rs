@@ -2,7 +2,7 @@
 pub mod element_type;
 
 use crate::{language::RstLanguage, lexer::token_type::RstTokenType, parser::element_type::RstElementType as ET};
-use data_text_core::{GreenNode, TextError, Parser, ParserState, source::Source};
+use data_text_core::{GreenNode, Parser, ParserState, TextError, source::Source};
 
 /// Parser for reStructuredText language.
 pub struct RstParser<'config> {
@@ -17,7 +17,12 @@ impl<'config> RstParser<'config> {
 }
 
 impl<'config> Parser<RstLanguage> for RstParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl data_text_core::ParseCache<RstLanguage>) -> data_text_core::ParseOutput<'a, RstLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<RstLanguage>,
+    ) -> data_text_core::ParseOutput<'a, RstLanguage> {
         let lexer = crate::lexer::RstLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -150,7 +155,9 @@ impl<'config> Parser<RstLanguage> for RstParser<'config> {
                                                                     break;
                                                                 }
                                                             }
-                                                            if nested_indent_level <= indent_level || !matches!(state.peek_kind(), Some(RstTokenType::BulletListMarker)) {
+                                                            if nested_indent_level <= indent_level
+                                                                || !matches!(state.peek_kind(), Some(RstTokenType::BulletListMarker))
+                                                            {
                                                                 state.restore(nested_nl_checkpoint);
                                                                 break;
                                                             }
@@ -233,7 +240,9 @@ impl<'config> Parser<RstLanguage> for RstParser<'config> {
                                                                     break;
                                                                 }
                                                             }
-                                                            if nested_indent_level <= indent_level || !matches!(state.peek_kind(), Some(RstTokenType::EnumeratedListMarker)) {
+                                                            if nested_indent_level <= indent_level
+                                                                || !matches!(state.peek_kind(), Some(RstTokenType::EnumeratedListMarker))
+                                                            {
                                                                 state.restore(nested_nl_checkpoint);
                                                                 break;
                                                             }
@@ -406,7 +415,10 @@ impl<'config> RstParser<'config> {
             match kind {
                 RstTokenType::Emphasis => {
                     state.bump(); // Start marker
-                    while state.not_at_end() && state.peek_kind() != Some(RstTokenType::Emphasis) && state.peek_kind() != Some(RstTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(RstTokenType::Emphasis)
+                        && state.peek_kind() != Some(RstTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(RstTokenType::Emphasis) {
@@ -416,7 +428,10 @@ impl<'config> RstParser<'config> {
                 }
                 RstTokenType::Strong => {
                     state.bump(); // Start marker
-                    while state.not_at_end() && state.peek_kind() != Some(RstTokenType::Strong) && state.peek_kind() != Some(RstTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(RstTokenType::Strong)
+                        && state.peek_kind() != Some(RstTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(RstTokenType::Strong) {
@@ -427,7 +442,10 @@ impl<'config> RstParser<'config> {
                 RstTokenType::Literal => {
                     state.bump();
                     // 解析字面量内容
-                    while state.not_at_end() && state.peek_kind() != Some(RstTokenType::Literal) && state.peek_kind() != Some(RstTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(RstTokenType::Literal)
+                        && state.peek_kind() != Some(RstTokenType::Newline)
+                    {
                         state.bump();
                     }
                     if state.peek_kind() == Some(RstTokenType::Literal) {
@@ -438,7 +456,10 @@ impl<'config> RstParser<'config> {
                 RstTokenType::Link => {
                     state.bump();
                     // 解析链接内容
-                    while state.not_at_end() && state.peek_kind() != Some(RstTokenType::Link) && state.peek_kind() != Some(RstTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(RstTokenType::Link)
+                        && state.peek_kind() != Some(RstTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(RstTokenType::Link) {

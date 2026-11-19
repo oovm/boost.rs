@@ -11,7 +11,10 @@ impl PrologTokenType {
 
     /// Check if this type is a structure element.
     pub fn is_element(&self) -> bool {
-        matches!(self, Self::Root | Self::Functor | Self::Clause | Self::Rule | Self::Fact | Self::Query | Self::Directive | Self::List | Self::Structure)
+        matches!(
+            self,
+            Self::Root | Self::Functor | Self::Clause | Self::Rule | Self::Fact | Self::Query | Self::Directive | Self::List | Self::Structure
+        )
     }
 }
 

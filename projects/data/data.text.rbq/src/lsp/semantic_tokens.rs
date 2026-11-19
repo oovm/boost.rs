@@ -21,7 +21,16 @@ impl SemanticTokensProvider<RbqLanguage> for RbqSemanticTokensProvider {
 }
 
 impl RbqSemanticTokensProvider {
-    fn collect_semantic_tokens<S: Source + ?Sized>(&self, node: &RedNode<RbqLanguage>, source: &S, line_map: &LineMap, tokens: &mut Vec<SemanticToken>, last_line: &mut u32, last_start: &mut u32, parent_kind: Option<RbqElementType>) {
+    fn collect_semantic_tokens<S: Source + ?Sized>(
+        &self,
+        node: &RedNode<RbqLanguage>,
+        source: &S,
+        line_map: &LineMap,
+        tokens: &mut Vec<SemanticToken>,
+        last_line: &mut u32,
+        last_start: &mut u32,
+        parent_kind: Option<RbqElementType>,
+    ) {
         for child in node.children() {
             match child {
                 RedTree::Leaf(leaf) => {
@@ -74,7 +83,13 @@ impl RbqSemanticTokensProvider {
                     let delta_line = line - *last_line;
                     let delta_start = if delta_line == 0 { start - *last_start } else { start };
 
-                    tokens.push(SemanticToken { delta_line, delta_start, length: (span.end - span.start) as u32, token_type, token_modifiers_bitset: 0 });
+                    tokens.push(SemanticToken {
+                        delta_line,
+                        delta_start,
+                        length: (span.end - span.start) as u32,
+                        token_type,
+                        token_modifiers_bitset: 0,
+                    });
 
                     *last_line = line;
                     *last_start = start;

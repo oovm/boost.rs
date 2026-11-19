@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::ScalaRoot, language::ScalaLanguage, parser::ScalaParser};
-use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, RedNode, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, Parser, RedNode, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Scala language
 #[derive(Clone)]
@@ -14,7 +14,11 @@ impl<'config> ScalaBuilder<'config> {
         Self { config }
     }
 
-    pub(crate) fn build_root(&self, green_tree: data_text_core::GreenNode<ScalaLanguage>, source: &data_text_core::SourceText) -> Result<ScalaRoot, data_text_core::TextError> {
+    pub(crate) fn build_root(
+        &self,
+        green_tree: data_text_core::GreenNode<ScalaLanguage>,
+        source: &data_text_core::SourceText,
+    ) -> Result<ScalaRoot, data_text_core::TextError> {
         let mut declarations = Vec::new();
         let mut offset = 0;
 
@@ -30,7 +34,12 @@ impl<'config> ScalaBuilder<'config> {
         Ok(ScalaRoot { span: (0..source.length()).into(), declarations })
     }
 
-    fn build_declaration(&self, node: &data_text_core::GreenNode<ScalaLanguage>, source: &data_text_core::SourceText, offset: usize) -> Option<crate::ast::Declaration> {
+    fn build_declaration(
+        &self,
+        node: &data_text_core::GreenNode<ScalaLanguage>,
+        source: &data_text_core::SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Declaration> {
         use crate::{lexer::token_type::ScalaTokenType, parser::element_type::ScalaElementType};
         let kind: ScalaElementType = node.kind;
         let start = offset;
@@ -60,7 +69,12 @@ impl<'config> ScalaBuilder<'config> {
         }
     }
 
-    fn parse_container(&self, node: &data_text_core::GreenNode<ScalaLanguage>, source: &data_text_core::SourceText, offset: usize) -> (String, Vec<crate::ast::Declaration>) {
+    fn parse_container(
+        &self,
+        node: &data_text_core::GreenNode<ScalaLanguage>,
+        source: &data_text_core::SourceText,
+        offset: usize,
+    ) -> (String, Vec<crate::ast::Declaration>) {
         use crate::parser::element_type::ScalaElementType;
         let mut name = "InferredName".to_string();
         let mut members = vec![];
@@ -90,7 +104,12 @@ impl<'config> ScalaBuilder<'config> {
         (name, members)
     }
 
-    fn find_identifier(&self, node: &data_text_core::GreenNode<ScalaLanguage>, source: &data_text_core::SourceText, offset: usize) -> Option<String> {
+    fn find_identifier(
+        &self,
+        node: &data_text_core::GreenNode<ScalaLanguage>,
+        source: &data_text_core::SourceText,
+        offset: usize,
+    ) -> Option<String> {
         let mut inner_offset = offset;
         for child in node.children() {
             if let data_text_core::GreenTree::Leaf(leaf) = child {
@@ -105,7 +124,12 @@ impl<'config> ScalaBuilder<'config> {
 }
 
 impl<'config> Builder<ScalaLanguage> for ScalaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<ScalaLanguage>) -> TextDiagnostics<ScalaRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<ScalaLanguage>,
+    ) -> TextDiagnostics<ScalaRoot> {
         let parser = ScalaParser::new(self.config);
         let lexer = crate::lexer::ScalaLexer::new(&self.config);
 

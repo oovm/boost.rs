@@ -161,9 +161,14 @@ impl ElementType for IdlElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::SourceFile => UniversalElementRole::Root,
-            Self::ModuleDeclaration | Self::InterfaceDeclaration | Self::StructDeclaration | Self::UnionDeclaration | Self::EnumDeclaration | Self::TypedefDeclaration | Self::ConstDeclaration | Self::ExceptionDeclaration => {
-                UniversalElementRole::Definition
-            }
+            Self::ModuleDeclaration
+            | Self::InterfaceDeclaration
+            | Self::StructDeclaration
+            | Self::UnionDeclaration
+            | Self::EnumDeclaration
+            | Self::TypedefDeclaration
+            | Self::ConstDeclaration
+            | Self::ExceptionDeclaration => UniversalElementRole::Definition,
             Self::Module | Self::Interface | Self::Struct | Self::Union | Self::Enum => UniversalElementRole::Container,
             _ => UniversalElementRole::None,
         }

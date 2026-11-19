@@ -5,10 +5,14 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
-    pub(crate) fn build_mezzo<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<TypeFunctionDefinition, TextError> {
+    pub(crate) fn build_mezzo<S: Source + ?Sized>(
+        &self,
+        node: RedNode<DejavuLanguage>,
+        source: &S,
+    ) -> Result<TypeFunctionDefinition, TextError> {
         let span = node.span();
         let mut name = IdentifierNode { name: String::new(), span: Default::default() };
         let mut annotations = Vec::new();
@@ -133,10 +137,17 @@ impl<'config> DejavuBuilder<'config> {
                     DejavuElementType::Whitespace | DejavuElementType::LineComment | DejavuElementType::BlockComment => continue,
                     DejavuElementType::Attribute => annotations.push(self.build_attribute(n, source)?),
                     DejavuElementType::Type => ty = Some(text(source, n.span().into()).trim().to_string()),
-                    _ => return Err(source.syntax_error(format!("Unexpected node in parameter definition: {:?}", n.green.kind), n.span().start)),
+                    _ => {
+                        return Err(source.syntax_error(format!("Unexpected node in parameter definition: {:?}", n.green.kind), n.span().start));
+                    }
                 },
             }
         }
-        if let Some(name) = name { Ok(ParameterNode { annotations, name, ty, span }) } else { Err(source.syntax_error(format!("Missing name in parameter at {:?}", span), span.start)) }
+        if let Some(name) = name {
+            Ok(ParameterNode { annotations, name, ty, span })
+        }
+        else {
+            Err(source.syntax_error(format!("Missing name in parameter at {:?}", span), span.start))
+        }
     }
 }

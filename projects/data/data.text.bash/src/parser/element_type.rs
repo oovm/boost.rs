@@ -51,7 +51,9 @@ impl ElementType for BashElementType {
             Self::Root => UniversalElementRole::Root,
             Self::FunctionDefinition => UniversalElementRole::Definition,
             Self::VariableAssignment => UniversalElementRole::Statement,
-            Self::CommandStatement | Self::IfStatement | Self::ForStatement | Self::WhileStatement | Self::Pipeline | Self::Redirection => UniversalElementRole::Statement,
+            Self::CommandStatement | Self::IfStatement | Self::ForStatement | Self::WhileStatement | Self::Pipeline | Self::Redirection => {
+                UniversalElementRole::Statement
+            }
             Self::Error => UniversalElementRole::Error,
             _ => UniversalElementRole::None,
         }

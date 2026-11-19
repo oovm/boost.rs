@@ -17,7 +17,12 @@ impl<'config> AsciidocParser<'config> {
 }
 
 impl<'config> Parser<AsciidocLanguage> for AsciidocParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl data_text_core::ParseCache<AsciidocLanguage>) -> data_text_core::ParseOutput<'a, AsciidocLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<AsciidocLanguage>,
+    ) -> data_text_core::ParseOutput<'a, AsciidocLanguage> {
         let lexer = crate::lexer::AsciidocLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -90,7 +95,9 @@ impl<'config> Parser<AsciidocLanguage> for AsciidocParser<'config> {
                                                                     break;
                                                                 }
                                                             }
-                                                            if nested_indent_level <= indent_level || !matches!(state.peek_kind(), Some(AsciidocTokenType::ListItemMarker)) {
+                                                            if nested_indent_level <= indent_level
+                                                                || !matches!(state.peek_kind(), Some(AsciidocTokenType::ListItemMarker))
+                                                            {
                                                                 state.restore(nested_nl_checkpoint);
                                                                 break;
                                                             }
@@ -328,7 +335,10 @@ impl<'config> AsciidocParser<'config> {
             match kind {
                 AsciidocTokenType::Emphasis => {
                     state.bump(); // Start marker
-                    while state.not_at_end() && state.peek_kind() != Some(AsciidocTokenType::Emphasis) && state.peek_kind() != Some(AsciidocTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(AsciidocTokenType::Emphasis)
+                        && state.peek_kind() != Some(AsciidocTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(AsciidocTokenType::Emphasis) {
@@ -338,7 +348,10 @@ impl<'config> AsciidocParser<'config> {
                 }
                 AsciidocTokenType::Strong => {
                     state.bump(); // Start marker
-                    while state.not_at_end() && state.peek_kind() != Some(AsciidocTokenType::Strong) && state.peek_kind() != Some(AsciidocTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(AsciidocTokenType::Strong)
+                        && state.peek_kind() != Some(AsciidocTokenType::Newline)
+                    {
                         self.parse_inline(state);
                     }
                     if state.peek_kind() == Some(AsciidocTokenType::Strong) {
@@ -349,7 +362,10 @@ impl<'config> AsciidocParser<'config> {
                 AsciidocTokenType::Monospace => {
                     state.bump();
                     // 解析字面量内容
-                    while state.not_at_end() && state.peek_kind() != Some(AsciidocTokenType::Monospace) && state.peek_kind() != Some(AsciidocTokenType::Newline) {
+                    while state.not_at_end()
+                        && state.peek_kind() != Some(AsciidocTokenType::Monospace)
+                        && state.peek_kind() != Some(AsciidocTokenType::Newline)
+                    {
                         state.bump();
                     }
                     if state.peek_kind() == Some(AsciidocTokenType::Monospace) {

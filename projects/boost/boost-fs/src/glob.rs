@@ -123,14 +123,17 @@ impl Pattern {
     /// 只做组件匹配，不访问文件系统；路径是否存在由调用方自行判断。
     #[must_use]
     pub fn matches(&self, path: &Path) -> bool {
-        let Ok(rest) = path.strip_prefix(&self.base) else {
+        let Ok(rest) = path.strip_prefix(&self.base)
+        else {
             return false;
         };
-        let names: Vec<&OsStr> =
-            rest.components().filter_map(|component| match component {
+        let names: Vec<&OsStr> = rest
+            .components()
+            .filter_map(|component| match component {
                 std::path::Component::Normal(name) => Some(name),
                 _ => None,
-            }).collect();
+            })
+            .collect();
         match_segments(&self.segments, &names)
     }
 }
@@ -158,7 +161,8 @@ fn reject_unsupported(pattern: &str) -> Result<(), PatternError> {
 }
 
 fn expand(directory: &Path, segments: &[Segment], matches: &mut Vec<PathBuf>) {
-    let Some((first, rest)) = segments.split_first() else {
+    let Some((first, rest)) = segments.split_first()
+    else {
         if directory.exists() {
             matches.push(directory.to_owned());
         }
@@ -188,7 +192,8 @@ fn expand(directory: &Path, segments: &[Segment], matches: &mut Vec<PathBuf>) {
         }
         Segment::Wildcard(mask) => {
             for entry in sorted_entries(directory) {
-                let Some(name) = entry.file_name().and_then(OsStr::to_str) else {
+                let Some(name) = entry.file_name().and_then(OsStr::to_str)
+                else {
                     continue;
                 };
                 if !wildcard_match(mask, name) {
@@ -206,7 +211,8 @@ fn expand(directory: &Path, segments: &[Segment], matches: &mut Vec<PathBuf>) {
 }
 
 fn sorted_entries(directory: &Path) -> Vec<PathBuf> {
-    let Ok(read) = fs::read_dir(directory) else {
+    let Ok(read) = fs::read_dir(directory)
+    else {
         return Vec::new();
     };
     let mut entries: Vec<PathBuf> = read.filter_map(|entry| entry.ok().map(|entry| entry.path())).collect();
@@ -222,11 +228,7 @@ fn match_segments(segments: &[Segment], names: &[&OsStr]) -> bool {
             names.first().is_some_and(|name| *name == OsStr::new(expected)) && match_segments(rest, &names[1..])
         }
         Some((Segment::Wildcard(mask), rest)) => {
-            names
-                .first()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| wildcard_match(mask, name))
-                && match_segments(rest, &names[1..])
+            names.first().and_then(|name| name.to_str()).is_some_and(|name| wildcard_match(mask, name)) && match_segments(rest, &names[1..])
         }
     }
 }

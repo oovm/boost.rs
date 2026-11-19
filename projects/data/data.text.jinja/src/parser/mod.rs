@@ -96,7 +96,11 @@ impl<'config> JinjaParser<'config> {
         }
     }
 
-    fn parse_if_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_if_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // if
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -123,13 +127,18 @@ impl<'config> JinjaParser<'config> {
                 state.expect(JinjaTokenType::LeftBracePercent)?;
                 state.expect(JinjaTokenType::Identifier)?; // else
                 state.expect(JinjaTokenType::PercentRightBrace)?;
-                while state.not_at_end() && !(state.at(JinjaTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false)) {
+                while state.not_at_end()
+                    && !(state.at(JinjaTokenType::LeftBracePercent)
+                        && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false))
+                {
                     self.parse_node(state)?;
                 }
             }
         }
 
-        if state.at(JinjaTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false) {
+        if state.at(JinjaTokenType::LeftBracePercent)
+            && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false)
+        {
             state.expect(JinjaTokenType::LeftBracePercent)?;
             state.expect(JinjaTokenType::Identifier)?; // endif
             state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -139,7 +148,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_for_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_for_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // for
         self.parse_expression(state)?; // x
         // Jinja for syntax: for x in y
@@ -189,12 +202,19 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_block_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_block_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // block
         state.expect(JinjaTokenType::Identifier)?; // name
         state.expect(JinjaTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(JinjaTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endblock").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(JinjaTokenType::LeftBracePercent)
+                && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endblock").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -209,7 +229,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_macro_definition<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_macro_definition<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?; // macro
         state.expect(JinjaTokenType::Identifier)?; // name
 
@@ -228,7 +252,10 @@ impl<'config> JinjaParser<'config> {
 
         state.expect(JinjaTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(JinjaTokenType::LeftBracePercent) && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endmacro").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(JinjaTokenType::LeftBracePercent)
+                && state.peek_non_trivia_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endmacro").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -240,7 +267,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_extends_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_extends_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -248,7 +279,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_include_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_include_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::PercentRightBrace)?;
@@ -256,7 +291,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_set_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_set_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         state.expect(JinjaTokenType::Identifier)?;
         state.expect(JinjaTokenType::Eq)?;
@@ -266,7 +305,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_from_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_from_import_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         state.expect(JinjaTokenType::Identifier)?;
@@ -278,7 +321,11 @@ impl<'config> JinjaParser<'config> {
         Ok(())
     }
 
-    fn parse_import_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, cp: (usize, usize)) -> Result<(), data_text_core::TextError> {
+    fn parse_import_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        cp: (usize, usize),
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(JinjaTokenType::Identifier)?;
         self.parse_expression(state)?;
         while state.not_at_end() && !state.at(JinjaTokenType::PercentRightBrace) {
@@ -293,7 +340,11 @@ impl<'config> JinjaParser<'config> {
         self.parse_binary_expression(state, 0)
     }
 
-    fn parse_binary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, min_precedence: i32) -> Result<(), data_text_core::TextError> {
+    fn parse_binary_expression<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        min_precedence: i32,
+    ) -> Result<(), data_text_core::TextError> {
         let cp = state.checkpoint();
         self.parse_primary_expression(state)?;
 
@@ -315,7 +366,12 @@ impl<'config> JinjaParser<'config> {
         match kind {
             JinjaTokenType::Or => 0,
             JinjaTokenType::And => 1,
-            JinjaTokenType::EqEq | JinjaTokenType::Neq | JinjaTokenType::Lt | JinjaTokenType::Gt | JinjaTokenType::LtEq | JinjaTokenType::GtEq => 3,
+            JinjaTokenType::EqEq
+            | JinjaTokenType::Neq
+            | JinjaTokenType::Lt
+            | JinjaTokenType::Gt
+            | JinjaTokenType::LtEq
+            | JinjaTokenType::GtEq => 3,
             JinjaTokenType::Pipe => 4,
             JinjaTokenType::Plus | JinjaTokenType::Minus => 5,
             JinjaTokenType::Star | JinjaTokenType::Slash => 6,
@@ -374,7 +430,12 @@ impl<'config> JinjaParser<'config> {
                 self.parse_primary_expression(state)?;
             }
             _ => {
-                while state.not_at_end() && !state.at(JinjaTokenType::PercentRightBrace) && !state.at(JinjaTokenType::DoubleRightBrace) && !state.at(JinjaTokenType::RightParen) && !state.at(JinjaTokenType::Comma) {
+                while state.not_at_end()
+                    && !state.at(JinjaTokenType::PercentRightBrace)
+                    && !state.at(JinjaTokenType::DoubleRightBrace)
+                    && !state.at(JinjaTokenType::RightParen)
+                    && !state.at(JinjaTokenType::Comma)
+                {
                     state.advance();
                 }
             }
@@ -384,7 +445,12 @@ impl<'config> JinjaParser<'config> {
 }
 
 impl<'config> Parser<JinjaLanguage> for JinjaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JinjaLanguage>) -> ParseOutput<'a, JinjaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JinjaLanguage>,
+    ) -> ParseOutput<'a, JinjaLanguage> {
         let lexer = JinjaLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

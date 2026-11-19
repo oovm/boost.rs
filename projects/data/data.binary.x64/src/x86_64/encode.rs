@@ -94,12 +94,8 @@ impl X64Encoder {
                     emit_mov_reg_mem_reg(&mut module.text, dst, base, offset);
                 }
                 X64Instruction::MovRegRspOffset { dst, offset } => emit_mov_reg_rsp_offset(&mut module.text, dst, offset),
-                X64Instruction::MovRspOffsetImm32 { offset, value } => {
-                    emit_mov_rsp_offset_imm32(&mut module.text, offset, value)
-                }
-                X64Instruction::MovMemRegImm32 { base, offset, value } => {
-                    emit_mov_mem_reg_imm32(&mut module.text, base, offset, value)
-                }
+                X64Instruction::MovRspOffsetImm32 { offset, value } => emit_mov_rsp_offset_imm32(&mut module.text, offset, value),
+                X64Instruction::MovMemRegImm32 { base, offset, value } => emit_mov_mem_reg_imm32(&mut module.text, base, offset, value),
                 X64Instruction::MovRspOffsetReg32 { offset, src } => {
                     emit_mov_rsp_offset_reg32(&mut module.text, offset, src);
                 }

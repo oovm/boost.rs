@@ -17,7 +17,12 @@ pub struct VhdlLexer<'config> {
 }
 
 impl<'config> Lexer<VhdlLanguage> for VhdlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<VhdlLanguage>) -> LexOutput<VhdlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<VhdlLanguage>,
+    ) -> LexOutput<VhdlLanguage> {
         let mut state = LexerState::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

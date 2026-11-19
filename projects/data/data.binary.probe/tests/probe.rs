@@ -1,5 +1,5 @@
-use data_binary_probe::{Confidence, ProbeSession, probe_memory};
 use boost_source::binary::MemorySource;
+use data_binary_probe::{Confidence, ProbeSession, probe_memory};
 
 #[test]
 fn zip_magic_at_start() {

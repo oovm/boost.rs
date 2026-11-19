@@ -1,7 +1,7 @@
 //! Bounded module view and the structural validation entry.
 
-use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::{ByteSource, ReadError};
+use data_binary_core::{BudgetTracker, ByteExtent};
 
 use crate::{
     error::{SpirvEvidence, SpirvLayoutError},
@@ -52,15 +52,9 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
             });
         }
 
-        let header_bytes = read_exact(
-            source,
-            ledger,
-            0,
-            SPIRV_HEADER_BYTES,
-            SpirvEvidence::new(0, ByteExtent { start: 0, len: SPIRV_HEADER_BYTES }),
-        )?;
-        let word_at =
-            |index: usize| u32::from_le_bytes(header_bytes[index * 4..index * 4 + 4].try_into().expect("4-byte header word"));
+        let header_bytes =
+            read_exact(source, ledger, 0, SPIRV_HEADER_BYTES, SpirvEvidence::new(0, ByteExtent { start: 0, len: SPIRV_HEADER_BYTES }))?;
+        let word_at = |index: usize| u32::from_le_bytes(header_bytes[index * 4..index * 4 + 4].try_into().expect("4-byte header word"));
         let magic = word_at(0);
         let version = word_at(1);
         let generator = word_at(2);
@@ -68,10 +62,7 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
         let schema = word_at(4);
 
         if magic != SPIRV_MAGIC {
-            return Err(SpirvLayoutError::BadMagic {
-                magic,
-                evidence: SpirvEvidence::new(0, ByteExtent { start: 0, len: SPIRV_WORD_BYTES }),
-            });
+            return Err(SpirvLayoutError::BadMagic { magic, evidence: SpirvEvidence::new(0, ByteExtent { start: 0, len: SPIRV_WORD_BYTES }) });
         }
         if schema != 0 {
             return Err(SpirvLayoutError::NonZeroSchema {
@@ -146,10 +137,7 @@ impl<'a, S: ByteSource + ?Sized> SpirvModule<'a, S> {
 ///
 /// Returns the module summary for a structurally valid module, or the classified
 /// failure that was found. Instruction semantics are never inspected.
-pub fn validate_spirv<S: ByteSource + ?Sized>(
-    source: &S,
-    ledger: &mut BudgetTracker,
-) -> Result<SpirvSummary, SpirvLayoutError> {
+pub fn validate_spirv<S: ByteSource + ?Sized>(source: &S, ledger: &mut BudgetTracker) -> Result<SpirvSummary, SpirvLayoutError> {
     SpirvModule::open(source, ledger)?.validate(ledger)
 }
 
@@ -162,7 +150,8 @@ pub(crate) fn read_exact<S: ByteSource + ?Sized>(
     evidence: SpirvEvidence,
 ) -> Result<Vec<u8>, SpirvLayoutError> {
     ledger.reserve_read_bytes(len).map_err(SpirvLayoutError::Budget)?;
-    let Some(range) = boost_source::ByteRange::with_len(start, len) else {
+    let Some(range) = boost_source::ByteRange::with_len(start, len)
+    else {
         ledger.release_read_bytes(len).map_err(SpirvLayoutError::Budget)?;
         return Err(SpirvLayoutError::Unavailable { reason: "byte range overflows `u64`".into(), evidence });
     };

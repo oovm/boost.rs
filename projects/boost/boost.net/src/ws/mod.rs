@@ -52,12 +52,7 @@ pub struct WsConfig {
 
 impl Default for WsConfig {
     fn default() -> Self {
-        Self {
-            max_message_bytes: 8 * 1024 * 1024,
-            timeout: Duration::from_secs(30),
-            tls: TlsConfig::default(),
-            headers: Vec::new(),
-        }
+        Self { max_message_bytes: 8 * 1024 * 1024, timeout: Duration::from_secs(30), tls: TlsConfig::default(), headers: Vec::new() }
     }
 }
 

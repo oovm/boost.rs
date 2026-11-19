@@ -141,7 +141,8 @@ pub fn validate_storage_identities(submission: &FragmentSubmission) -> Result<()
     let plan = &submission.backend_plan;
     let registered_layouts: std::collections::BTreeSet<LayoutId> = plan.aggregate_layouts().layouts.iter().map(|layout| layout.id).collect();
     for instance in plan.instances() {
-        let Some(view) = plan.get_function(&instance) else {
+        let Some(view) = plan.get_function(&instance)
+        else {
             continue;
         };
         let function = &view.function;
@@ -199,7 +200,8 @@ fn named_residual(ty: &SemanticType, registered_layouts: &std::collections::BTre
         SemanticType::Nominal { layout, .. } => {
             if registered_layouts.contains(layout) {
                 None
-            } else {
+            }
+            else {
                 Some(ty.clone())
             }
         }

@@ -42,8 +42,7 @@ impl TableShape {
 
     /// Primary-key column names, or `None` when the table has no primary key.
     pub fn order_columns(&self) -> Option<Vec<String>> {
-        let keys: Vec<String> =
-            self.columns.iter().filter(|column| column.primary).map(|column| column.name.clone()).collect();
+        let keys: Vec<String> = self.columns.iter().filter(|column| column.primary).map(|column| column.name.clone()).collect();
         if keys.is_empty() { None } else { Some(keys) }
     }
 }
@@ -72,12 +71,7 @@ fn target_type(column: &ColumnDef) -> Result<String, Error> {
             (Some(precision), Some(scale)) => format!("numeric({precision},{scale})"),
             _ => "numeric".to_owned(),
         },
-        other => {
-            return Err(Error::Unsupported(format!(
-                "column `{}` has source type `{other}` with no target mapping",
-                column.name
-            )))
-        }
+        other => return Err(Error::Unsupported(format!("column `{}` has source type `{other}` with no target mapping", column.name))),
     };
     Ok(rendered)
 }
@@ -112,26 +106,13 @@ pub fn upsert_statement(shape: &TableShape, rows: &[Vec<Option<String>>]) -> Res
     let mut values = Vec::with_capacity(rows.len());
     for row in rows {
         if row.len() != shape.columns.len() {
-            return Err(Error::Source(format!(
-                "table `{}` returned {} cells for {} columns",
-                shape.name,
-                row.len(),
-                shape.columns.len()
-            )));
+            return Err(Error::Source(format!("table `{}` returned {} cells for {} columns", shape.name, row.len(), shape.columns.len())));
         }
-        let cells: Vec<String> = types
-            .iter()
-            .zip(row.iter())
-            .map(|(target_type, value)| crate::literal::sql_literal(target_type, value.as_deref()))
-            .collect();
+        let cells: Vec<String> =
+            types.iter().zip(row.iter()).map(|(target_type, value)| crate::literal::sql_literal(target_type, value.as_deref())).collect();
         values.push(format!("({})", cells.join(", ")));
     }
-    let mut statement = format!(
-        "INSERT INTO {} ({}) VALUES {}",
-        quote_ident(&shape.name),
-        columns.join(", "),
-        values.join(", ")
-    );
+    let mut statement = format!("INSERT INTO {} ({}) VALUES {}", quote_ident(&shape.name), columns.join(", "), values.join(", "));
     if let Some(keys) = shape.order_columns() {
         let keys: Vec<String> = keys.iter().map(|key| quote_ident(key)).collect();
         let updates: Vec<String> = shape
@@ -146,7 +127,8 @@ pub fn upsert_statement(shape: &TableShape, rows: &[Vec<Option<String>>]) -> Res
         statement.push_str(&format!(" ON CONFLICT ({}) ", keys.join(", ")));
         if updates.is_empty() {
             statement.push_str("DO NOTHING");
-        } else {
+        }
+        else {
             statement.push_str(&format!("DO UPDATE SET {}", updates.join(", ")));
         }
     }
@@ -169,33 +151,17 @@ pub fn delete_by_keys(shape: &TableShape, order: &[String], keys: &[Vec<Option<S
         })
         .collect();
     let columns: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
-    format!(
-        "DELETE FROM {} WHERE ({}) IN ({})",
-        quote_ident(&shape.name),
-        columns.join(", "),
-        values.join(", ")
-    )
+    format!("DELETE FROM {} WHERE ({}) IN ({})", quote_ident(&shape.name), columns.join(", "), values.join(", "))
 }
 
 /// Primary-key-only window used to reconcile rows removed at the source.
 pub fn select_keys(shape: &TableShape, order: &[String], offset: u64, limit: usize) -> String {
     let columns: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
-    format!(
-        "SELECT {} FROM {} ORDER BY {} LIMIT {limit} OFFSET {offset}",
-        columns.join(", "),
-        quote_ident(&shape.name),
-        columns.join(", ")
-    )
+    format!("SELECT {} FROM {} ORDER BY {} LIMIT {limit} OFFSET {offset}", columns.join(", "), quote_ident(&shape.name), columns.join(", "))
 }
 
 /// Key-only window following `after`, used to rebuild the target key set.
-pub fn select_key_window(
-    shape: &TableShape,
-    order: &[String],
-    after: Option<&[Option<String>]>,
-    offset: u64,
-    limit: usize,
-) -> String {
+pub fn select_key_window(shape: &TableShape, order: &[String], after: Option<&[Option<String>]>, offset: u64, limit: usize) -> String {
     let columns: Vec<String> = order.iter().map(|column| quote_ident(column)).collect();
     window_sql(&columns.join(", "), shape, order, after, offset, limit)
 }
@@ -206,36 +172,18 @@ pub fn select_key_window(
 /// one index step per window instead of rescanning everything already compared.
 /// Composite keys keep `OFFSET`, because row-constructor comparison is not
 /// guaranteed to be supported by every target.
-pub fn select_after(
-    shape: &TableShape,
-    order: &[String],
-    after: Option<&[Option<String>]>,
-    offset: u64,
-    limit: usize,
-) -> String {
+pub fn select_after(shape: &TableShape, order: &[String], after: Option<&[Option<String>]>, offset: u64, limit: usize) -> String {
     window_sql("*", shape, order, after, offset, limit)
 }
 
 /// Builds one ordered window over `select_list`.
 ///
 /// Single-column keys use a keyset bound; composite keys fall back to `OFFSET`.
-fn window_sql(
-    select_list: &str,
-    shape: &TableShape,
-    order: &[String],
-    after: Option<&[Option<String>]>,
-    offset: u64,
-    limit: usize,
-) -> String {
+fn window_sql(select_list: &str, shape: &TableShape, order: &[String], after: Option<&[Option<String>]>, offset: u64, limit: usize) -> String {
     let keys: Vec<String> = order.iter().map(|key| quote_ident(key)).collect();
     let keyset = match (after, keys.as_slice()) {
         (Some(values), [key]) => {
-            let value = values
-                .first()
-                .cloned()
-                .flatten()
-                .map(|text| crate::literal::raw_literal(&text))
-                .unwrap_or_else(|| "NULL".to_owned());
+            let value = values.first().cloned().flatten().map(|text| crate::literal::raw_literal(&text)).unwrap_or_else(|| "NULL".to_owned());
             Some(format!(" WHERE {key} > {value}"))
         }
         _ => None,

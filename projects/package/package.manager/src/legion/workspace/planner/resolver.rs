@@ -312,8 +312,10 @@ impl WorkspaceResolver {
         build_target.target = request.resolved.platform.clone();
 
         let dependencies = self.collect_dependencies(&project_dir, &manifest, &build_target, true)?;
-        let output_dir =
-            request.output_dir.clone().unwrap_or_else(|| project_dir.join(".cache").join("test").join(request.resolved.platform.as_canonical_str()));
+        let output_dir = request
+            .output_dir
+            .clone()
+            .unwrap_or_else(|| project_dir.join(".cache").join("test").join(request.resolved.platform.as_canonical_str()));
 
         let mut visited = BTreeSet::new();
         let mut source_files = self.collect_source_closure(&project_dir, &manifest, &build_target, &mut visited, true)?;
@@ -328,7 +330,8 @@ impl WorkspaceResolver {
         // 测试声明才能进入语义闭包并生成 run contract；`source_files`（哈希输入）
         // 与语义组文件集合必须一致，否则缓存键与真实编译输入会分叉。
         let mut semantic_source_groups = semantic_source_groups;
-        let test_files = filter_source_files_for_target(collect_test_v_files(&project_dir)?, request.resolved.platform, Some(&request.enabled_features))?;
+        let test_files =
+            filter_source_files_for_target(collect_test_v_files(&project_dir)?, request.resolved.platform, Some(&request.enabled_features))?;
         append_test_files_to_entry_group(&mut semantic_source_groups, &test_files, &manifest.name)?;
         source_files.extend(test_files);
         source_files.sort();
@@ -676,10 +679,7 @@ impl WorkspaceResolver {
             dependency: dependency_name.to_string(),
             version: version.to_string(),
             registry: registry.to_string(),
-            reason: format!(
-                "依赖未出现在本地锁定快照 {}；compiler 不执行联网安装，请先由 package.* 解析并落盘",
-                vendor_path.display()
-            ),
+            reason: format!("依赖未出现在本地锁定快照 {}；compiler 不执行联网安装，请先由 package.* 解析并落盘", vendor_path.display()),
         })
     }
 }

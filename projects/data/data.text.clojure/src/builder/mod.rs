@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::ClojureLanguage, parser::ClojureParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Clojure language
 #[derive(Clone)]
@@ -16,7 +16,11 @@ impl<'config> ClojureBuilder<'config> {
     }
 
     /// Builds the AST root node from the green tree
-    pub fn build_root<'a>(&self, green: &'a GreenNode<'a, ClojureLanguage>, _source: &SourceText) -> Result<ClojureRoot<'a>, data_text_core::TextError> {
+    pub fn build_root<'a>(
+        &self,
+        green: &'a GreenNode<'a, ClojureLanguage>,
+        _source: &SourceText,
+    ) -> Result<ClojureRoot<'a>, data_text_core::TextError> {
         // Simplified AST building logic
         // Note: The current definition of ClojureRoot requires a RedNode; here we return a basic implementation.
         // The actual implementation usually involves converting GreenNode to RedNode.
@@ -26,7 +30,12 @@ impl<'config> ClojureBuilder<'config> {
 }
 
 impl<'config> Builder<ClojureLanguage> for ClojureBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<ClojureLanguage>) -> data_text_core::builder::BuildOutput<ClojureLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<ClojureLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ClojureLanguage> {
         let parser = ClojureParser::new(self.config);
         // We use the provided cache instead of creating a local one
         let parse_result = parser.parse(source, edits, cache);

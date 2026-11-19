@@ -8,11 +8,7 @@
 //! `OBJECT IDLETIME` 的空闲计时是真机按对象记录的命令语义，随命令族留在本模块；计时器
 //! 由监听器创建并跨连接共享，进程内保存、重启归零。
 
-use std::{
-    collections::HashMap,
-    sync::Mutex,
-    time::Instant,
-};
+use std::{collections::HashMap, sync::Mutex, time::Instant};
 
 use database_protocol_redis::{
     bind::{BindError, BoundAction, BoundCommand, SetCondition, SetExpiry, bind, bind_mget, bind_set},
@@ -575,11 +571,7 @@ fn expire_condition_allows(
 /// 表示迭代结束。所有值类型都参与扫描，键按字节序合并后去重，因此一次调用不保证
 /// 返回全部键，但持续回传游标直到 0 能覆盖当前键空间。`TYPE` 只筛出该类型的键；
 /// 真机对未知类型名不回错误，只是没有任何键能命中，这里同样返回空结果。
-fn handle_scan(
-    request: &Request<'_>,
-    executor: Option<&dyn KeyValueExecutor>,
-    namespace: &Namespace,
-) -> Result<Reply, CommandError> {
+fn handle_scan(request: &Request<'_>, executor: Option<&dyn KeyValueExecutor>, namespace: &Namespace) -> Result<Reply, CommandError> {
     let Some(executor) = executor
     else {
         return Err(CommandError::Failed("unsupported command".to_owned()));
@@ -1452,7 +1444,7 @@ pub fn handle_string(
             Err(error) => {
                 return Err(CommandError::Failed(error.to_string().to_owned()));
             }
-        }
+        };
     }
     else if command.eq_ignore_ascii_case(b"GETRANGE") {
         let Some(executor) = executor
@@ -2229,7 +2221,7 @@ pub fn handle_string(
                     Err(error) => Err(CommandError::Failed(error.to_string().to_owned())),
                 }
             }
-        }
+        };
     }
     else if command.eq_ignore_ascii_case(b"PSETEX") {
         let Some(executor) = executor
@@ -2360,12 +2352,7 @@ pub fn handle_string(
 /// 这是给持有整帧的嵌入宿主用的族入口：监听器按帧分派时用 [`handle_string`] 的
 /// `None` 返回值继续找下一个族，宿主只有一条命令要执行时用这里。命令语义、
 /// 参数校验与过期判定都在本模块，回复是正式的 `Reply` 值，字节编码归 protocol。
-pub fn execute(
-    arguments: &[&[u8]],
-    executor: &dyn KeyValueExecutor,
-    namespace: &Namespace,
-    protocol: u8,
-) -> Result<Reply, CommandError> {
+pub fn execute(arguments: &[&[u8]], executor: &dyn KeyValueExecutor, namespace: &Namespace, protocol: u8) -> Result<Reply, CommandError> {
     let request = Request { arguments: arguments.to_vec(), consumed: 0 };
     if let Some(reply) = handle_string(&request, Some(executor), Some(executor), None, namespace, protocol)? {
         return Ok(reply);

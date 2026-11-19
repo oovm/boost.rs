@@ -25,7 +25,12 @@ pub struct MojoParser<'config> {
 }
 
 impl<'config> Parser<MojoLanguage> for MojoParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<MojoLanguage>) -> ParseOutput<'a, MojoLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<MojoLanguage>,
+    ) -> ParseOutput<'a, MojoLanguage> {
         let lexer = MojoLexer::new(self.config);
         parse_with_lexer(&lexer, source, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -259,13 +264,23 @@ impl<'config> Pratt<MojoLanguage> for MojoParser<'config> {
         self.primary(state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, MojoLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, MojoLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, MojoLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, MojoLanguage>> {
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
         let (precedence, associativity) = match kind {
             MojoTokenType::Plus | MojoTokenType::Minus => (10, Associativity::Left),
             MojoTokenType::Star | MojoTokenType::Slash | MojoTokenType::Percent => (20, Associativity::Left),
-            MojoTokenType::EqualEqual | MojoTokenType::NotEqual | MojoTokenType::Less | MojoTokenType::LessEqual | MojoTokenType::Greater | MojoTokenType::GreaterEqual => (5, Associativity::Left),
+            MojoTokenType::EqualEqual
+            | MojoTokenType::NotEqual
+            | MojoTokenType::Less
+            | MojoTokenType::LessEqual
+            | MojoTokenType::Greater
+            | MojoTokenType::GreaterEqual => (5, Associativity::Left),
             _ => return None,
         };
 

@@ -152,7 +152,15 @@ impl<'config> FSharpBuilder<'config> {
             }
         }
 
-        Binding { name, is_rec, is_mutable: false, parameters, type_annotation: None, expression: expression.unwrap_or_else(|| Expression::Identifier(String::new())), span }
+        Binding {
+            name,
+            is_rec,
+            is_mutable: false,
+            parameters,
+            type_annotation: None,
+            expression: expression.unwrap_or_else(|| Expression::Identifier(String::new())),
+            span,
+        }
     }
 
     fn build_expression(&self, node: RedNode<FSharpLanguage>, source: &str) -> Expression {
@@ -178,7 +186,12 @@ impl<'config> FSharpBuilder<'config> {
 }
 
 impl<'config> Builder<FSharpLanguage> for FSharpBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::parser::ParseCache<FSharpLanguage>) -> BuildOutput<FSharpLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::parser::ParseCache<FSharpLanguage>,
+    ) -> BuildOutput<FSharpLanguage> {
         let parser = crate::parser::FSharpParser::new(self.language);
         let output = parser.parse(text, edits, cache);
 

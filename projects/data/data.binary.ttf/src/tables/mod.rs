@@ -29,8 +29,7 @@ pub use hhea::HheaTable;
 pub use hmtx::{HmtxTable, LongHorMetric};
 pub use loca::{LocaFormat, parse_loca};
 pub use math::{
-    GlyphAssembly, MathConstants, MathGlyphConstruction, MathGlyphInfo, MathKernTable, MathTable, MathVariantRecord,
-    MathVariants, PartRecord,
+    GlyphAssembly, MathConstants, MathGlyphConstruction, MathGlyphInfo, MathKernTable, MathTable, MathVariantRecord, MathVariants, PartRecord,
 };
 pub use maxp::MaxpTable;
 pub use name::{NameId, NameRecord, NameTable};

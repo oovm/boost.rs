@@ -3,7 +3,7 @@ use crate::{
     language::MarkdownLanguage,
     parser::{MarkdownParser, element_type::MarkdownElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextEdit, TextError, source::Source};
 
 /// AST builder for the Markdown language.
 #[derive(Clone)]
@@ -39,7 +39,12 @@ impl<'config> MarkdownBuilder<'config> {
         let kind = node.element_type();
 
         match kind {
-            MarkdownElementType::Heading1 | MarkdownElementType::Heading2 | MarkdownElementType::Heading3 | MarkdownElementType::Heading4 | MarkdownElementType::Heading5 | MarkdownElementType::Heading6 => {
+            MarkdownElementType::Heading1
+            | MarkdownElementType::Heading2
+            | MarkdownElementType::Heading3
+            | MarkdownElementType::Heading4
+            | MarkdownElementType::Heading5
+            | MarkdownElementType::Heading6 => {
                 let level = match kind {
                     MarkdownElementType::Heading1 => 1,
                     MarkdownElementType::Heading2 => 2,
@@ -264,7 +269,8 @@ impl<'config> MarkdownBuilder<'config> {
                     text
                 };
 
-                content.push(crate::ast::Block::Paragraph(crate::ast::Paragraph { content: display_text.trim().to_string(), span: node.span() }))
+                content
+                    .push(crate::ast::Block::Paragraph(crate::ast::Paragraph { content: display_text.trim().to_string(), span: node.span() }))
             }
         }
 
@@ -273,7 +279,12 @@ impl<'config> MarkdownBuilder<'config> {
 }
 
 impl<'config> Builder<MarkdownLanguage> for MarkdownBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<MarkdownLanguage>) -> data_text_core::builder::BuildOutput<MarkdownLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<MarkdownLanguage>,
+    ) -> data_text_core::builder::BuildOutput<MarkdownLanguage> {
         let parser = MarkdownParser::new(self.config);
         let mut parse_session = data_text_core::parser::session::ParseSession::<MarkdownLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_session);

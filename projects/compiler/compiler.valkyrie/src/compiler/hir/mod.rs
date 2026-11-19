@@ -8,14 +8,14 @@ pub mod ast_validation;
 pub mod call_binding;
 /// 闭包捕获分析。
 pub mod capture_analysis;
-/// 闭包 lambda 提升与捕获环境身份铸造。
-pub mod lambda_hoist;
 /// Field-name binding for brace struct literals.
 pub mod construct_binding;
 /// `HIR` 控制流语义校验。
 pub mod control_flow_validation;
 /// 语义诊断工具。
 pub mod diagnostics;
+/// 闭包 lambda 提升与捕获环境身份铸造。
+pub mod lambda_hoist;
 /// `AST -> HIR` lowering 与编译 facade。
 pub mod lowering;
 /// 名义类型相关能力。
@@ -40,7 +40,6 @@ pub mod type_lowering;
 pub mod type_relation;
 pub use crate::compiler::types::hir::*;
 pub use anonymous_class_hoist::hoist_anonymous_classes;
-pub use lambda_hoist::{bind_lambda_environments, hoist_lambdas};
 pub use ast_validation::validate_ast_root;
 pub use capture_analysis::CaptureAnalyzer;
 pub use construct_binding::bind_construct_fields;
@@ -48,6 +47,7 @@ pub use control_flow_validation::{
     function_body_contains_await, function_body_contains_block_on, function_body_contains_yield, function_can_effect_handle,
     function_can_suspend, function_has_suspend_effects, function_is_async, function_needs_suspend_fragment, validate_control_flow_module,
 };
+pub use lambda_hoist::{bind_lambda_environments, hoist_lambdas};
 pub use lowering::{
     AstToHir, CompilerSourceFile, CompilerSourceGroup, CompilerSourceInput, GeneratedSourceGroup, HirError, ValkyrieCompiler,
     build_generated_group, build_source_input_with_generated, compose_source_input_groups,

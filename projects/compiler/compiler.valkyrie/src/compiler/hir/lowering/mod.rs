@@ -55,9 +55,9 @@ pub use diagnostics::{
 };
 use diagnostics::{plan_source, plan_span};
 
-pub use contract_validation::validate_expr_call_contracts;
 pub use contract_validation::{
-    validate_block_call_contracts, validate_function_call_contracts, validate_hir_contract, validate_resolved_call_contracts,
+    validate_block_call_contracts, validate_expr_call_contracts, validate_function_call_contracts, validate_hir_contract,
+    validate_resolved_call_contracts,
 };
 
 #[doc(hidden)]
@@ -68,10 +68,10 @@ pub use nominal_declarations::{
 pub use quote_settle::settle_quote_literal_captures;
 
 pub use source_group::{
-    SelfOwnerPath, compiled_program_from_hir_module, exportable_dependency_functions, register_root_type_alias_targets,
-    root_type_alias_declarations, visible_nominal_type_names, visible_type_aliases,
+    SelfOwnerPath, build_generated_group, build_source_input_with_generated, compiled_program_from_hir_module, compose_source_input_groups,
+    exportable_dependency_functions, register_root_type_alias_targets, root_type_alias_declarations, validate_source_groups,
+    visible_nominal_type_names, visible_type_aliases,
 };
-pub use source_group::{build_generated_group, build_source_input_with_generated, compose_source_input_groups, validate_source_groups};
 
 pub use generic_binders::{
     array_owner_declaration, bind_declared_nominal_types, combined_impl_generic_context, freeze_enum_generic_binders,
@@ -93,8 +93,8 @@ pub use attribute_lowering::{
     default_module_name, generic_parameter_names, has_modifier, imply_generic_parameter_names, lower_attribute,
     lower_attribute_argument_expression, lower_bound_identifier, lower_derives, lower_documentation, lower_field, lower_generic_parameter,
     lower_generic_parameters, lower_method_params, lower_name_path, lower_param, lower_parent, lower_trait_associated_type,
-    lower_trait_path_from_type, lower_using, lower_visibility, lower_where_constraints, text_identifier, operator_member_name,
-    tag_attribute_discriminator, with_source,
+    lower_trait_path_from_type, lower_using, lower_visibility, lower_where_constraints, operator_member_name, tag_attribute_discriminator,
+    text_identifier, with_source,
 };
 
 pub use ast_to_hir::AstToHir;
@@ -260,7 +260,10 @@ impl ValkyrieCompiler {
 
     /// 从完整依赖顺序的源码快照构建一个语义闭包。
     #[doc(hidden)]
-    pub fn compile_source_groups_to_program(&self, groups: &[CompilerSourceGroup]) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
+    pub fn compile_source_groups_to_program(
+        &self,
+        groups: &[CompilerSourceGroup],
+    ) -> Result<crate::compiler::valkyrie_mir::CompiledValkyrieProgram, HirError> {
         self.compile_source_groups_to_program_with_host_bindings(groups, &[], &[], DEFAULT_COMPILE_ARCH)
     }
 

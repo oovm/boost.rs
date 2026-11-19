@@ -9,7 +9,7 @@ use crate::{
     lexer::{XmlLexer, token_type::XmlTokenType},
 };
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -22,7 +22,12 @@ pub struct XmlParser<'config> {
 }
 
 impl<'config> Parser<XmlLanguage> for XmlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<XmlLanguage>) -> ParseOutput<'a, XmlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<XmlLanguage>,
+    ) -> ParseOutput<'a, XmlLanguage> {
         let lexer = XmlLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

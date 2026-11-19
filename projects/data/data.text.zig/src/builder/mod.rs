@@ -4,7 +4,7 @@ use crate::{
     language::ZigLanguage,
     parser::{ZigParser, element_type::ZigElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, source::Source};
 use std::sync::Arc;
 
 /// AST builder for the Zig language
@@ -137,7 +137,11 @@ impl<'config> ZigBuilder<'config> {
         Ok(decl)
     }
 
-    fn build_container_field(&self, node: RedNode<ZigLanguage>, _source: &SourceText) -> Result<Arc<ContainerField>, data_text_core::TextError> {
+    fn build_container_field(
+        &self,
+        node: RedNode<ZigLanguage>,
+        _source: &SourceText,
+    ) -> Result<Arc<ContainerField>, data_text_core::TextError> {
         let span = node.span();
         let field = Arc::new(ContainerField { name: "field".to_string(), span: span.into() });
         Ok(field)
@@ -145,7 +149,12 @@ impl<'config> ZigBuilder<'config> {
 }
 
 impl<'config> Builder<ZigLanguage> for ZigBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<ZigLanguage>) -> data_text_core::builder::BuildOutput<ZigLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<ZigLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ZigLanguage> {
         let parser = ZigParser::new(self.config);
         let parse_result = parser.parse(source, edits, cache);
 

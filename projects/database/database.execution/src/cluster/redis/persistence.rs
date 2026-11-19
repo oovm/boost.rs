@@ -69,7 +69,10 @@ impl PersistenceState {
             return Ok(());
         }
         if arguments.len() != 1 {
-            return Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", String::from_utf8_lossy(command).to_lowercase())));
+            return Err(CommandError::Failed(format!(
+                "wrong number of arguments for '{}' command",
+                String::from_utf8_lossy(command).to_lowercase()
+            )));
         }
         Ok(())
     }
@@ -124,19 +127,28 @@ impl PersistenceState {
                 return error_outcome(CommandError::Failed("wrong number of arguments for 'lastsave' command".to_owned()));
             }
             // 真机认为启动即已保存，首次保存之前回服务器启动时刻。
-            return PersistenceOutcome { reply: Some(Reply::Integer(self.last_save.unwrap_or(self.started_unix))), action: PersistenceAction::None };
+            return PersistenceOutcome {
+                reply: Some(Reply::Integer(self.last_save.unwrap_or(self.started_unix))),
+                action: PersistenceAction::None,
+            };
         }
         if command.eq_ignore_ascii_case(b"BGREWRITEAOF") {
             if arguments.len() != 1 {
                 return error_outcome(CommandError::Failed("wrong number of arguments for 'bgrewriteaof' command".to_owned()));
             }
             // 真机无论 appendonly 是否开启都启动重写并回 started 状态。
-            return PersistenceOutcome { reply: Some(Reply::bulk("Background append only file rewriting started".to_owned())), action: PersistenceAction::None };
+            return PersistenceOutcome {
+                reply: Some(Reply::bulk("Background append only file rewriting started".to_owned())),
+                action: PersistenceAction::None,
+            };
         }
         if command.eq_ignore_ascii_case(b"SHUTDOWN") {
             return plan_shutdown(arguments, now_unix);
         }
-        error_outcome(CommandError::Failed(format!("wrong number of arguments for '{}' command", String::from_utf8_lossy(command).to_lowercase())))
+        error_outcome(CommandError::Failed(format!(
+            "wrong number of arguments for '{}' command",
+            String::from_utf8_lossy(command).to_lowercase()
+        )))
     }
 }
 
@@ -231,7 +243,10 @@ mod tests {
         let request = arguments(&["SHUTDOWN", "ABORT", "NOW"]);
         assert_eq!(state.plan(b"SHUTDOWN", &borrow(&request), 1001).reply, Some(CommandError::Failed("syntax error".to_owned()).to_reply()));
         let request = arguments(&["SHUTDOWN", "ABORT"]);
-        assert_eq!(state.plan(b"SHUTDOWN", &borrow(&request), 1001).reply, Some(CommandError::Failed("No shutdown in progress.".to_owned()).to_reply()));
+        assert_eq!(
+            state.plan(b"SHUTDOWN", &borrow(&request), 1001).reply,
+            Some(CommandError::Failed("No shutdown in progress.".to_owned()).to_reply())
+        );
         let request = arguments(&["SHUTDOWN", "NOSAVE"]);
         let outcome = state.plan(b"SHUTDOWN", &borrow(&request), 1001);
         assert_eq!(outcome.action, PersistenceAction::Shutdown { persist: false });

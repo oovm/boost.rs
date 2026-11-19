@@ -3,8 +3,8 @@
 //! 布局代数来自 `language-format`，与 `language_format::contract::Document`（CST formatter）严格分离。
 //! 源码正规格式化使用 [`FormatSyntax`]。
 
-use language_format::contract::FormatError;
 use data_text_valkyrie::printer::{Document as PrettyDocument, PrintError, to_document as pretty_to_document};
+use language_format::contract::FormatError;
 
 use crate::compiler::syntax::surface::ValkyrieRoot;
 

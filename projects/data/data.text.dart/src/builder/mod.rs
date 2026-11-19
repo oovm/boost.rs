@@ -18,7 +18,11 @@ impl<'config> DartBuilder<'config> {
         Self { config }
     }
 
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DartLanguage>, source: &SourceText) -> Result<DartRoot, data_text_core::TextError> {
+    pub(crate) fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, DartLanguage>,
+        source: &SourceText,
+    ) -> Result<DartRoot, data_text_core::TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut items = Vec::new();
 
@@ -142,7 +146,12 @@ impl<'config> DartBuilder<'config> {
 }
 
 impl<'config> Builder<DartLanguage> for DartBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DartLanguage>) -> data_text_core::builder::BuildOutput<DartLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<DartLanguage>,
+    ) -> data_text_core::builder::BuildOutput<DartLanguage> {
         let parser = DartParser::new(self.config);
         let mut parse_session = data_text_core::parser::session::ParseSession::<DartLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_session);

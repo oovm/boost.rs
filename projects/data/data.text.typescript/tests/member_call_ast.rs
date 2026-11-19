@@ -41,7 +41,15 @@ fn call_shape(source: &str) -> (String, String, Vec<String>) {
 fn member_calls_with_keyword_property_names_keep_callee_and_args() {
     // `get`, `from`, `read`, `type` are keyword token kinds in the lexer; the
     // builder must still surface them as member-call properties.
-    for source in ["map.get(name);", "Buffer.from(c);", "Array.from(line);", "scrollPositions.get(navKey);", "obj.set(k, v);", "reader.read();", "str.startsWith(\"event:\");"] {
+    for source in [
+        "map.get(name);",
+        "Buffer.from(c);",
+        "Array.from(line);",
+        "scrollPositions.get(navKey);",
+        "obj.set(k, v);",
+        "reader.read();",
+        "str.startsWith(\"event:\");",
+    ] {
         let (callee, _, args) = call_shape(source);
         let expected = source.trim_end_matches(';').rsplit_once('(').unwrap().0.to_string();
         assert_eq!(callee, expected, "{source}");

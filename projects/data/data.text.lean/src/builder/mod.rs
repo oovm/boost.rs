@@ -1,5 +1,5 @@
 use crate::{ast::LeanRoot, language::LeanLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, TextDiagnostics, TextEdit, source::Source};
 
 /// Builder for constructing Lean AST from source text.
 pub struct LeanBuilder<'config> {
@@ -14,7 +14,12 @@ impl<'config> LeanBuilder<'config> {
 }
 
 impl<'config> Builder<LeanLanguage> for LeanBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<LeanLanguage>) -> TextDiagnostics<LeanRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<LeanLanguage>,
+    ) -> TextDiagnostics<LeanRoot> {
         let parser = crate::parser::LeanParser::new(self.config);
         let parse_result = parser.parse(source, edits, cache);
 

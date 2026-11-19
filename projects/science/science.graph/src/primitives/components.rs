@@ -20,9 +20,7 @@ pub fn topological_sort<N, E>(graph: &MutableGraph<N, E>) -> Result<Vec<NodeId>,
     }
     let ids = node_ids(graph);
     let view = view_of(graph, &ids);
-    topological_order_by(&view, |node| **node)
-        .map(|order| order.into_iter().map(|node| *node).collect())
-        .map_err(|_| GraphError::CycleDetected)
+    topological_order_by(&view, |node| **node).map(|order| order.into_iter().map(|node| *node).collect()).map_err(|_| GraphError::CycleDetected)
 }
 
 /// 弱连通分量标签扫描（有向图按底层无向邻接解释）。
@@ -66,7 +64,8 @@ fn view_of<'a, N, E>(graph: &MutableGraph<N, E>, ids: &'a [NodeId]) -> GraphView
 fn labels_from_components(node_count: u64, components: Vec<Vec<&NodeId>>) -> Vec<NodeId> {
     let mut labels = (0..node_count).map(NodeId).collect::<Vec<_>>();
     for component in components {
-        let Some(root) = component.iter().map(|node| **node).min() else {
+        let Some(root) = component.iter().map(|node| **node).min()
+        else {
             continue;
         };
         for node in component {

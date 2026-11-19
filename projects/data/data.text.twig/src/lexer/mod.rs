@@ -14,7 +14,12 @@ pub struct TwigLexer<'config> {
 pub(crate) type State<'a, S> = LexerState<'a, S, TwigLanguage>;
 
 impl<'config> Lexer<TwigLanguage> for TwigLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<TwigLanguage>) -> LexOutput<TwigLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<TwigLanguage>,
+    ) -> LexOutput<TwigLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -72,7 +77,10 @@ impl<'config> TwigLexer<'config> {
         let start = state.get_position();
         while let Some(ch) = state.peek() {
             let rest = state.rest();
-            if rest.starts_with(&self.config.variable_start) || rest.starts_with(&self.config.tag_start) || rest.starts_with(&self.config.comment_start) {
+            if rest.starts_with(&self.config.variable_start)
+                || rest.starts_with(&self.config.tag_start)
+                || rest.starts_with(&self.config.comment_start)
+            {
                 break;
             }
             state.advance(ch.len_utf8());

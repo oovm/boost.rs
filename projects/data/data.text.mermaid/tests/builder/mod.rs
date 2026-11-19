@@ -2,7 +2,8 @@ use data_text_core::{Builder, SourceText};
 use data_text_mermaid::{
     MermaidBuilder, MermaidLanguage,
     ast::{
-        ClassDiagram, EdgeStyle, ErCardinality, ErDiagram, ErKey, FlowElement, Flowchart, MermaidDiagram, MermaidRoot, MessageArrow, NodeShape, ParticipantKind, SequenceDiagram, StateDiagram, StateDiagramVersion, StateElement, StateEndpoint, StateKind,
+        ClassDiagram, EdgeStyle, ErCardinality, ErDiagram, ErKey, FlowElement, Flowchart, MermaidDiagram, MermaidRoot, MessageArrow, NodeShape,
+        ParticipantKind, SequenceDiagram, StateDiagram, StateDiagramVersion, StateElement, StateEndpoint, StateKind,
     },
 };
 use language_testing::{building::BuilderTester, source_from_path};
@@ -137,7 +138,9 @@ fn test_flowchart_ast() {
 fn test_unsupported_statements_are_skipped() {
     let language = MermaidLanguage::default();
     let builder = MermaidBuilder::new(&language);
-    let source = SourceText::new("graph LR\n    subgraph One\n    A --> B\n    end\n    direction TB\n    style A fill:#f9f\n    classDef big fill:#f96\n");
+    let source = SourceText::new(
+        "graph LR\n    subgraph One\n    A --> B\n    end\n    direction TB\n    style A fill:#f9f\n    classDef big fill:#f96\n",
+    );
     let mut cache = data_text_core::parser::ParseSession::<MermaidLanguage>::default();
 
     let output = builder.build(&source, &[], &mut cache);
@@ -166,7 +169,9 @@ fn test_unsupported_statements_are_skipped() {
 fn test_nested_subgraphs_keep_titles_and_ids() {
     let language = MermaidLanguage::default();
     let builder = MermaidBuilder::new(&language);
-    let source = SourceText::new("graph TD\n    subgraph One\n        A --> B\n        subgraph two[Inner]\n            C\n        end\n    end\n    B --> D\n");
+    let source = SourceText::new(
+        "graph TD\n    subgraph One\n        A --> B\n        subgraph two[Inner]\n            C\n        end\n    end\n    B --> D\n",
+    );
     let mut cache = data_text_core::parser::ParseSession::<MermaidLanguage>::default();
 
     let output = builder.build(&source, &[], &mut cache);
@@ -239,7 +244,9 @@ fn test_empty_source_builds_no_diagrams() {
 
 #[test]
 fn test_sequence_diagram_ast() {
-    let root = build_root("sequenceDiagram\n    participant A as Alice\n    actor B\n    A->>B: ping\n    B-->A: pong\n    A->B: notify\n    B->>A: done\n");
+    let root = build_root(
+        "sequenceDiagram\n    participant A as Alice\n    actor B\n    A->>B: ping\n    B-->A: pong\n    A->B: notify\n    B->>A: done\n",
+    );
     assert_eq!(root.diagrams.len(), 1);
 
     let sequence = sequence(&root, 0);
@@ -263,7 +270,9 @@ fn test_sequence_diagram_ast() {
 
 #[test]
 fn test_class_diagram_ast() {
-    let root = build_root("classDiagram\n    class Animal {\n        +int age\n        +isMammal()\n    }\n    class Duck {\n        +String beakColor\n        +swim()\n    }\n    Animal <|-- Duck : is a\n    Duck *-- Wing : has\n    Duck ..> Water\n");
+    let root = build_root(
+        "classDiagram\n    class Animal {\n        +int age\n        +isMammal()\n    }\n    class Duck {\n        +String beakColor\n        +swim()\n    }\n    Animal <|-- Duck : is a\n    Duck *-- Wing : has\n    Duck ..> Water\n",
+    );
     assert_eq!(root.diagrams.len(), 1);
 
     let class = class_diagram(&root, 0);
@@ -290,7 +299,9 @@ fn test_class_diagram_ast() {
 
 #[test]
 fn test_tolerant_parsing_keeps_following_content() {
-    let root = build_root("classDiagram\n    class Broken {\n        +int field\nsequenceDiagram\n    participant A\n    A->>B: still parsed\n    this line has no arrow\n    B-->>A: done\n");
+    let root = build_root(
+        "classDiagram\n    class Broken {\n        +int field\nsequenceDiagram\n    participant A\n    A->>B: still parsed\n    this line has no arrow\n    B-->>A: done\n",
+    );
     assert_eq!(root.diagrams.len(), 2, "unclosed class body must not swallow the next diagram");
 
     let class = class_diagram(&root, 0);
@@ -308,7 +319,9 @@ fn test_tolerant_parsing_keeps_following_content() {
 
 #[test]
 fn test_state_diagram_ast() {
-    let root = build_root("stateDiagram-v2\n    [*] --> Idle\n    Idle --> Running : start\n    state Running {\n        [*] --> Warm\n        Warm --> Hot : heat\n        --\n        [*] --> Left\n    }\n    Running --> [*]\n");
+    let root = build_root(
+        "stateDiagram-v2\n    [*] --> Idle\n    Idle --> Running : start\n    state Running {\n        [*] --> Warm\n        Warm --> Hot : heat\n        --\n        [*] --> Left\n    }\n    Running --> [*]\n",
+    );
     assert_eq!(root.diagrams.len(), 1);
 
     let state = state_diagram(&root, 0);
@@ -347,7 +360,9 @@ fn test_state_diagram_ast() {
 
 #[test]
 fn test_state_kinds_and_display_text() {
-    let root = build_root("stateDiagram\n    state \"Long name\" as long1\n    state fork_state <<fork>>\n    state join_state <<join>>\n    state choice1 <<choice>>\n");
+    let root = build_root(
+        "stateDiagram\n    state \"Long name\" as long1\n    state fork_state <<fork>>\n    state join_state <<join>>\n    state choice1 <<choice>>\n",
+    );
     let state = state_diagram(&root, 0);
     assert_eq!(state.version, StateDiagramVersion::V1);
     assert_eq!(state.elements.len(), 4);

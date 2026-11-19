@@ -13,7 +13,15 @@ impl PascalBuilder {
 }
 
 impl Builder<PascalLanguage> for PascalBuilder {
-    fn build<'s, S: Source + ?Sized>(&self, _text: &S, _edits: &[TextEdit], _cache: &'s mut impl BuilderCache<PascalLanguage>) -> data_text_core::builder::BuildOutput<PascalLanguage> {
-        data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Not implemented")), diagnostics: vec![] }
+    fn build<'s, S: Source + ?Sized>(
+        &self,
+        _text: &S,
+        _edits: &[TextEdit],
+        _cache: &'s mut impl BuilderCache<PascalLanguage>,
+    ) -> data_text_core::builder::BuildOutput<PascalLanguage> {
+        data_text_core::errors::TextDiagnostics {
+            result: Err(data_text_core::errors::TextError::custom_error("Not implemented")),
+            diagnostics: vec![],
+        }
     }
 }

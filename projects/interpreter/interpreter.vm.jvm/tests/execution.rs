@@ -9,14 +9,8 @@ fn run(code: &[Instruction]) -> Result<i32, JvmError> {
 
 #[test]
 fn integer_arithmetic_returns_top_of_stack() {
-    let code = [
-        Instruction::IConst(2),
-        Instruction::IConst(3),
-        Instruction::IMul,
-        Instruction::IConst(4),
-        Instruction::IAdd,
-        Instruction::IReturn,
-    ];
+    let code =
+        [Instruction::IConst(2), Instruction::IConst(3), Instruction::IMul, Instruction::IConst(4), Instruction::IAdd, Instruction::IReturn];
     assert_eq!(run(&code), Ok(10));
 }
 

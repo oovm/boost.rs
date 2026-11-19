@@ -95,11 +95,7 @@ pub fn field_identity_from_type(
 }
 
 /// 成员类型查询：带标签元组走与位置解析相同的字段表，禁止另开按名分支。
-pub fn lookup_struct_field_type(
-    object_type: &ValkyrieType,
-    field: &Identifier,
-    struct_fields: &AggregateFieldIndex,
-) -> Option<ValkyrieType> {
+pub fn lookup_struct_field_type(object_type: &ValkyrieType, field: &Identifier, struct_fields: &AggregateFieldIndex) -> Option<ValkyrieType> {
     // 元组没有泛型代入：带标签元组按标签、无标签元组按 `.0` 位置投影元素类型；
     // 越界与普通名字访问都是 None（结构化失败由下游诊断承担）。
     match AggregateFieldIndex::resolve_tuple_field(object_type, field) {

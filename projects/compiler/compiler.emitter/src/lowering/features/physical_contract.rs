@@ -88,8 +88,7 @@ pub struct PhysicalTextProjection {
 /// 物理槽没有冻结 `utf16` 载体时的统一拒绝理由（GC 聚合槽、`WasiComponent` 边界等）。
 /// `WasmJsGlue` 的 ABI 位置已冻结 `JsStringHandle`，不消费该理由。
 #[doc(hidden)]
-pub const UTF16_UNRESOLVED_TEXT_ABI: &str =
-    "`utf16` 没有已声明的文本 ABI 载体：canonical ABI 的字符串是 UTF-8 字节列表，\
+pub const UTF16_UNRESOLVED_TEXT_ABI: &str = "`utf16` 没有已声明的文本 ABI 载体：canonical ABI 的字符串是 UTF-8 字节列表，\
      该边界不存在 `utf16` 的 canonical 表示，必须由显式 UTF-16 文本 ABI 契约提供载体";
 
 /// 宿主边界到文本 ABI 边界的唯一映射。
@@ -135,8 +134,7 @@ mod text_abi_tests {
 
     #[test]
     fn text_abi_fact_binds_encoding_boundary_and_carrier_from_declared_type() {
-        let js_utf8 = declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &SemanticType::Utf8)
-            .expect("`utf8` 必须已有冻结载体");
+        let js_utf8 = declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &SemanticType::Utf8).expect("`utf8` 必须已有冻结载体");
         assert_eq!(js_utf8.encoding, PhysicalTextEncoding::Utf8);
         assert_eq!(js_utf8.boundary, PhysicalTextBoundary::WasmJsGlue);
         assert_eq!(js_utf8.carrier, Some(PhysicalTextCarrier::JsStringHandle));
@@ -149,20 +147,13 @@ mod text_abi_tests {
                     let projection = projection.expect("`WasmJsGlue` 的 `utf16` 编码身份必须已冻结");
                     assert_eq!(projection.encoding, PhysicalTextEncoding::Utf16);
                     assert_eq!(projection.boundary, boundary);
-                    assert_eq!(
-                        projection.carrier,
-                        Some(PhysicalTextCarrier::JsStringHandle),
-                        "`utf16` 与 `utf8` 共用一个 JS string 句柄表"
-                    );
+                    assert_eq!(projection.carrier, Some(PhysicalTextCarrier::JsStringHandle), "`utf16` 与 `utf8` 共用一个 JS string 句柄表");
                 }
                 // canonical ABI 没有 `utf16` 表示，该边界不存在文本 ABI 事实。
                 PhysicalTextBoundary::WasiComponent => assert_eq!(projection, None),
             }
         }
-        assert_eq!(
-            unresolved_text_abi_reason(&SemanticType::Utf16),
-            Some(UTF16_UNRESOLVED_TEXT_ABI)
-        );
+        assert_eq!(unresolved_text_abi_reason(&SemanticType::Utf16), Some(UTF16_UNRESOLVED_TEXT_ABI));
         assert_eq!(unresolved_text_abi_reason(&SemanticType::Utf8), None);
         assert_eq!(declared_text_projection(PhysicalTextBoundary::WasmJsGlue, &SemanticType::Unit), None);
     }
@@ -404,7 +395,8 @@ fn collect_text_projections(
 ) -> Result<(BTreeSet<ExecutableValueRef>, BTreeMap<ExecutableValueRef, PhysicalTextProjection>), PhysicalPlanError> {
     // Utf8/Utf16 identity lives on SemanticType. 编码 × 边界 × 载体只在这里冻结，
     // 物理落点不得各自重新推断。
-    let Some(boundary) = text_abi_boundary(backend) else {
+    let Some(boundary) = text_abi_boundary(backend)
+    else {
         return Ok((BTreeSet::new(), BTreeMap::new()));
     };
     let projections: BTreeMap<ExecutableValueRef, PhysicalTextProjection> = function
@@ -429,9 +421,11 @@ fn physical_category(
         SemanticType::Bottom | SemanticType::Unit => {
             return Err(PhysicalPlanError::new("BPHYS001", function, location, "void/unit cannot occupy a physical value slot"));
         }
-        SemanticType::Boolean | SemanticType::Character | SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } => {
-            PhysicalValueCategory::I32
-        }
+        SemanticType::Boolean
+        | SemanticType::Character
+        | SemanticType::Integer8 { .. }
+        | SemanticType::Integer16 { .. }
+        | SemanticType::Integer32 { .. } => PhysicalValueCategory::I32,
         SemanticType::Integer64 { .. } => PhysicalValueCategory::I64,
         SemanticType::Float32 => PhysicalValueCategory::F32,
         SemanticType::Float64 => PhysicalValueCategory::F64,

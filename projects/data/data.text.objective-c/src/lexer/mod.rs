@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::ObjectiveCLanguage, lexer::token_type::ObjectiveCTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, ObjectiveCLanguage>;
 
@@ -15,7 +15,12 @@ pub struct ObjectiveCLexer<'config> {
 }
 
 impl<'config> Lexer<ObjectiveCLanguage> for ObjectiveCLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ObjectiveCLanguage>) -> LexOutput<ObjectiveCLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ObjectiveCLanguage>,
+    ) -> LexOutput<ObjectiveCLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -384,8 +389,14 @@ impl<'config> ObjectiveCLexer<'config> {
         let rest = state.rest();
 
         // prefer longest matches first
-        let patterns: &[(&str, ObjectiveCTokenType)] =
-            &[("==", ObjectiveCTokenType::EqualEqual), ("!=", ObjectiveCTokenType::NotEqual), (">=", ObjectiveCTokenType::GreaterEqual), ("<=", ObjectiveCTokenType::LessEqual), ("&&", ObjectiveCTokenType::And), ("||", ObjectiveCTokenType::Or)];
+        let patterns: &[(&str, ObjectiveCTokenType)] = &[
+            ("==", ObjectiveCTokenType::EqualEqual),
+            ("!=", ObjectiveCTokenType::NotEqual),
+            (">=", ObjectiveCTokenType::GreaterEqual),
+            ("<=", ObjectiveCTokenType::LessEqual),
+            ("&&", ObjectiveCTokenType::And),
+            ("||", ObjectiveCTokenType::Or),
+        ];
 
         for (pat, kind) in patterns {
             if rest.starts_with(pat) {

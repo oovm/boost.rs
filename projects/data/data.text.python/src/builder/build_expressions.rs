@@ -4,11 +4,16 @@ use crate::{
     lexer::token_type::PythonTokenType,
     parser::PythonElementType,
 };
-use data_text_core::{GreenNode, GreenTree, TextError, Source, SourceText};
+use data_text_core::{GreenNode, GreenTree, Source, SourceText, TextError};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Builds an expression from a green node.
-    pub(crate) fn build_expression(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Expression, TextError> {
+    pub(crate) fn build_expression(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Expression, TextError> {
         match node.kind {
             PythonElementType::Constant => {
                 let mut current_offset = offset;
@@ -34,7 +39,14 @@ impl<'config> super::PythonBuilder<'config> {
                             else {
                                 let s = text.to_string();
                                 if s.starts_with('b') || s.starts_with('B') {
-                                    let content = if (s.starts_with("b\"") || s.starts_with("B\"") || s.starts_with("b'")) && (s.ends_with('"') || s.ends_with('\'')) { &s[2..s.len() - 1] } else { &s[1..] };
+                                    let content = if (s.starts_with("b\"") || s.starts_with("B\"") || s.starts_with("b'"))
+                                        && (s.ends_with('"') || s.ends_with('\''))
+                                    {
+                                        &s[2..s.len() - 1]
+                                    }
+                                    else {
+                                        &s[1..]
+                                    };
                                     return Ok(Expression::Literal(Literal::Bytes(content.as_bytes().to_vec())));
                                 }
                                 let mut s = s;
@@ -108,7 +120,12 @@ impl<'config> super::PythonBuilder<'config> {
                     current_offset += child_len;
                 }
 
-                if let (Some(l), Some(op), Some(r)) = (left, operator, right) { Ok(Expression::BinaryOp { left: l, operator: op, right: r }) } else { Ok(Expression::Name(format!("invalid_binop_at_{}", offset))) }
+                if let (Some(l), Some(op), Some(r)) = (left, operator, right) {
+                    Ok(Expression::BinaryOp { left: l, operator: op, right: r })
+                }
+                else {
+                    Ok(Expression::Name(format!("invalid_binop_at_{}", offset)))
+                }
             }
             PythonElementType::Compare => {
                 let mut left = None;
@@ -153,7 +170,12 @@ impl<'config> super::PythonBuilder<'config> {
                     current_offset += child_len;
                 }
 
-                if let Some(l) = left { Ok(Expression::Compare { left: l, ops, comparators }) } else { Ok(Expression::Name(format!("invalid_compare_at_{}", offset))) }
+                if let Some(l) = left {
+                    Ok(Expression::Compare { left: l, ops, comparators })
+                }
+                else {
+                    Ok(Expression::Name(format!("invalid_compare_at_{}", offset)))
+                }
             }
             PythonElementType::Call => {
                 let mut func = None;
@@ -183,7 +205,12 @@ impl<'config> super::PythonBuilder<'config> {
                     current_offset += child_len;
                 }
 
-                if let Some(f) = func { Ok(Expression::Call { func: f, args, keywords }) } else { Ok(Expression::Name("invalid_call".to_string())) }
+                if let Some(f) = func {
+                    Ok(Expression::Call { func: f, args, keywords })
+                }
+                else {
+                    Ok(Expression::Name("invalid_call".to_string()))
+                }
             }
             PythonElementType::Attribute => {
                 let mut value = None;
@@ -206,7 +233,12 @@ impl<'config> super::PythonBuilder<'config> {
                     current_offset += child_len;
                 }
 
-                if let Some(v) = value { Ok(Expression::Attribute { value: v, attr }) } else { Ok(Expression::Name("invalid_attribute".to_string())) }
+                if let Some(v) = value {
+                    Ok(Expression::Attribute { value: v, attr })
+                }
+                else {
+                    Ok(Expression::Name("invalid_attribute".to_string()))
+                }
             }
             PythonElementType::Expr => {
                 let mut current_offset = offset;
@@ -269,7 +301,12 @@ impl<'config> super::PythonBuilder<'config> {
                     current_offset += child_len;
                 }
 
-                if let (Some(v), Some(s)) = (value, slice) { Ok(Expression::Subscript { value: v, slice: s }) } else { Ok(Expression::Name("invalid_subscript".to_string())) }
+                if let (Some(v), Some(s)) = (value, slice) {
+                    Ok(Expression::Subscript { value: v, slice: s })
+                }
+                else {
+                    Ok(Expression::Name("invalid_subscript".to_string()))
+                }
             }
             PythonElementType::JoinedStr => {
                 let mut current_offset = offset;
@@ -454,7 +491,11 @@ impl<'config> super::PythonBuilder<'config> {
                     }
                     current_offset += child_len;
                 }
-                Ok(Expression::DictComp { key: key.unwrap_or(Box::new(Expression::Name("invalid_key".to_string()))), value: value.unwrap_or(Box::new(Expression::Name("invalid_value".to_string()))), generators })
+                Ok(Expression::DictComp {
+                    key: key.unwrap_or(Box::new(Expression::Name("invalid_key".to_string()))),
+                    value: value.unwrap_or(Box::new(Expression::Name("invalid_value".to_string()))),
+                    generators,
+                })
             }
             PythonElementType::GeneratorExp => {
                 let mut elt = None;
@@ -557,11 +598,21 @@ impl<'config> super::PythonBuilder<'config> {
             current_offset += child_len;
         }
 
-        if let Some(v) = value { Ok(Expression::Starred { value: v, is_double }) } else { Err(TextError::custom_error("Invalid starred expression".to_string())) }
+        if let Some(v) = value {
+            Ok(Expression::Starred { value: v, is_double })
+        }
+        else {
+            Err(TextError::custom_error("Invalid starred expression".to_string()))
+        }
     }
 
     /// Builds a comprehension from a green node.
-    pub(crate) fn build_comprehension(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<crate::ast::Comprehension, TextError> {
+    pub(crate) fn build_comprehension(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<crate::ast::Comprehension, TextError> {
         let mut target = None;
         let mut iter = None;
         let mut ifs = Vec::new();
@@ -572,7 +623,12 @@ impl<'config> super::PythonBuilder<'config> {
             let child_len = child.len() as usize;
             match child {
                 GreenTree::Leaf(leaf) if leaf.kind == PythonTokenType::AsyncKeyword => is_async = true,
-                GreenTree::Node(n) if !n.kind.is_trivia() && n.kind != PythonElementType::ForKeyword && n.kind != PythonElementType::InKeyword && n.kind != PythonElementType::IfKeyword => {
+                GreenTree::Node(n)
+                    if !n.kind.is_trivia()
+                        && n.kind != PythonElementType::ForKeyword
+                        && n.kind != PythonElementType::InKeyword
+                        && n.kind != PythonElementType::IfKeyword =>
+                {
                     let expr = self.build_expression(n, current_offset, source)?;
                     if target.is_none() {
                         target = Some(expr)
@@ -589,11 +645,21 @@ impl<'config> super::PythonBuilder<'config> {
             current_offset += child_len
         }
 
-        Ok(crate::ast::Comprehension { target: target.unwrap_or(Expression::Name("invalid_target".to_string())), iter: iter.unwrap_or(Expression::Name("invalid_iter".to_string())), ifs, is_async })
+        Ok(crate::ast::Comprehension {
+            target: target.unwrap_or(Expression::Name("invalid_target".to_string())),
+            iter: iter.unwrap_or(Expression::Name("invalid_iter".to_string())),
+            ifs,
+            is_async,
+        })
     }
 
     /// Builds a list of parameters from a green node.
-    pub(crate) fn build_parameters(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Parameter>, TextError> {
+    pub(crate) fn build_parameters(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Vec<Parameter>, TextError> {
         let mut parameters = Vec::new();
         let mut current_offset = offset;
 

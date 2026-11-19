@@ -12,7 +12,12 @@ fn test_crystal_lexer_basic() {
 
     let result = lexer.lex(&source, &[], &mut session);
 
-    if result.diagnostics.is_empty() { println!("  ✓ Basic Crystal code lexed successfully") } else { println!("  ✗ Lexer produced errors: {:?}", result.diagnostics) }
+    if result.diagnostics.is_empty() {
+        println!("  ✓ Basic Crystal code lexed successfully")
+    }
+    else {
+        println!("  ✗ Lexer produced errors: {:?}", result.diagnostics)
+    }
 }
 
 #[test]
@@ -26,7 +31,12 @@ fn test_crystal_lexer_keywords() {
 
     let result = lexer.lex(&source, &[], &mut session);
 
-    if result.diagnostics.is_empty() { println!("  ✓ Crystal keywords lexed successfully") } else { println!("  ✗ Lexer produced errors: {:?}", result.diagnostics) }
+    if result.diagnostics.is_empty() {
+        println!("  ✓ Crystal keywords lexed successfully")
+    }
+    else {
+        println!("  ✗ Lexer produced errors: {:?}", result.diagnostics)
+    }
 }
 
 #[test]
@@ -40,7 +50,12 @@ fn test_crystal_lexer_operators() {
 
     let result = lexer.lex(&source, &[], &mut session);
 
-    if result.diagnostics.is_empty() { println!("  ✓ Crystal operators lexed successfully") } else { println!("  ✗ Lexer produced errors: {:?}", result.diagnostics) }
+    if result.diagnostics.is_empty() {
+        println!("  ✓ Crystal operators lexed successfully")
+    }
+    else {
+        println!("  ✗ Lexer produced errors: {:?}", result.diagnostics)
+    }
 }
 
 #[test]
@@ -54,7 +69,12 @@ fn test_crystal_lexer_strings() {
 
     let result = lexer.lex(&source, &[], &mut session);
 
-    if result.diagnostics.is_empty() { println!("  ✓ Crystal strings lexed successfully") } else { println!("  ✗ Lexer produced errors: {:?}", result.diagnostics) }
+    if result.diagnostics.is_empty() {
+        println!("  ✓ Crystal strings lexed successfully")
+    }
+    else {
+        println!("  ✗ Lexer produced errors: {:?}", result.diagnostics)
+    }
 }
 
 #[test]
@@ -68,7 +88,12 @@ fn test_crystal_lexer_numbers() {
 
     let result = lexer.lex(&source, &[], &mut session);
 
-    if result.diagnostics.is_empty() { println!("  ✓ Crystal numbers lexed successfully") } else { println!("  ✗ Lexer produced errors: {:?}", result.diagnostics) }
+    if result.diagnostics.is_empty() {
+        println!("  ✓ Crystal numbers lexed successfully")
+    }
+    else {
+        println!("  ✗ Lexer produced errors: {:?}", result.diagnostics)
+    }
 }
 
 #[test]
@@ -82,7 +107,12 @@ fn test_crystal_lexer_comments() {
 
     let result = lexer.lex(&source, &[], &mut session);
 
-    if result.diagnostics.is_empty() { println!("  ✓ Crystal comments lexed successfully") } else { println!("  ✗ Lexer produced errors: {:?}", result.diagnostics) }
+    if result.diagnostics.is_empty() {
+        println!("  ✓ Crystal comments lexed successfully")
+    }
+    else {
+        println!("  ✗ Lexer produced errors: {:?}", result.diagnostics)
+    }
 }
 
 fn main() {

@@ -236,7 +236,12 @@ impl<'config> StructurizrLexer<'config> {
 }
 
 impl<'config> Lexer<crate::language::StructurizrLanguage> for StructurizrLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<crate::language::StructurizrLanguage>) -> LexOutput<crate::language::StructurizrLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<crate::language::StructurizrLanguage>,
+    ) -> LexOutput<crate::language::StructurizrLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

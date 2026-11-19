@@ -18,8 +18,27 @@ impl TokenType for MsilTokenType {
             Self::IdentifierToken => UniversalTokenRole::Name,
             Self::NumberToken => UniversalTokenRole::Literal,
             Self::StringToken => UniversalTokenRole::Literal,
-            Self::AssemblyKeyword | Self::ExternKeyword | Self::ModuleKeyword | Self::ClassKeyword | Self::MethodKeyword | Self::PublicKeyword | Self::PrivateKeyword | Self::StaticKeyword | Self::Keyword => UniversalTokenRole::Keyword,
-            Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::Dot | Self::Colon | Self::Semicolon | Self::Comma | Self::Equal | Self::Slash => UniversalTokenRole::Operator,
+            Self::AssemblyKeyword
+            | Self::ExternKeyword
+            | Self::ModuleKeyword
+            | Self::ClassKeyword
+            | Self::MethodKeyword
+            | Self::PublicKeyword
+            | Self::PrivateKeyword
+            | Self::StaticKeyword
+            | Self::Keyword => UniversalTokenRole::Keyword,
+            Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Dot
+            | Self::Colon
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Equal
+            | Self::Slash => UniversalTokenRole::Operator,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error | Self::ErrorNode => UniversalTokenRole::Error,
             _ => UniversalTokenRole::None,

@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
-use interpreter_jit::*;
 use data_binary_odin::{Odin_VERSION, OdinHeadCode};
+use interpreter_jit::*;
 use interpreter_vm_ovm::odin_scalar_matcher::OdinScalarMatcher;
 
 fn request(code: Vec<u8>) -> JitCompileRequest {

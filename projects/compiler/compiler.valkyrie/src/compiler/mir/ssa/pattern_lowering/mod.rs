@@ -10,8 +10,7 @@ use crate::compiler::types::{
 use crate::compiler::hir::nullable_payload_type;
 
 use crate::compiler::mir::ssa::{
-    MirBuilder, MirConstant, MirDiagnostic, MirInstruction, MirOperand, MirOperation, MirTerminator, MirValueOrigin,
-    MirValueRef,
+    MirBuilder, MirConstant, MirDiagnostic, MirInstruction, MirOperand, MirOperation, MirTerminator, MirValueOrigin, MirValueRef,
     expr_lowering::lower_literal,
     infer_builder_operand_type, lower_resolved_callee, named_type_name,
     value_semantics::{LayoutId, ensure_unite_tagged_layout, layout_id_for_type, value_copy_supported},

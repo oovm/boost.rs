@@ -1,5 +1,5 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, parser::element_type::TypeScriptElementType};
-use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{RedNode, RedTree, Source, SourceText, TextError};
 
 impl<'config> TypeScriptBuilder<'config> {
     pub(crate) fn build_jsx_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxElement>, TextError> {
@@ -22,10 +22,19 @@ impl<'config> TypeScriptBuilder<'config> {
             }
         }
 
-        if let (Some(opening), Some(closing)) = (opening_element, closing_element) { Ok(Some(JsxElement { opening_element: opening, children, closing_element: closing, span: span.into() })) } else { Ok(None) }
+        if let (Some(opening), Some(closing)) = (opening_element, closing_element) {
+            Ok(Some(JsxElement { opening_element: opening, children, closing_element: closing, span: span.into() }))
+        }
+        else {
+            Ok(None)
+        }
     }
 
-    pub(crate) fn build_jsx_opening_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxOpeningElement>, TextError> {
+    pub(crate) fn build_jsx_opening_element(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<Option<JsxOpeningElement>, TextError> {
         let span = node.span();
         let mut name = None;
         let mut attributes = Vec::new();
@@ -33,7 +42,9 @@ impl<'config> TypeScriptBuilder<'config> {
         for child in node.children() {
             if let RedTree::Node(child_node) = child {
                 match child_node.green.kind {
-                    TypeScriptElementType::IdentifierName => name = Some(JsxTagName::Identifier(source.get_text_in(child_node.span().into()).to_string())),
+                    TypeScriptElementType::IdentifierName => {
+                        name = Some(JsxTagName::Identifier(source.get_text_in(child_node.span().into()).to_string()))
+                    }
                     TypeScriptElementType::JsxAttributes => {
                         for attr_child in child_node.children() {
                             if let RedTree::Node(attr_node) = attr_child {
@@ -51,7 +62,11 @@ impl<'config> TypeScriptBuilder<'config> {
         if let Some(n) = name { Ok(Some(JsxOpeningElement { name: n, attributes, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_closing_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxClosingElement>, TextError> {
+    pub(crate) fn build_jsx_closing_element(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<Option<JsxClosingElement>, TextError> {
         let span = node.span();
         let mut name = None;
 
@@ -66,7 +81,11 @@ impl<'config> TypeScriptBuilder<'config> {
         if let Some(n) = name { Ok(Some(JsxClosingElement { name: n, span: span.into() })) } else { Ok(None) }
     }
 
-    pub(crate) fn build_jsx_self_closing_element(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxSelfClosingElement>, TextError> {
+    pub(crate) fn build_jsx_self_closing_element(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<Option<JsxSelfClosingElement>, TextError> {
         let span = node.span();
         let mut name = None;
         let mut attributes = Vec::new();
@@ -74,7 +93,9 @@ impl<'config> TypeScriptBuilder<'config> {
         for child in node.children() {
             if let RedTree::Node(child_node) = child {
                 match child_node.green.kind {
-                    TypeScriptElementType::IdentifierName => name = Some(JsxTagName::Identifier(source.get_text_in(child_node.span().into()).to_string())),
+                    TypeScriptElementType::IdentifierName => {
+                        name = Some(JsxTagName::Identifier(source.get_text_in(child_node.span().into()).to_string()))
+                    }
                     TypeScriptElementType::JsxAttributes => {
                         for attr_child in child_node.children() {
                             if let RedTree::Node(attr_node) = attr_child {
@@ -112,7 +133,12 @@ impl<'config> TypeScriptBuilder<'config> {
             }
         }
 
-        if let (Some(opening), Some(closing)) = (opening_fragment, closing_fragment) { Ok(Some(JsxFragment { opening_fragment: opening, children, closing_fragment: closing, span: span.into() })) } else { Ok(None) }
+        if let (Some(opening), Some(closing)) = (opening_fragment, closing_fragment) {
+            Ok(Some(JsxFragment { opening_fragment: opening, children, closing_fragment: closing, span: span.into() }))
+        }
+        else {
+            Ok(None)
+        }
     }
 
     pub(crate) fn build_jsx_child(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxChild>, TextError> {
@@ -156,7 +182,11 @@ impl<'config> TypeScriptBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_jsx_attribute_or_spread(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<JsxAttributeOrSpread>, TextError> {
+    pub(crate) fn build_jsx_attribute_or_spread(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<Option<JsxAttributeOrSpread>, TextError> {
         match node.green.kind {
             TypeScriptElementType::JsxAttribute => {
                 let span = node.span();
@@ -167,7 +197,9 @@ impl<'config> TypeScriptBuilder<'config> {
                     if let RedTree::Node(child_node) = child {
                         match child_node.green.kind {
                             TypeScriptElementType::IdentifierName => name = source.get_text_in(child_node.span().into()).to_string(),
-                            TypeScriptElementType::StringLiteral => value = Some(JsxAttributeValue::StringLiteral(source.get_text_in(child_node.span().into()).to_string())),
+                            TypeScriptElementType::StringLiteral => {
+                                value = Some(JsxAttributeValue::StringLiteral(source.get_text_in(child_node.span().into()).to_string()))
+                            }
                             TypeScriptElementType::JsxExpressionContainer => {
                                 for sub_child in child_node.children() {
                                     if let RedTree::Node(sub_node) = sub_child {

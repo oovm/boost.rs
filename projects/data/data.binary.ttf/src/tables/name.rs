@@ -209,8 +209,7 @@ fn decode_name_record(bytes: &[u8], platform: u16, encoding: u16) -> Option<Stri
         3 => {
             // Windows: encoding 1 is UTF-16BE.
             if encoding == 1 || encoding == 10 {
-                let chars: Vec<u16> =
-                    bytes.chunks(2).filter_map(|c| (c.len() == 2).then(|| u16::from_be_bytes([c[0], c[1]]))).collect();
+                let chars: Vec<u16> = bytes.chunks(2).filter_map(|c| (c.len() == 2).then(|| u16::from_be_bytes([c[0], c[1]]))).collect();
                 String::from_utf16(&chars).ok()
             }
             else {

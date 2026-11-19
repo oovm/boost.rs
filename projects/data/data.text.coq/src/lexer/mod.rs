@@ -354,7 +354,12 @@ impl<'config> CoqLexer<'config> {
 }
 
 impl<'config> Lexer<CoqLanguage> for CoqLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<CoqLanguage>) -> LexOutput<CoqLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<CoqLanguage>,
+    ) -> LexOutput<CoqLanguage> {
         let mut state: State<'_, S> = LexerState::new(text);
         // TODO: Implement incremental lexing using edits and cache
         self.lex_internal(&mut state);

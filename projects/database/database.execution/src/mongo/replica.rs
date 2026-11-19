@@ -213,10 +213,12 @@ impl ReplicaSet {
     ///
     /// 只读时间戳：客户端签名在真机上只在集合内部成员之间校验。
     fn adopt_client_cluster_time(&mut self, command: &BsonDocument) {
-        let Some(BsonValue::Document(cluster)) = command.get("$clusterTime") else {
+        let Some(BsonValue::Document(cluster)) = command.get("$clusterTime")
+        else {
             return;
         };
-        let Some(BsonValue::Timestamp { t, i }) = cluster.get("clusterTime") else {
+        let Some(BsonValue::Timestamp { t, i }) = cluster.get("clusterTime")
+        else {
             return;
         };
         self.advance_cluster_time(*t, *i);
@@ -335,7 +337,8 @@ impl ReplicaSet {
     /// `mongosh` 的 `rs.initiate()` 发送空文档，`mongod 8.0.9` 用默认的单成员
     /// 配置应答并回填 `info2`。校验文案与真机一致。
     fn initiate(&mut self, command: &BsonDocument, me: &str) -> Result<BsonDocument, String> {
-        let Some(name) = self.name.clone() else {
+        let Some(name) = self.name.clone()
+        else {
             return Ok(replica_error(76, "NoReplicationEnabled", "This node was not started with replication enabled."));
         };
         if self.initialized {
@@ -534,13 +537,15 @@ impl ReplicaSet {
         if self.name.is_none() || self.initialized {
             return Ok(false);
         }
-        let Some(set_name) = stored.get("_id").map(|value| scalar_text(Some(value))) else {
+        let Some(set_name) = stored.get("_id").map(|value| scalar_text(Some(value)))
+        else {
             return Ok(false);
         };
         if self.name.as_deref() != Some(set_name.as_str()) {
             return Ok(false);
         }
-        let Some(BsonValue::Array(members)) = stored.get("members") else {
+        let Some(BsonValue::Array(members)) = stored.get("members")
+        else {
             return Ok(false);
         };
         if members.is_empty() {
@@ -605,7 +610,8 @@ pub fn settle_write(
 ///
 /// `mongod` 启动时同样读这个集合；没有文档或文档形态不可用时成员保持未初始化。
 pub fn restore_stored_config(store: &dyn MongoStorage, replica: &mut ReplicaSet) -> Result<bool, CommandError> {
-    let Some(stored) = stored_config(store)? else {
+    let Some(stored) = stored_config(store)?
+    else {
         return Ok(false);
     };
     replica.restore_config(&stored).map_err(|message| CommandError::new(96, message))
@@ -615,7 +621,8 @@ pub fn restore_stored_config(store: &dyn MongoStorage, replica: &mut ReplicaSet)
 ///
 /// 集合文档是复制元数据而非数据，因此这次写入暂存的 oplog 条目一律丢弃。
 pub fn persist_config(store: &dyn MongoStorage, replica: &ReplicaSet) -> Result<bool, CommandError> {
-    let Some(config) = replica.config() else {
+    let Some(config) = replica.config()
+    else {
         return Ok(false);
     };
     let mut command = BsonDocument::new();
@@ -637,7 +644,8 @@ fn stored_config(store: &dyn MongoStorage) -> Result<Option<BsonDocument>, Comma
     command.push("filter".to_string(), BsonValue::Document(BsonDocument::new()));
     command.push("$db".to_string(), BsonValue::String("local".to_string()));
     let reply = commands::find(&command, store, &mut CursorStore::new())?;
-    let Some(BsonValue::Document(cursor)) = reply.get("cursor") else {
+    let Some(BsonValue::Document(cursor)) = reply.get("cursor")
+    else {
         return Ok(None);
     };
     match cursor.get("firstBatch") {
@@ -710,12 +718,13 @@ fn normalize_member(member: &BsonDocument) -> BsonDocument {
 /// 用给定 `replicaSetId` 把请求配置归一化成集合配置。
 fn normalize_config(config: &BsonDocument, replica_set_id: BsonValue) -> BsonDocument {
     let members = match config.get("members") {
-        Some(BsonValue::Array(members)) => {
-            members.iter().map(|member| match member {
+        Some(BsonValue::Array(members)) => members
+            .iter()
+            .map(|member| match member {
                 BsonValue::Document(member) => BsonValue::Document(normalize_member(member)),
                 other => other.clone(),
-            }).collect()
-        }
+            })
+            .collect(),
         _ => Vec::new(),
     };
     let mut settings = BsonDocument::new();

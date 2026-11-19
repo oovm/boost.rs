@@ -2,7 +2,13 @@ use crate::{builder::JavaBuilder, language::JavaLanguage, lexer::token_type::Jav
 use data_text_core::tree::red_tree::{RedNode, RedTree};
 
 impl<'config> JavaBuilder<'config> {
-    pub(crate) fn extract_inheritance(&self, node: RedNode<JavaLanguage>, source: &str, class_name: &str, modifiers: &[String]) -> (Option<String>, Vec<String>) {
+    pub(crate) fn extract_inheritance(
+        &self,
+        node: RedNode<JavaLanguage>,
+        source: &str,
+        class_name: &str,
+        modifiers: &[String],
+    ) -> (Option<String>, Vec<String>) {
         let mut extends = None;
         let mut implements = Vec::new();
 

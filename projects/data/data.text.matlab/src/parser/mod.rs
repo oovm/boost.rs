@@ -30,7 +30,12 @@ impl<'config> MatlabParser<'config> {
 }
 
 impl<'config> Parser<MatlabLanguage> for MatlabParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<MatlabLanguage>) -> ParseOutput<'a, MatlabLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<MatlabLanguage>,
+    ) -> ParseOutput<'a, MatlabLanguage> {
         let lexer = MatlabLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -164,7 +169,11 @@ impl<'config> MatlabParser<'config> {
     }
 
     /// `global x y` / `persistent a b` — keyword then same-line identifiers.
-    fn parse_declaration<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, kind: MatlabElementType) -> &'a GreenNode<'a, MatlabLanguage> {
+    fn parse_declaration<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        kind: MatlabElementType,
+    ) -> &'a GreenNode<'a, MatlabLanguage> {
         let checkpoint = state.checkpoint();
         state.bump(); // global / persistent
         while Self::peek_same_line_kind_at(state, 0) == Some(MatlabTokenType::Identifier) {
@@ -190,7 +199,12 @@ impl<'config> MatlabParser<'config> {
     }
 
     fn at_block_terminator(state: &State<'_, impl Source + ?Sized>) -> bool {
-        state.at(MatlabTokenType::End) || state.at(MatlabTokenType::Else) || state.at(MatlabTokenType::Elseif) || state.at(MatlabTokenType::Catch) || state.at(MatlabTokenType::Eof) || !state.not_at_end()
+        state.at(MatlabTokenType::End)
+            || state.at(MatlabTokenType::Else)
+            || state.at(MatlabTokenType::Elseif)
+            || state.at(MatlabTokenType::Catch)
+            || state.at(MatlabTokenType::Eof)
+            || !state.not_at_end()
     }
 
     fn parse_block_body<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
@@ -260,7 +274,11 @@ impl<'config> MatlabParser<'config> {
     fn parse_return<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, MatlabLanguage> {
         let checkpoint = state.checkpoint();
         state.bump(); // return
-        if !Self::at_block_terminator(state) && !state.at(MatlabTokenType::Semicolon) && !state.at(MatlabTokenType::Comma) && !state.at(MatlabTokenType::Newline) {
+        if !Self::at_block_terminator(state)
+            && !state.at(MatlabTokenType::Semicolon)
+            && !state.at(MatlabTokenType::Comma)
+            && !state.at(MatlabTokenType::Newline)
+        {
             self.parse_expression(state);
         }
         state.finish_at(checkpoint, MatlabElementType::ReturnStmt)
@@ -316,7 +334,11 @@ impl<'config> MatlabParser<'config> {
     }
 
     fn at_switch_arm_terminator(state: &State<'_, impl Source + ?Sized>) -> bool {
-        state.at(MatlabTokenType::Case) || state.at(MatlabTokenType::Otherwise) || state.at(MatlabTokenType::End) || state.at(MatlabTokenType::Eof) || !state.not_at_end()
+        state.at(MatlabTokenType::Case)
+            || state.at(MatlabTokenType::Otherwise)
+            || state.at(MatlabTokenType::End)
+            || state.at(MatlabTokenType::Eof)
+            || !state.not_at_end()
     }
 
     fn parse_try<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, MatlabLanguage> {
@@ -353,14 +375,22 @@ impl<'config> MatlabParser<'config> {
     }
 
     /// `expr(…)` call / indexing postfix.
-    fn parse_paren_postfix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, MatlabLanguage>) -> &'a GreenNode<'a, MatlabLanguage> {
+    fn parse_paren_postfix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, MatlabLanguage>,
+    ) -> &'a GreenNode<'a, MatlabLanguage> {
         let checkpoint = state.checkpoint_before(left);
         self.parse_call_args(state);
         state.finish_at(checkpoint, MatlabElementType::Call)
     }
 
     /// `expr.name` member / package access.
-    fn parse_member_access<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, MatlabLanguage>) -> &'a GreenNode<'a, MatlabLanguage> {
+    fn parse_member_access<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, MatlabLanguage>,
+    ) -> &'a GreenNode<'a, MatlabLanguage> {
         let checkpoint = state.checkpoint_before(left);
         state.bump(); // .
         if state.at(MatlabTokenType::Identifier) {
@@ -524,10 +554,20 @@ impl<'config> Pratt<MatlabLanguage> for MatlabParser<'config> {
             MatlabTokenType::Minus | MatlabTokenType::Plus | MatlabTokenType::Not => Some(OperatorInfo::right(110)),
             _ => None,
         };
-        if let Some(info) = info { unary(state, kind, info.precedence, MatlabElementType::PrefixExpr, |s, p| self.parse_pratt(s, p)) } else { self.primary(state) }
+        if let Some(info) = info {
+            unary(state, kind, info.precedence, MatlabElementType::PrefixExpr, |s, p| self.parse_pratt(s, p))
+        }
+        else {
+            self.primary(state)
+        }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, MatlabLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, MatlabLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, MatlabLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, MatlabLanguage>> {
         let kind = state.peek_kind()?;
 
         // Indexing / call `expr(…)` (high precedence)
@@ -566,11 +606,21 @@ impl<'config> Pratt<MatlabLanguage> for MatlabParser<'config> {
             MatlabTokenType::Or => Some(OperatorInfo::left(45)),
             MatlabTokenType::AndAnd => Some(OperatorInfo::left(50)),
             MatlabTokenType::And => Some(OperatorInfo::left(55)),
-            MatlabTokenType::Equal | MatlabTokenType::NotEqual | MatlabTokenType::Less | MatlabTokenType::Greater | MatlabTokenType::LessEqual | MatlabTokenType::GreaterEqual => Some(OperatorInfo::none(60)),
+            MatlabTokenType::Equal
+            | MatlabTokenType::NotEqual
+            | MatlabTokenType::Less
+            | MatlabTokenType::Greater
+            | MatlabTokenType::LessEqual
+            | MatlabTokenType::GreaterEqual => Some(OperatorInfo::none(60)),
             // MATLAB `a:b:c` is right-associative enough that left-assoc nesting is fixed in lowering.
             MatlabTokenType::Colon => Some(OperatorInfo::left(70)),
             MatlabTokenType::Plus | MatlabTokenType::Minus => Some(OperatorInfo::left(80)),
-            MatlabTokenType::Times | MatlabTokenType::Divide | MatlabTokenType::LeftDivide | MatlabTokenType::DotTimes | MatlabTokenType::DotDivide | MatlabTokenType::DotLeftDivide => Some(OperatorInfo::left(90)),
+            MatlabTokenType::Times
+            | MatlabTokenType::Divide
+            | MatlabTokenType::LeftDivide
+            | MatlabTokenType::DotTimes
+            | MatlabTokenType::DotDivide
+            | MatlabTokenType::DotLeftDivide => Some(OperatorInfo::left(90)),
             MatlabTokenType::Power | MatlabTokenType::DotPower => Some(OperatorInfo::right(120)),
             _ => None,
         }?;

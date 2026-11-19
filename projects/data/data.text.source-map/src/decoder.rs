@@ -66,7 +66,12 @@ impl SourceMapDecoder {
 
         let name = mapping.name_index.and_then(|idx| self.source_map.get_name(idx as usize));
 
-        Some(OriginalPosition { source: source.map(String::from), original_line: mapping.original_line, original_column: mapping.original_column, name: name.map(String::from) })
+        Some(OriginalPosition {
+            source: source.map(String::from),
+            original_line: mapping.original_line,
+            original_column: mapping.original_column,
+            name: name.map(String::from),
+        })
     }
 
     /// Returns all mappings for a generated line.

@@ -7,8 +7,8 @@ use core::cmp::Ordering;
 
 use crate::numeric::{
     algorithm::{DivStrategy, MulStrategy, karatsuba_scratch_limbs, toom3_scratch_limbs},
-    kernel::{LimbBuffer, ScratchWorkspace, error::KernelError},
     budget::ExecutionBudget,
+    kernel::{LimbBuffer, ScratchWorkspace, error::KernelError},
 };
 
 use super::{

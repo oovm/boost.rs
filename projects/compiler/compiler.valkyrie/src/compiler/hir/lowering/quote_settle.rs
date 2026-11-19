@@ -7,16 +7,16 @@
 //! 错误，不提供长度回退。结算完成后 HIR 可独立证明每个字面量的最终类型，
 //! MIR 只编码既定值，不再读引号、不做语言类型选择。
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Range;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Range,
+};
 
 use crate::compiler::{
     hir::{
         lowering::{
             errors::{HirError, QuoteLiteralFailure},
-            quote_literal::{
-                capture_binds, capture_code_points, capture_quote_default, settle_quote_error, CaptureTargetKind, SettledCapture,
-            },
+            quote_literal::{CaptureTargetKind, SettledCapture, capture_binds, capture_code_points, capture_quote_default, settle_quote_error},
         },
         overload::types::{infer_scrutinee_type, lookup_struct_field_type},
         type_relation::TypeRelationContext,
@@ -116,8 +116,7 @@ fn settle_statement(
             if let Some(initializer) = initializer {
                 // 显式注解才是权威期望类型；无注解 `let` 的初始值确无约束，按引号默认结算。
                 settle_expr(initializer, pass, locals, ty.clone(), return_type)?;
-                let binding_type =
-                    ty.clone().or_else(|| infer_scrutinee_type(initializer, locals, pass.struct_fields, pass.singleton_names));
+                let binding_type = ty.clone().or_else(|| infer_scrutinee_type(initializer, locals, pass.struct_fields, pass.singleton_names));
                 if let Some(binding_type) = binding_type {
                     bind_pattern_name(pattern, &binding_type, locals);
                 }
@@ -381,10 +380,7 @@ fn settle_pattern(
             });
             for (index, (name, subpattern)) in fields.iter_mut().enumerate() {
                 let field_type = if *named_fields {
-                    slots
-                        .as_ref()
-                        .and_then(|slots| slots.iter().find(|(declared, _)| declared == name))
-                        .map(|(_, ty)| ty.clone())
+                    slots.as_ref().and_then(|slots| slots.iter().find(|(declared, _)| declared == name)).map(|(_, ty)| ty.clone())
                 }
                 else {
                     slots.as_ref().and_then(|slots| slots.get(index)).map(|(_, ty)| ty.clone())
@@ -425,27 +421,22 @@ fn settle_capture(
     if let Some(encoding) = capture.text_encoding {
         return Ok(Some(SettledCapture::Text(encoding)));
     }
-    let Some(target) = expected else {
+    let Some(target) = expected
+    else {
         return default_capture(capture, span);
     };
     match pass.relations.capture_target_kind(target) {
         CaptureTargetKind::Char => match capture.as_single_char() {
             Some(code) => Ok(Some(SettledCapture::Char(code))),
-            None => Err(settle_quote_error(
-                QuoteLiteralFailure::CharContextNotRepresentable { reason: representability_reason(capture) },
-                span,
-            )),
+            None => {
+                Err(settle_quote_error(QuoteLiteralFailure::CharContextNotRepresentable { reason: representability_reason(capture) }, span))
+            }
         },
         CaptureTargetKind::Text(encoding) => Ok(Some(SettledCapture::Text(encoding))),
         CaptureTargetKind::Numeric => Ok(capture_binds(capture, CaptureTargetKind::Numeric)),
         CaptureTargetKind::Other => {
             // 开放泛型/自动类型位置按引号默认结算：泛型实参已由调用解析以自然型统一。
-            if matches!(target, ValkyrieType::Generic(_) | ValkyrieType::AutoType) {
-                default_capture(capture, span)
-            }
-            else {
-                Ok(None)
-            }
+            if matches!(target, ValkyrieType::Generic(_) | ValkyrieType::AutoType) { default_capture(capture, span) } else { Ok(None) }
         }
     }
 }
@@ -454,12 +445,7 @@ fn settle_capture(
 fn default_capture(capture: &HirStringLiteral, span: Range<usize>) -> Result<Option<SettledCapture>, HirError> {
     match capture_quote_default(capture) {
         Some(settled) => Ok(Some(settled)),
-        None => {
-            Err(settle_quote_error(
-                QuoteLiteralFailure::CharDefaultNotRepresentable { reason: representability_reason(capture) },
-                span,
-            ))
-        }
+        None => Err(settle_quote_error(QuoteLiteralFailure::CharDefaultNotRepresentable { reason: representability_reason(capture) }, span)),
     }
 }
 

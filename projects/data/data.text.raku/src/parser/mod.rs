@@ -8,12 +8,12 @@ use crate::{
     language::RakuLanguage,
     lexer::{RakuLexer, token_type::RakuTokenType},
 };
-pub use element_type::RakuElementType;
 use data_text_core::{
     GreenNode, TextError, TokenType,
     parser::{Associativity, ParseCache, ParseOutput, Parser, ParserState, Pratt, PrattParser, binary, parse_with_lexer, unary},
     source::{Source, TextEdit},
 };
+pub use element_type::RakuElementType;
 
 pub(crate) type State<'a, S> = ParserState<'a, RakuLanguage, S>;
 
@@ -83,7 +83,12 @@ impl RakuParser {
 }
 
 impl Parser<RakuLanguage> for RakuParser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<RakuLanguage>) -> ParseOutput<'a, RakuLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<RakuLanguage>,
+    ) -> ParseOutput<'a, RakuLanguage> {
         let lexer = RakuLexer::new();
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -128,7 +133,12 @@ impl Pratt<RakuLanguage> for RakuParser {
         self.primary(state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, RakuLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, RakuLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, RakuLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, RakuLanguage>> {
         let kind = state.peek_kind()?;
         let (prec, assoc) = match kind {
             RakuTokenType::Operator => (10, Associativity::Left),

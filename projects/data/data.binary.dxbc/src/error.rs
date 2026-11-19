@@ -225,11 +225,7 @@ impl Display for DxbcLayoutError {
                 write!(f, "DXBC chunk {first_index} overlaps chunk {second_index} at {}", evidence.location())
             }
             Self::ShaderChunkTooSmall { chunk_index, chunk_size, evidence } => {
-                write!(
-                    f,
-                    "DXBC shader chunk {chunk_index} is {chunk_size} bytes at {}, fewer than the 8-byte token pair",
-                    evidence.location()
-                )
+                write!(f, "DXBC shader chunk {chunk_index} is {chunk_size} bytes at {}, fewer than the 8-byte token pair", evidence.location())
             }
             Self::ShaderLengthMismatch { chunk_index, declared, chunk_size, evidence } => {
                 write!(
@@ -242,11 +238,7 @@ impl Display for DxbcLayoutError {
                 write!(f, "DXBC instruction at {} declares a zero word count", evidence.location())
             }
             Self::InstructionOutOfBounds { word_count, available_words, evidence } => {
-                write!(
-                    f,
-                    "DXBC instruction at {} declares {word_count} words but only {available_words} remain",
-                    evidence.location()
-                )
+                write!(f, "DXBC instruction at {} declares {word_count} words but only {available_words} remain", evidence.location())
             }
             Self::TrailingPartialWord { remainder_bytes, evidence } => {
                 write!(f, "{remainder_bytes} trailing bytes at {} do not complete a 32-bit word", evidence.location())

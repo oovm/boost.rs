@@ -16,7 +16,7 @@ use crate::{
     builder::ValkyrieBuilder,
     lexer::{ValkyrieLexer, token_type::ValkyrieTokenType},
 };
-use data_text_core::{Lexer, NoLexerCache, TextError, Parser, SourceText, parser::session::ParseSession};
+use data_text_core::{Lexer, NoLexerCache, Parser, SourceText, TextError, parser::session::ParseSession};
 
 /// Locale 参数标记字符 (Gwot, U+07DF)
 const LOCALE_MARKER: char = '\u{07DF}';
@@ -54,26 +54,40 @@ impl<'config> ValkyrieBuilder<'config> {
                 }
                 '{' => {
                     if index > text_start {
-                        segments.push(StringSegment::Text(Box::new(TextSegment { content: content[text_start..index].to_string(), span: crate::ast::Span { start: content_start + text_start, end: content_start + index } })));
+                        segments.push(StringSegment::Text(Box::new(TextSegment {
+                            content: content[text_start..index].to_string(),
+                            span: crate::ast::Span { start: content_start + text_start, end: content_start + index },
+                        })));
                     }
                     let after_brace = index + 1;
                     let is_locale = content[after_brace..].starts_with(LOCALE_MARKER);
                     let expr_start = if is_locale { after_brace + LOCALE_MARKER.len_utf8() } else { after_brace };
                     let expr_end = self.scan_interpolation_end(content, content_start, expr_start)?;
                     let expr = self.parse_interpolation_expression(&content[expr_start..expr_end], content_start + expr_start)?;
-                    segments.push(StringSegment::Interpolation(Box::new(InterpolationSegment { expr, is_locale, span: crate::ast::Span { start: content_start + index, end: content_start + expr_end + 1 } })));
+                    segments.push(StringSegment::Interpolation(Box::new(InterpolationSegment {
+                        expr,
+                        is_locale,
+                        span: crate::ast::Span { start: content_start + index, end: content_start + expr_end + 1 },
+                    })));
                     index = expr_end + 1;
                     text_start = index;
                 }
                 '}' => {
-                    return Err(TextError::syntax_error("bare `}` in quoted template: write `\\}` for a literal closing brace".to_string(), content_start + index, None));
+                    return Err(TextError::syntax_error(
+                        "bare `}` in quoted template: write `\\}` for a literal closing brace".to_string(),
+                        content_start + index,
+                        None,
+                    ));
                 }
                 _ => index += character.len_utf8(),
             }
         }
 
         if text_start < content.len() {
-            segments.push(StringSegment::Text(Box::new(TextSegment { content: content[text_start..].to_string(), span: crate::ast::Span { start: content_start + text_start, end: content_start + content.len() } })));
+            segments.push(StringSegment::Text(Box::new(TextSegment {
+                content: content[text_start..].to_string(),
+                span: crate::ast::Span { start: content_start + text_start, end: content_start + content.len() },
+            })));
         }
 
         Ok(segments)
@@ -107,7 +121,11 @@ impl<'config> ValkyrieBuilder<'config> {
                 ValkyrieTokenType::ParenthesisR | ValkyrieTokenType::BracketR => {
                     depth -= 1;
                     if depth == 0 {
-                        return Err(TextError::syntax_error(format!("unbalanced closing `{:?}` in interpolation expression", token.kind), token.span.start, None));
+                        return Err(TextError::syntax_error(
+                            format!("unbalanced closing `{:?}` in interpolation expression", token.kind),
+                            token.span.start,
+                            None,
+                        ));
                     }
                 }
                 ValkyrieTokenType::Error => {

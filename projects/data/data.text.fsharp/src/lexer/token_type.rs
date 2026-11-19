@@ -465,7 +465,9 @@ impl TokenType for FSharpTokenType {
             Self::Error => UniversalTokenRole::Error,
             _ if self.is_keyword() => UniversalTokenRole::Keyword,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::BooleanLiteral => UniversalTokenRole::Literal,
+            Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::BooleanLiteral => {
+                UniversalTokenRole::Literal
+            }
             _ => UniversalTokenRole::None,
         }
     }

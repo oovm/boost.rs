@@ -25,7 +25,10 @@ impl<'config> RustParser<'config> {
 }
 
 impl<'config> Pratt<RustLanguage> for RustParser<'config> {
-    fn primary<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> &'a GreenNode<'a, RustLanguage> {
+    fn primary<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> &'a GreenNode<'a, RustLanguage> {
         let cp = state.checkpoint();
         match state.peek_kind() {
             Some(crate::lexer::RustTokenType::Identifier) => {
@@ -49,7 +52,10 @@ impl<'config> Pratt<RustLanguage> for RustParser<'config> {
         }
     }
 
-    fn prefix<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> &'a GreenNode<'a, RustLanguage> {
+    fn prefix<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> &'a GreenNode<'a, RustLanguage> {
         use crate::{lexer::RustTokenType::*, parser::RustElementType as RE};
         let kind = match state.peek_kind() {
             Some(k) => k,
@@ -62,7 +68,12 @@ impl<'config> Pratt<RustLanguage> for RustParser<'config> {
         }
     }
 
-    fn infix<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>, left: &'a GreenNode<'a, RustLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, RustLanguage>> {
+    fn infix<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+        left: &'a GreenNode<'a, RustLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, RustLanguage>> {
         use crate::{lexer::RustTokenType::*, parser::RustElementType as RE};
         let kind = state.peek_kind()?;
 
@@ -124,7 +135,12 @@ impl<'config> Pratt<RustLanguage> for RustParser<'config> {
 }
 
 impl<'config> Parser<RustLanguage> for RustParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<RustLanguage>) -> ParseOutput<'a, RustLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<RustLanguage>,
+    ) -> ParseOutput<'a, RustLanguage> {
         let lexer = RustLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -196,51 +212,87 @@ impl<'config> RustParser<'config> {
         }
     }
 
-    fn parse_function_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_function_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_function(state)
     }
 
-    fn parse_use_item_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_use_item_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_use_item(state)
     }
 
-    fn parse_mod_item_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_mod_item_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_mod_item(state)
     }
 
-    fn parse_struct_item_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_struct_item_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_struct_item(state)
     }
 
-    fn parse_enum_item_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_enum_item_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_enum_item(state)
     }
 
-    fn parse_let_statement_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_let_statement_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_let_statement(state)
     }
 
-    fn parse_if_expression_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_if_expression_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_if_expression(state)
     }
 
-    fn parse_while_expression_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_while_expression_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_while_expression(state)
     }
 
-    fn parse_loop_expression_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_loop_expression_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_loop_expression(state)
     }
 
-    fn parse_for_expression_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_for_expression_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_for_expression(state)
     }
 
-    fn parse_return_statement_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_return_statement_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_return_statement(state)
     }
 
-    fn parse_block_body<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_block_body<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         self.parse_block(state)
     }
 
@@ -254,7 +306,10 @@ impl<'config> RustParser<'config> {
     ///
     /// # Returns
     /// * `Result<(), TextError>` - Ok if parsing succeeds, Err otherwise
-    fn parse_function<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_function<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         use crate::lexer::RustTokenType;
         let cp = state.checkpoint();
         state.expect(RustTokenType::Fn).ok();
@@ -279,7 +334,10 @@ impl<'config> RustParser<'config> {
     ///
     /// # Returns
     /// * `Result<(), TextError>` - Ok if parsing succeeds, Err otherwise
-    fn parse_param_list<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_param_list<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         use crate::lexer::RustTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftParen).ok();
@@ -301,7 +359,10 @@ impl<'config> RustParser<'config> {
     ///
     /// # Returns
     /// * `Result<(), TextError>` - Ok if parsing succeeds, Err otherwise
-    fn parse_block<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_block<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         use crate::lexer::RustTokenType::*;
         let cp = state.checkpoint();
         state.expect(LeftBrace).ok();
@@ -314,7 +375,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a `use` declaration.
-    fn parse_use_item<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_use_item<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.expect(crate::lexer::RustTokenType::Use).ok();
         // Simplified path handling
@@ -327,7 +391,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a module declaration.
-    fn parse_mod_item<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_mod_item<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // mod
         state.expect(crate::lexer::RustTokenType::Identifier).ok();
@@ -342,7 +409,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a struct definition.
-    fn parse_struct_item<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_struct_item<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // struct
         state.expect(crate::lexer::RustTokenType::Identifier).ok();
@@ -360,7 +430,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses an enum definition.
-    fn parse_enum_item<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_enum_item<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // enum
         state.expect(crate::lexer::RustTokenType::Identifier).ok();
@@ -370,7 +443,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a `let` statement.
-    fn parse_let_statement<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_let_statement<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // let
         state.expect(crate::lexer::RustTokenType::Identifier).ok();
@@ -383,7 +459,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses an `if` expression.
-    fn parse_if_expression<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_if_expression<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // if
         PrattParser::parse(state, 0, self);
@@ -396,7 +475,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a `while` loop.
-    fn parse_while_expression<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_while_expression<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // while
         PrattParser::parse(state, 0, self);
@@ -406,7 +488,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a `loop` expression.
-    fn parse_loop_expression<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_loop_expression<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // loop
         self.parse_block(state)?;
@@ -415,7 +500,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a `for` loop.
-    fn parse_for_expression<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_for_expression<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // for
         state.expect(crate::lexer::RustTokenType::Identifier).ok();
@@ -427,7 +515,10 @@ impl<'config> RustParser<'config> {
     }
 
     /// Parses a `return` statement.
-    fn parse_return_statement<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut ParserState<'a, RustLanguage, S>) -> Result<(), TextError> {
+    fn parse_return_statement<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut ParserState<'a, RustLanguage, S>,
+    ) -> Result<(), TextError> {
         let cp = state.checkpoint();
         state.bump(); // return
         if !state.at(crate::lexer::RustTokenType::Semicolon) {

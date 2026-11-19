@@ -4,7 +4,7 @@ pub mod token_type;
 
 pub use self::token_type::TypeScriptTokenType;
 use crate::language::TypeScriptLanguage;
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 /// Lexer for the TypeScript language.
 #[derive(Clone, Debug)]
@@ -22,7 +22,12 @@ impl<'config> TypeScriptLexer<'config> {
 }
 
 impl<'config> Lexer<TypeScriptLanguage> for TypeScriptLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl LexerCache<TypeScriptLanguage>) -> LexOutput<TypeScriptLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<TypeScriptLanguage>,
+    ) -> LexOutput<TypeScriptLanguage> {
         let relex_from = edits.iter().map(|e| e.span.start).min().unwrap_or(0);
         let mut state: State<'_, S> = LexerState::new_with_cache(text, relex_from, cache);
 
@@ -561,7 +566,9 @@ fn consume_template_expression<S: Source + ?Sized>(state: &mut State<'_, S>) {
 fn template_regex_can_start(previous: Option<char>) -> bool {
     match previous {
         None => true,
-        Some(ch) => matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '=' | '!' | '&' | '|' | '?' | '+' | '-' | '*' | '%' | '<' | '>' | '~' | '^'),
+        Some(ch) => {
+            matches!(ch, '(' | '[' | '{' | ',' | ';' | ':' | '=' | '!' | '&' | '|' | '?' | '+' | '-' | '*' | '%' | '<' | '>' | '~' | '^')
+        }
     }
 }
 
@@ -631,7 +638,15 @@ fn consume_quoted<S: Source + ?Sized>(state: &mut State<'_, S>, quote: char) {
 }
 
 fn regex_can_start_after(tokens: &[data_text_core::Token<TypeScriptTokenType>]) -> bool {
-    let previous = tokens.iter().rev().find(|token| !matches!(token.kind, TypeScriptTokenType::Whitespace | TypeScriptTokenType::Newline | TypeScriptTokenType::LineComment | TypeScriptTokenType::BlockComment));
+    let previous = tokens.iter().rev().find(|token| {
+        !matches!(
+            token.kind,
+            TypeScriptTokenType::Whitespace
+                | TypeScriptTokenType::Newline
+                | TypeScriptTokenType::LineComment
+                | TypeScriptTokenType::BlockComment
+        )
+    });
     let Some(previous) = previous
     else {
         return true;

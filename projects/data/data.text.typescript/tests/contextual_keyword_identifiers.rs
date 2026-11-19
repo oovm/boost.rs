@@ -59,7 +59,11 @@ fn contextual_keywords_parse_as_identifier_references() {
     ] {
         let source = format!("const value = {name};");
         let init = single_init(&source);
-        assert!(matches!(&*init.kind, ExpressionKind::Identifier(actual) if actual == name), "{source}: expected identifier, got {:?}", init.kind);
+        assert!(
+            matches!(&*init.kind, ExpressionKind::Identifier(actual) if actual == name),
+            "{source}: expected identifier, got {:?}",
+            init.kind
+        );
     }
 }
 

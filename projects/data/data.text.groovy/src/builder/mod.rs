@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::GroovyLanguage, parser::GroovyParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Groovy language
 #[derive(Clone)]
@@ -32,7 +32,12 @@ impl<'config> GroovyBuilder<'config> {
         Ok(GroovyRoot { declarations, span: (0..source.length()).into() })
     }
 
-    fn build_declaration(&self, node: &data_text_core::GreenNode<GroovyLanguage>, source: &SourceText, offset: usize) -> Option<crate::ast::Declaration> {
+    fn build_declaration(
+        &self,
+        node: &data_text_core::GreenNode<GroovyLanguage>,
+        source: &SourceText,
+        offset: usize,
+    ) -> Option<crate::ast::Declaration> {
         use crate::parser::element_type::GroovyElementType;
         let kind: GroovyElementType = node.kind;
         let start = offset;
@@ -78,7 +83,12 @@ impl<'config> GroovyBuilder<'config> {
 }
 
 impl<'config> Builder<GroovyLanguage> for GroovyBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<GroovyLanguage>) -> data_text_core::builder::BuildOutput<GroovyLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<GroovyLanguage>,
+    ) -> data_text_core::builder::BuildOutput<GroovyLanguage> {
         let parser = GroovyParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<GroovyLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

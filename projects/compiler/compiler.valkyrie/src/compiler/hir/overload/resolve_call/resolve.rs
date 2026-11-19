@@ -7,8 +7,8 @@ use crate::compiler::{
         control_flow_validation::display_type,
         overload::{
             call_resolver::{
-                explain_unresolved_call, try_resolve_instance_method, try_resolve_nullary_constructor, try_resolve_pattern_extractor,
-                resolve_variant_pattern_constructor, try_resolve_try_propagate_ok_variant,
+                explain_unresolved_call, resolve_variant_pattern_constructor, try_resolve_instance_method, try_resolve_nullary_constructor,
+                try_resolve_pattern_extractor, try_resolve_try_propagate_ok_variant,
             },
             diagnostics::{OverloadCandidate, OverloadDomain, OverloadResolutionError},
             expr_position::ExprPosition,
@@ -26,8 +26,9 @@ use crate::compiler::{
     types::{
         Identifier, NamePath,
         hir::{
-            FunctionType, HirBlock, HirCallArgument, HirCallResolutionFailure, HirCallResolutionFailureKind, HirExpr, HirExprKind, HirFunction, HirFunctionReference,
-            HirMatchArm, HirModule, HirLetOrigin, HirPattern, HirResolvedCall, HirStatement, HirStatementKind, ValkyrieType,
+            FunctionType, HirBlock, HirCallArgument, HirCallResolutionFailure, HirCallResolutionFailureKind, HirExpr, HirExprKind, HirFunction,
+            HirFunctionReference, HirLetOrigin, HirMatchArm, HirModule, HirPattern, HirResolvedCall, HirStatement, HirStatementKind,
+            ValkyrieType,
         },
     },
 };
@@ -275,9 +276,7 @@ fn resolve_statement_calls(
                 bind_pattern_type(pattern, &binding_type, locals);
             }
         }
-        HirStatementKind::Expr(expr) => {
-            resolve_expr_calls(expr, candidates, type_relations, locals, struct_fields, singleton_names, context)
-        }
+        HirStatementKind::Expr(expr) => resolve_expr_calls(expr, candidates, type_relations, locals, struct_fields, singleton_names, context),
     }
 }
 
@@ -301,17 +300,12 @@ fn for_in_iterator_source(expr: &HirExpr) -> Option<&HirExpr> {
 ///
 /// 具体 impl 成员按声明身份在候选表里核对 trait 归属；泛型源经 trait 槽解析时核对
 /// witness 冻结的 trait 声明。同名 inherent 方法不构成证据。
-fn into_iterator_has_protocol_evidence(
-    initializer: &HirExpr,
-    candidates: &[OverloadCandidate],
-    type_relations: &TypeRelationContext,
-) -> bool {
+fn into_iterator_has_protocol_evidence(initializer: &HirExpr, candidates: &[OverloadCandidate], type_relations: &TypeRelationContext) -> bool {
     let HirExprKind::Call { resolved: Some(call), .. } = &initializer.kind
     else {
         return false;
     };
-    let Some(protocol) =
-        type_relations.protocol_trait_declaration(crate::compiler::semantic::operator_members::FOR_IN_INTO_ITERATOR_TRAIT)
+    let Some(protocol) = type_relations.protocol_trait_declaration(crate::compiler::semantic::operator_members::FOR_IN_INTO_ITERATOR_TRAIT)
     else {
         return false;
     };
@@ -540,7 +534,8 @@ fn resolve_expr_calls_at(
                     singleton_names,
                     context.ty,
                 )
-            } else {
+            }
+            else {
                 member_argument_contexts
             };
             for (index, arg) in args.iter_mut().enumerate() {
@@ -577,15 +572,7 @@ fn resolve_expr_calls_at(
             }
         }
         HirExprKind::FieldAccess { object, field, field_id, tuple_index } => {
-            resolve_expr_calls(
-                object,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             if field_id.is_none() && tuple_index.is_none() {
                 // 字段解析统一走 `resolve_field`：带标签元组按标签、无标签元组按 `.0` 位置
                 // 都冻结成位置索引，名义聚合冻结成字段身份；越界与普通名字访问保持未解析，
@@ -620,15 +607,7 @@ fn resolve_expr_calls_at(
         | HirExprKind::YieldFrom(callee)
         | HirExprKind::Raise(callee)
         | HirExprKind::Resume(callee) => {
-            resolve_expr_calls(
-                callee,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            )
+            resolve_expr_calls(callee, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty))
         }
         HirExprKind::Assign { target, value } => {
             // 赋值值位置：期望类型是左值的声明类型（对照 `StoreField` 的字段写入），
@@ -642,15 +621,7 @@ fn resolve_expr_calls_at(
             resolve_expr_calls(value, candidates, type_relations, locals, struct_fields, singleton_names, value_context)
         }
         HirExprKind::StoreField { object, field, value, field_id } => {
-            resolve_expr_calls(
-                object,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(object, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             // 字段写入的值位于「接收位置」：期望类型是目标字段的声明类型，
             // 不是外层表达式类型。`self.root = nullary_ctor()` 之类的写入必须靠
             // 字段类型定下泛型/变体，否则 MIR 的 StoreField 值与声明不符。
@@ -668,40 +639,18 @@ fn resolve_expr_calls_at(
                     .and_then(|object_type| field_identity_from_type(object_type, field, struct_fields));
             }
         }
-        HirExprKind::ArrayNew { length, .. } => resolve_expr_calls(
-            length,
-            candidates,
-            type_relations,
-            locals,
-            struct_fields,
-            singleton_names,
-            context.hint(context.ty),
-        ),
+        HirExprKind::ArrayNew { length, .. } => {
+            resolve_expr_calls(length, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty))
+        }
         HirExprKind::ArrayLiteral { items: args }
         | HirExprKind::TupleLiteral { items: args }
         | HirExprKind::CollectionInit { items: args, .. } => {
             for arg in args {
-                resolve_expr_calls(
-                    arg,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                    context.hint(context.ty),
-                );
+                resolve_expr_calls(arg, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             }
         }
         HirExprKind::TryPropagate { inner, resolved_ok_variant } => {
-            resolve_expr_calls(
-                inner,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(inner, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             if resolved_ok_variant.is_none() {
                 let operand_type = infer_scrutinee_type(inner, locals, struct_fields, singleton_names);
                 *resolved_ok_variant = operand_type.as_ref().and_then(|ty| try_resolve_try_propagate_ok_variant(ty, candidates));
@@ -713,20 +662,17 @@ fn resolve_expr_calls_at(
             // 泛型 binder 属于聚合声明本身，直接拿来当上下文会把 `None` 这类空变体
             // 冻结成声明 binder，后面构造匹配再把同一泛型当成两个 rigid binder。
             let field_substitutions = context.ty.and_then(|context| {
-                candidates
-                    .iter()
-                    .filter(|candidate| aggregate_constructor_matches_name(candidate, path))
-                    .find_map(|candidate| {
-                        let mut substitutions = BTreeMap::new();
-                        unify_call_type_binders(
-                            &candidate.signature.return_type,
-                            context,
-                            &candidate.generic_binders,
-                            &mut substitutions,
-                            type_relations,
-                        )?;
-                        Some(substitutions)
-                    })
+                candidates.iter().filter(|candidate| aggregate_constructor_matches_name(candidate, path)).find_map(|candidate| {
+                    let mut substitutions = BTreeMap::new();
+                    unify_call_type_binders(
+                        &candidate.signature.return_type,
+                        context,
+                        &candidate.generic_binders,
+                        &mut substitutions,
+                        type_relations,
+                    )?;
+                    Some(substitutions)
+                })
             });
             for (index, arg) in args.iter_mut().enumerate() {
                 let declared_parameter_type = match &arg.kind {
@@ -763,15 +709,7 @@ fn resolve_expr_calls_at(
                         Some(field_context) => context.expected(Some(field_context)),
                         None => context.hint(context.ty),
                     };
-                    resolve_argument_expr(
-                        arg,
-                        candidates,
-                        type_relations,
-                        locals,
-                        struct_fields,
-                        singleton_names,
-                        positional_context,
-                    );
+                    resolve_argument_expr(arg, candidates, type_relations, locals, struct_fields, singleton_names, positional_context);
                 }
             }
             if resolved.is_none() {
@@ -795,8 +733,7 @@ fn resolve_expr_calls_at(
                         for arg in args.iter_mut() {
                             if let HirExprKind::FieldInit { name, field_id, .. } = &mut arg.kind {
                                 if field_id.is_none() {
-                                    *field_id =
-                                        fields.iter().find(|field| field.name.as_str() == name.as_str()).and_then(|field| field.id);
+                                    *field_id = fields.iter().find(|field| field.name.as_str() == name.as_str()).and_then(|field| field.id);
                                 }
                             }
                         }
@@ -805,19 +742,9 @@ fn resolve_expr_calls_at(
             }
         }
         HirExprKind::Cast { expr, .. } => {
-            resolve_expr_calls(
-                expr,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(expr, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
         }
-        HirExprKind::Block(block) => {
-            resolve_block_calls(block, candidates, type_relations, locals, struct_fields, singleton_names, context)
-        }
+        HirExprKind::Block(block) => resolve_block_calls(block, candidates, type_relations, locals, struct_fields, singleton_names, context),
         HirExprKind::TryScope { body, .. } => {
             resolve_block_calls(body, candidates, type_relations, locals, struct_fields, singleton_names, context)
         }
@@ -830,30 +757,14 @@ fn resolve_expr_calls_at(
         }
         HirExprKind::AnonymousClass { fields, methods, .. } => {
             for (_, value) in fields {
-                resolve_expr_calls(
-                    value,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                    context.hint(context.ty),
-                );
+                resolve_expr_calls(value, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             }
             for method in methods {
                 resolve_function_calls(method, candidates, type_relations, struct_fields, singleton_names, None);
             }
         }
         HirExprKind::If { condition, then_branch, else_branch } => {
-            resolve_expr_calls(
-                condition,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(condition, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             let mut then_locals = locals.clone();
             resolve_block_calls(then_branch, candidates, type_relations, &mut then_locals, struct_fields, singleton_names, context);
             if let Some(else_branch) = else_branch {
@@ -862,39 +773,14 @@ fn resolve_expr_calls_at(
             }
         }
         HirExprKind::Match { scrutinee, arms } | HirExprKind::Case { scrutinee, arms } => {
-            resolve_expr_calls(
-                scrutinee,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(scrutinee, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, singleton_names);
             for arm in arms {
-                resolve_arm_calls(
-                    arm,
-                    candidates,
-                    type_relations,
-                    locals,
-                    scrutinee_type.as_ref(),
-                    struct_fields,
-                    singleton_names,
-                    context,
-                );
+                resolve_arm_calls(arm, candidates, type_relations, locals, scrutinee_type.as_ref(), struct_fields, singleton_names, context);
             }
         }
         HirExprKind::IfLet { pattern, scrutinee, then_branch, else_branch } => {
-            resolve_expr_calls(
-                scrutinee,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(scrutinee, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             let scrutinee_type = infer_scrutinee_type(scrutinee, locals, struct_fields, singleton_names);
             resolve_pattern_calls(pattern, candidates, type_relations, scrutinee_type.as_ref(), struct_fields);
             let mut then_locals = locals.clone();
@@ -909,26 +795,10 @@ fn resolve_expr_calls_at(
         }
         HirExprKind::Loop { pattern, iterator, condition, body, .. } => {
             if let Some(iterator) = iterator {
-                resolve_expr_calls(
-                    iterator,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                    context.hint(context.ty),
-                );
+                resolve_expr_calls(iterator, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             }
             if let Some(condition) = condition {
-                resolve_expr_calls(
-                    condition,
-                    candidates,
-                    type_relations,
-                    locals,
-                    struct_fields,
-                    singleton_names,
-                    context.hint(context.ty),
-                );
+                resolve_expr_calls(condition, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             }
             let mut body_locals = locals.clone();
             if let (Some(pattern), Some(iterator)) = (pattern, iterator) {
@@ -959,38 +829,13 @@ fn resolve_expr_calls_at(
         }
         HirExprKind::Break { expr: Some(value), .. } | HirExprKind::Yield(Some(value)) => {
             // `break` / `yield` 的期望类型不是外壳类型，只作收窄提示。
-            resolve_expr_calls(
-                value,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(value, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
         }
         HirExprKind::Catch { expr, arms } => {
-            resolve_expr_calls(
-                expr,
-                candidates,
-                type_relations,
-                locals,
-                struct_fields,
-                singleton_names,
-                context.hint(context.ty),
-            );
+            resolve_expr_calls(expr, candidates, type_relations, locals, struct_fields, singleton_names, context.hint(context.ty));
             let scrutinee_type = infer_catch_scrutinee_type(expr, locals);
             for arm in arms {
-                resolve_arm_calls(
-                    arm,
-                    candidates,
-                    type_relations,
-                    locals,
-                    scrutinee_type.as_ref(),
-                    struct_fields,
-                    singleton_names,
-                    context,
-                );
+                resolve_arm_calls(arm, candidates, type_relations, locals, scrutinee_type.as_ref(), struct_fields, singleton_names, context);
             }
         }
         HirExprKind::Variable(_)
@@ -1023,15 +868,7 @@ fn resolve_arm_calls(
         bind_pattern_type(&arm.pattern, scrutinee_type, &mut arm_locals);
     }
     if let Some(guard) = &mut arm.guard {
-        resolve_expr_calls(
-            guard,
-            candidates,
-            type_relations,
-            &mut arm_locals,
-            struct_fields,
-            singleton_names,
-            context.hint(context.ty),
-        );
+        resolve_expr_calls(guard, candidates, type_relations, &mut arm_locals, struct_fields, singleton_names, context.hint(context.ty));
     }
     resolve_expr_calls(&mut arm.body, candidates, type_relations, &mut arm_locals, struct_fields, singleton_names, context);
 }
@@ -1133,7 +970,8 @@ fn resolve_pattern_calls(
                                     .as_ref()
                                     .and_then(|payload| object_pattern_field_slots(fields, &resolved_call, payload, struct_fields))
                                     .map(|slots| reorder_object_pattern_fields(fields, &slots))
-                            } else {
+                            }
+                            else {
                                 None
                             }
                             .unwrap_or_else(|| fields.iter().map(|(_, field)| field.clone()).collect());

@@ -50,10 +50,33 @@ impl TokenType for ObjectiveCTokenType {
             | Self::NilKeyword
             | Self::YesKeyword
             | Self::NoKeyword => UniversalTokenRole::Keyword,
-            Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Equal | Self::EqualEqual | Self::NotEqual | Self::Less | Self::Greater | Self::LessEqual | Self::GreaterEqual | Self::And | Self::Or | Self::Not | Self::Question => {
-                UniversalTokenRole::Operator
-            }
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Semicolon | Self::Comma | Self::Dot | Self::Colon | Self::At => UniversalTokenRole::Punctuation,
+            Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Percent
+            | Self::Equal
+            | Self::EqualEqual
+            | Self::NotEqual
+            | Self::Less
+            | Self::Greater
+            | Self::LessEqual
+            | Self::GreaterEqual
+            | Self::And
+            | Self::Or
+            | Self::Not
+            | Self::Question => UniversalTokenRole::Operator,
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::Colon
+            | Self::At => UniversalTokenRole::Punctuation,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,
             _ => UniversalTokenRole::None,

@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
@@ -75,8 +75,12 @@ impl<'config> DejavuBuilder<'config> {
                     match child {
                         RedTree::Leaf(t) => match t.kind {
                             DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment => continue,
-                            DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::True) => return Ok(ExpressionNode::Bool(BooleanLiteralNode { value: true, span })),
-                            DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::False) => return Ok(ExpressionNode::Bool(BooleanLiteralNode { value: false, span })),
+                            DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::True) => {
+                                return Ok(ExpressionNode::Bool(BooleanLiteralNode { value: true, span }));
+                            }
+                            DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::False) => {
+                                return Ok(ExpressionNode::Bool(BooleanLiteralNode { value: false, span }));
+                            }
                             _ => return Ok(ExpressionNode::Literal(LiteralExpressionNode { value: text(source, t.span.into()), span })),
                         },
                         RedTree::Node(_) => {}
@@ -90,7 +94,12 @@ impl<'config> DejavuBuilder<'config> {
                     match child {
                         RedTree::Leaf(t) => match t.kind {
                             DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment => continue,
-                            _ => return Ok(ExpressionNode::Bool(BooleanLiteralNode { value: t.kind == DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::True), span })),
+                            _ => {
+                                return Ok(ExpressionNode::Bool(BooleanLiteralNode {
+                                    value: t.kind == DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::True),
+                                    span,
+                                }));
+                            }
                         },
                         RedTree::Node(_) => {}
                     }
@@ -102,10 +111,19 @@ impl<'config> DejavuBuilder<'config> {
                 for child in node.children() {
                     match child {
                         RedTree::Leaf(t) => match t.kind {
-                            DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment | DejavuTokenType::LeftParen | DejavuTokenType::RightParen => continue,
+                            DejavuTokenType::Whitespace
+                            | DejavuTokenType::LineComment
+                            | DejavuTokenType::BlockComment
+                            | DejavuTokenType::LeftParen
+                            | DejavuTokenType::RightParen => continue,
                             _ => {}
                         },
-                        RedTree::Node(n) => return Ok(ExpressionNode::Paren(ParenthesizedExpressionNode { expr: Box::new(self.build_expr(n, source)?), span })),
+                        RedTree::Node(n) => {
+                            return Ok(ExpressionNode::Paren(ParenthesizedExpressionNode {
+                                expr: Box::new(self.build_expr(n, source)?),
+                                span,
+                            }));
+                        }
                     }
                 }
                 Err(source.syntax_error(format!("Missing expression in parenthesized expression at {:?}", span), span.start))
@@ -160,7 +178,12 @@ impl<'config> DejavuBuilder<'config> {
                     }
                 }
                 if let (Some(left_expr), Some(op_kind), Some(right_expr)) = (left, op, right) {
-                    Ok(ExpressionNode::Binary(BinaryExpressionNode { left: Box::new(left_expr), op: op_kind, right: Box::new(right_expr), span }))
+                    Ok(ExpressionNode::Binary(BinaryExpressionNode {
+                        left: Box::new(left_expr),
+                        op: op_kind,
+                        right: Box::new(right_expr),
+                        span,
+                    }))
                 }
                 else {
                     Err(source.syntax_error(format!("Missing operands in binary expression at {:?}", span), span.start))
@@ -182,7 +205,11 @@ impl<'config> DejavuBuilder<'config> {
                             }
                         }
                         RedTree::Leaf(t) => match t.kind {
-                            DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment | DejavuTokenType::Comma | DejavuTokenType::RightParen => continue,
+                            DejavuTokenType::Whitespace
+                            | DejavuTokenType::LineComment
+                            | DejavuTokenType::BlockComment
+                            | DejavuTokenType::Comma
+                            | DejavuTokenType::RightParen => continue,
                             DejavuTokenType::LeftParen => {
                                 seen_paren = true;
                             }
@@ -190,7 +217,12 @@ impl<'config> DejavuBuilder<'config> {
                         },
                     }
                 }
-                if let Some(callee_expr) = callee { Ok(ExpressionNode::Call(CallExpressionNode { callee: Box::new(callee_expr), args, span })) } else { Err(source.syntax_error(format!("Missing callee in call expression at {:?}", span), span.start)) }
+                if let Some(callee_expr) = callee {
+                    Ok(ExpressionNode::Call(CallExpressionNode { callee: Box::new(callee_expr), args, span }))
+                }
+                else {
+                    Err(source.syntax_error(format!("Missing callee in call expression at {:?}", span), span.start))
+                }
             }
             DejavuElementType::FieldExpression => {
                 let span = node.span();
@@ -207,7 +239,12 @@ impl<'config> DejavuBuilder<'config> {
                                 match self.build_expr(n, source)? {
                                     ExpressionNode::Ident(ident) => field = Some(ident),
                                     ExpressionNode::Path(path) if path.parts.len() == 1 => field = Some(path.parts[0].clone()),
-                                    _ => return Err(source.syntax_error(format!("Expected identifier after '.', but found {:?}", n.green.kind), n.span().start)),
+                                    _ => {
+                                        return Err(source.syntax_error(
+                                            format!("Expected identifier after '.', but found {:?}", n.green.kind),
+                                            n.span().start,
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -247,7 +284,11 @@ impl<'config> DejavuBuilder<'config> {
                             }
                         }
                         RedTree::Leaf(t) => match t.kind {
-                            DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment | DejavuTokenType::LeftBracket | DejavuTokenType::RightBracket => continue,
+                            DejavuTokenType::Whitespace
+                            | DejavuTokenType::LineComment
+                            | DejavuTokenType::BlockComment
+                            | DejavuTokenType::LeftBracket
+                            | DejavuTokenType::RightBracket => continue,
                             _ => {}
                         },
                     }
@@ -309,7 +350,11 @@ impl<'config> DejavuBuilder<'config> {
         }
     }
 
-    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<LambdaExpressionNode, TextError> {
+    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(
+        &self,
+        node: RedNode<DejavuLanguage>,
+        source: &S,
+    ) -> Result<LambdaExpressionNode, TextError> {
         let span = node.span();
         let mut params = Vec::new();
         let mut return_type = None;
@@ -328,6 +373,11 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        Ok(LambdaExpressionNode { params, return_type, body: body.ok_or_else(|| source.syntax_error("Missing body in lambda".to_string(), span.end))?, span })
+        Ok(LambdaExpressionNode {
+            params,
+            return_type,
+            body: body.ok_or_else(|| source.syntax_error("Missing body in lambda".to_string(), span.end))?,
+            span,
+        })
     }
 }

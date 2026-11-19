@@ -31,7 +31,12 @@ impl<'config> AthenaParser<'config> {
 }
 
 impl<'config> Parser<AthenaLanguage> for AthenaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<AthenaLanguage>) -> ParseOutput<'a, AthenaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<AthenaLanguage>,
+    ) -> ParseOutput<'a, AthenaLanguage> {
         let lexer = AthenaLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -163,7 +168,12 @@ impl<'config> Pratt<AthenaLanguage> for AthenaParser<'config> {
         self.primary(state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, AthenaLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, AthenaLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, AthenaLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, AthenaLanguage>> {
         let kind = state.peek_kind()?;
         let info = match kind {
             AthenaTokenType::Plus | AthenaTokenType::Minus => Some(OperatorInfo::left(80)),

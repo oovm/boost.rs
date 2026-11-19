@@ -7,6 +7,5 @@ mod validate;
 
 pub use failure_sink::record_failure;
 pub use pattern_policy::pattern_extractor_receiver_type;
-pub use resolve::bind_pattern_type;
-pub use resolve::resolve_hir_calls;
+pub use resolve::{bind_pattern_type, resolve_hir_calls};
 pub use validate::validate_extractor_patterns;

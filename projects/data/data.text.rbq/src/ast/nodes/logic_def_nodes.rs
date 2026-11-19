@@ -153,14 +153,28 @@ impl RbqTrait {
                         if let Some(expr) = &field.default_value {
                             if let RbqExprKind::Identifier(id) = &expr.kind {
                                 if id == "micro" {
-                                    items.push(RbqTraitItem::Method(RbqMicro { annotations: field.annotations.clone(), name: field.name.clone(), args: Vec::new(), return_type: None, body: None, span: node.span() }));
+                                    items.push(RbqTraitItem::Method(RbqMicro {
+                                        annotations: field.annotations.clone(),
+                                        name: field.name.clone(),
+                                        args: Vec::new(),
+                                        return_type: None,
+                                        body: None,
+                                        span: node.span(),
+                                    }));
                                     continue;
                                 }
                             }
                             else if let RbqExprKind::Call { callee, args } = &expr.kind {
                                 if let RbqExprKind::Identifier(id) = &callee.kind {
                                     if id == "micro" {
-                                        let mut micro = RbqMicro { annotations: field.annotations.clone(), name: field.name.clone(), args: Vec::new(), return_type: None, body: None, span: node.span() };
+                                        let mut micro = RbqMicro {
+                                            annotations: field.annotations.clone(),
+                                            name: field.name.clone(),
+                                            args: Vec::new(),
+                                            return_type: None,
+                                            body: None,
+                                            span: node.span(),
+                                        };
                                         // Try to map CallExpr args to RbqField args
                                         for arg_expr in args {
                                             if let RbqExprKind::Binary { left, op, right } = &arg_expr.kind {
@@ -170,7 +184,13 @@ impl RbqTrait {
                                                         micro.args.push(RbqField {
                                                             annotations: Vec::new(),
                                                             name: arg_name.clone(),
-                                                            type_ref: RbqType::Named { path: type_path, generic_args: Vec::new(), is_physical_ptr: false, is_optional: false, span: right.span.clone() },
+                                                            type_ref: RbqType::Named {
+                                                                path: type_path,
+                                                                generic_args: Vec::new(),
+                                                                is_physical_ptr: false,
+                                                                is_optional: false,
+                                                                span: right.span.clone(),
+                                                            },
                                                             default_value: None,
                                                             span: arg_expr.span.clone(),
                                                         });
@@ -320,7 +340,13 @@ impl RbqTypeAlias {
         let span = red.span();
         let mut annotations = Vec::new();
         let mut name = String::new();
-        let mut type_ref = RbqType::Named { path: "unknown".to_string(), generic_args: Vec::new(), is_physical_ptr: false, is_optional: false, span: span.clone() };
+        let mut type_ref = RbqType::Named {
+            path: "unknown".to_string(),
+            generic_args: Vec::new(),
+            is_physical_ptr: false,
+            is_optional: false,
+            span: span.clone(),
+        };
 
         for child in red.children() {
             match child.kind::<RbqElementType>() {

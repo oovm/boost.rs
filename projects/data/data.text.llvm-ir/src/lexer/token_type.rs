@@ -77,7 +77,9 @@ impl TokenType for LLvmTokenType {
             Self::Keyword => UniversalTokenRole::Keyword,
             Self::Number | Self::String => UniversalTokenRole::Literal,
             Self::Equal | Self::Star => UniversalTokenRole::Operator,
-            Self::Comma | Self::LParen | Self::RParen | Self::LBracket | Self::RBracket | Self::LBrace | Self::RBrace | Self::Colon => UniversalTokenRole::Punctuation,
+            Self::Comma | Self::LParen | Self::RParen | Self::LBracket | Self::RBracket | Self::LBrace | Self::RBrace | Self::Colon => {
+                UniversalTokenRole::Punctuation
+            }
             Self::LocalVar | Self::GlobalVar | Self::Metadata | Self::Identifier => UniversalTokenRole::Name,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,

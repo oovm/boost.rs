@@ -5,7 +5,7 @@ use crate::{
     language::MsilLanguage,
     parser::{MsilParser, element_type::MsilElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Source, SourceText, TextEdit};
+use data_text_core::{Builder, BuilderCache, GreenNode, Source, SourceText, TextDiagnostics, TextEdit};
 
 /// Builder for the MSIL language.
 #[derive(Clone)]
@@ -154,7 +154,12 @@ impl<'config> MsilBuilder<'config> {
 }
 
 impl<'config> Builder<MsilLanguage> for MsilBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<MsilLanguage>) -> TextDiagnostics<MsilRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<MsilLanguage>,
+    ) -> TextDiagnostics<MsilRoot> {
         let parser = MsilParser::new(self.config);
         let lexer = crate::lexer::MsilLexer::new(&self.config);
 

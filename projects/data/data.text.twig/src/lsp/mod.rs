@@ -4,8 +4,8 @@ pub mod highlighter;
 
 #[cfg(feature = "lsp")]
 use {
-    futures::Future,
     data_text_core::tree::RedNode,
+    futures::Future,
     language_server::LanguageService,
     language_server::{DocumentSession, MemoryVfs, Vfs},
 };

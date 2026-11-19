@@ -1,10 +1,16 @@
 use crate::{
-    ast::{VosDeclaration, VosDeclarationKind, VosField, VosFieldAttribute, VosParameter, VosRoot, VosServiceMethod, VosServiceMethodReturn, VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax},
+    ast::{
+        VosDeclaration, VosDeclarationKind, VosField, VosFieldAttribute, VosParameter, VosRoot, VosServiceMethod, VosServiceMethodReturn,
+        VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax,
+    },
     language::VosLanguage,
     lexer::VosLexer,
     parser::{VosElementType, VosParser},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Lexer, Parser, SourceText, TextDiagnostics, TextEdit, TextError,
+    parser::session::ParseSession, source::Source,
+};
 
 mod program;
 
@@ -37,7 +43,12 @@ impl VosBuilder {
         })
     }
 
-    fn build_declaration<'a>(&self, node: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText) -> Result<VosDeclaration, TextError> {
+    fn build_declaration<'a>(
+        &self,
+        node: &GreenNode<'a, VosLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<VosDeclaration, TextError> {
         let kind = Self::kind(node.kind).ok_or_else(|| TextError::expected_token("VOS declaration", offset, None))?;
         let span = (offset..offset + node.byte_length as usize).into();
         let mut current_offset = offset;
@@ -107,7 +118,21 @@ impl VosBuilder {
         if kind == VosDeclarationKind::Service {
             self.collect_methods(node, offset, source, &mut methods)?;
         }
-        Ok(VosDeclaration { kind, name, path, signature, parameters, attributes, methods, body, body_program, return_type, return_type_expr, fields, span })
+        Ok(VosDeclaration {
+            kind,
+            name,
+            path,
+            signature,
+            parameters,
+            attributes,
+            methods,
+            body,
+            body_program,
+            return_type,
+            return_type_expr,
+            fields,
+            span,
+        })
     }
 
     fn build_parameters(&self, node: &GreenNode<'_, VosLanguage>, offset: usize, source: &SourceText) -> Result<Vec<VosParameter>, TextError> {
@@ -157,7 +182,13 @@ impl VosBuilder {
         Ok(VosParameter { name, name_span, type_syntax, type_expr, span })
     }
 
-    fn collect_fields<'a>(&self, tree: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText, fields: &mut Vec<VosField>) -> Result<(), TextError> {
+    fn collect_fields<'a>(
+        &self,
+        tree: &GreenNode<'a, VosLanguage>,
+        offset: usize,
+        source: &SourceText,
+        fields: &mut Vec<VosField>,
+    ) -> Result<(), TextError> {
         let mut child_offset = offset;
         for child in tree.children {
             match child {
@@ -211,7 +242,13 @@ impl VosBuilder {
         Ok(VosField { name, name_span, attributes, type_syntax, type_expr, default_value, span: span.into() })
     }
 
-    fn collect_methods<'a>(&self, tree: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText, methods: &mut Vec<VosServiceMethod>) -> Result<(), TextError> {
+    fn collect_methods<'a>(
+        &self,
+        tree: &GreenNode<'a, VosLanguage>,
+        offset: usize,
+        source: &SourceText,
+        methods: &mut Vec<VosServiceMethod>,
+    ) -> Result<(), TextError> {
         let mut child_offset = offset;
         for child in tree.children {
             match child {
@@ -266,15 +303,26 @@ impl VosBuilder {
         Ok(VosServiceMethod { name, name_span, attributes, signature, parameters, return_type, span: span.into() })
     }
 
-    fn build_method_return(&self, node: &GreenNode<'_, VosLanguage>, offset: usize, source: &SourceText) -> Result<VosServiceMethodReturn, TextError> {
+    fn build_method_return(
+        &self,
+        node: &GreenNode<'_, VosLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<VosServiceMethodReturn, TextError> {
         let type_syntax = self.slice(node, offset, source);
         let span = type_syntax.span;
-        let stream = node.children.iter().any(|child| matches!(child, GreenTree::Leaf(leaf) if leaf.kind == crate::lexer::VosTokenType::Stream));
+        let stream =
+            node.children.iter().any(|child| matches!(child, GreenTree::Leaf(leaf) if leaf.kind == crate::lexer::VosTokenType::Stream));
         let type_expr = self.build_type_expr(node, offset, source)?;
         Ok(VosServiceMethodReturn { stream, type_syntax, type_expr, span })
     }
 
-    fn build_type_expr(&self, field: &GreenNode<'_, VosLanguage>, field_offset: usize, source: &SourceText) -> Result<VosTypeSyntax, TextError> {
+    fn build_type_expr(
+        &self,
+        field: &GreenNode<'_, VosLanguage>,
+        field_offset: usize,
+        source: &SourceText,
+    ) -> Result<VosTypeSyntax, TextError> {
         let mut child_offset = field_offset;
         for child in field.children {
             if let GreenTree::Node(node) = child {
@@ -308,7 +356,12 @@ impl VosBuilder {
         Err(TextError::expected_token("VOS type syntax", field_offset, None))
     }
 
-    fn parse_type_tokens(&self, tokens: &[(crate::lexer::VosTokenType, core::range::Range<usize>)], index: &mut usize, source: &SourceText) -> Result<VosTypeSyntax, TextError> {
+    fn parse_type_tokens(
+        &self,
+        tokens: &[(crate::lexer::VosTokenType, core::range::Range<usize>)],
+        index: &mut usize,
+        source: &SourceText,
+    ) -> Result<VosTypeSyntax, TextError> {
         let Some((kind, span)) = tokens.get(*index)
         else {
             return Err(TextError::expected_token("VOS type syntax", 0, None));
@@ -323,7 +376,12 @@ impl VosBuilder {
             };
             let end = self.type_span(&target).end;
             let reference = VosTypeSyntax::Reference { target: Box::new(target), span: (start..end).into() };
-            if let Some(optional_end) = target_optional { VosTypeSyntax::Optional { inner: Box::new(reference), span: (start..optional_end).into() } } else { reference }
+            if let Some(optional_end) = target_optional {
+                VosTypeSyntax::Optional { inner: Box::new(reference), span: (start..optional_end).into() }
+            }
+            else {
+                reference
+            }
         }
         else if *kind == crate::lexer::VosTokenType::LeftBracket {
             *index += 1;
@@ -339,7 +397,10 @@ impl VosBuilder {
             let mut path = vec![self.token_text(span, source).into_owned()];
             let mut end = span.end;
             *index += 1;
-            while *index + 1 < tokens.len() && tokens[*index].0 == crate::lexer::VosTokenType::Colon && tokens[*index + 1].0 == crate::lexer::VosTokenType::Colon {
+            while *index + 1 < tokens.len()
+                && tokens[*index].0 == crate::lexer::VosTokenType::Colon
+                && tokens[*index + 1].0 == crate::lexer::VosTokenType::Colon
+            {
                 *index += 2;
                 let segment = tokens.get(*index).ok_or_else(|| TextError::unexpected_eof(end, None))?;
                 if segment.0 != crate::lexer::VosTokenType::Identifier {
@@ -357,7 +418,13 @@ impl VosBuilder {
                     if argument.0 == crate::lexer::VosTokenType::Greater {
                         return Err(TextError::expected_token("generic argument", argument.1.start, None));
                     }
-                    let parsed = if matches!(argument.0, crate::lexer::VosTokenType::NumberLiteral | crate::lexer::VosTokenType::StringLiteral | crate::lexer::VosTokenType::BooleanLiteral | crate::lexer::VosTokenType::NullLiteral) {
+                    let parsed = if matches!(
+                        argument.0,
+                        crate::lexer::VosTokenType::NumberLiteral
+                            | crate::lexer::VosTokenType::StringLiteral
+                            | crate::lexer::VosTokenType::BooleanLiteral
+                            | crate::lexer::VosTokenType::NullLiteral
+                    ) {
                         *index += 1;
                         VosTypeArgument::Literal(self.raw_slice(argument.1.start, argument.1.end, source))
                     }
@@ -403,7 +470,11 @@ impl VosBuilder {
 
     fn type_span<'a>(&self, value: &'a VosTypeSyntax) -> &'a core::range::Range<usize> {
         match value {
-            VosTypeSyntax::Named { span, .. } | VosTypeSyntax::Reference { span, .. } | VosTypeSyntax::Optional { span, .. } | VosTypeSyntax::List { span, .. } | VosTypeSyntax::Generic { span, .. } => span,
+            VosTypeSyntax::Named { span, .. }
+            | VosTypeSyntax::Reference { span, .. }
+            | VosTypeSyntax::Optional { span, .. }
+            | VosTypeSyntax::List { span, .. }
+            | VosTypeSyntax::Generic { span, .. } => span,
         }
     }
 
@@ -480,14 +551,23 @@ impl VosBuilder {
             }
             GreenTree::Leaf(leaf) => {
                 let end = offset + leaf.length as usize;
-                VosSyntaxElement::Token(VosSyntaxToken { kind: leaf.kind, span: (offset..end).into(), text: source.get_text_in((offset..end).into()).into_owned() })
+                VosSyntaxElement::Token(VosSyntaxToken {
+                    kind: leaf.kind,
+                    span: (offset..end).into(),
+                    text: source.get_text_in((offset..end).into()).into_owned(),
+                })
             }
         }
     }
 }
 
 impl Builder<VosLanguage> for VosBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<VosLanguage>) -> TextDiagnostics<VosRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<VosLanguage>,
+    ) -> TextDiagnostics<VosRoot> {
         let parser = VosParser::default();
         let lexer = VosLexer;
         let mut parse_session = ParseSession::<VosLanguage>::default();

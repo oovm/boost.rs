@@ -2,8 +2,8 @@
 
 use compiler_optimize::{
     CapabilityTag, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ObjectAlgebraicDimension, ObjectAlgebraicProgram,
-    OptimizationRequest, OptimizationSession, ProjectionPolicy, QualifiedName, RewritePhase, RewriteRule, RewriteTheory, Term,
-    TheoryBundle, builtin_core_term_rewrites, parse_term,
+    OptimizationRequest, OptimizationSession, ProjectionPolicy, QualifiedName, RewritePhase, RewriteRule, RewriteTheory, Term, TheoryBundle,
+    builtin_core_term_rewrites, parse_term,
 };
 use compiler_types::ReferenceManagement;
 

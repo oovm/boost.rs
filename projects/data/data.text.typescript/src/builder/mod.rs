@@ -1,5 +1,5 @@
 use crate::{ast::*, language::TypeScriptLanguage, lexer::TypeScriptLexer, parser::TypeScriptParser};
-use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 mod build_binding;
 mod build_class;
@@ -33,7 +33,12 @@ impl<'config> TypeScriptBuilder<'config> {
 }
 
 impl<'config> Builder<TypeScriptLanguage> for TypeScriptBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<TypeScriptLanguage>) -> TextDiagnostics<TypeScriptRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<TypeScriptLanguage>,
+    ) -> TextDiagnostics<TypeScriptRoot> {
         let parser = TypeScriptParser::new(self.config);
         let lexer = TypeScriptLexer::new(&self.config);
 

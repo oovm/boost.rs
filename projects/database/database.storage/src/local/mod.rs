@@ -20,8 +20,7 @@ pub use journal::{JournalMode, OpenFlags, shm_path, wal_path};
 pub use lock::{LockMode, WriterLock};
 pub use rows::{ReadRows, Row, load_row, load_row_optional, load_table, load_table_entries, remove_row, scan_selected, upsert_row};
 pub use snapshot::{
-    PagerKv, RecordDelta, RecordWindow, RowRecord, RowSource, RowWindow, SPILLED_END, SPILLED_PREFIX, Snapshot,
-    read_snapshot_windows_with_rows,
+    PagerKv, RecordDelta, RecordWindow, RowRecord, RowSource, RowWindow, SPILLED_END, SPILLED_PREFIX, Snapshot, read_snapshot_windows_with_rows,
 };
 
 // 上层只需一跳拿到的物理布局词表：CAS 块哈希与 WAL blob-manifest 增量属持久化面。

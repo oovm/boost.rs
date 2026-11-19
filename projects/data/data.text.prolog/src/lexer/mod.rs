@@ -480,7 +480,12 @@ impl<'config> PrologLexer<'config> {
 }
 
 impl<'config> Lexer<PrologLanguage> for PrologLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<PrologLanguage>) -> LexOutput<PrologLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<PrologLanguage>,
+    ) -> LexOutput<PrologLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

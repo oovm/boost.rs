@@ -514,10 +514,9 @@ mod tests {
     fn blob_directory_lists_and_removes_published_segments() {
         let path = temp_db("roundtrip");
         cleanup(&path);
-        let mut publisher =
-            VolumePublisher::open(path.to_string_lossy().to_string(), FsVolumeStore::open(&path)).unwrap().with_blob_directory(Box::new(
-                FsBlobDirectory::open(&path),
-            ));
+        let mut publisher = VolumePublisher::open(path.to_string_lossy().to_string(), FsVolumeStore::open(&path))
+            .unwrap()
+            .with_blob_directory(Box::new(FsBlobDirectory::open(&path)));
         assert!(publisher.has_blob_directory());
 
         publisher.publish_blob("abc1", b"first").unwrap();

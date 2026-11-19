@@ -1,5 +1,8 @@
 use crate::{ast::*, language::SassLanguage, parser::SassParser};
-use data_text_core::{Builder, BuilderCache, ElementType, TextDiagnostics, TextError, Parser, Range, SourceText, TextEdit, builder::BuildOutput, source::Source, tree::GreenNode};
+use data_text_core::{
+    Builder, BuilderCache, ElementType, Parser, Range, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+    tree::GreenNode,
+};
 
 /// AST builder for the Sass language.
 #[derive(Clone)]
@@ -14,7 +17,12 @@ impl<'config> SassBuilder<'config> {
     }
 
     /// Builds the Sass AST root from a green tree.
-    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, SassLanguage>, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<SassRoot, TextError> {
+    fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, SassLanguage>,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<SassLanguage>,
+    ) -> Result<SassRoot, TextError> {
         let mut statements = Vec::new();
         let mut current_offset = 0;
 
@@ -35,7 +43,13 @@ impl<'config> SassBuilder<'config> {
         Ok(SassRoot { statements, span: (0..current_offset).into() })
     }
 
-    fn build_statement<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<Option<SassStatement>, TextError> {
+    fn build_statement<'a>(
+        &self,
+        node: &'a GreenNode<'a, SassLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<SassLanguage>,
+    ) -> Result<Option<SassStatement>, TextError> {
         if let Some(cached) = cache.get_typed_node::<SassStatement>(node) {
             return Ok(Some(cached.clone()));
         }
@@ -49,7 +63,10 @@ impl<'config> SassBuilder<'config> {
             SassElementType::ObjectEntry => Some(SassStatement::Property(self.build_property(node, offset, source)?)),
             _ => {
                 if node.kind.is_error() {
-                    Some(SassStatement::Error(ErrorNode { message: format!("Unexpected node kind: {:?}", node.kind), span: (offset..offset + node.byte_length as usize).into() }))
+                    Some(SassStatement::Error(ErrorNode {
+                        message: format!("Unexpected node kind: {:?}", node.kind),
+                        span: (offset..offset + node.byte_length as usize).into(),
+                    }))
                 }
                 else if node.kind == SassElementType::Object {
                     Some(SassStatement::RuleSet(self.build_rule_set(node, offset, source, cache)?))
@@ -67,7 +84,12 @@ impl<'config> SassBuilder<'config> {
         Ok(result)
     }
 
-    fn build_variable_definition<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, _source: &SourceText) -> Result<VariableDefinition, TextError> {
+    fn build_variable_definition<'a>(
+        &self,
+        node: &'a GreenNode<'a, SassLanguage>,
+        offset: usize,
+        _source: &SourceText,
+    ) -> Result<VariableDefinition, TextError> {
         let mut name: Range<usize> = (offset..offset).into();
         let mut value: Range<usize> = (offset..offset).into();
         let mut current_offset = offset;
@@ -92,7 +114,13 @@ impl<'config> SassBuilder<'config> {
         Ok(VariableDefinition { name, value, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_rule_set<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<RuleSet, TextError> {
+    fn build_rule_set<'a>(
+        &self,
+        node: &'a GreenNode<'a, SassLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<SassLanguage>,
+    ) -> Result<RuleSet, TextError> {
         let mut selector = (offset..offset).into();
         let mut children = Vec::new();
         let properties = Vec::new(); // Keep for backward compatibility if needed, but we prefer children
@@ -160,7 +188,13 @@ impl<'config> SassBuilder<'config> {
         Ok(Property { name, value, span: (offset..offset + node.byte_length as usize).into() })
     }
 
-    fn build_at_rule<'a>(&self, node: &'a GreenNode<'a, SassLanguage>, offset: usize, source: &SourceText, cache: &mut impl BuilderCache<SassLanguage>) -> Result<AtRule, TextError> {
+    fn build_at_rule<'a>(
+        &self,
+        node: &'a GreenNode<'a, SassLanguage>,
+        offset: usize,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<SassLanguage>,
+    ) -> Result<AtRule, TextError> {
         let mut name: Range<usize> = (offset..offset).into();
         let mut params = None;
         let mut body = None;
@@ -188,7 +222,10 @@ impl<'config> SassBuilder<'config> {
                     current_offset += n.byte_length as usize;
                 }
                 data_text_core::tree::GreenTree::Leaf(leaf) => {
-                    if name.is_empty() && (leaf.kind == crate::lexer::token_type::SassTokenType::Identifier || leaf.kind == crate::lexer::token_type::SassTokenType::Mixin) {
+                    if name.is_empty()
+                        && (leaf.kind == crate::lexer::token_type::SassTokenType::Identifier
+                            || leaf.kind == crate::lexer::token_type::SassTokenType::Mixin)
+                    {
                         name = (current_offset..current_offset + leaf.length as usize).into();
                     }
                     current_offset += leaf.length as usize;
@@ -201,7 +238,12 @@ impl<'config> SassBuilder<'config> {
 }
 
 impl<'config> Builder<SassLanguage> for SassBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SassLanguage>) -> BuildOutput<SassLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<SassLanguage>,
+    ) -> BuildOutput<SassLanguage> {
         let parser = SassParser::new(self.config);
         let mut parse_cache = data_text_core::parser::ParseSession::<SassLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);

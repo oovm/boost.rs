@@ -1,18 +1,11 @@
 use data_binary_pe::coff::{
-    CoffHeader, CoffMachine, CoffObject, CoffObjectKind, CoffObjectWriter, CoffRelocation, CoffRelocationKind, CoffSection,
-    CoffSymbol,
+    CoffHeader, CoffMachine, CoffObject, CoffObjectKind, CoffObjectWriter, CoffRelocation, CoffRelocationKind, CoffSection, CoffSymbol,
 };
 
 #[test]
 fn writes_section_relocations() {
     let object = CoffObject {
-        header: CoffHeader {
-            machine: CoffMachine::Amd64,
-            section_count: 1,
-            symbol_table_offset: 0,
-            symbol_count: 1,
-            characteristics: 0,
-        },
+        header: CoffHeader { machine: CoffMachine::Amd64, section_count: 1, symbol_table_offset: 0, symbol_count: 1, characteristics: 0 },
         object_kind: CoffObjectKind::ObjectFile,
         sections: vec![CoffSection {
             name: ".text".to_string(),

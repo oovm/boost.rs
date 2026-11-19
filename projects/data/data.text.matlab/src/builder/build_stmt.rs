@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::MatlabTokenType,
     parser::element_type::MatlabElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum IfPhase {
@@ -47,7 +47,12 @@ impl<'config> MatlabBuilder<'config> {
         }
     }
 
-    fn build_name_declaration<S: Source + ?Sized>(&self, node: RedNode<'_, MatlabLanguage>, source: &S, is_global: bool) -> Result<Statement, TextError> {
+    fn build_name_declaration<S: Source + ?Sized>(
+        &self,
+        node: RedNode<'_, MatlabLanguage>,
+        source: &S,
+        is_global: bool,
+    ) -> Result<Statement, TextError> {
         let span = node.span();
         let mut names = Vec::new();
         for child in node.children() {

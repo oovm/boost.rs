@@ -18,11 +18,9 @@ fn test_tree_node_creation() {
 
 #[test]
 fn test_tree_node_with_children() {
-    let node = TreeNode::new("root".to_string(), "Root Node".to_string(), "root".to_string()).with_child(TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string())).with_child(TreeNode::new(
-        "child2".to_string(),
-        "Child 2".to_string(),
-        "child".to_string(),
-    ));
+    let node = TreeNode::new("root".to_string(), "Root Node".to_string(), "root".to_string())
+        .with_child(TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()))
+        .with_child(TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string()));
 
     assert_eq!(node.children.len(), 2);
     assert_eq!(node.depth(), 2);
@@ -33,8 +31,11 @@ fn test_tree_node_with_children() {
 
 #[test]
 fn test_tree_node_with_multiple_children() {
-    let children =
-        vec![TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()), TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string()), TreeNode::new("child3".to_string(), "Child 3".to_string(), "child".to_string())];
+    let children = vec![
+        TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()),
+        TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string()),
+        TreeNode::new("child3".to_string(), "Child 3".to_string(), "child".to_string()),
+    ];
 
     let node = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_children(children);
 
@@ -44,7 +45,9 @@ fn test_tree_node_with_multiple_children() {
 
 #[test]
 fn test_tree_node_attributes() {
-    let node = TreeNode::new("test".to_string(), "Test".to_string(), "test".to_string()).with_attribute("key1".to_string(), "value1".to_string()).with_attribute("key2".to_string(), "value2".to_string());
+    let node = TreeNode::new("test".to_string(), "Test".to_string(), "test".to_string())
+        .with_attribute("key1".to_string(), "value1".to_string())
+        .with_attribute("key2".to_string(), "value2".to_string());
 
     assert_eq!(node.attributes.len(), 2);
     assert_eq!(node.attributes.get("key1"), Some(&"value1".to_string()));
@@ -62,11 +65,13 @@ fn test_tree_node_with_size() {
 #[test]
 fn test_tree_depth_calculation() {
     let deep_tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_child(
-        TreeNode::new("level1".to_string(), "Level 1".to_string(), "node".to_string()).with_child(TreeNode::new("level2".to_string(), "Level 2".to_string(), "node".to_string()).with_child(TreeNode::new(
-            "level3".to_string(),
-            "Level 3".to_string(),
-            "leaf".to_string(),
-        ))),
+        TreeNode::new("level1".to_string(), "Level 1".to_string(), "node".to_string()).with_child(
+            TreeNode::new("level2".to_string(), "Level 2".to_string(), "node".to_string()).with_child(TreeNode::new(
+                "level3".to_string(),
+                "Level 3".to_string(),
+                "leaf".to_string(),
+            )),
+        ),
     );
 
     assert_eq!(deep_tree.depth(), 4);
@@ -77,11 +82,9 @@ fn test_tree_depth_calculation() {
 
 #[test]
 fn test_layered_tree_layout() {
-    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_child(TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string())).with_child(TreeNode::new(
-        "child2".to_string(),
-        "Child 2".to_string(),
-        "child".to_string(),
-    ));
+    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string())
+        .with_child(TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()))
+        .with_child(TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string()));
 
     let layout_engine = TreeLayout::new().with_algorithm(TreeLayoutAlgorithm::Layered);
     let result = layout_engine.layout_tree(&tree);
@@ -116,8 +119,10 @@ fn test_radial_tree_layout() {
 
 #[test]
 fn test_compact_tree_layout() {
-    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string())
-        .with_children(vec![TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()), TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string())]);
+    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_children(vec![
+        TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()),
+        TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string()),
+    ]);
 
     let layout_engine = TreeLayout::new().with_algorithm(TreeLayoutAlgorithm::Compact);
     let result = layout_engine.layout_tree(&tree);
@@ -130,8 +135,10 @@ fn test_compact_tree_layout() {
 
 #[test]
 fn test_balloon_tree_layout() {
-    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string())
-        .with_children(vec![TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()), TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string())]);
+    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_children(vec![
+        TreeNode::new("child1".to_string(), "Child 1".to_string(), "child".to_string()),
+        TreeNode::new("child2".to_string(), "Child 2".to_string(), "child".to_string()),
+    ]);
 
     let layout_engine = TreeLayout::new().with_algorithm(TreeLayoutAlgorithm::Balloon);
     let result = layout_engine.layout_tree(&tree);
@@ -144,9 +151,14 @@ fn test_balloon_tree_layout() {
 
 #[test]
 fn test_tree_layout_with_custom_config() {
-    let config = TreeLayoutConfig { node_width: 150.0, node_height: 80.0, level_distance: 100.0, sibling_distance: 50.0, subtree_distance: 80.0 };
+    let config =
+        TreeLayoutConfig { node_width: 150.0, node_height: 80.0, level_distance: 100.0, sibling_distance: 50.0, subtree_distance: 80.0 };
 
-    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_child(TreeNode::new("child".to_string(), "Child".to_string(), "child".to_string()));
+    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_child(TreeNode::new(
+        "child".to_string(),
+        "Child".to_string(),
+        "child".to_string(),
+    ));
 
     let layout_engine = TreeLayout::new().with_algorithm(TreeLayoutAlgorithm::Layered).with_config(config);
 
@@ -212,9 +224,14 @@ fn test_empty_tree_layout() {
 
 #[test]
 fn test_all_layout_algorithms() {
-    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_child(TreeNode::new("child".to_string(), "Child".to_string(), "child".to_string()));
+    let tree = TreeNode::new("root".to_string(), "Root".to_string(), "root".to_string()).with_child(TreeNode::new(
+        "child".to_string(),
+        "Child".to_string(),
+        "child".to_string(),
+    ));
 
-    let algorithms = vec![TreeLayoutAlgorithm::Layered, TreeLayoutAlgorithm::Radial, TreeLayoutAlgorithm::Compact, TreeLayoutAlgorithm::Balloon];
+    let algorithms =
+        vec![TreeLayoutAlgorithm::Layered, TreeLayoutAlgorithm::Radial, TreeLayoutAlgorithm::Compact, TreeLayoutAlgorithm::Balloon];
 
     for algorithm in algorithms {
         let layout_engine = TreeLayout::new().with_algorithm(algorithm);

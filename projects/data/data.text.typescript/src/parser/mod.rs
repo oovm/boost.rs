@@ -37,13 +37,23 @@ impl<'config> Pratt<TypeScriptLanguage> for TypeScriptParser<'config> {
         self.prefix(state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, TypeScriptLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, TypeScriptLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, TypeScriptLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, TypeScriptLanguage>> {
         self.infix(state, left, min_precedence)
     }
 }
 
 impl<'config> Parser<TypeScriptLanguage> for TypeScriptParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<TypeScriptLanguage>) -> ParseOutput<'a, TypeScriptLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<TypeScriptLanguage>,
+    ) -> ParseOutput<'a, TypeScriptLanguage> {
         let lexer = TypeScriptLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

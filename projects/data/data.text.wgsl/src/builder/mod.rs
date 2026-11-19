@@ -1,5 +1,8 @@
 use crate::{WgslParser, ast::*, language::WgslLanguage, lexer::token_type::WgslTokenType, parser::element_type::WgslElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedLeaf, RedNode, RedTree, TextEdit, TokenType, builder::BuildOutput, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedLeaf, RedNode, RedTree, TextDiagnostics, TextEdit, TextError, TokenType, builder::BuildOutput,
+    parser::session::ParseSession, source::Source,
+};
 
 /// AST builder for the WebGPU Shading Language (WGSL).
 #[derive(Clone, Copy)]
@@ -16,7 +19,12 @@ impl<'config> WgslBuilder<'config> {
 }
 
 impl<'config> Builder<WgslLanguage> for WgslBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<WgslLanguage>) -> BuildOutput<WgslLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<WgslLanguage>,
+    ) -> BuildOutput<WgslLanguage> {
         let parser = WgslParser::new(self.config);
         let mut session = ParseSession::<WgslLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);
@@ -405,7 +413,12 @@ fn first_expression<S: Source + ?Sized>(node: RedNode<WgslLanguage>, source: &S)
 }
 
 /// Collects nested expressions and significant leaf kinds in source order.
-fn collect_expressions_and_leaves<S: Source + ?Sized>(node: RedNode<WgslLanguage>, source: &S, expressions: &mut Vec<WgslExpression>, leaves: &mut Vec<WgslTokenType>) {
+fn collect_expressions_and_leaves<S: Source + ?Sized>(
+    node: RedNode<WgslLanguage>,
+    source: &S,
+    expressions: &mut Vec<WgslExpression>,
+    leaves: &mut Vec<WgslTokenType>,
+) {
     for child in node.children() {
         match child {
             RedTree::Leaf(token) => {
@@ -603,7 +616,12 @@ fn parse_integer(text: &str) -> i64 {
         value = &value[..value.len() - 1];
     }
 
-    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) { i64::from_str_radix(hex, 16).unwrap_or(0) } else { value.parse().unwrap_or(0) }
+    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) {
+        i64::from_str_radix(hex, 16).unwrap_or(0)
+    }
+    else {
+        value.parse().unwrap_or(0)
+    }
 }
 
 /// Parses a floating-point literal, ignoring the `f`/`h` suffix.
@@ -669,7 +687,17 @@ fn binary_op(kinds: &[WgslTokenType]) -> WgslBinaryOp {
 
 /// Returns `true` for expression element kinds.
 fn is_expression_kind(kind: WgslElementType) -> bool {
-    matches!(kind, WgslElementType::Expr | WgslElementType::ExprUnary | WgslElementType::ExprBinary | WgslElementType::ExprTypeCtor | WgslElementType::ExprCall | WgslElementType::ExprMember | WgslElementType::ExprIndex | WgslElementType::ExprParen)
+    matches!(
+        kind,
+        WgslElementType::Expr
+            | WgslElementType::ExprUnary
+            | WgslElementType::ExprBinary
+            | WgslElementType::ExprTypeCtor
+            | WgslElementType::ExprCall
+            | WgslElementType::ExprMember
+            | WgslElementType::ExprIndex
+            | WgslElementType::ExprParen
+    )
 }
 
 /// Returns `true` for element kinds that can appear as a statement.

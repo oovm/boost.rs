@@ -454,10 +454,7 @@ pub fn is_array_index_valkyrie_type(ty: &ValkyrieType, module: &MirModule) -> bo
     }
 }
 
-pub fn canonical_type_kind(
-    ty: &ValkyrieType,
-    ids: &BTreeMap<ValkyrieType, TypeId>,
-) -> Result<CanonicalTypeKind, StructuredDiagnosticSet> {
+pub fn canonical_type_kind(ty: &ValkyrieType, ids: &BTreeMap<ValkyrieType, TypeId>) -> Result<CanonicalTypeKind, StructuredDiagnosticSet> {
     let id = |value: &ValkyrieType| type_id(ids, value);
     Ok(match ty {
         ValkyrieType::Void => CanonicalTypeKind::Primitive(CanonicalPrimitiveType::Void),

@@ -27,11 +27,12 @@
 //! 负的 `BigInteger`、无符号幅值、固定宽度整数与模整数上下文是不同对象，
 //! 本模块不互相隐式替换。
 
-use alloc::vec;
-use alloc::vec::Vec;
-use core::cmp::Ordering;
-use core::fmt;
-use core::ops::{Add, Mul, Neg, Sub};
+use alloc::{vec, vec::Vec};
+use core::{
+    cmp::Ordering,
+    fmt,
+    ops::{Add, Mul, Neg, Sub},
+};
 
 /// 符号。规范零恒为 `Positive`，不存在负零。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,12 +86,7 @@ impl Magnitude {
     }
 
     fn from_u64(value: u64) -> Self {
-        if value == 0 {
-            Self::Zero
-        }
-        else {
-            Self::Inline { limbs: [value, 0], count: 1 }
-        }
+        if value == 0 { Self::Zero } else { Self::Inline { limbs: [value, 0], count: 1 } }
     }
 
     fn from_u128(value: u128) -> Self {
@@ -414,12 +410,7 @@ impl BigInteger {
 
     /// 由符号与幅值构造，零一律归一到规范零。
     fn from_sign_magnitude(sign: Sign, magnitude: Magnitude) -> Self {
-        if magnitude.is_zero() {
-            Self::ZERO
-        }
-        else {
-            Self { sign, magnitude }
-        }
+        if magnitude.is_zero() { Self::ZERO } else { Self { sign, magnitude } }
     }
 
     /// 比较符号与幅值，实现全序。
@@ -472,12 +463,7 @@ impl BigInteger {
         let (quotient, remainder) = div_rem_magnitudes(self.magnitude.limbs(), divisor.magnitude.limbs());
         let quotient = Magnitude::canonicalize(quotient);
         let remainder = Magnitude::canonicalize(remainder);
-        let quotient_sign = if Self::magnitude_is_zero(&quotient) || self.sign == divisor.sign {
-            Sign::Positive
-        }
-        else {
-            Sign::Negative
-        };
+        let quotient_sign = if Self::magnitude_is_zero(&quotient) || self.sign == divisor.sign { Sign::Positive } else { Sign::Negative };
         let remainder_sign = if Self::magnitude_is_zero(&remainder) { Sign::Positive } else { self.sign };
         Ok((Self { sign: quotient_sign, magnitude: quotient }, Self { sign: remainder_sign, magnitude: remainder }))
     }

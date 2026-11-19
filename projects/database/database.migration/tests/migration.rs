@@ -5,8 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use database_migration::{
-    migrate, sql_literal, ColumnDef, Error, MigrationSource, MigrationTarget, Options, PageRequest, Phase, ResultSet,
-    Row, TableShape,
+    ColumnDef, Error, MigrationSource, MigrationTarget, Options, PageRequest, Phase, ResultSet, Row, TableShape, migrate, sql_literal,
 };
 
 fn column(name: &str, udt: &str, primary: bool) -> ColumnDef {
@@ -26,11 +25,7 @@ fn column(name: &str, udt: &str, primary: bool) -> ColumnDef {
 fn users_shape() -> TableShape {
     TableShape {
         name: "users".into(),
-        columns: vec![
-            column("id", "int8", true),
-            column("email", "varchar", false),
-            column("updated_at", "timestamptz", false),
-        ],
+        columns: vec![column("id", "int8", true), column("email", "varchar", false), column("updated_at", "timestamptz", false)],
     }
 }
 
@@ -68,11 +63,7 @@ impl MigrationSource for StubSource {
     }
 
     fn rows(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error> {
-        let shape = self
-            .shapes
-            .get(request.table)
-            .cloned()
-            .ok_or_else(|| Error::Source(format!("no table {}", request.table)))?;
+        let shape = self.shapes.get(request.table).cloned().ok_or_else(|| Error::Source(format!("no table {}", request.table)))?;
         let columns: Vec<usize> = request
             .order
             .iter()
@@ -130,7 +121,10 @@ impl MigrationTarget for StubTarget {
 
     fn execute(&mut self, sql: &str) -> Result<(), Error> {
         self.statements.push(sql.to_owned());
-        let Some(table) = table_of(sql) else { return Ok(()) };
+        let Some(table) = table_of(sql)
+        else {
+            return Ok(());
+        };
         let bucket = self.rows.entry(table).or_default();
         if let Some(values) = sql.split(" VALUES ").nth(1) {
             // `ON CONFLICT (...) DO UPDATE` adds its own parentheses, so the
@@ -185,19 +179,19 @@ impl MigrationTarget for StubTarget {
 
 /// Applies the single-column keyset filter a verification window carries.
 fn apply_key_filter(table: &str, sql: &str, rows: Vec<Row>) -> Vec<Row> {
-    let Some(rest) = sql.split(" WHERE ").nth(1) else {
+    let Some(rest) = sql.split(" WHERE ").nth(1)
+    else {
         return rows;
     };
-    let Some((column, tail)) = rest.split_once(" > ") else {
+    let Some((column, tail)) = rest.split_once(" > ")
+    else {
         return rows;
     };
     let column = column.trim().trim_matches('"');
     let literal = tail.split(" ORDER BY ").next().unwrap_or(tail).trim();
     let bound = literal.trim_matches('\'').to_owned();
     let index = shape_index(table, column);
-    rows.into_iter()
-        .filter(|row| row.get(index).cloned().flatten().unwrap_or_default() > bound)
-        .collect()
+    rows.into_iter().filter(|row| row.get(index).cloned().flatten().unwrap_or_default() > bound).collect()
 }
 
 fn shape_index(table: &str, name: &str) -> usize {
@@ -258,11 +252,7 @@ fn cell_of(text: &str) -> Option<String> {
 
 fn window(sql: &str) -> (usize, usize) {
     let number_after = |keyword: &str| {
-        sql.split(keyword)
-            .nth(1)
-            .and_then(|rest| rest.split_whitespace().next())
-            .and_then(|text| text.parse::<usize>().ok())
-            .unwrap_or(0)
+        sql.split(keyword).nth(1).and_then(|rest| rest.split_whitespace().next()).and_then(|text| text.parse::<usize>().ok()).unwrap_or(0)
     };
     let limit = if sql.contains("LIMIT ") { number_after("LIMIT ").max(1) } else { usize::MAX };
     (number_after("OFFSET "), limit)
@@ -335,10 +325,7 @@ fn incremental_pass_picks_up_updates_after_the_watermark() {
 
 #[test]
 fn cursor_is_saved_so_a_resume_skips_finished_batches() {
-    let mut source = source(vec![
-        row("1", "a@x.com", "2026-11-01T00:00:00Z"),
-        row("2", "b@x.com", "2026-11-02T00:00:00Z"),
-    ]);
+    let mut source = source(vec![row("1", "a@x.com", "2026-11-01T00:00:00Z"), row("2", "b@x.com", "2026-11-02T00:00:00Z")]);
     let mut target = target_with(Vec::new());
 
     let report = migrate(&mut source, &mut target, &Options { batch_rows: 1, ..Options::default() }).unwrap();
@@ -350,10 +337,7 @@ fn cursor_is_saved_so_a_resume_skips_finished_batches() {
 #[test]
 fn prune_removes_rows_the_source_deleted() {
     let mut source = source(vec![row("1", "a@x.com", "2026-11-01T00:00:00Z")]);
-    let mut target = target_with(vec![
-        row("1", "a@x.com", "2026-11-01T00:00:00Z"),
-        row("9", "gone@x.com", "2026-11-01T00:00:00Z"),
-    ]);
+    let mut target = target_with(vec![row("1", "a@x.com", "2026-11-01T00:00:00Z"), row("9", "gone@x.com", "2026-11-01T00:00:00Z")]);
 
     let report = migrate(&mut source, &mut target, &Options { prune: true, ..Options::default() }).unwrap();
 
@@ -363,10 +347,7 @@ fn prune_removes_rows_the_source_deleted() {
 
 #[test]
 fn a_table_without_updated_at_still_replays_appended_rows() {
-    let shape = TableShape {
-        name: "events".into(),
-        columns: vec![column("id", "int8", true), column("body", "text", false)],
-    };
+    let shape = TableShape { name: "events".into(), columns: vec![column("id", "int8", true), column("body", "text", false)] };
     let mut source = StubSource {
         shapes: HashMap::from([("events".to_owned(), shape)]),
         rows: HashMap::from([("events".to_owned(), vec![vec![Some("1".into()), Some("a".into())]])]),
@@ -414,9 +395,10 @@ fn a_late_row_that_sorts_behind_earlier_writes_is_still_replayed() {
     assert!(saved.tables["users"].cursor.is_none(), "a finished run leaves no cursor that could skip a later row");
 
     // Committed after the first run, but sorting before the row it already wrote.
-    source
-        .rows
-        .insert("users".into(), vec![row("1", "late@x.com", "2026-11-18T00:00:02.000000Z"), row("2", "a@x.com", "2026-11-18T00:00:00.500000Z")]);
+    source.rows.insert(
+        "users".into(),
+        vec![row("1", "late@x.com", "2026-11-18T00:00:02.000000Z"), row("2", "a@x.com", "2026-11-18T00:00:00.500000Z")],
+    );
     let second = migrate(&mut source, &mut target, &options).unwrap();
 
     assert!(second.tables[0].written >= 1, "{:?}", second.tables[0]);
@@ -426,7 +408,8 @@ fn a_late_row_that_sorts_behind_earlier_writes_is_still_replayed() {
 }
 
 #[test]
-fn a_table_without_a_primary_key_is_reported_and_skipped() {    let shape = TableShape { name: "logs".into(), columns: vec![column("message", "text", false)] };
+fn a_table_without_a_primary_key_is_reported_and_skipped() {
+    let shape = TableShape { name: "logs".into(), columns: vec![column("message", "text", false)] };
     let mut source = StubSource {
         shapes: HashMap::from([("logs".to_owned(), shape)]),
         rows: HashMap::from([("logs".to_owned(), vec![vec![Some("hi".into())]])]),
@@ -448,11 +431,8 @@ fn wide_rows_are_split_so_one_statement_stays_small() {
     let shape = TableShape { name: "t".into(), columns: vec![column("id", "int8", true), column("body", "text", false)] };
     let body = "x".repeat(600);
     let rows: Vec<Row> = (0..3).map(|index| vec![Some(index.to_string()), Some(body.clone())]).collect();
-    let mut source = StubSource {
-        shapes: HashMap::from([("t".to_owned(), shape)]),
-        rows: HashMap::from([("t".to_owned(), rows.clone())]),
-        tick: 0,
-    };
+    let mut source =
+        StubSource { shapes: HashMap::from([("t".to_owned(), shape)]), rows: HashMap::from([("t".to_owned(), rows.clone())]), tick: 0 };
     let mut target = StubTarget::default();
     target.rows.insert("t".into(), Vec::new());
 

@@ -2,5 +2,4 @@
 //!
 //! 实现归 [`database_storage::mongo::store`]，本模块只做门面再导出。
 
-pub use database_storage::mongo::*;
-pub use database_storage::mongo::store::*;
+pub use database_storage::mongo::{store::*, *};

@@ -21,7 +21,12 @@ impl<'config> VbNetBuilder<'config> {
 }
 
 impl<'config> Builder<VbNetLanguage> for VbNetBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl data_text_core::builder::BuilderCache<VbNetLanguage>) -> data_text_core::builder::BuildOutput<VbNetLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl data_text_core::builder::BuilderCache<VbNetLanguage>,
+    ) -> data_text_core::builder::BuildOutput<VbNetLanguage> {
         let parser = crate::parser::VbNetParser::new(self.config);
         let parse_output = parser.parse(source, edits, cache);
 
@@ -175,7 +180,14 @@ impl<'config> VbNetBuilder<'config> {
                             name = source.get_text_in((leaf_start..leaf_end).into()).to_string();
                         }
                     }
-                    VbNetTokenType::Public | VbNetTokenType::Private | VbNetTokenType::Protected | VbNetTokenType::Friend | VbNetTokenType::Shared | VbNetTokenType::MustInherit | VbNetTokenType::NotInheritable | VbNetTokenType::Partial => {
+                    VbNetTokenType::Public
+                    | VbNetTokenType::Private
+                    | VbNetTokenType::Protected
+                    | VbNetTokenType::Friend
+                    | VbNetTokenType::Shared
+                    | VbNetTokenType::MustInherit
+                    | VbNetTokenType::NotInheritable
+                    | VbNetTokenType::Partial => {
                         let leaf_start = current_offset;
                         let leaf_end = current_offset + leaf.length() as usize;
                         modifiers.push(source.get_text_in((leaf_start..leaf_end).into()).to_string());

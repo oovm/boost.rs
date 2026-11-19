@@ -3,12 +3,7 @@
 //! 详细语义（导入绑定、重导出、动态边界、隔离模块等）的符合性归属下游产品仓，
 //! Boost 只保留最基本 smoke。
 
-use compiler_bundle::{
-    graph::build_graph,
-    module::ModuleRecord,
-    resolve::Target,
-    ModuleFactSource, PackDiagnostic, StdSourceReader,
-};
+use compiler_bundle::{ModuleFactSource, PackDiagnostic, StdSourceReader, graph::build_graph, module::ModuleRecord, resolve::Target};
 use std::path::PathBuf;
 
 struct EmptyFacts;

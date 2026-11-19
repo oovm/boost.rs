@@ -3,7 +3,7 @@
 pub mod token_type;
 
 use crate::{language::RubyLanguage, lexer::token_type::RubyTokenType};
-use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, TextError, Source, TextEdit};
+use data_text_core::{LexOutput, Lexer, LexerCache, LexerState, Source, TextEdit, TextError};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, RubyLanguage>;
 
@@ -14,7 +14,12 @@ pub struct RubyLexer<'config> {
 }
 
 impl<'config> Lexer<RubyLanguage> for RubyLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<RubyLanguage>) -> LexOutput<RubyLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<RubyLanguage>,
+    ) -> LexOutput<RubyLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -575,7 +580,8 @@ impl<'config> RubyLexer<'config> {
             }
         }
 
-        let two_char_ops = ["**", "<<", ">>", "<=", ">=", "==", "!=", "=~", "!~", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "..", "=>"];
+        let two_char_ops =
+            ["**", "<<", ">>", "<=", ">=", "==", "!=", "=~", "!~", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "..", "=>"];
         for op in &two_char_ops {
             if state.peek() == op.chars().nth(0) && state.peek_next_n(1) == op.chars().nth(1) {
                 state.advance(2);

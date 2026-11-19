@@ -27,7 +27,12 @@ impl<'config> HandlebarsParser<'config> {
 }
 
 impl<'config> Parser<HandlebarsLanguage> for HandlebarsParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<HandlebarsLanguage>) -> ParseOutput<'a, HandlebarsLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<HandlebarsLanguage>,
+    ) -> ParseOutput<'a, HandlebarsLanguage> {
         let lexer = HandlebarsLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -252,7 +257,16 @@ impl<'config> HandlebarsParser<'config> {
 
         while state.not_at_end() && !state.at(HandlebarsTokenType::Close) && !state.at(HandlebarsTokenType::CloseUnescaped) {
             self.skip_trivia(state);
-            if state.at(HandlebarsTokenType::Identifier) || state.at(HandlebarsTokenType::StringLiteral) || state.at(HandlebarsTokenType::NumberLiteral) || state.at(HandlebarsTokenType::BooleanLiteral) { self.parse_parameter(state)? } else { break }
+            if state.at(HandlebarsTokenType::Identifier)
+                || state.at(HandlebarsTokenType::StringLiteral)
+                || state.at(HandlebarsTokenType::NumberLiteral)
+                || state.at(HandlebarsTokenType::BooleanLiteral)
+            {
+                self.parse_parameter(state)?
+            }
+            else {
+                break;
+            }
         }
 
         state.finish_at(checkpoint, crate::parser::element_type::HandlebarsElementType::Expression);
@@ -282,7 +296,10 @@ impl<'config> HandlebarsParser<'config> {
         if state.at(HandlebarsTokenType::Identifier) {
             self.parse_path(state)?
         }
-        else if state.at(HandlebarsTokenType::StringLiteral) || state.at(HandlebarsTokenType::NumberLiteral) || state.at(HandlebarsTokenType::BooleanLiteral) {
+        else if state.at(HandlebarsTokenType::StringLiteral)
+            || state.at(HandlebarsTokenType::NumberLiteral)
+            || state.at(HandlebarsTokenType::BooleanLiteral)
+        {
             state.advance()
         }
         else if state.at(HandlebarsTokenType::LeftParen) {
@@ -290,7 +307,11 @@ impl<'config> HandlebarsParser<'config> {
         }
         else {
             let token = state.current();
-            let err = data_text_core::errors::TextError::unexpected_token(format!("{:?}", token.map(|t| t.kind)), state.tokens.index(), state.source_ref());
+            let err = data_text_core::errors::TextError::unexpected_token(
+                format!("{:?}", token.map(|t| t.kind)),
+                state.tokens.index(),
+                state.source_ref(),
+            );
             state.errors.push(err.clone());
             return Err(err);
         }

@@ -41,11 +41,7 @@ pub(crate) const GLUE_IMPORT_SIGNATURES: &[GlueImportSignature] = &[
     GlueImportSignature { field: "directory_exists", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "create_directory", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "write_file_text", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature {
-        field: "get_files",
-        params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32],
-        results: &[VALTYPE_I32],
-    },
+    GlueImportSignature { field: "get_files", params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "utf8_length", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "utf8_index_of", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "utf8_trim", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
@@ -56,16 +52,8 @@ pub(crate) const GLUE_IMPORT_SIGNATURES: &[GlueImportSignature] = &[
     GlueImportSignature { field: "utf8_ends_with", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "utf8_contains", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "utf8_equals", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature {
-        field: "utf8_replace",
-        params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32],
-        results: &[VALTYPE_I32],
-    },
-    GlueImportSignature {
-        field: "utf8_slice",
-        params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32],
-        results: &[VALTYPE_I32],
-    },
+    GlueImportSignature { field: "utf8_replace", params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
+    GlueImportSignature { field: "utf8_slice", params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "emit_byte", params: &[VALTYPE_I32], results: &[] },
     GlueImportSignature { field: "System.Console", params: &[VALTYPE_I32], results: &[] },
     GlueImportSignature { field: "System.Diagnostics.Process", params: &[VALTYPE_I32], results: &[] },
@@ -93,8 +81,5 @@ pub(crate) const SYNTHETIC_NODE_IMPORT_FIELDS: &[&str] = &[
 
 /// 查询 `env` 字段的物理签名。
 pub(crate) fn glue_import_signature(field: &str) -> Option<(&'static [u8], &'static [u8])> {
-    GLUE_IMPORT_SIGNATURES
-        .iter()
-        .find(|signature| signature.field == field)
-        .map(|signature| (signature.params, signature.results))
+    GLUE_IMPORT_SIGNATURES.iter().find(|signature| signature.field == field).map(|signature| (signature.params, signature.results))
 }

@@ -414,10 +414,7 @@ fn registry_bin_entries(contracts: &[RunContract], artifact_dir: &Path, layout: 
         let path = resolve_contract_artifact(artifact_dir, contract, layout)?;
         let relative = path.strip_prefix(artifact_dir).unwrap_or(&path).to_string_lossy().replace('\\', "/");
         if !is_publishable_artifact(&relative) {
-            return Err(PublishError::message(format!(
-                "run contract `{}` 指向不可发布的产物 `{relative}`",
-                contract.logical_entry
-            )));
+            return Err(PublishError::message(format!("run contract `{}` 指向不可发布的产物 `{relative}`", contract.logical_entry)));
         }
         entries.push(RegistryBinEntry { bin_name: bin_name_from_logical(&contract.logical_entry), relative_path: relative });
     }

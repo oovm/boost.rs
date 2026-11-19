@@ -1,7 +1,9 @@
-use data_text_core::{Builder, TextError, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, TextError, parser::session::ParseSession};
 use data_text_hlsl::{
     HlslBuilder, HlslLanguage,
-    ast::{HlslAssignOp, HlslBinaryOp, HlslExpression, HlslFunction, HlslGlobalVar, HlslItem, HlslQualifier, HlslRoot, HlslStatement, HlslUnaryOp},
+    ast::{
+        HlslAssignOp, HlslBinaryOp, HlslExpression, HlslFunction, HlslGlobalVar, HlslItem, HlslQualifier, HlslRoot, HlslStatement, HlslUnaryOp,
+    },
 };
 
 /// Builds the AST and the diagnostics for `source`.
@@ -73,7 +75,10 @@ fn parses_compute_kernel() {
     let kernel = function(&root, "cs_main");
     assert_eq!(kernel.attributes.len(), 1);
     assert_eq!(kernel.attributes[0].name, "numthreads");
-    assert!(matches!(kernel.attributes[0].args.as_slice(), [HlslExpression::IntegerLiteral(64), HlslExpression::IntegerLiteral(1), HlslExpression::IntegerLiteral(1)]));
+    assert!(matches!(
+        kernel.attributes[0].args.as_slice(),
+        [HlslExpression::IntegerLiteral(64), HlslExpression::IntegerLiteral(1), HlslExpression::IntegerLiteral(1)]
+    ));
     assert_eq!(kernel.return_type.as_ref().map(|ty| ty.name.as_str()), Some("void"));
     assert_eq!(kernel.params.len(), 1);
     assert_eq!(kernel.params[0].name, "id");
@@ -119,7 +124,11 @@ fn parses_compute_kernel() {
     }
 
     match &kernel.body[3] {
-        HlslStatement::Assign { target: HlslExpression::Index { base, index }, op: HlslAssignOp::Assign, value: HlslExpression::Binary { op: HlslBinaryOp::Mul, .. } } => {
+        HlslStatement::Assign {
+            target: HlslExpression::Index { base, index },
+            op: HlslAssignOp::Assign,
+            value: HlslExpression::Binary { op: HlslBinaryOp::Mul, .. },
+        } => {
             assert!(matches!(base.as_ref(), HlslExpression::Ident(name) if name == "output"));
             assert!(matches!(index.as_ref(), HlslExpression::Ident(name) if name == "index"));
         }
@@ -151,31 +160,49 @@ fn parses_loops_and_branches() {
     }
     assert!(matches!(cond, Some(HlslExpression::Binary { op: HlslBinaryOp::Lt, .. })));
     assert!(matches!(update.as_deref(), Some(HlslStatement::Expr(HlslExpression::Unary { op: HlslUnaryOp::PostIncrement, .. }))));
-    assert!(matches!(body.as_slice(), [HlslStatement::Assign { op: HlslAssignOp::AddAssign, value: HlslExpression::Binary { op: HlslBinaryOp::Mul, .. }, .. }]));
+    assert!(matches!(
+        body.as_slice(),
+        [HlslStatement::Assign { op: HlslAssignOp::AddAssign, value: HlslExpression::Binary { op: HlslBinaryOp::Mul, .. }, .. }]
+    ));
 
     assert!(matches!(&accumulate.body[2], HlslStatement::Var { name, .. } if name == "remaining"));
 
     match &accumulate.body[3] {
         HlslStatement::While { cond, body } => {
-            assert!(matches!(cond, HlslExpression::Paren(cond) if matches!(cond.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Gt, .. })));
+            assert!(
+                matches!(cond, HlslExpression::Paren(cond) if matches!(cond.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Gt, .. }))
+            );
             assert_eq!(body.len(), 3, "unexpected while body: {body:#?}");
             assert!(matches!(body[0], HlslStatement::Expr(HlslExpression::Unary { op: HlslUnaryOp::PostDecrement, .. })));
             match &body[1] {
                 HlslStatement::If { then_body, else_body, .. } => {
                     assert!(matches!(then_body.as_slice(), [HlslStatement::Continue]));
-                    assert!(matches!(else_body.as_slice(), [HlslStatement::If { then_body, .. }] if matches!(then_body.as_slice(), [HlslStatement::Break])));
+                    assert!(
+                        matches!(else_body.as_slice(), [HlslStatement::If { then_body, .. }] if matches!(then_body.as_slice(), [HlslStatement::Break]))
+                    );
                 }
                 other => panic!("expected the nested branch, got {other:?}"),
             }
-            assert!(matches!(body[2], HlslStatement::Assign { op: HlslAssignOp::Assign, value: HlslExpression::Binary { op: HlslBinaryOp::Sub, .. }, .. }));
+            assert!(matches!(
+                body[2],
+                HlslStatement::Assign { op: HlslAssignOp::Assign, value: HlslExpression::Binary { op: HlslBinaryOp::Sub, .. }, .. }
+            ));
         }
         other => panic!("expected a `while` loop, got {other:?}"),
     }
 
     match &accumulate.body[4] {
         HlslStatement::DoWhile { body, cond } => {
-            assert!(matches!(body.as_slice(), [HlslStatement::Assign { op: HlslAssignOp::MulAssign, .. }, HlslStatement::Expr(HlslExpression::Unary { op: HlslUnaryOp::PostIncrement, .. })]));
-            assert!(matches!(cond, HlslExpression::Paren(cond) if matches!(cond.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Lt, .. })));
+            assert!(matches!(
+                body.as_slice(),
+                [
+                    HlslStatement::Assign { op: HlslAssignOp::MulAssign, .. },
+                    HlslStatement::Expr(HlslExpression::Unary { op: HlslUnaryOp::PostIncrement, .. })
+                ]
+            ));
+            assert!(
+                matches!(cond, HlslExpression::Paren(cond) if matches!(cond.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Lt, .. }))
+            );
         }
         other => panic!("expected a `do ... while` loop, got {other:?}"),
     }
@@ -259,14 +286,18 @@ fn parses_expression_precedence() {
     }
     match &f.body[1] {
         HlslStatement::Var { init: Some(HlslExpression::Binary { op: HlslBinaryOp::Mul, lhs, .. }), .. } => {
-            assert!(matches!(lhs.as_ref(), HlslExpression::Paren(inner) if matches!(inner.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Add, .. })));
+            assert!(
+                matches!(lhs.as_ref(), HlslExpression::Paren(inner) if matches!(inner.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Add, .. }))
+            );
         }
         other => panic!("expected `(a + b) * 2.0`, got {other:?}"),
     }
     assert!(matches!(&f.body[2], HlslStatement::Var { init: Some(HlslExpression::IntegerLiteral(255)), .. }));
     match &f.body[3] {
         HlslStatement::Var { init: Some(HlslExpression::Binary { op: HlslBinaryOp::BitOr, lhs, rhs }), .. } => {
-            assert!(matches!(lhs.as_ref(), HlslExpression::Paren(inner) if matches!(inner.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Shl, .. })));
+            assert!(
+                matches!(lhs.as_ref(), HlslExpression::Paren(inner) if matches!(inner.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::Shl, .. }))
+            );
             assert!(matches!(rhs.as_ref(), HlslExpression::Binary { op: HlslBinaryOp::BitAnd, .. }));
         }
         other => panic!("expected a bitwise expression, got {other:?}"),
@@ -284,7 +315,10 @@ fn reports_truncated_function() {
 #[test]
 fn reports_unknown_attribute() {
     let (root, diagnostics) = build("[mystery(1)] void f() {}");
-    assert!(diagnostics.iter().any(|error| format!("{error:?}").contains("unknown HLSL attribute")), "expected an unknown attribute diagnostic, got {diagnostics:?}");
+    assert!(
+        diagnostics.iter().any(|error| format!("{error:?}").contains("unknown HLSL attribute")),
+        "expected an unknown attribute diagnostic, got {diagnostics:?}"
+    );
 
     let f = function(&root, "f");
     assert_eq!(f.attributes.len(), 1);

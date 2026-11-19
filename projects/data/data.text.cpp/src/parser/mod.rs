@@ -338,7 +338,12 @@ impl<'config> CppParser<'config> {
 
 impl<'config> Parser<CppLanguage> for CppParser<'config> {
     /// Parses the entire C++ source file.
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CppLanguage>) -> ParseOutput<'a, CppLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CppLanguage>,
+    ) -> ParseOutput<'a, CppLanguage> {
         let lexer = CppLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -384,13 +389,19 @@ impl<'config> Pratt<CppLanguage> for CppParser<'config> {
         self.primary(state)
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, CppLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, CppLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, CppLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, CppLanguage>> {
         use crate::lexer::CppTokenType::*;
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
-            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign => (1, Associativity::Right),
+            Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign | PercentAssign | AndAssign | OrAssign | XorAssign
+            | LeftShiftAssign | RightShiftAssign => (1, Associativity::Right),
             LogicalOr => (2, Associativity::Left),
             LogicalAnd => (3, Associativity::Left),
             Equal | NotEqual | Less | Greater | LessEqual | GreaterEqual => (4, Associativity::Left),

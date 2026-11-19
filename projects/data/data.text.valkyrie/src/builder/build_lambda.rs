@@ -1,9 +1,13 @@
 use crate::{ValkyrieLanguage, ast::*, builder::ValkyrieBuilder, lexer::token_type::ValkyrieTokenType};
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// 构建 lambda 表达式
-    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<AnonymousMicro, TextError> {
+    pub(crate) fn build_lambda_expr<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<AnonymousMicro, TextError> {
         let span = node.span();
         let mut params = Vec::new();
         let mut return_type = None;
@@ -12,7 +16,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -33,7 +40,15 @@ impl<'config> ValkyrieBuilder<'config> {
                         if body.is_none() {
                             // 如果不是 BlockExpression，我们需要将表达式包装在一个 Block 中
                             let expr = self.build_expr(n, source)?;
-                            body = Some(Block { statements: vec![Statement::Expression(Box::new(ExprStmt { expr, semi: false, annotations: Vec::new(), span: n.span() }))], span: n.span() });
+                            body = Some(Block {
+                                statements: vec![Statement::Expression(Box::new(ExprStmt {
+                                    expr,
+                                    semi: false,
+                                    annotations: Vec::new(),
+                                    span: n.span(),
+                                }))],
+                                span: n.span(),
+                            });
                         }
                     }
                 },

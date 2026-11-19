@@ -12,7 +12,8 @@ use std::sync::LazyLock;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, RbqLanguage>;
 
-static RBQ_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "", block_end: "", nested_blocks: false });
+static RBQ_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "#", block_start: "", block_end: "", nested_blocks: false });
 
 /// Lexer for the RBQ language.
 #[derive(Clone, Debug)]
@@ -22,7 +23,12 @@ pub struct RbqLexer<'config> {
 
 impl<'config> Lexer<RbqLanguage> for RbqLexer<'config> {
     /// Tokenizes the source text into a sequence of RBQ tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<RbqLanguage>) -> LexOutput<RbqLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<RbqLanguage>,
+    ) -> LexOutput<RbqLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

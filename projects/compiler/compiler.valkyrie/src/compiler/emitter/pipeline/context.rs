@@ -3,8 +3,8 @@
 //! Resolver 必须把 target/profile、架构键和已选 host provider 一并交给 Compiler；
 //! 这些字段是后续 adaptor 链接与表示规划的前置事实，不能留在源码行扫描里。
 
-use compiler_target::{ArtifactPurpose, ClrSuspendStrategy, ResolvedTarget};
 use compiler_emitter::emitter_backend_wasi::WasmPackageKind;
+use compiler_target::{ArtifactPurpose, ClrSuspendStrategy, ResolvedTarget};
 
 use crate::compiler::semantic::closure::DeclarationKey;
 

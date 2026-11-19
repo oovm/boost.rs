@@ -1,6 +1,6 @@
 use data_text_core::TextError;
-use language_testing::lexing::LexerTester;
 use data_text_vala::{ValaLanguage, ValaLexer};
+use language_testing::lexing::LexerTester;
 use std::{path::Path, time::Duration};
 
 #[test]

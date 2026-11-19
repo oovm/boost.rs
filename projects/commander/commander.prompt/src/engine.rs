@@ -15,13 +15,17 @@
 //!   the caller resumes in another run; it never hangs and never claims
 //!   completion.
 
-use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use commander_core::{
-    AwaitActionOutcome, AwaitActionRequest, Clock, ConfirmRequest, InputRequest, Localizer,
-    PasswordRequest, PromptApi, PromptHooks, SelectRequest, Writer,
+    AwaitActionOutcome, AwaitActionRequest, Clock, ConfirmRequest, InputRequest, Localizer, PasswordRequest, PromptApi, PromptHooks,
+    SelectRequest, Writer,
 };
 use commander_types::{ActionRequiredDescriptor, CommanderError, SecretString, error_id};
 
@@ -85,8 +89,7 @@ impl PromptEngine {
         if !self.hooks.interactive || self.hooks.stdin_claimed.load(Ordering::SeqCst) {
             return Err(CommanderError::from_id(error_id::INTERACTIVE_UNAVAILABLE));
         }
-        if self.hooks.lease.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err()
-        {
+        if self.hooks.lease.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             return Err(CommanderError::from_id(error_id::INTERACTION_BUSY));
         }
         Ok(LeaseGuard(&self.hooks.lease))
@@ -150,11 +153,7 @@ impl PromptEngine {
     }
 
     /// Reads one secret line with echo off; the caller owns the guard.
-    fn read_secret(
-        &self,
-        io: &mut dyn PromptIo,
-        until: Option<u64>,
-    ) -> Result<String, CommanderError> {
+    fn read_secret(&self, io: &mut dyn PromptIo, until: Option<u64>) -> Result<String, CommanderError> {
         let mut buffer: Vec<u8> = Vec::new();
         loop {
             if self.deps.cancel.load(Ordering::SeqCst) {
@@ -229,7 +228,8 @@ impl PromptApi for PromptEngine {
         let question = self.t(&req.key, &BTreeMap::new());
         loop {
             let value = self.ask_line(&question, until)?;
-            let Some(problem) = req.validate.as_ref().and_then(|validate| validate(&value)) else {
+            let Some(problem) = req.validate.as_ref().and_then(|validate| validate(&value))
+            else {
                 return Ok(value);
             };
             let hint = self.hint(&problem.code, &problem.args);
@@ -274,7 +274,8 @@ impl PromptApi for PromptEngine {
         if !io.supports_echo_control() {
             return Err(CommanderError::from_id(error_id::PASSWORD_UNSUPPORTED));
         }
-        let Some(echo) = io.disable_echo() else {
+        let Some(echo) = io.disable_echo()
+        else {
             return Err(CommanderError::from_id(error_id::PASSWORD_UNSUPPORTED));
         };
         let result = self.read_secret(&mut *io, until);
@@ -293,8 +294,7 @@ impl PromptApi for PromptEngine {
         let until = self.deadline(req.deadline_ms);
         let body = self.t(&req.instructions_key, &req.args);
         let hint = self.hint("commander.prompt.await_action_hint", &BTreeMap::new());
-        let question =
-            if hint.is_empty() { format!("{body}\n") } else { format!("{body}\n{hint}\n") };
+        let question = if hint.is_empty() { format!("{body}\n") } else { format!("{body}\n{hint}\n") };
         loop {
             let line = self.ask_line(&question, until)?;
             let value = line.trim().to_lowercase();

@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, HashSet};
 
-use data_compression::{CodecLimits, gzip::Gzip};
 use boost_harness::diagnostic::{DiagnosticSeverity, Message, MessageArg};
 use crawler_fetch::{FetchClient, FetchRequest, Transport};
 use crawler_types::{CrawlError, CrawlEvent, DiscoverySource, FrontierItem, Result, diagnostics as pd};
+use data_compression::{CodecLimits, gzip::Gzip};
 use data_text_xml::ast::XmlValue;
 
 use crate::crawl::CrawlState;

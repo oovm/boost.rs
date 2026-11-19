@@ -29,7 +29,10 @@ impl<'config> DParser<'config> {
     /// Skips trivia tokens (whitespace, comments, newlines).
     fn skip_trivia<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
         while let Some(kind) = state.peek_kind() {
-            if matches!(kind, DTokenType::Whitespace | DTokenType::Newline | DTokenType::LineComment | DTokenType::BlockComment | DTokenType::NestedComment) {
+            if matches!(
+                kind,
+                DTokenType::Whitespace | DTokenType::Newline | DTokenType::LineComment | DTokenType::BlockComment | DTokenType::NestedComment
+            ) {
                 state.bump();
             }
             else {
@@ -394,7 +397,12 @@ impl<'config> DParser<'config> {
 }
 
 impl<'config> Parser<DLanguage> for DParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<DLanguage>) -> data_text_core::ParseOutput<'a, DLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<DLanguage>,
+    ) -> data_text_core::ParseOutput<'a, DLanguage> {
         let lexer = DLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -417,7 +425,10 @@ impl<'config> Pratt<DLanguage> for DParser<'config> {
                 state.bump();
                 state.finish_at(cp, crate::parser::element_type::DElementType::Identifier)
             }
-            Some(DTokenType::IntegerLiteral) | Some(DTokenType::FloatLiteral) | Some(DTokenType::StringLiteral) | Some(DTokenType::CharLiteral) => {
+            Some(DTokenType::IntegerLiteral)
+            | Some(DTokenType::FloatLiteral)
+            | Some(DTokenType::StringLiteral)
+            | Some(DTokenType::CharLiteral) => {
                 state.bump();
                 state.finish_at(cp, crate::parser::element_type::DElementType::Literal)
             }
@@ -436,16 +447,30 @@ impl<'config> Pratt<DLanguage> for DParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, DLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, DLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, DLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, DLanguage>> {
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
             DTokenType::Assign => (1, Associativity::Right),
-            DTokenType::PlusAssign | DTokenType::MinusAssign | DTokenType::MultiplyAssign | DTokenType::DivideAssign | DTokenType::ModuloAssign => (1, Associativity::Right),
+            DTokenType::PlusAssign
+            | DTokenType::MinusAssign
+            | DTokenType::MultiplyAssign
+            | DTokenType::DivideAssign
+            | DTokenType::ModuloAssign => (1, Associativity::Right),
             DTokenType::LogicalOr => (2, Associativity::Left),
             DTokenType::LogicalAnd => (3, Associativity::Left),
-            DTokenType::Equal | DTokenType::NotEqual | DTokenType::Less | DTokenType::LessEqual | DTokenType::Greater | DTokenType::GreaterEqual => (4, Associativity::Left),
+            DTokenType::Equal
+            | DTokenType::NotEqual
+            | DTokenType::Less
+            | DTokenType::LessEqual
+            | DTokenType::Greater
+            | DTokenType::GreaterEqual => (4, Associativity::Left),
             DTokenType::Plus | DTokenType::Minus => (5, Associativity::Left),
             DTokenType::Multiply | DTokenType::Divide | DTokenType::Modulo => (6, Associativity::Left),
             DTokenType::Dot => (7, Associativity::Left),

@@ -46,7 +46,9 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
             self.skip_trivia(state);
         }
 
-        while state.not_at_end() && matches!(state.peek_kind(), Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Final) | Some(Abstract)) {
+        while state.not_at_end()
+            && matches!(state.peek_kind(), Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Final) | Some(Abstract))
+        {
             state.bump();
             self.skip_trivia(state)
         }
@@ -264,7 +266,8 @@ pub trait DeclarationParser: Pratt<JavaLanguage> {
         self.skip_trivia(state);
         let cp = state.checkpoint();
         match state.peek_kind() {
-            Some(Identifier) | Some(Int) | Some(Boolean) | Some(Void) | Some(Long) | Some(Float) | Some(Double) | Some(Char) | Some(Byte) | Some(Short) => state.bump(),
+            Some(Identifier) | Some(Int) | Some(Boolean) | Some(Void) | Some(Long) | Some(Float) | Some(Double) | Some(Char) | Some(Byte)
+            | Some(Short) => state.bump(),
             _ => {}
         }
         self.skip_trivia(state);

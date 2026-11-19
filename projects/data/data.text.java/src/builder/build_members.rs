@@ -8,7 +8,12 @@ impl<'config> JavaBuilder<'config> {
                 match sub_node.green.kind {
                     JavaElementType::MethodDeclaration => {
                         let is_constructor = self.is_constructor(sub_node.clone(), source);
-                        if is_constructor { members.push(Member::Constructor(self.build_constructor(sub_node, source))) } else { members.push(Member::Method(self.build_method(sub_node, source))) }
+                        if is_constructor {
+                            members.push(Member::Constructor(self.build_constructor(sub_node, source)))
+                        }
+                        else {
+                            members.push(Member::Method(self.build_method(sub_node, source)))
+                        }
                     }
                     JavaElementType::ConstructorDeclaration => members.push(Member::Constructor(self.build_constructor(sub_node, source))),
                     JavaElementType::FieldDeclaration => members.push(Member::Field(self.build_field(sub_node, source))),
@@ -24,7 +29,16 @@ impl<'config> JavaBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(leaf) => match leaf.kind {
-                    JavaTokenType::Identifier | JavaTokenType::Int | JavaTokenType::Boolean | JavaTokenType::Void | JavaTokenType::Long | JavaTokenType::Float | JavaTokenType::Double | JavaTokenType::Char | JavaTokenType::Byte | JavaTokenType::Short => {
+                    JavaTokenType::Identifier
+                    | JavaTokenType::Int
+                    | JavaTokenType::Boolean
+                    | JavaTokenType::Void
+                    | JavaTokenType::Long
+                    | JavaTokenType::Float
+                    | JavaTokenType::Double
+                    | JavaTokenType::Char
+                    | JavaTokenType::Byte
+                    | JavaTokenType::Short => {
                         if !name_found {
                             if has_type { name_found = true } else { has_type = true }
                         }
@@ -96,7 +110,12 @@ impl<'config> JavaBuilder<'config> {
                 RedTree::Leaf(leaf) => match leaf.kind {
                     JavaTokenType::Identifier => {
                         if !modifiers.contains(&self.get_text(leaf.span, source).trim().to_string()) {
-                            if return_type.is_empty() { return_type = self.get_text(leaf.span, source).trim().to_string() } else { name = self.get_text(leaf.span, source).trim().to_string() }
+                            if return_type.is_empty() {
+                                return_type = self.get_text(leaf.span, source).trim().to_string()
+                            }
+                            else {
+                                name = self.get_text(leaf.span, source).trim().to_string()
+                            }
                         }
                     }
                     JavaTokenType::Static => is_static = true,
@@ -126,7 +145,18 @@ impl<'config> JavaBuilder<'config> {
         }
 
         let type_parameters = Vec::new(); // TODO: Extract type parameters
-        let method = MethodDeclaration { type_parameters, modifiers, annotations, name, return_type, parameters, body, throws, is_static, span: node.span() };
+        let method = MethodDeclaration {
+            type_parameters,
+            modifiers,
+            annotations,
+            name,
+            return_type,
+            parameters,
+            body,
+            throws,
+            is_static,
+            span: node.span(),
+        };
 
         method
     }
@@ -147,15 +177,26 @@ impl<'config> JavaBuilder<'config> {
                             name = self.get_text(leaf.span, source).to_string()
                         }
                     }
-                    JavaTokenType::Int | JavaTokenType::Boolean | JavaTokenType::Void | JavaTokenType::Long | JavaTokenType::Float | JavaTokenType::Double | JavaTokenType::Char | JavaTokenType::Byte | JavaTokenType::Short => {
-                        r#type = self.get_text(leaf.span, source).to_string()
-                    }
+                    JavaTokenType::Int
+                    | JavaTokenType::Boolean
+                    | JavaTokenType::Void
+                    | JavaTokenType::Long
+                    | JavaTokenType::Float
+                    | JavaTokenType::Double
+                    | JavaTokenType::Char
+                    | JavaTokenType::Byte
+                    | JavaTokenType::Short => r#type = self.get_text(leaf.span, source).to_string(),
                     JavaTokenType::LeftBracket => is_array = true,
                     _ => {}
                 },
                 RedTree::Node(sub_node) => {
                     if sub_node.green.kind == JavaElementType::Identifier {
-                        if r#type.is_empty() { r#type = self.extract_identifier(sub_node, source) } else { name = self.extract_identifier(sub_node, source) }
+                        if r#type.is_empty() {
+                            r#type = self.extract_identifier(sub_node, source)
+                        }
+                        else {
+                            name = self.extract_identifier(sub_node, source)
+                        }
                     }
                 }
             }

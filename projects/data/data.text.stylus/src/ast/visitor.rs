@@ -291,7 +291,13 @@ pub trait MapFn {
 
     /// 映射函数定义节点
     fn map_function(&mut self, node: &crate::ast::StylusFunction) -> crate::ast::StylusFunction {
-        let mut new_function = crate::ast::StylusFunction { span: node.span.clone(), name: node.name.clone(), params: Vec::new(), body: Vec::new(), return_value: node.return_value.clone() };
+        let mut new_function = crate::ast::StylusFunction {
+            span: node.span.clone(),
+            name: node.name.clone(),
+            params: Vec::new(),
+            body: Vec::new(),
+            return_value: node.return_value.clone(),
+        };
         for param in &node.params {
             new_function.add_param(self.map_param(param));
         }
@@ -303,7 +309,8 @@ pub trait MapFn {
 
     /// 映射条件语句节点
     fn map_if(&mut self, node: &crate::ast::StylusIf) -> crate::ast::StylusIf {
-        let mut new_if = crate::ast::StylusIf { span: node.span.clone(), condition: node.condition.clone(), body: Vec::new(), else_clause: None };
+        let mut new_if =
+            crate::ast::StylusIf { span: node.span.clone(), condition: node.condition.clone(), body: Vec::new(), else_clause: None };
         for item in &node.body {
             new_if.add_body_item(self.map_item(item));
         }
@@ -319,7 +326,8 @@ pub trait MapFn {
 
     /// 映射for循环节点
     fn map_for(&mut self, node: &crate::ast::StylusFor) -> crate::ast::StylusFor {
-        let mut new_for = crate::ast::StylusFor { span: node.span.clone(), variable: node.variable.clone(), range: node.range.clone(), body: Vec::new() };
+        let mut new_for =
+            crate::ast::StylusFor { span: node.span.clone(), variable: node.variable.clone(), range: node.range.clone(), body: Vec::new() };
         for item in &node.body {
             new_for.add_body_item(self.map_item(item));
         }

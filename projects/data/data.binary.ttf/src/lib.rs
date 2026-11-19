@@ -27,8 +27,8 @@ pub mod tables;
 pub use outline::{BBox, OutlineBuilder};
 pub use reader::{ReadError, Reader, Tag};
 pub use sfnt::{
-    ChecksumStatus, Face, FontContainer, OffsetTable, ParseError, TableDirectory, TableRecord, file_checksum, magic,
-    parse_font, parse_font_validated, table_checksum, validate_checksums,
+    ChecksumStatus, Face, FontContainer, OffsetTable, ParseError, TableDirectory, TableRecord, file_checksum, magic, parse_font,
+    parse_font_validated, table_checksum, validate_checksums,
 };
 
 // Diagnostic helpers bridge to `data-binary-core`.

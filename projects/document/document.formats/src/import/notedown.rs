@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, RelationEndpoint, SemanticStatus, SourceSpan, TableRow};
 use data_text_core::{Parser, RedNode, RedTree, SourceText, parser::session::ParseSession};
 use data_text_notedown::{NoteLanguage, NoteParser, lexer::token_type::NoteTokenType, parser::element_type::NoteElementType};
+use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, RelationEndpoint, SemanticStatus, SourceSpan, TableRow};
 
 use super::common::{cell_children, decode_escaped_text, register_image_assets};
 use crate::FormatError;
@@ -29,7 +29,11 @@ pub fn import_notedown_bytes(label: &str, text: &str) -> Result<DocumentGraph, F
     lower_notedown_tree(label, green_tree, &source)
 }
 
-fn lower_notedown_tree(label: &str, green_tree: &data_text_core::GreenNode<NoteLanguage>, source: &SourceText) -> Result<DocumentGraph, FormatError> {
+fn lower_notedown_tree(
+    label: &str,
+    green_tree: &data_text_core::GreenNode<NoteLanguage>,
+    source: &SourceText,
+) -> Result<DocumentGraph, FormatError> {
     let root = RedNode::new(green_tree, 0);
     let mut graph = DocumentGraph::new(document_id_for(label));
     let mut losses: LossQueue = Vec::new();

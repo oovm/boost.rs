@@ -1,8 +1,12 @@
 //! `utilities` 公开面 smoke：诊断 re-export 与命令出口文案。
 
-use compiler_valkyrie::report;
-use compiler_valkyrie::utilities::diagnostic::{DiagnosticCode, DiagnosticSeverity};
-use compiler_valkyrie::utilities::{display_failure, report_msg};
+use compiler_valkyrie::{
+    report,
+    utilities::{
+        diagnostic::{DiagnosticCode, DiagnosticSeverity},
+        display_failure, report_msg,
+    },
+};
 
 #[test]
 fn report_macro_formats_a_user_facing_sentence() {

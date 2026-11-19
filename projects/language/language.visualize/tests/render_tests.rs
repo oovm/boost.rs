@@ -83,7 +83,11 @@ fn test_render_config_defaults() {
 
 #[test]
 fn test_element_style_builder() {
-    let style = ElementStyle::new().with_fill("#blue".to_string()).with_text("#white".to_string(), 14.0).with_class("node-style".to_string()).with_attribute("data-id".to_string(), "test".to_string());
+    let style = ElementStyle::new()
+        .with_fill("#blue".to_string())
+        .with_text("#white".to_string(), 14.0)
+        .with_class("node-style".to_string())
+        .with_attribute("data-id".to_string(), "test".to_string());
 
     assert_eq!(style.fill_color, Some("#blue".to_string()));
     assert_eq!(style.text_color, Some("#white".to_string()));

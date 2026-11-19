@@ -18,7 +18,12 @@ pub struct LLvmLexer<'config> {
 }
 
 impl<'config> Lexer<LLvmLanguage> for LLvmLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<LLvmLanguage>) -> LexOutput<LLvmLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<LLvmLanguage>,
+    ) -> LexOutput<LLvmLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

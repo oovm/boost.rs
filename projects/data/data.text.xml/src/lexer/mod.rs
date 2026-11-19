@@ -16,12 +16,18 @@ pub(crate) type State<'a, S> = LexerState<'a, S, XmlLanguage>;
 // XML static configuration
 static XML_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
 
-static XML_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "", block_start: "<!--", block_end: "-->", nested_blocks: false });
+static XML_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "", block_start: "<!--", block_end: "-->", nested_blocks: false });
 
 static XML_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"', '\''], escape: None });
 
 impl<'config> Lexer<XmlLanguage> for XmlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<XmlLanguage>) -> LexOutput<XmlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<XmlLanguage>,
+    ) -> LexOutput<XmlLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

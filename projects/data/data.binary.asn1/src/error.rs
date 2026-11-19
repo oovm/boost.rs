@@ -57,11 +57,7 @@ impl fmt::Display for DerError {
             DerErrorKind::NonMinimalInteger => write!(formatter, "non-minimal DER INTEGER at offset {}", self.offset),
             DerErrorKind::IntegerOverflow => write!(formatter, "DER INTEGER too large at offset {}", self.offset),
             DerErrorKind::TagMismatch => {
-                write!(
-                    formatter,
-                    "DER tag mismatch at offset {}: expected {:?}, found {:?}",
-                    self.offset, self.expected, self.actual
-                )
+                write!(formatter, "DER tag mismatch at offset {}: expected {:?}, found {:?}", self.offset, self.expected, self.actual)
             }
             DerErrorKind::MalformedContent => write!(formatter, "malformed DER content at offset {}", self.offset),
             DerErrorKind::TrailingData => write!(formatter, "trailing DER bytes at offset {}", self.offset),

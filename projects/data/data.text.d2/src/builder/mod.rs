@@ -1,6 +1,6 @@
 use crate::{D2ElementType, D2Parser, D2TokenType, ast::*, language::D2Language};
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree,
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, TextDiagnostics, TextError,
     builder::BuildOutput,
     source::{Source, SourceText, TextEdit},
 };
@@ -21,7 +21,12 @@ impl<'config> D2Builder<'config> {
 
 impl<'config> Builder<D2Language> for D2Builder<'config> {
     /// Builds the D2 AST from the green tree.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<D2Language>) -> BuildOutput<D2Language> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<D2Language>,
+    ) -> BuildOutput<D2Language> {
         let parser = D2Parser::new(self.config);
 
         let mut cache = data_text_core::parser::session::ParseSession::<D2Language>::default();

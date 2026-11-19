@@ -6,7 +6,7 @@ pub use element_type::AplElementType;
 
 use crate::{language::AplLanguage, lexer::token_type::AplTokenType};
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{Parser, ParserState},
     source::Source,
 };
@@ -83,7 +83,12 @@ impl<'config> AplParser<'config> {
 }
 
 impl<'config> Parser<AplLanguage> for AplParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<AplLanguage>) -> data_text_core::ParseOutput<'a, AplLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<AplLanguage>,
+    ) -> data_text_core::ParseOutput<'a, AplLanguage> {
         let lexer = crate::lexer::AplLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

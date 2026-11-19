@@ -216,9 +216,19 @@ impl TokenType for VerilogKind {
             | Self::Pipe
             | Self::Caret
             | Self::Tilde => UniversalTokenRole::Operator,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Semicolon | Self::Comma | Self::Dot | Self::Colon | Self::Hash | Self::At | Self::Question => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::Colon
+            | Self::Hash
+            | Self::At
+            | Self::Question => UniversalTokenRole::Punctuation,
             Self::Error => UniversalTokenRole::Error,
             Self::Eof => UniversalTokenRole::None,
             _ => UniversalTokenRole::None,

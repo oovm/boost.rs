@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use data_text_core::Arc;
 
-use boost_harness::diagnostic::{ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message, SourceRef, terminal::SourceID};
+use boost_harness::diagnostic::{
+    ByteRange, Diagnostic, DiagnosticCode, DiagnosticLabel, DiagnosticLocation, DiagnosticOrigin, DiagnosticSeverity, LabelRole, Message,
+    SourceRef, terminal::SourceID,
+};
 use language_server::{
     diagnostic::{SourceCache, SourceResolver, byte_index_to_position, position_to_byte_index, structured_to_protocol},
     types::{DiagnosticSeverity as ProtocolSeverity, TextPosition},
@@ -61,8 +64,17 @@ fn structured_text_diagnostic_to_protocol() {
     let file_id = cache.load_text("let value = 1", "sample.tao");
     let resolver = TestResolver::new(&source_ref, file_id);
 
-    let diagnostic = Diagnostic::new(DiagnosticCode::new("oak.syntax.unexpected-token"), DiagnosticSeverity::Error, DiagnosticOrigin::new("oak", "xml"), Message::new("oak.syntax.unexpected-token").with_fallback("unexpected token"))
-        .with_primary(DiagnosticLabel::new(DiagnosticLocation::Text { source: source_ref, range: ByteRange::new(4, 9).unwrap() }, Message::new("label.token").with_fallback("token"), LabelRole::Primary));
+    let diagnostic = Diagnostic::new(
+        DiagnosticCode::new("oak.syntax.unexpected-token"),
+        DiagnosticSeverity::Error,
+        DiagnosticOrigin::new("oak", "xml"),
+        Message::new("oak.syntax.unexpected-token").with_fallback("unexpected token"),
+    )
+    .with_primary(DiagnosticLabel::new(
+        DiagnosticLocation::Text { source: source_ref, range: ByteRange::new(4, 9).unwrap() },
+        Message::new("label.token").with_fallback("token"),
+        LabelRole::Primary,
+    ));
 
     let protocol = structured_to_protocol(&diagnostic, &cache, &resolver, &|_| Some(Arc::from("file:///sample.tao"))).unwrap();
 
@@ -77,12 +89,22 @@ fn structured_member_diagnostic_uses_related_information() {
 
     let cache = SourceCache::default();
     let resolver = TestResolver::new(&SourceRef::new("data.binary", "docx.zip").unwrap(), SourceID::default());
-    let diagnostic =
-        Diagnostic::new(DiagnosticCode::new("data.binary.container.need-range"), DiagnosticSeverity::Warning, DiagnosticOrigin::new("data.binary", "zip"), Message::new("data.binary.container.need-range").with_fallback("need range")).with_primary(DiagnosticLabel::new(
-            DiagnosticLocation::Member { container: SourceRef::new("data.binary", "docx.zip").unwrap(), member: MemberPath::new(vec![MemberSegment::new("zip", "word/document.xml")]), range: None, precision: MappingPrecision::Container },
-            Message::new("label.member").with_fallback("member"),
-            LabelRole::Primary,
-        ));
+    let diagnostic = Diagnostic::new(
+        DiagnosticCode::new("data.binary.container.need-range"),
+        DiagnosticSeverity::Warning,
+        DiagnosticOrigin::new("data.binary", "zip"),
+        Message::new("data.binary.container.need-range").with_fallback("need range"),
+    )
+    .with_primary(DiagnosticLabel::new(
+        DiagnosticLocation::Member {
+            container: SourceRef::new("data.binary", "docx.zip").unwrap(),
+            member: MemberPath::new(vec![MemberSegment::new("zip", "word/document.xml")]),
+            range: None,
+            precision: MappingPrecision::Container,
+        },
+        Message::new("label.member").with_fallback("member"),
+        LabelRole::Primary,
+    ));
 
     let protocol = structured_to_protocol(&diagnostic, &cache, &resolver, &|_| None).unwrap();
     let related = protocol.related_information.expect("member location should become related info");

@@ -113,11 +113,7 @@ impl PublishError {
 
 impl std::fmt::Display for PublishError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "publish failed at {:?}: {:?} (retryable={}): {}",
-            self.stage, self.outcome, self.retryable, self.source
-        )?;
+        write!(formatter, "publish failed at {:?}: {:?} (retryable={}): {}", self.stage, self.outcome, self.retryable, self.source)?;
         if let Some(error) = &self.restore_error {
             write!(formatter, "; restore failed: {error}")?;
         }
@@ -199,9 +195,8 @@ impl PublishSteps for AtomicRename {
 
         // `MoveFileExW` 与 unix 的 `rename` 是同一个提交点：替换目录项，并且
         // `MOVEFILE_WRITE_THROUGH` 让替换本身落盘。
-        let result = unsafe {
-            MoveFileExW(wide(temp).as_ptr(), wide(destination).as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
-        };
+        let result =
+            unsafe { MoveFileExW(wide(temp).as_ptr(), wide(destination).as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
         if result == 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
     }
 
@@ -229,17 +224,11 @@ fn publish_with(path: &Path, bytes: &[u8], steps: &dyn PublishSteps) -> Result<P
     publish_with_steps(path, bytes, temp, steps)
 }
 
-fn publish_with_steps(
-    path: &Path,
-    bytes: &[u8],
-    temp: PathBuf,
-    steps: &dyn PublishSteps,
-) -> Result<PublishReceipt, PublishError> {
+fn publish_with_steps(path: &Path, bytes: &[u8], temp: PathBuf, steps: &dyn PublishSteps) -> Result<PublishReceipt, PublishError> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        fs::create_dir_all(parent)
-            .map_err(|error| PublishError::new(PublishStage::Prepare, PublishOutcome::Unchanged, true, error))?;
+        fs::create_dir_all(parent).map_err(|error| PublishError::new(PublishStage::Prepare, PublishOutcome::Unchanged, true, error))?;
     }
     let result = write_and_replace(path, bytes, &temp, steps);
     if result.is_err() {
@@ -248,18 +237,11 @@ fn publish_with_steps(
     result
 }
 
-fn write_and_replace(
-    path: &Path,
-    bytes: &[u8],
-    temp: &Path,
-    steps: &dyn PublishSteps,
-) -> Result<PublishReceipt, PublishError> {
-    let mut file = fs::File::create(temp)
-        .map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
-    file.write_all(bytes)
-        .map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
-    file.sync_all()
-        .map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
+fn write_and_replace(path: &Path, bytes: &[u8], temp: &Path, steps: &dyn PublishSteps) -> Result<PublishReceipt, PublishError> {
+    let mut file =
+        fs::File::create(temp).map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
+    file.write_all(bytes).map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
+    file.sync_all().map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
     drop(file);
     match steps.replace(temp, path) {
         Ok(()) => match steps.sync_parent(path) {
@@ -270,12 +252,7 @@ fn write_and_replace(
     }
 }
 
-fn recover_with_backup(
-    path: &Path,
-    temp: &Path,
-    steps: &dyn PublishSteps,
-    first: io::Error,
-) -> Result<PublishReceipt, PublishError> {
+fn recover_with_backup(path: &Path, temp: &Path, steps: &dyn PublishSteps, first: io::Error) -> Result<PublishReceipt, PublishError> {
     // 目标可能被另一个打开的句柄占住（Windows）。把旧文件移到备份名
     // 再重试替换，而不是删除它：两次替换都失败时旧内容原样放回。
     if !path.exists() {
@@ -284,9 +261,7 @@ fn recover_with_backup(
     let backup = sibling(path, &format!(".bak-{}", unique_suffix()));
     if let Err(error) = steps.stash(path, &backup) {
         // 目标没有被挪走，旧内容仍可读；这次失败可以安全重试。
-        return Err(PublishError::new(PublishStage::Replace, PublishOutcome::Unchanged, true, first)
-            .with_backup(backup)
-            .with_restore(error));
+        return Err(PublishError::new(PublishStage::Replace, PublishOutcome::Unchanged, true, first).with_backup(backup).with_restore(error));
     }
     match steps.replace(temp, path) {
         Ok(()) => match steps.sync_parent(path) {
@@ -303,14 +278,9 @@ fn recover_with_backup(
             let _ = fs::remove_file(temp);
             match steps.restore(&backup, path) {
                 Ok(()) => Err(PublishError::new(PublishStage::Replace, PublishOutcome::Unchanged, true, second)),
-                Err(error) => Err(PublishError::new(
-                    PublishStage::Restore,
-                    PublishOutcome::RestoreUnconfirmed,
-                    false,
-                    second,
-                )
-                .with_backup(backup)
-                .with_restore(error)),
+                Err(error) => Err(PublishError::new(PublishStage::Restore, PublishOutcome::RestoreUnconfirmed, false, second)
+                    .with_backup(backup)
+                    .with_restore(error)),
             }
         }
     }

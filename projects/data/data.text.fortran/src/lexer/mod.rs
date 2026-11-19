@@ -13,7 +13,12 @@ pub struct FortranLexer<'config> {
 }
 
 impl<'config> Lexer<FortranLanguage> for FortranLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<FortranLanguage>) -> LexOutput<FortranLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<FortranLanguage>,
+    ) -> LexOutput<FortranLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

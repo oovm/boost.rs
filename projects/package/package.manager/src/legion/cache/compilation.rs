@@ -1,6 +1,6 @@
 //! Legion 产物缓存存储；不拥有词法分析或源码 staging 路线。
 
-use crate::legion::cache::store::{combined_hash, WorkspaceCache};
+use crate::legion::cache::store::{WorkspaceCache, combined_hash};
 
 const TYPE_IR: &str = "ir";
 const TYPE_ENTRY_SLICE: &str = "entry-slice";

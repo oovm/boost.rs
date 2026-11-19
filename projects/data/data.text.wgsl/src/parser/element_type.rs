@@ -425,7 +425,9 @@ impl ElementType for WgslElementType {
             | Self::ExpressionStatement
             | Self::Directive => UniversalElementRole::Statement,
             Self::ExprParen => UniversalElementRole::Expression,
-            Self::Expr | Self::ExprUnary | Self::ExprBinary | Self::ExprTypeCtor | Self::ExprMember | Self::ExprIndex => UniversalElementRole::Expression,
+            Self::Expr | Self::ExprUnary | Self::ExprBinary | Self::ExprTypeCtor | Self::ExprMember | Self::ExprIndex => {
+                UniversalElementRole::Expression
+            }
             Self::ExprCall => UniversalElementRole::Call,
             _ => UniversalElementRole::None,
         }

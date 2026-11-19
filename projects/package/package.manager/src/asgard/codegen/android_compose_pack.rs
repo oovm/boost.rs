@@ -1,7 +1,9 @@
 //! Android Compose 打包：vendored androidx dex + Asgard 运行时合并。
 use crate::asgard::error::{AsgardError, AsgardResult};
 use data_binary_dex::dex::{DexImageBuilder, merge_class_sets};
-use data_binary_jvm::class::{JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor};
+use data_binary_jvm::class::{
+    JvmClassFile, JvmCodeBody, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmTypeDescriptor,
+};
 use std::path::{Path, PathBuf};
 
 const ACC_PUBLIC: u16 = 0x0001;

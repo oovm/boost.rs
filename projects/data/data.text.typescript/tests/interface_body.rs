@@ -40,7 +40,8 @@ fn interface_heritage_records_extended_types() {
 
 #[test]
 fn interface_body_records_index_call_and_construct_signatures() {
-    let (members, _) = interface("interface Callable {\n  [key: string]: number\n  (value: string): number\n  new (value: string): Callable\n}");
+    let (members, _) =
+        interface("interface Callable {\n  [key: string]: number\n  (value: string): number\n  new (value: string): Callable\n}");
     assert_eq!(members.len(), 3, "{members:#?}");
     let ClassMember::Method { return_type, .. } = &members[0]
     else {

@@ -58,9 +58,7 @@ pub fn read_schema(project_dir: &Path, schema_pattern: &str) -> Result<String, S
 /// macros) are valid schema-file content but are not schema types, so the
 /// schema-only projection entry of `schema.input.vos` skips them.
 pub fn parse_schema(source: &str) -> Result<SchemaProjection, String> {
-    schema_input_vos::parse_schema(source)?
-        .project_schema_only()
-        .map_err(|diagnostics| format_projection_diagnostics(&diagnostics))
+    schema_input_vos::parse_schema(source)?.project_schema_only().map_err(|diagnostics| format_projection_diagnostics(&diagnostics))
 }
 
 /// Parse, validate, and merge schema files into one logical projection.

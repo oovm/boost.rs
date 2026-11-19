@@ -19,9 +19,9 @@ use database_storage::cluster_kv::redis::format::{
 use database_types::cluster::Namespace;
 
 use super::{
+    KeyValueExecutor,
     blocking::{BlockingRegistry, WaitOutcome, Waiter, timeout_deadline},
     reply::glob_match,
-    KeyValueExecutor,
 };
 use database_protocol_redis::{
     codec::{CommandError, Reply},
@@ -102,7 +102,6 @@ pub fn find_kind(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) 
 }
 
 /// 集合键的一次读取结果。
-///
 enum Loaded<T> {
     /// 键不存在或已过期。
     Missing,
@@ -337,11 +336,7 @@ pub fn is_hyperloglog_command(command: &[u8]) -> bool {
 }
 
 /// 载入 hash 字段并校验类型。
-fn load_hash(
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    key: &[u8],
-) -> Result<Loaded<Vec<(Vec<u8>, Vec<u8>)>>, CommandError> {
+fn load_hash(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Loaded<Vec<(Vec<u8>, Vec<u8>)>>, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::Hash)) => {}
@@ -355,14 +350,10 @@ fn load_hash(
     match load_value(executor, &KeyKind::Hash.namespace(base), key) {
         Ok(Some(bytes)) => match decode_hash(&bytes) {
             Some(fields) => Ok(Loaded::Found(fields)),
-            None => {
-                Err(CommandError::Failed("stored hash value is corrupt".to_owned()))
-            }
+            None => Err(CommandError::Failed("stored hash value is corrupt".to_owned())),
         },
         Ok(None) => Ok(Loaded::Missing),
-        Err(message) => {
-            Err(CommandError::Failed(message.to_owned()))
-        }
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
@@ -381,14 +372,10 @@ fn load_list(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> R
     match load_value(executor, &KeyKind::List.namespace(base), key) {
         Ok(Some(bytes)) => match decode_list(&bytes) {
             Some(elements) => Ok(Loaded::Found(elements)),
-            None => {
-                Err(CommandError::Failed("stored list value is corrupt".to_owned()))
-            }
+            None => Err(CommandError::Failed("stored list value is corrupt".to_owned())),
         },
         Ok(None) => Ok(Loaded::Missing),
-        Err(message) => {
-            Err(CommandError::Failed(message.to_owned()))
-        }
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
@@ -407,23 +394,15 @@ fn load_set(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Re
     match load_value(executor, &KeyKind::Set.namespace(base), key) {
         Ok(Some(bytes)) => match decode_set(&bytes) {
             Some(members) => Ok(Loaded::Found(members)),
-            None => {
-                Err(CommandError::Failed("stored set value is corrupt".to_owned()))
-            }
+            None => Err(CommandError::Failed("stored set value is corrupt".to_owned())),
         },
         Ok(None) => Ok(Loaded::Missing),
-        Err(message) => {
-            Err(CommandError::Failed(message.to_owned()))
-        }
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
 /// 载入 zset 成员并校验类型。
-fn load_zset(
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    key: &[u8],
-) -> Result<Loaded<Vec<(Vec<u8>, f64)>>, CommandError> {
+fn load_zset(executor: &dyn KeyValueExecutor, base: &Namespace, key: &[u8]) -> Result<Loaded<Vec<(Vec<u8>, f64)>>, CommandError> {
     match find_kind(executor, base, key) {
         Ok(None) => return Ok(Loaded::Missing),
         Ok(Some(KeyKind::ZSet)) => {}
@@ -437,14 +416,10 @@ fn load_zset(
     match load_value(executor, &KeyKind::ZSet.namespace(base), key) {
         Ok(Some(bytes)) => match decode_zset(&bytes) {
             Some(entries) => Ok(Loaded::Found(entries)),
-            None => {
-                Err(CommandError::Failed("stored zset value is corrupt".to_owned()))
-            }
+            None => Err(CommandError::Failed("stored zset value is corrupt".to_owned())),
         },
         Ok(None) => Ok(Loaded::Missing),
-        Err(message) => {
-            Err(CommandError::Failed(message.to_owned()))
-        }
+        Err(message) => Err(CommandError::Failed(message.to_owned())),
     }
 }
 
@@ -731,10 +706,7 @@ pub fn handle_hash(
             Loaded::Missing => Vec::new(),
             Loaded::Found(fields) => fields,
         };
-        let items: Vec<Reply> = fields
-            .iter()
-            .map(|(field, value)| Reply::bulk(if by_name { field.clone() } else { value.clone() }))
-            .collect();
+        let items: Vec<Reply> = fields.iter().map(|(field, value)| Reply::bulk(if by_name { field.clone() } else { value.clone() })).collect();
         return Ok(Reply::array(items));
     }
     if command.eq_ignore_ascii_case(b"HEXISTS") {
@@ -933,12 +905,7 @@ struct LposOptions {
 }
 
 /// 执行 `LPOS`。
-fn handle_lpos(
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    arguments: &[&[u8]],
-    protocol: u8,
-) -> Result<Reply, CommandError> {
+fn handle_lpos(executor: &dyn KeyValueExecutor, base: &Namespace, arguments: &[&[u8]], protocol: u8) -> Result<Reply, CommandError> {
     if arguments.len() < 3 {
         return Err(arity_error("lpos"));
     }
@@ -959,7 +926,9 @@ fn handle_lpos(
             };
             // 真机把 `RANK` 限制在 `[-i64::MAX, i64::MAX]`，`i64::MIN` 单独报范围错误。
             if rank == i64::MIN {
-                return Err(CommandError::Failed("value is out of range, value must between -9223372036854775807 and 9223372036854775807".to_owned()));
+                return Err(CommandError::Failed(
+                    "value is out of range, value must between -9223372036854775807 and 9223372036854775807".to_owned(),
+                ));
             }
             if rank == 0 {
                 return Err(CommandError::Failed(
@@ -1220,9 +1189,7 @@ fn handle_blocking_pop(
         Ok(Blocked::Ready(element))
     })?;
     match outcome {
-        BlockOutcome::Claimed(index, element) => {
-            Ok(Reply::array(vec![Reply::bulk(keys[index].to_vec()), Reply::bulk(element)]))
-        }
+        BlockOutcome::Claimed(index, element) => Ok(Reply::array(vec![Reply::bulk(keys[index].to_vec()), Reply::bulk(element)])),
         BlockOutcome::TimedOut => Ok(Reply::nil_array()),
     }
 }
@@ -1336,9 +1303,8 @@ fn handle_blocking_move(
         Err(message) => return Err(CommandError::Failed(message.to_owned())),
     }
     let keys = [source];
-    let outcome = block_until(registry, base, &keys, timeout, allow_blocking, |_| {
-        claim_move(executor, base, registry, source, destination, from, to)
-    })?;
+    let outcome =
+        block_until(registry, base, &keys, timeout, allow_blocking, |_| claim_move(executor, base, registry, source, destination, from, to))?;
     match outcome {
         BlockOutcome::Claimed(_, element) => Ok(Reply::bulk(element)),
         BlockOutcome::TimedOut => Ok(Reply::nil_array()),
@@ -1422,12 +1388,7 @@ fn handle_blocking_mpop(
 /// `LMPOP numkeys key [key ...] LEFT|RIGHT [COUNT count]`。
 ///
 /// 按参数顺序扫描，第一个非空列表胜出；前面的键先过类型检查，与真机一致。
-fn handle_mpop(
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    arguments: &[&[u8]],
-    protocol: u8,
-) -> Result<Reply, CommandError> {
+fn handle_mpop(executor: &dyn KeyValueExecutor, base: &Namespace, arguments: &[&[u8]], protocol: u8) -> Result<Reply, CommandError> {
     if arguments.len() < 4 {
         return Err(arity_error("lmpop"));
     }
@@ -3183,11 +3144,7 @@ fn store_zset_result(
 }
 
 /// 解析 `ZUNION` / `ZINTER` 的键、权重、聚合方式与 `WITHSCORES`。
-fn parse_zset_combine_plan(
-    name: &str,
-    arguments: &[&[u8]],
-    numkeys_index: usize,
-) -> Result<(ZSetStorePlan, bool), CommandError> {
+fn parse_zset_combine_plan(name: &str, arguments: &[&[u8]], numkeys_index: usize) -> Result<(ZSetStorePlan, bool), CommandError> {
     let Some(numkeys) = parse_positive_usize(arguments[numkeys_index])
     else {
         return Err(CommandError::Failed(format!("at least 1 input key is needed for '{name}' command").to_owned()));
@@ -3356,11 +3313,7 @@ fn handle_zset_mpop(
 }
 
 /// 解析 `ZDIFF` / `ZDIFFSTORE` 的 `numkeys` 与键列表，`numkeys` 位于 `numkeys_index`。
-fn parse_diff_keys(
-    arguments: &[&[u8]],
-    name: &str,
-    numkeys_index: usize,
-) -> Result<(Vec<Vec<u8>>, usize), CommandError> {
+fn parse_diff_keys(arguments: &[&[u8]], name: &str, numkeys_index: usize) -> Result<(Vec<Vec<u8>>, usize), CommandError> {
     let Some(numkeys) = parse_positive_usize(arguments[numkeys_index])
     else {
         return Err(CommandError::Failed(format!("at least 1 input key is needed for '{name}' command").to_owned()));
@@ -3499,12 +3452,7 @@ enum SortKey {
 }
 
 /// 执行 `SORT` / `SORT_RO`。
-fn handle_sort(
-    executor: &dyn KeyValueExecutor,
-    base: &Namespace,
-    arguments: &[&[u8]],
-    readonly: bool,
-) -> Result<Reply, CommandError> {
+fn handle_sort(executor: &dyn KeyValueExecutor, base: &Namespace, arguments: &[&[u8]], readonly: bool) -> Result<Reply, CommandError> {
     let name = if readonly { "sort_ro" } else { "sort" };
     if arguments.len() < 2 {
         return Err(arity_error(name));
@@ -3699,7 +3647,9 @@ fn parse_bitfield_ops(arguments: &[&[u8]], readonly: bool) -> Result<Vec<BitFiel
         }
         let Some(encoding) = parse_bit_encoding(arguments[index + 1])
         else {
-            return Err(CommandError::Failed("Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is.".to_owned()));
+            return Err(CommandError::Failed(
+                "Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is.".to_owned(),
+            ));
         };
         let Some(offset) = parse_bitfield_offset(arguments[index + 2], encoding.bits)
         else {
@@ -4213,12 +4163,7 @@ pub fn handle_zset(
         return match entries.iter().position(|(member, _)| member.as_slice() == request.arguments[2]) {
             Some(index) => {
                 let rank = if reverse { entries.len() - 1 - index } else { index } as i64;
-                if with_score {
-                    Ok(Reply::array(vec![Reply::integer(rank), score_reply(entries[index].1)]))
-                }
-                else {
-                    Ok(Reply::integer(rank))
-                }
+                if with_score { Ok(Reply::array(vec![Reply::integer(rank), score_reply(entries[index].1)])) } else { Ok(Reply::integer(rank)) }
             }
             // `WITHSCORE` answers an array on success, so the server keeps the array
             // shape for a miss and replies a null array under RESP2.
@@ -4230,7 +4175,7 @@ pub fn handle_zset(
                     Ok(Reply::nil())
                 }
             }
-        }
+        };
     }
     if command.eq_ignore_ascii_case(b"ZINCRBY") {
         if request.arguments.len() != 4 {
@@ -4286,9 +4231,7 @@ pub fn handle_zset(
         let key = request.arguments[1];
         return match load_zset(executor, base, key)? {
             Loaded::Missing => Ok(Reply::integer(0)),
-            Loaded::Found(entries) => {
-                Ok(Reply::integer(entries.iter().filter(|(_, score)| in_score_range(*score, min, max)).count() as i64))
-            }
+            Loaded::Found(entries) => Ok(Reply::integer(entries.iter().filter(|(_, score)| in_score_range(*score, min, max)).count() as i64)),
         };
     }
     if command.eq_ignore_ascii_case(b"ZREMRANGEBYRANK")
@@ -4861,11 +4804,7 @@ fn hll_merge_max(registers: &mut [u8], source: &[u8]) {
 /// `PFADD` / `PFCOUNT` / `PFMERGE` 的实现。
 ///
 /// 值本身是 dense HyperLogLog 字符串，创建时写入完整 12304 字节，读写只碰寄存器区。
-pub fn handle_hyperloglog(
-    request: &Request<'_>,
-    executor: Option<&dyn KeyValueExecutor>,
-    base: &Namespace,
-) -> Result<Reply, CommandError> {
+pub fn handle_hyperloglog(request: &Request<'_>, executor: Option<&dyn KeyValueExecutor>, base: &Namespace) -> Result<Reply, CommandError> {
     let Some(executor) = executor
     else {
         return Err(CommandError::Failed("unsupported command".to_owned()));

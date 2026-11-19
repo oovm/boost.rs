@@ -1,11 +1,10 @@
 //! Structural tests for the DXBC container layout adapter.
 
+use boost_source::binary::MemorySource;
 use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
 use data_binary_dxbc::{
-    DXBC_MAGIC, DxbcByteError, DxbcChunkKind, DxbcContainer, DxbcInstruction, DxbcLayoutError, ShexProgram, validate_dxbc,
-    validate_dxbc_bytes,
+    DXBC_MAGIC, DxbcByteError, DxbcChunkKind, DxbcContainer, DxbcInstruction, DxbcLayoutError, ShexProgram, validate_dxbc, validate_dxbc_bytes,
 };
-use boost_source::binary::MemorySource;
 
 const DIGEST: [u8; 16] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00];
 const CONTAINER_VERSION: u32 = 1;
@@ -243,12 +242,7 @@ fn chunk_count_whose_table_does_not_fit_is_rejected() {
 
     let error = validate_dxbc_bytes(&bytes).expect_err("an oversized offset table must fail");
     match error {
-        DxbcByteError::Layout(DxbcLayoutError::ChunkCountOutOfBounds {
-            chunk_count,
-            declared_length,
-            table_bytes,
-            evidence,
-        }) => {
+        DxbcByteError::Layout(DxbcLayoutError::ChunkCountOutOfBounds { chunk_count, declared_length, table_bytes, evidence }) => {
             assert_eq!(chunk_count, 1000);
             assert_eq!(declared_length, 136);
             assert_eq!(table_bytes, 4000);
@@ -284,14 +278,7 @@ fn chunk_size_past_the_container_is_rejected() {
 
     let error = validate_dxbc_bytes(&bytes).expect_err("a size past the container must fail");
     match error {
-        DxbcByteError::Layout(DxbcLayoutError::ChunkSizeOutOfBounds {
-            chunk_index,
-            four_cc,
-            size,
-            offset,
-            declared_length,
-            evidence,
-        }) => {
+        DxbcByteError::Layout(DxbcLayoutError::ChunkSizeOutOfBounds { chunk_index, four_cc, size, offset, declared_length, evidence }) => {
             assert_eq!(chunk_index, 1);
             assert_eq!(four_cc, *b"ISGN");
             assert_eq!(size, 200);
@@ -521,10 +508,7 @@ fn byte_slice_error_keeps_the_original_error() {
 #[test]
 fn byte_error_maps_layout_budget_and_source_failures() {
     assert_eq!(DxbcByteError::from(DxbcLayoutError::UnknownLength), DxbcByteError::Layout(DxbcLayoutError::UnknownLength));
-    assert_eq!(
-        DxbcByteError::from(DxbcLayoutError::Budget(BudgetError::ReadBytes)),
-        DxbcByteError::Budget(BudgetError::ReadBytes)
-    );
+    assert_eq!(DxbcByteError::from(DxbcLayoutError::Budget(BudgetError::ReadBytes)), DxbcByteError::Budget(BudgetError::ReadBytes));
     assert_eq!(DxbcByteError::from(BudgetError::ScanBytes), DxbcByteError::Budget(BudgetError::ScanBytes));
 }
 

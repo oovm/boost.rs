@@ -2,7 +2,7 @@
 pub mod element_type;
 
 use crate::{language::JsonLanguage, lexer::token_type::JsonTokenType, parser::element_type::JsonElementType};
-use data_text_core::{TextError, Parser, ParserState, Source, TextEdit, TokenType};
+use data_text_core::{Parser, ParserState, Source, TextEdit, TextError, TokenType};
 
 pub(crate) type State<'a, S> = ParserState<'a, JsonLanguage, S>;
 
@@ -188,7 +188,12 @@ impl<'config> JsonParser<'config> {
 }
 
 impl<'config> Parser<JsonLanguage> for JsonParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<JsonLanguage>) -> data_text_core::ParseOutput<'a, JsonLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<JsonLanguage>,
+    ) -> data_text_core::ParseOutput<'a, JsonLanguage> {
         let lexer = crate::lexer::JsonLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

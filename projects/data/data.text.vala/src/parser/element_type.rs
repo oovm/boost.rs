@@ -63,7 +63,9 @@ impl ElementType for ValaElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::SourceFile | Self::Root => UniversalElementRole::Root,
-            Self::Namespace | Self::Class | Self::Interface | Self::Struct | Self::Enum | Self::Method | Self::Field | Self::Property => UniversalElementRole::Definition,
+            Self::Namespace | Self::Class | Self::Interface | Self::Struct | Self::Enum | Self::Method | Self::Field | Self::Property => {
+                UniversalElementRole::Definition
+            }
             Self::Block | Self::Parameter => UniversalElementRole::Container,
             Self::Statement => UniversalElementRole::Statement,
             Self::Expression | Self::Type => UniversalElementRole::Expression,

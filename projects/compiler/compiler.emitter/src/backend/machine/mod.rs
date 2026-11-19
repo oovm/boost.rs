@@ -15,14 +15,13 @@ use compiler_target::{
 };
 
 pub use crate::lowering::backends::machine::{
-    HostMethod, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64CallConv, X64DataTarget, HostModule, X64LoweredExtension,
-    X64Platform, X64ProductTarget, X64TextInstruction, X64ProgramFunction, X64ProgramImage, any_returns_bool,
-    any_returns_utf8, append_text_arena, compile_shared_container, encode_x64_program, encode_x64_program_with_data,
-    encode_x64_program_with_dependencies, encode_x64_program_with_imports, is_c_identifier, node_addon_registration,
-    node_method_wrapper, node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
-    reset_text_arena,
+    HostMethod, HostModule, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64CallConv, X64DataTarget, X64LoweredExtension, X64Platform,
+    X64ProductTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction, any_returns_bool, any_returns_utf8, append_text_arena,
+    compile_shared_container, encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
+    encode_x64_program_with_imports, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
+    python_module_data, python_module_exec, python_module_registration, reset_text_arena,
 };
-pub use executable::{MachineImageError, MachineImageKind, MachineImageFacts, classify_machine_executable, classify_machine_image};
+pub use executable::{MachineImageError, MachineImageFacts, MachineImageKind, classify_machine_executable, classify_machine_image};
 
 /// `Native` 后端输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,7 +116,8 @@ impl TargetCodeGenBackend for MachineImageBackend {
     }
 
     fn compile(&self, input: Self::Input, options: &CompilationOptions) -> compiler_target::backends::BackendResult<ArtifactSet> {
-        self.compile_artifact(input, options).map_err(|error| compiler_target::backends::BackendError::for_backend(&self.descriptor.name, error))
+        self.compile_artifact(input, options)
+            .map_err(|error| compiler_target::backends::BackendError::for_backend(&self.descriptor.name, error))
     }
 }
 

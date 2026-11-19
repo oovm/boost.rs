@@ -107,7 +107,16 @@ fn index_element<'a>(element: &'a XmlElement, parent: Option<u64>, nodes: &mut V
     let direct_text = collect_direct_text(&element.children);
     let descendant_text = collect_descendant_text_values(&element.children);
     let mut children = Vec::new();
-    nodes.push(XmlNodeData { expanded_name, raw_name: element.name.clone(), attributes, parent, children: Vec::new(), direct_text, descendant_text, span: element.span });
+    nodes.push(XmlNodeData {
+        expanded_name,
+        raw_name: element.name.clone(),
+        attributes,
+        parent,
+        children: Vec::new(),
+        direct_text,
+        descendant_text,
+        span: element.span,
+    });
     for child in &element.children {
         if let XmlValue::Element(child_element) = child {
             let child_id = index_element(child_element, Some(node_id), nodes, sources);
@@ -163,12 +172,18 @@ impl<'a> ElementView for XmlElementView<'a> {
     }
 
     fn parent(&self) -> Option<ElementRef> {
-        self.document.node(self.node_id).and_then(|node| node.parent).map(|parent| ElementRef { node_id: parent, revision: self.document.revision })
+        self.document
+            .node(self.node_id)
+            .and_then(|node| node.parent)
+            .map(|parent| ElementRef { node_id: parent, revision: self.document.revision })
     }
 
     fn element_children(&self) -> Vec<ElementRef> {
         let revision = self.document.revision;
-        self.document.node(self.node_id).map(|node| node.children.iter().map(|child| ElementRef { node_id: *child, revision }).collect()).unwrap_or_default()
+        self.document
+            .node(self.node_id)
+            .map(|node| node.children.iter().map(|child| ElementRef { node_id: *child, revision }).collect())
+            .unwrap_or_default()
     }
 
     fn resolve(&self, reference: ElementRef) -> Option<Self> {

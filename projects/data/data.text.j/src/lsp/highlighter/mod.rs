@@ -1,7 +1,9 @@
 #![doc = include_str!("readme.md")]
 
-use language_highlight::syntax::{HighlightResult, HighlightSource};
-use language_highlight::themes::Theme;
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource},
+    themes::Theme,
+};
 
 /// Local definition of highlight kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -16,7 +16,9 @@ impl TokenType for OCamlTokenType {
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::True | Self::False => UniversalTokenRole::Literal,
+            Self::IntegerLiteral | Self::FloatLiteral | Self::StringLiteral | Self::CharLiteral | Self::True | Self::False => {
+                UniversalTokenRole::Literal
+            }
             _ if self.is_keyword() => UniversalTokenRole::Keyword,
             _ if self.is_operator() => UniversalTokenRole::Operator,
             _ if self.is_punctuation() => UniversalTokenRole::Punctuation,
@@ -117,7 +119,19 @@ impl OCamlTokenType {
 
     /// Checks if the token is a punctuation character.
     pub fn is_punctuation(&self) -> bool {
-        matches!(self, Self::Colon | Self::Semicolon | Self::Comma | Self::Dot | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace)
+        matches!(
+            self,
+            Self::Colon
+                | Self::Semicolon
+                | Self::Comma
+                | Self::Dot
+                | Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::LeftBrace
+                | Self::RightBrace
+        )
     }
 }
 

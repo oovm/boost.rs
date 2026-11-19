@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::HaskellTokenType,
     parser::{HaskellParser, element_type::HaskellElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, RedNode, RedTree, Source, SourceText, TextEdit};
+use data_text_core::{Builder, BuilderCache, GreenNode, RedNode, RedTree, Source, SourceText, TextDiagnostics, TextEdit, TextError};
 
 /// AST builder for the Haskell language.
 #[derive(Clone)]
@@ -21,7 +21,12 @@ impl<'config> HaskellBuilder<'config> {
 }
 
 impl<'config> Builder<HaskellLanguage> for HaskellBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<HaskellLanguage>) -> TextDiagnostics<HaskellRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<HaskellLanguage>,
+    ) -> TextDiagnostics<HaskellRoot> {
         let parser = HaskellParser::new(self.config);
         let lexer = crate::lexer::HaskellLexer::new(&self.config);
 
@@ -299,7 +304,9 @@ impl<'config> HaskellBuilder<'config> {
                             patterns.push(pattern);
                         }
                     }
-                    _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16 && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 => {
+                    _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16
+                        && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 =>
+                    {
                         body = self.build_expression(&n, source);
                     }
                     _ => {}
@@ -364,7 +371,9 @@ impl<'config> HaskellBuilder<'config> {
                                     patterns.push(p);
                                 }
                             }
-                            _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16 && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 => {
+                            _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16
+                                && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 =>
+                            {
                                 body = self.build_expression(&n, source);
                             }
                             _ => {}
@@ -379,12 +388,16 @@ impl<'config> HaskellBuilder<'config> {
                 for child in node.children() {
                     if let RedTree::Node(n) = child {
                         match n.green.kind {
-                            _ if n.green.kind as u16 >= HaskellElementType::Function as u16 && n.green.kind as u16 <= HaskellElementType::TypeAliasDeclaration as u16 => {
+                            _ if n.green.kind as u16 >= HaskellElementType::Function as u16
+                                && n.green.kind as u16 <= HaskellElementType::TypeAliasDeclaration as u16 =>
+                            {
                                 if let Some(item) = self.build_item(&n, source) {
                                     items.push(item);
                                 }
                             }
-                            _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16 && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 => {
+                            _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16
+                                && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 =>
+                            {
                                 body = self.build_expression(&n, source);
                             }
                             _ => {}
@@ -404,7 +417,9 @@ impl<'config> HaskellBuilder<'config> {
                                     arms.push(arm);
                                 }
                             }
-                            _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16 && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 => {
+                            _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16
+                                && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 =>
+                            {
                                 if target.is_none() {
                                     target = self.build_expression(&n, source);
                                 }
@@ -429,7 +444,9 @@ impl<'config> HaskellBuilder<'config> {
                     HaskellElementType::Pattern => {
                         pattern = self.build_pattern(&n, source);
                     }
-                    _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16 && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 => {
+                    _ if n.green.kind as u16 >= HaskellElementType::LiteralExpression as u16
+                        && n.green.kind as u16 <= HaskellElementType::CaseExpression as u16 =>
+                    {
                         body = self.build_expression(&n, source);
                     }
                     _ => {}

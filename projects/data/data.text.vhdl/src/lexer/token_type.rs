@@ -304,7 +304,12 @@ impl TokenType for VhdlTokenType {
             Self::Whitespace => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::StringLiteral | Self::CharLiteral | Self::BitStringLiteral | Self::BasedLiteral | Self::RealLiteral | Self::IntegerLiteral => UniversalTokenRole::Literal,
+            Self::StringLiteral
+            | Self::CharLiteral
+            | Self::BitStringLiteral
+            | Self::BasedLiteral
+            | Self::RealLiteral
+            | Self::IntegerLiteral => UniversalTokenRole::Literal,
             Self::EntityKw
             | Self::ArchitectureKw
             | Self::BeginKw
@@ -397,9 +402,23 @@ impl TokenType for VhdlTokenType {
             | Self::Mod
             | Self::Rem
             | Self::Abs => UniversalTokenRole::Keyword,
-            Self::Arrow | Self::Eq | Self::Ne | Self::Slash | Self::Le | Self::Lt | Self::Ge | Self::Gt | Self::ShiftLeft | Self::ShiftRight | Self::Plus | Self::Minus | Self::Star | Self::Pow | Self::Assign | Self::Colon | Self::Ampersand => {
-                UniversalTokenRole::Operator
-            }
+            Self::Arrow
+            | Self::Eq
+            | Self::Ne
+            | Self::Slash
+            | Self::Le
+            | Self::Lt
+            | Self::Ge
+            | Self::Gt
+            | Self::ShiftLeft
+            | Self::ShiftRight
+            | Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Pow
+            | Self::Assign
+            | Self::Colon
+            | Self::Ampersand => UniversalTokenRole::Operator,
             Self::LeftParen
             | Self::RightParen
             | Self::LeftBracket

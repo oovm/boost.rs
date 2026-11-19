@@ -7,8 +7,7 @@ pub mod ssa;
 mod sum;
 /// Semantic MIR 合同与模块级校验。
 pub mod validation;
-pub use sum::{MirSumDeclaration, MirSumVariant};
-pub use sum::record_payload_layout;
+pub use sum::{MirSumDeclaration, MirSumVariant, record_payload_layout};
 
 use crate::compiler::{
     driver::validation::ControlFlowScheduler,
@@ -18,11 +17,10 @@ use crate::compiler::{
 };
 
 pub use singleton::{
-    FieldResolution, TupleFieldResolution,
-    AggregateFieldIndex, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME, SINGLETON_INSTANCE_FIELD,
-    SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, SingletonWitnessEntries, collect_aggregate_field_map,
-    collect_singleton_accessor_contracts, collect_singleton_instance_plans, collect_singleton_witness_entries, merge_singleton_field_layouts,
-    singleton_accessor_instance_map, singleton_accessor_map,
+    AggregateFieldIndex, FieldResolution, SINGLETON_CONSTRUCTOR_NAME, SINGLETON_EAGER_ACCESSOR, SINGLETON_FINALIZER_NAME,
+    SINGLETON_INSTANCE_FIELD, SINGLETON_LAZY_ACCESSOR, SINGLETON_UNLOAD_ACCESSOR, SingletonInstancePlan, SingletonWitnessEntries,
+    TupleFieldResolution, collect_aggregate_field_map, collect_singleton_accessor_contracts, collect_singleton_instance_plans,
+    collect_singleton_witness_entries, merge_singleton_field_layouts, singleton_accessor_instance_map, singleton_accessor_map,
 };
 pub use ssa::{
     AggregateLayout, AggregateLayoutPlan, ArrayInitialization, FieldLayout, FlagsLayout, LayoutId, LayoutKey, MirBlock, MirBlockRef,

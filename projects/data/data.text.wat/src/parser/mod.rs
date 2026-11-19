@@ -167,7 +167,12 @@ impl<'config> WatParser<'config> {
 }
 
 impl<'config> Parser<WatLanguage> for WatParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<WatLanguage>) -> ParseOutput<'a, WatLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<WatLanguage>,
+    ) -> ParseOutput<'a, WatLanguage> {
         let lexer = WatLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

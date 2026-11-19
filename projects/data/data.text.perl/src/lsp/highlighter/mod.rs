@@ -46,8 +46,10 @@ impl PerlHighlighter {
     fn highlight_keywords(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
         let keywords = [
-            "if", "else", "elsif", "unless", "while", "until", "for", "foreach", "next", "last", "redo", "sub", "my", "our", "local", "use", "require", "package", "return", "eval", "die", "warn", "print", "printf", "say", "shift", "unshift", "push",
-            "pop", "split", "join", "map", "grep", "sort", "reverse", "keys", "values", "each", "delete", "exists", "defined", "undef", "scalar", "array", "hash", "ref", "bless", "tie", "untie", "package", "strict", "warnings",
+            "if", "else", "elsif", "unless", "while", "until", "for", "foreach", "next", "last", "redo", "sub", "my", "our", "local", "use",
+            "require", "package", "return", "eval", "die", "warn", "print", "printf", "say", "shift", "unshift", "push", "pop", "split",
+            "join", "map", "grep", "sort", "reverse", "keys", "values", "each", "delete", "exists", "defined", "undef", "scalar", "array",
+            "hash", "ref", "bless", "tie", "untie", "package", "strict", "warnings",
         ];
 
         for keyword in &keywords {

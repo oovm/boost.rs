@@ -1,7 +1,7 @@
 //! Object literal member construction: every member must be retained, in source
 //! order, with spans that stop exactly at the last byte of the member.
 
-use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{Expression, ExpressionKind, ModifierKind, ObjectProperty, Statement, TypeScriptRoot},
@@ -39,7 +39,9 @@ fn property_text(source: &str, start: usize, end: usize) -> String {
 
 fn property_parts(source: &str, property: &ObjectProperty) -> (String, bool, (usize, usize), String) {
     match property {
-        ObjectProperty::Property { name, shorthand, span, .. } => (name.clone(), *shorthand, (span.start, span.end), property_text(source, span.start, span.end)),
+        ObjectProperty::Property { name, shorthand, span, .. } => {
+            (name.clone(), *shorthand, (span.start, span.end), property_text(source, span.start, span.end))
+        }
         ObjectProperty::Method { name, span, .. } => (name.clone(), false, (span.start, span.end), property_text(source, span.start, span.end)),
         ObjectProperty::Spread(_) => panic!("expected a property, got a spread"),
     }

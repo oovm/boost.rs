@@ -1,28 +1,21 @@
 //! `package.resolve` 冒烟测试：清单 / 工作区 / lock 往返、版本约束与依赖求解。
 
-use std::{
-    collections::BTreeMap,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use package_registry::{MockRegistry, Package};
 use package_resolve::{
-    DependencyResolver, DependencySpec, LockFile, PackageManifest, ProjectLayout, ProjectMode, WorkspaceManifest,
-    satisfies_version_constraint,
+    DependencyResolver, DependencySpec, LockFile, PackageManifest, ProjectLayout, ProjectMode, WorkspaceManifest, satisfies_version_constraint,
 };
 
 #[test]
 fn manifest_and_lock_round_trip_through_von() {
-    let mut manifest = PackageManifest::parse(
-        "{\n    name: \"demo\",\n    version: \"1.2.3\",\n    description: \"demo package\",\n}\n",
-    )
-    .expect("manifest parses");
+    let mut manifest = PackageManifest::parse("{\n    name: \"demo\",\n    version: \"1.2.3\",\n    description: \"demo package\",\n}\n")
+        .expect("manifest parses");
     manifest.dependencies.insert("left".to_string(), DependencySpec::Version("^1.0".to_string()));
-    manifest.dev_dependencies.insert("right".to_string(), DependencySpec::Detailed {
-        version: Some("~2.1".to_string()),
-        path: None,
-        registry: Some("npm".to_string()),
-    });
+    manifest.dev_dependencies.insert(
+        "right".to_string(),
+        DependencySpec::Detailed { version: Some("~2.1".to_string()), path: None, registry: Some("npm".to_string()) },
+    );
 
     let directory = std::env::temp_dir().join(format!("package-resolve-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
@@ -56,16 +49,16 @@ fn project_mode_discovers_workspace_members() {
 
     std::fs::create_dir_all(root.join("crates/alpha")).expect("alpha dir");
     std::fs::create_dir_all(root.join("crates/beta")).expect("beta dir");
-    std::fs::write(
-        root.join(layout.workspace_manifest),
-        "{\n    name: \"ws\",\n    members: [\"crates/alpha\", \"crates/beta\"],\n}\n",
-    )
-    .expect("workspace manifest");
-    std::fs::write(root.join("crates/alpha").join(layout.package_manifest), "{\n    name: \"alpha\",\n    version: \"0.1.0\",\n}\n").expect("alpha manifest");
-    std::fs::write(root.join("crates/beta").join(layout.package_manifest), "{\n    name: \"beta\",\n    version: \"0.1.0\",\n}\n").expect("beta manifest");
+    std::fs::write(root.join(layout.workspace_manifest), "{\n    name: \"ws\",\n    members: [\"crates/alpha\", \"crates/beta\"],\n}\n")
+        .expect("workspace manifest");
+    std::fs::write(root.join("crates/alpha").join(layout.package_manifest), "{\n    name: \"alpha\",\n    version: \"0.1.0\",\n}\n")
+        .expect("alpha manifest");
+    std::fs::write(root.join("crates/beta").join(layout.package_manifest), "{\n    name: \"beta\",\n    version: \"0.1.0\",\n}\n")
+        .expect("beta manifest");
 
     let mode = ProjectMode::discover(&root, layout).expect("mode discovered");
-    let ProjectMode::Workspace { workspace, .. } = &mode else {
+    let ProjectMode::Workspace { workspace, .. } = &mode
+    else {
         panic!("expected workspace mode");
     };
     let members = workspace.member_packages(&root, layout).expect("members");

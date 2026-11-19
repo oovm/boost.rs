@@ -44,14 +44,14 @@ use std::{
     path::Path,
 };
 
-use document_ir::{
-    AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, LinkId, ListItem, LossMarker, MathDisplay, NodeId,
-    Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef, SourceSpan, TableCell, TableRow,
-};
 use data_text_core::{Builder, SourceText, parser::session::ParseSession};
 use data_text_tex::{
     TexBuilder, TexLanguage,
     ast::{MathDelimiter, TexArgument, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexLimits, TexMath, TexRoot},
+};
+use document_ir::{
+    AttributePair, Attributes, Block, DocumentGraph, DocumentId, DocumentMetadata, Inline, LinkId, ListItem, LossMarker, MathDisplay, NodeId,
+    Relation, RelationEndpoint, RelationKind, SemanticStatus, SourceKind, SourceRef, SourceSpan, TableCell, TableRow,
 };
 
 use super::{

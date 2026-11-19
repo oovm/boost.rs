@@ -60,7 +60,11 @@ impl LanguageService for TailwindLanguageService {
         }
     }
 
-    fn completion(&self, _uri: &str, _offset: usize) -> impl std::future::Future<Output = Vec<language_server::types::CompletionItem>> + Send + '_ {
+    fn completion(
+        &self,
+        _uri: &str,
+        _offset: usize,
+    ) -> impl std::future::Future<Output = Vec<language_server::types::CompletionItem>> + Send + '_ {
         async move { vec![] }
     }
 }

@@ -23,10 +23,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use database_execution::cluster::KeyValueExecutor;
-use database_execution::mongo::{
-    commands::{self, CommandError},
-    cursor::CursorStore,
+use database_execution::{
+    cluster::KeyValueExecutor,
+    mongo::{
+        commands::{self, CommandError},
+        cursor::CursorStore,
+    },
 };
 use database_storage::mongo::MongoStorage;
 

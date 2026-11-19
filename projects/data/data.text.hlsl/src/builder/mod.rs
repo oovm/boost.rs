@@ -1,5 +1,8 @@
 use crate::{HlslParser, ast::*, language::HlslLanguage, lexer::token_type::HlslTokenType, parser::element_type::HlslElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedLeaf, RedNode, RedTree, TextEdit, TokenType, builder::BuildOutput, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedLeaf, RedNode, RedTree, TextDiagnostics, TextEdit, TextError, TokenType, builder::BuildOutput,
+    parser::session::ParseSession, source::Source,
+};
 
 /// AST builder for the HLSL language.
 #[derive(Clone, Copy)]
@@ -16,7 +19,12 @@ impl<'config> HlslBuilder<'config> {
 }
 
 impl<'config> Builder<HlslLanguage> for HlslBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<HlslLanguage>) -> BuildOutput<HlslLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<HlslLanguage>,
+    ) -> BuildOutput<HlslLanguage> {
         let parser = HlslParser::new(self.config);
         let mut session = ParseSession::<HlslLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);
@@ -116,7 +124,15 @@ impl<'config> HlslBuilder<'config> {
             }
         }
 
-        HlslGlobalVar { attributes, qualifiers: qualifiers(node), register, semantic: colon_semantic(node, source), name: declared_name(node, source), ty, init }
+        HlslGlobalVar {
+            attributes,
+            qualifiers: qualifiers(node),
+            register,
+            semantic: colon_semantic(node, source),
+            name: declared_name(node, source),
+            ty,
+            init,
+        }
     }
 
     fn build_const<'a, S: Source + ?Sized>(&self, node: RedNode<'a, HlslLanguage>, source: &S) -> HlslConst {
@@ -411,7 +427,12 @@ fn first_expression<S: Source + ?Sized>(node: RedNode<HlslLanguage>, source: &S)
 }
 
 /// Collects nested expressions and significant leaf kinds in source order.
-fn collect_expressions_and_leaves<S: Source + ?Sized>(node: RedNode<HlslLanguage>, source: &S, expressions: &mut Vec<HlslExpression>, leaves: &mut Vec<HlslTokenType>) {
+fn collect_expressions_and_leaves<S: Source + ?Sized>(
+    node: RedNode<HlslLanguage>,
+    source: &S,
+    expressions: &mut Vec<HlslExpression>,
+    leaves: &mut Vec<HlslTokenType>,
+) {
     for child in node.children() {
         match child {
             RedTree::Leaf(token) => {
@@ -695,7 +716,12 @@ fn number_expression(text: &str) -> HlslExpression {
 /// Parses an integer literal, ignoring its suffix.
 fn parse_integer(text: &str) -> i64 {
     let value = text.trim().trim_end_matches(['u', 'U', 'l', 'L']);
-    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) { i64::from_str_radix(hex, 16).unwrap_or(0) } else { value.parse().unwrap_or(0) }
+    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) {
+        i64::from_str_radix(hex, 16).unwrap_or(0)
+    }
+    else {
+        value.parse().unwrap_or(0)
+    }
 }
 
 /// Parses a floating-point literal, ignoring its suffix.
@@ -759,7 +785,16 @@ fn binary_op(kinds: &[HlslTokenType]) -> HlslBinaryOp {
 
 /// Returns `true` for expression element kinds.
 fn is_expression_kind(kind: HlslElementType) -> bool {
-    matches!(kind, HlslElementType::Expr | HlslElementType::ExprUnary | HlslElementType::ExprBinary | HlslElementType::ExprCall | HlslElementType::ExprMember | HlslElementType::ExprIndex | HlslElementType::ExprParen)
+    matches!(
+        kind,
+        HlslElementType::Expr
+            | HlslElementType::ExprUnary
+            | HlslElementType::ExprBinary
+            | HlslElementType::ExprCall
+            | HlslElementType::ExprMember
+            | HlslElementType::ExprIndex
+            | HlslElementType::ExprParen
+    )
 }
 
 /// Returns `true` for element kinds that can appear as a statement.

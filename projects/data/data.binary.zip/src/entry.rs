@@ -100,12 +100,7 @@ impl ZipMember {
         if self.general_purpose_bit_flag & FLAG_ENCRYPTED == 0 {
             return ZipEncryption::None;
         }
-        if self.general_purpose_bit_flag & FLAG_STRONG_ENCRYPTION != 0 {
-            ZipEncryption::Strong
-        }
-        else {
-            ZipEncryption::Traditional
-        }
+        if self.general_purpose_bit_flag & FLAG_STRONG_ENCRYPTION != 0 { ZipEncryption::Strong } else { ZipEncryption::Traditional }
     }
 
     /// Whether the member declares any encryption.

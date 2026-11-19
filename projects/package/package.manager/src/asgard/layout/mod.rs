@@ -258,10 +258,7 @@ impl LayoutSpec {
 }
 
 fn parse_points(attr: &str, value: &str) -> Result<Points, LayoutContractError> {
-    value
-        .parse::<f32>()
-        .map(Points)
-        .map_err(|_| LayoutContractError::BadLength { attr: attr.to_string(), value: value.to_string() })
+    value.parse::<f32>().map(Points).map_err(|_| LayoutContractError::BadLength { attr: attr.to_string(), value: value.to_string() })
 }
 
 fn parse_extent(attr: &str, value: &str) -> Result<Extent, LayoutContractError> {

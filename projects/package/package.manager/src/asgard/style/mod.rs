@@ -264,8 +264,9 @@ fn find_block_end(block: &str) -> Option<usize> {
 fn parse_rule(head: &str, body: &str) -> Result<StyleRule, StyleContractError> {
     let (state, selector_text) = match head.strip_prefix("state ") {
         Some(tail) => {
-            let (state_name, selector_part) =
-                tail.split_once(" on ").ok_or_else(|| StyleContractError::Malformed { detail: format!("状态规则缺少 `on`：`{head}`") })?;
+            let (state_name, selector_part) = tail
+                .split_once(" on ")
+                .ok_or_else(|| StyleContractError::Malformed { detail: format!("状态规则缺少 `on`：`{head}`") })?;
             let state = match state_name.trim() {
                 "pressed" => State::Pressed,
                 "hover" => State::Hover,
@@ -284,7 +285,8 @@ fn parse_rule(head: &str, body: &str) -> Result<StyleRule, StyleContractError> {
         if line.is_empty() {
             continue;
         }
-        let (name, value) = line.split_once(':').ok_or_else(|| StyleContractError::Malformed { detail: format!("声明缺少 `:`：`{line}`") })?;
+        let (name, value) =
+            line.split_once(':').ok_or_else(|| StyleContractError::Malformed { detail: format!("声明缺少 `:`：`{line}`") })?;
         declarations.push(parse_declaration(name.trim(), value.trim())?);
     }
     Ok(StyleRule { selector, state, declarations })

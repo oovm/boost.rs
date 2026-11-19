@@ -1,4 +1,3 @@
-use compiler_target::{CapabilityTag, Identifier, RewriteTheory, TheoryBundle, WitnessCallEdge, WitnessMethodSlotSubmission, WitnessSubmission};
 use compiler_emitter::{
     FragmentSubmission,
     emitter_backend_clr::{
@@ -6,6 +5,9 @@ use compiler_emitter::{
         MsilType,
     },
     testing::augment_msil_with_witness,
+};
+use compiler_target::{
+    CapabilityTag, Identifier, RewriteTheory, TheoryBundle, WitnessCallEdge, WitnessMethodSlotSubmission, WitnessSubmission,
 };
 
 #[test]

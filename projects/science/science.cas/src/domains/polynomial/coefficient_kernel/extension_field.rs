@@ -67,7 +67,7 @@ impl FpExtCoefficientKernel {
         self.div(Number::integer(Integer::one()), a)
     }
 
-fn extract_coords(&self, coeff: &Number) -> Result<Vec<Integer>> {
+    fn extract_coords(&self, coeff: &Number) -> Result<Vec<Integer>> {
         match coeff {
             NumericValue::FiniteField(ff) if ff.field() == self.field => {
                 canonical_coords(ff.coefficients().to_vec(), self.spec.degree, &self.modulus)
@@ -81,8 +81,7 @@ fn extract_coords(&self, coeff: &Number) -> Result<Vec<Integer>> {
 
     fn pack_coords(&self, coords: Vec<Integer>) -> Number {
         Number::FiniteField(
-            FiniteFieldValue::try_new(self.field, science_types::FieldPresentationId(0), coords)
-                .expect("coords non-empty from kernel"),
+            FiniteFieldValue::try_new(self.field, science_types::FieldPresentationId(0), coords).expect("coords non-empty from kernel"),
         )
     }
 }

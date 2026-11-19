@@ -1,11 +1,10 @@
 //! Structural tests for the ELF64 code object layout adapter.
 
+use boost_source::binary::{ByteSource, ContentIdentity, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities};
 use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
 use data_binary_hsaco::{
-    HSACO_ELF_MAGIC, HSACO_EM_AMDGPU, HsacoByteError, HsacoHeaderTable, HsacoLayoutError, HsacoObject, HsacoSectionKind,
-    validate_hsaco_bytes,
+    HSACO_ELF_MAGIC, HSACO_EM_AMDGPU, HsacoByteError, HsacoHeaderTable, HsacoLayoutError, HsacoObject, HsacoSectionKind, validate_hsaco_bytes,
 };
-use boost_source::binary::{ByteSource, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, ContentIdentity};
 
 const ELF_HEADER_BYTES: u64 = 64;
 const PROGRAM_HEADER_BYTES: u64 = 56;
@@ -104,10 +103,8 @@ fn build_object(sections: &[SectionSpec]) -> Vec<u8> {
     put_u16(&mut bytes, 60, u16::try_from(entries.len()).expect("section count fits in a word"));
     put_u16(&mut bytes, 62, u16::try_from(entries.len() - 1).expect("name table index fits in a word"));
 
-    let text = entries
-        .iter()
-        .position(|entry| entry.name == ".text")
-        .map(|position| (offsets[position], entries[position].payload.len() as u64));
+    let text =
+        entries.iter().position(|entry| entry.name == ".text").map(|position| (offsets[position], entries[position].payload.len() as u64));
     let (text_offset, text_size) = text.unwrap_or((0, 0));
     put_u32(&mut bytes, 64, 1);
     put_u32(&mut bytes, 68, 5);
@@ -321,14 +318,7 @@ fn section_header_table_past_the_object_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("an offset past the object must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::HeaderTableOutOfBounds {
-            table,
-            count,
-            table_bytes,
-            available_bytes,
-            offset,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::HeaderTableOutOfBounds { table, count, table_bytes, available_bytes, offset, evidence }) => {
             assert_eq!(table, HsacoHeaderTable::Section);
             assert_eq!(count, 3);
             assert_eq!(table_bytes, 192);
@@ -347,14 +337,7 @@ fn program_header_table_past_the_object_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("a program table past the object must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::HeaderTableOutOfBounds {
-            table,
-            count,
-            table_bytes,
-            available_bytes,
-            offset,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::HeaderTableOutOfBounds { table, count, table_bytes, available_bytes, offset, evidence }) => {
             assert_eq!(table, HsacoHeaderTable::Program);
             assert_eq!(count, 1);
             assert_eq!(table_bytes, 56);
@@ -390,14 +373,7 @@ fn declared_section_count_past_the_object_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("an oversized table must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::HeaderTableOutOfBounds {
-            table,
-            count,
-            table_bytes,
-            available_bytes,
-            offset,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::HeaderTableOutOfBounds { table, count, table_bytes, available_bytes, offset, evidence }) => {
             assert_eq!(table, HsacoHeaderTable::Section);
             assert_eq!(count, 4096);
             assert_eq!(table_bytes, 4096 * 64);
@@ -416,13 +392,7 @@ fn trailing_incomplete_section_header_entry_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("a partial trailing entry must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::TrailingIncompleteEntry {
-            table,
-            offset,
-            available_bytes,
-            entry_bytes,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::TrailingIncompleteEntry { table, offset, available_bytes, entry_bytes, evidence }) => {
             assert_eq!(table, HsacoHeaderTable::Section);
             assert_eq!(offset, 288);
             assert_eq!(available_bytes, 54);
@@ -440,13 +410,7 @@ fn trailing_incomplete_program_header_entry_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("a partial trailing entry must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::TrailingIncompleteEntry {
-            table,
-            offset,
-            available_bytes,
-            entry_bytes,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::TrailingIncompleteEntry { table, offset, available_bytes, entry_bytes, evidence }) => {
             assert_eq!(table, HsacoHeaderTable::Program);
             assert_eq!(offset, 322);
             assert_eq!(available_bytes, 30);
@@ -465,13 +429,7 @@ fn section_payload_past_the_object_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("a section past the object must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::SectionOutOfBounds {
-            section_index,
-            offset,
-            size,
-            object_bytes,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::SectionOutOfBounds { section_index, offset, size, object_bytes, evidence }) => {
             assert_eq!(section_index, 1);
             assert_eq!(offset, 120);
             assert_eq!(size, 100_000);
@@ -490,13 +448,7 @@ fn segment_payload_past_the_object_is_rejected() {
 
     let error = validate_hsaco_bytes(&bytes).expect_err("a segment past the object must fail");
     match error {
-        HsacoByteError::Layout(HsacoLayoutError::SegmentOutOfBounds {
-            segment_index,
-            offset,
-            file_bytes,
-            object_bytes,
-            evidence,
-        }) => {
+        HsacoByteError::Layout(HsacoLayoutError::SegmentOutOfBounds { segment_index, offset, file_bytes, object_bytes, evidence }) => {
             assert_eq!(segment_index, 0);
             assert_eq!(offset, 120);
             assert_eq!(file_bytes, 100_000);
@@ -584,10 +536,7 @@ fn byte_slice_error_keeps_the_original_error() {
 #[test]
 fn byte_error_maps_layout_budget_and_source_failures() {
     assert_eq!(HsacoByteError::from(HsacoLayoutError::UnknownLength), HsacoByteError::Layout(HsacoLayoutError::UnknownLength));
-    assert_eq!(
-        HsacoByteError::from(HsacoLayoutError::Budget(BudgetError::ReadBytes)),
-        HsacoByteError::Budget(BudgetError::ReadBytes)
-    );
+    assert_eq!(HsacoByteError::from(HsacoLayoutError::Budget(BudgetError::ReadBytes)), HsacoByteError::Budget(BudgetError::ReadBytes));
     assert_eq!(HsacoByteError::from(BudgetError::ScanBytes), HsacoByteError::Budget(BudgetError::ScanBytes));
     assert_eq!(HsacoByteError::from(ReadError::Eof), HsacoByteError::Source(ReadError::Eof));
 }
@@ -632,12 +581,7 @@ fn short_header_read_keeps_the_requested_range() {
             let available = self.bytes.len() - offset;
             let to_copy = destination.len().min(available);
             destination[..to_copy].copy_from_slice(&self.bytes[offset..offset + to_copy]);
-            if to_copy == destination.len() {
-                Ok(ReadOutcome::Complete)
-            }
-            else {
-                Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 })
-            }
+            if to_copy == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 }) }
         }
 
         fn capabilities(&self) -> SourceCapabilities {

@@ -17,14 +17,8 @@ pub struct SourceCapabilities {
 
 impl SourceCapabilities {
     /// Capabilities of an in-memory slice.
-    pub const MEMORY: Self = Self {
-        random_access: true,
-        known_length: true,
-        repeatable: true,
-        concurrent_reads: true,
-        stable_identity: true,
-        decoded_views: true,
-    };
+    pub const MEMORY: Self =
+        Self { random_access: true, known_length: true, repeatable: true, concurrent_reads: true, stable_identity: true, decoded_views: true };
 
     /// Capabilities of a partial or remote range source.
     pub const PARTIAL: Self = Self {

@@ -14,9 +14,8 @@ use super::{
             wasm_function_body, wasm_function_type,
         },
     },
-    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, WasmOperatorBinding,
-    Utf8HostHandleMaterializePlan, VALTYPE_F32, WASM_GC_EXTERNREF, WasmBodyInstruction, WasmGcArrayOperation, encode_f32_const,
-    encode_wasm_body,
+    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, Utf8HostHandleMaterializePlan,
+    VALTYPE_F32, WASM_GC_EXTERNREF, WasmBodyInstruction, WasmGcArrayOperation, WasmOperatorBinding, encode_f32_const, encode_wasm_body,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
         collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
@@ -135,10 +134,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 入口包装体必须从 `wasi:cli/environment#get-arguments` 取值。该导入属于
     // 宿主边界本身，不由用户源码显式声明——否则 argv 形参永远只会拿到空数组。
     if wasi_mode && wasi_entry_declares_argv(submission) {
-        let key = (
-            crate::emitter_backend_wasi::wasi_versioned_import_module_for("wasi:cli/environment", wasi_preview),
-            "get-arguments".to_string(),
-        );
+        let key =
+            (crate::emitter_backend_wasi::wasi_versioned_import_module_for("wasi:cli/environment", wasi_preview), "get-arguments".to_string());
         if !host_imports.contains(&key) {
             host_imports.push(key);
         }
@@ -1529,14 +1526,10 @@ pub(super) const WASI_GET_ARGUMENTS_OUT_PTR: i32 = 16;
 /// 宿主边界导入被加入模块，而不是要求用户源码显式声明该导入。固定长度数组
 /// 与任意位置的字符串数组形参都不是 argv 载体，禁止按形状认领。
 fn wasi_entry_declares_argv(submission: &FragmentSubmission) -> bool {
-    submission
-        .backend_plan
-        .entry_operation()
-        .and_then(|instance| submission.backend_plan.get_function(&instance))
-        .is_some_and(|view| {
-            matches!(view.function.param_types.as_slice(),
+    submission.backend_plan.entry_operation().and_then(|instance| submission.backend_plan.get_function(&instance)).is_some_and(|view| {
+        matches!(view.function.param_types.as_slice(),
                 [SemanticType::Array(element)] if is_js_glue_host_string_type(element.as_ref()))
-        })
+    })
 }
 
 /// Build guest `[utf8]` argv from `wasi:cli/environment#get-arguments` (cabi out-pointer).
@@ -1547,10 +1540,7 @@ fn wasi_entry_declares_argv(submission: &FragmentSubmission) -> bool {
 /// Locals (declared by caller): `0..6` i32, `7` (ref null $array_ty) (argv).
 /// Stack effect: pushes argv anyref. 返回值是该包装体的目标 LIR，调用方统一经
 /// `encode_wasm_body` 编码，不再现场拼字节。
-pub(super) fn wasi_argv_from_get_arguments_instructions(
-    get_arguments_import: u32,
-    array_ty: u32,
-) -> Vec<WasmBodyInstruction> {
+pub(super) fn wasi_argv_from_get_arguments_instructions(get_arguments_import: u32, array_ty: u32) -> Vec<WasmBodyInstruction> {
     use WasmBodyInstruction as I;
     let local = |opcode, operand| I::U32 { opcode, operand };
     let mut lir = vec![
@@ -2222,10 +2212,6 @@ fn semantic_aggregate_layout(layout: &crate::lowering::shared::physical_layout::
         namespace: layout.namespace.clone(),
         key: layout.key.clone(),
         storage: layout.storage,
-        fields: layout
-            .fields
-            .iter()
-            .map(|field| compiler_types::FieldLayout { name: field.name.clone(), ty: field.ty.clone() })
-            .collect(),
+        fields: layout.fields.iter().map(|field| compiler_types::FieldLayout { name: field.name.clone(), ty: field.ty.clone() }).collect(),
     }
 }

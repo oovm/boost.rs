@@ -1,8 +1,8 @@
 use boost_source::binary::{MemorySink, MemorySource};
 use data_binary_core::{Budget, BudgetTracker};
 use data_binary_zip::{
-    FLAG_DATA_DESCRIPTOR, Zip64Mode, ZipCompression, ZipDateTime, ZipDosDateTime, ZipStreamEntry, ZipStreamWriter,
-    ZipWriteError, index_zip_bytes, read_member_payload,
+    FLAG_DATA_DESCRIPTOR, Zip64Mode, ZipCompression, ZipDateTime, ZipDosDateTime, ZipStreamEntry, ZipStreamWriter, ZipWriteError,
+    index_zip_bytes, read_member_payload,
 };
 
 fn chunked_archive(compression: ZipCompression, payload: &[u8], chunk: usize) -> Vec<u8> {
@@ -32,12 +32,9 @@ fn streams_stored_and_deflated_members() {
         assert_eq!(index.members[0].uncompressed_size, payload.len() as u64);
         assert_ne!(index.members[0].general_purpose_bit_flag & FLAG_DATA_DESCRIPTOR, 0, "descriptor flag");
 
-        let decoded = read_member_payload(
-            MemorySource::from_bytes("stream.zip", bytes),
-            &index.members[0],
-            &mut BudgetTracker::new(Budget::default()),
-        )
-        .expect("decode");
+        let decoded =
+            read_member_payload(MemorySource::from_bytes("stream.zip", bytes), &index.members[0], &mut BudgetTracker::new(Budget::default()))
+                .expect("decode");
         assert_eq!(decoded, payload);
         if method == 8 {
             assert!(index.members[0].compressed_size < payload.len() as u64, "deflate must shrink this payload");
@@ -86,12 +83,9 @@ fn forced_zip64_streaming_round_trips() {
     assert!(index.eocd.zip64);
     assert_eq!(index.members[0].uncompressed_size, payload.len() as u64);
 
-    let decoded = read_member_payload(
-        MemorySource::from_bytes("zip64-stream.zip", bytes),
-        &index.members[0],
-        &mut BudgetTracker::new(Budget::default()),
-    )
-    .expect("decode");
+    let decoded =
+        read_member_payload(MemorySource::from_bytes("zip64-stream.zip", bytes), &index.members[0], &mut BudgetTracker::new(Budget::default()))
+            .expect("decode");
     assert_eq!(decoded, payload);
 }
 
@@ -157,12 +151,9 @@ fn zero_length_member_round_trips() {
     let bytes = writer.into_sink().into_bytes();
     let index = index_zip_bytes("empty-member.zip", bytes.clone()).expect("index");
     assert_eq!(index.members[0].uncompressed_size, 0);
-    let decoded = read_member_payload(
-        MemorySource::from_bytes("empty-member.zip", bytes),
-        &index.members[0],
-        &mut BudgetTracker::new(Budget::default()),
-    )
-    .expect("decode empty member");
+    let decoded =
+        read_member_payload(MemorySource::from_bytes("empty-member.zip", bytes), &index.members[0], &mut BudgetTracker::new(Budget::default()))
+            .expect("decode empty member");
     assert!(decoded.is_empty());
 }
 

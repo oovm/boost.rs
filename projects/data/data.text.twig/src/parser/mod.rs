@@ -113,13 +113,18 @@ impl<'config> TwigParser<'config> {
                 state.expect(TwigTokenType::LeftBracePercent)?;
                 state.expect(TwigTokenType::Identifier)?; // else
                 state.expect(TwigTokenType::PercentRightBrace)?;
-                while state.not_at_end() && !(state.at(TwigTokenType::LeftBracePercent) && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false)) {
+                while state.not_at_end()
+                    && !(state.at(TwigTokenType::LeftBracePercent)
+                        && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false))
+                {
                     self.parse_node(state)?;
                 }
             }
         }
 
-        if state.at(TwigTokenType::LeftBracePercent) && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false) {
+        if state.at(TwigTokenType::LeftBracePercent)
+            && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endif").unwrap_or(false)
+        {
             state.expect(TwigTokenType::LeftBracePercent)?;
             state.expect(TwigTokenType::Identifier)?; // endif
             state.expect(TwigTokenType::PercentRightBrace)?;
@@ -139,7 +144,10 @@ impl<'config> TwigParser<'config> {
         }
         state.expect(TwigTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(TwigTokenType::LeftBracePercent) && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endfor").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(TwigTokenType::LeftBracePercent)
+                && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endfor").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -156,7 +164,10 @@ impl<'config> TwigParser<'config> {
         state.expect(TwigTokenType::Identifier)?; // name
         state.expect(TwigTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(TwigTokenType::LeftBracePercent) && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endblock").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(TwigTokenType::LeftBracePercent)
+                && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endblock").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -190,7 +201,10 @@ impl<'config> TwigParser<'config> {
 
         state.expect(TwigTokenType::PercentRightBrace)?;
 
-        while state.not_at_end() && !(state.at(TwigTokenType::LeftBracePercent) && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endmacro").unwrap_or(false)) {
+        while state.not_at_end()
+            && !(state.at(TwigTokenType::LeftBracePercent)
+                && state.tokens.peek_at(1).map(|t| state.source.get_text_in(t.span)).map(|t| t == "endmacro").unwrap_or(false))
+        {
             self.parse_node(state)?;
         }
 
@@ -264,7 +278,12 @@ impl<'config> TwigParser<'config> {
                 state.expect(TwigTokenType::RightParen)?;
             }
             _ => {
-                while state.not_at_end() && !state.at(TwigTokenType::PercentRightBrace) && !state.at(TwigTokenType::DoubleRightBrace) && !state.at(TwigTokenType::RightParen) && !state.at(TwigTokenType::Comma) {
+                while state.not_at_end()
+                    && !state.at(TwigTokenType::PercentRightBrace)
+                    && !state.at(TwigTokenType::DoubleRightBrace)
+                    && !state.at(TwigTokenType::RightParen)
+                    && !state.at(TwigTokenType::Comma)
+                {
                     state.advance();
                 }
             }
@@ -274,7 +293,12 @@ impl<'config> TwigParser<'config> {
 }
 
 impl<'config> Parser<TwigLanguage> for TwigParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<TwigLanguage>) -> ParseOutput<'a, TwigLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<TwigLanguage>,
+    ) -> ParseOutput<'a, TwigLanguage> {
         let lexer = TwigLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

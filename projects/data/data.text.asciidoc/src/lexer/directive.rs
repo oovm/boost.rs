@@ -163,7 +163,9 @@ impl<'config> AsciidocLexer<'config> {
                 && state.source().get_char_at(start_pos + 2) == Some('d')
                 && state.source().get_char_at(start_pos + 3) == Some('e')
                 && state.source().get_char_at(start_pos + 4) == Some('f')
-                && (state.source().get_char_at(start_pos + 5) == Some(' ') || state.source().get_char_at(start_pos + 5) == Some('\t') || state.source().get_char_at(start_pos + 5) == Some(':'))
+                && (state.source().get_char_at(start_pos + 5) == Some(' ')
+                    || state.source().get_char_at(start_pos + 5) == Some('\t')
+                    || state.source().get_char_at(start_pos + 5) == Some(':'))
             {
                 state.advance(5);
 
@@ -188,7 +190,9 @@ impl<'config> AsciidocLexer<'config> {
                 && state.source().get_char_at(start_pos + 3) == Some('d')
                 && state.source().get_char_at(start_pos + 4) == Some('e')
                 && state.source().get_char_at(start_pos + 5) == Some('f')
-                && (state.source().get_char_at(start_pos + 6) == Some(' ') || state.source().get_char_at(start_pos + 6) == Some('\t') || state.source().get_char_at(start_pos + 6) == Some(':'))
+                && (state.source().get_char_at(start_pos + 6) == Some(' ')
+                    || state.source().get_char_at(start_pos + 6) == Some('\t')
+                    || state.source().get_char_at(start_pos + 6) == Some(':'))
             {
                 state.advance(6);
 
@@ -210,7 +214,11 @@ impl<'config> AsciidocLexer<'config> {
             }
         }
         else if state.peek() == Some('e') {
-            if state.source().get_char_at(start_pos + 1) == Some('n') && state.source().get_char_at(start_pos + 2) == Some('d') && state.source().get_char_at(start_pos + 3) == Some('i') && state.source().get_char_at(start_pos + 4) == Some('f') {
+            if state.source().get_char_at(start_pos + 1) == Some('n')
+                && state.source().get_char_at(start_pos + 2) == Some('d')
+                && state.source().get_char_at(start_pos + 3) == Some('i')
+                && state.source().get_char_at(start_pos + 4) == Some('f')
+            {
                 state.advance(5);
 
                 while state.not_at_end() {

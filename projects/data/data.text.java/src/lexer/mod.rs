@@ -15,7 +15,12 @@ pub struct JavaLexer<'config> {
 }
 
 impl<'config> Lexer<JavaLanguage> for JavaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<JavaLanguage>) -> LexOutput<JavaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<JavaLanguage>,
+    ) -> LexOutput<JavaLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -271,7 +276,14 @@ impl<'config> JavaLexer<'config> {
                 }
 
                 let text = state.get_text_in((start..state.get_position()).into());
-                let kind = if text.contains('.') || text.contains('e') || text.contains('E') || text.ends_with('f') || text.ends_with('F') || text.ends_with('d') || text.ends_with('D') {
+                let kind = if text.contains('.')
+                    || text.contains('e')
+                    || text.contains('E')
+                    || text.ends_with('f')
+                    || text.ends_with('F')
+                    || text.ends_with('d')
+                    || text.ends_with('D')
+                {
                     JavaTokenType::FloatingPointLiteral
                 }
                 else {

@@ -108,10 +108,13 @@ impl TokenType for MetisTokenType {
     fn role(&self) -> Self::Role {
         use MetisTokenType::*;
         match self {
-            KwIsland | KwNamespace | KwUse | KwUsing | KwNode | KwRelation | KwAxiom | KwTheorem | KwAction | KwRewrites | KwConnection | KwForall | KwExists | KwAnd | KwOr | KwNot | KwLet | KwIf | KwIn => UniversalTokenRole::Keyword,
+            KwIsland | KwNamespace | KwUse | KwUsing | KwNode | KwRelation | KwAxiom | KwTheorem | KwAction | KwRewrites | KwConnection
+            | KwForall | KwExists | KwAnd | KwOr | KwNot | KwLet | KwIf | KwIn => UniversalTokenRole::Keyword,
             Ident => UniversalTokenRole::Name,
             String => UniversalTokenRole::Literal,
-            PathSep | Colon | Arrow | Iff | EqEq | Eq | OpLe | OpMul | OpPlus | OpSubseteq | OpSupseteq | OpIso | OpInv | Pipe | Dot => UniversalTokenRole::Operator,
+            PathSep | Colon | Arrow | Iff | EqEq | Eq | OpLe | OpMul | OpPlus | OpSubseteq | OpSupseteq | OpIso | OpInv | Pipe | Dot => {
+                UniversalTokenRole::Operator
+            }
             Semi | LBrace | RBrace | LParen | RParen | LBracket | RBracket | Comma => UniversalTokenRole::Punctuation,
             Whitespace => UniversalTokenRole::Whitespace,
             Comment => UniversalTokenRole::Comment,

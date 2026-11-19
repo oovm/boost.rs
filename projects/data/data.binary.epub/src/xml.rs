@@ -74,9 +74,7 @@ fn collect_element_text(element: &XmlElement, out: &mut String) {
 pub fn document_root(value: &XmlValue) -> Result<&XmlElement, String> {
     match value {
         XmlValue::Element(element) => Ok(element),
-        XmlValue::Fragment(values) => {
-            values.iter().find_map(XmlValue::as_element).ok_or_else(|| "xml fragment has no root element".into())
-        }
+        XmlValue::Fragment(values) => values.iter().find_map(XmlValue::as_element).ok_or_else(|| "xml fragment has no root element".into()),
         _ => Err("xml has no root element".into()),
     }
 }

@@ -4,7 +4,9 @@ use crate::{
     lexer::token_type::JuliaTokenType,
     parser::{JuliaParser, element_type::JuliaElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source, SourceText, TextEdit, builder::BuildOutput};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, Source, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+};
 
 /// Builder for the Julia language.
 pub struct JuliaBuilder<'config> {
@@ -19,7 +21,12 @@ impl<'config> JuliaBuilder<'config> {
 }
 
 impl<'config> Builder<JuliaLanguage> for JuliaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<JuliaLanguage>) -> BuildOutput<JuliaLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<JuliaLanguage>,
+    ) -> BuildOutput<JuliaLanguage> {
         let parser = JuliaParser::new(self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<JuliaLanguage>::default();
@@ -67,7 +74,12 @@ impl<'config> JuliaBuilder<'config> {
         Ok(JuliaRoot { statements })
     }
 
-    fn build_statement(&self, node: &GreenNode<JuliaLanguage>, offset: usize, source: &SourceText) -> Result<Option<JuliaStatement>, TextError> {
+    fn build_statement(
+        &self,
+        node: &GreenNode<JuliaLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<JuliaStatement>, TextError> {
         match node.kind {
             JuliaElementType::Function => {
                 let mut name = String::new();
@@ -77,8 +89,12 @@ impl<'config> JuliaBuilder<'config> {
                 for child in node.children() {
                     let child_len = child.len() as usize;
                     match child {
-                        GreenTree::Node(inner_node) if inner_node.kind == JuliaElementType::Identifier => name = source.get_text_in((current_offset..current_offset + child_len).into()).to_string(),
-                        GreenTree::Leaf(leaf) if leaf.kind == JuliaTokenType::Identifier => name = source.get_text_in((current_offset..current_offset + child_len).into()).to_string(),
+                        GreenTree::Node(inner_node) if inner_node.kind == JuliaElementType::Identifier => {
+                            name = source.get_text_in((current_offset..current_offset + child_len).into()).to_string()
+                        }
+                        GreenTree::Leaf(leaf) if leaf.kind == JuliaTokenType::Identifier => {
+                            name = source.get_text_in((current_offset..current_offset + child_len).into()).to_string()
+                        }
                         GreenTree::Node(inner_node) => {
                             if !inner_node.kind.is_trivia() {
                                 if let Some(stmt) = self.build_statement(inner_node, current_offset, source)? {
@@ -111,7 +127,12 @@ impl<'config> JuliaBuilder<'config> {
         }
     }
 
-    fn build_expression(&self, node: &GreenNode<JuliaLanguage>, offset: usize, source: &SourceText) -> Result<Option<JuliaExpression>, TextError> {
+    fn build_expression(
+        &self,
+        node: &GreenNode<JuliaLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<JuliaExpression>, TextError> {
         match node.kind {
             JuliaElementType::Identifier => {
                 let text = source.get_text_in((offset..offset + node.text_len() as usize).into()).to_string();
@@ -129,8 +150,16 @@ impl<'config> JuliaBuilder<'config> {
                 for child in node.children() {
                     let child_len = child.len() as usize;
                     match child {
-                        GreenTree::Node(inner_node) if inner_node.kind == JuliaElementType::Identifier => callee = Some(Box::new(JuliaExpression::Identifier(source.get_text_in((current_offset..current_offset + child_len).into()).to_string()))),
-                        GreenTree::Leaf(leaf) if leaf.kind == JuliaTokenType::Identifier => callee = Some(Box::new(JuliaExpression::Identifier(source.get_text_in((current_offset..current_offset + child_len).into()).to_string()))),
+                        GreenTree::Node(inner_node) if inner_node.kind == JuliaElementType::Identifier => {
+                            callee = Some(Box::new(JuliaExpression::Identifier(
+                                source.get_text_in((current_offset..current_offset + child_len).into()).to_string(),
+                            )))
+                        }
+                        GreenTree::Leaf(leaf) if leaf.kind == JuliaTokenType::Identifier => {
+                            callee = Some(Box::new(JuliaExpression::Identifier(
+                                source.get_text_in((current_offset..current_offset + child_len).into()).to_string(),
+                            )))
+                        }
                         GreenTree::Node(inner_node) if inner_node.kind == JuliaElementType::ArgumentList => {
                             let mut arg_offset = current_offset;
                             for arg_child in inner_node.children() {

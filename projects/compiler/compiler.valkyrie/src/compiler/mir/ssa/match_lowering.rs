@@ -201,7 +201,9 @@ impl MirBuilder {
                         self.terminate(MirTerminator::Jump { target: exit_block, arguments: vec![arm_result] });
                         any_arm_joins_exit = true;
                     }
-                    else if ty.as_ref().is_some_and(is_never_type) || expected_type.is_some_and(|expected| !matches!(expected, ValkyrieType::Unit)) {
+                    else if ty.as_ref().is_some_and(is_never_type)
+                        || expected_type.is_some_and(|expected| !matches!(expected, ValkyrieType::Unit))
+                    {
                         // `panic` / `raise` arms resume on `Never`, or the arm produced a `Unit`
                         // placeholder for a non-`Unit` signature: they never reach the join.
                         self.terminate(MirTerminator::Unreachable);

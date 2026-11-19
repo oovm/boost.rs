@@ -15,8 +15,8 @@
 //!
 //! `f32` valtype 的身份（`0x7D`）由 `data-binary-wasm` 拥有；本模块只重导出，
 //! 其余模块必须引用它，不得各自写字面量。
-use data_binary_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, encode_arraytype_raw, encode_structtype_raw};
 use compiler_target::SemanticType;
+use data_binary_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, encode_arraytype_raw, encode_structtype_raw};
 
 /// Abbreviated `anyref` valtype byte (`data-binary-wasm` `VALTYPE_ANYREF`).
 pub(crate) const WASM_GC_ANYREF: u8 = VALTYPE_ANYREF;

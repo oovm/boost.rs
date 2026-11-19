@@ -9,7 +9,7 @@ use crate::{
     lexer::{BashLexer, BashTokenType},
 };
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{ParseCache, Parser, ParserState},
     source::Source,
 };
@@ -38,10 +38,16 @@ impl<'config> BashParser<'config> {
                 _ => self.parse_command_or_pipeline(state),
             }
         }
-        else if state.at(BashTokenType::Identifier) && state.peek_kind_at(1) == Some(BashTokenType::Delimiter) && state.peek_at(1).map(|t| state.source.get_text_in(t.span)).as_deref() == Some("(") {
+        else if state.at(BashTokenType::Identifier)
+            && state.peek_kind_at(1) == Some(BashTokenType::Delimiter)
+            && state.peek_at(1).map(|t| state.source.get_text_in(t.span)).as_deref() == Some("(")
+        {
             self.parse_function(state)
         }
-        else if state.at(BashTokenType::Identifier) && state.peek_kind_at(1) == Some(BashTokenType::Operator) && state.peek_at(1).map(|t| state.source.get_text_in(t.span)).as_deref() == Some("=") {
+        else if state.at(BashTokenType::Identifier)
+            && state.peek_kind_at(1) == Some(BashTokenType::Operator)
+            && state.peek_at(1).map(|t| state.source.get_text_in(t.span)).as_deref() == Some("=")
+        {
             self.parse_variable_assignment(state)
         }
         else {
@@ -215,7 +221,11 @@ impl<'config> BashParser<'config> {
 
     pub(crate) fn parse_command<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let checkpoint = state.checkpoint();
-        while state.not_at_end() && !state.at(BashTokenType::Newline) && !state.at(BashTokenType::Delimiter) && state.peek_text().as_deref() != Some("|") {
+        while state.not_at_end()
+            && !state.at(BashTokenType::Newline)
+            && !state.at(BashTokenType::Delimiter)
+            && state.peek_text().as_deref() != Some("|")
+        {
             if matches!(state.peek_text().as_deref(), Some(">" | ">>" | "<" | "<<")) {
                 self.parse_redirection(state)?;
             }
@@ -247,7 +257,12 @@ impl<'config> BashParser<'config> {
 }
 
 impl<'config> Parser<BashLanguage> for BashParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<BashLanguage>) -> data_text_core::ParseOutput<'a, BashLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<BashLanguage>,
+    ) -> data_text_core::ParseOutput<'a, BashLanguage> {
         let lexer = BashLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -5,8 +5,10 @@
 //! 状态——那些属于宿主执行上下文。失败以 [`KernelError::ResourceLimit`] 报告，
 //! 由下游映射为自己的诊断。
 
-use crate::numeric::capability::NumericBackendLimits;
-use crate::numeric::kernel::error::{KernelError, Result};
+use crate::numeric::{
+    capability::NumericBackendLimits,
+    kernel::error::{KernelError, Result},
+};
 
 /// 由 backend 上限或 Session 策略接入的执行预算。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

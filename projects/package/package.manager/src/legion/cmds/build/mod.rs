@@ -13,8 +13,8 @@ use crate::{
         },
     },
 };
-use compiler_target::{ArtifactContract, ArtifactSet, CanonicalTarget, ClrSuspendStrategy};
 use compiler_emitter::DriverRunContract;
+use compiler_target::{ArtifactContract, ArtifactSet, CanonicalTarget, ClrSuspendStrategy};
 use compiler_types::compiler_input::CompilerSourceInput;
 use serde::Serialize;
 use std::{
@@ -64,12 +64,8 @@ fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
         return run_all_workspace_members(args);
     }
 
-    let request = BuildRequest {
-        project_dir: project_input,
-        resolved: args.resolved.clone(),
-        output_dir: args.output_dir.clone(),
-        ..Default::default()
-    };
+    let request =
+        BuildRequest { project_dir: project_input, resolved: args.resolved.clone(), output_dir: args.output_dir.clone(), ..Default::default() };
     let plan = workspace.build_plan(&request)?;
 
     println!("workspace: {}", crate::legion::cmds::path_for_cli_log(&plan.workspace_root));
@@ -265,12 +261,13 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<compiler_em
             ProjectArtifactKind::Binary => compiler_target::ArtifactPurpose::Application,
         }
     };
-    let wasm_package_kind = if matches!(artifact_purpose, compiler_target::ArtifactPurpose::TestBundle | compiler_target::ArtifactPurpose::Library) {
-        compiler_emitter::backend::wasi::WasmPackageKind::Library
-    }
-    else {
-        compiler_emitter::backend::wasi::WasmPackageKind::Binary
-    };
+    let wasm_package_kind =
+        if matches!(artifact_purpose, compiler_target::ArtifactPurpose::TestBundle | compiler_target::ArtifactPurpose::Library) {
+            compiler_emitter::backend::wasi::WasmPackageKind::Library
+        }
+        else {
+            compiler_emitter::backend::wasi::WasmPackageKind::Binary
+        };
     fs::create_dir_all(&plan.output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", plan.output_dir.display())))?;
     let host_bindings =
         compiler_host_provider_bindings(&plan.project.selected_host_providers).map_err(|error| LegionError::msg(report!("{error}")))?;
@@ -289,8 +286,7 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<compiler_em
     let _build_lock = acquire_build_lock(&plan.output_dir)?;
     let staging_dir = staging_dir_for(&plan.output_dir);
     let _ = fs::remove_dir_all(&staging_dir);
-    fs::create_dir_all(&staging_dir)
-        .map_err(|e| LegionError::msg(format!("创建产物暂存目录失败: {}: {e}", staging_dir.display())))?;
+    fs::create_dir_all(&staging_dir).map_err(|e| LegionError::msg(format!("创建产物暂存目录失败: {}: {e}", staging_dir.display())))?;
     let outcome = (|| -> LegionResult<compiler_emitter::DriverCompileReport> {
         let artifact = match compile_source_groups_to_artifacts(
             &compiler_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default(),
@@ -339,10 +335,10 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<compiler_em
         }
     };
     // 交付已提交；缓存只是加速路径，失败单独报告为警告，不推翻已成功的交付。
-    match collect_build_bundle(&plan.output_dir, &driver)
-        .map_err(|error| report!("产物集合不完整：{error}"))
-        .and_then(|bundle| store_cached_build(&cache, &plan.project.name, &canonical_triple, &ir_hash, &bundle).map_err(|error| report!("产物缓存写入失败：{error}")))
-    {
+    match collect_build_bundle(&plan.output_dir, &driver).map_err(|error| report!("产物集合不完整：{error}")).and_then(|bundle| {
+        store_cached_build(&cache, &plan.project.name, &canonical_triple, &ir_hash, &bundle)
+            .map_err(|error| report!("产物缓存写入失败：{error}"))
+    }) {
         Ok(()) => {
             if verbose {
                 println!("cache: stored (artifact-set)");
@@ -407,9 +403,7 @@ fn acquire_build_lock(output_dir: &Path) -> LegionResult<BuildLock> {
 
 fn read_delivery_manifest(output_dir: &Path) -> DeliveryManifest {
     // 读不到的清单按"无受管理上一代"处理：首次提交或被中断的旧格式交付。
-    fs::read(output_dir.join(DELIVERY_MANIFEST_FILE)).ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+    fs::read(output_dir.join(DELIVERY_MANIFEST_FILE)).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
 }
 
 /// 提交整组暂存产物为新一代受管理交付，可回滚。
@@ -427,7 +421,8 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
         if !file_type.is_file() {
             return Err(LegionError::msg(format!("产物暂存目录不应包含子目录: {}", entry.path().display())));
         }
-        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+        let Some(name) = entry.file_name().to_str().map(str::to_string)
+        else {
             return Err(LegionError::msg(format!("暂存产物文件名不是合法 UTF-8: {}", entry.path().display())));
         };
         if name == DELIVERY_MANIFEST_FILE || name.starts_with(".nyar-") {
@@ -709,10 +704,17 @@ fn write_ovm_abi(output_dir: &Path, sidecar: &compiler_emitter::OvmAbiSidecar) -
     Ok(())
 }
 
-fn write_compile_evidence(output_dir: &Path, evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence) -> LegionResult<()> {
+fn write_compile_evidence(
+    output_dir: &Path,
+    evidence: &compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence,
+) -> LegionResult<()> {
     let output_path = output_dir.join("compile-evidence.txt");
     let content = crate::legion::write_von_indented(evidence).map_err(|error| {
-        labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("序列化 compile evidence 失败 {}", output_path.display()), "VON 序列化失败位置")
+        labeled_report_with_context(
+            data_text_core::TextError::format_error(error.to_string()),
+            format!("序列化 compile evidence 失败 {}", output_path.display()),
+            "VON 序列化失败位置",
+        )
     })?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;
     fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 compile evidence 失败: {}: {e}", output_path.display())))?;
@@ -782,7 +784,11 @@ fn write_host_selection_spec(output_dir: &Path, providers: &[crate::legion::work
         })
         .collect();
     let content = write_von_indented(&entries).map_err(|error| {
-        labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("序列化 host 选择结果失败 {}", output_path.display()), "VON 序列化失败位置")
+        labeled_report_with_context(
+            data_text_core::TextError::format_error(error.to_string()),
+            format!("序列化 host 选择结果失败 {}", output_path.display()),
+            "VON 序列化失败位置",
+        )
     })?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败 {}: {e}", output_dir.display())))?;
     fs::write(&output_path, content).map_err(|e| LegionError::msg(format!("写入 host 选择结果失败 {}: {e}", output_path.display())))?;

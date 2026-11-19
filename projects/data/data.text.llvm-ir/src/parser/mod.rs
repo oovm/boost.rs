@@ -28,7 +28,9 @@ impl<'config> LLirParser<'config> {
     }
 
     fn skip_trivia<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
-        while state.not_at_end() && (state.at(LLvmTokenType::Whitespace) || state.at(LLvmTokenType::Newline) || state.at(LLvmTokenType::Comment)) {
+        while state.not_at_end()
+            && (state.at(LLvmTokenType::Whitespace) || state.at(LLvmTokenType::Newline) || state.at(LLvmTokenType::Comment))
+        {
             state.bump();
         }
     }
@@ -218,7 +220,10 @@ impl<'config> LLirParser<'config> {
             while state.not_at_end() && !state.at(LLvmTokenType::RBrace) {
                 // Check if it's a label: identifier/localvar/number followed by colon
                 let is_label = match state.peek_kind() {
-                    Some(LLvmTokenType::Identifier) | Some(LLvmTokenType::LocalVar) | Some(LLvmTokenType::Number) | Some(LLvmTokenType::Keyword) => state.peek_at(1).map(|t| t.kind) == Some(LLvmTokenType::Colon),
+                    Some(LLvmTokenType::Identifier)
+                    | Some(LLvmTokenType::LocalVar)
+                    | Some(LLvmTokenType::Number)
+                    | Some(LLvmTokenType::Keyword) => state.peek_at(1).map(|t| t.kind) == Some(LLvmTokenType::Colon),
                     _ => false,
                 };
 
@@ -257,14 +262,26 @@ impl<'config> LLirParser<'config> {
                         if state.peek_at(1).map(|t| t.kind) == Some(LLvmTokenType::Colon) {
                             let _next_text = state.current().map(|t| state.source.get_text_in(t.span)).unwrap_or_else(|| "".into());
                             // If the current token looks like a label name (identifier/number/localvar), stop
-                            if matches!(state.peek_kind(), Some(LLvmTokenType::Identifier) | Some(LLvmTokenType::LocalVar) | Some(LLvmTokenType::Number) | Some(LLvmTokenType::Keyword)) {
+                            if matches!(
+                                state.peek_kind(),
+                                Some(LLvmTokenType::Identifier)
+                                    | Some(LLvmTokenType::LocalVar)
+                                    | Some(LLvmTokenType::Number)
+                                    | Some(LLvmTokenType::Keyword)
+                            ) {
                                 break;
                             }
                         }
                         else {
                             // Instruction arguments
                             let arg_checkpoint = state.checkpoint();
-                            if matches!(state.peek_kind(), Some(LLvmTokenType::Identifier) | Some(LLvmTokenType::LocalVar) | Some(LLvmTokenType::Number) | Some(LLvmTokenType::Keyword)) {
+                            if matches!(
+                                state.peek_kind(),
+                                Some(LLvmTokenType::Identifier)
+                                    | Some(LLvmTokenType::LocalVar)
+                                    | Some(LLvmTokenType::Number)
+                                    | Some(LLvmTokenType::Keyword)
+                            ) {
                                 state.bump();
                                 state.finish_at(arg_checkpoint, LLvmElementType::Operand);
                             }
@@ -295,7 +312,12 @@ impl<'config> LLirParser<'config> {
 }
 
 impl<'config> Parser<LLvmLanguage> for LLirParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<LLvmLanguage>) -> ParseOutput<'a, LLvmLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<LLvmLanguage>,
+    ) -> ParseOutput<'a, LLvmLanguage> {
         let lexer = LLvmLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

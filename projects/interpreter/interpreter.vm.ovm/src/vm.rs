@@ -208,12 +208,18 @@ impl OdinVm {
     }
 
     /// 应用进程级工作负载意图并刷新 GC 策略。
-    pub fn apply_workload_intent(&mut self, intent: interpreter_gc::WorkloadIntent) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
+    pub fn apply_workload_intent(
+        &mut self,
+        intent: interpreter_gc::WorkloadIntent,
+    ) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
         self.executor.heap_mut().apply_intent(intent)
     }
 
     /// 进入业务阶段（嵌套）并刷新策略。
-    pub fn begin_workload_phase(&mut self, intent: interpreter_gc::WorkloadIntent) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
+    pub fn begin_workload_phase(
+        &mut self,
+        intent: interpreter_gc::WorkloadIntent,
+    ) -> Result<interpreter_gc::StrategyDecision, interpreter_gc::IntentError> {
         self.executor.heap_mut().begin_phase(intent)
     }
 
@@ -246,5 +252,4 @@ impl OdinVm {
     pub fn get_root(&self, handle: interpreter_gc::RootHandle) -> Option<&Value> {
         self.executor.heap().get_root(handle)
     }
-
 }

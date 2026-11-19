@@ -16,8 +16,10 @@
 use media_types::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::{BackendCapability, CostModel, Execution, Timing, VoiceFeature};
-use crate::bridge::WordTiming;
+use crate::{
+    backend::{BackendCapability, CostModel, Execution, Timing, VoiceFeature},
+    bridge::WordTiming,
+};
 
 use atlas_cloud::microsoft::readaloud::{Boundary, Client, ReadaloudOutcome, ReadaloudRequest, SEC_MS_GEC_VERSION};
 
@@ -122,10 +124,7 @@ fn map_cloud(error: atlas_cloud::tencent::CloudError) -> Error {
 }
 
 fn unix_now() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs_f64())
-        .unwrap_or_default()
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_secs_f64()).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -152,12 +151,8 @@ mod tests {
 
     #[test]
     fn the_domain_request_maps_onto_the_cloud_shape() {
-        let request = SynthesisRequest {
-            text: "先看".to_owned(),
-            voice: "zh-CN-XiaoxiaoNeural".to_owned(),
-            rate_percent: 10,
-            word_boundaries: false,
-        };
+        let request =
+            SynthesisRequest { text: "先看".to_owned(), voice: "zh-CN-XiaoxiaoNeural".to_owned(), rate_percent: 10, word_boundaries: false };
         let cloud = to_cloud(&request);
         assert_eq!(cloud.text, "先看");
         assert_eq!(cloud.voice, "zh-CN-XiaoxiaoNeural");

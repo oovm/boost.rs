@@ -73,7 +73,8 @@ pub fn verify_module(module: &ExecutionModule) -> Result<()> {
                 for used in operands_of(&op.kind) {
                     if block_reachable {
                         verify_ssa_use(used, region.id, block.id, &local_defs, &def_block, &cfg)?;
-                    } else {
+                    }
+                    else {
                         verify_ssa_use_local_only(used, region.id, block.id, &local_defs, &def_block)?;
                     }
                 }
@@ -97,7 +98,8 @@ pub fn verify_module(module: &ExecutionModule) -> Result<()> {
             }
             if block_reachable {
                 verify_terminator(module, region.id, block.id, &block.terminator, &block_index, &local_defs, &def_block, &cfg)?;
-            } else {
+            }
+            else {
                 // 不可达块仍校验边目标存在与 arity，但不做支配证明。
                 verify_terminator_shape(module, region.id, &block.terminator, &block_index)?;
             }
@@ -140,7 +142,8 @@ fn verify_ssa_use(
     if local_defs.contains(&used) {
         return Ok(());
     }
-    let Some(&(def_region, def_bid)) = def_block.get(&used) else {
+    let Some(&(def_region, def_bid)) = def_block.get(&used)
+    else {
         return Err(diag("use_before_def"));
     };
     if def_region != region {
@@ -180,7 +183,8 @@ impl RegionCfg {
         for block in &region.blocks {
             let from = index_of[&block.id];
             for target in terminator_targets(&block.terminator) {
-                let Some(&to) = index_of.get(&target) else {
+                let Some(&to) = index_of.get(&target)
+                else {
                     return Err(diag("terminator_unknown_target"));
                 };
                 succs[from].push(to);
@@ -268,10 +272,12 @@ impl RegionCfg {
         if def == use_block {
             return true;
         }
-        let Some(&def_i) = self.index_of.get(&def) else {
+        let Some(&def_i) = self.index_of.get(&def)
+        else {
             return false;
         };
-        let Some(&use_i) = self.index_of.get(&use_block) else {
+        let Some(&use_i) = self.index_of.get(&use_block)
+        else {
             return false;
         };
         if !self.reachable.contains(&def) || !self.reachable.contains(&use_block) {
@@ -365,7 +371,8 @@ fn verify_terminator_shape(
     block_index: &HashMap<(RegionId, BlockId), usize>,
 ) -> Result<()> {
     let check_edge = |target: BlockId, arguments: &[SsaValueId]| -> Result<()> {
-        let Some(idx) = block_index.get(&(region, target)).copied() else {
+        let Some(idx) = block_index.get(&(region, target)).copied()
+        else {
             return Err(diag("terminator_unknown_target"));
         };
         let block = &module.regions.iter().find(|r| r.id == region).expect("region").blocks[idx];
@@ -404,7 +411,8 @@ fn verify_terminator(
     cfg: &RegionCfg,
 ) -> Result<()> {
     let check_edge = |target: BlockId, arguments: &[SsaValueId]| -> Result<()> {
-        let Some(idx) = block_index.get(&(region, target)).copied() else {
+        let Some(idx) = block_index.get(&(region, target)).copied()
+        else {
             return Err(diag("terminator_unknown_target"));
         };
         let block = &module.regions.iter().find(|r| r.id == region).expect("region").blocks[idx];

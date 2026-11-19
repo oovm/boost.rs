@@ -10,7 +10,10 @@ use data_text_core::{GreenNode, TextError, source::Source};
 use super::State;
 
 impl<'config> super::DejavuParser<'config> {
-    pub(crate) fn parse_if<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_if<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::If))?;
         self.skip_trivia(state);
@@ -52,7 +55,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, IfExpression))
     }
 
-    pub(crate) fn parse_match<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_match<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Match))?;
         self.skip_trivia(state);
@@ -69,7 +75,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, MatchExpression))
     }
 
-    pub(crate) fn parse_match_arm<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_match_arm<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         if state.at(Keyword(DejavuKeywords::Case)) {
@@ -120,7 +129,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, MatchArm))
     }
 
-    pub(crate) fn parse_pattern<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_pattern<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         if state.at(Keyword(DejavuKeywords::Is)) {
             state.bump();
@@ -153,7 +165,11 @@ impl<'config> super::DejavuParser<'config> {
                 state.expect(RightBrace)?;
             }
         }
-        else if state.at(IntegerLiteral) || state.at(StringLiteral) || state.at(Keyword(DejavuKeywords::True)) || state.at(Keyword(DejavuKeywords::False)) {
+        else if state.at(IntegerLiteral)
+            || state.at(StringLiteral)
+            || state.at(Keyword(DejavuKeywords::True))
+            || state.at(Keyword(DejavuKeywords::False))
+        {
             state.bump();
         }
         else if state.at(Underscore) {
@@ -165,7 +181,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Pattern))
     }
 
-    pub(crate) fn parse_loop<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_loop<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         let is_while = state.at(Keyword(DejavuKeywords::While));
         let is_for = state.at(Keyword(DejavuKeywords::For));
@@ -218,7 +237,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, LoopExpression))
     }
 
-    pub(crate) fn parse_return<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_return<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Return))?;
         self.skip_trivia(state);
@@ -228,7 +250,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, ReturnExpression))
     }
 
-    pub(crate) fn parse_break<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_break<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Break))?;
         self.skip_trivia(state);
@@ -244,7 +269,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, BreakExpression))
     }
 
-    pub(crate) fn parse_continue<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_continue<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Continue))?;
         self.skip_trivia(state);
@@ -256,7 +284,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, ContinueExpression))
     }
 
-    pub(crate) fn parse_yield<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_yield<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Yield))?;
         self.skip_trivia(state);
@@ -271,7 +302,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, YieldExpression))
     }
 
-    pub(crate) fn parse_raise<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_raise<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Raise))?;
         self.skip_trivia(state);
@@ -279,7 +313,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, RaiseExpression))
     }
 
-    pub(crate) fn parse_resume<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_resume<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Resume))?;
         self.skip_trivia(state);
@@ -289,7 +326,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, ResumeExpression))
     }
 
-    pub(crate) fn parse_catch<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_catch<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Try))?;
         self.skip_trivia(state);
@@ -332,7 +372,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, CatchExpression))
     }
 
-    pub(crate) fn parse_block_expr_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_block_expr_node<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         if !state.at(LeftBrace) {
             return Err(TextError::custom_error(format!("expected token 'LeftBrace' at {:?}", state.current().map(|t| t.span.start))));
@@ -378,7 +421,10 @@ impl<'config> super::DejavuParser<'config> {
         kind
     }
 
-    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         self.skip_trivia(state);
         if let Some(t) = state.current() {
             match t.kind {
@@ -421,7 +467,10 @@ impl<'config> super::DejavuParser<'config> {
         }
     }
 
-    pub(crate) fn parse_let_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_let_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -456,7 +505,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, LetStatement))
     }
 
-    pub(crate) fn parse_expression_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_expression_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         let _ = self.parse_expression_internal(state, 0);
         self.skip_trivia(state);
@@ -466,7 +518,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, ExprStatement))
     }
 
-    pub(crate) fn parse_using_statement<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_using_statement<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         state.expect(Keyword(DejavuKeywords::Using))?;
@@ -480,7 +535,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, UsingStatement))
     }
 
-    pub(crate) fn parse_include<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_include<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         state.expect(Keyword(DejavuKeywords::Include))?;
@@ -490,7 +548,10 @@ impl<'config> super::DejavuParser<'config> {
             state.bump();
         }
         else {
-            return Err(TextError::custom_error(format!("Expected string literal for template name, found {:?}", state.current().map(|t| t.kind))));
+            return Err(TextError::custom_error(format!(
+                "Expected string literal for template name, found {:?}",
+                state.current().map(|t| t.kind)
+            )));
         }
 
         self.skip_trivia(state);
@@ -498,7 +559,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, IncludeDirective))
     }
 
-    pub(crate) fn parse_primary<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_primary<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         let t = state.current().ok_or_else(|| TextError::custom_error("Unexpected end of file"))?;
 
@@ -611,7 +675,10 @@ impl<'config> super::DejavuParser<'config> {
         }
     }
 
-    pub(crate) fn parse_string_literal<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_string_literal<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.bump();
 
@@ -635,7 +702,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, LiteralExpression))
     }
 
-    pub(crate) fn parse_name_path<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_name_path<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         if state.at(Identifier) || matches!(state.current().map(|t| t.kind), Some(Keyword(_))) {

@@ -106,12 +106,7 @@ pub fn converge_call_with_context(
 
 /// `self` 上的 `AutoType`/`Self` 必须在候选阶段换成完整 owner（可为 `Nominal{ItemId}`）。
 /// 禁止留给 `match_call_candidate` 再收成 `Named(短名)`，否则与已绑定字段类型对不上。
-pub fn specialize_method_param_type(
-    ty: &ValkyrieType,
-    index: usize,
-    param_specs: &[HirParam],
-    owner_type: &ValkyrieType,
-) -> ValkyrieType {
+pub fn specialize_method_param_type(ty: &ValkyrieType, index: usize, param_specs: &[HirParam], owner_type: &ValkyrieType) -> ValkyrieType {
     let is_self_slot = index == 0 && param_specs.first().is_some_and(|param| param.name.name.as_str() == "self");
     if is_self_slot && matches!(ty, ValkyrieType::AutoType | ValkyrieType::r#SelfType) {
         return owner_type.clone();
@@ -237,10 +232,7 @@ pub fn substitute_associated_equations(
 /// 与 [`substitute_associated_equations`] 的区别是解来源不预先给定等式表：调用方
 /// 可以在回调里按投影基类型查 trait 实现的关联类型见证，投影基类型仍是开放 binder
 /// 时由回调拒绝解析，保持 fail-closed。
-pub fn rewrite_associated_projections(
-    ty: &ValkyrieType,
-    resolve: &mut impl FnMut(&AssociatedType) -> Option<ValkyrieType>,
-) -> ValkyrieType {
+pub fn rewrite_associated_projections(ty: &ValkyrieType, resolve: &mut impl FnMut(&AssociatedType) -> Option<ValkyrieType>) -> ValkyrieType {
     if let ValkyrieType::Associated(associated) = ty {
         if let Some(resolved) = resolve(associated) {
             return rewrite_associated_projections(&resolved, resolve);

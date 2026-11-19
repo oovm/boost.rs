@@ -1,10 +1,10 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use data_text_xml::ast::{XmlElement, XmlValue};
 use document_ir::{
     Asset, AssetId, AssetKind, Block, BreakKind, DocumentGraph, DocumentId, Inline, ListItem, LossMarker, MathDisplay, NodeId, PageSetup,
     RelationEndpoint, SemanticStatus, TableCell,
 };
-use data_text_xml::ast::{XmlElement, XmlValue};
 
 use super::{
     footnotes::FootnoteCatalog,

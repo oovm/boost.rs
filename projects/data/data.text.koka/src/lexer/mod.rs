@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::KokaLanguage, lexer::token_type::KokaTokenType};
 use data_text_core::{
-    Lexer, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerState, Source, TextEdit, TextError,
     lexer::{LexOutput, LexerCache},
 };
 
@@ -464,7 +464,12 @@ impl<'config> KokaLexer<'config> {
 }
 
 impl<'config> Lexer<KokaLanguage> for KokaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<KokaLanguage>) -> LexOutput<KokaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<KokaLanguage>,
+    ) -> LexOutput<KokaLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

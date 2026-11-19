@@ -17,8 +17,10 @@
 use media_types::{Error, TimeBase};
 use serde::{Deserialize, Serialize};
 
-use crate::production::{Cue, CueId, Production};
-use crate::scene::Project;
+use crate::{
+    production::{Cue, CueId, Production},
+    scene::Project,
+};
 
 /// Line-breaking and reading-speed limits.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -61,10 +63,12 @@ pub struct AbsoluteCue {
 pub fn absolute_cues(project: &Project, production: &Production, style: &SubtitleStyle) -> Result<Vec<AbsoluteCue>, Error> {
     let mut resolved = Vec::with_capacity(production.cues.len());
     for cue in &production.cues {
-        let Some(shot) = production.shots.iter().find(|shot| shot.id == cue.shot) else {
+        let Some(shot) = production.shots.iter().find(|shot| shot.id == cue.shot)
+        else {
             return Err(Error::invalid_input(format!("cue `{}` references unknown shot `{}`", cue.id, cue.shot)));
         };
-        let Some(scene) = project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str())) else {
+        let Some(scene) = project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str()))
+        else {
             return Err(Error::invalid_input(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
         };
         let start = scene.start + cue.range[0];
@@ -106,10 +110,7 @@ pub fn wrap_text(text: &str, max_chars: usize, max_lines: usize) -> Result<Vec<S
         return Err(Error::invalid_input("a subtitle cue needs text"));
     }
     if lines.len() > max_lines {
-        return Err(Error::invalid_input(format!(
-            "`{text}` needs {} lines at {max_chars} characters, more than {max_lines}",
-            lines.len()
-        )));
+        return Err(Error::invalid_input(format!("`{text}` needs {} lines at {max_chars} characters, more than {max_lines}", lines.len())));
     }
     Ok(lines)
 }
@@ -253,13 +254,16 @@ pub struct CueRevision {
 /// clean; a revision that no longer fits reports what to fix instead of
 /// silently shrinking type or extending the cue.
 pub fn revise_cue(project: &Project, production: &Production, cue: &CueId, text: &str, style: &SubtitleStyle) -> Result<CueRevision, Error> {
-    let Some(existing) = production.cues.iter().find(|existing_cue| &existing_cue.id == cue) else {
+    let Some(existing) = production.cues.iter().find(|existing_cue| &existing_cue.id == cue)
+    else {
         return Err(Error::invalid_input(format!("cue `{cue}` does not exist")));
     };
-    let Some(shot) = production.shots.iter().find(|shot| shot.id == existing.shot) else {
+    let Some(shot) = production.shots.iter().find(|shot| shot.id == existing.shot)
+    else {
         return Err(Error::invalid_input(format!("cue `{cue}` references unknown shot `{}`", existing.shot)));
     };
-    let Some(scene) = project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str())) else {
+    let Some(scene) = project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str()))
+    else {
         return Err(Error::invalid_input(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
     };
 
@@ -284,14 +288,7 @@ pub fn revise_cue(project: &Project, production: &Production, cue: &CueId, text:
     }
     let shots = if panels.is_empty() { Vec::new() } else { vec![shot.id.to_string()] };
 
-    Ok(CueRevision {
-        cue: existing.id.clone(),
-        lines: lines.map_err(|error| error.message),
-        range: [start, end],
-        shots,
-        panels,
-        reading,
-    })
+    Ok(CueRevision { cue: existing.id.clone(), lines: lines.map_err(|error| error.message), range: [start, end], shots, panels, reading })
 }
 
 #[cfg(test)]
@@ -325,10 +322,7 @@ mod tests {
     #[test]
     fn a_fast_cue_is_refused_with_its_handle() {
         let cues = vec![AbsoluteCue {
-            id: CueId::new("crowded").unwrap(),
-            start: 0,
-            end: 6,
-            lines: vec!["这一句太快了根本读不完".to_owned()],
+            id: CueId::new("crowded").unwrap(), start: 0, end: 6, lines: vec!["这一句太快了根本读不完".to_owned()]
         }];
         let error = check_reading(&cues, &SubtitleStyle::default(), time_base()).expect_err("too fast");
         assert!(error.message.contains("crowded"), "{}", error.message);

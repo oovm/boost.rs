@@ -15,7 +15,12 @@ impl Default for JavadocBuilder {
 }
 
 impl Builder<JavadocLanguage> for JavadocBuilder {
-    fn build<'a, S: data_text_core::source::Source + ?Sized>(&self, _source: &S, _edits: &[data_text_core::source::TextEdit], _cache: &'a mut impl data_text_core::builder::BuilderCache<JavadocLanguage>) -> data_text_core::builder::BuildOutput<JavadocLanguage> {
+    fn build<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        _source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        _cache: &'a mut impl data_text_core::builder::BuilderCache<JavadocLanguage>,
+    ) -> data_text_core::builder::BuildOutput<JavadocLanguage> {
         data_text_core::errors::TextDiagnostics { result: Ok(JavadocRoot { description: vec![], tags: vec![] }), diagnostics: vec![] }
     }
 }

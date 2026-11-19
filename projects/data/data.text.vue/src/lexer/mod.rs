@@ -523,7 +523,12 @@ fn is_ident_continue(ch: char) -> bool {
 }
 
 impl<'config> Lexer<VueLanguage> for VueLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<VueLanguage>) -> LexOutput<VueLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<VueLanguage>,
+    ) -> LexOutput<VueLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let mut mode = LexMode::new(self.initial_mode);
 

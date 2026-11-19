@@ -1,15 +1,14 @@
 //! `SHEX`/`SHDR` tokens, instruction layout and the lazy instruction walk.
 
-use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::ByteSource;
+use data_binary_core::{BudgetTracker, ByteExtent};
 
 use crate::{
     chunk::DxbcChunk,
     container::read_exact,
     error::{DxbcEvidence, DxbcLayoutError},
     header::{
-        DXBC_OPCODE_TOKEN_LENGTH_MASK, DXBC_OPCODE_TOKEN_LENGTH_SHIFT, DXBC_OPCODE_TOKEN_OPCODE_MASK, DXBC_WORD_BYTES,
-        SHEX_HEADER_BYTES,
+        DXBC_OPCODE_TOKEN_LENGTH_MASK, DXBC_OPCODE_TOKEN_LENGTH_SHIFT, DXBC_OPCODE_TOKEN_OPCODE_MASK, DXBC_WORD_BYTES, SHEX_HEADER_BYTES,
     },
 };
 
@@ -183,10 +182,7 @@ impl<S: ByteSource + ?Sized> Iterator for ShexInstructions<'_, '_, S> {
             return Some(Err(DxbcLayoutError::InstructionOutOfBounds {
                 word_count,
                 available_words: self.remaining_words,
-                evidence: DxbcEvidence::chunk(
-                    self.chunk_index,
-                    ByteExtent { start: byte_start, len: self.remaining_words * DXBC_WORD_BYTES },
-                ),
+                evidence: DxbcEvidence::chunk(self.chunk_index, ByteExtent { start: byte_start, len: self.remaining_words * DXBC_WORD_BYTES }),
             }));
         }
 

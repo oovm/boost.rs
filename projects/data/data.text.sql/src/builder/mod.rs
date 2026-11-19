@@ -1,5 +1,8 @@
 use crate::{SqlElementType, SqlLanguage, SqlParser, ast, ast::*, lexer::token_type::SqlTokenType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, Range, RedNode, RedTree, SourceText, TextEdit, TokenType, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, Range, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, TokenType,
+    builder::BuildOutput, source::Source,
+};
 use std::sync::Arc;
 
 mod build_expression_tree;
@@ -61,7 +64,12 @@ impl<'config> Builder<SqlLanguage> for SqlBuilder<'config> {
     /// # Errors
     ///
     /// Returns an error if parsing fails or if the CST cannot be lowered to a valid AST.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<SqlLanguage>) -> BuildOutput<SqlLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<SqlLanguage>,
+    ) -> BuildOutput<SqlLanguage> {
         let parser = SqlParser::new(self.config);
         let parse_result = parser.parse(source, edits, cache);
         let TextDiagnostics { result, diagnostics } = parse_result;
@@ -217,14 +225,23 @@ impl<'config> SqlBuilder<'config> {
                 _ => {}
             }
         }
-        Ok(CteDefinition { name: name.ok_or_else(|| TextError::custom_error("Missing common table expression name"))?, columns, query: query.ok_or_else(|| TextError::custom_error("Missing common table expression query"))?, span: node.span() })
+        Ok(CteDefinition {
+            name: name.ok_or_else(|| TextError::custom_error("Missing common table expression name"))?,
+            columns,
+            query: query.ok_or_else(|| TextError::custom_error("Missing common table expression query"))?,
+            span: node.span(),
+        })
     }
 
     /// Builds a set operation (`UNION` / `INTERSECT` / `EXCEPT`) statement.
     ///
     /// `ORDER BY` and `LIMIT` sit on the set operation node because they apply to
     /// the combined result, not to the last branch.
-    fn build_set_operation_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<SetOperationStatement, TextError> {
+    fn build_set_operation_statement<'a>(
+        &self,
+        node: RedNode<'a, SqlLanguage>,
+        source: &SourceText,
+    ) -> Result<SetOperationStatement, TextError> {
         let mut operands = Vec::new();
         let mut operators = Vec::new();
         let mut order_by = None;
@@ -301,7 +318,9 @@ impl<'config> SqlBuilder<'config> {
                     SqlTokenType::On => on = true,
                     _ => {}
                 },
-                RedTree::Node(n) if matches!(n.green.kind, SqlElementType::Expression | SqlElementType::Identifier | SqlElementType::FunctionCall) => {
+                RedTree::Node(n)
+                    if matches!(n.green.kind, SqlElementType::Expression | SqlElementType::Identifier | SqlElementType::FunctionCall) =>
+                {
                     expressions.push(self.build_expression(n, source)?);
                 }
                 _ => {}
@@ -331,7 +350,8 @@ impl<'config> SqlBuilder<'config> {
                     SqlTokenType::Star => is_star = true,
                     SqlTokenType::Identifier_ => {
                         if expr.is_none() {
-                            expr = Some(Expression::Identifier(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() }));
+                            expr =
+                                Some(Expression::Identifier(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() }));
                         }
                         else {
                             alias = Some(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() });
@@ -355,7 +375,16 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        if is_star { Ok(SelectItem::Star { span: node.span() }) } else { Ok(SelectItem::Expression { expr: expr.ok_or_else(|| TextError::custom_error("Missing expression in select item"))?, alias, span: node.span() }) }
+        if is_star {
+            Ok(SelectItem::Star { span: node.span() })
+        }
+        else {
+            Ok(SelectItem::Expression {
+                expr: expr.ok_or_else(|| TextError::custom_error("Missing expression in select item"))?,
+                alias,
+                span: node.span(),
+            })
+        }
     }
 
     /// Builds an `INSERT` statement AST node.
@@ -427,7 +456,15 @@ impl<'config> SqlBuilder<'config> {
             }
         };
 
-        Ok(InsertStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in INSERT"))?, columns, rows, source: insert_source, on_conflict, returning, span: node.span() })
+        Ok(InsertStatement {
+            table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in INSERT"))?,
+            columns,
+            rows,
+            source: insert_source,
+            on_conflict,
+            returning,
+            span: node.span(),
+        })
     }
 
     /// Builds the `ON CONFLICT` clause of an `INSERT` statement.
@@ -540,7 +577,12 @@ impl<'config> SqlBuilder<'config> {
             return Err(TextError::custom_error("WHERE predicate could not be built"));
         }
 
-        Ok(UpdateStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in UPDATE"))?, assignments, selection, span: node.span() })
+        Ok(UpdateStatement {
+            table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in UPDATE"))?,
+            assignments,
+            selection,
+            span: node.span(),
+        })
     }
 
     /// Builds an assignment (column = expression) for an `UPDATE` statement.
@@ -562,7 +604,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        Ok(Assignment { column: column.ok_or_else(|| TextError::custom_error("Missing column in assignment"))?, value: value.ok_or_else(|| TextError::custom_error("Missing value in assignment"))?, span: node.span() })
+        Ok(Assignment {
+            column: column.ok_or_else(|| TextError::custom_error("Missing column in assignment"))?,
+            value: value.ok_or_else(|| TextError::custom_error("Missing value in assignment"))?,
+            span: node.span(),
+        })
     }
 
     /// Builds a `DELETE` statement AST node.
@@ -591,7 +637,11 @@ impl<'config> SqlBuilder<'config> {
             return Err(TextError::custom_error("WHERE predicate could not be built"));
         }
 
-        Ok(DeleteStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in DELETE"))?, selection, span: node.span() })
+        Ok(DeleteStatement {
+            table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in DELETE"))?,
+            selection,
+            span: node.span(),
+        })
     }
 
     /// Builds a `CREATE` statement AST node.
@@ -616,7 +666,11 @@ impl<'config> SqlBuilder<'config> {
                     SqlTokenType::Exists => if_not_exists = true,
                     SqlTokenType::Unique => unique = true,
                     _ => {
-                        if object_type == CreateObjectType::Index && name.is_some() && table_name.is_some() && t.kind == SqlTokenType::Identifier_ {
+                        if object_type == CreateObjectType::Index
+                            && name.is_some()
+                            && table_name.is_some()
+                            && t.kind == SqlTokenType::Identifier_
+                        {
                             index_columns.push(ast::Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() });
                         }
                     }
@@ -657,12 +711,26 @@ impl<'config> SqlBuilder<'config> {
 
         let body = match object_type {
             CreateObjectType::Table => CreateBody::Table { columns, constraints: table_constraints, span: node.span() },
-            CreateObjectType::View => CreateBody::View { query: Box::new(query.ok_or_else(|| TextError::custom_error("Missing query in CREATE VIEW"))?), span: node.span() },
-            CreateObjectType::Index => CreateBody::Index { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in CREATE INDEX"))?, columns: index_columns, unique, span: node.span() },
+            CreateObjectType::View => CreateBody::View {
+                query: Box::new(query.ok_or_else(|| TextError::custom_error("Missing query in CREATE VIEW"))?),
+                span: node.span(),
+            },
+            CreateObjectType::Index => CreateBody::Index {
+                table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in CREATE INDEX"))?,
+                columns: index_columns,
+                unique,
+                span: node.span(),
+            },
             CreateObjectType::Database => CreateBody::Database { span: node.span() },
         };
 
-        let result = CreateStatement { object_type, name: name.ok_or_else(|| TextError::custom_error("Missing name in CREATE"))?, if_not_exists, body, span: node.span() };
+        let result = CreateStatement {
+            object_type,
+            name: name.ok_or_else(|| TextError::custom_error("Missing name in CREATE"))?,
+            if_not_exists,
+            body,
+            span: node.span(),
+        };
         Ok(result)
     }
 
@@ -756,7 +824,12 @@ impl<'config> SqlBuilder<'config> {
             _ => Arc::from(""),
         };
 
-        Ok(ColumnDefinition { name: name.ok_or_else(|| TextError::custom_error("Missing name in column definition"))?, data_type, constraints, span: node.span() })
+        Ok(ColumnDefinition {
+            name: name.ok_or_else(|| TextError::custom_error("Missing name in column definition"))?,
+            data_type,
+            constraints,
+            span: node.span(),
+        })
     }
 
     /// Builds a table-level constraint of a `CREATE TABLE` statement.
@@ -812,7 +885,12 @@ impl<'config> SqlBuilder<'config> {
             return Ok(TableConstraint::PrimaryKey { columns: indexed_columns, on_conflict: resolution, span });
         }
         if is_foreign {
-            return Ok(TableConstraint::ForeignKey { columns, table_name: table_name.ok_or_else(|| TextError::custom_error("Missing referenced table in `FOREIGN KEY`"))?, referenced_columns, span });
+            return Ok(TableConstraint::ForeignKey {
+                columns,
+                table_name: table_name.ok_or_else(|| TextError::custom_error("Missing referenced table in `FOREIGN KEY`"))?,
+                referenced_columns,
+                span,
+            });
         }
         if is_check {
             return Ok(TableConstraint::Check { expr: expr.ok_or_else(|| TextError::custom_error("Missing expression in `CHECK`"))?, span });
@@ -826,7 +904,9 @@ impl<'config> SqlBuilder<'config> {
         let mut direction = None;
         for child in node.children() {
             match child {
-                RedTree::Node(n) if matches!(n.green.kind, SqlElementType::Identifier | SqlElementType::ColumnName) => name = Some(self.build_identifier(n, source)?),
+                RedTree::Node(n) if matches!(n.green.kind, SqlElementType::Identifier | SqlElementType::ColumnName) => {
+                    name = Some(self.build_identifier(n, source)?)
+                }
                 RedTree::Leaf(t) => match t.kind {
                     SqlTokenType::Asc => direction = Some(OrderDirection::Asc),
                     SqlTokenType::Desc => direction = Some(OrderDirection::Desc),
@@ -835,11 +915,20 @@ impl<'config> SqlBuilder<'config> {
                 _ => {}
             }
         }
-        Ok(IndexedColumn { name: name.ok_or_else(|| TextError::custom_error("Missing column name in `PRIMARY KEY`"))?, direction, span: node.span() })
+        Ok(IndexedColumn {
+            name: name.ok_or_else(|| TextError::custom_error("Missing column name in `PRIMARY KEY`"))?,
+            direction,
+            span: node.span(),
+        })
     }
 
     /// Helper to find the next node of a specific kind after a certain position
-    fn find_next_node_in_parent<'a>(&self, parent: RedNode<'a, SqlLanguage>, kind: SqlElementType, after_pos: usize) -> Option<RedNode<'a, SqlLanguage>> {
+    fn find_next_node_in_parent<'a>(
+        &self,
+        parent: RedNode<'a, SqlLanguage>,
+        kind: SqlElementType,
+        after_pos: usize,
+    ) -> Option<RedNode<'a, SqlLanguage>> {
         for child in parent.children() {
             if let RedTree::Node(n) = child {
                 if n.green.kind == kind && n.span().start >= after_pos {
@@ -873,7 +962,12 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        let result = DropStatement { object_type, name: name.ok_or_else(|| TextError::custom_error("Missing name in DROP"))?, if_exists, span: node.span() };
+        let result = DropStatement {
+            object_type,
+            name: name.ok_or_else(|| TextError::custom_error("Missing name in DROP"))?,
+            if_exists,
+            span: node.span(),
+        };
         Ok(result)
     }
 
@@ -892,7 +986,11 @@ impl<'config> SqlBuilder<'config> {
             }
         }
 
-        let result = AlterStatement { table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in ALTER"))?, action, span: node.span() };
+        let result = AlterStatement {
+            table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in ALTER"))?,
+            action,
+            span: node.span(),
+        };
         Ok(result)
     }
 
@@ -918,7 +1016,8 @@ impl<'config> SqlBuilder<'config> {
                             data_type_tokens.push(t.span.clone());
                         }
                     }
-                    LeftParen | RightParen | NumberLiteral | Comma | Int | Integer | Varchar | Char | Text | Date | Time | Timestamp | Decimal | Float | Double | Boolean => {
+                    LeftParen | RightParen | NumberLiteral | Comma | Int | Integer | Varchar | Char | Text | Date | Time | Timestamp
+                    | Decimal | Float | Double | Boolean => {
                         if is_add && identifier.is_some() {
                             data_type_tokens.push(t.span.clone());
                         }
@@ -942,13 +1041,23 @@ impl<'config> SqlBuilder<'config> {
         };
 
         if is_add {
-            Ok(ast::AlterAction::AddColumn { name: identifier.ok_or_else(|| TextError::custom_error("Missing column name in ALTER TABLE ADD"))?, data_type, span: node.span() })
+            Ok(ast::AlterAction::AddColumn {
+                name: identifier.ok_or_else(|| TextError::custom_error("Missing column name in ALTER TABLE ADD"))?,
+                data_type,
+                span: node.span(),
+            })
         }
         else if is_drop {
-            Ok(ast::AlterAction::DropColumn { name: identifier.ok_or_else(|| TextError::custom_error("Missing column name in ALTER TABLE DROP"))?, span: node.span() })
+            Ok(ast::AlterAction::DropColumn {
+                name: identifier.ok_or_else(|| TextError::custom_error("Missing column name in ALTER TABLE DROP"))?,
+                span: node.span(),
+            })
         }
         else if is_rename {
-            Ok(ast::AlterAction::RenameTo { new_name: identifier.ok_or_else(|| TextError::custom_error("Missing new name in ALTER TABLE RENAME"))?, span: node.span() })
+            Ok(ast::AlterAction::RenameTo {
+                new_name: identifier.ok_or_else(|| TextError::custom_error("Missing new name in ALTER TABLE RENAME"))?,
+                span: node.span(),
+            })
         }
         else {
             Err(TextError::custom_error("Unknown ALTER action"))
@@ -963,7 +1072,11 @@ impl<'config> SqlBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Node(n) if n.green.kind == SqlElementType::SelectStatement => {
-                    return Ok(TableSource::Derived { query: Box::new(self.build_select_statement(n, source)?), alias: self.build_derived_alias(node.clone(), source), span: node.span() });
+                    return Ok(TableSource::Derived {
+                        query: Box::new(self.build_select_statement(n, source)?),
+                        alias: self.build_derived_alias(node.clone(), source),
+                        span: node.span(),
+                    });
                 }
                 RedTree::Node(n) if matches!(n.green.kind, SqlElementType::SetOperationStatement) => {
                     return Err(TextError::custom_error("Set operations in a derived table are not supported"));
@@ -997,7 +1110,9 @@ impl<'config> SqlBuilder<'config> {
         let mut alias = None;
         for child in node.children() {
             let identifier = match child {
-                RedTree::Leaf(t) if t.kind == SqlTokenType::Identifier_ => Some(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() }),
+                RedTree::Leaf(t) if t.kind == SqlTokenType::Identifier_ => {
+                    Some(Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() })
+                }
                 RedTree::Node(n) if n.green.kind == SqlElementType::Identifier => Some(self.build_identifier(n, source)?),
                 _ => None,
             };
@@ -1015,7 +1130,11 @@ impl<'config> SqlBuilder<'config> {
         Ok(TableName { name: name.ok_or_else(|| TextError::custom_error("Missing table name"))?, alias, span: node.span() })
     }
 
-    fn build_transaction_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<ast::TransactionStatement, TextError> {
+    fn build_transaction_statement<'a>(
+        &self,
+        node: RedNode<'a, SqlLanguage>,
+        source: &SourceText,
+    ) -> Result<ast::TransactionStatement, TextError> {
         use SqlTokenType::*;
         let mut head: Option<SqlTokenType> = None;
         let mut saw_to = false;
@@ -1063,7 +1182,9 @@ impl<'config> SqlBuilder<'config> {
         }
         let (character_set, collation) = match tokens.as_slice() {
             [_, character_set] => (character_set.clone(), None),
-            [_, character_set, collate, collation] if collate.eq_ignore_ascii_case("COLLATE") => (character_set.clone(), Some(collation.clone())),
+            [_, character_set, collate, collation] if collate.eq_ignore_ascii_case("COLLATE") => {
+                (character_set.clone(), Some(collation.clone()))
+            }
             _ => return Err(TextError::custom_error("SET NAMES requires a character set and optional collation")),
         };
         Ok(SetNamesStatement { character_set, collation, span: node.span() })
@@ -1420,7 +1541,12 @@ impl<'config> SqlBuilder<'config> {
                         if let Some(item) = current.take() {
                             items.push(item);
                         }
-                        current = Some(OrderByItem { expr: self.build_expression(n.clone(), source)?, direction: OrderDirection::Asc, nulls: None, span: n.span() });
+                        current = Some(OrderByItem {
+                            expr: self.build_expression(n.clone(), source)?,
+                            direction: OrderDirection::Asc,
+                            nulls: None,
+                            span: n.span(),
+                        });
                     }
                 }
                 RedTree::Leaf(t) => match t.kind {
@@ -1570,7 +1696,8 @@ fn split_session_scope(words: Vec<Arc<str>>, keyword: &str) -> Result<(Option<Se
     match words.as_slice() {
         [name] => Ok((None, name.clone())),
         [scope, name] => {
-            let scope = SessionScope::from_word(scope).ok_or_else(|| TextError::custom_error(format!("{keyword} scope must be GLOBAL, SESSION, or LOCAL")))?;
+            let scope = SessionScope::from_word(scope)
+                .ok_or_else(|| TextError::custom_error(format!("{keyword} scope must be GLOBAL, SESSION, or LOCAL")))?;
             Ok((Some(scope), name.clone()))
         }
         _ => Err(TextError::custom_error(format!("{keyword} requires a target word"))),

@@ -43,7 +43,14 @@ impl<V: Vfs> MarkdownLanguageService<V> {
     pub fn new(vfs: V) -> Self {
         Self { vfs, workspace: language_server::workspace::WorkspaceManager::new(), hover_provider: MarkdownHoverProvider }
     }
-    fn collect_definitions(&self, node: &RedNode<MarkdownLanguage>, name: &str, source: &str, uri: &str, definitions: &mut Vec<language_server::LocationRange>) {
+    fn collect_definitions(
+        &self,
+        node: &RedNode<MarkdownLanguage>,
+        name: &str,
+        source: &str,
+        uri: &str,
+        definitions: &mut Vec<language_server::LocationRange>,
+    ) {
         use data_text_core::{language::UniversalElementRole, tree::RedTree};
         let role = ElementType::role(&node.green.kind);
         if ElementRole::universal(&role) == UniversalElementRole::Definition {
@@ -150,7 +157,12 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             all_refs
         }
     }
-    fn rename<'a>(&'a self, uri: &'a str, range: Range<usize>, new_name: String) -> impl Future<Output = Option<language_server::WorkspaceEdit>> + Send + 'a {
+    fn rename<'a>(
+        &'a self,
+        uri: &'a str,
+        range: Range<usize>,
+        new_name: String,
+    ) -> impl Future<Output = Option<language_server::WorkspaceEdit>> + Send + 'a {
         let uri = uri.to_string();
         async move {
             let refs = self.references(&uri, range).await;
@@ -159,7 +171,10 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             }
             let mut changes = std::collections::HashMap::new();
             for r in refs {
-                changes.entry(r.uri.to_string()).or_insert_with(Vec::new).push(language_server::TextEdit { range: r.range, new_text: new_name.clone() });
+                changes
+                    .entry(r.uri.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(language_server::TextEdit { range: r.range, new_text: new_name.clone() });
             }
             Some(language_server::WorkspaceEdit { changes })
         }

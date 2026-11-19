@@ -12,12 +12,12 @@ use std::{
 };
 
 use crawler_types::{CrawlEvent, CrawlRequest, FetchArtifact, FrontierItem, PageChallengeState};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use url::Url;
 use database::execution::engine::{
     Batch, Connection, DoctorSeverity, Error as YydbError, HashAlgo, LeaseExpectation, LeaseToken, ObjectKind as YydbObjectKind,
     ObjectRef as YydbObjectRef, ReleaseOutcome as YydbReleaseOutcome,
 };
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use url::Url;
 
 use crate::{
     Store,

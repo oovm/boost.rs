@@ -5,7 +5,9 @@ use crate::{
     lexer::token_type::YamlTokenType,
     parser::{YamlParser, element_type::YamlElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, Source, SourceText, TextEdit, builder::BuildOutput};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, Source, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+};
 use std::{collections::BTreeMap, sync::Arc};
 
 /// AST builder for YAML.
@@ -21,7 +23,12 @@ impl<'config> YamlBuilder<'config> {
         Self { config }
     }
 
-    fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, YamlLanguage>, source: &SourceText, cache: &mut impl BuilderCache<YamlLanguage>) -> Result<YamlRoot, TextError> {
+    fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, YamlLanguage>,
+        source: &SourceText,
+        cache: &mut impl BuilderCache<YamlLanguage>,
+    ) -> Result<YamlRoot, TextError> {
         if let Some(cached) = cache.get_typed_node::<YamlRoot>(green_tree) {
             return Ok(cached.clone());
         }
@@ -59,7 +66,13 @@ impl<'config> YamlBuilder<'config> {
         Ok(result)
     }
 
-    fn build_value<'a>(&self, node: &GreenNode<'a, YamlLanguage>, offset: usize, source: &SourceText, _cache: &mut impl BuilderCache<YamlLanguage>) -> Result<YamlValueNode, TextError> {
+    fn build_value<'a>(
+        &self,
+        node: &GreenNode<'a, YamlLanguage>,
+        offset: usize,
+        source: &SourceText,
+        _cache: &mut impl BuilderCache<YamlLanguage>,
+    ) -> Result<YamlValueNode, TextError> {
         let span: data_text_core::Range<usize> = (offset..offset + node.byte_length as usize).into();
 
         // Placeholder implementation for YAML values
@@ -70,7 +83,12 @@ impl<'config> YamlBuilder<'config> {
 }
 
 impl<'config> Builder<YamlLanguage> for YamlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<YamlLanguage>) -> BuildOutput<YamlLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<YamlLanguage>,
+    ) -> BuildOutput<YamlLanguage> {
         let parser = YamlParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<YamlLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);

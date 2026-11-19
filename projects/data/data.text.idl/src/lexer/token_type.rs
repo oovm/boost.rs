@@ -290,7 +290,16 @@ impl TokenType for IdlTokenType {
             | Self::ValueType
             | Self::Native
             | Self::Factory => UniversalTokenRole::Keyword,
-            Self::Include | Self::Pragma | Self::Define | Self::Ifdef | Self::Ifndef | Self::Endif | Self::Else | Self::Elif | Self::Undef | Self::Hash => UniversalTokenRole::Keyword,
+            Self::Include
+            | Self::Pragma
+            | Self::Define
+            | Self::Ifdef
+            | Self::Ifndef
+            | Self::Endif
+            | Self::Else
+            | Self::Elif
+            | Self::Undef
+            | Self::Hash => UniversalTokenRole::Keyword,
             Self::LeftParen
             | Self::RightParen
             | Self::LeftBrace

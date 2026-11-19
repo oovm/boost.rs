@@ -5,7 +5,7 @@ pub use token_type::VampireTokenType;
 
 use crate::language::VampireLanguage;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, TextEdit,
+    Lexer, LexerCache, LexerState, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -14,7 +14,8 @@ use std::sync::LazyLock;
 type State<'s, S> = LexerState<'s, S, VampireLanguage>;
 
 static VAMPIRE_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static VAMPIRE_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "%", block_start: "/*", block_end: "*/", nested_blocks: false });
+static VAMPIRE_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "%", block_start: "/*", block_end: "*/", nested_blocks: false });
 static VAMPIRE_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer for the Vampire language.
@@ -25,7 +26,12 @@ pub struct VampireLexer<'config> {
 
 impl<'config> Lexer<VampireLanguage> for VampireLexer<'config> {
     /// Lexes the input text and produces a token stream for the Vampire language.
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], _cache: &'a mut impl LexerCache<VampireLanguage>) -> LexOutput<VampireLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        _cache: &'a mut impl LexerCache<VampireLanguage>,
+    ) -> LexOutput<VampireLanguage> {
         let mut state: State<'_, S> = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

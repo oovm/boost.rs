@@ -17,10 +17,25 @@ impl TokenType for RhombusTokenType {
             Self::Comment | Self::LineComment => UniversalTokenRole::Comment,
             Self::Error => UniversalTokenRole::Error,
             Self::Eof => UniversalTokenRole::Eof,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace => UniversalTokenRole::Punctuation,
+            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace => {
+                UniversalTokenRole::Punctuation
+            }
             Self::NumberLiteral | Self::StringLiteral | Self::BooleanLiteral => UniversalTokenRole::Literal,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::Fun | Self::Val | Self::Var | Self::Let | Self::If | Self::Else | Self::Match | Self::Case | Self::Block | Self::Module | Self::Import | Self::Export | Self::Require | Self::Provide => UniversalTokenRole::Keyword,
+            Self::Fun
+            | Self::Val
+            | Self::Var
+            | Self::Let
+            | Self::If
+            | Self::Else
+            | Self::Match
+            | Self::Case
+            | Self::Block
+            | Self::Module
+            | Self::Import
+            | Self::Export
+            | Self::Require
+            | Self::Provide => UniversalTokenRole::Keyword,
             _ => UniversalTokenRole::None,
         }
     }

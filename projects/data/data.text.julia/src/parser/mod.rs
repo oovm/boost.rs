@@ -204,7 +204,12 @@ impl<'config> JuliaParser<'config> {
 }
 
 impl<'config> Parser<JuliaLanguage> for JuliaParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JuliaLanguage>) -> ParseOutput<'a, JuliaLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JuliaLanguage>,
+    ) -> ParseOutput<'a, JuliaLanguage> {
         let lexer = JuliaLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

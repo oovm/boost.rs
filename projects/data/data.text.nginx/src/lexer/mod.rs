@@ -212,7 +212,16 @@ impl<'config> NginxLexer<'config> {
             state.advance(scheme_len);
 
             while let Some(ch) = state.peek() {
-                if ch.is_ascii_alphanumeric() || ch == '.' || ch == '/' || ch == ':' || ch == '-' || ch == '_' || ch == '?' || ch == '&' || ch == '=' {
+                if ch.is_ascii_alphanumeric()
+                    || ch == '.'
+                    || ch == '/'
+                    || ch == ':'
+                    || ch == '-'
+                    || ch == '_'
+                    || ch == '?'
+                    || ch == '&'
+                    || ch == '='
+                {
                     state.advance(ch.len_utf8());
                 }
                 else {
@@ -345,7 +354,12 @@ impl<'config> NginxLexer<'config> {
 }
 
 impl<'config> Lexer<NginxLanguage> for NginxLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<NginxLanguage>) -> LexOutput<NginxLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<NginxLanguage>,
+    ) -> LexOutput<NginxLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

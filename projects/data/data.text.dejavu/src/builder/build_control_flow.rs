@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     pub(crate) fn build_if<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
@@ -33,7 +33,15 @@ impl<'config> DejavuBuilder<'config> {
                         if is_else {
                             let nested_if = self.build_if(n, source)?;
                             let n_span = n.span();
-                            else_branch = Some(BlockNode { statements: vec![StatementNode::Expr(ExpressionStatement { annotations: Vec::new(), expr: nested_if, semi: false, span: n_span.clone() })], span: n_span });
+                            else_branch = Some(BlockNode {
+                                statements: vec![StatementNode::Expr(ExpressionStatement {
+                                    annotations: Vec::new(),
+                                    expr: nested_if,
+                                    semi: false,
+                                    span: n_span.clone(),
+                                })],
+                                span: n_span,
+                            });
                         }
                     }
                     _ => {
@@ -84,7 +92,11 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        Ok(ExpressionNode::Match(MatchExpressionNode { scrutinee: scrutinee.ok_or_else(|| source.syntax_error("Missing match scrutinee".to_string(), span.start))?, arms, span }))
+        Ok(ExpressionNode::Match(MatchExpressionNode {
+            scrutinee: scrutinee.ok_or_else(|| source.syntax_error("Missing match scrutinee".to_string(), span.start))?,
+            arms,
+            span,
+        }))
     }
 
     pub(crate) fn build_match_arm<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<MatchArmNode, TextError> {
@@ -153,7 +165,13 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        Ok(ExpressionNode::Loop(LoopExpressionNode { label, pattern, condition, body: body.ok_or_else(|| source.syntax_error("Missing loop body".to_string(), span.end))?, span }))
+        Ok(ExpressionNode::Loop(LoopExpressionNode {
+            label,
+            pattern,
+            condition,
+            body: body.ok_or_else(|| source.syntax_error("Missing loop body".to_string(), span.end))?,
+            span,
+        }))
     }
 
     pub(crate) fn build_return<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
@@ -246,7 +264,10 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        Ok(ExpressionNode::Raise(RaiseExpressionNode { expr: expr.ok_or_else(|| source.syntax_error("Missing expression in raise".to_string(), span.end))?, span }))
+        Ok(ExpressionNode::Raise(RaiseExpressionNode {
+            expr: expr.ok_or_else(|| source.syntax_error("Missing expression in raise".to_string(), span.end))?,
+            span,
+        }))
     }
 
     pub(crate) fn build_catch<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
@@ -271,7 +292,12 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        Ok(ExpressionNode::Catch(CatchExpressionNode { return_type, expr: expr.ok_or_else(|| source.syntax_error("Missing expression in catch".to_string(), span.end))?, arms, span }))
+        Ok(ExpressionNode::Catch(CatchExpressionNode {
+            return_type,
+            expr: expr.ok_or_else(|| source.syntax_error("Missing expression in catch".to_string(), span.end))?,
+            arms,
+            span,
+        }))
     }
 
     pub(crate) fn build_resume<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<ExpressionNode, TextError> {
@@ -351,10 +377,19 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        let default_pattern = PatternNode::Variable(VariablePatternNode { name: IdentifierNode { name: "_".to_string(), span: span.clone() }, span: span.clone() });
+        let default_pattern = PatternNode::Variable(VariablePatternNode {
+            name: IdentifierNode { name: "_".to_string(), span: span.clone() },
+            span: span.clone(),
+        });
         let default_iterable = ExpressionNode::Ident(IdentifierNode { name: "[]".to_string(), span: span.clone() });
 
-        Ok(ForControlNode { pattern: pattern.unwrap_or(default_pattern), iterable: iterable.unwrap_or(default_iterable), body, else_body, span })
+        Ok(ForControlNode {
+            pattern: pattern.unwrap_or(default_pattern),
+            iterable: iterable.unwrap_or(default_iterable),
+            body,
+            else_body,
+            span,
+        })
     }
 
     /// Builds an IfControlNode from an IfControl red node.
@@ -380,7 +415,11 @@ impl<'config> DejavuBuilder<'config> {
                     DejavuElementType::IfControl => {
                         if in_else {
                             let nested_if = self.build_if_control(child_node, source)?;
-                            else_branch = Some(ElseBranchNode::Elif { condition: nested_if.condition, body: nested_if.then_body, else_branch: nested_if.else_branch.map(Box::new) });
+                            else_branch = Some(ElseBranchNode::Elif {
+                                condition: nested_if.condition,
+                                body: nested_if.then_body,
+                                else_branch: nested_if.else_branch.map(Box::new),
+                            });
                         }
                     }
                     _ => {
@@ -417,7 +456,11 @@ impl<'config> DejavuBuilder<'config> {
     }
 
     /// Builds a WhileControlNode from a WhileControl red node.
-    pub(crate) fn build_while_control<S: Source + ?Sized>(&self, n: RedNode<DejavuLanguage>, source: &S) -> Result<WhileControlNode, TextError> {
+    pub(crate) fn build_while_control<S: Source + ?Sized>(
+        &self,
+        n: RedNode<DejavuLanguage>,
+        source: &S,
+    ) -> Result<WhileControlNode, TextError> {
         let span = n.span();
         let mut condition = None;
         let mut body = Vec::new();
@@ -483,7 +526,10 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        let default_pattern = PatternNode::Variable(VariablePatternNode { name: IdentifierNode { name: "_".to_string(), span: span.clone() }, span: span.clone() });
+        let default_pattern = PatternNode::Variable(VariablePatternNode {
+            name: IdentifierNode { name: "_".to_string(), span: span.clone() },
+            span: span.clone(),
+        });
         let default_iterable = ExpressionNode::Ident(IdentifierNode { name: "[]".to_string(), span: span.clone() });
 
         Ok(LoopControlNode { pattern: pattern.unwrap_or(default_pattern), iterable: iterable.unwrap_or(default_iterable), body, span })

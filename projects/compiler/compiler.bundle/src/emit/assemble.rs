@@ -64,11 +64,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::chunk::Chunk;
-use crate::diag::PackDiagnostic;
-use crate::graph::{EdgeKind, EdgeSite, ModuleNode, NodeKind};
-use crate::link::{LinkedModule, UsedReexport};
-use crate::module::{ExportFact, ImportKind, ImportedName, ModuleRecord};
+use crate::{
+    chunk::Chunk,
+    diag::PackDiagnostic,
+    graph::{EdgeKind, EdgeSite, ModuleNode, NodeKind},
+    link::{LinkedModule, UsedReexport},
+    module::{ExportFact, ImportKind, ImportedName, ModuleRecord},
+};
 
 use super::{EmitContext, PLACEHOLDER_PREFIX, json_string, normalize_path, placeholder};
 
@@ -182,9 +184,18 @@ pub(crate) fn assemble_chunk(
     let mut default_faces: HashMap<usize, BTreeMap<usize, String>> = HashMap::new();
 
     for &node_index in &chunk.modules {
-        let Some(node) = context.graph.nodes.get(node_index) else { continue };
-        let Some(linked) = context.linked[node_index] else { continue };
-        let Some(source) = context.sources.get(&node_index) else { continue };
+        let Some(node) = context.graph.nodes.get(node_index)
+        else {
+            continue;
+        };
+        let Some(linked) = context.linked[node_index]
+        else {
+            continue;
+        };
+        let Some(source) = context.sources.get(&node_index)
+        else {
+            continue;
+        };
         let module_path = normalize_path(&node.resolved.path);
         let record = &node.record;
         let source_lines = compiler_emitter::js::SourceLines::new(source);
@@ -199,13 +210,9 @@ pub(crate) fn assemble_chunk(
         // 绑定使用判定输入：活跃语句 span、export 子句 span 与语法名字
         // 回退集。回退集是保守超集（含属性名与遮蔽标识符），只在 scope
         // 事实不可信时使用；scope 完整时按引用 span 落点精确判定。
-        let active_spans: Vec<(usize, usize)> = linked
-            .active_statements
-            .iter()
-            .filter_map(|&index| record.statements.get(index).map(|statement| statement.span))
-            .collect();
-        let export_spans: Vec<(usize, usize)> =
-            record.exports.iter().map(export_fact_span).collect();
+        let active_spans: Vec<(usize, usize)> =
+            linked.active_statements.iter().filter_map(|&index| record.statements.get(index).map(|statement| statement.span)).collect();
+        let export_spans: Vec<(usize, usize)> = record.exports.iter().map(export_fact_span).collect();
         let mut referenced_in_active: HashSet<&str> = HashSet::new();
         for &statement_index in &linked.active_statements {
             if let Some(statement) = record.statements.get(statement_index) {
@@ -250,28 +257,19 @@ pub(crate) fn assemble_chunk(
         // 多个调用点各自改写自己的站点。
         let mut dynamic_replacements: Vec<(usize, usize)> = Vec::new();
         for &edge_index in &linked.dynamic_edges {
-            let Some(edge) = node.dynamic_edges.get(edge_index) else {
-                errors.push(
-                    inconsistent(format!("动态边下标 {edge_index} 越界"))
-                        .with_path(module_path.clone()),
-                );
+            let Some(edge) = node.dynamic_edges.get(edge_index)
+            else {
+                errors.push(inconsistent(format!("动态边下标 {edge_index} 越界")).with_path(module_path.clone()));
                 continue;
             };
-            let EdgeSite::Import(import_index) = edge.site else {
-                errors.push(
-                    inconsistent(format!(
-                        "动态边 `{}` 的调用点身份不是 import 事实",
-                        edge.specifier
-                    ))
-                    .with_path(module_path.clone()),
-                );
+            let EdgeSite::Import(import_index) = edge.site
+            else {
+                errors.push(inconsistent(format!("动态边 `{}` 的调用点身份不是 import 事实", edge.specifier)).with_path(module_path.clone()));
                 continue;
             };
-            let Some(import) = record.imports.get(import_index) else {
-                errors.push(
-                    inconsistent(format!("动态 import 事实下标 {import_index} 越界"))
-                        .with_path(module_path.clone()),
-                );
+            let Some(import) = record.imports.get(import_index)
+            else {
+                errors.push(inconsistent(format!("动态 import 事实下标 {import_index} 越界")).with_path(module_path.clone()));
                 continue;
             };
             match edge.target.as_ref() {
@@ -293,10 +291,7 @@ pub(crate) fn assemble_chunk(
                     warnings.push(
                         PackDiagnostic::new(
                             "vmz::pack::emit::dynamic_url_kept",
-                            format!(
-                                "根绝对 URL 动态 import `{}` 原样保留，由站点 origin 运行时解析",
-                                edge.specifier
-                            ),
+                            format!("根绝对 URL 动态 import `{}` 原样保留，由站点 origin 运行时解析", edge.specifier),
                         )
                         .with_path(module_path.clone())
                         .with_span(import.span),
@@ -309,10 +304,7 @@ pub(crate) fn assemble_chunk(
                     warnings.push(
                         PackDiagnostic::new(
                             "vmz::pack::emit::dynamic_external_kept",
-                            format!(
-                                "动态 import `{}` 是 Node.js 内建模块，说明符原样保留，由运行时宿主解析",
-                                edge.specifier
-                            ),
+                            format!("动态 import `{}` 是 Node.js 内建模块，说明符原样保留，由运行时宿主解析", edge.specifier),
                         )
                         .with_path(module_path.clone())
                         .with_span(import.span),
@@ -321,30 +313,22 @@ pub(crate) fn assemble_chunk(
                 Err(_) => errors.push(
                     PackDiagnostic::new(
                         "vmz::pack::emit::dynamic_unresolved",
-                        format!(
-                            "动态 import `{}` 目标未解析，无法重写为 chunk 文件",
-                            edge.specifier
-                        ),
+                        format!("动态 import `{}` 目标未解析，无法重写为 chunk 文件", edge.specifier),
                     )
                     .with_path(module_path.clone())
                     .with_span(import.span),
                 ),
                 Ok(id) => {
-                    let Some(target) = context.graph.index_of(id) else {
-                        errors.push(
-                            inconsistent(format!("动态 import 目标不在图中: `{}`", edge.specifier))
-                                .with_path(module_path.clone()),
-                        );
+                    let Some(target) = context.graph.index_of(id)
+                    else {
+                        errors.push(inconsistent(format!("动态 import 目标不在图中: `{}`", edge.specifier)).with_path(module_path.clone()));
                         continue;
                     };
                     if context.graph.nodes[target].kind == NodeKind::Style {
                         errors.push(
                             PackDiagnostic::new(
                                 "vmz::pack::emit::dynamic_style_unsupported",
-                                format!(
-                                    "动态 import `{}` 目标是 CSS：样式只经宿主模块静态副作用边进入级联",
-                                    edge.specifier
-                                ),
+                                format!("动态 import `{}` 目标是 CSS：样式只经宿主模块静态副作用边进入级联", edge.specifier),
                             )
                             .with_path(module_path.clone())
                             .with_span(import.span),
@@ -355,10 +339,7 @@ pub(crate) fn assemble_chunk(
                         errors.push(
                             PackDiagnostic::new(
                                 "vmz::pack::emit::dynamic_json_unsupported",
-                                format!(
-                                    "动态 import `{}` 目标是 JSON：值节点只经宿主模块静态 default 导入合成绑定",
-                                    edge.specifier
-                                ),
+                                format!("动态 import `{}` 目标是 JSON：值节点只经宿主模块静态 default 导入合成绑定", edge.specifier),
                             )
                             .with_path(module_path.clone())
                             .with_span(import.span),
@@ -377,10 +358,7 @@ pub(crate) fn assemble_chunk(
                         warnings.push(
                             PackDiagnostic::new(
                                 "vmz::pack::emit::dynamic_same_chunk_widened",
-                                format!(
-                                    "动态 import `{}` 目标与源同 chunk，改写为 chunk 自身文件，命名空间加宽到整个 chunk",
-                                    edge.specifier
-                                ),
+                                format!("动态 import `{}` 目标与源同 chunk，改写为 chunk 自身文件，命名空间加宽到整个 chunk", edge.specifier),
                             )
                             .with_path(module_path.clone())
                             .with_span(import.span),
@@ -393,32 +371,25 @@ pub(crate) fn assemble_chunk(
 
         // 语句切片 + 切片内替换 + 类型擦除。
         for &statement_index in &linked.active_statements {
-            let Some(statement) = record.statements.get(statement_index) else {
-                errors.push(
-                    inconsistent(format!("语句下标 {statement_index} 越界"))
-                        .with_path(module_path.clone()),
-                );
+            let Some(statement) = record.statements.get(statement_index)
+            else {
+                errors.push(inconsistent(format!("语句下标 {statement_index} 越界")).with_path(module_path.clone()));
                 continue;
             };
-            let Some(raw) = source.get(statement.span.0..statement.span.1) else {
+            let Some(raw) = source.get(statement.span.0..statement.span.1)
+            else {
                 errors.push(
-                    inconsistent(format!(
-                        "语句 span {:?} 超出重读源码长度（源码与事实漂移）",
-                        statement.span
-                    ))
-                    .with_path(module_path.clone())
-                    .with_span(statement.span),
+                    inconsistent(format!("语句 span {:?} 超出重读源码长度（源码与事实漂移）", statement.span))
+                        .with_path(module_path.clone())
+                        .with_span(statement.span),
                 );
                 continue;
             };
             if raw.contains(PLACEHOLDER_PREFIX) {
                 errors.push(
-                    PackDiagnostic::new(
-                        "vmz::pack::emit::placeholder_collision",
-                        "源文本包含产物占位符前缀，替换会有歧义",
-                    )
-                    .with_path(module_path.clone())
-                    .with_span(statement.span),
+                    PackDiagnostic::new("vmz::pack::emit::placeholder_collision", "源文本包含产物占位符前缀，替换会有歧义")
+                        .with_path(module_path.clone())
+                        .with_span(statement.span),
                 );
                 continue;
             }
@@ -429,7 +400,8 @@ pub(crate) fn assemble_chunk(
             // 按调用点身份逐站点改写：同一说明符的其它调用点在这个语句里
             // 没有被登记，不会被顺手改写。
             for &(import_index, target_chunk) in &dynamic_replacements {
-                let Some(import) = record.imports.get(import_index) else {
+                let Some(import) = record.imports.get(import_index)
+                else {
                     errors.push(
                         inconsistent(format!("动态 import 事实下标 {import_index} 越界"))
                             .with_path(module_path.clone())
@@ -445,12 +417,9 @@ pub(crate) fn assemble_chunk(
                         replacements.insert(span, json_string(&placeholder(target_chunk)));
                     }
                     Some(_) => errors.push(
-                        inconsistent(format!(
-                            "动态 import 说明符 span 不在语句内: `{}`",
-                            import.specifier
-                        ))
-                        .with_path(module_path.clone())
-                        .with_span(statement.span),
+                        inconsistent(format!("动态 import 说明符 span 不在语句内: `{}`", import.specifier))
+                            .with_path(module_path.clone())
+                            .with_span(statement.span),
                     ),
                     None => errors.push(
                         PackDiagnostic::new(
@@ -468,26 +437,26 @@ pub(crate) fn assemble_chunk(
                 }
                 // 资源读不到的已在 `collect_assets` 阶段整体拒绝；这里只消费。
                 let key = (module_path.clone(), asset.specifier.clone());
-                let Some(artifact) = context.asset_index.get(&key) else { continue };
+                let Some(artifact) = context.asset_index.get(&key)
+                else {
+                    continue;
+                };
                 // URL 对象语义：只重写 `new URL` 的第一参数为指纹化相对
                 // 路径，保留构造外壳；chunk 与资产同目录写出，运行时按
                 // chunk 自身 URL 解析成立。整段替换成字符串是错误语义。
-                let Some(specifier_span) = asset.specifier_span else {
+                let Some(specifier_span) = asset.specifier_span
+                else {
                     errors.push(
                         PackDiagnostic::new(
                             "vmz::pack::emit::asset_unrewritable",
-                            format!(
-                                "资源 `{}` 字面量 span 缺失，无法重写 `new URL` 第一参数",
-                                asset.specifier
-                            ),
+                            format!("资源 `{}` 字面量 span 缺失，无法重写 `new URL` 第一参数", asset.specifier),
                         )
                         .with_path(module_path.clone())
                         .with_span(asset.span),
                     );
                     continue;
                 };
-                replacements
-                    .insert(specifier_span, json_string(&format!("./{}", artifact.file_name)));
+                replacements.insert(specifier_span, json_string(&format!("./{}", artifact.file_name)));
             }
             // scope 重写：消费者绑定名在其值引用 span 上改写为 chunk 绑定名；
             // 简写属性 token 同时充当属性键，改写为 `<旧名>: <新名>` 保住键。
@@ -498,19 +467,14 @@ pub(crate) fn assemble_chunk(
                     }
                     if replacements.contains_key(span) {
                         errors.push(
-                            inconsistent(format!(
-                                "绑定重写 span {span:?} 与切片内既有替换区间冲突"
-                            ))
-                            .with_path(module_path.clone())
-                            .with_span(statement.span),
+                            inconsistent(format!("绑定重写 span {span:?} 与切片内既有替换区间冲突"))
+                                .with_path(module_path.clone())
+                                .with_span(statement.span),
                         );
                         continue;
                     }
-                    let text = if rewrite.shorthand_spans.contains(span) {
-                        format!("{old}: {}", rewrite.new_name)
-                    } else {
-                        rewrite.new_name.clone()
-                    };
+                    let text =
+                        if rewrite.shorthand_spans.contains(span) { format!("{old}: {}", rewrite.new_name) } else { rewrite.new_name.clone() };
                     replacements.insert(*span, text);
                 }
             }
@@ -518,20 +482,16 @@ pub(crate) fn assemble_chunk(
             // `const <物化绑定> = `，求值位置不变；导出面交给 deferred 机制。
             if Some(statement.span) == expr_default_span {
                 let binding = expr_default_binding(node_index);
-                let Some(offset) = expression_default_prefix_len(raw) else {
+                let Some(offset) = expression_default_prefix_len(raw)
+                else {
                     errors.push(
-                        inconsistent(format!(
-                            "`export default <表达式>` 切片前缀形态与事实不符（源码与事实漂移）"
-                        ))
-                        .with_path(module_path.clone())
-                        .with_span(statement.span),
+                        inconsistent(format!("`export default <表达式>` 切片前缀形态与事实不符（源码与事实漂移）"))
+                            .with_path(module_path.clone())
+                            .with_span(statement.span),
                     );
                     continue;
                 };
-                replacements.insert(
-                    (statement.span.0, statement.span.0 + offset),
-                    format!("const {binding} = "),
-                );
+                replacements.insert((statement.span.0, statement.span.0 + offset), format!("const {binding} = "));
                 declared.push((binding, module_path.clone()));
             }
             let replaced = match apply_replacements(raw, statement.span.0, &replacements) {
@@ -541,17 +501,13 @@ pub(crate) fn assemble_chunk(
                     continue;
                 }
             };
-            let (erased, deletions) = match compiler_emitter::js::erase_types_with_deletions(&replaced)
-            {
+            let (erased, deletions) = match compiler_emitter::js::erase_types_with_deletions(&replaced) {
                 Ok(pair) => pair,
                 Err(err) => {
                     errors.push(
-                        PackDiagnostic::new(
-                            "vmz::pack::emit::erase_failed",
-                            format!("TypeScript 类型擦除失败: {err}"),
-                        )
-                        .with_path(module_path.clone())
-                        .with_span(statement.span),
+                        PackDiagnostic::new("vmz::pack::emit::erase_failed", format!("TypeScript 类型擦除失败: {err}"))
+                            .with_path(module_path.clone())
+                            .with_span(statement.span),
                     );
                     continue;
                 }
@@ -562,15 +518,9 @@ pub(crate) fn assemble_chunk(
                 let mut line_off = 0usize;
                 for (line_index, generated) in erased.split('\n').enumerate() {
                     let replaced_off = compiler_emitter::js::map_erased_offset(line_off, &deletions);
-                    let raw_off =
-                        map_replaced_offset(replaced_off, raw, statement.span.0, &replacements);
+                    let raw_off = map_replaced_offset(replaced_off, raw, statement.span.0, &replacements);
                     let (src_line, src_col) = source_lines.line_col(statement.span.0 + raw_off);
-                    segments.push(ChunkSegment {
-                        gen_line: body_line + line_index as u32,
-                        source: module_path.clone(),
-                        src_line,
-                        src_col,
-                    });
+                    segments.push(ChunkSegment { gen_line: body_line + line_index as u32, source: module_path.clone(), src_line, src_col });
                     line_off += generated.len() + 1;
                 }
                 body_line += erased.matches('\n').count() as u32 + 1;
@@ -604,9 +554,9 @@ pub(crate) fn assemble_chunk(
                     };
                     let active = match local {
                         Some(_) => true,
-                        None => linked.active_statements.iter().any(|&index| {
-                            record.statements.get(index).is_some_and(|item| item.span == *span)
-                        }),
+                        None => {
+                            linked.active_statements.iter().any(|&index| record.statements.get(index).is_some_and(|item| item.span == *span))
+                        }
                     };
                     if !active {
                         continue;
@@ -621,27 +571,17 @@ pub(crate) fn assemble_chunk(
                             module: module_path.clone(),
                             is_default: false,
                         }
-                    } else {
-                        DeferredExport {
-                            local: binding,
-                            exported: "default".to_string(),
-                            module: module_path.clone(),
-                            is_default: true,
-                        }
+                    }
+                    else {
+                        DeferredExport { local: binding, exported: "default".to_string(), module: module_path.clone(), is_default: true }
                     });
                 }
                 ExportFact::ReexportNamed { source, local, exported, type_only, .. } => {
                     if *type_only || !used_reexport(linked, export_index, is_named) {
                         continue;
                     }
-                    let Some(target) = edge_target_node(
-                        context,
-                        node,
-                        EdgeKind::ReexportNamed,
-                        source,
-                        &module_path,
-                        errors,
-                    ) else {
+                    let Some(target) = edge_target_node(context, node, EdgeKind::ReexportNamed, source, &module_path, errors)
+                    else {
                         continue;
                     };
                     let Some(target_chunk) = chunk_of_node(context, target, &module_path, errors)
@@ -672,8 +612,7 @@ pub(crate) fn assemble_chunk(
                                 // 剪除时面导出随之消失（与 deferred Local
                                 // 同一剪枝语义），不登记、不发射，避免引用
                                 // 不存在的绑定。依赖序保证落点模块先处理。
-                                let landing_path =
-                                    normalize_path(&context.graph.nodes[decl_node].resolved.path);
+                                let landing_path = normalize_path(&context.graph.nodes[decl_node].resolved.path);
                                 if declared.iter().any(|(d, m)| *d == local && *m == landing_path) {
                                     // 落点名对重导出模块同样可解析（deferred
                                     // 定稿的 per-module 判定需要）。
@@ -691,17 +630,9 @@ pub(crate) fn assemble_chunk(
                                 // 面名歧义分裂：把目标 chunk 的面名解析到本模块
                                 // 事实链认领者的实际发射面名。
                                 let name = resolve_emitted_face(context, chunk, node, &name);
-                                if emitted_reexports.insert((chunk, name.clone(), exported.clone()))
-                                {
-                                    let clause = if name == *exported {
-                                        name
-                                    } else {
-                                        format!("{name} as {exported}")
-                                    };
-                                    exports_text.push_str(&format!(
-                                        "export {{ {clause} }} from {};\n",
-                                        json_string(&placeholder(chunk))
-                                    ));
+                                if emitted_reexports.insert((chunk, name.clone(), exported.clone())) {
+                                    let clause = if name == *exported { name } else { format!("{name} as {exported}") };
+                                    exports_text.push_str(&format!("export {{ {clause} }} from {};\n", json_string(&placeholder(chunk))));
                                     export_names.push((exported.clone(), module_path.clone()));
                                 }
                             }
@@ -711,15 +642,8 @@ pub(crate) fn assemble_chunk(
                     }
                     // 跨 chunk 具名重导出：目标 chunk 的面名经分裂发射表解析。
                     let local = resolve_emitted_face(context, target_chunk, target, local);
-                    let clause = if local == *exported {
-                        local.clone()
-                    } else {
-                        format!("{local} as {exported}")
-                    };
-                    exports_text.push_str(&format!(
-                        "export {{ {clause} }} from {};\n",
-                        json_string(&placeholder(target_chunk))
-                    ));
+                    let clause = if local == *exported { local.clone() } else { format!("{local} as {exported}") };
+                    exports_text.push_str(&format!("export {{ {clause} }} from {};\n", json_string(&placeholder(target_chunk))));
                     export_names.push((exported.clone(), module_path.clone()));
                     referenced_chunks.insert(target_chunk);
                 }
@@ -727,14 +651,8 @@ pub(crate) fn assemble_chunk(
                     if !used_reexport(linked, export_index, is_all) {
                         continue;
                     }
-                    let Some(target) = edge_target_node(
-                        context,
-                        node,
-                        EdgeKind::ReexportAll,
-                        source,
-                        &module_path,
-                        errors,
-                    ) else {
+                    let Some(target) = edge_target_node(context, node, EdgeKind::ReexportAll, source, &module_path, errors)
+                    else {
                         continue;
                     };
                     let Some(target_chunk) = chunk_of_node(context, target, &module_path, errors)
@@ -774,41 +692,19 @@ pub(crate) fn assemble_chunk(
                                     // 星号枚举含未被任何消费者需求的导出：
                                     // 落点声明已被剪除时该面名不发射（与
                                     // 具名重导出同一活跃性判定）。
-                                    let landing_path = normalize_path(
-                                        &context.graph.nodes[decl_node].resolved.path,
-                                    );
-                                    if declared
-                                        .iter()
-                                        .any(|(d, m)| *d == local && *m == landing_path)
-                                    {
-                                        same_chunk_locals
-                                            .insert((local.clone(), module_path.clone()));
-                                        deferred.push(DeferredExport {
-                                            local,
-                                            exported,
-                                            module: module_path.clone(),
-                                            is_default: false,
-                                        });
+                                    let landing_path = normalize_path(&context.graph.nodes[decl_node].resolved.path);
+                                    if declared.iter().any(|(d, m)| *d == local && *m == landing_path) {
+                                        same_chunk_locals.insert((local.clone(), module_path.clone()));
+                                        deferred.push(DeferredExport { local, exported, module: module_path.clone(), is_default: false });
                                     }
                                 }
                                 Some(ReexportBinding::External { chunk, node, name }) => {
                                     // 面名歧义分裂：把目标 chunk 的面名解析到
                                     // 事实链认领者的实际发射面名。
                                     let name = resolve_emitted_face(context, chunk, node, &name);
-                                    if emitted_reexports.insert((
-                                        chunk,
-                                        name.clone(),
-                                        exported.clone(),
-                                    )) {
-                                        let clause = if name == exported {
-                                            name
-                                        } else {
-                                            format!("{name} as {exported}")
-                                        };
-                                        exports_text.push_str(&format!(
-                                            "export {{ {clause} }} from {};\n",
-                                            json_string(&placeholder(chunk))
-                                        ));
+                                    if emitted_reexports.insert((chunk, name.clone(), exported.clone())) {
+                                        let clause = if name == exported { name } else { format!("{name} as {exported}") };
+                                        exports_text.push_str(&format!("export {{ {clause} }} from {};\n", json_string(&placeholder(chunk))));
                                         export_names.push((exported, module_path.clone()));
                                         referenced_chunks.insert(chunk);
                                     }
@@ -818,10 +714,7 @@ pub(crate) fn assemble_chunk(
                         }
                         continue;
                     }
-                    exports_text.push_str(&format!(
-                        "export * from {};\n",
-                        json_string(&placeholder(target_chunk))
-                    ));
+                    exports_text.push_str(&format!("export * from {};\n", json_string(&placeholder(target_chunk))));
                     referenced_chunks.insert(target_chunk);
                     // (c) 收集目标模块直接非类型导出名（不递归星号链）：
                     // 星号登记名可被本 chunk 显式导出遮蔽，单独走星号表。
@@ -831,14 +724,8 @@ pub(crate) fn assemble_chunk(
                     if *type_only || !used_reexport(linked, export_index, is_namespace) {
                         continue;
                     }
-                    let Some(target) = edge_target_node(
-                        context,
-                        node,
-                        EdgeKind::ReexportNamespace,
-                        source,
-                        &module_path,
-                        errors,
-                    ) else {
+                    let Some(target) = edge_target_node(context, node, EdgeKind::ReexportNamespace, source, &module_path, errors)
+                    else {
                         continue;
                     };
                     let Some(target_chunk) = chunk_of_node(context, target, &module_path, errors)
@@ -861,10 +748,7 @@ pub(crate) fn assemble_chunk(
                             .with_path(module_path.clone()),
                         );
                     }
-                    exports_text.push_str(&format!(
-                        "export * as {namespace} from {};\n",
-                        json_string(&placeholder(target_chunk))
-                    ));
+                    exports_text.push_str(&format!("export * as {namespace} from {};\n", json_string(&placeholder(target_chunk))));
                     export_names.push((namespace.clone(), module_path.clone()));
                     referenced_chunks.insert(target_chunk);
                 }
@@ -893,10 +777,7 @@ pub(crate) fn assemble_chunk(
                 ImportKind::SideEffect => EdgeKind::SideEffect,
                 ImportKind::Dynamic => continue,
             };
-            let Some(edge) = node
-                .static_edges
-                .iter()
-                .find(|edge| edge.kind == edge_kind && edge.specifier == import.specifier)
+            let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == edge_kind && edge.specifier == import.specifier)
             else {
                 errors.push(
                     inconsistent(format!("import `{}` 找不到对应静态边", import.specifier))
@@ -905,7 +786,8 @@ pub(crate) fn assemble_chunk(
                 );
                 continue;
             };
-            let Ok(id) = edge.target.as_ref() else {
+            let Ok(id) = edge.target.as_ref()
+            else {
                 let builtin = matches!(
                     edge.target.as_ref().err(),
                     Some(diagnostic) if diagnostic.code == crate::resolve::CODE_NODE_BUILTIN
@@ -946,22 +828,15 @@ pub(crate) fn assemble_chunk(
                     continue;
                 }
                 errors.push(
-                    super::edge_unresolved(
-                        "静态导入",
-                        &import.specifier,
-                        "无法拼接或合成 import",
-                        edge.target.as_ref().err(),
-                    )
-                    .with_path(module_path.clone())
-                    .with_span(import.span),
+                    super::edge_unresolved("静态导入", &import.specifier, "无法拼接或合成 import", edge.target.as_ref().err())
+                        .with_path(module_path.clone())
+                        .with_span(import.span),
                 );
                 continue;
             };
-            let Some(target) = context.graph.index_of(id) else {
-                errors.push(
-                    inconsistent(format!("import `{}` 目标不在图中", import.specifier))
-                        .with_path(module_path.clone()),
-                );
+            let Some(target) = context.graph.index_of(id)
+            else {
+                errors.push(inconsistent(format!("import `{}` 目标不在图中", import.specifier)).with_path(module_path.clone()));
                 continue;
             };
             if context.graph.nodes[target].kind == NodeKind::Style {
@@ -972,10 +847,7 @@ pub(crate) fn assemble_chunk(
                     errors.push(
                         PackDiagnostic::new(
                             "vmz::pack::emit::style_binding_unsupported",
-                            format!(
-                                "import `{}` 从 CSS 获取绑定：样式节点不透明，无导出绑定",
-                                import.specifier
-                            ),
+                            format!("import `{}` 从 CSS 获取绑定：样式节点不透明，无导出绑定", import.specifier),
                         )
                         .with_path(module_path.clone())
                         .with_span(import.span),
@@ -994,36 +866,24 @@ pub(crate) fn assemble_chunk(
                     match &binding.imported {
                         ImportedName::Default => {
                             // 未被发射文本消费的绑定不合成（与跨 chunk 同口径）。
-                            if !binding_is_used(
-                                record,
-                                source,
-                                binding.local.as_str(),
-                                &active_spans,
-                                &export_spans,
-                                &referenced_in_active,
-                            ) {
+                            if !binding_is_used(record, source, binding.local.as_str(), &active_spans, &export_spans, &referenced_in_active) {
                                 continue;
                             }
                             if !json_locals.insert((target, binding.local.clone())) {
                                 continue;
                             }
-                            let Some(text) =
-                                json_text(context, target, &mut json_texts, errors)
+                            let Some(text) = json_text(context, target, &mut json_texts, errors)
                             else {
                                 continue;
                             };
-                            let json_path =
-                                normalize_path(&context.graph.nodes[target].resolved.path);
+                            let json_path = normalize_path(&context.graph.nodes[target].resolved.path);
                             imports_text.push_str(&format!("const {} = {text};\n", binding.local));
                             declared.push((binding.local.clone(), json_path));
                         }
                         _ => errors.push(
                             PackDiagnostic::new(
                                 "vmz::pack::emit::json_binding_unsupported",
-                                format!(
-                                    "import `{}` 从 JSON 获取非 default 绑定：值节点只支持 default 导入，未实现",
-                                    import.specifier
-                                ),
+                                format!("import `{}` 从 JSON 获取非 default 绑定：值节点只支持 default 导入，未实现", import.specifier),
                             )
                             .with_path(module_path.clone())
                             .with_span(import.span),
@@ -1036,7 +896,8 @@ pub(crate) fn assemble_chunk(
                 // 目标被链接层剪除：绑定必未被活跃语句引用，import 文本一并消失。
                 continue;
             }
-            let Some(target_chunk) = chunk_of_node(context, target, &module_path, errors) else {
+            let Some(target_chunk) = chunk_of_node(context, target, &module_path, errors)
+            else {
                 continue;
             };
             match import.kind {
@@ -1050,26 +911,18 @@ pub(crate) fn assemble_chunk(
                         // 名沿事实链取（`external_name`）。
                         let (synth_chunk, external_name) = if target_chunk == chunk_index {
                             match binding_decisions.get(&(import_index, binding_index)) {
-                                Some(BindingDecision::External { chunk, name }) => {
-                                    (*chunk, Some(name.clone()))
-                                }
+                                Some(BindingDecision::External { chunk, name }) => (*chunk, Some(name.clone())),
                                 _ => continue,
                             }
-                        } else {
+                        }
+                        else {
                             (target_chunk, None)
                         };
                         // 未被引用的绑定不合成：目标 chunk 可能已剪除该声明，
                         // 合成会产出引用不存在导出的错误 JS。使用判定必须先于
                         // `merged` 条目创建，否则空绑定会让「本 chunk 引用了目标
                         // chunk」的判定失真。
-                        if !binding_is_used(
-                            record,
-                            source,
-                            binding.local.as_str(),
-                            &active_spans,
-                            &export_spans,
-                            &referenced_in_active,
-                        ) {
+                        if !binding_is_used(record, source, binding.local.as_str(), &active_spans, &export_spans, &referenced_in_active) {
                             continue;
                         }
                         let bindings = merged.entry(synth_chunk).or_default();
@@ -1085,12 +938,7 @@ pub(crate) fn assemble_chunk(
                                     // 跨 chunk default：目标 chunk 有多个 default
                                     // 模块时无统一 `default` 面，按来源模块的
                                     // 面名具名导入（与发射侧同一口径）。
-                                    let face = default_face(
-                                        context,
-                                        synth_chunk,
-                                        target,
-                                        &mut default_faces,
-                                    );
+                                    let face = default_face(context, synth_chunk, target, &mut default_faces);
                                     match face {
                                         Some(face) if face != "default" => {
                                             bindings.named.insert((face, binding.local.clone()));
@@ -1108,8 +956,7 @@ pub(crate) fn assemble_chunk(
                                         "vmz::pack::emit::namespace_widened",
                                         format!(
                                             "命名空间绑定 `{}` 指向 chunk `{}`，实际拿到整个 chunk 的命名空间（比源模块宽）",
-                                            binding.local,
-                                            context.chunks.chunks[synth_chunk].id
+                                            binding.local, context.chunks.chunks[synth_chunk].id
                                         ),
                                     )
                                     .with_path(module_path.clone())
@@ -1123,18 +970,12 @@ pub(crate) fn assemble_chunk(
                                 // chunk 预决议时已解析到发射名，不重复解析）。
                                 let emitted = match external_name {
                                     Some(name) => name,
-                                    None => {
-                                        resolve_emitted_face(context, synth_chunk, target, name)
-                                    }
+                                    None => resolve_emitted_face(context, synth_chunk, target, name),
                                 };
                                 bindings.named.insert((emitted, binding.local.clone()));
                             }
                         }
-                        import_locals.push((
-                            binding.local.clone(),
-                            synth_chunk,
-                            module_path.clone(),
-                        ));
+                        import_locals.push((binding.local.clone(), synth_chunk, module_path.clone()));
                     }
                 }
                 ImportKind::SideEffect => {
@@ -1156,10 +997,19 @@ pub(crate) fn assemble_chunk(
     referenced_chunks.extend(merged.keys().copied());
     referenced_chunks.extend(side_effects.iter().copied());
     for &node_index in &chunk.modules {
-        let Some(node) = context.graph.nodes.get(node_index) else { continue };
+        let Some(node) = context.graph.nodes.get(node_index)
+        else {
+            continue;
+        };
         for edge in &node.static_edges {
-            let Ok(id) = edge.target.as_ref() else { continue };
-            let Some(target) = context.graph.index_of(id) else { continue };
+            let Ok(id) = edge.target.as_ref()
+            else {
+                continue;
+            };
+            let Some(target) = context.graph.index_of(id)
+            else {
+                continue;
+            };
             if context.graph.nodes[target].kind != NodeKind::Js {
                 continue;
             }
@@ -1169,7 +1019,8 @@ pub(crate) fn assemble_chunk(
             if !context.effectful.get(target).copied().unwrap_or(true) {
                 continue;
             }
-            let Some(target_chunk) = context.node_chunk.get(target).copied().flatten() else {
+            let Some(target_chunk) = context.node_chunk.get(target).copied().flatten()
+            else {
                 continue;
             };
             if target_chunk == chunk_index || referenced_chunks.contains(&target_chunk) {
@@ -1186,16 +1037,10 @@ pub(crate) fn assemble_chunk(
         let quoted = json_string(&placeholder(*target_chunk));
         let named_clause = if bindings.named.is_empty() {
             String::new()
-        } else {
-            let parts: Vec<String> = bindings
-                .named
-                .iter()
-                .map(
-                    |(name, local)| {
-                        if name == local { name.clone() } else { format!("{name} as {local}") }
-                    },
-                )
-                .collect();
+        }
+        else {
+            let parts: Vec<String> =
+                bindings.named.iter().map(|(name, local)| if name == local { name.clone() } else { format!("{name} as {local}") }).collect();
             format!("{{ {} }}", parts.join(", "))
         };
         let mut defaults = bindings.defaults.iter();
@@ -1229,16 +1074,10 @@ pub(crate) fn assemble_chunk(
         let quoted = json_string(specifier);
         let named_clause = if bindings.named.is_empty() {
             String::new()
-        } else {
-            let parts: Vec<String> = bindings
-                .named
-                .iter()
-                .map(
-                    |(name, local)| {
-                        if name == local { name.clone() } else { format!("{name} as {local}") }
-                    },
-                )
-                .collect();
+        }
+        else {
+            let parts: Vec<String> =
+                bindings.named.iter().map(|(name, local)| if name == local { name.clone() } else { format!("{name} as {local}") }).collect();
             format!("{{ {} }}", parts.join(", "))
         };
         let mut defaults = bindings.defaults.iter();
@@ -1283,10 +1122,7 @@ pub(crate) fn assemble_chunk(
         resolvable.entry(module.as_str()).or_default().insert(local.as_str());
     }
     for item in &deferred {
-        if !resolvable
-            .get(item.module.as_str())
-            .is_some_and(|names| names.contains(item.local.as_str()))
-        {
+        if !resolvable.get(item.module.as_str()).is_some_and(|names| names.contains(item.local.as_str())) {
             continue;
         }
         // 面名歧义分裂：被分裂的面名只发 canonical 认领者的原名导出
@@ -1299,22 +1135,20 @@ pub(crate) fn assemble_chunk(
             },
             None => item.exported.clone(),
         };
-        let key = (
-            item.local.clone(),
-            if item.is_default { "default".to_string() } else { emitted_name.clone() },
-        );
+        let key = (item.local.clone(), if item.is_default { "default".to_string() } else { emitted_name.clone() });
         if !emitted_bindings.insert(key) {
             continue;
         }
         if item.is_default {
             exports_text.push_str(&format!("export {{ {} as default }};\n", item.local));
             export_names.push(("default".to_string(), item.module.clone()));
-        } else {
+        }
+        else {
             if item.local == emitted_name {
                 exports_text.push_str(&format!("export {{ {} }};\n", item.local));
-            } else {
-                exports_text
-                    .push_str(&format!("export {{ {} as {} }};\n", item.local, emitted_name));
+            }
+            else {
+                exports_text.push_str(&format!("export {{ {} as {} }};\n", item.local, emitted_name));
             }
             export_names.push((emitted_name, item.module.clone()));
         }
@@ -1360,10 +1194,7 @@ pub(crate) struct ChunkPreplan {
 /// 单个 chunk 的改名预决议：同 chunk 声明改名 + 面名歧义分裂 + 落点改名兜底，
 /// 三路计划合并为一张节点改名表与一张面名发射表。隔离 chunk 不参与拼接，
 /// 返回 `None`。
-pub(crate) fn plan_chunk_renames(
-    context: &EmitContext<'_>,
-    chunk_index: usize,
-) -> Option<ChunkPreplan> {
+pub(crate) fn plan_chunk_renames(context: &EmitContext<'_>, chunk_index: usize) -> Option<ChunkPreplan> {
     if super::isolated::is_isolated_chunk(context, chunk_index) {
         return None;
     }
@@ -1387,12 +1218,7 @@ pub(crate) fn plan_chunk_renames(
 /// 沿目标 chunk 的导出事实链把面名解析到最终声明认领者，返回面名歧义分裂后
 /// 该认领者的实际发射面名；未分裂或解析不到落点时返回原名（与解析前行为一致，
 /// 既有诊断路径不受影响）。
-pub(crate) fn resolve_emitted_face(
-    context: &EmitContext<'_>,
-    chunk_index: usize,
-    entry_node: usize,
-    name: &str,
-) -> String {
+pub(crate) fn resolve_emitted_face(context: &EmitContext<'_>, chunk_index: usize, entry_node: usize, name: &str) -> String {
     let mut visited: BTreeSet<(usize, String)> = BTreeSet::new();
     let mut current_chunk = chunk_index;
     let mut current_node = entry_node;
@@ -1402,15 +1228,7 @@ pub(crate) fn resolve_emitted_face(
             return face;
         }
         let mut scratch: Vec<PackDiagnostic> = Vec::new();
-        match resolve_same_chunk_reexport(
-            context,
-            current_chunk,
-            current_node,
-            &face,
-            "",
-            "vmz::pack::emit::name_conflict",
-            &mut scratch,
-        ) {
+        match resolve_same_chunk_reexport(context, current_chunk, current_node, &face, "", "vmz::pack::emit::name_conflict", &mut scratch) {
             Some(ReexportBinding::Declared { node: landing, .. }) => {
                 let path = normalize_path(&context.graph.nodes[landing].resolved.path);
                 return context.face_aliases.get(&(path, face.clone())).cloned().unwrap_or(face);
@@ -1454,7 +1272,8 @@ fn contains_identifier(haystack: &str, needle: &str) -> bool {
     let is_ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b >= 0x80;
     let mut from = 0usize;
     while from < bytes.len() {
-        let Some(offset) = bytes[from..].windows(pattern.len()).position(|w| w == pattern) else {
+        let Some(offset) = bytes[from..].windows(pattern.len()).position(|w| w == pattern)
+        else {
             return false;
         };
         let start = from + offset;
@@ -1514,17 +1333,23 @@ fn expression_default_prefix_len(raw: &str) -> Option<usize> {
 /// 表达式 default 落物化绑定名，活跃性按 export 语句 span 匹配活跃语句
 /// （与链接层 `activate_span` 同口径）。发射侧与消费侧共用本快照口径，
 /// 保证面名决议一致。
-fn chunk_default_bindings(
-    context: &EmitContext<'_>,
-    chunk_index: usize,
-) -> BTreeMap<usize, String> {
+fn chunk_default_bindings(context: &EmitContext<'_>, chunk_index: usize) -> BTreeMap<usize, String> {
     let mut bindings = BTreeMap::new();
     for &node_index in &context.chunks.chunks[chunk_index].modules {
-        let Some(node) = context.graph.nodes.get(node_index) else { continue };
-        let Some(linked) = context.linked[node_index] else { continue };
+        let Some(node) = context.graph.nodes.get(node_index)
+        else {
+            continue;
+        };
+        let Some(linked) = context.linked[node_index]
+        else {
+            continue;
+        };
         let record = &node.record;
         for export in &record.exports {
-            let ExportFact::Default { local, span } = export else { continue };
+            let ExportFact::Default { local, span } = export
+            else {
+                continue;
+            };
             let active = linked.active_statements.iter().any(|&index| {
                 record.statements.get(index).is_some_and(|statement| match local {
                     None => statement.span == *span,
@@ -1556,8 +1381,7 @@ fn default_face(
     if super::isolated::is_isolated_chunk(context, chunk_index) {
         return Some("default".to_string());
     }
-    let bindings =
-        cache.entry(chunk_index).or_insert_with(|| chunk_default_bindings(context, chunk_index));
+    let bindings = cache.entry(chunk_index).or_insert_with(|| chunk_default_bindings(context, chunk_index));
     let binding = bindings.get(&node_index)?.clone();
     Some(if bindings.len() == 1 { "default".to_string() } else { binding })
 }
@@ -1590,9 +1414,7 @@ fn precise_binding_used(
         if source.get(span.0..span.1) != Some(name) {
             return None;
         }
-        if active_spans.iter().any(|outer| contains(*outer, *span))
-            || export_spans.iter().any(|outer| contains(*outer, *span))
-        {
+        if active_spans.iter().any(|outer| contains(*outer, *span)) || export_spans.iter().any(|outer| contains(*outer, *span)) {
             used = true;
         }
     }
@@ -1655,30 +1477,23 @@ fn plan_binding_rewrite(
     stripped_spans: &[(usize, usize)],
 ) -> Result<BindingRewrite, RewriteFailure> {
     if record.is_scope_incomplete() {
-        return Err(RewriteFailure::reject(format!(
-            "消费者模块 scope 事实不完整，无法证明 `{old}` 的全部引用"
-        )));
+        return Err(RewriteFailure::reject(format!("消费者模块 scope 事实不完整，无法证明 `{old}` 的全部引用")));
     }
     if record.scope_bindings.iter().any(|binding| binding.name == new) {
-        return Err(RewriteFailure::collision(format!(
-            "消费者模块已有名为 `{new}` 的模块级绑定，重写会碰撞"
-        )));
+        return Err(RewriteFailure::collision(format!("消费者模块已有名为 `{new}` 的模块级绑定，重写会碰撞")));
     }
-    let Some(binding) = record.scope_bindings.iter().find(|item| item.name == old) else {
+    let Some(binding) = record.scope_bindings.iter().find(|item| item.name == old)
+    else {
         return Err(RewriteFailure::reject(format!("`{old}` 无 scope 绑定事实，引用清单给不全")));
     };
     if binding.has_type_references {
-        return Err(RewriteFailure::reject(format!(
-            "`{old}` 存在类型位置引用（span 不记录），重写会漏掉类型引用"
-        )));
+        return Err(RewriteFailure::reject(format!("`{old}` 存在类型位置引用（span 不记录），重写会漏掉类型引用")));
     }
     let mut spans: Vec<(usize, usize)> = Vec::with_capacity(binding.references.len());
     let mut shorthand_spans: Vec<(usize, usize)> = Vec::new();
     for span in &binding.references {
         if source.get(span.0..span.1) != Some(old) {
-            return Err(RewriteFailure::reject(format!(
-                "`{old}` 的引用 span {span:?} 切片回原文不是本名（源码与事实漂移）"
-            )));
+            return Err(RewriteFailure::reject(format!("`{old}` 的引用 span {span:?} 切片回原文不是本名（源码与事实漂移）")));
         }
         let in_active = active_spans.iter().any(|outer| contains(*outer, *span));
         let in_stripped = stripped_spans.iter().any(|outer| contains(*outer, *span));
@@ -1689,7 +1504,8 @@ fn plan_binding_rewrite(
             if binding.shorthand_reference_spans.contains(span) {
                 shorthand_spans.push(*span);
             }
-        } else if !in_stripped {
+        }
+        else if !in_stripped {
             return Err(RewriteFailure::reject(format!(
                 "`{old}` 的引用 span {span:?} 既不在活跃语句也不在被移除的 import/export 子句内，无法判定发射归属"
             )));
@@ -1699,15 +1515,12 @@ fn plan_binding_rewrite(
     // 子句一起消失，不构成碰撞；出现在活跃语句里（嵌套遮蔽声明、同名
     // 绑定）才可能让重写后的引用指向错误绑定，保守拒绝。
     for outer in active_spans {
-        let Some(text) = source.get(outer.0..outer.1) else {
-            return Err(RewriteFailure::reject(format!(
-                "活跃语句 span {outer:?} 超出源码长度（源码与事实漂移）"
-            )));
+        let Some(text) = source.get(outer.0..outer.1)
+        else {
+            return Err(RewriteFailure::reject(format!("活跃语句 span {outer:?} 超出源码长度（源码与事实漂移）")));
         };
         if contains_identifier(text, new) {
-            return Err(RewriteFailure::collision(format!(
-                "落点名 `{new}` 按词边界出现在消费者活跃语句文本中，重写会碰撞"
-            )));
+            return Err(RewriteFailure::collision(format!("落点名 `{new}` 按词边界出现在消费者活跃语句文本中，重写会碰撞")));
         }
     }
     Ok(BindingRewrite { new_name: new.to_string(), spans, shorthand_spans })
@@ -1744,8 +1557,7 @@ fn plan_same_chunk_bindings(
 
     // import 语句与 export 子句文本不进入 body（语句事实不含这些形态），
     // 其中的名字引用由合成语句与 deferred 导出机制携带落点名。
-    let mut stripped_spans: Vec<(usize, usize)> =
-        record.imports.iter().map(|import| import.span).collect();
+    let mut stripped_spans: Vec<(usize, usize)> = record.imports.iter().map(|import| import.span).collect();
     stripped_spans.extend(export_spans.iter().copied());
 
     for (import_index, import) in record.imports.iter().enumerate() {
@@ -1756,19 +1568,14 @@ fn plan_same_chunk_bindings(
         {
             continue;
         }
-        let Some(edge) = node
-            .static_edges
-            .iter()
-            .find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)
+        let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)
         else {
             continue;
         };
         // Node 内建模块：Node target 上是运行时外部模块，binding 改名为 fresh
         // 名后按说明符合成 chunk 级 import；Browser target 留给主循环显式拒绝。
         if let Err(diagnostic) = edge.target.as_ref() {
-            if diagnostic.code != crate::resolve::CODE_NODE_BUILTIN
-                || context.graph.target != crate::resolve::Target::Node
-            {
+            if diagnostic.code != crate::resolve::CODE_NODE_BUILTIN || context.graph.target != crate::resolve::Target::Node {
                 continue;
             }
             for (binding_index, binding) in import.bindings.iter().enumerate() {
@@ -1776,26 +1583,12 @@ fn plan_same_chunk_bindings(
                     continue;
                 }
                 let consumer = binding.local.as_str();
-                if !binding_is_used(
-                    record,
-                    source,
-                    consumer,
-                    active_spans,
-                    export_spans,
-                    referenced_in_active,
-                ) {
+                if !binding_is_used(record, source, consumer, active_spans, export_spans, referenced_in_active) {
                     decisions.insert((import_index, binding_index), BindingDecision::Handled);
                     continue;
                 }
                 let landing = format!("{consumer}__vmz_node{node_index}");
-                match plan_binding_rewrite(
-                    record,
-                    source,
-                    consumer,
-                    &landing,
-                    active_spans,
-                    &stripped_spans,
-                ) {
+                match plan_binding_rewrite(record, source, consumer, &landing, active_spans, &stripped_spans) {
                     Ok(rewrite) => {
                         let bindings = external_imports.entry(import.specifier.clone()).or_default();
                         match &binding.imported {
@@ -1816,22 +1609,16 @@ fn plan_same_chunk_bindings(
                         warnings.push(
                             PackDiagnostic::new(
                                 "vmz::pack::emit::node_builtin_static_kept",
-                                format!(
-                                    "静态导入 `{}` 是 Node.js 内建模块，按 chunk 级外部 import 保留，由 Node 宿主解析",
-                                    import.specifier
-                                ),
+                                format!("静态导入 `{}` 是 Node.js 内建模块，按 chunk 级外部 import 保留，由 Node 宿主解析", import.specifier),
                             )
                             .with_path(module_path.to_string())
                             .with_span(import.span),
                         );
                         if renames.insert(consumer.to_string(), rewrite).is_some() {
                             errors.push(
-                                PackDiagnostic::new(
-                                    REJECT,
-                                    format!("消费者模块存在多个名为 `{consumer}` 的 import 绑定，非法源形态"),
-                                )
-                                .with_path(module_path.to_string())
-                                .with_span(import.span),
+                                PackDiagnostic::new(REJECT, format!("消费者模块存在多个名为 `{consumer}` 的 import 绑定，非法源形态"))
+                                    .with_path(module_path.to_string())
+                                    .with_span(import.span),
                             );
                         }
                     }
@@ -1851,12 +1638,21 @@ fn plan_same_chunk_bindings(
             }
             continue;
         }
-        let Ok(id) = edge.target.as_ref() else { continue };
-        let Some(target) = context.graph.index_of(id) else { continue };
+        let Ok(id) = edge.target.as_ref()
+        else {
+            continue;
+        };
+        let Some(target) = context.graph.index_of(id)
+        else {
+            continue;
+        };
         if context.graph.nodes[target].kind != NodeKind::Js || !context.retained[target] {
             continue;
         }
-        let Some(target_chunk) = context.node_chunk[target] else { continue };
+        let Some(target_chunk) = context.node_chunk[target]
+        else {
+            continue;
+        };
         if target_chunk != chunk_index {
             continue;
         }
@@ -1865,14 +1661,7 @@ fn plan_same_chunk_bindings(
                 continue;
             }
             let consumer = binding.local.as_str();
-            if !binding_is_used(
-                record,
-                source,
-                consumer,
-                active_spans,
-                export_spans,
-                referenced_in_active,
-            ) {
+            if !binding_is_used(record, source, consumer, active_spans, export_spans, referenced_in_active) {
                 decisions.insert((import_index, binding_index), BindingDecision::Handled);
                 continue;
             }
@@ -1885,9 +1674,7 @@ fn plan_same_chunk_bindings(
                 warnings.push(
                     PackDiagnostic::new(
                         "vmz::pack::emit::namespace_widened",
-                        format!(
-                            "同 chunk 命名空间绑定 `{consumer}` 指向 chunk 自身文件，实际拿到整个 chunk 的命名空间（比源模块宽）"
-                        ),
+                        format!("同 chunk 命名空间绑定 `{consumer}` 指向 chunk 自身文件，实际拿到整个 chunk 的命名空间（比源模块宽）"),
                     )
                     .with_path(module_path.to_string())
                     .with_span(import.span),
@@ -1901,15 +1688,7 @@ fn plan_same_chunk_bindings(
                 ImportedName::Namespace => unreachable!("上面已处理命名空间绑定"),
             };
             let mut scratch: Vec<PackDiagnostic> = Vec::new();
-            match resolve_same_chunk_reexport(
-                context,
-                chunk_index,
-                target,
-                &source_name,
-                module_path,
-                REJECT,
-                &mut scratch,
-            ) {
+            match resolve_same_chunk_reexport(context, chunk_index, target, &source_name, module_path, REJECT, &mut scratch) {
                 Some(ReexportBinding::Declared { node: decl_node, name: binding_name }) => {
                     // 落点改名兜底预决议生效时，发射文本里的落点绑定已是
                     // fresh 名：消费者重写目标按落点声明模块的改名表映射。
@@ -1919,38 +1698,25 @@ fn plan_same_chunk_bindings(
                     };
                     if landing == consumer {
                         same_chunk_locals.insert((consumer.to_string(), module_path.to_string()));
-                    } else {
-                        match plan_binding_rewrite(
-                            record,
-                            source,
-                            consumer,
-                            &landing,
-                            active_spans,
-                            &stripped_spans,
-                        ) {
+                    }
+                    else {
+                        match plan_binding_rewrite(record, source, consumer, &landing, active_spans, &stripped_spans) {
                             Ok(rewrite) => {
                                 // 重导出绑定的 deferred 导出以落点名为 local：
                                 // 该名字对本模块同样可解析。
-                                same_chunk_locals
-                                    .insert((landing.clone(), module_path.to_string()));
+                                same_chunk_locals.insert((landing.clone(), module_path.to_string()));
                                 if renames.insert(consumer.to_string(), rewrite).is_some() {
                                     errors.push(
-                                        PackDiagnostic::new(
-                                            REJECT,
-                                            format!("消费者模块存在多个名为 `{consumer}` 的 import 绑定，非法源形态"),
-                                        )
-                                        .with_path(module_path.to_string())
-                                        .with_span(import.span),
+                                        PackDiagnostic::new(REJECT, format!("消费者模块存在多个名为 `{consumer}` 的 import 绑定，非法源形态"))
+                                            .with_path(module_path.to_string())
+                                            .with_span(import.span),
                                     );
                                 }
                             }
                             Err(failure) => errors.push(
                                 PackDiagnostic::new(
                                     REJECT,
-                                    format!(
-                                        "同 chunk import 绑定 `{consumer}` 需 scope 重写为 `{landing}`：{}，未实现",
-                                        failure.reason
-                                    ),
+                                    format!("同 chunk import 绑定 `{consumer}` 需 scope 重写为 `{landing}`：{}，未实现", failure.reason),
                                 )
                                 .with_path(module_path.to_string())
                                 .with_span(import.span),
@@ -1963,17 +1729,15 @@ fn plan_same_chunk_bindings(
                     // 面名歧义分裂在装配前已全局定稿：此处即解析到目标 chunk
                     // 认领者的实际发射面名，合成 import 直接用发射名。
                     let name = resolve_emitted_face(context, chunk, node, &name);
-                    decisions.insert(
-                        (import_index, binding_index),
-                        BindingDecision::External { chunk, name },
-                    );
+                    decisions.insert((import_index, binding_index), BindingDecision::External { chunk, name });
                 }
                 None => {
                     // 具名同名（shorthand）：名字经拼接直接可达（星号来源不
                     // 展开的既有口径）；其余形态解析器已给出拒绝诊断。
                     if consumer == source_name {
                         same_chunk_locals.insert((consumer.to_string(), module_path.to_string()));
-                    } else {
+                    }
+                    else {
                         errors.append(&mut scratch);
                     }
                     decisions.insert((import_index, binding_index), BindingDecision::Handled);
@@ -2003,20 +1767,29 @@ struct ChunkModuleScan<'a> {
 }
 
 /// chunk 成员活跃语句扫描快照：声明改名与落点改名兜底共用同一份事实。
-fn chunk_scans<'ctx>(
-    context: &'ctx EmitContext<'_>,
-    chunk_index: usize,
-) -> BTreeMap<usize, ChunkModuleScan<'ctx>> {
+fn chunk_scans<'ctx>(context: &'ctx EmitContext<'_>, chunk_index: usize) -> BTreeMap<usize, ChunkModuleScan<'ctx>> {
     let chunk = &context.chunks.chunks[chunk_index];
     let mut scans: BTreeMap<usize, ChunkModuleScan<'_>> = BTreeMap::new();
     for &node_index in &chunk.modules {
-        let Some(node) = context.graph.nodes.get(node_index) else { continue };
-        let Some(linked) = context.linked[node_index] else { continue };
-        let Some(source) = context.sources.get(&node_index) else { continue };
+        let Some(node) = context.graph.nodes.get(node_index)
+        else {
+            continue;
+        };
+        let Some(linked) = context.linked[node_index]
+        else {
+            continue;
+        };
+        let Some(source) = context.sources.get(&node_index)
+        else {
+            continue;
+        };
         let mut active_spans: Vec<(usize, usize)> = Vec::new();
         let mut declared: BTreeSet<String> = BTreeSet::new();
         for &index in &linked.active_statements {
-            let Some(statement) = node.record.statements.get(index) else { continue };
+            let Some(statement) = node.record.statements.get(index)
+            else {
+                continue;
+            };
             active_spans.push(statement.span);
             for name in &statement.declared_names {
                 declared.insert(name.clone());
@@ -2050,7 +1823,10 @@ fn plan_declaration_renames(
     let chunk = &context.chunks.chunks[chunk_index];
     let mut name_nodes: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     for &node_index in &chunk.modules {
-        let Some(scan) = scans.get(&node_index) else { continue };
+        let Some(scan) = scans.get(&node_index)
+        else {
+            continue;
+        };
         for name in &scan.declared {
             name_nodes.entry(name.clone()).or_default().insert(node_index);
         }
@@ -2061,9 +1837,7 @@ fn plan_declaration_renames(
             continue;
         }
         for &node_index in nodes {
-            if let Some(rewrite) =
-                try_plan_declaration_rename(context, node_index, name, scans, false)
-            {
+            if let Some(rewrite) = try_plan_declaration_rename(context, node_index, name, scans, false) {
                 plans.entry(node_index).or_default().insert(name.clone(), rewrite);
             }
         }
@@ -2093,15 +1867,25 @@ fn plan_landing_renames(
     let chunk = &context.chunks.chunks[chunk_index];
     let mut candidates: BTreeMap<(usize, String), LandingCandidate> = BTreeMap::new();
     for &node_index in &chunk.modules {
-        let Some(node) = context.graph.nodes.get(node_index) else { continue };
-        let Some(linked) = context.linked[node_index] else { continue };
-        let Some(source) = context.sources.get(&node_index) else { continue };
-        let Some(scan) = scans.get(&node_index) else { continue };
+        let Some(node) = context.graph.nodes.get(node_index)
+        else {
+            continue;
+        };
+        let Some(linked) = context.linked[node_index]
+        else {
+            continue;
+        };
+        let Some(source) = context.sources.get(&node_index)
+        else {
+            continue;
+        };
+        let Some(scan) = scans.get(&node_index)
+        else {
+            continue;
+        };
         let record = &node.record;
-        let export_spans: Vec<(usize, usize)> =
-            record.exports.iter().map(export_fact_span).collect();
-        let mut stripped_spans: Vec<(usize, usize)> =
-            record.imports.iter().map(|import| import.span).collect();
+        let export_spans: Vec<(usize, usize)> = record.exports.iter().map(export_fact_span).collect();
+        let mut stripped_spans: Vec<(usize, usize)> = record.imports.iter().map(|import| import.span).collect();
         stripped_spans.extend(export_spans.iter().copied());
         let mut referenced_in_active: HashSet<&str> = HashSet::new();
         for &statement_index in &linked.active_statements {
@@ -2119,19 +1903,25 @@ fn plan_landing_renames(
             {
                 continue;
             }
-            let Some(edge) = node
-                .static_edges
-                .iter()
-                .find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)
+            let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)
             else {
                 continue;
             };
-            let Ok(id) = edge.target.as_ref() else { continue };
-            let Some(target) = context.graph.index_of(id) else { continue };
+            let Ok(id) = edge.target.as_ref()
+            else {
+                continue;
+            };
+            let Some(target) = context.graph.index_of(id)
+            else {
+                continue;
+            };
             if context.graph.nodes[target].kind != NodeKind::Js || !context.retained[target] {
                 continue;
             }
-            let Some(target_chunk) = context.node_chunk[target] else { continue };
+            let Some(target_chunk) = context.node_chunk[target]
+            else {
+                continue;
+            };
             if target_chunk != chunk_index {
                 continue;
             }
@@ -2140,14 +1930,7 @@ fn plan_landing_renames(
                     continue;
                 }
                 let consumer = binding.local.as_str();
-                if !binding_is_used(
-                    record,
-                    source,
-                    consumer,
-                    &scan.active_spans,
-                    &export_spans,
-                    &referenced_in_active,
-                ) {
+                if !binding_is_used(record, source, consumer, &scan.active_spans, &export_spans, &referenced_in_active) {
                     continue;
                 }
                 let source_name = match &binding.imported {
@@ -2168,20 +1951,13 @@ fn plan_landing_renames(
                     Some(ReexportBinding::Declared { node, name }) => (node, name),
                     _ => continue,
                 };
-                let entry = candidates.entry((decl_node, landing.clone())).or_insert_with(|| {
-                    LandingCandidate { consumers: Vec::new(), collision: false }
-                });
+                let entry = candidates
+                    .entry((decl_node, landing.clone()))
+                    .or_insert_with(|| LandingCandidate { consumers: Vec::new(), collision: false });
                 entry.consumers.push((node_index, consumer.to_string()));
                 if landing != consumer
-                    && plan_binding_rewrite(
-                        record,
-                        source,
-                        consumer,
-                        &landing,
-                        &scan.active_spans,
-                        &stripped_spans,
-                    )
-                    .is_err_and(|failure| failure.collision)
+                    && plan_binding_rewrite(record, source, consumer, &landing, &scan.active_spans, &stripped_spans)
+                        .is_err_and(|failure| failure.collision)
                 {
                     entry.collision = true;
                 }
@@ -2200,7 +1976,8 @@ fn plan_landing_renames(
         let fresh = rewrite.new_name.clone();
         let mut valid = true;
         for (consumer_node, consumer_name) in &candidate.consumers {
-            let Some(scan) = scans.get(consumer_node) else {
+            let Some(scan) = scans.get(consumer_node)
+            else {
                 valid = false;
                 break;
             };
@@ -2209,21 +1986,10 @@ fn plan_landing_renames(
                 valid = false;
                 break;
             };
-            let export_spans: Vec<(usize, usize)> =
-                record.exports.iter().map(export_fact_span).collect();
-            let mut stripped_spans: Vec<(usize, usize)> =
-                record.imports.iter().map(|import| import.span).collect();
+            let export_spans: Vec<(usize, usize)> = record.exports.iter().map(export_fact_span).collect();
+            let mut stripped_spans: Vec<(usize, usize)> = record.imports.iter().map(|import| import.span).collect();
             stripped_spans.extend(export_spans.iter().copied());
-            if plan_binding_rewrite(
-                record,
-                scan.source,
-                consumer_name,
-                &fresh,
-                &scan.active_spans,
-                &stripped_spans,
-            )
-            .is_err()
-            {
+            if plan_binding_rewrite(record, scan.source, consumer_name, &fresh, &scan.active_spans, &stripped_spans).is_err() {
                 valid = false;
                 break;
             }
@@ -2239,28 +2005,10 @@ fn plan_landing_renames(
 /// **同名绑定**时返回该模块（跨 chunk 即停，不认领）。落点绑定名必须
 /// 等于面名：认领者的面 `X` 由名为 `X` 的绑定承载，消费者导入其它面名
 /// （如 `Y`）落到同一模块不构成对 `X` 的认领。
-fn pin_claimant(
-    context: &EmitContext<'_>,
-    chunk_index: usize,
-    target: usize,
-    face: &str,
-    claimants: &BTreeSet<usize>,
-) -> Option<usize> {
+fn pin_claimant(context: &EmitContext<'_>, chunk_index: usize, target: usize, face: &str, claimants: &BTreeSet<usize>) -> Option<usize> {
     let mut scratch: Vec<PackDiagnostic> = Vec::new();
-    match resolve_same_chunk_reexport(
-        context,
-        chunk_index,
-        target,
-        face,
-        "",
-        "vmz::pack::emit::name_conflict",
-        &mut scratch,
-    ) {
-        Some(ReexportBinding::Declared { node, name })
-            if name == face && claimants.contains(&node) =>
-        {
-            Some(node)
-        }
+    match resolve_same_chunk_reexport(context, chunk_index, target, face, "", "vmz::pack::emit::name_conflict", &mut scratch) {
+        Some(ReexportBinding::Declared { node, name }) if name == face && claimants.contains(&node) => Some(node),
         _ => None,
     }
 }
@@ -2287,14 +2035,11 @@ fn plan_face_renames(
     context: &EmitContext<'_>,
     chunk_index: usize,
     scans: &BTreeMap<usize, ChunkModuleScan<'_>>,
-) -> (BTreeMap<usize, BTreeMap<String, BindingRewrite>>, BTreeMap<String, BTreeMap<String, String>>)
-{
+) -> (BTreeMap<usize, BTreeMap<String, BindingRewrite>>, BTreeMap<String, BTreeMap<String, String>>) {
     let chunk = &context.chunks.chunks[chunk_index];
     let face_exported = |record: &ModuleRecord, name: &str| -> bool {
         record.exports.iter().any(|export| match export {
-            ExportFact::Local { local, exported, type_only, .. } => {
-                !type_only && local == name && exported == name
-            }
+            ExportFact::Local { local, exported, type_only, .. } => !type_only && local == name && exported == name,
             ExportFact::Default { local: Some(local), .. } => local == name,
             _ => false,
         })
@@ -2302,8 +2047,14 @@ fn plan_face_renames(
     let mut decl_nodes: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut binding_nodes: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     for &node_index in &chunk.modules {
-        let Some(node) = context.graph.nodes.get(node_index) else { continue };
-        let Some(scan) = scans.get(&node_index) else { continue };
+        let Some(node) = context.graph.nodes.get(node_index)
+        else {
+            continue;
+        };
+        let Some(scan) = scans.get(&node_index)
+        else {
+            continue;
+        };
         for name in &scan.declared {
             if face_exported(&node.record, name) {
                 decl_nodes.entry(name.clone()).or_default().insert(node_index);
@@ -2345,9 +2096,7 @@ fn plan_face_renames(
         for &node in &claimants {
             let record = &context.graph.nodes[node].record;
             let named = record.exports.iter().any(|export| match export {
-                ExportFact::Local { local, exported, type_only, .. } => {
-                    !type_only && local == name && exported == name
-                }
+                ExportFact::Local { local, exported, type_only, .. } => !type_only && local == name && exported == name,
                 ExportFact::Default { local: Some(local), .. } => multi_default && local == name,
                 _ => false,
             });
@@ -2378,15 +2127,25 @@ fn plan_face_renames(
         let renamed_nodes: BTreeSet<usize> = rewrites.keys().copied().collect();
         let mut consumers_ok = true;
         for &node_index in &chunk.modules {
-            let Some(node) = context.graph.nodes.get(node_index) else { continue };
-            let Some(linked) = context.linked[node_index] else { continue };
-            let Some(source) = context.sources.get(&node_index) else { continue };
-            let Some(scan) = scans.get(&node_index) else { continue };
+            let Some(node) = context.graph.nodes.get(node_index)
+            else {
+                continue;
+            };
+            let Some(linked) = context.linked[node_index]
+            else {
+                continue;
+            };
+            let Some(source) = context.sources.get(&node_index)
+            else {
+                continue;
+            };
+            let Some(scan) = scans.get(&node_index)
+            else {
+                continue;
+            };
             let record = &node.record;
-            let export_spans: Vec<(usize, usize)> =
-                record.exports.iter().map(export_fact_span).collect();
-            let mut stripped_spans: Vec<(usize, usize)> =
-                record.imports.iter().map(|import| import.span).collect();
+            let export_spans: Vec<(usize, usize)> = record.exports.iter().map(export_fact_span).collect();
+            let mut stripped_spans: Vec<(usize, usize)> = record.imports.iter().map(|import| import.span).collect();
             stripped_spans.extend(export_spans.iter().copied());
             let mut referenced_in_active: HashSet<&str> = HashSet::new();
             for &statement_index in &linked.active_statements {
@@ -2404,13 +2163,18 @@ fn plan_face_renames(
                 {
                     continue;
                 }
-                let Some(edge) = node.static_edges.iter().find(|edge| {
-                    edge.kind == EdgeKind::Static && edge.specifier == import.specifier
-                }) else {
+                let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)
+                else {
                     continue;
                 };
-                let Ok(id) = edge.target.as_ref() else { continue };
-                let Some(target) = context.graph.index_of(id) else { continue };
+                let Ok(id) = edge.target.as_ref()
+                else {
+                    continue;
+                };
+                let Some(target) = context.graph.index_of(id)
+                else {
+                    continue;
+                };
                 if context.graph.nodes[target].kind != NodeKind::Js
                     || !context.retained[target]
                     || context.node_chunk[target] != Some(chunk_index)
@@ -2418,19 +2182,10 @@ fn plan_face_renames(
                     continue;
                 }
                 for binding in &import.bindings {
-                    if binding.inline_type_only
-                        || matches!(binding.imported, ImportedName::Namespace)
-                    {
+                    if binding.inline_type_only || matches!(binding.imported, ImportedName::Namespace) {
                         continue;
                     }
-                    if !binding_is_used(
-                        record,
-                        source,
-                        &binding.local,
-                        &scan.active_spans,
-                        &export_spans,
-                        &referenced_in_active,
-                    ) {
+                    if !binding_is_used(record, source, &binding.local, &scan.active_spans, &export_spans, &referenced_in_active) {
                         continue;
                     }
                     let source_name = match &binding.imported {
@@ -2438,27 +2193,12 @@ fn plan_face_renames(
                         ImportedName::Name(item) => item.clone(),
                         ImportedName::Namespace => unreachable!(),
                     };
-                    let landing = match pin_claimant(
-                        context,
-                        chunk_index,
-                        target,
-                        &source_name,
-                        &renamed_nodes,
-                    ) {
+                    let landing = match pin_claimant(context, chunk_index, target, &source_name, &renamed_nodes) {
                         Some(node) => node,
                         None => continue,
                     };
                     let fresh = &rewrites[&landing].new_name;
-                    if plan_binding_rewrite(
-                        record,
-                        source,
-                        &binding.local,
-                        fresh,
-                        &scan.active_spans,
-                        &stripped_spans,
-                    )
-                    .is_err()
-                    {
+                    if plan_binding_rewrite(record, source, &binding.local, fresh, &scan.active_spans, &stripped_spans).is_err() {
                         consumers_ok = false;
                     }
                 }
@@ -2482,13 +2222,18 @@ fn plan_face_renames(
                 if import.kind != ImportKind::Static || import.type_only {
                     continue;
                 }
-                let Some(edge) = node.static_edges.iter().find(|edge| {
-                    edge.kind == EdgeKind::Static && edge.specifier == import.specifier
-                }) else {
+                let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)
+                else {
                     continue;
                 };
-                let Ok(id) = edge.target.as_ref() else { continue };
-                let Some(target) = context.graph.index_of(id) else { continue };
+                let Ok(id) = edge.target.as_ref()
+                else {
+                    continue;
+                };
+                let Some(target) = context.graph.index_of(id)
+                else {
+                    continue;
+                };
                 if context.node_chunk[target] != Some(chunk_index) {
                     continue;
                 }
@@ -2516,8 +2261,14 @@ fn plan_face_renames(
                 }
             }
             for edge in node.dynamic_edges.iter() {
-                let Ok(id) = edge.target.as_ref() else { continue };
-                let Some(target) = context.graph.index_of(id) else { continue };
+                let Ok(id) = edge.target.as_ref()
+                else {
+                    continue;
+                };
+                let Some(target) = context.graph.index_of(id)
+                else {
+                    continue;
+                };
                 if context.node_chunk[target] != Some(chunk_index) {
                     continue;
                 }
@@ -2533,22 +2284,27 @@ fn plan_face_renames(
                         }
                         (source, name.as_str(), EdgeKind::ReexportNamed)
                     }
-                    ExportFact::ReexportAll { source, .. } => {
-                        (source, name.as_str(), EdgeKind::ReexportAll)
-                    }
+                    ExportFact::ReexportAll { source, .. } => (source, name.as_str(), EdgeKind::ReexportAll),
                     _ => continue,
                 };
                 // 重导出事实的边按事实自身 kind 建在 `static_edges` 上
                 // （`EdgeKind::ReexportNamed` / `EdgeKind::ReexportAll`），
                 // 只认 `Static` 会让具名重导出与星号边永远钉不到认领者。
-                let Some(edge) = node.static_edges.iter().find(|edge| {
-                    (edge.kind == EdgeKind::Static || edge.kind == edge_kind)
-                        && edge.specifier == *source
-                }) else {
+                let Some(edge) = node
+                    .static_edges
+                    .iter()
+                    .find(|edge| (edge.kind == EdgeKind::Static || edge.kind == edge_kind) && edge.specifier == *source)
+                else {
                     continue;
                 };
-                let Ok(id) = edge.target.as_ref() else { continue };
-                let Some(target) = context.graph.index_of(id) else { continue };
+                let Ok(id) = edge.target.as_ref()
+                else {
+                    continue;
+                };
+                let Some(target) = context.graph.index_of(id)
+                else {
+                    continue;
+                };
                 if context.node_chunk[target] != Some(chunk_index) {
                     continue;
                 }
@@ -2568,18 +2324,17 @@ fn plan_face_renames(
             None => *owners.iter().next().expect("owners 非空"),
         };
         let mut emission: BTreeMap<String, String> = BTreeMap::new();
-        emission
-            .insert(normalize_path(&context.graph.nodes[canonical].resolved.path), name.clone());
+        emission.insert(normalize_path(&context.graph.nodes[canonical].resolved.path), name.clone());
         // 面名分裂：被钉住的非 canonical 声明认领者以 fresh 名自身为发射面名，
         // 跨 chunk 消费者经 `resolve_emitted_face` 落到各自认领者的发射名；
         // 未被钉住的非 canonical 认领者不进表，面导出随 deferred 定稿丢弃。
         if pins.len() > 1 {
             for &pin in pins.iter().filter(|&&pin| pin != canonical) {
-                let Some(rewrite) = rewrites.get(&pin) else { continue };
-                emission.insert(
-                    normalize_path(&context.graph.nodes[pin].resolved.path),
-                    rewrite.new_name.clone(),
-                );
+                let Some(rewrite) = rewrites.get(&pin)
+                else {
+                    continue;
+                };
+                emission.insert(normalize_path(&context.graph.nodes[pin].resolved.path), rewrite.new_name.clone());
             }
         }
         for (node, rewrite) in rewrites {
@@ -2668,7 +2423,8 @@ fn try_plan_declaration_rename(
             return None;
         }
         for outer in &other.active_spans {
-            let Some(text) = other.source.get(outer.0..outer.1) else {
+            let Some(text) = other.source.get(outer.0..outer.1)
+            else {
                 return None;
             };
             if contains_identifier(text, &fresh) {
@@ -2681,12 +2437,7 @@ fn try_plan_declaration_rename(
 
 /// 替换文本偏移 → 切片原文偏移：落在替换新文本内取替换起点，
 /// 否则扣除此前替换的长度增量；结果夹到切片长度。
-pub(crate) fn map_replaced_offset(
-    replaced_off: usize,
-    raw: &str,
-    base: usize,
-    replacements: &BTreeMap<(usize, usize), String>,
-) -> usize {
+pub(crate) fn map_replaced_offset(replaced_off: usize, raw: &str, base: usize, replacements: &BTreeMap<(usize, usize), String>) -> usize {
     let mut pos = 0usize; // 当前原文段在替换文本中的起点。
     let mut raw_pos = 0usize; // 当前原文段在切片中的起点。
     for ((start, end), text) in replacements {
@@ -2718,10 +2469,7 @@ fn check_names(
     errors: &mut Vec<PackDiagnostic>,
 ) {
     let conflict = |name: &str, first: &str, second: &str| {
-        PackDiagnostic::new(
-            "vmz::pack::emit::name_conflict",
-            format!("chunk `{}` 内名字 `{name}` 冲突: `{first}` 与 `{second}`", chunk.id),
-        )
+        PackDiagnostic::new("vmz::pack::emit::name_conflict", format!("chunk `{}` 内名字 `{name}` 冲突: `{first}` 与 `{second}`", chunk.id))
     };
     let mut decl_modules: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for (name, module) in declared {
@@ -2745,8 +2493,7 @@ fn check_names(
             continue;
         }
         if let Some(modules) = decl_modules.get(local) {
-            let binding_modules: BTreeSet<&str> =
-                origins.iter().map(|(_, module)| *module).collect();
+            let binding_modules: BTreeSet<&str> = origins.iter().map(|(_, module)| *module).collect();
             if let Some(other) = modules.iter().find(|module| !binding_modules.contains(*module)) {
                 errors.push(conflict(local, other, binding_modules.iter().next().unwrap()));
             }
@@ -2781,20 +2528,13 @@ fn check_names(
 }
 
 /// 切片内替换：按起点升序应用，区间不得重叠或越出切片。
-pub(crate) fn apply_replacements(
-    raw: &str,
-    base: usize,
-    replacements: &BTreeMap<(usize, usize), String>,
-) -> Result<String, PackDiagnostic> {
+pub(crate) fn apply_replacements(raw: &str, base: usize, replacements: &BTreeMap<(usize, usize), String>) -> Result<String, PackDiagnostic> {
     let mut out = String::with_capacity(raw.len());
     let mut cursor = 0usize; // 相对切片偏移。
     for ((start, end), text) in replacements {
         let (start, end) = (start - base, end - base);
         if start < cursor || end > raw.len() {
-            return Err(inconsistent(format!(
-                "替换区间 ({start}, {end}) 与切片 [0, {}) 冲突",
-                raw.len()
-            )));
+            return Err(inconsistent(format!("替换区间 ({start}, {end}) 与切片 [0, {}) 冲突", raw.len())));
         }
         if !raw.is_char_boundary(start) || !raw.is_char_boundary(end) {
             return Err(inconsistent("替换区间边界不在 UTF-8 char 边界上".to_string()));
@@ -2816,24 +2556,15 @@ fn edge_target_node(
     module_path: &str,
     errors: &mut Vec<PackDiagnostic>,
 ) -> Option<usize> {
-    let Some(edge) =
-        node.static_edges.iter().find(|edge| edge.kind == kind && edge.specifier == specifier)
+    let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == kind && edge.specifier == specifier)
     else {
-        errors.push(
-            inconsistent(format!("重导出 `{specifier}` 找不到对应边"))
-                .with_path(module_path.to_string()),
-        );
+        errors.push(inconsistent(format!("重导出 `{specifier}` 找不到对应边")).with_path(module_path.to_string()));
         return None;
     };
-    let Ok(id) = edge.target.as_ref() else {
+    let Ok(id) = edge.target.as_ref()
+    else {
         errors.push(
-            super::edge_unresolved(
-                "重导出",
-                specifier,
-                "无法合成 export-from",
-                edge.target.as_ref().err(),
-            )
-            .with_path(module_path.to_string()),
+            super::edge_unresolved("重导出", specifier, "无法合成 export-from", edge.target.as_ref().err()).with_path(module_path.to_string()),
         );
         return None;
     };
@@ -2852,9 +2583,7 @@ fn edge_target_node(
             errors.push(
                 PackDiagnostic::new(
                     "vmz::pack::emit::json_reexport_unsupported",
-                    format!(
-                        "重导出 `{specifier}` 目标是 JSON：值节点只提供 default 绑定，无法重导出具名"
-                    ),
+                    format!("重导出 `{specifier}` 目标是 JSON：值节点只提供 default 绑定，无法重导出具名"),
                 )
                 .with_path(module_path.to_string()),
             );
@@ -2862,10 +2591,7 @@ fn edge_target_node(
         }
         Some(target) => Some(target),
         None => {
-            errors.push(
-                inconsistent(format!("重导出 `{specifier}` 目标不在图中"))
-                    .with_path(module_path.to_string()),
-            );
+            errors.push(inconsistent(format!("重导出 `{specifier}` 目标不在图中")).with_path(module_path.to_string()));
             None
         }
     }
@@ -2901,16 +2627,13 @@ fn resolve_same_chunk_reexport(
     code: &str,
     errors: &mut Vec<PackDiagnostic>,
 ) -> Option<ReexportBinding> {
-    let unsupported =
-        |message: String| PackDiagnostic::new(code, message).with_path(module_path.to_string());
+    let unsupported = |message: String| PackDiagnostic::new(code, message).with_path(module_path.to_string());
     let mut visited: BTreeSet<usize> = BTreeSet::new();
     let mut node = target;
     let mut name = name.to_string();
     loop {
         if !visited.insert(node) {
-            errors.push(unsupported(format!(
-                "同 chunk 重导出 `{name}` 的来源链成环，无绑定事实可解析，未实现"
-            )));
+            errors.push(unsupported(format!("同 chunk 重导出 `{name}` 的来源链成环，无绑定事实可解析，未实现")));
             return None;
         }
         let record = &context.graph.nodes[node].record;
@@ -2948,17 +2671,13 @@ fn resolve_same_chunk_reexport(
                     if *type_only || exported != &name {
                         continue;
                     }
-                    let Some(step) = edge_target_node(
-                        context,
-                        &context.graph.nodes[node],
-                        EdgeKind::ReexportNamed,
-                        source,
-                        module_path,
-                        errors,
-                    ) else {
+                    let Some(step) =
+                        edge_target_node(context, &context.graph.nodes[node], EdgeKind::ReexportNamed, source, module_path, errors)
+                    else {
                         return None;
                     };
-                    let Some(step_chunk) = chunk_of_node(context, step, module_path, errors) else {
+                    let Some(step_chunk) = chunk_of_node(context, step, module_path, errors)
+                    else {
                         return None;
                     };
                     if step_chunk == chunk_index {
@@ -2968,9 +2687,9 @@ fn resolve_same_chunk_reexport(
                     // 落点名 `default` 按目标 chunk 的面名映射：多 default
                     // 模块的 chunk 无统一 `default` 面，消费走面名具名形态。
                     let name = if local == "default" {
-                        default_face(context, step_chunk, step, &mut HashMap::new())
-                            .unwrap_or_else(|| local.clone())
-                    } else {
+                        default_face(context, step_chunk, step, &mut HashMap::new()).unwrap_or_else(|| local.clone())
+                    }
+                    else {
                         local.clone()
                     };
                     return Some(ReexportBinding::External { chunk: step_chunk, node: step, name });
@@ -2994,11 +2713,7 @@ fn resolve_same_chunk_reexport(
 /// 落点绑定是静态导入绑定（「import 再 export」两步重导出）时返回该绑定
 /// 来源模块与来源导出名；声明、命名空间绑定、type-only、来源跨 chunk
 /// 返回 `None`（绑定名本身即发射落点）。
-fn same_chunk_import_source(
-    context: &EmitContext<'_>,
-    node: usize,
-    local: &str,
-) -> Option<(usize, String)> {
+fn same_chunk_import_source(context: &EmitContext<'_>, node: usize, local: &str) -> Option<(usize, String)> {
     let record = &context.graph.nodes[node].record;
     let chunk = context.node_chunk[node]?;
     for import in record.imports.iter() {
@@ -3016,17 +2731,21 @@ fn same_chunk_import_source(
                 ImportedName::Namespace => return None,
             });
         }
-        let Some(source_name) = matched else { continue };
-        let edge = context.graph.nodes[node]
-            .static_edges
-            .iter()
-            .find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)?;
-        let Ok(id) = edge.target.as_ref() else { return None };
-        let Some(target) = context.graph.index_of(id) else { return None };
-        if context.graph.nodes[target].kind != NodeKind::Js
-            || !context.retained[target]
-            || context.node_chunk[target] != Some(chunk)
-        {
+        let Some(source_name) = matched
+        else {
+            continue;
+        };
+        let edge =
+            context.graph.nodes[node].static_edges.iter().find(|edge| edge.kind == EdgeKind::Static && edge.specifier == import.specifier)?;
+        let Ok(id) = edge.target.as_ref()
+        else {
+            return None;
+        };
+        let Some(target) = context.graph.index_of(id)
+        else {
+            return None;
+        };
+        if context.graph.nodes[target].kind != NodeKind::Js || !context.retained[target] || context.node_chunk[target] != Some(chunk) {
             return None;
         }
         return Some((target, source_name));
@@ -3036,19 +2755,11 @@ fn same_chunk_import_source(
 
 /// 节点 → 所属 chunk 索引；未保留/未分包显式拒绝（调用方已保证保留的
 /// 静态导入路径不会走到拒绝分支）。
-pub(crate) fn chunk_of_node(
-    context: &EmitContext<'_>,
-    node: usize,
-    module_path: &str,
-    errors: &mut Vec<PackDiagnostic>,
-) -> Option<usize> {
+pub(crate) fn chunk_of_node(context: &EmitContext<'_>, node: usize, module_path: &str, errors: &mut Vec<PackDiagnostic>) -> Option<usize> {
     if !context.retained[node] {
         errors.push(
-            inconsistent(format!(
-                "目标 `{}` 未被链接层保留",
-                normalize_path(&context.graph.nodes[node].resolved.path)
-            ))
-            .with_path(module_path.to_string()),
+            inconsistent(format!("目标 `{}` 未被链接层保留", normalize_path(&context.graph.nodes[node].resolved.path)))
+                .with_path(module_path.to_string()),
         );
         return None;
     }
@@ -3056,11 +2767,8 @@ pub(crate) fn chunk_of_node(
         Some(chunk_index) => Some(chunk_index),
         None => {
             errors.push(
-                inconsistent(format!(
-                    "目标 `{}` 未被分包",
-                    normalize_path(&context.graph.nodes[node].resolved.path)
-                ))
-                .with_path(module_path.to_string()),
+                inconsistent(format!("目标 `{}` 未被分包", normalize_path(&context.graph.nodes[node].resolved.path)))
+                    .with_path(module_path.to_string()),
             );
             None
         }
@@ -3085,11 +2793,7 @@ pub(crate) fn json_text(
         Ok(text) => Some(text),
         Err(err) => {
             errors.push(
-                PackDiagnostic::new(
-                    "vmz::pack::emit::read_failed",
-                    format!("cannot re-read json module file: {err}"),
-                )
-                .with_path(path_display),
+                PackDiagnostic::new("vmz::pack::emit::read_failed", format!("cannot re-read json module file: {err}")).with_path(path_display),
             );
             None
         }
@@ -3100,26 +2804,18 @@ pub(crate) fn json_text(
 
 /// 星号重导出目标自身是否含活跃 `export *`（名字经链流入，展开时不可
 /// 枚举）：命中即显式拒绝展开，不递归收集。
-fn target_has_active_star(
-    context: &EmitContext<'_>,
-    target: usize,
-    module_path: &str,
-    errors: &mut Vec<PackDiagnostic>,
-) -> bool {
-    let Some(linked) = context.linked[target] else {
+fn target_has_active_star(context: &EmitContext<'_>, target: usize, module_path: &str, errors: &mut Vec<PackDiagnostic>) -> bool {
+    let Some(linked) = context.linked[target]
+    else {
         errors.push(
-            inconsistent(format!(
-                "星号重导出目标 `{}` 未被链接层保留",
-                normalize_path(&context.graph.nodes[target].resolved.path)
-            ))
-            .with_path(module_path.to_string()),
+            inconsistent(format!("星号重导出目标 `{}` 未被链接层保留", normalize_path(&context.graph.nodes[target].resolved.path)))
+                .with_path(module_path.to_string()),
         );
         return true;
     };
     let record = &context.graph.nodes[target].record;
     for (index, export) in record.exports.iter().enumerate() {
-        if matches!(export, ExportFact::ReexportAll { .. }) && used_reexport(linked, index, is_all)
-        {
+        if matches!(export, ExportFact::ReexportAll { .. }) && used_reexport(linked, index, is_all) {
             errors.push(
                 PackDiagnostic::new(
                     "vmz::pack::emit::namespace_synthesis_unsupported",
@@ -3137,11 +2833,7 @@ fn target_has_active_star(
 }
 
 /// 目标模块的直接非类型导出名（`export *` 的 (c) 收集口径，不递归星号链）。
-fn collect_direct_exports(
-    context: &EmitContext<'_>,
-    target: usize,
-    export_names: &mut Vec<(String, String)>,
-) {
+fn collect_direct_exports(context: &EmitContext<'_>, target: usize, export_names: &mut Vec<(String, String)>) {
     let node = &context.graph.nodes[target];
     let module_path = normalize_path(&node.resolved.path);
     for export in &node.record.exports {
@@ -3169,11 +2861,7 @@ fn collect_direct_exports(
 }
 
 /// 该重导出事实是否被链接层记录为使用（决定 export-from 是否合成）。
-fn used_reexport(
-    linked: &LinkedModule,
-    export_index: usize,
-    kind_matches: impl Fn(&UsedReexport) -> bool,
-) -> bool {
+fn used_reexport(linked: &LinkedModule, export_index: usize, kind_matches: impl Fn(&UsedReexport) -> bool) -> bool {
     linked.used_reexports.iter().any(|used| {
         kind_matches(used)
             && match used {

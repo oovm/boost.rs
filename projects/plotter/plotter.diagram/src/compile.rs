@@ -258,7 +258,8 @@ pub fn compile_layered_with_source(spec: &DiagramSpec, options: &LayoutOptions, 
                 .map(|label| estimate_label_box(label, polyline_midpoint(&points), edge_label_font_size(options.font_size)));
             routed[index].points = points;
             routed[index].label_box = label_box;
-        } else {
+        }
+        else {
             diagnostics.push(located(
                 codes::APPROXIMATED,
                 format!(
@@ -418,7 +419,8 @@ fn compile_time_ordered(spec: &DiagramSpec, sequence: &SequenceLayout, options: 
     let mut row_centers: Vec<f64> = Vec::with_capacity(spec.edges.len());
     for edge_index in message_indices {
         let edge = &spec.edges[edge_index];
-        let (Some(&from_index), Some(&to_index)) = (indices.get(&edge.from.node), indices.get(&edge.to.node)) else {
+        let (Some(&from_index), Some(&to_index)) = (indices.get(&edge.from.node), indices.get(&edge.to.node))
+        else {
             let missing = if indices.contains_key(&edge.from.node) { edge.to.node.as_str() } else { edge.from.node.as_str() };
             diagnostics.push(located(
                 codes::APPROXIMATED,
@@ -452,7 +454,8 @@ fn compile_time_ordered(spec: &DiagramSpec, sequence: &SequenceLayout, options: 
 
     let mut activations = Vec::new();
     for activation in &sequence.activations {
-        let Some(&participant_index) = indices.get(&activation.participant) else {
+        let Some(&participant_index) = indices.get(&activation.participant)
+        else {
             diagnostics
                 .push(warning(codes::APPROXIMATED, format!("activation on unknown participant `{}` is ignored", activation.participant)));
             continue;
@@ -547,7 +550,8 @@ fn declared_messages(spec: &DiagramSpec, sequence: &SequenceLayout, diagnostics:
                 codes::APPROXIMATED,
                 format!("sequence message index {index} is outside the {} declared edges and is ignored", spec.edges.len()),
             ));
-        } else if seen.insert(index) {
+        }
+        else if seen.insert(index) {
             ordered.push(index);
         }
     }
@@ -777,7 +781,8 @@ fn assign_layers(
         let message = if reversed.is_empty() {
             let ids: Vec<&str> = cycle_nodes.iter().map(|&index| nodes[index].id.as_str()).collect();
             format!("diagram contains a cycle involving nodes {ids:?}. Layered placement breaks it in declaration order")
-        } else {
+        }
+        else {
             let pairs: Vec<String> = reversed.iter().map(|edge| format!("{}->{}", edge.from.node, edge.to.node)).collect();
             format!(
                 "diagram contains a cycle closed by edge {pairs:?}, which no longer advances to a later layer and is drawn in declaration order"
@@ -808,7 +813,8 @@ fn assign_layers(
                 }
                 if group.is_empty() {
                     diagnostics.push(warning(codes::APPROXIMATED, "same-rank constraint references no known nodes and is ignored"));
-                } else {
+                }
+                else {
                     groups.push(group);
                 }
             }
@@ -819,7 +825,8 @@ fn assign_layers(
                             codes::APPROXIMATED,
                             format!("place-before constraint relates node `{before}` to itself and is ignored"),
                         ));
-                    } else {
+                    }
+                    else {
                         precedences.push((before_index, after_index));
                     }
                 }
@@ -913,11 +920,14 @@ fn label_size(label: &str, shape: NodeShape, options: &LayoutOptions) -> Size {
     if matches!(shape, NodeShape::Circle | NodeShape::DoubleCircle) {
         let side = width.max(height);
         Size::new(side, side)
-    } else if matches!(shape, NodeShape::Point) {
+    }
+    else if matches!(shape, NodeShape::Point) {
         Size::new(8.0, 8.0)
-    } else if matches!(shape, NodeShape::Plaintext) {
+    }
+    else if matches!(shape, NodeShape::Plaintext) {
         Size::new(widest, lines.len() as f64 * options.font_size * 1.4)
-    } else {
+    }
+    else {
         Size::new(width, height)
     }
 }
@@ -964,7 +974,8 @@ fn place_rects(sizes: &[Size], layers: &[usize], direction: Direction, options: 
             cross_cursor += cross(index) + options.node_gap;
             let (x, y) = if horizontal {
                 (primary_center - sizes[index].width * 0.5, cross_center - sizes[index].height * 0.5)
-            } else {
+            }
+            else {
                 (cross_center - sizes[index].width * 0.5, primary_center - sizes[index].height * 0.5)
             };
             rects[index] = Rect::new(x, y, sizes[index].width, sizes[index].height);
@@ -1031,7 +1042,8 @@ fn build_ports(node: &ResolvedNode, rect: Rect, diagnostics: &mut Vec<Diagnostic
                 source,
             ));
             0.0
-        } else if !(0.0..=1.0).contains(&port.offset) {
+        }
+        else if !(0.0..=1.0).contains(&port.offset) {
             diagnostics.push(located(
                 codes::APPROXIMATED,
                 format!("port `{}` on node `{}` has an offset outside `0.0..=1.0` and is clamped", port.id, node.id),
@@ -1039,7 +1051,8 @@ fn build_ports(node: &ResolvedNode, rect: Rect, diagnostics: &mut Vec<Diagnostic
                 source,
             ));
             port.offset.clamp(0.0, 1.0)
-        } else {
+        }
+        else {
             port.offset
         };
         ports.insert(port.id.clone(), port_anchor(rect, port.side, offset));
@@ -1219,7 +1232,8 @@ fn route_avoiding(from: Point, to: Point, direction: Direction, obstacles: &[Rec
                 if vertical { (rect.y, rect.bottom(), rect.x, rect.right()) } else { (rect.x, rect.right(), rect.y, rect.bottom()) };
             if rect_high > span_low && rect_low < span_high {
                 vec![rect_cross_low - ROUTE_LANE_CLEARANCE, rect_high_cross + ROUTE_LANE_CLEARANCE]
-            } else {
+            }
+            else {
                 Vec::new()
             }
         })
@@ -1247,12 +1261,14 @@ fn route_avoiding(from: Point, to: Point, direction: Direction, obstacles: &[Rec
         let (stub, rejoin) = if sign * (rejoin - stub) <= 0.0 {
             let middle = (start + end) * 0.5;
             (middle, middle)
-        } else {
+        }
+        else {
             (stub, rejoin)
         };
         let points = if vertical {
             vec![from, Point::new(start_cross, stub), Point::new(lane, stub), Point::new(lane, rejoin), Point::new(end_cross, rejoin), to]
-        } else {
+        }
+        else {
             vec![from, Point::new(stub, start_cross), Point::new(stub, lane), Point::new(rejoin, lane), Point::new(rejoin, end_cross), to]
         };
         let points = dedupe_points(points);
@@ -1382,10 +1398,12 @@ fn warning(code: &'static str, message: impl Into<String>) -> Diagnostic {
 fn located(code: &'static str, message: impl Into<String>, span: Option<Range<usize>>, source: &SourceMap) -> Diagnostic {
     let message = message.into();
     let record = diagnostic("diagram", code, DiagnosticSeverity::Warning, message.clone());
-    let Some(span) = span else {
+    let Some(span) = span
+    else {
         return record;
     };
-    let (Ok(source_ref), Ok(range)) = (SourceRef::new(NAMESPACE, source.family()), ByteRange::new(span.start as u64, span.end as u64)) else {
+    let (Ok(source_ref), Ok(range)) = (SourceRef::new(NAMESPACE, source.family()), ByteRange::new(span.start as u64, span.end as u64))
+    else {
         return record;
     };
     record.with_primary(DiagnosticLabel::new(

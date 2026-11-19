@@ -162,7 +162,8 @@ pub fn invalid_export_case_argument(annotations: &[HirAttribute]) -> Option<(Str
 }
 
 fn argument_string_literal(argument: &HirArgument) -> Option<String> {
-    let HirExprKind::Literal(literal) = &argument.value.kind else {
+    let HirExprKind::Literal(literal) = &argument.value.kind
+    else {
         return None;
     };
     literal.as_constant_text()

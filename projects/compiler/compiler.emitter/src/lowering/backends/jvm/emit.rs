@@ -35,8 +35,10 @@ use compiler_types::{AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstance
 
 use crate::SumRepresentation;
 
-use super::JvmOperatorCode;
-use super::recipe::{JvmOperatorBinding, freeze_jvm_operator};
+use super::{
+    JvmOperatorCode,
+    recipe::{JvmOperatorBinding, freeze_jvm_operator},
+};
 
 const JVM_ACC_PUBLIC: u16 = 0x0001;
 const JVM_ACC_STATIC: u16 = 0x0008;
@@ -278,9 +280,8 @@ fn build_managed_abi_surface(
     // 复用 launcher，不再重复构建。
     if let Some((instance, logical_entry)) = entry {
         if entry_launcher.is_none() {
-            let method = method_plans
-                .get(&instance)
-                .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
+            let method =
+                method_plans.get(&instance).ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
             let lowered = class_file
                 .methods
                 .iter()
@@ -886,9 +887,9 @@ fn lower_function(
         else {
             return false;
         };
-        operator_by_instance
-            .get(instance)
-            .is_some_and(|(_, binding)| matches!(binding, JvmOperatorBinding::Frozen(plan) if plan.encoding == JvmOperatorCode::LongCompareLessThanUnsigned))
+        operator_by_instance.get(instance).is_some_and(
+            |(_, binding)| matches!(binding, JvmOperatorBinding::Frozen(plan) if plan.encoding == JvmOperatorCode::LongCompareLessThanUnsigned),
+        )
     });
     let scratch_long_slot = if needs_scratch_long {
         let slot = local_count;

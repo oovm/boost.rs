@@ -101,10 +101,27 @@ impl data_text_core::language::TokenType for TokenType {
 
     fn role(&self) -> Self::Role {
         match self {
-            TokenType::For | TokenType::In | TokenType::Require | TokenType::Provide | TokenType::Struct | TokenType::Class | TokenType::Match | TokenType::WithHandlers | TokenType::Raise => UniversalTokenRole::Keyword,
+            TokenType::For
+            | TokenType::In
+            | TokenType::Require
+            | TokenType::Provide
+            | TokenType::Struct
+            | TokenType::Class
+            | TokenType::Match
+            | TokenType::WithHandlers
+            | TokenType::Raise => UniversalTokenRole::Keyword,
             TokenType::Identifier => UniversalTokenRole::Name,
             TokenType::Number | TokenType::String | TokenType::Boolean => UniversalTokenRole::Literal,
-            TokenType::LParen | TokenType::RParen | TokenType::LBracket | TokenType::RBracket | TokenType::LBrace | TokenType::RBrace | TokenType::Comma | TokenType::Dot | TokenType::Colon | TokenType::Semicolon => UniversalTokenRole::Punctuation,
+            TokenType::LParen
+            | TokenType::RParen
+            | TokenType::LBracket
+            | TokenType::RBracket
+            | TokenType::LBrace
+            | TokenType::RBrace
+            | TokenType::Comma
+            | TokenType::Dot
+            | TokenType::Colon
+            | TokenType::Semicolon => UniversalTokenRole::Punctuation,
             TokenType::Plus
             | TokenType::Minus
             | TokenType::Multiply

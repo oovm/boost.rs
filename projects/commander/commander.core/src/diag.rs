@@ -1,7 +1,6 @@
 //! Language-neutral diagnostics and the default stderr rendering.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::ports::Localizer;
 
@@ -74,11 +73,7 @@ pub(crate) const HINT_CODES: &[&str] = &[
 ];
 
 /// Localizes one key and treats the unresolved sentinel `{{key}}` as absent.
-pub(crate) fn localized_or_id(
-    localizer: &dyn Localizer,
-    key: &str,
-    args: &BTreeMap<String, String>,
-) -> Option<String> {
+pub(crate) fn localized_or_id(localizer: &dyn Localizer, key: &str, args: &BTreeMap<String, String>) -> Option<String> {
     let value = localizer.t(key, args);
     if value == format!("{{{key}}}") { None } else { Some(value) }
 }

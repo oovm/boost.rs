@@ -175,7 +175,10 @@ pub fn split_pattern_capture(raw: &str, literal_start: usize) -> Option<QuoteLit
         None
     }
     else {
-        Some(TextIdentifier { name: prefix_text.to_string(), span: data_text_core::Range { start: literal_start, end: literal_start + quote_index } })
+        Some(TextIdentifier {
+            name: prefix_text.to_string(),
+            span: data_text_core::Range { start: literal_start, end: literal_start + quote_index },
+        })
     };
     let content_start = literal_start + quote_index + quote_count;
     Some(QuoteLiteral {

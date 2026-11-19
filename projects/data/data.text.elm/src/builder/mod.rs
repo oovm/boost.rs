@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::ElmLanguage, parser::ElmParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Elm language
 #[derive(Clone)]
@@ -23,7 +23,12 @@ impl<'config> ElmBuilder<'config> {
 }
 
 impl<'config> Builder<ElmLanguage> for ElmBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ElmLanguage>) -> data_text_core::builder::BuildOutput<ElmLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ElmLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ElmLanguage> {
         let parser = ElmParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<ElmLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

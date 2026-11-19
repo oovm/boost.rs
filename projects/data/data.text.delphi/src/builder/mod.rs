@@ -1,5 +1,5 @@
 use crate::{ast::*, language::DelphiLanguage, parser::DelphiParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, SourceText, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// AST builder for the Delphi language
 #[derive(Clone)]
@@ -15,7 +15,12 @@ impl DelphiBuilder {
 }
 
 impl Builder<DelphiLanguage> for DelphiBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DelphiLanguage>) -> data_text_core::builder::BuildOutput<DelphiLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<DelphiLanguage>,
+    ) -> data_text_core::builder::BuildOutput<DelphiLanguage> {
         let parser = DelphiParser::new(&self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<DelphiLanguage>::default();

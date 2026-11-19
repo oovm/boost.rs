@@ -5,11 +5,15 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// 只消费 CST 的约束节点，不重新扫描源码语法。
-    pub(crate) fn build_where_clause<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<Vec<WhereConstraint>, TextError> {
+    pub(crate) fn build_where_clause<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Vec<WhereConstraint>, TextError> {
         let mut constraints = Vec::new();
         for child in node.children() {
             let RedTree::Node(n) = child
@@ -61,7 +65,9 @@ impl<'config> ValkyrieBuilder<'config> {
                     let mut ty = None;
                     for child in n.children() {
                         match child {
-                            RedTree::Leaf(t) if t.kind == ValkyrieTokenType::Identifier => name = Some(crate::ast::Identifier { name: crate::builder::identifier_text(source, t.span), span: t.span }),
+                            RedTree::Leaf(t) if t.kind == ValkyrieTokenType::Identifier => {
+                                name = Some(crate::ast::Identifier { name: crate::builder::identifier_text(source, t.span), span: t.span })
+                            }
                             RedTree::Node(n) if n.green.kind == ValkyrieElementType::Type => ty = Some(self.build_type(n, source)?),
                             _ => {}
                         }
@@ -74,6 +80,10 @@ impl<'config> ValkyrieBuilder<'config> {
                 _ => {}
             }
         }
-        Ok(TraitBound { trait_path: trait_path.ok_or_else(|| source.syntax_error("bound 缺少 trait 路径".to_string(), span.start))?, type_arguments, associated_types })
+        Ok(TraitBound {
+            trait_path: trait_path.ok_or_else(|| source.syntax_error("bound 缺少 trait 路径".to_string(), span.start))?,
+            type_arguments,
+            associated_types,
+        })
     }
 }

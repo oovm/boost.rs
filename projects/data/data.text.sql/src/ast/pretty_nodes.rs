@@ -174,7 +174,14 @@ impl AsDocument for SelectQuantifier {
             SelectQuantifier::All { .. } => Document::text("ALL"),
             SelectQuantifier::Distinct { .. } => Document::text("DISTINCT"),
             SelectQuantifier::DistinctOn { expressions, .. } => {
-                doc!("DISTINCT", soft_space, "ON", "(", Document::join(expressions.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
+                doc!(
+                    "DISTINCT",
+                    soft_space,
+                    "ON",
+                    "(",
+                    Document::join(expressions.iter().map(|it| it.as_document(&())), doc!(",", soft_space)),
+                    ")"
+                )
             }
         }
     }
@@ -202,7 +209,13 @@ impl AsDocument for Expression {
             Expression::Literal(it) => it.as_document(&()),
             Expression::Binary { left, op, right, .. } => {
                 let precedence = binary_precedence(*op);
-                doc!(binary_operand_document(left, precedence, false), soft_space, op.as_document(&()), soft_space, binary_operand_document(right, precedence, true))
+                doc!(
+                    binary_operand_document(left, precedence, false),
+                    soft_space,
+                    op.as_document(&()),
+                    soft_space,
+                    binary_operand_document(right, precedence, true)
+                )
             }
             Expression::Unary { op, expr, .. } => {
                 doc!(op.as_document(&()), expr.as_document(&()))
@@ -211,22 +224,58 @@ impl AsDocument for Expression {
                 doc!(name.as_document(&()), "(", Document::join(args.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
             }
             Expression::InList { expr, list, negated, .. } => {
-                doc!(expr.as_document(&()), if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "IN", soft_space, "(", Document::join(list.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
+                doc!(
+                    expr.as_document(&()),
+                    if *negated { doc!(soft_space, "NOT") } else { nil },
+                    soft_space,
+                    "IN",
+                    soft_space,
+                    "(",
+                    Document::join(list.iter().map(|it| it.as_document(&())), doc!(",", soft_space)),
+                    ")"
+                )
             }
             Expression::Between { expr, low, high, negated, .. } => {
-                doc!(expr.as_document(&()), if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "BETWEEN", soft_space, low.as_document(&()), soft_space, "AND", soft_space, high.as_document(&()))
+                doc!(
+                    expr.as_document(&()),
+                    if *negated { doc!(soft_space, "NOT") } else { nil },
+                    soft_space,
+                    "BETWEEN",
+                    soft_space,
+                    low.as_document(&()),
+                    soft_space,
+                    "AND",
+                    soft_space,
+                    high.as_document(&())
+                )
             }
             Expression::IsNull { expr, negated, .. } => {
                 doc!(is_operand_document(expr), soft_space, "IS", if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "NULL")
             }
             Expression::IsTruth { expr, value, negated, .. } => {
-                doc!(is_operand_document(expr), soft_space, "IS", if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, if *value { "TRUE" } else { "FALSE" })
+                doc!(
+                    is_operand_document(expr),
+                    soft_space,
+                    "IS",
+                    if *negated { doc!(soft_space, "NOT") } else { nil },
+                    soft_space,
+                    if *value { "TRUE" } else { "FALSE" }
+                )
             }
             Expression::Subquery { query, .. } => {
                 doc!("(", query.as_document(&()), ")")
             }
             Expression::InSubquery { expr, query: subquery, negated, .. } => {
-                doc!(expr.as_document(&()), if *negated { doc!(soft_space, "NOT") } else { nil }, soft_space, "IN", soft_space, "(", subquery.as_document(&()), ")")
+                doc!(
+                    expr.as_document(&()),
+                    if *negated { doc!(soft_space, "NOT") } else { nil },
+                    soft_space,
+                    "IN",
+                    soft_space,
+                    "(",
+                    subquery.as_document(&()),
+                    ")"
+                )
             }
             Expression::Exists { query, negated, .. } => {
                 doc!(if *negated { doc!("NOT", soft_space) } else { nil }, "EXISTS", "(", query.as_document(&()), ")")
@@ -270,7 +319,13 @@ fn binary_precedence(op: BinaryOperator) -> u8 {
     match op {
         BinaryOperator::Or => 1,
         BinaryOperator::And => 2,
-        BinaryOperator::Equal | BinaryOperator::NotEqual | BinaryOperator::Less | BinaryOperator::Greater | BinaryOperator::LessEqual | BinaryOperator::GreaterEqual | BinaryOperator::Like => 4,
+        BinaryOperator::Equal
+        | BinaryOperator::NotEqual
+        | BinaryOperator::Less
+        | BinaryOperator::Greater
+        | BinaryOperator::LessEqual
+        | BinaryOperator::GreaterEqual
+        | BinaryOperator::Like => 4,
         BinaryOperator::Plus | BinaryOperator::Minus => 10,
         BinaryOperator::Star | BinaryOperator::Slash | BinaryOperator::Percent => 11,
         BinaryOperator::Concat => 12,
@@ -281,7 +336,12 @@ fn expression_precedence(expr: &Expression) -> u8 {
         Expression::Binary { op, .. } => binary_precedence(*op),
         Expression::Unary { op: UnaryOperator::Not, .. } => 3,
         Expression::Unary { .. } => 14,
-        Expression::InList { .. } | Expression::Between { .. } | Expression::IsNull { .. } | Expression::IsTruth { .. } | Expression::InSubquery { .. } | Expression::Exists { .. } => 5,
+        Expression::InList { .. }
+        | Expression::Between { .. }
+        | Expression::IsNull { .. }
+        | Expression::IsTruth { .. }
+        | Expression::InSubquery { .. }
+        | Expression::Exists { .. } => 5,
         _ => u8::MAX,
     }
 }
@@ -340,7 +400,12 @@ impl AsDocument for Identifier {
 }
 impl AsDocument for TableName {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
-        if let Some(alias) = &self.alias { doc!(self.name.as_document(&()), soft_space, "AS", soft_space, alias.as_document(&())) } else { self.name.as_document(&()) }
+        if let Some(alias) = &self.alias {
+            doc!(self.name.as_document(&()), soft_space, "AS", soft_space, alias.as_document(&()))
+        }
+        else {
+            self.name.as_document(&())
+        }
     }
 }
 impl AsDocument for TableSource {
@@ -361,7 +426,14 @@ impl AsDocument for ColumnName {
 }
 impl AsDocument for JoinClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
-        doc!(self.join_type.as_document(&()), soft_space, "JOIN", soft_space, self.table.as_document(&()), if let Some(on) = &self.on { doc!(soft_space, "ON", soft_space, on.as_document(&())) } else { nil })
+        doc!(
+            self.join_type.as_document(&()),
+            soft_space,
+            "JOIN",
+            soft_space,
+            self.table.as_document(&()),
+            if let Some(on) = &self.on { doc!(soft_space, "ON", soft_space, on.as_document(&())) } else { nil }
+        )
     }
 }
 impl AsDocument for JoinType {
@@ -387,7 +459,12 @@ impl AsDocument for GroupByItem {
             GroupByItem::Position { index, .. } => Document::text(index.to_string()),
             GroupByItem::Expression(expr) => expr.as_document(&()),
             GroupByItem::GroupingSets(groups) => {
-                let sets = Document::join(groups.iter().map(|group| doc!("(", Document::join(group.iter().map(|item| item.as_document(&())), doc!(",", soft_space)), ")")), doc!(",", soft_space));
+                let sets = Document::join(
+                    groups
+                        .iter()
+                        .map(|group| doc!("(", Document::join(group.iter().map(|item| item.as_document(&())), doc!(",", soft_space)), ")")),
+                    doc!(",", soft_space),
+                );
                 doc!("GROUPING", soft_space, "SETS", soft_space, "(", sets, ")")
             }
             GroupByItem::Rollup(items) => {
@@ -411,7 +488,12 @@ impl AsDocument for OrderByClause {
 }
 impl AsDocument for OrderByItem {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
-        doc!(self.expr.as_document(&()), soft_space, self.direction.as_document(&()), if let Some(nulls) = &self.nulls { doc!(soft_space, "NULLS", soft_space, nulls.as_document(&())) } else { nil })
+        doc!(
+            self.expr.as_document(&()),
+            soft_space,
+            self.direction.as_document(&()),
+            if let Some(nulls) = &self.nulls { doc!(soft_space, "NULLS", soft_space, nulls.as_document(&())) } else { nil }
+        )
     }
 }
 impl AsDocument for NullsOrder {
@@ -433,7 +515,9 @@ impl AsDocument for OrderDirection {
 impl AsDocument for LimitClause {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match (&self.limit, &self.offset) {
-            (Some(limit), Some(offset)) => doc!("LIMIT", soft_space, limit.as_document(&()), soft_space, "OFFSET", soft_space, offset.as_document(&())),
+            (Some(limit), Some(offset)) => {
+                doc!("LIMIT", soft_space, limit.as_document(&()), soft_space, "OFFSET", soft_space, offset.as_document(&()))
+            }
             (Some(limit), None) => doc!("LIMIT", soft_space, limit.as_document(&())),
             (None, Some(offset)) => doc!("OFFSET", soft_space, offset.as_document(&())),
             (None, None) => nil,
@@ -496,7 +580,12 @@ impl AsDocument for CreateStatement {
 impl AsDocument for ColumnDefinition {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         let data_type_str = self.data_type.to_string();
-        doc!(self.name.as_document(&()), soft_space, data_type_str, Document::join(self.constraints.iter().map(|it| doc!(soft_space, it.as_document(&()))), nil))
+        doc!(
+            self.name.as_document(&()),
+            soft_space,
+            data_type_str,
+            Document::join(self.constraints.iter().map(|it| doc!(soft_space, it.as_document(&()))), nil)
+        )
     }
 }
 impl AsDocument for ColumnConstraint {
@@ -525,8 +614,26 @@ impl AsDocument for TableConstraint {
             }
             TableConstraint::ForeignKey { columns, table_name, referenced_columns, .. } => {
                 let columns = Document::join(columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space));
-                let referenced = if referenced_columns.is_empty() { nil } else { doc!(soft_space, "(", Document::join(referenced_columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")") };
-                doc!("FOREIGN", soft_space, "KEY", soft_space, "(", columns, ")", soft_space, "REFERENCES", soft_space, table_name.as_document(&()), referenced)
+                let referenced = if referenced_columns.is_empty() {
+                    nil
+                }
+                else {
+                    doc!(soft_space, "(", Document::join(referenced_columns.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")")
+                };
+                doc!(
+                    "FOREIGN",
+                    soft_space,
+                    "KEY",
+                    soft_space,
+                    "(",
+                    columns,
+                    ")",
+                    soft_space,
+                    "REFERENCES",
+                    soft_space,
+                    table_name.as_document(&()),
+                    referenced
+                )
             }
             TableConstraint::Check { expr, .. } => doc!("CHECK", soft_space, "(", expr.as_document(&()), ")"),
         }
@@ -579,7 +686,8 @@ impl AsDocument for InsertStatement {
             InsertSource::Values => {
                 parts.push(line);
                 parts.push(Document::text("VALUES"));
-                let rows = self.rows.iter().map(|row| doc!("(", Document::join(row.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")"));
+                let rows =
+                    self.rows.iter().map(|row| doc!("(", Document::join(row.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), ")"));
                 parts.push(soft_space);
                 parts.push(Document::join(rows, doc!(",", soft_space)));
             }
@@ -692,7 +800,14 @@ impl AsDocument for DeleteStatement {
 }
 impl AsDocument for DropStatement {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
-        doc!("DROP", soft_space, self.object_type.as_document(&()), if self.if_exists { doc!(soft_space, "IF EXISTS") } else { nil }, soft_space, self.name.as_document(&()))
+        doc!(
+            "DROP",
+            soft_space,
+            self.object_type.as_document(&()),
+            if self.if_exists { doc!(soft_space, "IF EXISTS") } else { nil },
+            soft_space,
+            self.name.as_document(&())
+        )
     }
 }
 impl AsDocument for DropObjectType {

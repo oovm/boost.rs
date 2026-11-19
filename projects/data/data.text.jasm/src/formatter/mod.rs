@@ -1,8 +1,7 @@
 //! Formatter implementation for the JASM language.
 
 use data_text_core::source::{SourceBuffer, ToSource};
-use data_text_pretty::to_doc::AsDocument;
-use data_text_pretty::{Document, PrinterConfig};
+use data_text_pretty::{Document, PrinterConfig, to_doc::AsDocument};
 
 use crate::ast::JasmRoot;
 

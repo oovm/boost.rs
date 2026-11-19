@@ -240,7 +240,9 @@ fn infer_expression_type(
                 .find(|field_type| !matches!(field_type, SqlFieldType::Unknown))
                 .unwrap_or(SqlFieldType::Unknown),
             // `NULLIF`/`GREATEST`/`LEAST` 沿用第一个实参的声明类型。
-            "nullif" | "greatest" | "least" => args.first().map(|arg| infer_expression_type(arg, field_types, dialect)).unwrap_or(SqlFieldType::Unknown),
+            "nullif" | "greatest" | "least" => {
+                args.first().map(|arg| infer_expression_type(arg, field_types, dialect)).unwrap_or(SqlFieldType::Unknown)
+            }
             // `DATE_TRUNC` 返回规范时间文本，与 `DATETIME` 列同一口径。
             "date_trunc" => SqlFieldType::Datetime,
             "bool_and" | "bool_or" => SqlFieldType::Bool,

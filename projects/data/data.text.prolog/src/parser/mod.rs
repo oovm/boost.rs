@@ -53,7 +53,12 @@ impl<'config> PrologParser<'config> {
 }
 
 impl<'config> Parser<PrologLanguage> for PrologParser<'config> {
-    fn parse<'s, S: Source + ?Sized>(&self, text: &'s S, edits: &[TextEdit], cache: &'s mut impl ParseCache<PrologLanguage>) -> ParseOutput<'s, PrologLanguage> {
+    fn parse<'s, S: Source + ?Sized>(
+        &self,
+        text: &'s S,
+        edits: &[TextEdit],
+        cache: &'s mut impl ParseCache<PrologLanguage>,
+    ) -> ParseOutput<'s, PrologLanguage> {
         let lexer = PrologLexer::new(self.language);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

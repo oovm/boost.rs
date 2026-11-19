@@ -1,10 +1,10 @@
 //! IPA 组装。
 use crate::asgard::error::{AsgardError, AsgardResult};
+use data_binary_zip::{ZipEntry, ZipWriter};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-use data_binary_zip::{ZipEntry, ZipWriter};
 
 use super::util::{copy_dir_recursive, parse_plist_bundle_name, read_optional_file};
 use crate::asgard::{

@@ -1,7 +1,7 @@
 //! 训练、保存、恢复、继续训练的闭环。
 
 use dl_model;
-use dl_nn::{mlp, seeded_random, Module};
+use dl_nn::{Module, mlp, seeded_random};
 use dl_tensor::Tensor;
 use dl_train::{Sgd, TrainConfig, fit};
 

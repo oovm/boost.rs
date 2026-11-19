@@ -27,12 +27,13 @@ pub mod types;
 pub use diagnostics::{OverloadCandidate, OverloadDomain, OverloadMatchKind, OverloadResolutionError, resolve_overload};
 
 // candidates
-pub use candidates::collect_module_candidates;
-pub use candidates::specialize_method_candidate;
+pub use candidates::{collect_module_candidates, specialize_method_candidate};
 
 // call_resolver 核心匹配
-pub use call_resolver::instantiate_candidate_for_context;
-pub use call_resolver::{match_call_candidate, match_singleton_method_candidate, try_resolve_constructor, try_resolve_nullary_constructor};
+pub use call_resolver::{
+    instantiate_candidate_for_context, match_call_candidate, match_singleton_method_candidate, try_resolve_constructor,
+    try_resolve_nullary_constructor,
+};
 
 // substitution 对外可见的代换函数
 #[doc(hidden)]
@@ -49,8 +50,8 @@ pub use r#trait::impl_nominal_type_name;
 // types
 pub use types::{
     accepts_array_shape, canonical_extractor_callee, compute_call_match_kind, enum_apply_type, extract_callable_name, infer_expr_type,
-    infer_scrutinee_type, is_empty_array_literal, normalize_local_field_chain, pattern_type_declaration,
-    should_resolve_name_pattern_as_type, struct_apply_type, variant_payload_type,
+    infer_scrutinee_type, is_empty_array_literal, normalize_local_field_chain, pattern_type_declaration, should_resolve_name_pattern_as_type,
+    struct_apply_type, variant_payload_type,
 };
 
 // resolve_call 对外入口
@@ -64,8 +65,7 @@ pub use symbol_match::{
 
 // call_resolver 里的 shim/辅助（被 resolve_call 直接引用）
 pub use call_resolver::{
-    build_constructor_resolved_call, candidate_has_receiver_parameter, overload_symbol_path,
-    peel_explicit_generic_arguments, try_resolve_constructor_call, try_resolve_instance_method, try_resolve_singleton_method,
-    try_resolve_type_static_method,
+    build_constructor_resolved_call, candidate_has_receiver_parameter, overload_symbol_path, peel_explicit_generic_arguments,
+    try_resolve_constructor_call, try_resolve_instance_method, try_resolve_singleton_method, try_resolve_type_static_method,
 };
 pub use resolve_call::bind_pattern_type;

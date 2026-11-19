@@ -4,7 +4,7 @@ mod build_statements;
 mod build_utils;
 
 use crate::{language::PythonLanguage, parser::PythonParser};
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, Parser, SourceText, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for the Python language.
 pub struct PythonBuilder<'config> {
@@ -20,7 +20,12 @@ impl<'config> PythonBuilder<'config> {
 }
 
 impl<'config> Builder<PythonLanguage> for PythonBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PythonLanguage>) -> BuildOutput<PythonLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<PythonLanguage>,
+    ) -> BuildOutput<PythonLanguage> {
         let parser = PythonParser::new(self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<PythonLanguage>::default();

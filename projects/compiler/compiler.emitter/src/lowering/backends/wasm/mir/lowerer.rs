@@ -5,13 +5,12 @@ use std::collections::BTreeMap;
 use crate::lowering::shared::physical_layout::{ResolvedAggregateLayout, ResolvedFieldLayout};
 
 use super::{
-    WasmOperatorBinding,
     super::{
-        super::{executable::{ExecutableLoweringContext, collect_reachable_blocks}},
+        super::executable::{ExecutableLoweringContext, collect_reachable_blocks},
         gc::WASM_GC_ANYREF,
         sections::encode_uleb128,
     },
-    NominalInstanceId, StorageKind, VALTYPE_F32, WasmBodyInstruction, encode_wasm_body,
+    NominalInstanceId, StorageKind, VALTYPE_F32, WasmBodyInstruction, WasmOperatorBinding, encode_wasm_body,
     representation::{
         is_js_glue_host_string_type, mir_storage_for_type, type_is_inline_aggregate, wasm_gc_field_type_byte_for_glue, wasm_param_value_type,
         wasm_param_value_type_for,
@@ -25,8 +24,8 @@ use crate::{
         ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, SemanticType,
     },
 };
-use data_binary_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 use compiler_types::{ItemInstanceId, LayoutId};
+use data_binary_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 
 pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &SemanticType) -> Option<&SemanticType> {
     match array_type {

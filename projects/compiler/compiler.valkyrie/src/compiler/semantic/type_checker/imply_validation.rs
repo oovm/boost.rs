@@ -542,9 +542,9 @@ fn render_method_signature(method: &HirFunction) -> String {
 fn trait_type_to_path(ty: &HirType) -> Option<NamePath> {
     match ty {
         HirType::Named(name) => Some(NamePath::new(vec![name.clone()])),
-        HirType::QualifiedPath { namespace, name } => Some(NamePath::new(
-            namespace.iter().map(|part| Identifier::new(part)).chain(std::iter::once(name.clone())).collect(),
-        )),
+        HirType::QualifiedPath { namespace, name } => {
+            Some(NamePath::new(namespace.iter().map(|part| Identifier::new(part)).chain(std::iter::once(name.clone())).collect()))
+        }
         HirType::Apply(base, _) => match base.as_ref() {
             HirType::Named(name) => Some(NamePath::new(vec![name.clone()])),
             _ => None,
@@ -595,14 +595,11 @@ fn trait_identity_path(trait_def: &HirTrait) -> NamePath {
 /// 把 super trait 引用解析成声明身份路径。
 ///
 /// 单段引用按 `scope` 所在命名空间补全；已带命名空间段的引用按原样匹配。
-fn resolve_super_trait_path(
-    traits: &BTreeMap<NamePath, &HirTrait>,
-    scope: &NamePath,
-    reference: &NamePath,
-) -> Option<NamePath> {
+fn resolve_super_trait_path(traits: &BTreeMap<NamePath, &HirTrait>, scope: &NamePath, reference: &NamePath) -> Option<NamePath> {
     let candidate = if reference.parts().len() > 1 {
         reference.clone()
-    } else {
+    }
+    else {
         let parent = &scope.parts()[..scope.parts().len().saturating_sub(1)];
         let mut parts = parent.to_vec();
         parts.push(reference.name());

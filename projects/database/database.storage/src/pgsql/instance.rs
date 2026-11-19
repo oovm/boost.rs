@@ -40,8 +40,7 @@ pub const SCHEMA_FILE: &str = "schema.json";
 /// [`ServerStore::open`] with the default catalog registration. Orphan cleanup
 /// deletes exactly these and nothing else, so an unexpected file keeps its
 /// directory in place instead of vanishing.
-pub const SHARD_DIRECTORY_FILES: [&str; 5] =
-    ["local-0.yyds", "local-0.yykv", "postmaster.pid", "local-0.yyds.tmp", "local-0.yykv.tmp"];
+pub const SHARD_DIRECTORY_FILES: [&str; 5] = ["local-0.yyds", "local-0.yykv", "postmaster.pid", "local-0.yyds.tmp", "local-0.yykv.tmp"];
 
 /// Whether a process with this id is still running, the way PostgreSQL checks
 /// `postmaster.pid` before refusing a data directory.

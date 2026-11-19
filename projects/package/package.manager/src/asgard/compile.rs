@@ -58,7 +58,12 @@ pub struct ResolvedCompilerSources {
 pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarget) -> AsgardResult<ResolvedCompilerSources> {
     let resolver = WorkspaceResolver::discover_for_project(project_dir).map_err(|error| report!("解析项目工作区失败: {error}"))?;
     let plan = resolver
-        .build_plan(&BuildRequest { project_dir: project_dir.to_path_buf(), resolved: crate::legion::ResolvedTarget::platform_only(target.clone()), output_dir: None, ..Default::default() })
+        .build_plan(&BuildRequest {
+            project_dir: project_dir.to_path_buf(),
+            resolved: crate::legion::ResolvedTarget::platform_only(target.clone()),
+            output_dir: None,
+            ..Default::default()
+        })
         .map_err(|error| report!("解析项目构建计划失败: {error}"))?;
     let project_name = plan.project.name.clone();
     let groups = compile_source_snapshot(&plan.project.semantic_source_groups).map_err(|error| report!("读取项目源码快照失败: {error}"))?;
@@ -74,11 +79,7 @@ pub fn resolve_project_source_groups(project_dir: &Path, target: &CanonicalTarge
 /// 不从整个 workspace 或整个 `std` 泛化挂接。包不在快照内时不产生键，
 /// 由编译期名称解析对缺失声明失败闭合。
 pub fn dependency_keys_for_packages(source_groups: &[CompilerSourceGroup], package_names: &[&str]) -> Vec<String> {
-    source_groups
-        .iter()
-        .filter(|group| package_names.contains(&group.name.as_str()))
-        .map(|group| group.dependency_key.clone())
-        .collect()
+    source_groups.iter().filter(|group| package_names.contains(&group.name.as_str())).map(|group| group.dependency_key.clone()).collect()
 }
 
 /// 独立生成源码：唯一生成器身份、生成文本与随组提交的附加源文件。
@@ -188,8 +189,7 @@ pub fn compile_v_bundle(
     let compiler = if surface == GeneratedEntrySurface::GeneratedOnly {
         compiler_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default().with_suppressed_imported_builtin_short_names()
     }
-    else
-    {
+    else {
         compiler_valkyrie::compiler::hir::lowering::ValkyrieCompiler::default()
     };
     let target_profile = target.to_profile(None);
@@ -212,8 +212,8 @@ pub fn compile_v_bundle(
         wasm_package_kind,
     )
     .with_artifact_purpose(artifact_purpose)
-        .with_selected_host_providers(host_provider_bindings.to_vec())
-        .with_gated_out_host_providers(gated_out_host_providers.to_vec());
+    .with_selected_host_providers(host_provider_bindings.to_vec())
+    .with_gated_out_host_providers(gated_out_host_providers.to_vec());
     let input = compiler_input_for_with_dependencies(source_groups, generated, surface, extra_dependency_keys)?;
     let artifact = compile_source_groups_to_artifacts(
         &compiler,

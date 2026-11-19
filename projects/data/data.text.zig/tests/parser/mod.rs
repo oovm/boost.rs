@@ -1,5 +1,5 @@
-use language_testing::parsing::ParserTester;
 use data_text_zig::{ZigLanguage, ZigParser};
+use language_testing::parsing::ParserTester;
 use std::time::Duration;
 
 #[test]

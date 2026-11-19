@@ -6,13 +6,13 @@ use crate::numeric::kernel::error::Result;
 
 use crate::numeric::{
     algorithm::{DivStrategy, MulStrategy},
+    budget::ExecutionBudget,
     capability::MachineCapability,
     kernel::{
         buffer::{LimbBuffer, ScratchWorkspace},
         portable::{self, LimbKernel, PortableLimbKernel},
         token::ExecutionToken,
     },
-    budget::ExecutionBudget,
 };
 
 type BinOp = fn(&[u64], &[u64], &mut LimbBuffer, &mut ScratchWorkspace, &ExecutionBudget) -> Result<()>;

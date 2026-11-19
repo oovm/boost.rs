@@ -20,7 +20,12 @@ pub struct CLexer<'config> {
 
 impl<'config> Lexer<CLanguage> for CLexer<'config> {
     /// Tokenizes the source code into a stream of C tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<CLanguage>) -> LexOutput<CLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<CLanguage>,
+    ) -> LexOutput<CLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -212,11 +217,21 @@ impl<'config> CLexer<'config> {
             if ch.is_ascii_digit() {
                 state.advance(1);
                 while let Some(ch) = state.peek() {
-                    if ch.is_ascii_alphanumeric() || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-' { state.advance(ch.len_utf8()) } else { break }
+                    if ch.is_ascii_alphanumeric() || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-' {
+                        state.advance(ch.len_utf8())
+                    }
+                    else {
+                        break;
+                    }
                 }
 
                 let text = state.get_text_in((start..state.get_position()).into());
-                let kind = if text.contains('.') || text.contains('e') || text.contains('E') { CTokenType::FloatConstant } else { CTokenType::IntConstant };
+                let kind = if text.contains('.') || text.contains('e') || text.contains('E') {
+                    CTokenType::FloatConstant
+                }
+                else {
+                    CTokenType::IntConstant
+                };
                 state.add_token(kind, start, state.get_position());
                 return true;
             }
@@ -298,7 +313,12 @@ impl<'config> CLexer<'config> {
         let start = state.get_position();
 
         if let Some(ch) = state.peek() {
-            let three_char = if let Some(next_ch) = state.peek_next_n(1) { if let Some(third_ch) = state.peek_next_n(2) { Some(format!("{}{}{}", ch, next_ch, third_ch)) } else { None } } else { None };
+            let three_char = if let Some(next_ch) = state.peek_next_n(1) {
+                if let Some(third_ch) = state.peek_next_n(2) { Some(format!("{}{}{}", ch, next_ch, third_ch)) } else { None }
+            }
+            else {
+                None
+            };
 
             let two_char = if let Some(next_ch) = state.peek_next_n(1) { format!("{}{}", ch, next_ch) } else { String::new() };
 

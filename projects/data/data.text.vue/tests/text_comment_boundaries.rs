@@ -99,7 +99,11 @@ fn glob_star_slash_mix_in_text_stays_literal() {
 fn html_comment_still_becomes_comment_node() {
     let built = build("<template><p>a<!-- note -->b</p></template>");
     let element = first_element(&built);
-    assert!(element.children.iter().any(|n| matches!(n, VueNode::Comment(text) if text == " note ")), "html comment must stay a comment node: {:?}", element.children);
+    assert!(
+        element.children.iter().any(|n| matches!(n, VueNode::Comment(text) if text == " note ")),
+        "html comment must stay a comment node: {:?}",
+        element.children
+    );
 }
 
 #[test]

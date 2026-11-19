@@ -25,13 +25,13 @@ use compiler_target::{
 use crate::backend::binding_builders::{BindingGenerationContext, generate_host_binding_artifacts};
 use data_binary_wasm::{parse_export_section, parse_import_section};
 
-pub use data_binary_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
 pub use component::WasiPreview;
 pub(crate) use component::{
     WASI_PREVIEW2_VERSION, WASI_PREVIEW3_VERSION, WitBindingBuilder, package_core_wasm_as_component, wasi_adapt_import_for_preview,
     wasi_cli_run_export_name, wasi_cli_run_export_name_for, wasi_versioned_import_module, wasi_versioned_import_module_for,
     write_component_wit_package, write_component_wit_package_for,
 };
+pub use data_binary_wasm::{WasmBinaryError, WasmBinaryModule, WasmCustomSection, WasmSection};
 pub use witness_dispatch::{
     WasmTraitFatPointer, WitnessMethodSlot, WitnessTableLayout, materialize_witness_bytes, plan_witness_table_layout, resolve_witness_call,
 };
@@ -91,7 +91,11 @@ impl WasmBinaryBackend {
             descriptor: BackendDescriptor {
                 name: "wasm-binary".to_string(),
                 input_kind: BackendInputKind::WasmModule,
-                supported_targets: vec![BinaryTarget::new(compiler_target::TargetFamily::Wasm, compiler_target::BinaryArch::Any, compiler_target::BinaryFlavor::MachineCode)],
+                supported_targets: vec![BinaryTarget::new(
+                    compiler_target::TargetFamily::Wasm,
+                    compiler_target::BinaryArch::Any,
+                    compiler_target::BinaryFlavor::MachineCode,
+                )],
             },
         }
     }

@@ -182,7 +182,12 @@ impl<'config> ElmParser<'config> {
 }
 
 impl<'config> Parser<ElmLanguage> for ElmParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ElmLanguage>) -> ParseOutput<'a, ElmLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ElmLanguage>,
+    ) -> ParseOutput<'a, ElmLanguage> {
         let lexer = ElmLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -242,7 +247,12 @@ impl<'config> Pratt<ElmLanguage> for ElmParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, ElmLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, ElmLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, ElmLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, ElmLanguage>> {
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
@@ -250,7 +260,12 @@ impl<'config> Pratt<ElmLanguage> for ElmParser<'config> {
             ElmTokenType::Star | ElmTokenType::Slash | ElmTokenType::DoubleSlash | ElmTokenType::Percent => (11, Associativity::Left),
             ElmTokenType::Plus | ElmTokenType::Minus => (10, Associativity::Left),
             ElmTokenType::DoublePlus => (9, Associativity::Right),
-            ElmTokenType::EqualEqual | ElmTokenType::NotEqual | ElmTokenType::Less | ElmTokenType::Greater | ElmTokenType::LessEqual | ElmTokenType::GreaterEqual => (8, Associativity::Left),
+            ElmTokenType::EqualEqual
+            | ElmTokenType::NotEqual
+            | ElmTokenType::Less
+            | ElmTokenType::Greater
+            | ElmTokenType::LessEqual
+            | ElmTokenType::GreaterEqual => (8, Associativity::Left),
             ElmTokenType::DoubleAmpersand => (7, Associativity::Right),
             ElmTokenType::DoublePipe => (6, Associativity::Right),
             ElmTokenType::DoubleLess | ElmTokenType::DoubleGreater => (5, Associativity::Left),

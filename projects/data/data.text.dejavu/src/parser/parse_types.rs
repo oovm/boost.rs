@@ -10,7 +10,10 @@ use data_text_core::{GreenNode, TextError};
 use super::State;
 
 impl<'config> super::DejavuParser<'config> {
-    pub(crate) fn parse_namespace<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_namespace<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -38,7 +41,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Namespace))
     }
 
-    pub(crate) fn parse_attribute<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_attribute<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         if state.at(At) || state.at(Bolt) {
             state.bump();
@@ -94,7 +100,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Attribute))
     }
 
-    pub(crate) fn parse_micro<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_micro<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -135,7 +144,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Micro))
     }
 
-    pub(crate) fn parse_micro_lambda<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_micro_lambda<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         if state.at(Keyword(DejavuKeywords::Micro)) {
             state.bump();
@@ -171,7 +183,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Micro))
     }
 
-    pub(crate) fn parse_mezzo<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_mezzo<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -198,7 +213,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Mezzo))
     }
 
-    pub(crate) fn parse_widget<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_widget<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -219,7 +237,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Widget))
     }
 
-    pub(crate) fn parse_singleton<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_singleton<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -240,7 +261,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Class))
     }
 
-    pub(crate) fn parse_trait<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_trait<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -283,7 +307,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Trait))
     }
 
-    pub(crate) fn parse_effect<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_effect<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -309,7 +336,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, EffectDefinition))
     }
 
-    pub(crate) fn parse_class<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_class<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -352,7 +382,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Class))
     }
 
-    pub(crate) fn parse_flags<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_flags<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -372,7 +405,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Flags))
     }
 
-    pub(crate) fn parse_enums<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_enums<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -393,7 +429,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Enums))
     }
 
-    pub(crate) fn parse_variant_block<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_variant_block<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(LeftBrace)?;
         self.skip_trivia(state);
@@ -422,7 +461,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, BlockExpression))
     }
 
-    pub(crate) fn parse_variant<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_variant<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -447,7 +489,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Variant))
     }
 
-    pub(crate) fn parse_generic_parameter_list<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_generic_parameter_list<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         let use_angle_brackets = state.at(LeftAngle);
         if use_angle_brackets {
@@ -472,7 +517,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, GenericParameterList))
     }
 
-    pub(crate) fn parse_generic_argument_list<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_generic_argument_list<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         let use_angle_brackets = state.at(LeftAngle);
         if use_angle_brackets {
@@ -499,7 +547,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, GenericArgumentList))
     }
 
-    pub(crate) fn parse_parameter_list<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_parameter_list<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         state.expect(LeftParen)?;
@@ -530,7 +581,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, ParameterList))
     }
 
-    pub(crate) fn parse_parameter<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_parameter<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         while state.at(At) || state.at(Bolt) {
@@ -551,7 +605,10 @@ impl<'config> super::DejavuParser<'config> {
         Ok(state.finish_at(cp, Parameter))
     }
 
-    pub(crate) fn parse_anonymous_class<'a, S: data_text_core::source::Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_anonymous_class<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
         state.expect(Keyword(DejavuKeywords::Class))?;
         self.skip_trivia(state);

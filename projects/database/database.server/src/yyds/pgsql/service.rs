@@ -12,13 +12,10 @@ use std::{
 };
 
 use database_cluster::control::NodeLease;
-use database_execution::cluster::KeyValueExecutor;
-use database_execution::{pgsql::PgsqlSqlRuntime, sql_schema::SqlSchemaRegistry};
+use database_execution::{cluster::KeyValueExecutor, pgsql::PgsqlSqlRuntime, sql_schema::SqlSchemaRegistry};
 use database_query::SqlCatalog;
 
-use super::auth::PgAuthentication;
-use super::connection::serve_cancellable_with_auth_and_tls;
-use super::tls::PgTls;
+use super::{auth::PgAuthentication, connection::serve_cancellable_with_auth_and_tls, tls::PgTls};
 
 const MAX_CLIENTS: usize = 64;
 
@@ -50,10 +47,7 @@ impl ListenerRegistry {
 
     /// Removes and stops one listener; a missing service counts as already stopped.
     pub fn close(&self, slot: &ListenerSlot) -> io::Result<()> {
-        self.slots
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .retain(|existing| !Arc::ptr_eq(existing, slot));
+        self.slots.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).retain(|existing| !Arc::ptr_eq(existing, slot));
         let service = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
         match service {
             Some(service) => service.stop(),
@@ -170,8 +164,7 @@ impl PgsqlService {
         lane: u8,
         schema_path: impl Into<std::path::PathBuf>,
     ) -> io::Result<Self> {
-        let schema =
-            SqlSchemaRegistry::open_or_seeded(schema_path, &catalog, lane).map_err(|error| io::Error::other(error.message))?;
+        let schema = SqlSchemaRegistry::open_or_seeded(schema_path, &catalog, lane).map_err(|error| io::Error::other(error.message))?;
         Self::start_with_registry(owner, address, executor, Arc::new(schema))
     }
 
@@ -183,10 +176,7 @@ impl PgsqlService {
         tls: Option<Arc<PgTls>>,
     ) -> io::Result<Self> {
         if !address.ip().is_loopback() {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "PostgreSQL accepts loopback connections only",
-            ));
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "PostgreSQL accepts loopback connections only"));
         }
         let listener = bind_with_retry(address)?;
         listener.set_nonblocking(true)?;

@@ -1,6 +1,9 @@
-use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
+use crate::{
+    ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType,
+    parser::element_type::TypeScriptElementType,
+};
 use core::range::Range;
-use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
+use data_text_core::{RedNode, RedTree, Source, SourceText, TextError};
 
 /// Builds a [`ModuleSpecifier`] from the span of a string literal token.
 ///
@@ -54,8 +57,18 @@ impl<'config> TypeScriptBuilder<'config> {
                             }
                             match child_kind {
                                 TypeScriptElementType::BindingPattern => {
-                                    let mut declarator = current.take().unwrap_or(VariableDeclarator { binding_names: Vec::new(), binding_spans: Vec::new(), binding_pattern_keys: Vec::new(), pattern_text: None, ty: None, value: None, span: child_span });
-                                    for (name, name_span, is_pattern_key) in crate::builder::build_binding::binding_pattern_names(&child_node, source) {
+                                    let mut declarator = current.take().unwrap_or(VariableDeclarator {
+                                        binding_names: Vec::new(),
+                                        binding_spans: Vec::new(),
+                                        binding_pattern_keys: Vec::new(),
+                                        pattern_text: None,
+                                        ty: None,
+                                        value: None,
+                                        span: child_span,
+                                    });
+                                    for (name, name_span, is_pattern_key) in
+                                        crate::builder::build_binding::binding_pattern_names(&child_node, source)
+                                    {
                                         declarator.binding_names.push(name);
                                         declarator.binding_spans.push(name_span);
                                         declarator.binding_pattern_keys.push(is_pattern_key);
@@ -74,8 +87,15 @@ impl<'config> TypeScriptBuilder<'config> {
                                 }
                                 TypeScriptElementType::IdentifierName => {
                                     let (name, name_span) = crate::builder::build_binding::binding_identifier_text(&child_node, source);
-                                    let mut declarator =
-                                        current.take().unwrap_or(VariableDeclarator { binding_names: Vec::new(), binding_spans: Vec::new(), binding_pattern_keys: Vec::new(), pattern_text: None, ty: None, value: None, span: child_span.clone() });
+                                    let mut declarator = current.take().unwrap_or(VariableDeclarator {
+                                        binding_names: Vec::new(),
+                                        binding_spans: Vec::new(),
+                                        binding_pattern_keys: Vec::new(),
+                                        pattern_text: None,
+                                        ty: None,
+                                        value: None,
+                                        span: child_span.clone(),
+                                    });
                                     declarator.binding_names.push(name);
                                     declarator.binding_spans.push(name_span);
                                     declarator.binding_pattern_keys.push(false);
@@ -100,7 +120,15 @@ impl<'config> TypeScriptBuilder<'config> {
                             TypeScriptTokenType::IdentifierName => {
                                 let span: Range<usize> = leaf.span.into();
                                 let name = source.get_text_in(span.clone()).trim().to_string();
-                                let mut declarator = current.take().unwrap_or(VariableDeclarator { binding_names: Vec::new(), binding_spans: Vec::new(), binding_pattern_keys: Vec::new(), pattern_text: None, ty: None, value: None, span: span.clone() });
+                                let mut declarator = current.take().unwrap_or(VariableDeclarator {
+                                    binding_names: Vec::new(),
+                                    binding_spans: Vec::new(),
+                                    binding_pattern_keys: Vec::new(),
+                                    pattern_text: None,
+                                    ty: None,
+                                    value: None,
+                                    span: span.clone(),
+                                });
                                 declarator.binding_names.push(name);
                                 declarator.binding_spans.push(span.clone());
                                 declarator.binding_pattern_keys.push(false);
@@ -114,7 +142,13 @@ impl<'config> TypeScriptBuilder<'config> {
                 if let Some(declarator) = current.take() {
                     declarators.push(declarator);
                 }
-                Ok(Some(Statement::VariableDeclaration(VariableDeclaration { decorators: Vec::new(), modifiers, kind: declaration_kind, declarators, span: span.into() })))
+                Ok(Some(Statement::VariableDeclaration(VariableDeclaration {
+                    decorators: Vec::new(),
+                    modifiers,
+                    kind: declaration_kind,
+                    declarators,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::FunctionDeclaration => {
                 let mut name = String::new();
@@ -191,7 +225,17 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
                 let name_span = name_span.unwrap_or_else(|| Range { start: span.start, end: span.start });
-                Ok(Some(Statement::FunctionDeclaration(FunctionDeclaration { decorators, modifiers, name, name_span, type_params, params, return_type, body, span: span.into() })))
+                Ok(Some(Statement::FunctionDeclaration(FunctionDeclaration {
+                    decorators,
+                    modifiers,
+                    name,
+                    name_span,
+                    type_params,
+                    params,
+                    return_type,
+                    body,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::ClassDeclaration => {
                 let mut name = String::new();
@@ -295,7 +339,17 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
                 let name_span = name_span.unwrap_or_else(|| Range { start: span.start, end: span.start });
-                Ok(Some(Statement::ClassDeclaration(ClassDeclaration { decorators, modifiers, name, name_span, type_params, extends, implements, body, span: span.into() })))
+                Ok(Some(Statement::ClassDeclaration(ClassDeclaration {
+                    decorators,
+                    modifiers,
+                    name,
+                    name_span,
+                    type_params,
+                    extends,
+                    implements,
+                    body,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::InterfaceDeclaration => {
                 if self.erase_types {
@@ -362,7 +416,15 @@ impl<'config> TypeScriptBuilder<'config> {
                         }
                     }
                 }
-                Ok(Some(Statement::Interface(InterfaceDeclaration { decorators, modifiers, name, type_params, extends, body, span: span.into() })))
+                Ok(Some(Statement::Interface(InterfaceDeclaration {
+                    decorators,
+                    modifiers,
+                    name,
+                    type_params,
+                    extends,
+                    body,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::TypeAliasDeclaration => {
                 if self.erase_types {
@@ -411,7 +473,12 @@ impl<'config> TypeScriptBuilder<'config> {
                         }
                     }
                 }
-                if let Some(ty) = ty { Ok(Some(Statement::TypeAlias(TypeAliasDeclaration { decorators, modifiers, name, type_params, ty, span: span.into() }))) } else { Ok(None) }
+                if let Some(ty) = ty {
+                    Ok(Some(Statement::TypeAlias(TypeAliasDeclaration { decorators, modifiers, name, type_params, ty, span: span.into() })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::EnumDeclaration => {
                 let mut name = String::new();
@@ -472,7 +539,16 @@ impl<'config> TypeScriptBuilder<'config> {
                         expression = self.build_expression(&child_node, source)?
                     }
                 }
-                if let Some(expr) = expression { Ok(Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: span.into() }))) } else { Ok(None) }
+                if let Some(expr) = expression {
+                    Ok(Some(Statement::ExpressionStatement(ExpressionStatement {
+                        decorators: Vec::new(),
+                        expression: expr,
+                        span: span.into(),
+                    })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::IfStatement => {
                 let mut test = None;
@@ -502,7 +578,18 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let (Some(t), Some(c)) = (test, consequent) { Ok(Some(Statement::IfStatement(IfStatement { decorators: Vec::new(), test: t, consequent: Box::new(c), alternate: alternate.map(Box::new), span: span.into() }))) } else { Ok(None) }
+                if let (Some(t), Some(c)) = (test, consequent) {
+                    Ok(Some(Statement::IfStatement(IfStatement {
+                        decorators: Vec::new(),
+                        test: t,
+                        consequent: Box::new(c),
+                        alternate: alternate.map(Box::new),
+                        span: span.into(),
+                    })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::ReturnStatement => {
                 let mut argument = None;
@@ -517,7 +604,8 @@ impl<'config> TypeScriptBuilder<'config> {
                 let mut initializer = None;
                 let mut test = None;
                 let mut incrementor = None;
-                let mut body = Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
+                let mut body =
+                    Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
 
                 #[derive(PartialEq)]
                 enum ForState {
@@ -575,11 +663,19 @@ impl<'config> TypeScriptBuilder<'config> {
                         },
                     }
                 }
-                Ok(Some(Statement::ForStatement(ForStatement { decorators: Vec::new(), initializer, test, incrementor, body, span: span.into() })))
+                Ok(Some(Statement::ForStatement(ForStatement {
+                    decorators: Vec::new(),
+                    initializer,
+                    test,
+                    incrementor,
+                    body,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::WhileStatement => {
                 let mut test = Expression { span: (0..0).into(), kind: Box::new(ExpressionKind::BooleanLiteral(true)) };
-                let mut body = Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
+                let mut body =
+                    Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
                 let mut past_paren = false;
 
                 for child in node.children() {
@@ -607,7 +703,8 @@ impl<'config> TypeScriptBuilder<'config> {
             }
             TypeScriptElementType::DoWhileStatement => {
                 let mut test = Expression { span: (0..0).into(), kind: Box::new(ExpressionKind::BooleanLiteral(true)) };
-                let mut body = Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
+                let mut body =
+                    Box::new(Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() }));
                 let mut seen_while = false;
 
                 for child in node.children() {
@@ -691,7 +788,12 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if let Some(discriminant) = discriminant { Ok(Some(Statement::SwitchStatement(SwitchStatement { decorators: Vec::new(), discriminant, cases, span: span.into() }))) } else { Ok(None) }
+                if let Some(discriminant) = discriminant {
+                    Ok(Some(Statement::SwitchStatement(SwitchStatement { decorators: Vec::new(), discriminant, cases, span: span.into() })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::TryStatement => {
                 let mut block = Vec::new();
@@ -770,7 +872,12 @@ impl<'config> TypeScriptBuilder<'config> {
                     }
                 }
 
-                if !block.is_empty() { Ok(Some(Statement::TryStatement(TryStatement { decorators: Vec::new(), block, handler, finalizer, span: span.into() }))) } else { Ok(None) }
+                if !block.is_empty() {
+                    Ok(Some(Statement::TryStatement(TryStatement { decorators: Vec::new(), block, handler, finalizer, span: span.into() })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             TypeScriptElementType::ImportDeclaration => {
                 let mut specifiers = Vec::new();
@@ -783,13 +890,18 @@ impl<'config> TypeScriptBuilder<'config> {
                         RedTree::Node(child_node) => {
                             let child_kind = child_node.green.kind;
                             match child_kind {
-                                TypeScriptElementType::ImportAttributes => attributes = Some(source.get_text_in(child_node.span().into()).trim().to_string()),
+                                TypeScriptElementType::ImportAttributes => {
+                                    attributes = Some(source.get_text_in(child_node.span().into()).trim().to_string())
+                                }
                                 TypeScriptElementType::ImportClause => {
                                     for clause_child in child_node.children() {
                                         if let RedTree::Node(clause_node) = clause_child {
                                             let clause_span = clause_node.span();
                                             match clause_node.green.kind {
-                                                TypeScriptElementType::IdentifierName => specifiers.push(ImportSpecifier::Default { local: source.get_text_in(clause_span.clone()).trim().to_string(), span: clause_span }),
+                                                TypeScriptElementType::IdentifierName => specifiers.push(ImportSpecifier::Default {
+                                                    local: source.get_text_in(clause_span.clone()).trim().to_string(),
+                                                    span: clause_span,
+                                                }),
                                                 TypeScriptElementType::NamespaceImport => {
                                                     let mut local = String::new();
                                                     let mut local_span: Option<Range<usize>> = None;
@@ -801,7 +913,8 @@ impl<'config> TypeScriptBuilder<'config> {
                                                             }
                                                         }
                                                     }
-                                                    let local_span = local_span.unwrap_or_else(|| Range { start: clause_span.start, end: clause_span.start });
+                                                    let local_span = local_span
+                                                        .unwrap_or_else(|| Range { start: clause_span.start, end: clause_span.start });
                                                     specifiers.push(ImportSpecifier::Namespace { local, local_span, span: clause_span })
                                                 }
                                                 TypeScriptElementType::NamedImports => {
@@ -818,7 +931,8 @@ impl<'config> TypeScriptBuilder<'config> {
                                                                     if let RedTree::Node(spec_node) = spec_child {
                                                                         if spec_node.green.kind == TypeScriptElementType::IdentifierName {
                                                                             let name_span = spec_node.span().into();
-                                                                            let name = source.get_text_in(spec_node.span().into()).trim().to_string();
+                                                                            let name =
+                                                                                source.get_text_in(spec_node.span().into()).trim().to_string();
                                                                             if imported.is_empty() {
                                                                                 imported = name;
                                                                                 imported_span = Some(name_span);
@@ -838,8 +952,19 @@ impl<'config> TypeScriptBuilder<'config> {
                                                                 if local.is_empty() {
                                                                     local = imported.clone()
                                                                 }
-                                                                let local_span = local_span.unwrap_or_else(|| imported_span.unwrap_or_else(|| Range { start: spec_span.start, end: spec_span.start }));
-                                                                specifiers.push(ImportSpecifier::Named { local, local_span, imported, type_modifier, span: spec_span })
+                                                                let local_span = local_span.unwrap_or_else(|| {
+                                                                    imported_span.unwrap_or_else(|| Range {
+                                                                        start: spec_span.start,
+                                                                        end: spec_span.start,
+                                                                    })
+                                                                });
+                                                                specifiers.push(ImportSpecifier::Named {
+                                                                    local,
+                                                                    local_span,
+                                                                    imported,
+                                                                    type_modifier,
+                                                                    span: spec_span,
+                                                                })
                                                             }
                                                         }
                                                     }
@@ -863,8 +988,15 @@ impl<'config> TypeScriptBuilder<'config> {
                         }
                     }
                 }
-                let module_specifier = module_specifier.unwrap_or_else(|| ModuleSpecifier { value: String::new(), span: Range { start: span.start, end: span.start } });
-                Ok(Some(Statement::ImportDeclaration(ImportDeclaration { specifiers, module_specifier, modifiers, attributes, span: span.into() })))
+                let module_specifier = module_specifier
+                    .unwrap_or_else(|| ModuleSpecifier { value: String::new(), span: Range { start: span.start, end: span.start } });
+                Ok(Some(Statement::ImportDeclaration(ImportDeclaration {
+                    specifiers,
+                    module_specifier,
+                    modifiers,
+                    attributes,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::ExportDeclaration => {
                 let mut declaration = None;
@@ -910,8 +1042,15 @@ impl<'config> TypeScriptBuilder<'config> {
                                                 if exported.is_empty() {
                                                     exported = local.clone()
                                                 }
-                                                let local_span = local_span.unwrap_or_else(|| Range { start: spec_span.start, end: spec_span.start });
-                                                specifiers.push(ExportSpecifier::Named { local, local_span, exported, type_modifier, span: spec_span })
+                                                let local_span =
+                                                    local_span.unwrap_or_else(|| Range { start: spec_span.start, end: spec_span.start });
+                                                specifiers.push(ExportSpecifier::Named {
+                                                    local,
+                                                    local_span,
+                                                    exported,
+                                                    type_modifier,
+                                                    span: spec_span,
+                                                })
                                             }
                                         }
                                     }
@@ -940,7 +1079,9 @@ impl<'config> TypeScriptBuilder<'config> {
                                     }
                                 }
                                 TypeScriptElementType::StringLiteral => module_specifier = Some(module_specifier_at(child_node.span(), source)),
-                                TypeScriptElementType::ImportAttributes => attributes = Some(source.get_text_in(child_node.span().into()).trim().to_string()),
+                                TypeScriptElementType::ImportAttributes => {
+                                    attributes = Some(source.get_text_in(child_node.span().into()).trim().to_string())
+                                }
                                 _ => declaration = self.build_statement(&child_node, source)?,
                             }
                         }
@@ -954,7 +1095,14 @@ impl<'config> TypeScriptBuilder<'config> {
                         },
                     }
                 }
-                Ok(Some(Statement::ExportDeclaration(ExportDeclaration { declaration: declaration.map(Box::new), specifiers, source: module_specifier, modifiers, attributes, span: span.into() })))
+                Ok(Some(Statement::ExportDeclaration(ExportDeclaration {
+                    declaration: declaration.map(Box::new),
+                    specifiers,
+                    source: module_specifier,
+                    modifiers,
+                    attributes,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::ForOfStatement => {
                 let mut left: Option<Statement> = None;
@@ -987,16 +1135,35 @@ impl<'config> TypeScriptBuilder<'config> {
                                 left = Some(stmt);
                             }
                             else if let Some(expr) = self.build_expression(&child_node, source)? {
-                                left = Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: child_node.span().into() }));
+                                left = Some(Statement::ExpressionStatement(ExpressionStatement {
+                                    decorators: Vec::new(),
+                                    expression: expr,
+                                    span: child_node.span().into(),
+                                }));
                             }
                         }
                     }
                 }
 
-                let left = Box::new(left.unwrap_or_else(|| Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()), span: (0..0).into() })));
+                let left = Box::new(left.unwrap_or_else(|| {
+                    Statement::ExpressionStatement(ExpressionStatement {
+                        decorators: Vec::new(),
+                        expression: Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()),
+                        span: (0..0).into(),
+                    })
+                }));
                 let right = right.unwrap_or_else(|| Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()));
-                let body = Box::new(body.unwrap_or_else(|| Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() })));
-                Ok(Some(Statement::ForOfStatement(ForOfStatement { decorators: Vec::new(), await_marker, left, right, body, span: span.into() })))
+                let body = Box::new(body.unwrap_or_else(|| {
+                    Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() })
+                }));
+                Ok(Some(Statement::ForOfStatement(ForOfStatement {
+                    decorators: Vec::new(),
+                    await_marker,
+                    left,
+                    right,
+                    body,
+                    span: span.into(),
+                })))
             }
             TypeScriptElementType::ForInStatement => {
                 let mut left: Option<Statement> = None;
@@ -1027,20 +1194,41 @@ impl<'config> TypeScriptBuilder<'config> {
                                 left = Some(stmt);
                             }
                             else if let Some(expr) = self.build_expression(&child_node, source)? {
-                                left = Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: child_node.span().into() }));
+                                left = Some(Statement::ExpressionStatement(ExpressionStatement {
+                                    decorators: Vec::new(),
+                                    expression: expr,
+                                    span: child_node.span().into(),
+                                }));
                             }
                         }
                     }
                 }
 
-                let left = Box::new(left.unwrap_or_else(|| Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()), span: (0..0).into() })));
+                let left = Box::new(left.unwrap_or_else(|| {
+                    Statement::ExpressionStatement(ExpressionStatement {
+                        decorators: Vec::new(),
+                        expression: Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()),
+                        span: (0..0).into(),
+                    })
+                }));
                 let right = right.unwrap_or_else(|| Expression::new(ExpressionKind::Identifier(String::new()), (0..0).into()));
-                let body = Box::new(body.unwrap_or_else(|| Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() })));
+                let body = Box::new(body.unwrap_or_else(|| {
+                    Statement::BlockStatement(BlockStatement { decorators: Vec::new(), statements: Vec::new(), span: (0..0).into() })
+                }));
                 Ok(Some(Statement::ForInStatement(ForInStatement { decorators: Vec::new(), left, right, body, span: span.into() })))
             }
             _ => {
                 // Try building as expression statement if not a recognized statement kind
-                if let Some(expr) = self.build_expression(node, source)? { Ok(Some(Statement::ExpressionStatement(ExpressionStatement { decorators: Vec::new(), expression: expr, span: span.into() }))) } else { Ok(None) }
+                if let Some(expr) = self.build_expression(node, source)? {
+                    Ok(Some(Statement::ExpressionStatement(ExpressionStatement {
+                        decorators: Vec::new(),
+                        expression: expr,
+                        span: span.into(),
+                    })))
+                }
+                else {
+                    Ok(None)
+                }
             }
         }
     }

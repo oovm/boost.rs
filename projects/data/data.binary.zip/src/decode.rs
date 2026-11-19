@@ -213,11 +213,7 @@ fn map_budget_error(_: BudgetError) -> ZipViewError {
 }
 
 /// Reads and decodes a member payload into an owned buffer.
-pub fn read_member_payload<S: ByteSource>(
-    source: S,
-    member: &ZipMember,
-    ledger: &mut BudgetTracker,
-) -> Result<Vec<u8>, ZipViewError> {
+pub fn read_member_payload<S: ByteSource>(source: S, member: &ZipMember, ledger: &mut BudgetTracker) -> Result<Vec<u8>, ZipViewError> {
     let decoded = decode_member("zip-member", source, member, ledger)?;
     let length = decoded.length().ok_or(ZipViewError::InvalidRange)? as usize;
     if length == 0 {

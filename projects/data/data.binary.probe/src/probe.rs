@@ -1,5 +1,5 @@
-use data_binary_core::ByteExtent;
 use boost_source::binary::{ByteSource, MemorySource, ReadOutcome};
+use data_binary_core::ByteExtent;
 
 use crate::{
     candidate::ProbeCandidate,
@@ -60,13 +60,7 @@ impl ProbeSession {
         candidates
     }
 
-    fn probe_signature<S: ByteSource>(
-        &self,
-        source: &S,
-        source_len: u64,
-        signature: &Signature,
-        out: &mut Vec<ProbeCandidate>,
-    ) {
+    fn probe_signature<S: ByteSource>(&self, source: &S, source_len: u64, signature: &Signature, out: &mut Vec<ProbeCandidate>) {
         match signature.anchor {
             ProbeAnchor::Search { start, len } => {
                 if signature.evidence_range(source_len).is_none() {

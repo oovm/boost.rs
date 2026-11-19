@@ -1,7 +1,6 @@
 //! 多文档 schema：跨命名空间引用解析进同一份契约。
 
-use database_execution::engine::Connection;
-use database_execution::program::Type;
+use database_execution::{engine::Connection, program::Type};
 
 const CORE: &str = "\
 namespace oai_autos

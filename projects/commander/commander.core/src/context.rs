@@ -1,23 +1,24 @@
 //! The per-run `CommandContext` handed to handlers.
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use commander_types::{
-    ActionRequiredDescriptor, CommanderError, ExitCode, SecretString, envelope_error, envelope_ok,
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
+
+use commander_types::{ActionRequiredDescriptor, CommanderError, ExitCode, SecretString, envelope_error, envelope_ok};
 use serde_json::{Value, to_string_pretty};
 
-use crate::parse::ParsedOptions;
-use crate::ports::Ports;
-use crate::prompt_api::{
-    AwaitActionOutcome, AwaitActionRequest, ConfirmRequest, InputRequest, PasswordRequest,
-    PromptApi, SelectRequest,
+use crate::{
+    Cli, Diagnostic, Severity,
+    parse::ParsedOptions,
+    ports::Ports,
+    prompt_api::{AwaitActionOutcome, AwaitActionRequest, ConfirmRequest, InputRequest, PasswordRequest, PromptApi, SelectRequest},
+    routing::RunState,
+    spec::{Command, HandlerOutcome},
 };
-use crate::routing::RunState;
-use crate::spec::{Command, HandlerOutcome};
-use crate::{Cli, Diagnostic, Severity};
 
 /// Everything a handler may do through the framework.
 ///
@@ -140,25 +141,21 @@ impl<'a> CommandContext<'a> {
     pub fn emit_result(&self, data: Value, human: Option<String>) {
         if self.json {
             self.state.write_envelope(envelope_ok(data));
-        } else {
-            let text = human.unwrap_or_else(|| {
-                to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
-            });
+        }
+        else {
+            let text = human.unwrap_or_else(|| to_string_pretty(&data).unwrap_or_else(|_| data.to_string()));
             self.state.write_payload(text);
         }
     }
 
     /// Emits a typed failure. JSON mode writes one envelope; human mode
     /// writes `code: message` to stderr.
-    pub fn emit_failure(
-        &self,
-        error: &CommanderError,
-        descriptor: Option<&ActionRequiredDescriptor>,
-    ) {
+    pub fn emit_failure(&self, error: &CommanderError, descriptor: Option<&ActionRequiredDescriptor>) {
         let message = crate::routing::failure_message(self.ports, &error.id, &error.args);
         if self.json {
             self.state.write_envelope(envelope_error(&error.id, &message, descriptor));
-        } else {
+        }
+        else {
             self.ports.writer.write_line(&format!("{}: {}", error.id, message));
         }
     }
@@ -169,11 +166,7 @@ impl<'a> CommandContext<'a> {
         args.insert("actionId".to_string(), descriptor.action_id.clone());
         let message = crate::diag::localized_or_id(self.ports.localizer.as_ref(), ACTION_REQUIRED_CODE, &args)
             .unwrap_or_else(|| ACTION_REQUIRED_CODE.to_string());
-        HandlerOutcome::ActionRequired {
-            code: ACTION_REQUIRED_CODE.to_string(),
-            message,
-            descriptor,
-        }
+        HandlerOutcome::ActionRequired { code: ACTION_REQUIRED_CODE.to_string(), message, descriptor }
     }
 
     /// Emits an error diagnostic and returns a `commander::action_failed`-style
@@ -181,12 +174,7 @@ impl<'a> CommandContext<'a> {
     ///
     /// Mirrors the TypeScript `ctx.fail`: the handler must return the error.
     pub fn fail(&self, code: &str, args: BTreeMap<String, String>) -> CommanderError {
-        self.emit_diagnostic(Diagnostic {
-            severity: Severity::Error,
-            code: code.to_string(),
-            args: args.clone(),
-            message: None,
-        });
+        self.emit_diagnostic(Diagnostic { severity: Severity::Error, code: code.to_string(), args: args.clone(), message: None });
         let mut error = CommanderError::new(code, ExitCode::Failure);
         for (key, value) in args {
             error = error.with_arg(key, value);

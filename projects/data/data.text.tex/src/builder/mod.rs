@@ -1,9 +1,30 @@
 use crate::{ast::*, language::TexLanguage, lexer::token_type::TexTokenType, parser::TexParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// Names of TeX environments that represent math mode (AMS + classic).
-const TEX_MATH_ENVIRONMENTS: &[&str] =
-    &["equation", "align", "gather", "multline", "eqnarray", "flalign", "alignat", "aligned", "alignedat", "gathered", "split", "cases", "matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "smallmatrix", "math", "displaymath"];
+const TEX_MATH_ENVIRONMENTS: &[&str] = &[
+    "equation",
+    "align",
+    "gather",
+    "multline",
+    "eqnarray",
+    "flalign",
+    "alignat",
+    "aligned",
+    "alignedat",
+    "gathered",
+    "split",
+    "cases",
+    "matrix",
+    "pmatrix",
+    "bmatrix",
+    "Bmatrix",
+    "vmatrix",
+    "Vmatrix",
+    "smallmatrix",
+    "math",
+    "displaymath",
+];
 
 /// An AST builder for the TeX language.
 #[derive(Clone)]
@@ -20,7 +41,12 @@ impl<'config> TexBuilder<'config> {
 }
 
 impl<'config> Builder<TexLanguage> for TexBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<TexLanguage>) -> data_text_core::builder::BuildOutput<TexLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<TexLanguage>,
+    ) -> data_text_core::builder::BuildOutput<TexLanguage> {
         let parser = TexParser::new(self.config);
 
         let parse_result = parser.parse(source, edits, cache);
@@ -61,7 +87,12 @@ impl<'config> TexBuilder<'config> {
         let first = children.first().unwrap();
         let last = children.last().unwrap();
         let start = if first.as_token().is_some() && is_delimiter(first.kind::<TexTokenType>()) { 1 } else { 0 };
-        let end = if children.len() > start && last.as_token().is_some() && is_delimiter(last.kind::<TexTokenType>()) { children.len() - 1 } else { children.len() };
+        let end = if children.len() > start && last.as_token().is_some() && is_delimiter(last.kind::<TexTokenType>()) {
+            children.len() - 1
+        }
+        else {
+            children.len()
+        };
 
         for i in start..end {
             if let Some(item) = self.build_item(children[i], source)? {
@@ -205,14 +236,24 @@ impl<'config> TexBuilder<'config> {
             // A row break outside an environment body has no row to close.
             // Keep it as the `\\` command so text-mode lowering still sees the
             // authored line break instead of dropping it.
-            TexTokenType::RowBreak => Ok(Some(TexItem::Command(TexCommand { span: tree.span().into(), name: "\\".to_string(), starred: false, arguments: Vec::new() }))),
+            TexTokenType::RowBreak => Ok(Some(TexItem::Command(TexCommand {
+                span: tree.span().into(),
+                name: "\\".to_string(),
+                starred: false,
+                arguments: Vec::new(),
+            }))),
             TexTokenType::Group => Ok(Some(TexItem::Group(self.build_group(tree.as_node().unwrap(), source)?))),
-            TexTokenType::InlineMath | TexTokenType::DisplayMath | TexTokenType::ParenInlineMathDelim | TexTokenType::BracketDisplayMathDelim => Ok(Some(TexItem::Math(self.build_math(tree.as_node().unwrap(), source)?))),
+            TexTokenType::InlineMath
+            | TexTokenType::DisplayMath
+            | TexTokenType::ParenInlineMathDelim
+            | TexTokenType::BracketDisplayMathDelim => Ok(Some(TexItem::Math(self.build_math(tree.as_node().unwrap(), source)?))),
             TexTokenType::LeftRightPair => Ok(Some(TexItem::LeftRightPair(self.build_left_right(tree.as_node().unwrap(), source)?))),
             TexTokenType::Limits | TexTokenType::Nolimits => Ok(Some(TexItem::Limits(self.build_limits(tree.as_node().unwrap(), source)?))),
             TexTokenType::Superscript => Ok(Some(TexItem::Superscript(self.build_superscript(tree.as_node().unwrap(), source)?))),
             TexTokenType::Subscript => Ok(Some(TexItem::Subscript(self.build_subscript(tree.as_node().unwrap(), source)?))),
-            TexTokenType::Identifier | TexTokenType::Number | TexTokenType::Text => Ok(Some(TexItem::Text { span: tree.span().into(), content: tree.text(source).to_string() })),
+            TexTokenType::Identifier | TexTokenType::Number | TexTokenType::Text => {
+                Ok(Some(TexItem::Text { span: tree.span().into(), content: tree.text(source).to_string() }))
+            }
             TexTokenType::Comment => Ok(Some(TexItem::Comment { span: tree.span().into(), content: tree.text(source).to_string() })),
             _ => {
                 match kind {
@@ -403,7 +444,12 @@ impl<'config> TexBuilder<'config> {
                 TexTokenType::MiddleCommand => {
                     // \middle is still part of the content semantically;
                     // treat as a text token carrying the command name.
-                    content.items.push(TexItem::Command(TexCommand { span: child.span().into(), name: "middle".to_string(), starred: false, arguments: Vec::new() }));
+                    content.items.push(TexItem::Command(TexCommand {
+                        span: child.span().into(),
+                        name: "middle".to_string(),
+                        starred: false,
+                        arguments: Vec::new(),
+                    }));
                     stage = 1;
                 }
                 _ => {
@@ -457,7 +503,9 @@ impl<'config> TexBuilder<'config> {
                                     arguments.push(TexArgument::Required(self.build_content(sub_child.as_node().unwrap(), source)?))
                                 }
                             }
-                            TexTokenType::OptionalArgument => arguments.push(TexArgument::Optional(self.build_content(sub_child.as_node().unwrap(), source)?)),
+                            TexTokenType::OptionalArgument => {
+                                arguments.push(TexArgument::Optional(self.build_content(sub_child.as_node().unwrap(), source)?))
+                            }
                             _ => {}
                         }
                     }
@@ -499,5 +547,15 @@ impl<'config> TexBuilder<'config> {
 }
 
 fn is_delimiter(kind: TexTokenType) -> bool {
-    matches!(kind, TexTokenType::LeftBrace | TexTokenType::RightBrace | TexTokenType::LeftBracket | TexTokenType::RightBracket | TexTokenType::Dollar | TexTokenType::DoubleDollar | TexTokenType::ParenInlineMathDelim | TexTokenType::BracketDisplayMathDelim)
+    matches!(
+        kind,
+        TexTokenType::LeftBrace
+            | TexTokenType::RightBrace
+            | TexTokenType::LeftBracket
+            | TexTokenType::RightBracket
+            | TexTokenType::Dollar
+            | TexTokenType::DoubleDollar
+            | TexTokenType::ParenInlineMathDelim
+            | TexTokenType::BracketDisplayMathDelim
+    )
 }

@@ -4,7 +4,9 @@ use crate::{
     language::NimLanguage,
     parser::{NimElementType, NimParser},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+};
 use std::sync::Arc;
 
 /// Root structure for Nim build output.
@@ -35,11 +37,20 @@ impl<'config> NimBuilder<'config> {
         for child in red.children() {
             if let RedTree::Node(n) = child {
                 match n.green.kind {
-                    NimElementType::ProcDecl | NimElementType::VarDecl | NimElementType::ConstDecl | NimElementType::LetDecl | NimElementType::TypeDecl => {
+                    NimElementType::ProcDecl
+                    | NimElementType::VarDecl
+                    | NimElementType::ConstDecl
+                    | NimElementType::LetDecl
+                    | NimElementType::TypeDecl => {
                         let decl = self.build_declaration(n)?;
                         items.push(Item::Declaration(decl));
                     }
-                    NimElementType::WhenStmt | NimElementType::StaticStmt | NimElementType::IfStmt | NimElementType::WhileStmt | NimElementType::ForStmt | NimElementType::BlockStmt => {
+                    NimElementType::WhenStmt
+                    | NimElementType::StaticStmt
+                    | NimElementType::IfStmt
+                    | NimElementType::WhileStmt
+                    | NimElementType::ForStmt
+                    | NimElementType::BlockStmt => {
                         let stmt = self.build_statement(n)?;
                         items.push(Item::Statement(stmt));
                     }
@@ -84,7 +95,10 @@ impl<'config> NimBuilder<'config> {
                             }
                             NimElementType::BlockStmt => {
                                 // This would be a branch body or else body
-                                branches.push(WhenBranch { condition: Expression::Identifier("when_cond".to_string()), body: self.build_block(n)? });
+                                branches.push(WhenBranch {
+                                    condition: Expression::Identifier("when_cond".to_string()),
+                                    body: self.build_block(n)?,
+                                });
                             }
                             _ => {}
                         }
@@ -115,7 +129,12 @@ impl<'config> NimBuilder<'config> {
 }
 
 impl<'config> Builder<NimLanguage> for NimBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<NimLanguage>) -> BuildOutput<NimLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<NimLanguage>,
+    ) -> BuildOutput<NimLanguage> {
         let parser = NimParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<NimLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);

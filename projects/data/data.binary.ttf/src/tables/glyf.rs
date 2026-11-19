@@ -204,12 +204,7 @@ pub fn parse_glyph(glyph_id: u16, data: &[u8]) -> Result<GlyphOutline, GlyphErro
         while more {
             let flags = CompositeGlyphFlags(r.read_u16()?);
             let glyph_id_comp = r.read_u16()?;
-            let (arg1, arg2) = if flags.args_are_words() {
-                (r.read_i16()?, r.read_i16()?)
-            }
-            else {
-                (r.read_i8()? as i16, r.read_i8()? as i16)
-            };
+            let (arg1, arg2) = if flags.args_are_words() { (r.read_i16()?, r.read_i16()?) } else { (r.read_i8()? as i16, r.read_i8()? as i16) };
             let (x_offset, y_offset) = if flags.args_are_xy_values() {
                 (arg1 as i32, arg2 as i32)
             }
@@ -322,29 +317,13 @@ pub fn parse_glyph(glyph_id: u16, data: &[u8]) -> Result<GlyphOutline, GlyphErro
         contours.push(ep + 1);
     }
 
-    Ok(GlyphOutline {
-        glyph_id,
-        num_contours,
-        x_min,
-        y_min,
-        x_max,
-        y_max,
-        contours,
-        points,
-        is_composite: false,
-        components: Vec::new(),
-    })
+    Ok(GlyphOutline { glyph_id, num_contours, x_min, y_min, x_max, y_max, contours, points, is_composite: false, components: Vec::new() })
 }
 
 // ---- top-level glyf iteration ----
 
 /// Iterate over every non-empty glyph in `glyf` using a pre-parsed [`Loca`].
-pub fn iterate_glyf<'a>(
-    glyf_bytes: &'a [u8],
-    loca: &Loca,
-    num_glyphs: u16,
-    mut emit: impl FnMut(u16, Result<GlyphOutline, GlyphError>),
-) {
+pub fn iterate_glyf<'a>(glyf_bytes: &'a [u8], loca: &Loca, num_glyphs: u16, mut emit: impl FnMut(u16, Result<GlyphOutline, GlyphError>)) {
     for id in 0..num_glyphs {
         let off = loca.glyph_offset(id);
         let size = loca.glyph_size(id);
@@ -354,10 +333,7 @@ pub fn iterate_glyf<'a>(
         let start = off as usize;
         let end = (off + size) as usize;
         if end > glyf_bytes.len() {
-            emit(
-                id,
-                Err(GlyphError::Bounds(ReadError::OutOfBounds { offset: start, limit: glyf_bytes.len(), need: size as usize })),
-            );
+            emit(id, Err(GlyphError::Bounds(ReadError::OutOfBounds { offset: start, limit: glyf_bytes.len(), need: size as usize })));
             continue;
         }
         let slice = &glyf_bytes[start..end];

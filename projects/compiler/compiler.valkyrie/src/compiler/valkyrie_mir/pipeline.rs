@@ -4,8 +4,7 @@
 //! 阶段与阶段诊断是 **Valkyrie 自己的 pipeline 事实**，不属于公共 `nyar-types`；
 //! 诊断生产入口另有 `DiagnosticPhase` + `DiagnosticRow`，两套模型职责不同、不混用。
 
-use super::ValkyrieMirProgram;
-use super::representation::RepresentationPlan;
+use super::{ValkyrieMirProgram, representation::RepresentationPlan};
 use compiler_types::LinkedSemanticProgram;
 
 /// 语义 pipeline 阶段。

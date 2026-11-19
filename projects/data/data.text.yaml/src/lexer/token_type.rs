@@ -17,8 +17,17 @@ impl TokenType for YamlTokenType {
             Self::Comment => UniversalTokenRole::Comment,
             Self::StringLiteral | Self::NumberLiteral | Self::BooleanLiteral | Self::NullLiteral => UniversalTokenRole::Literal,
             Self::Identifier | Self::Anchor | Self::Alias | Self::Tag => UniversalTokenRole::Name,
-            Self::Colon | Self::Dash | Self::Pipe | Self::GreaterThan | Self::Question | Self::Ampersand | Self::Asterisk | Self::Exclamation => UniversalTokenRole::Operator,
-            Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::DocumentStart | Self::DocumentEnd => UniversalTokenRole::Punctuation,
+            Self::Colon
+            | Self::Dash
+            | Self::Pipe
+            | Self::GreaterThan
+            | Self::Question
+            | Self::Ampersand
+            | Self::Asterisk
+            | Self::Exclamation => UniversalTokenRole::Operator,
+            Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::DocumentStart | Self::DocumentEnd => {
+                UniversalTokenRole::Punctuation
+            }
             Self::Error => UniversalTokenRole::Error,
             _ => UniversalTokenRole::None,
         }

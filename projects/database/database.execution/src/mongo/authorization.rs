@@ -9,11 +9,7 @@
 //! 权限合并规则与真机一致：同一资源的多条权限合成一条，action 按 `mongod` 的
 //! 规范顺序合并，`anyAction` 顶掉整张表。
 
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    sync::OnceLock,
-};
+use std::{cell::RefCell, collections::HashMap, sync::OnceLock};
 
 use database_protocol_mongo::{
     bson::{BsonDocument, BsonValue, value_to_key},
@@ -122,19 +118,22 @@ fn read_stored_role(store: &dyn MongoStorage, db: &str, key: &str) -> Option<Sto
 
 /// 把一条权限文档读成 [`Privilege`]；形态不对时跳过。
 fn privilege_from_value(value: &BsonValue) -> Option<Privilege> {
-    let BsonValue::Document(entry) = value else {
+    let BsonValue::Document(entry) = value
+    else {
         return None;
     };
-    let BsonValue::Document(resource) = entry.get("resource")? else {
+    let BsonValue::Document(resource) = entry.get("resource")?
+    else {
         return None;
     };
     let actions = match entry.get("actions") {
-        Some(BsonValue::Array(actions)) => {
-            actions.iter().filter_map(|action| match action {
+        Some(BsonValue::Array(actions)) => actions
+            .iter()
+            .filter_map(|action| match action {
                 BsonValue::String(text) => Some(text.clone()),
                 _ => None,
-            }).collect()
-        }
+            })
+            .collect(),
         _ => Vec::new(),
     };
     Some(Privilege { resource: resource.clone(), actions })
@@ -142,7 +141,8 @@ fn privilege_from_value(value: &BsonValue) -> Option<Privilege> {
 
 /// 把一条角色引用文档读成 [`RoleRef`]；形态不对时跳过。
 fn role_from_value(value: &BsonValue) -> Option<RoleRef> {
-    let BsonValue::Document(entry) = value else {
+    let BsonValue::Document(entry) = value
+    else {
         return None;
     };
     match (entry.get("role"), entry.get("db")) {
@@ -179,12 +179,14 @@ fn parse_tables(text: &str) -> Result<RoleTables, String> {
     let mut db_scoped = HashMap::new();
     if let Some(BsonValue::Document(entries)) = document.get("dbScoped") {
         for (role, value) in entries.fields() {
-            let BsonValue::Array(rows) = value else {
+            let BsonValue::Array(rows) = value
+            else {
                 return Err(format!("dbScoped.{role} is not an array"));
             };
             let mut rows_out = Vec::new();
             for row in rows {
-                let BsonValue::Document(row) = row else {
+                let BsonValue::Document(row) = row
+                else {
                     return Err(format!("dbScoped.{role} holds a non-document row"));
                 };
                 let collection = match row.get("collection") {
@@ -209,7 +211,8 @@ fn parse_tables(text: &str) -> Result<RoleTables, String> {
     let mut cluster_bound = HashMap::new();
     if let Some(BsonValue::Document(entries)) = document.get("clusterBound") {
         for (role, value) in entries.fields() {
-            let BsonValue::Array(rows) = value else {
+            let BsonValue::Array(rows) = value
+            else {
                 return Err(format!("clusterBound.{role} is not an array"));
             };
             let privileges = rows.iter().map(privilege_from_value).collect::<Option<Vec<_>>>();
@@ -423,7 +426,8 @@ fn add_role(
         }
         return;
     }
-    let Some(stored) = resolver.resolve(&role.role, &role.db) else {
+    let Some(stored) = resolver.resolve(&role.role, &role.db)
+    else {
         return;
     };
     if !stored.authentication_restrictions.is_empty() {
@@ -547,14 +551,7 @@ fn render_document(command: &BsonDocument) -> String {
     let rendered: Vec<String> = command
         .fields()
         .iter()
-        .map(|(key, value)| {
-            if key == "pwd" {
-                format!("{key}: \"xxx\"")
-            }
-            else {
-                format!("{key}: {}", render_value(value))
-            }
-        })
+        .map(|(key, value)| if key == "pwd" { format!("{key}: \"xxx\"") } else { format!("{key}: {}", render_value(value)) })
         .collect();
     format!("{{ {} }}", rendered.join(", "))
 }
@@ -665,24 +662,35 @@ fn bulk_write_requirements(command: &BsonDocument, database: &str) -> Vec<Requir
     };
     let mut requirements = Vec::new();
     for op in &ops {
-        let BsonValue::Document(op) = op else {
+        let BsonValue::Document(op) = op
+        else {
             continue;
         };
         let insert = op.get("insert").and_then(number_field);
         let update = op.get("update").and_then(number_field);
         let remove = op.get("delete").and_then(number_field);
         let index = insert.or(update).or(remove);
-        let Some(index) = index else {
+        let Some(index) = index
+        else {
             continue;
         };
         let target = info.get(index).and_then(|entry| match entry {
             BsonValue::Document(entry) => string_field(entry, "ns").and_then(|ns| namespace_target(ns, database)),
             _ => None,
         });
-        let Some((db, collection)) = target else {
+        let Some((db, collection)) = target
+        else {
             continue;
         };
-        let action = if insert.is_some() { "insert" } else if update.is_some() { "update" } else { "remove" };
+        let action = if insert.is_some() {
+            "insert"
+        }
+        else if update.is_some() {
+            "update"
+        }
+        else {
+            "remove"
+        };
         requirements.push(Requirement::on(action, &db, &collection));
     }
     requirements
@@ -727,13 +735,16 @@ fn requirements_for(name: &str, command: &BsonDocument, database: &str) -> Optio
             }
             let mut requirements = vec![Requirement::on("find", database, &field("aggregate"))];
             for stage in &pipeline {
-                let BsonValue::Document(stage) = stage else {
+                let BsonValue::Document(stage) = stage
+                else {
                     continue;
                 };
                 // `$lookup`、`$graphLookup` 与 `$unionWith` 读同库的另一个集合，
                 // `mongod` 要求那上面的 `find`；对象形态的 `from` 指外部数据库，
                 // 由管道校验器拒绝，因此不折算成授权。
-                for value in [stage_field(stage, "$lookup", "from"), stage_field(stage, "$graphLookup", "from"), stage.get("$unionWith").cloned()] {
+                for value in
+                    [stage_field(stage, "$lookup", "from"), stage_field(stage, "$graphLookup", "from"), stage.get("$unionWith").cloned()]
+                {
                     if let Some(BsonValue::String(namespace)) = value {
                         if !namespace.is_empty() {
                             requirements.push(Requirement::on("find", database, &namespace));
@@ -861,15 +872,18 @@ fn role_targets(roles: Option<&BsonValue>) -> Vec<RoleRef> {
 
 /// `privileges` 数组命名的资源各自需要的 action。
 fn privilege_targets(privileges: Option<&BsonValue>, action: &str, database: &str) -> Vec<Requirement> {
-    let Some(BsonValue::Array(entries)) = privileges else {
+    let Some(BsonValue::Array(entries)) = privileges
+    else {
         return Vec::new();
     };
     let mut targets = Vec::new();
     for entry in entries {
-        let BsonValue::Document(entry) = entry else {
+        let BsonValue::Document(entry) = entry
+        else {
             continue;
         };
-        let Some(BsonValue::Document(resource)) = entry.get("resource") else {
+        let Some(BsonValue::Document(resource)) = entry.get("resource")
+        else {
             continue;
         };
         if let Some(db) = string_field(resource, "db") {
@@ -998,7 +1012,8 @@ fn credential_refusal(name: &str, command: &BsonDocument, database: &str) -> Opt
         _ => Vec::new(),
     };
     for stage in &pipeline {
-        let BsonValue::Document(stage) = stage else {
+        let BsonValue::Document(stage) = stage
+        else {
             continue;
         };
         if let Some((_, collection)) = stage.get("$out").and_then(|value| output_target(value, database)) {
@@ -1032,9 +1047,7 @@ pub fn authorize_command(roles: &[RoleRef], command: &BsonDocument, resolver: &d
     if name == "listDatabases" {
         let privileges = privileges_for_roles(roles, resolver);
         if matches!(command.get("authorizedDatabases"), Some(BsonValue::Bool(false))) && !cluster_grants(&privileges, "listDatabases") {
-            return Some(
-                CommandError::new(13, "Insufficient permissions to list all databases").into_reply(),
-            );
+            return Some(CommandError::new(13, "Insufficient permissions to list all databases").into_reply());
         }
         return None;
     }

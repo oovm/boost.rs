@@ -463,7 +463,12 @@ impl<'config> LessLexer<'config> {
 
 impl<'config> Lexer<LessLanguage> for LessLexer<'config> {
     /// Tokenizes the source code into a stream of Less tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], mut cache: &'a mut impl data_text_core::lexer::LexerCache<LessLanguage>) -> LexOutput<LessLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        mut cache: &'a mut impl data_text_core::lexer::LexerCache<LessLanguage>,
+    ) -> LexOutput<LessLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

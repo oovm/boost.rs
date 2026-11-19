@@ -32,6 +32,8 @@ impl NativeLayoutSink for UnimplementedNativeSink {
 
 fn binding_class(binding: &LayoutBinding) -> &str {
     match binding {
-        LayoutBinding::Container { class, .. } | LayoutBinding::MeasuredText { class, .. } | LayoutBinding::MeasureRejected { class, .. } => class,
+        LayoutBinding::Container { class, .. } | LayoutBinding::MeasuredText { class, .. } | LayoutBinding::MeasureRejected { class, .. } => {
+            class
+        }
     }
 }

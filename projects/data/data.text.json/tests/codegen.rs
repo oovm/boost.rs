@@ -8,8 +8,16 @@ fn test_json_to_source() {
     let root = JsonRoot {
         value: JsonValueNode::Object(JsonObject {
             fields: vec![
-                JsonField { name: JsonString { value: "name".to_string(), span: Range { start: 0, end: 0 } }, value: JsonValueNode::String(JsonString { value: "oak".to_string(), span: Range { start: 0, end: 0 } }), span: Range { start: 0, end: 0 } },
-                JsonField { name: JsonString { value: "version".to_string(), span: Range { start: 0, end: 0 } }, value: JsonValueNode::Number(JsonNumber { value: 1.0, span: Range { start: 0, end: 0 } }), span: Range { start: 0, end: 0 } },
+                JsonField {
+                    name: JsonString { value: "name".to_string(), span: Range { start: 0, end: 0 } },
+                    value: JsonValueNode::String(JsonString { value: "oak".to_string(), span: Range { start: 0, end: 0 } }),
+                    span: Range { start: 0, end: 0 },
+                },
+                JsonField {
+                    name: JsonString { value: "version".to_string(), span: Range { start: 0, end: 0 } },
+                    value: JsonValueNode::Number(JsonNumber { value: 1.0, span: Range { start: 0, end: 0 } }),
+                    span: Range { start: 0, end: 0 },
+                },
             ],
             span: Range { start: 0, end: 0 },
         }),

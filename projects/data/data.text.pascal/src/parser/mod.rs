@@ -19,7 +19,12 @@ impl PascalParser {
 }
 
 impl Parser<PascalLanguage> for PascalParser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<PascalLanguage>) -> data_text_core::ParseOutput<'a, PascalLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<PascalLanguage>,
+    ) -> data_text_core::ParseOutput<'a, PascalLanguage> {
         let language = PascalLanguage::default();
         let lexer = PascalLexer::new(&language);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {

@@ -33,8 +33,8 @@ use crate::{
     FragmentSubmission, Result,
     abi_structure::canonical_parameter_identities,
     backend_plan_views::ExecutableFunction,
-    lowering::backends::wasm::abi::WasmLibraryExportAbi,
     emitter_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
+    lowering::backends::wasm::abi::WasmLibraryExportAbi,
 };
 
 use super::abi_schema::{abi_schema_for_type, abi_schema_for_type_with_layouts};
@@ -243,9 +243,9 @@ mod tests {
     use super::*;
     use crate::{
         TargetExecutionPlan,
+        contracts::ValueOrigin,
         lowering::backends::wasm::abi::{WasmAbiCarrier, WasmLibraryExportAbi},
     };
-    use crate::contracts::ValueOrigin;
     use compiler_types::SemanticType;
 
     fn named_type(s: &str) -> SemanticType {
@@ -317,7 +317,10 @@ mod tests {
     }
 
     fn arraylist_i64() -> SemanticType {
-        SemanticType::Apply(Box::new(SemanticType::Named(compiler_types::Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")])
+        SemanticType::Apply(
+            Box::new(SemanticType::Named(compiler_types::Identifier::new("std::collections::ArrayList"))),
+            vec![named_type("i64")],
+        )
     }
 
     fn frozen_abi(params: Vec<WasmAbiCarrier>, returns: WasmAbiCarrier) -> WasmLibraryExportAbi {

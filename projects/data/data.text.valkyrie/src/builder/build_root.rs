@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source};
+use data_text_core::{GreenNode, RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// Builds a strongly-typed AST from a green tree.
@@ -41,7 +41,10 @@ impl<'config> ValkyrieBuilder<'config> {
                     }
                 }
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::BracketL | ValkyrieTokenType::BracketR | ValkyrieTokenType::Comma => continue,
                     ValkyrieTokenType::Eof => continue,
                     ValkyrieTokenType::TemplateText if crate::builder::text(source, t.span).trim().is_empty() => continue,
@@ -232,7 +235,10 @@ impl<'config> ValkyrieBuilder<'config> {
                 let shader = self.build_shader(n, source)?;
                 Ok(StatementNode::Shader(Box::new(shader)))
             }
-            ValkyrieElementType::TemplateIfStatement | ValkyrieElementType::TemplateLoop | ValkyrieElementType::TemplateMatch | ValkyrieElementType::TemplateStatement => self.build_template_item(n, source),
+            ValkyrieElementType::TemplateIfStatement
+            | ValkyrieElementType::TemplateLoop
+            | ValkyrieElementType::TemplateMatch
+            | ValkyrieElementType::TemplateStatement => self.build_template_item(n, source),
             _ => Err(source.syntax_error(format!("Unexpected item: {:?}", n.green.kind), n.span().start)),
         }
     }
@@ -242,7 +248,11 @@ fn is_trivia_only_expr_stmt<S: Source + ?Sized>(node: &RedNode<ValkyrieLanguage>
     for child in node.children() {
         match child {
             RedTree::Leaf(t) => match t.kind {
-                ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment | ValkyrieTokenType::Eof => {}
+                ValkyrieTokenType::Whitespace
+                | ValkyrieTokenType::Newline
+                | ValkyrieTokenType::LineComment
+                | ValkyrieTokenType::BlockComment
+                | ValkyrieTokenType::Eof => {}
                 ValkyrieTokenType::TemplateText => {
                     if crate::builder::text(source, t.span).trim().is_empty() {
                         continue;

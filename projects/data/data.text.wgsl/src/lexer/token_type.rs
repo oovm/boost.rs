@@ -148,9 +148,20 @@ impl TokenType for WgslTokenType {
             | Self::Bang
             | Self::Assign
             | Self::Arrow => UniversalTokenRole::Operator,
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Semicolon | Self::Comma | Self::Dot | Self::Colon | Self::Question | Self::At | Self::Hash | Self::Dollar => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::Colon
+            | Self::Question
+            | Self::At
+            | Self::Hash
+            | Self::Dollar => UniversalTokenRole::Punctuation,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,
             _ => UniversalTokenRole::None,

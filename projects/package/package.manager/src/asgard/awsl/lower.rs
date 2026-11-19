@@ -834,8 +834,8 @@ fn lower_directive_template_value(expr: &str, span: &std::ops::Range<usize>) -> 
     if !expr.contains('{') && !expr.contains('}') {
         return Ok(SurfaceAttrValue::Dynamic(expr.to_string()));
     }
-    let segments =
-        compiler_valkyrie::compiler::syntax::surface::parse_quote_template(expr, 0).map_err(|error| directive_template_error(span, error.to_string()))?;
+    let segments = compiler_valkyrie::compiler::syntax::surface::parse_quote_template(expr, 0)
+        .map_err(|error| directive_template_error(span, error.to_string()))?;
     let parts: Vec<SurfaceTextPart> = segments
         .into_iter()
         .map(|segment| match segment {

@@ -12,8 +12,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusty_valkyrie::compiler::hir::{CompilerSourceFile, CompilerSourceGroup, HirError, ValkyrieCompiler};
-use rusty_valkyrie::compiler::types::hir::HirModule;
+use rusty_valkyrie::compiler::{
+    hir::{CompilerSourceFile, CompilerSourceGroup, HirError, ValkyrieCompiler},
+    types::hir::HirModule,
+};
 
 /// 与 std 包一致的 primitive 声明集合；测试侧唯一声明来源。
 pub(crate) const PRIMITIVES: &str = include_str!("primitives.v");
@@ -108,7 +110,12 @@ fn prelude_for(missing: &BTreeSet<String>) -> String {
         }
         if names.len() == block.lines().count() {
             // 每行一条 `type` 别名，按行补齐。
-            pieces.extend(block.lines().filter(|line| declaration_name(line).is_some_and(|name| missing.contains(name))).map(|line| (active_namespace, line)));
+            pieces.extend(
+                block
+                    .lines()
+                    .filter(|line| declaration_name(line).is_some_and(|name| missing.contains(name)))
+                    .map(|line| (active_namespace, line)),
+            );
         }
         else if missing.contains(names[0]) {
             pieces.push((active_namespace, block));
@@ -210,7 +217,8 @@ fn reachable_declared(
     if let Some(cached) = memo.get(key) {
         return cached.clone();
     }
-    let Some(own) = declared.get(key) else {
+    let Some(own) = declared.get(key)
+    else {
         // 依赖不在本次输入内：无法保证它补，按「未覆盖」处理。
         return BTreeSet::new();
     };

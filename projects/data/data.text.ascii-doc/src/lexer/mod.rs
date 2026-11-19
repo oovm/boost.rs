@@ -21,7 +21,12 @@ pub struct AsciiDocLexer;
 
 impl<'config> Lexer<AsciiDocLanguage> for AsciiDocLexer {
     /// Lexes the source text into tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<AsciiDocLanguage>) -> LexOutput<AsciiDocLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<AsciiDocLanguage>,
+    ) -> LexOutput<AsciiDocLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -545,7 +550,9 @@ impl AsciiDocLexer {
 
         while let Some(ch) = state.peek() {
             match ch {
-                ' ' | '\t' | '\n' | '\r' | '=' | '*' | '_' | '`' | '-' | '+' | '[' | ']' | '(' | ')' | ':' | ',' | '.' | '|' | '/' | '<' => break,
+                ' ' | '\t' | '\n' | '\r' | '=' | '*' | '_' | '`' | '-' | '+' | '[' | ']' | '(' | ')' | ':' | ',' | '.' | '|' | '/' | '<' => {
+                    break;
+                }
                 _ => {
                     state.advance(ch.len_utf8());
                 }

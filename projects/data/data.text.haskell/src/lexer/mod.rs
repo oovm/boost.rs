@@ -466,7 +466,12 @@ impl<'config> HaskellLexer<'config> {
 }
 
 impl<'config> Lexer<HaskellLanguage> for HaskellLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<HaskellLanguage>) -> LexOutput<HaskellLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<HaskellLanguage>,
+    ) -> LexOutput<HaskellLanguage> {
         let mut state = State::new(source);
 
         while state.not_at_end() {

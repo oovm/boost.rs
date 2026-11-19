@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::{ManagerError, Result};
 
 /// 注册表适配器工厂：把 endpoint 表解析为可用的渠道集合。
-pub type RegistryFactory = Arc<dyn Fn(&BTreeMap<String, String>) -> std::result::Result<HashMap<String, Arc<dyn Registry>>, package_registry::RegistryError> + Send + Sync>;
+pub type RegistryFactory = Arc<
+    dyn Fn(&BTreeMap<String, String>) -> std::result::Result<HashMap<String, Arc<dyn Registry>>, package_registry::RegistryError> + Send + Sync,
+>;
 
 /// 默认工厂：只构建本 crate 认识的第三方渠道。
 pub fn default_registry_factory() -> RegistryFactory {

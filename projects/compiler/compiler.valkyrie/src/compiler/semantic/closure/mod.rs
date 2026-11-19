@@ -21,7 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 // Declaration 索引中立数据结构（生产权在本 crate 的 frontend inventory）
 // 定义在 compiler_types::compiler_input，本模块 re-export 供内部使用。
 // ---------------------------------------------------------------------------
-pub use compiler_types::compiler_input::{DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath};
+pub use compiler_types::compiler_input::{
+    DeclarationIndexEntry, DeclarationKey, DeclarationKind, DeclarationLink, EntryPointKind, ReferencePath,
+};
 
 /// 单组语义闭包切片。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,14 +206,15 @@ mod plan;
 mod primitive_identity;
 mod retain;
 
-pub use primitive_identity::primitive_annotation_identity;
-pub use primitive_identity::{PrimitiveIdentity, PrimitiveIdentityTable};
+pub use primitive_identity::{PrimitiveIdentity, PrimitiveIdentityTable, primitive_annotation_identity};
 
 pub use collect::{collect_method, collect_micro, imply_owner_name};
 pub use index_file::{References, index_parsed_root, name_path_segments};
 pub use indexes::DeclarationIndexes;
 pub type ScopedReference = (Vec<String>, ReferencePath);
 
-pub use plan::{micro_declaration_key, plan_semantic_closure, plan_semantic_closure_with_host_bindings};
-pub use plan::{source_group_closure, source_group_closure_with_host_bindings};
+pub use plan::{
+    micro_declaration_key, plan_semantic_closure, plan_semantic_closure_with_host_bindings, source_group_closure,
+    source_group_closure_with_host_bindings,
+};
 pub use retain::retain_demanded_declarations;

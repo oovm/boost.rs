@@ -145,7 +145,11 @@ impl From<TclTokenType> for UniversalElementRole {
         match kind {
             TclTokenType::Root => UniversalElementRole::Root,
             TclTokenType::Command => UniversalElementRole::Expression,
-            TclTokenType::Word | TclTokenType::SimpleWord | TclTokenType::VariableWord | TclTokenType::ScriptWord | TclTokenType::BracedWord => UniversalElementRole::Expression,
+            TclTokenType::Word
+            | TclTokenType::SimpleWord
+            | TclTokenType::VariableWord
+            | TclTokenType::ScriptWord
+            | TclTokenType::BracedWord => UniversalElementRole::Expression,
             TclTokenType::Identifier => UniversalElementRole::Name,
             TclTokenType::Number | TclTokenType::StringLiteral => UniversalElementRole::Value,
             _ => UniversalElementRole::None,

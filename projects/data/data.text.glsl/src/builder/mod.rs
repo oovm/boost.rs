@@ -1,5 +1,8 @@
 use crate::{GlslParser, ast::*, language::GlslLanguage, lexer::token_type::GlslTokenType, parser::element_type::GlslElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedLeaf, RedNode, RedTree, TextEdit, TokenType, builder::BuildOutput, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedLeaf, RedNode, RedTree, TextDiagnostics, TextEdit, TextError, TokenType, builder::BuildOutput,
+    parser::session::ParseSession, source::Source,
+};
 
 /// AST builder for the GLSL language.
 #[derive(Clone, Copy)]
@@ -16,7 +19,12 @@ impl<'config> GlslBuilder<'config> {
 }
 
 impl<'config> Builder<GlslLanguage> for GlslBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<GlslLanguage>) -> BuildOutput<GlslLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<GlslLanguage>,
+    ) -> BuildOutput<GlslLanguage> {
         let parser = GlslParser::new(self.config);
         let mut session = ParseSession::<GlslLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);
@@ -369,7 +377,12 @@ fn first_expression<S: Source + ?Sized>(node: RedNode<GlslLanguage>, source: &S)
 }
 
 /// Collects nested expressions and significant leaf kinds in source order.
-fn collect_expressions_and_leaves<S: Source + ?Sized>(node: RedNode<GlslLanguage>, source: &S, expressions: &mut Vec<GlslExpression>, leaves: &mut Vec<GlslTokenType>) {
+fn collect_expressions_and_leaves<S: Source + ?Sized>(
+    node: RedNode<GlslLanguage>,
+    source: &S,
+    expressions: &mut Vec<GlslExpression>,
+    leaves: &mut Vec<GlslTokenType>,
+) {
     for child in node.children() {
         match child {
             RedTree::Leaf(token) => {
@@ -605,7 +618,12 @@ fn build_atomic_expression<S: Source + ?Sized>(node: RedNode<GlslLanguage>, sour
 /// Parses an integer literal, ignoring its suffix.
 fn parse_integer(text: &str) -> i64 {
     let value = text.trim().trim_end_matches(['u', 'U', 'l', 'L']);
-    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) { i64::from_str_radix(hex, 16).unwrap_or(0) } else { value.parse().unwrap_or(0) }
+    if let Some(hex) = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")) {
+        i64::from_str_radix(hex, 16).unwrap_or(0)
+    }
+    else {
+        value.parse().unwrap_or(0)
+    }
 }
 
 /// Parses a floating-point literal, ignoring its suffix.
@@ -669,7 +687,16 @@ fn binary_op(kinds: &[GlslTokenType]) -> GlslBinaryOp {
 
 /// Returns `true` for expression element kinds.
 fn is_expression_kind(kind: GlslElementType) -> bool {
-    matches!(kind, GlslElementType::Expr | GlslElementType::ExprUnary | GlslElementType::ExprBinary | GlslElementType::ExprCall | GlslElementType::ExprMember | GlslElementType::ExprIndex | GlslElementType::ExprParen)
+    matches!(
+        kind,
+        GlslElementType::Expr
+            | GlslElementType::ExprUnary
+            | GlslElementType::ExprBinary
+            | GlslElementType::ExprCall
+            | GlslElementType::ExprMember
+            | GlslElementType::ExprIndex
+            | GlslElementType::ExprParen
+    )
 }
 
 /// Returns `true` for element kinds that can appear as a statement.

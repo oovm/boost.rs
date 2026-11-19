@@ -13,14 +13,14 @@ use compiler_emitter::{
     },
 };
 use compiler_types::{
-    CanonicalPrimitiveType, CanonicalTypeKind, ItemInstanceId, FunctionType, SemanticType,
+    CanonicalPrimitiveType, CanonicalTypeKind, FunctionType, ItemInstanceId, SemanticType,
     semantic_ids::{MirValueId, NominalInstanceId, TypeId, VariantId},
 };
 
 use super::super::super::valkyrie_mir::{
-    CompiledValkyrieProgram, InvokeLowering, TextRepresentation as PlannedTextRepresentation, ValueRepresentation, ValkyrieMir,
-    ValkyrieMirArrayInitialization, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirFunction,
-    ValkyrieMirInstruction, ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator, ValkyrieMirWitness,
+    CompiledValkyrieProgram, InvokeLowering, TextRepresentation as PlannedTextRepresentation, ValkyrieMir, ValkyrieMirArrayInitialization,
+    ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirFunction, ValkyrieMirInstruction,
+    ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirProgram, ValkyrieMirTerminator, ValkyrieMirWitness, ValueRepresentation,
 };
 
 type Result<T> = std::result::Result<T, String>;
@@ -194,23 +194,17 @@ fn build_plan(
                 .parameter_types
                 .iter()
                 .map(|ty| {
-                    lower_type(canonical, *ty)
-                        .map_err(|reason| TargetPlanError::unsound(AdapterStage::Type, Some(instance), None, reason))
+                    lower_type(canonical, *ty).map_err(|reason| TargetPlanError::unsound(AdapterStage::Type, Some(instance), None, reason))
                 })
                 .collect::<std::result::Result<Vec<_>, TargetPlanError>>()?;
             let return_type = lower_type(canonical, import.return_type)
                 .map_err(|reason| TargetPlanError::unsound(AdapterStage::Type, Some(instance), None, reason))?;
-            imports.insert(
-                instance,
-                BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type },
-            );
+            imports.insert(instance, BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type });
             continue;
         }
-        let name = canonical
-            .linked
-            .callable_names
-            .get(&instance)
-            .ok_or_else(|| TargetPlanError::unsound(AdapterStage::Link, Some(instance), None, format!("callable 实例 `{instance:?}` 缺少 ABI 名称")))?;
+        let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| {
+            TargetPlanError::unsound(AdapterStage::Link, Some(instance), None, format!("callable 实例 `{instance:?}` 缺少 ABI 名称"))
+        })?;
         abi_names.insert(instance, name.clone());
         let function = canonical.mir.functions.get(&instance).ok_or_else(|| {
             TargetPlanError::unsound(
@@ -432,7 +426,8 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
                     id: instruction.id,
                     results: instruction.results.iter().map(|value| ValueRef(value.index())).collect(),
                     kind: lower_operation(canonical, function, instruction, &mut callees)?,
-                    provenance: compiler_types::ProvenanceId::from_index(instruction.id.index()).ok_or_else(|| format!("指令 identity 溢出"))?,
+                    provenance: compiler_types::ProvenanceId::from_index(instruction.id.index())
+                        .ok_or_else(|| format!("指令 identity 溢出"))?,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -486,7 +481,9 @@ fn has_reference_instance_layout(program: &ValkyrieMirProgram, type_id: compiler
         .is_some_and(|layout| layout.storage == compiler_types::StorageKind::Reference)
 }
 
-fn canonical_sum_operations(instruction: &crate::compiler::valkyrie_mir::ValkyrieMirInstruction) -> Vec<(compiler_types::NominalInstanceId, compiler_types::VariantId)> {
+fn canonical_sum_operations(
+    instruction: &crate::compiler::valkyrie_mir::ValkyrieMirInstruction,
+) -> Vec<(compiler_types::NominalInstanceId, compiler_types::VariantId)> {
     match instruction.operation {
         ValkyrieMirOperation::SumNew { nominal, variant, .. }
         | ValkyrieMirOperation::SumPayloadGet { nominal, variant, .. }
@@ -499,10 +496,7 @@ fn canonical_sum_operations(instruction: &crate::compiler::valkyrie_mir::Valkyri
 ///
 /// variant 身份与 payload 类型来自链接程序；tag 宽度由平台提供，
 /// 语言表示计划不再声明它。
-fn platform_sum_representations(
-    canonical: &ValkyrieMirProgram,
-    tag_width: u32,
-) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
+fn platform_sum_representations(canonical: &ValkyrieMirProgram, tag_width: u32) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
     let mut reps = BTreeMap::new();
     for sum in &canonical.linked.sum_types {
         if !canonical.linked.nominal_instances.contains_key(&sum.nominal) {
@@ -548,7 +542,10 @@ fn platform_sum_representations(
 /// 具体 witness 必须在 canonical 实例化固定点消去为 `ValkyrieMirCallee::Item`；
 /// 走到目标层仍保留 `Witness` 说明上游未闭合，必须结构化失败而不是按
 /// `(method declaration, self 类型)` 在这里再选一次实现。
-fn resolve_witness_to_item(_program: &ValkyrieMirProgram, witness: &crate::compiler::valkyrie_mir::ValkyrieMirWitness) -> Result<ItemInstanceId> {
+fn resolve_witness_to_item(
+    _program: &ValkyrieMirProgram,
+    witness: &crate::compiler::valkyrie_mir::ValkyrieMirWitness,
+) -> Result<ItemInstanceId> {
     Err(format!(
         "canonical 未消去的 trait witness 分派到达目标层：trait={:?} method={:?} self_type={:?}；\
          具体 witness 必须在实例化固定点冻结 `ItemInstanceId`",
@@ -654,7 +651,9 @@ fn lower_operation(
             // 只有 FixedArray 才有聚合布局；动态数组没有对象 body 布局，
             // 不得用 dummy 身份污染共享计划。
             let layout_id = match program.linked.types.get(array_type).map(|row| &row.kind) {
-                Some(compiler_types::CanonicalTypeKind::Array { length: Some(_), .. }) => Some(layout_for_type(*array_type, "ArrayFromElements")?),
+                Some(compiler_types::CanonicalTypeKind::Array { length: Some(_), .. }) => {
+                    Some(layout_for_type(*array_type, "ArrayFromElements")?)
+                }
                 _ => None,
             };
             InstructionKind::ArrayFromElements {
@@ -797,7 +796,6 @@ fn canonical_primitive_carrier(spelling: &str) -> Option<SemanticType> {
         _ => return None,
     })
 }
-
 
 /// 按 canonical 类型图重建布局计划使用的**未结算**类型形态（`Nominal` 基 + `Apply` 实参）。
 fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Result<SemanticType> {
@@ -1092,7 +1090,10 @@ mod tests {
         program
     }
 
-    fn function_with_signature(parameters: Vec<compiler_types::TypeId>, return_type: compiler_types::TypeId) -> crate::compiler::valkyrie_mir::ValkyrieMirFunction {
+    fn function_with_signature(
+        parameters: Vec<compiler_types::TypeId>,
+        return_type: compiler_types::TypeId,
+    ) -> crate::compiler::valkyrie_mir::ValkyrieMirFunction {
         ValkyrieMirFunction {
             instance: ItemInstanceId::from_index(0).expect("测试实例身份"),
             parameters: parameters
@@ -1295,10 +1296,7 @@ mod tests {
             resume_target: ValkyrieMirBlockId(3),
         })
         .expect("`Raise` 必须有目标合同");
-        assert_eq!(
-            lowered,
-            Terminator::Raise { payload: Some(Operand::Value(ValueRef(7))), resume_target: BlockRef(3) }
-        );
+        assert_eq!(lowered, Terminator::Raise { payload: Some(Operand::Value(ValueRef(7))), resume_target: BlockRef(3) });
     }
 
     /// 反例：`Yield` 等其余 effect 没有目标合同，必须在计划层失败闭合，
@@ -1319,7 +1317,8 @@ mod tests {
     fn unsound_error_carries_stage_and_source_identity() {
         let instance = ItemInstanceId::from_index(3).expect("测试实例身份");
         let error = TargetPlanError::unsound(AdapterStage::Type, Some(instance), Some("demo::run".to_string()), "投影失败".to_string());
-        let TargetPlanError::Unsound { stage, instance: bound_instance, symbol, reason } = &error else {
+        let TargetPlanError::Unsound { stage, instance: bound_instance, symbol, reason } = &error
+        else {
             panic!("必须构造 Unsound");
         };
         assert_eq!(*stage, AdapterStage::Type);
@@ -1353,11 +1352,13 @@ mod tests {
         let key = lower_unsettled_contract_key(&program, storage_of_utf8).expect("闭合实例必须能派生 unsettled 键");
         assert_eq!(
             key,
-            SemanticType::Apply(Box::new(SemanticType::Named(compiler_types::Identifier::new("std::collection::ArrayStorage"))), vec![SemanticType::Utf8]),
+            SemanticType::Apply(
+                Box::new(SemanticType::Named(compiler_types::Identifier::new("std::collection::ArrayStorage"))),
+                vec![SemanticType::Utf8]
+            ),
             "文本载体实参必须折叠成 `Utf8`，与语言布局字段事实同键: {key:?}"
         );
     }
-
 }
 
 fn lower_terminator(terminator: ValkyrieMirTerminator) -> Result<Terminator> {

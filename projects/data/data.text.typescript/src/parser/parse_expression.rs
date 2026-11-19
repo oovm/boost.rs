@@ -60,7 +60,8 @@ impl<'config> TypeScriptParser<'config> {
                 self.expect(state, Super).ok();
                 state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::Super)
             }
-            Some(NumericLiteral) | Some(StringLiteral) | Some(BigIntLiteral) | Some(TemplateString) | Some(True) | Some(False) | Some(Null) | Some(RegexLiteral) => {
+            Some(NumericLiteral) | Some(StringLiteral) | Some(BigIntLiteral) | Some(TemplateString) | Some(True) | Some(False) | Some(Null)
+            | Some(RegexLiteral) => {
                 let kind = state.peek_kind().unwrap();
                 state.bump();
                 let elem = match kind {
@@ -374,7 +375,12 @@ impl<'config> TypeScriptParser<'config> {
         self.expect(state, RightParen).ok();
     }
 
-    pub(crate) fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, crate::language::TypeScriptLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, crate::language::TypeScriptLanguage>> {
+    pub(crate) fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, crate::language::TypeScriptLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, crate::language::TypeScriptLanguage>> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let kind = self.peek_kind(state)?;
 
@@ -529,7 +535,9 @@ impl<'config> TypeScriptParser<'config> {
                 state.finish_at(tcp, crate::parser::element_type::TypeScriptElementType::TemplateString);
                 Some(state.finish_at(cp, crate::parser::element_type::TypeScriptElementType::TaggedTemplateExpression.into()))
             }
-            _ => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::TypeScriptElementType::BinaryExpression, |s, p| PrattParser::parse(s, p, self))),
+            _ => Some(binary(state, left, kind, prec, assoc, crate::parser::element_type::TypeScriptElementType::BinaryExpression, |s, p| {
+                PrattParser::parse(s, p, self)
+            })),
         }
     }
 }

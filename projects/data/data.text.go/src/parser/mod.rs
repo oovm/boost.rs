@@ -418,7 +418,12 @@ impl<'config> Pratt<GoLanguage> for GoParser<'config> {
         unary(state, kind, prec, E::BinaryExpression.into(), |st, p| PrattParser::parse(st, p, self))
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, GoLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, GoLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, GoLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, GoLanguage>> {
         use crate::{GoElementType as E, GoTokenType as T};
         self.skip_trivia(state);
         let kind = state.peek_kind()?;
@@ -471,7 +476,12 @@ impl<'config> Pratt<GoLanguage> for GoParser<'config> {
 }
 
 impl<'config> Parser<GoLanguage> for GoParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<GoLanguage>) -> ParseOutput<'a, GoLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<GoLanguage>,
+    ) -> ParseOutput<'a, GoLanguage> {
         let lexer = GoLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

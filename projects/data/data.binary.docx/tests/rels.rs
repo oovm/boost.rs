@@ -112,8 +112,6 @@ fn reads_document_relationships_from_package() {
 fn missing_relationships_part_returns_empty_map() {
     let zip = stored_zip(&[("word/document.xml", b"<w:document/>")]);
     let pkg = OpcPackage::open("docx.zip", zip).expect("open");
-    let targets = pkg
-        .read_relationship_targets("word/_rels/document.xml.rels", &mut BudgetTracker::new(Budget::default()))
-        .expect("rels");
+    let targets = pkg.read_relationship_targets("word/_rels/document.xml.rels", &mut BudgetTracker::new(Budget::default())).expect("rels");
     assert!(targets.is_empty());
 }

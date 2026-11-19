@@ -16,7 +16,12 @@ use crate::language::FluentLanguage;
 pub struct FluentLexer;
 
 impl Lexer<FluentLanguage> for FluentLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl LexerCache<FluentLanguage>) -> LexOutput<FluentLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<FluentLanguage>,
+    ) -> LexOutput<FluentLanguage> {
         let mut state = data_text_core::lexer::LexerState::new_with_cache(text, text.length(), cache);
 
         while state.not_at_end() {

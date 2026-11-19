@@ -1,7 +1,9 @@
 //! AWSL 模板解析器。
 
 use super::{
-    ast::{AwslAttribute, AwslAttributeValue, AwslDirective, AwslDirectiveKind, AwslElement, AwslImport, AwslRoot, AwslTemplateNode, AwslTextPart},
+    ast::{
+        AwslAttribute, AwslAttributeValue, AwslDirective, AwslDirectiveKind, AwslElement, AwslImport, AwslRoot, AwslTemplateNode, AwslTextPart,
+    },
     error::AwslParseError,
     html::is_html_void_element,
     lexer::Lexer,
@@ -139,7 +141,12 @@ impl<'a> AwslParser<'a> {
     }
 
     fn reject_nested_section_tag(&self, tag: &str) -> AwslParseError {
-        self.error_at(self.lexer.pos, format!("<{tag}> must be a top-level sibling of <widget>; nesting <script>, <style>, or <template> inside <widget> is not supported"))
+        self.error_at(
+            self.lexer.pos,
+            format!(
+                "<{tag}> must be a top-level sibling of <widget>; nesting <script>, <style>, or <template> inside <widget> is not supported"
+            ),
+        )
     }
 
     fn parse_import(&mut self) -> Result<AwslImport, AwslParseError> {
@@ -246,15 +253,27 @@ impl<'a> AwslParser<'a> {
     /// 请求共享模板解析器对捕获区间做有边界分段。
     fn template_segments(&self, content: &str, content_start: usize) -> Result<Vec<data_text_valkyrie::ast::StringSegment>, AwslParseError> {
         let language = data_text_valkyrie::ValkyrieLanguage::default();
-        data_text_valkyrie::ValkyrieBuilder::new(&language).parse_quote_template(content, content_start).map_err(|error| self.error_at(content_start, error.to_string()))
+        data_text_valkyrie::ValkyrieBuilder::new(&language)
+            .parse_quote_template(content, content_start)
+            .map_err(|error| self.error_at(content_start, error.to_string()))
     }
 
-    fn segments_to_template_nodes(&self, segments: &[data_text_valkyrie::ast::StringSegment], content: &str, content_start: usize) -> Vec<AwslTemplateNode> {
+    fn segments_to_template_nodes(
+        &self,
+        segments: &[data_text_valkyrie::ast::StringSegment],
+        content: &str,
+        content_start: usize,
+    ) -> Vec<AwslTemplateNode> {
         segments
             .iter()
             .map(|segment| match segment {
-                data_text_valkyrie::ast::StringSegment::Text(text) => AwslTemplateNode::Text { content: text.content.clone(), span: text.span.start..text.span.end },
-                data_text_valkyrie::ast::StringSegment::Interpolation(interpolation) => AwslTemplateNode::Interpolation { expr: interpolation_source(content, content_start, interpolation), span: interpolation.span.start..interpolation.span.end },
+                data_text_valkyrie::ast::StringSegment::Text(text) => {
+                    AwslTemplateNode::Text { content: text.content.clone(), span: text.span.start..text.span.end }
+                }
+                data_text_valkyrie::ast::StringSegment::Interpolation(interpolation) => AwslTemplateNode::Interpolation {
+                    expr: interpolation_source(content, content_start, interpolation),
+                    span: interpolation.span.start..interpolation.span.end,
+                },
             })
             .collect()
     }
@@ -269,12 +288,19 @@ impl<'a> AwslParser<'a> {
         Ok(self.segments_to_attr_value(&segments, content, content_start))
     }
 
-    fn segments_to_attr_value(&self, segments: &[data_text_valkyrie::ast::StringSegment], content: &str, content_start: usize) -> AwslAttributeValue {
+    fn segments_to_attr_value(
+        &self,
+        segments: &[data_text_valkyrie::ast::StringSegment],
+        content: &str,
+        content_start: usize,
+    ) -> AwslAttributeValue {
         let parts: Vec<AwslTextPart> = segments
             .iter()
             .map(|segment| match segment {
                 data_text_valkyrie::ast::StringSegment::Text(text) => AwslTextPart::Text(text.content.clone()),
-                data_text_valkyrie::ast::StringSegment::Interpolation(interpolation) => AwslTextPart::Expr(interpolation_source(content, content_start, interpolation)),
+                data_text_valkyrie::ast::StringSegment::Interpolation(interpolation) => {
+                    AwslTextPart::Expr(interpolation_source(content, content_start, interpolation))
+                }
             })
             .collect();
         match parts.as_slice() {
@@ -291,7 +317,9 @@ impl<'a> AwslParser<'a> {
         self.lexer.skip_trivia();
 
         if matches!(tag.as_str(), "widget" | "template") {
-            return Err(self.error_at(start, format!("<{tag}> is a top-level template container; use it at file root, not nested inside markup")));
+            return Err(
+                self.error_at(start, format!("<{tag}> is a top-level template container; use it at file root, not nested inside markup"))
+            );
         }
         if matches!(tag.as_str(), "script" | "style") {
             return Err(self.reject_nested_section_tag(&tag));
@@ -502,7 +530,10 @@ impl<'a> AwslParser<'a> {
         self.lexer.skip_trivia();
         let items_expr = self.lexer.read_raw_expr_until_gt();
         let span = checkpoint..self.lexer.pos;
-        Some(vec![AwslAttribute { name: "item".into(), value: AwslAttributeValue::Literal(item.clone()), span: span.clone() }, AwslAttribute { name: "each".into(), value: AwslAttributeValue::Expression(items_expr), span }])
+        Some(vec![
+            AwslAttribute { name: "item".into(), value: AwslAttributeValue::Literal(item.clone()), span: span.clone() },
+            AwslAttribute { name: "each".into(), value: AwslAttributeValue::Expression(items_expr), span },
+        ])
     }
 
     fn try_parse_bare_if_condition(&mut self) -> Option<String> {

@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::engine::{catalog::RenameMap, Connection};
+use database_execution::engine::{Connection, catalog::RenameMap};
 
 fn path(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("database-execution-statement-caches-{}-{label}.yydb", std::process::id()))

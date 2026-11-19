@@ -125,7 +125,12 @@ impl MirBuilder {
 
     /// Emit nominal-sum payload extraction from declaration identities attached to the
     /// lowered `sum_types` table. MIR must not call spelling-based `sum_identity`.
-    fn lower_sum_payload_by_declarations(&mut self, value: MirOperand, owner: compiler_types::ItemId, variant: compiler_types::ItemId) -> MirOperand {
+    fn lower_sum_payload_by_declarations(
+        &mut self,
+        value: MirOperand,
+        owner: compiler_types::ItemId,
+        variant: compiler_types::ItemId,
+    ) -> MirOperand {
         let object_ty = infer_builder_operand_type(&value, &self.value_types);
         let sum = super::MirSumDeclaration::find_by_declaration(&self.sum_types, owner);
         let variant_decl = sum.and_then(|sum| sum.variants.iter().find(|item| item.declaration == Some(variant)));

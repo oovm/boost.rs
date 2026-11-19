@@ -32,16 +32,11 @@ impl Display for OdinDecodeError {
         match self {
             Self::TooShort => write!(f, ".odin buffer too short"),
             Self::InvalidMagic(magic) => write!(f, "invalid .odin magic: 0x{magic:08X} (expected 0x{:08X})", crate::ODIN_MAGIC),
-            Self::LegacyNyarMagic => write!(
-                f,
-                "legacy `.nyar` execution artifact rejected: `.odin` is a distinct artifact identity; rebuild it as `.odin`"
-            ),
+            Self::LegacyNyarMagic => {
+                write!(f, "legacy `.nyar` execution artifact rejected: `.odin` is a distinct artifact identity; rebuild it as `.odin`")
+            }
             Self::InvalidVersion(version) => {
-                write!(
-                    f,
-                    "unsupported .odin format version: found {version}, expected {} (rebuild the artifact)",
-                    crate::Odin_VERSION
-                )
+                write!(f, "unsupported .odin format version: found {version}, expected {} (rebuild the artifact)", crate::Odin_VERSION)
             }
             Self::InvalidConstantKind(kind) => write!(f, "invalid constant kind: {kind}"),
             Self::InvalidImportKind(kind) => write!(f, "invalid import kind: {kind}"),

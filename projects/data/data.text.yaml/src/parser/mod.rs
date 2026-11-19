@@ -22,7 +22,12 @@ impl<'config> YamlParser<'config> {
 }
 
 impl<'config> Parser<YamlLanguage> for YamlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<YamlLanguage>) -> ParseOutput<'a, YamlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<YamlLanguage>,
+    ) -> ParseOutput<'a, YamlLanguage> {
         let lexer = YamlLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

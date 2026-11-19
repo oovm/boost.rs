@@ -6,9 +6,13 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::engine::Connection;
-use database_execution::engine::bytes::{Placement, object_reference};
-use database_execution::local::point_write_keys_parsed;
+use database_execution::{
+    engine::{
+        Connection,
+        bytes::{Placement, object_reference},
+    },
+    local::point_write_keys_parsed,
+};
 use database_formats::yy::yydx::blob_chunk_hash;
 use database_query::local::resolved_contract_from_document;
 use database_types::{INLINE_BYTES_MAX, ObjectKind, Value};

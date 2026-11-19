@@ -20,7 +20,12 @@ pub struct ElixirParser<'config> {
 }
 
 impl<'config> Parser<ElixirLanguage> for ElixirParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ElixirLanguage>) -> ParseOutput<'a, ElixirLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ElixirLanguage>,
+    ) -> ParseOutput<'a, ElixirLanguage> {
         let lexer = ElixirLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -175,12 +180,19 @@ impl<'config> Pratt<ElixirLanguage> for ElixirParser<'config> {
         };
 
         match kind {
-            ElixirTokenType::Plus | ElixirTokenType::Minus | ElixirTokenType::Bang | ElixirTokenType::At => unary(state, kind, 13, ElixirElementType::UnaryExpression.into(), |s, p| PrattParser::parse(s, p, self)),
+            ElixirTokenType::Plus | ElixirTokenType::Minus | ElixirTokenType::Bang | ElixirTokenType::At => {
+                unary(state, kind, 13, ElixirElementType::UnaryExpression.into(), |s, p| PrattParser::parse(s, p, self))
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, ElixirLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, ElixirLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, ElixirLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, ElixirLanguage>> {
         use ElixirTokenType::*;
         let kind = state.peek_kind()?;
 
@@ -226,8 +238,12 @@ impl<'config> Pratt<ElixirLanguage> for ElixirParser<'config> {
                 PrattParser::parse(state, prec + 1, self);
                 Some(state.finish_at(cp, ElixirElementType::AccessExpression))
             }
-            Eq => Some(binary(state, left, kind, prec, assoc, ElixirElementType::MatchExpression.into(), |s, p| PrattParser::parse(s, p, self))),
-            _ => Some(binary(state, left, kind, prec, assoc, ElixirElementType::BinaryExpression.into(), |s, p| PrattParser::parse(s, p, self))),
+            Eq => {
+                Some(binary(state, left, kind, prec, assoc, ElixirElementType::MatchExpression.into(), |s, p| PrattParser::parse(s, p, self)))
+            }
+            _ => {
+                Some(binary(state, left, kind, prec, assoc, ElixirElementType::BinaryExpression.into(), |s, p| PrattParser::parse(s, p, self)))
+            }
         }
     }
 }

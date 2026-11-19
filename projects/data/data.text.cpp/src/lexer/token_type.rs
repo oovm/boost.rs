@@ -201,7 +201,9 @@ impl TokenType for CppTokenType {
             | Self::DotStar
             | Self::ArrowStar => UniversalTokenRole::Operator,
             Self::Semicolon | Self::Comma => UniversalTokenRole::Punctuation,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace => UniversalTokenRole::Punctuation,
+            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace => {
+                UniversalTokenRole::Punctuation
+            }
             Self::Hash | Self::DoubleHash | Self::Preprocessor => UniversalTokenRole::Operator,
             Self::EndOfFile => UniversalTokenRole::Eof,
             Self::Unknown | Self::Error => UniversalTokenRole::Error,

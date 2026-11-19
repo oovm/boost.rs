@@ -725,9 +725,15 @@ mod tests {
     #[test]
     fn command_errors_encode_the_canonical_error_lines() {
         use super::CommandError;
-        assert_eq!(super::encode_reply(&CommandError::WrongType.to_reply(), 2), b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+        assert_eq!(
+            super::encode_reply(&CommandError::WrongType.to_reply(), 2),
+            b"-WRONGTYPE Operation against a key holding the wrong kind of value\r\n"
+        );
         assert_eq!(super::encode_reply(&CommandError::Failed("syntax error".to_owned()).to_reply(), 2), b"-ERR syntax error\r\n");
-        assert_eq!(super::encode_reply(&CommandError::Coded("EXECABORT Transaction discarded because of previous errors.".to_owned()).to_reply(), 2), b"-EXECABORT Transaction discarded because of previous errors.\r\n");
+        assert_eq!(
+            super::encode_reply(&CommandError::Coded("EXECABORT Transaction discarded because of previous errors.".to_owned()).to_reply(), 2),
+            b"-EXECABORT Transaction discarded because of previous errors.\r\n"
+        );
         // 折行与 512 字符截断属于 error 行合同：`\r` 与 `\n` 各折为一个空格。
         assert_eq!(super::encode_reply(&CommandError::Failed("a\r\nb".to_owned()).to_reply(), 2), b"-ERR a  b\r\n");
         let long = "x".repeat(600);

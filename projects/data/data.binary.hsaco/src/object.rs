@@ -1,13 +1,13 @@
 //! Bounded code object view and the structural validation entry.
 
-use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::{ByteSource, ReadError};
+use data_binary_core::{BudgetTracker, ByteExtent};
 
 use crate::{
     error::{HsacoEvidence, HsacoHeaderTable, HsacoLayoutError},
     header::{
-        HSACO_ELF_HEADER_BYTES, HSACO_ELF_MAGIC, HSACO_ELFCLASS64, HSACO_ELFDATA2LSB, HSACO_EM_AMDGPU,
-        HSACO_PROGRAM_HEADER_BYTES, HSACO_SECTION_HEADER_BYTES, HSACO_SHT_NOBITS, HSACO_SYMBOL_BYTES, HsacoHeader,
+        HSACO_ELF_HEADER_BYTES, HSACO_ELF_MAGIC, HSACO_ELFCLASS64, HSACO_ELFDATA2LSB, HSACO_EM_AMDGPU, HSACO_PROGRAM_HEADER_BYTES,
+        HSACO_SECTION_HEADER_BYTES, HSACO_SHT_NOBITS, HSACO_SYMBOL_BYTES, HsacoHeader,
     },
 };
 
@@ -121,13 +121,8 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
             });
         }
 
-        let bytes = read_exact(
-            source,
-            ledger,
-            0,
-            HSACO_ELF_HEADER_BYTES,
-            HsacoEvidence::object(ByteExtent { start: 0, len: HSACO_ELF_HEADER_BYTES }),
-        )?;
+        let bytes =
+            read_exact(source, ledger, 0, HSACO_ELF_HEADER_BYTES, HsacoEvidence::object(ByteExtent { start: 0, len: HSACO_ELF_HEADER_BYTES }))?;
 
         let magic: [u8; 4] = bytes[0..4].try_into().expect("4-byte ELF magic");
         if magic != HSACO_ELF_MAGIC {
@@ -136,26 +131,17 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
 
         let class = bytes[4];
         if class != HSACO_ELFCLASS64 {
-            return Err(HsacoLayoutError::UnsupportedClass {
-                class,
-                evidence: HsacoEvidence::object(ByteExtent { start: 4, len: 1 }),
-            });
+            return Err(HsacoLayoutError::UnsupportedClass { class, evidence: HsacoEvidence::object(ByteExtent { start: 4, len: 1 }) });
         }
 
         let data = bytes[5];
         if data != HSACO_ELFDATA2LSB {
-            return Err(HsacoLayoutError::UnsupportedEndianness {
-                data,
-                evidence: HsacoEvidence::object(ByteExtent { start: 5, len: 1 }),
-            });
+            return Err(HsacoLayoutError::UnsupportedEndianness { data, evidence: HsacoEvidence::object(ByteExtent { start: 5, len: 1 }) });
         }
 
         let machine = read_u16(&bytes, 18);
         if machine != HSACO_EM_AMDGPU {
-            return Err(HsacoLayoutError::MachineMismatch {
-                machine,
-                evidence: HsacoEvidence::object(ByteExtent { start: 18, len: 2 }),
-            });
+            return Err(HsacoLayoutError::MachineMismatch { machine, evidence: HsacoEvidence::object(ByteExtent { start: 18, len: 2 }) });
         }
 
         let header = HsacoHeader {
@@ -243,24 +229,13 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
             sections.push(HsacoSection { index, name, kind, byte_range });
         }
 
-        let (text_index, text) = text
-            .ok_or(HsacoLayoutError::MissingTextSection { evidence: HsacoEvidence::object(ByteExtent { start: 40, len: 8 }) })?;
+        let (text_index, text) =
+            text.ok_or(HsacoLayoutError::MissingTextSection { evidence: HsacoEvidence::object(ByteExtent { start: 40, len: 8 }) })?;
         if text.len == 0 {
-            return Err(HsacoLayoutError::EmptyTextSection {
-                section_index: text_index,
-                evidence: self.section_field(text_index, 32),
-            });
+            return Err(HsacoLayoutError::EmptyTextSection { section_index: text_index, evidence: self.section_field(text_index, 32) });
         }
 
-        Ok(HsacoSummary {
-            header: self.header,
-            segments,
-            section_count: sections.len() as u64,
-            sections,
-            text,
-            symbol_count,
-            amdgpu_metadata,
-        })
+        Ok(HsacoSummary { header: self.header, segments, section_count: sections.len() as u64, sections, text, symbol_count, amdgpu_metadata })
     }
 
     /// Reads and decodes every entry of the section header table.
@@ -391,13 +366,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
             Vec::new()
         }
         else {
-            read_exact(
-                self.source,
-                ledger,
-                table.offset,
-                len,
-                HsacoEvidence::section(index as u32, ByteExtent { start: table.offset, len }),
-            )?
+            read_exact(self.source, ledger, table.offset, len, HsacoEvidence::section(index as u32, ByteExtent { start: table.offset, len }))?
         };
 
         Ok(headers.iter().map(|header| read_section_name(&bytes, header.name_offset)).collect())
@@ -416,10 +385,7 @@ impl<'a, S: ByteSource + ?Sized> HsacoObject<'a, S> {
 /// Returns the object summary for a structurally valid code object, or the
 /// classified failure that was found. Instruction and metadata semantics are
 /// never inspected.
-pub fn validate_hsaco<S: ByteSource + ?Sized>(
-    source: &S,
-    ledger: &mut BudgetTracker,
-) -> Result<HsacoSummary, HsacoLayoutError> {
+pub fn validate_hsaco<S: ByteSource + ?Sized>(source: &S, ledger: &mut BudgetTracker) -> Result<HsacoSummary, HsacoLayoutError> {
     HsacoObject::open(source, ledger)?.validate(ledger)
 }
 
@@ -464,20 +430,11 @@ fn table_bytes(length: u64, layout: TableLayout) -> Result<u64, HsacoLayoutError
         return Ok(0);
     }
     if entry_bytes < minimum_entry_bytes {
-        return Err(HsacoLayoutError::HeaderEntryTooSmall {
-            table,
-            entry_bytes,
-            minimum: minimum_entry_bytes,
-            evidence: entry_size_evidence,
-        });
+        return Err(HsacoLayoutError::HeaderEntryTooSmall { table, entry_bytes, minimum: minimum_entry_bytes, evidence: entry_size_evidence });
     }
 
-    let table_bytes = count.checked_mul(entry_bytes).ok_or(HsacoLayoutError::HeaderTableOverflow {
-        table,
-        count,
-        entry_bytes,
-        evidence: offset_evidence,
-    })?;
+    let table_bytes =
+        count.checked_mul(entry_bytes).ok_or(HsacoLayoutError::HeaderTableOverflow { table, count, entry_bytes, evidence: offset_evidence })?;
 
     if offset.checked_add(table_bytes).is_some_and(|end| end <= length) {
         return Ok(table_bytes);
@@ -496,14 +453,7 @@ fn table_bytes(length: u64, layout: TableLayout) -> Result<u64, HsacoLayoutError
         });
     }
 
-    Err(HsacoLayoutError::HeaderTableOutOfBounds {
-        table,
-        count,
-        table_bytes,
-        available_bytes,
-        offset,
-        evidence: offset_evidence,
-    })
+    Err(HsacoLayoutError::HeaderTableOutOfBounds { table, count, table_bytes, available_bytes, offset, evidence: offset_evidence })
 }
 
 /// Resolves one null-terminated name inside the section name table.
@@ -538,7 +488,8 @@ pub(crate) fn read_exact<S: ByteSource + ?Sized>(
     evidence: HsacoEvidence,
 ) -> Result<Vec<u8>, HsacoLayoutError> {
     ledger.reserve_read_bytes(len).map_err(HsacoLayoutError::Budget)?;
-    let Some(range) = boost_source::ByteRange::with_len(start, len) else {
+    let Some(range) = boost_source::ByteRange::with_len(start, len)
+    else {
         ledger.release_read_bytes(len).map_err(HsacoLayoutError::Budget)?;
         return Err(HsacoLayoutError::Unavailable { reason: "byte range overflows `u64`".into(), evidence });
     };

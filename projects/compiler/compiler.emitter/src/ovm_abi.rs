@@ -15,8 +15,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use data_binary_odin::OdinLayout;
 use compiler_types::{AggregateLayoutPlan, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, combined_content_hash};
+use data_binary_odin::OdinLayout;
 use serde::Serialize;
 
 use crate::{
@@ -591,7 +591,10 @@ mod tests {
             inner_ty.clone(),
             layout(8, "Inner", StorageKind::Value, vec![("value", named_type("i64")), ("tag", named_type("i32"))]),
         );
-        plan.testing_register_type_layout(outer_ty, layout(7, "Outer", StorageKind::Value, vec![("inner", inner_ty), ("count", named_type("i32"))]));
+        plan.testing_register_type_layout(
+            outer_ty,
+            layout(7, "Outer", StorageKind::Value, vec![("inner", inner_ty), ("count", named_type("i32"))]),
+        );
         let contract = derive(&plan).expect("嵌套聚合必须有 OVM 合同");
         let OvmAbiType::Aggregate { fields, .. } = &export_of(&contract).params[0].ty
         else {
@@ -612,7 +615,12 @@ mod tests {
         let mut plan = plan("list", function(&[(0, "values", list.clone())], list.clone()));
         plan.testing_register_type_layout(
             list,
-            layout(9, "ArrayList", StorageKind::Reference, vec![("_items", SemanticType::Array(Box::new(named_type("i64")))), ("_length", named_type("i32"))]),
+            layout(
+                9,
+                "ArrayList",
+                StorageKind::Reference,
+                vec![("_items", SemanticType::Array(Box::new(named_type("i64")))), ("_length", named_type("i32"))],
+            ),
         );
         let contract = derive(&plan).expect("泛型实例必须有 OVM 合同");
         let OvmAbiType::InstanceHandle { layout: index, name, .. } = &export_of(&contract).params[0].ty
@@ -809,7 +817,10 @@ mod tests {
         let ty = SemanticType::Nominal { layout: 7, spelling: Identifier::new("demo::Point") };
         let build = || {
             let mut plan = plan("point", function(&[(0, "point", ty.clone())], ty.clone()));
-            plan.testing_register_type_layout(ty.clone(), layout(7, "Point", StorageKind::Value, vec![("x", named_type("i64")), ("y", named_type("i64"))]));
+            plan.testing_register_type_layout(
+                ty.clone(),
+                layout(7, "Point", StorageKind::Value, vec![("x", named_type("i64")), ("y", named_type("i64"))]),
+            );
             derive(&plan).expect("合同")
         };
         let first = build();
@@ -884,7 +895,10 @@ mod tests {
     fn unsupported_aggregate_field_fails_closed() {
         let ty = SemanticType::Nominal { layout: 8, spelling: Identifier::new("demo::Heavy") };
         let mut plan = plan("heavy", function(&[(0, "heavy", ty.clone())], ty.clone()));
-        plan.testing_register_type_layout(ty, layout(8, "Heavy", StorageKind::Value, vec![("big", named_type("i128")), ("name", named_type("utf8"))]));
+        plan.testing_register_type_layout(
+            ty,
+            layout(8, "Heavy", StorageKind::Value, vec![("big", named_type("i128")), ("name", named_type("utf8"))]),
+        );
         let error = derive(&plan).expect_err("聚合字段不支持必须失败");
         assert!(error.contains("Heavy"), "got: {error}");
         assert!(error.contains("没有 OVM ABI 合同"), "got: {error}");

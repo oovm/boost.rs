@@ -2,7 +2,7 @@
 pub mod element_type;
 
 use crate::{language::RbqLanguage, lexer::token_type::RbqTokenType, parser::element_type::RbqElementType};
-use data_text_core::{TextError, Parser, ParserState, Source, TextEdit, TokenType};
+use data_text_core::{Parser, ParserState, Source, TextEdit, TextError, TokenType};
 
 pub(crate) type State<'a, S> = ParserState<'a, RbqLanguage, S>;
 
@@ -399,7 +399,10 @@ impl<'config> RbqParser<'config> {
                     else if state.at(RbqTokenType::MicroKw) {
                         self.parse_micro_function(state)?
                     }
-                    else if state.at(RbqTokenType::Ident) && (state.peek_non_trivia_kind_at(1) == Some(RbqTokenType::Colon) && state.peek_non_trivia_kind_at(2) == Some(RbqTokenType::MicroKw)) {
+                    else if state.at(RbqTokenType::Ident)
+                        && (state.peek_non_trivia_kind_at(1) == Some(RbqTokenType::Colon)
+                            && state.peek_non_trivia_kind_at(2) == Some(RbqTokenType::MicroKw))
+                    {
                         // Method definition: login: micro(token: string) -> bool;
                         state.incremental_node(RbqElementType::MicroDef, |state| {
                             state.eat(RbqTokenType::Ident); // login
@@ -683,7 +686,11 @@ impl<'config> RbqParser<'config> {
                 Ok(())
             })?
         }
-        else if state.at(RbqTokenType::StringLiteral) || state.at(RbqTokenType::NumberLiteral) || state.at(RbqTokenType::TrueKw) || state.at(RbqTokenType::FalseKw) {
+        else if state.at(RbqTokenType::StringLiteral)
+            || state.at(RbqTokenType::NumberLiteral)
+            || state.at(RbqTokenType::TrueKw)
+            || state.at(RbqTokenType::FalseKw)
+        {
             state.incremental_node(RbqElementType::Literal, |state| {
                 state.bump();
                 Ok(())
@@ -962,7 +969,12 @@ impl<'config> RbqParser<'config> {
 
 impl<'config> Parser<RbqLanguage> for RbqParser<'config> {
     /// Parses the source text into an RBQ syntax tree.
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<RbqLanguage>) -> data_text_core::ParseOutput<'a, RbqLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<RbqLanguage>,
+    ) -> data_text_core::ParseOutput<'a, RbqLanguage> {
         let lexer = crate::lexer::RbqLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

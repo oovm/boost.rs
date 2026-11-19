@@ -41,12 +41,7 @@ pub(crate) fn load_fat(bytes: &[u8], header: &Header) -> Result<Vec<u32>> {
                 fat_sector_ids.push(next);
             }
             let link_offset = usable * 4;
-            difat_sector = u32::from_le_bytes([
-                sector[link_offset],
-                sector[link_offset + 1],
-                sector[link_offset + 2],
-                sector[link_offset + 3],
-            ]);
+            difat_sector = u32::from_le_bytes([sector[link_offset], sector[link_offset + 1], sector[link_offset + 2], sector[link_offset + 3]]);
             difat_sectors_read += 1;
         }
     }
@@ -76,10 +71,7 @@ pub(crate) fn load_mini_fat(bytes: &[u8], header: &Header, fat: &[u32]) -> Resul
         for chunk in sector.chunks_exact(4) {
             mini_fat.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
-        sector_id = fat
-            .get(sector_id as usize)
-            .copied()
-            .ok_or_else(|| CfbError::UnexpectedEndOfChain { context: "mini FAT".to_string() })?;
+        sector_id = fat.get(sector_id as usize).copied().ok_or_else(|| CfbError::UnexpectedEndOfChain { context: "mini FAT".to_string() })?;
         sectors_read += 1;
     }
 
@@ -102,11 +94,8 @@ pub(crate) fn read_stream(
     if size == 0 {
         return Ok(Vec::new());
     }
-    let size_usize = usize::try_from(size).map_err(|_| CfbError::StreamTooLarge {
-        path: context.to_string(),
-        size,
-        limit: usize::MAX as u64,
-    })?;
+    let size_usize =
+        usize::try_from(size).map_err(|_| CfbError::StreamTooLarge { path: context.to_string(), size, limit: usize::MAX as u64 })?;
 
     if size as u32 >= mini_stream_cutoff {
         read_regular_stream(bytes, sector_size, fat, start_sector, size_usize, context)
@@ -127,14 +116,7 @@ pub(crate) fn read_stream(
     }
 }
 
-fn read_regular_stream(
-    bytes: &[u8],
-    sector_size: usize,
-    fat: &[u32],
-    mut sector_id: u32,
-    size: usize,
-    context: &str,
-) -> Result<Vec<u8>> {
+fn read_regular_stream(bytes: &[u8], sector_size: usize, fat: &[u32], mut sector_id: u32, size: usize, context: &str) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(size);
     let mut steps = 0usize;
     while out.len() < size {
@@ -147,10 +129,7 @@ fn read_regular_stream(
         let sector = read_sector(bytes, sector_size, sector_id)?;
         let remaining = size - out.len();
         out.extend_from_slice(&sector[..remaining.min(sector.len())]);
-        sector_id = fat
-            .get(sector_id as usize)
-            .copied()
-            .ok_or_else(|| CfbError::UnexpectedEndOfChain { context: context.to_string() })?;
+        sector_id = fat.get(sector_id as usize).copied().ok_or_else(|| CfbError::UnexpectedEndOfChain { context: context.to_string() })?;
         steps += 1;
     }
     out.truncate(size);
@@ -191,10 +170,8 @@ fn read_mini_stream(
         }
         let remaining = size - out.len();
         out.extend_from_slice(&mini_stream[start..start + remaining.min(mini_sector_size)]);
-        mini_sector_id = mini_fat
-            .get(mini_sector_id as usize)
-            .copied()
-            .ok_or_else(|| CfbError::UnexpectedEndOfChain { context: context.to_string() })?;
+        mini_sector_id =
+            mini_fat.get(mini_sector_id as usize).copied().ok_or_else(|| CfbError::UnexpectedEndOfChain { context: context.to_string() })?;
         steps += 1;
     }
     out.truncate(size);
@@ -205,10 +182,7 @@ fn read_sector(bytes: &[u8], sector_size: usize, sector_id: u32) -> Result<Vec<u
     let start = (sector_id as usize + 1) * sector_size;
     let end = start + sector_size;
     if end > bytes.len() {
-        return Err(CfbError::SectorOutOfRange {
-            sector_id,
-            max_sector: ((bytes.len() / sector_size).saturating_sub(1)) as u32,
-        });
+        return Err(CfbError::SectorOutOfRange { sector_id, max_sector: ((bytes.len() / sector_size).saturating_sub(1)) as u32 });
     }
     Ok(bytes[start..end].to_vec())
 }

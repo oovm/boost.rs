@@ -12,8 +12,8 @@ use crate::engine::{
     Error, Result,
     bytes::{ObjectStoreResolver, Placement},
 };
-use database_formats::yy::row::{with_object_resolver, ObjectResolver};
-use database_query::local::{fingerprint as fp, prepare as prepare_source, Dialect, PreparedStatement, QueryRow};
+use database_formats::yy::row::{ObjectResolver, with_object_resolver};
+use database_query::local::{Dialect, PreparedStatement, QueryRow, fingerprint as fp, prepare as prepare_source};
 use database_types::Value;
 
 use super::{Backend, Connection};
@@ -487,18 +487,19 @@ impl Connection {
                     }
                 };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
-                let keys = self.with_row_resolver(|| {
-                    crate::local::point_write_keys_parsed(
-                        &program,
-                        contract,
-                        &metadata.unique_constraints,
-                        schema_document,
-                        &[],
-                        exempt,
-                        &self.planning_placement(),
-                    )
-                })
-                .map(|keys| keys.map(Self::key_windows))?;
+                let keys = self
+                    .with_row_resolver(|| {
+                        crate::local::point_write_keys_parsed(
+                            &program,
+                            contract,
+                            &metadata.unique_constraints,
+                            schema_document,
+                            &[],
+                            exempt,
+                            &self.planning_placement(),
+                        )
+                    })
+                    .map(|keys| keys.map(Self::key_windows))?;
                 let complete = keys.is_none() || holds_every_row;
                 Ok((keys, (program, basis, complete)))
             },
@@ -512,7 +513,16 @@ impl Connection {
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 let placement = self.placement();
                 self.with_row_resolver(|| {
-                    crate::local::execute_write_parsed_indexed(&program, &contract, constraints, schema_document, records, &[], Some(&index), &placement)
+                    crate::local::execute_write_parsed_indexed(
+                        &program,
+                        &contract,
+                        constraints,
+                        schema_document,
+                        records,
+                        &[],
+                        Some(&index),
+                        &placement,
+                    )
                 })
             },
         )
@@ -556,18 +566,19 @@ impl Connection {
                     }
                 };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
-                let keys = self.with_row_resolver(|| {
-                    crate::local::point_write_keys_parsed(
-                        &plan.program,
-                        contract,
-                        &metadata.unique_constraints,
-                        schema_document,
-                        &plan.values,
-                        exempt,
-                        &self.planning_placement(),
-                    )
-                })
-                .map(|keys| keys.map(Self::key_windows))?;
+                let keys = self
+                    .with_row_resolver(|| {
+                        crate::local::point_write_keys_parsed(
+                            &plan.program,
+                            contract,
+                            &metadata.unique_constraints,
+                            schema_document,
+                            &plan.values,
+                            exempt,
+                            &self.planning_placement(),
+                        )
+                    })
+                    .map(|keys| keys.map(Self::key_windows))?;
                 let complete = keys.is_none() || holds_every_row;
                 Ok((keys, (plan, basis, complete)))
             },

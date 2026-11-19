@@ -150,9 +150,7 @@ pub fn plan_semantic_closure_with_host_bindings(
             // 常是 `Utf8Text` 的别名，impl 声明的所有者必须是真实聚合身份。
             let aggregate = if resolved.kind == DeclarationKind::TypeAlias {
                 declaration_index.get(&resolved).and_then(|alias| match &alias.link {
-                    Some(DeclarationLink::AliasTarget(target)) => {
-                        indexes.resolve(target, &resolved.namespace, visible).iter().next().cloned()
-                    }
+                    Some(DeclarationLink::AliasTarget(target)) => indexes.resolve(target, &resolved.namespace, visible).iter().next().cloned(),
                     _ => None,
                 })
             }
@@ -397,25 +395,22 @@ pub fn plan_semantic_closure_with_host_bindings(
                 };
                 let visible = visibility.get(&method.dependency_key).unwrap_or(&empty_visibility);
                 let implements_demanded_trait = entry.references.iter().any(|reference| {
-                    indexes
-                        .resolve(reference, &method.namespace, visible)
-                        .iter()
-                        .any(|resolved| {
-                            let trait_key = if resolved.kind == DeclarationKind::TypeAlias {
-                                declaration_index.get(resolved).and_then(|alias| match &alias.link {
-                                    Some(DeclarationLink::AliasTarget(target)) => indexes
-                                        .resolve(target, &resolved.namespace, visible)
-                                        .iter()
-                                        .find(|key| key.kind == DeclarationKind::Trait)
-                                        .cloned(),
-                                    _ => None,
-                                })
-                            }
-                            else {
-                                Some(resolved.clone())
-                            };
-                            trait_key.is_some_and(|key| key.kind == DeclarationKind::Trait && demanded.contains(&key))
-                        })
+                    indexes.resolve(reference, &method.namespace, visible).iter().any(|resolved| {
+                        let trait_key = if resolved.kind == DeclarationKind::TypeAlias {
+                            declaration_index.get(resolved).and_then(|alias| match &alias.link {
+                                Some(DeclarationLink::AliasTarget(target)) => indexes
+                                    .resolve(target, &resolved.namespace, visible)
+                                    .iter()
+                                    .find(|key| key.kind == DeclarationKind::Trait)
+                                    .cloned(),
+                                _ => None,
+                            })
+                        }
+                        else {
+                            Some(resolved.clone())
+                        };
+                        trait_key.is_some_and(|key| key.kind == DeclarationKind::Trait && demanded.contains(&key))
+                    })
                 });
                 if implements_demanded_trait {
                     promoted.insert(method.clone());

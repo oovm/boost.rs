@@ -4,12 +4,16 @@ use crate::{
     builder::ValkyrieBuilder,
     lexer::token_type::ValkyrieTokenType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     /// 使用 Pratt 解析器构建表达式
     /// 这是一个更高效的表达式解析方法，特别适合处理运算符优先级
-    pub(crate) fn build_expr_pratt<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_expr_pratt<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         // 对于简单的表达式，直接使用现有的构建方法
         // 对于复杂的二元表达式，使用 Pratt 解析器
         match node.green.kind {
@@ -32,7 +36,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {
                         // 这是一个运算符
                         operators.push((t.kind, t.span));
@@ -61,13 +68,22 @@ impl<'config> ValkyrieBuilder<'config> {
     }
 
     /// Pratt 解析器的核心算法
-    fn pratt_parse<S: Source + ?Sized>(&self, operands: Vec<TermExpression>, operators: Vec<(ValkyrieTokenType, data_text_core::Range<usize>)>, span: data_text_core::Range<usize>) -> Result<TermExpression, TextError> {
+    fn pratt_parse<S: Source + ?Sized>(
+        &self,
+        operands: Vec<TermExpression>,
+        operators: Vec<(ValkyrieTokenType, data_text_core::Range<usize>)>,
+        span: data_text_core::Range<usize>,
+    ) -> Result<TermExpression, TextError> {
         // 运算符优先级表
         let precedence = |op: &ValkyrieTokenType| -> u8 {
             match op {
                 ValkyrieTokenType::Star | ValkyrieTokenType::Slash | ValkyrieTokenType::Percent => 11,
                 ValkyrieTokenType::Plus | ValkyrieTokenType::PlusPlus | ValkyrieTokenType::Minus => 10,
-                ValkyrieTokenType::LessThan | ValkyrieTokenType::GreaterThan | ValkyrieTokenType::LessEq | ValkyrieTokenType::GreaterEq | ValkyrieTokenType::LessEqGreater => 9,
+                ValkyrieTokenType::LessThan
+                | ValkyrieTokenType::GreaterThan
+                | ValkyrieTokenType::LessEq
+                | ValkyrieTokenType::GreaterEq
+                | ValkyrieTokenType::LessEqGreater => 9,
                 ValkyrieTokenType::EqEq | ValkyrieTokenType::NotEq => 8,
                 // 区间低于相等、高于 `&&`；与 parser 的层序一致。非结合由 parser 只接受
                 // 单个区间运算符保证，`a..b..c` 不会进入 Pratt 表。
@@ -130,7 +146,12 @@ impl<'config> ValkyrieBuilder<'config> {
                 // 创建二元表达式
                 let left_span = expr.span();
                 let right_span = right_expr.span();
-                expr = TermExpression::Binary(Box::new(Binary { lhs: expr, operator: op.clone(), rhs: right_expr, span: data_text_core::Range { start: left_span.start, end: right_span.end } }));
+                expr = TermExpression::Binary(Box::new(Binary {
+                    lhs: expr,
+                    operator: op.clone(),
+                    rhs: right_expr,
+                    span: data_text_core::Range { start: left_span.start, end: right_span.end },
+                }));
 
                 i += consumed + 1;
             }

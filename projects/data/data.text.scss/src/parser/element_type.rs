@@ -168,7 +168,13 @@ impl ElementType for ScssElementType {
             Self::Declaration | Self::Property => UniversalElementRole::Attribute,
             Self::Selector => UniversalElementRole::Name,
             Self::ValueNode => UniversalElementRole::Value,
-            Self::ImportStatement | Self::IncludeStatement | Self::VariableDeclaration | Self::IfStatement | Self::ForStatement | Self::EachStatement | Self::WhileStatement => UniversalElementRole::Statement,
+            Self::ImportStatement
+            | Self::IncludeStatement
+            | Self::VariableDeclaration
+            | Self::IfStatement
+            | Self::ForStatement
+            | Self::EachStatement
+            | Self::WhileStatement => UniversalElementRole::Statement,
             Self::Error => UniversalElementRole::Error,
             _ => UniversalElementRole::None,
         }

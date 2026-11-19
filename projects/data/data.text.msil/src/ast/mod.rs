@@ -13,7 +13,12 @@ impl<'a> data_text_core::tree::TypedNode<'a> for MsilTypedRoot<'a> {
     type Language = crate::language::MsilLanguage;
 
     fn cast(node: data_text_core::RedNode<'a, Self::Language>) -> Option<Self> {
-        if node.kind::<crate::parser::element_type::MsilElementType>() == crate::parser::element_type::MsilElementType::Root { Some(Self { red: node }) } else { None }
+        if node.kind::<crate::parser::element_type::MsilElementType>() == crate::parser::element_type::MsilElementType::Root {
+            Some(Self { red: node })
+        }
+        else {
+            None
+        }
     }
 
     fn green(&self) -> &data_text_core::GreenNode<'a, Self::Language> {

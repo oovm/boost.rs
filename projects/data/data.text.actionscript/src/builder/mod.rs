@@ -3,7 +3,9 @@ use crate::{
     language::ActionScriptLanguage,
     parser::{ActionScriptElementType, ActionScriptParser},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Lexer, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 
 /// AST builder for the ActionScript language.
 #[derive(Clone)]
@@ -20,7 +22,12 @@ impl<'config> ActionScriptBuilder<'config> {
 }
 
 impl<'config> Builder<ActionScriptLanguage> for ActionScriptBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ActionScriptLanguage>) -> data_text_core::builder::BuildOutput<ActionScriptLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ActionScriptLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ActionScriptLanguage> {
         let parser = ActionScriptParser::new(self.config);
         let lexer = crate::lexer::ActionScriptLexer::new(&self.config);
 
@@ -274,7 +281,10 @@ impl<'config> ActionScriptBuilder<'config> {
 
         for child in node.children() {
             if let RedTree::Node(n) = child {
-                if n.green.kind == ActionScriptElementType::Identifier || n.green.kind == ActionScriptElementType::Dot || n.green.kind == ActionScriptElementType::Star {
+                if n.green.kind == ActionScriptElementType::Identifier
+                    || n.green.kind == ActionScriptElementType::Dot
+                    || n.green.kind == ActionScriptElementType::Star
+                {
                     path.push_str(&source.get_text_in(n.span()));
                 }
             }

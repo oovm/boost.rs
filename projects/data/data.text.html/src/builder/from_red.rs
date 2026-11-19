@@ -162,7 +162,9 @@ fn element_body_children<'a>(node: RedNode<'a, HtmlLanguage>, source: &SourceTex
         let child = node_children[index];
         match child {
             RedTree::Node(child_node) => {
-                if child_node.element_type() == HtmlElementType::TagSlashOpen && closes_current_element(&node_children, index, tag_name.as_deref(), source) {
+                if child_node.element_type() == HtmlElementType::TagSlashOpen
+                    && closes_current_element(&node_children, index, tag_name.as_deref(), source)
+                {
                     if let Some(close_index) = closing_tag_close_index(&node_children, index) {
                         closing_end = Some(tree_span_end(node_children[close_index]));
                         trailing.extend(node_children[close_index + 1..].iter().copied());
@@ -274,7 +276,12 @@ fn tag_name_from_element_text(text: &str) -> Option<String> {
 
 fn unquote(value: &str) -> String {
     let trimmed = value.trim();
-    if (trimmed.starts_with('"') && trimmed.ends_with('"')) || (trimmed.starts_with('\'') && trimmed.ends_with('\'')) { trimmed[1..trimmed.len() - 1].to_string() } else { trimmed.to_string() }
+    if (trimmed.starts_with('"') && trimmed.ends_with('"')) || (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+        trimmed[1..trimmed.len() - 1].to_string()
+    }
+    else {
+        trimmed.to_string()
+    }
 }
 
 fn normalize_whitespace(text: &str) -> String {

@@ -5,7 +5,10 @@ use crate::{
     parser::{ElixirParser, element_type::ElixirElementType},
 };
 use core::range::Range;
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    source::Source,
+};
 
 /// Elixir AST builder.
 #[derive(Clone, Copy)]
@@ -22,7 +25,12 @@ impl<'config> ElixirBuilder<'config> {
 }
 
 impl<'config> Builder<ElixirLanguage> for ElixirBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ElixirLanguage>) -> BuildOutput<ElixirLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ElixirLanguage>,
+    ) -> BuildOutput<ElixirLanguage> {
         let parser = ElixirParser::new(self.config);
 
         let mut cache = data_text_core::parser::session::ParseSession::<ElixirLanguage>::default();
@@ -225,7 +233,12 @@ impl<'config> ElixirBuilder<'config> {
                     }
                 }
 
-                if let (Some(l), Some(o), Some(r)) = (left, op, right) { Ok(Some(Expr::Binary { left: Box::new(l), op: o, right: Box::new(r), span: span.into() })) } else { Ok(None) }
+                if let (Some(l), Some(o), Some(r)) = (left, op, right) {
+                    Ok(Some(Expr::Binary { left: Box::new(l), op: o, right: Box::new(r), span: span.into() }))
+                }
+                else {
+                    Ok(None)
+                }
             }
             ElixirElementType::MatchExpression => {
                 let mut left = None;
@@ -244,7 +257,12 @@ impl<'config> ElixirBuilder<'config> {
                     }
                 }
 
-                if let (Some(l), Some(r)) = (left, right) { Ok(Some(Expr::Match { left: Box::new(l), right: Box::new(r), span: span.into() })) } else { Ok(None) }
+                if let (Some(l), Some(r)) = (left, right) {
+                    Ok(Some(Expr::Match { left: Box::new(l), right: Box::new(r), span: span.into() }))
+                }
+                else {
+                    Ok(None)
+                }
             }
             ElixirElementType::UnaryExpression => {
                 let mut op = None;
@@ -293,7 +311,10 @@ impl<'config> ElixirBuilder<'config> {
                         }
                         RedTree::Leaf(t) if t.kind == ElixirTokenType::Identifier => {
                             if callee.is_none() {
-                                callee = Some(Box::new(Expr::Ident(Identifier { name: text(source, t.span.clone().into()), span: t.span.clone().into() })));
+                                callee = Some(Box::new(Expr::Ident(Identifier {
+                                    name: text(source, t.span.clone().into()),
+                                    span: t.span.clone().into(),
+                                })));
                             }
                         }
                         _ => {}
@@ -321,7 +342,10 @@ impl<'config> ElixirBuilder<'config> {
                         }
                         RedTree::Leaf(t) if t.kind == ElixirTokenType::Identifier => {
                             if receiver.is_none() {
-                                receiver = Some(Box::new(Expr::Ident(Identifier { name: text(source, t.span.clone().into()), span: t.span.clone().into() })));
+                                receiver = Some(Box::new(Expr::Ident(Identifier {
+                                    name: text(source, t.span.clone().into()),
+                                    span: t.span.clone().into(),
+                                })));
                             }
                             else {
                                 field = Some(Identifier { name: text(source, t.span.clone().into()), span: t.span.clone().into() });
@@ -331,7 +355,12 @@ impl<'config> ElixirBuilder<'config> {
                     }
                 }
 
-                if let (Some(r), Some(f)) = (receiver, field) { Ok(Some(Expr::Field { receiver: r, field: f, span: span.into() })) } else { Ok(None) }
+                if let (Some(r), Some(f)) = (receiver, field) {
+                    Ok(Some(Expr::Field { receiver: r, field: f, span: span.into() }))
+                }
+                else {
+                    Ok(None)
+                }
             }
             ElixirElementType::BlockExpression => {
                 let mut statements = Vec::new();

@@ -1,11 +1,14 @@
 use crate::{
     VueElementType, VueLanguage,
-    ast::{Attribute, AttributeValue, Directive, DirectiveArgument, DirectiveExpression, Modifier, VueAttribute, VueBlock, VueElement, VueInterpolation, VueNode, VueRoot, VueText},
+    ast::{
+        Attribute, AttributeValue, Directive, DirectiveArgument, DirectiveExpression, Modifier, VueAttribute, VueBlock, VueElement,
+        VueInterpolation, VueNode, VueRoot, VueText,
+    },
     lexer::token_type::VueTokenType,
 };
 use core::range::Range;
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, Source,
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, Source, TextDiagnostics, TextError,
     builder::BuildOutput,
     source::{SourceText, TextEdit},
 };
@@ -61,7 +64,9 @@ impl VueBuilder {
                                             name = Range { start: sub_offset, end: sub_offset + t.length as usize };
                                         }
                                     }
-                                    GreenTree::Node(attr_node) if attr_node.kind == VueElementType::Attribute || attr_node.kind == VueElementType::Directive => {
+                                    GreenTree::Node(attr_node)
+                                        if attr_node.kind == VueElementType::Attribute || attr_node.kind == VueElementType::Directive =>
+                                    {
                                         attributes.push(self.build_attribute(attr_node, sub_offset, source)?);
                                     }
                                     _ => {}
@@ -93,7 +98,9 @@ impl VueBuilder {
                             if block_name == "template" {
                                 let text_content = source.get_text_in(Range { start: current_offset, end: current_offset + t.length as usize });
                                 if !text_content.trim().is_empty() {
-                                    children.push(VueNode::Text(VueText { span: Range { start: current_offset, end: current_offset + t.length as usize } }));
+                                    children.push(VueNode::Text(VueText {
+                                        span: Range { start: current_offset, end: current_offset + t.length as usize },
+                                    }));
                                 }
                             }
                             else {
@@ -137,12 +144,20 @@ impl VueBuilder {
                                             tag_name = Range { start: sub_offset, end: sub_offset + t.length as usize };
                                         }
                                     }
-                                    GreenTree::Leaf(t) if tag_name.is_empty() && matches!(t.kind, VueTokenType::TemplateStart | VueTokenType::ScriptStart | VueTokenType::StyleStart) => {
+                                    GreenTree::Leaf(t)
+                                        if tag_name.is_empty()
+                                            && matches!(
+                                                t.kind,
+                                                VueTokenType::TemplateStart | VueTokenType::ScriptStart | VueTokenType::StyleStart
+                                            ) =>
+                                    {
                                         // Lexer emits `<template` / `<script` / `<style` as one
                                         // keyword leaf (no separate Identifier). Name span skips `<`.
                                         tag_name = Range { start: sub_offset + 1, end: sub_offset + t.length as usize };
                                     }
-                                    GreenTree::Node(attr_node) if attr_node.kind == VueElementType::Attribute || attr_node.kind == VueElementType::Directive => {
+                                    GreenTree::Node(attr_node)
+                                        if attr_node.kind == VueElementType::Attribute || attr_node.kind == VueElementType::Directive =>
+                                    {
                                         attributes.push(self.build_attribute(attr_node, sub_offset, source)?);
                                     }
                                     // Trivia after `>` is pushed while finishing the tag, so a
@@ -174,7 +189,9 @@ impl VueBuilder {
                         VueTokenType::Text => {
                             let content = source.get_text_in(Range { start: current_offset, end: current_offset + t.length as usize });
                             if !content.trim().is_empty() {
-                                children.push(VueNode::Text(VueText { span: Range { start: current_offset, end: current_offset + t.length as usize } }));
+                                children.push(VueNode::Text(VueText {
+                                    span: Range { start: current_offset, end: current_offset + t.length as usize },
+                                }));
                             }
                         }
                         // The lexer treats comments as trivia, so they arrive as leaves here.
@@ -228,7 +245,14 @@ impl VueBuilder {
                                 if let GreenTree::Node(argument) = name_child {
                                     if argument.kind == VueElementType::Identifier {
                                         let argument_name = Self::name_range_from_attr_name_node(argument, argument_offset);
-                                        arg = Some(DirectiveArgument { span: if argument_name.is_empty() { Range { start: argument_offset, end: argument_offset + argument.byte_length as usize } } else { argument_name } });
+                                        arg = Some(DirectiveArgument {
+                                            span: if argument_name.is_empty() {
+                                                Range { start: argument_offset, end: argument_offset + argument.byte_length as usize }
+                                            }
+                                            else {
+                                                argument_name
+                                            },
+                                        });
                                     }
                                 }
                                 argument_offset += name_child.len() as usize;
@@ -260,7 +284,13 @@ impl VueBuilder {
 
             let value = value.map(|span| DirectiveExpression { span });
 
-            VueAttribute::Directive(Directive { name, arg, modifiers, value, span: Range { start: offset, end: offset + node.byte_length as usize } })
+            VueAttribute::Directive(Directive {
+                name,
+                arg,
+                modifiers,
+                value,
+                span: Range { start: offset, end: offset + node.byte_length as usize },
+            })
         }
         else {
             for child in node.children {
@@ -298,7 +328,34 @@ impl VueBuilder {
 
     fn is_name_token(kind: VueTokenType) -> bool {
         use VueTokenType::*;
-        matches!(kind, Identifier | For | In | Of | As | If | Else | From | Default | Const | Let | Var | Function | Return | Break | Continue | Switch | Try | Throw | True | False | Null | Import | Export | While)
+        matches!(
+            kind,
+            Identifier
+                | For
+                | In
+                | Of
+                | As
+                | If
+                | Else
+                | From
+                | Default
+                | Const
+                | Let
+                | Var
+                | Function
+                | Return
+                | Break
+                | Continue
+                | Switch
+                | Try
+                | Throw
+                | True
+                | False
+                | Null
+                | Import
+                | Export
+                | While
+        )
     }
 
     fn name_range_from_attr_name_node<'a>(node: &GreenNode<'a, VueLanguage>, offset: usize) -> Range<usize> {
@@ -315,7 +372,12 @@ impl VueBuilder {
         Range { start: offset, end: offset }
     }
 
-    fn build_interpolation<'a>(&self, node: &GreenNode<'a, VueLanguage>, offset: usize, _source: &SourceText) -> Result<VueInterpolation, TextError> {
+    fn build_interpolation<'a>(
+        &self,
+        node: &GreenNode<'a, VueLanguage>,
+        offset: usize,
+        _source: &SourceText,
+    ) -> Result<VueInterpolation, TextError> {
         let mut expression = Range { start: offset, end: offset };
         let mut current_offset = offset;
 
@@ -350,7 +412,12 @@ impl VueBuilder {
 }
 
 impl Builder<VueLanguage> for VueBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<VueLanguage>) -> BuildOutput<VueLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<VueLanguage>,
+    ) -> BuildOutput<VueLanguage> {
         let source = SourceText::new(text.get_text_in(Range { start: 0, end: text.length() }).to_string());
         let config = VueLanguage::default();
         let parser = crate::parser::VueParser::new(&config);
@@ -377,7 +444,11 @@ fn comment_body(raw: &str) -> String {
 /// Trivia is kept out of structural nodes, but a text run keeps it as content, so the
 /// builder has to reabsorb it when computing text spans.
 fn trailing_whitespace_len(node: &GreenNode<'_, VueLanguage>, index: usize) -> usize {
-    node.children[index + 1..].iter().take_while(|child| matches!(child, GreenTree::Leaf(leaf) if leaf.kind == VueTokenType::Whitespace)).map(|child| child.len() as usize).sum()
+    node.children[index + 1..]
+        .iter()
+        .take_while(|child| matches!(child, GreenTree::Leaf(leaf) if leaf.kind == VueTokenType::Whitespace))
+        .map(|child| child.len() as usize)
+        .sum()
 }
 
 /// Splits a `TextNode` into `Text` and `Comment` children.

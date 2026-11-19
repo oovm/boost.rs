@@ -2,7 +2,10 @@ use crate::RustParser;
 
 use crate::{ast::*, language::RustLanguage, lexer::RustTokenType, parser::RustElementType};
 use core::range::Range;
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    source::Source,
+};
 use std::sync::Arc;
 
 mod build_generics;
@@ -28,7 +31,12 @@ impl<'config> RustBuilder<'config> {
 }
 
 impl<'config> Builder<RustLanguage> for RustBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RustLanguage>) -> BuildOutput<RustLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<RustLanguage>,
+    ) -> BuildOutput<RustLanguage> {
         let parser = RustParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<RustLanguage>::default();
         let TextDiagnostics { result, diagnostics } = parser.parse(source, edits, &mut session);
@@ -155,7 +163,13 @@ impl<'config> RustBuilder<'config> {
             name,
             params,
             return_type,
-            body: body.unwrap_or_else(|| Block { statements: Vec::new(), block_start: 0, block_end: 0, nested: 0, span: Range { start: 0, end: 0 } }),
+            body: body.unwrap_or_else(|| Block {
+                statements: Vec::new(),
+                block_start: 0,
+                block_end: 0,
+                nested: 0,
+                span: Range { start: 0, end: 0 },
+            }),
             is_async,
             is_unsafe,
             generics,
@@ -381,7 +395,12 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let (Some(left), Some(op), Some(right)) = (left, op, right) { Ok(Expr::Binary { left, op, right, span: span.into() }) } else { Err(TextError::syntax_error("Invalid binary expression".to_string(), span.start, None)) }
+                if let (Some(left), Some(op), Some(right)) = (left, op, right) {
+                    Ok(Expr::Binary { left, op, right, span: span.into() })
+                }
+                else {
+                    Err(TextError::syntax_error("Invalid binary expression".to_string(), span.start, None))
+                }
             }
             RustElementType::UnaryExpression => {
                 let mut op = None;
@@ -407,7 +426,12 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let (Some(op), Some(operand)) = (op, operand) { Ok(Expr::Unary { op, expr: operand, span: span.into() }) } else { Err(TextError::syntax_error("Invalid unary expression".to_string(), span.start, None)) }
+                if let (Some(op), Some(operand)) = (op, operand) {
+                    Ok(Expr::Unary { op, expr: operand, span: span.into() })
+                }
+                else {
+                    Err(TextError::syntax_error("Invalid unary expression".to_string(), span.start, None))
+                }
             }
             RustElementType::CallExpression => {
                 let mut func = None;
@@ -427,7 +451,12 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let Some(func) = func { Ok(Expr::Call { callee: func, args, span: span.into() }) } else { Err(TextError::syntax_error("Invalid call expression".to_string(), span.start, None)) }
+                if let Some(func) = func {
+                    Ok(Expr::Call { callee: func, args, span: span.into() })
+                }
+                else {
+                    Err(TextError::syntax_error("Invalid call expression".to_string(), span.start, None))
+                }
             }
             RustElementType::FieldExpression => {
                 let mut base = None;
@@ -447,7 +476,12 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let Some(receiver) = base { Ok(Expr::Field { receiver, field, span: span.into() }) } else { Err(TextError::syntax_error("Invalid field expression".to_string(), span.start, None)) }
+                if let Some(receiver) = base {
+                    Ok(Expr::Field { receiver, field, span: span.into() })
+                }
+                else {
+                    Err(TextError::syntax_error("Invalid field expression".to_string(), span.start, None))
+                }
             }
             RustElementType::IndexExpression => {
                 let mut base = None;
@@ -464,7 +498,12 @@ impl<'config> RustBuilder<'config> {
                     }
                 }
 
-                if let (Some(receiver), Some(index)) = (base, index) { Ok(Expr::Index { receiver, index, span: span.into() }) } else { Err(TextError::syntax_error("Invalid index expression".to_string(), span.start, None)) }
+                if let (Some(receiver), Some(index)) = (base, index) {
+                    Ok(Expr::Index { receiver, index, span: span.into() })
+                }
+                else {
+                    Err(TextError::syntax_error("Invalid index expression".to_string(), span.start, None))
+                }
             }
             RustElementType::ParenthesizedExpression => {
                 for child in node.children() {

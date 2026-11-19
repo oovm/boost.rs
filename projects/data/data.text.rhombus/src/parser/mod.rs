@@ -39,7 +39,9 @@ impl<'config> RhombusParser<'config> {
 
     fn parse_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         match state.peek_kind() {
-            Some(RhombusTokenType::LeftParen) | Some(RhombusTokenType::LeftBracket) | Some(RhombusTokenType::LeftBrace) => self.parse_block(state),
+            Some(RhombusTokenType::LeftParen) | Some(RhombusTokenType::LeftBracket) | Some(RhombusTokenType::LeftBrace) => {
+                self.parse_block(state)
+            }
             Some(_) => {
                 state.bump();
                 Ok(())
@@ -116,7 +118,12 @@ impl<'config> RhombusParser<'config> {
 }
 
 impl<'config> Parser<RhombusLanguage> for RhombusParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<RhombusLanguage>) -> ParseOutput<'a, RhombusLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<RhombusLanguage>,
+    ) -> ParseOutput<'a, RhombusLanguage> {
         let lexer = RhombusLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

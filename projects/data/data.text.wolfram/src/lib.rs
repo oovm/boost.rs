@@ -26,6 +26,6 @@ pub use crate::lsp::WolframLanguageService;
 /// MCP service implementation.
 #[cfg(feature = "mcp")]
 pub use crate::mcp::serve_wolfram_mcp;
-pub use lexer::token_type::WolframTokenType;
 pub use data_text_core::{ElementType, TokenType};
+pub use lexer::token_type::WolframTokenType;
 pub use parser::element_type::WolframElementType;

@@ -52,7 +52,5 @@ impl LegacyDoc {
 fn read_table_stream(compound: &CompoundFile, word_document: &[u8]) -> Result<Vec<u8>> {
     let flags = word_document.get(10..12).and_then(|bytes| bytes.try_into().ok()).map(u16::from_le_bytes).unwrap_or_default();
     let stream_name = if flags & (1 << 9) != 0 { "/1Table" } else { "/0Table" };
-    compound
-        .read_stream(stream_name)
-        .map_err(|error| DocError::Stream { stream: stream_name.to_string(), message: error.to_string() })
+    compound.read_stream(stream_name).map_err(|error| DocError::Stream { stream: stream_name.to_string(), message: error.to_string() })
 }

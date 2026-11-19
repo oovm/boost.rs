@@ -59,7 +59,19 @@ impl<'config> JavadocParser<'config> {
     fn is_at_block_tag<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> bool {
         // A block tag starts with @ at the beginning of a line (ignoring whitespace and *)
         if let Some(k) = state.peek_kind() {
-            if matches!(k, TT::ParamTag | TT::ReturnTag | TT::ThrowsTag | TT::ExceptionTag | TT::SeeTag | TT::SinceTag | TT::VersionTag | TT::AuthorTag | TT::DeprecatedTag | TT::Tag) {
+            if matches!(
+                k,
+                TT::ParamTag
+                    | TT::ReturnTag
+                    | TT::ThrowsTag
+                    | TT::ExceptionTag
+                    | TT::SeeTag
+                    | TT::SinceTag
+                    | TT::VersionTag
+                    | TT::AuthorTag
+                    | TT::DeprecatedTag
+                    | TT::Tag
+            ) {
                 // Check if it's effectively at the start of a line
                 // In a real Javadoc, it's preceded by Newline and optional Whitespace/Asterisk
                 return true;
@@ -104,7 +116,12 @@ impl<'config> JavadocParser<'config> {
 }
 
 impl<'config> Parser<JavadocLanguage> for JavadocParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JavadocLanguage>) -> ParseOutput<'a, JavadocLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JavadocLanguage>,
+    ) -> ParseOutput<'a, JavadocLanguage> {
         let lexer = JavadocLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

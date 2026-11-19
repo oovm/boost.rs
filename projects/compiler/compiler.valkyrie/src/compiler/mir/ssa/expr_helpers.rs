@@ -8,7 +8,10 @@ use crate::compiler::types::{
 use super::{MirBuilder, MirConstant, MirOperand, MirTraitWitness, MirValueRef, ValkyrieType};
 
 impl MirBuilder {
-    pub(super) fn nominal_identity_for_declaration(&mut self, declaration: compiler_types::ItemId) -> Option<compiler_types::NominalInstanceId> {
+    pub(super) fn nominal_identity_for_declaration(
+        &mut self,
+        declaration: compiler_types::ItemId,
+    ) -> Option<compiler_types::NominalInstanceId> {
         super::MirStruct::find_by_declaration(&self.field_declarations, declaration).map(|structure| structure.nominal)
     }
 
@@ -254,18 +257,16 @@ pub(super) fn is_integer_range_scrutinee_type(ty: &ValkyrieType, structs: &[supe
 
 /// 声明身份是否为整型 primitive：`[primitive("std::primitive::i*/u*")]` 折叠出的载体。
 fn is_integer_primitive_identity(identity: Option<&str>) -> bool {
-    identity
-        .and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
-        .is_some_and(|builtin| {
-            matches!(
-                builtin,
-                ValkyrieType::Integer8 { .. }
-                    | ValkyrieType::Integer16 { .. }
-                    | ValkyrieType::Integer32 { .. }
-                    | ValkyrieType::Integer64 { .. }
-                    | ValkyrieType::Integer128 { .. }
-            )
-        })
+    identity.and_then(crate::compiler::types::hir::primitive_identity_builtin_type).is_some_and(|builtin| {
+        matches!(
+            builtin,
+            ValkyrieType::Integer8 { .. }
+                | ValkyrieType::Integer16 { .. }
+                | ValkyrieType::Integer32 { .. }
+                | ValkyrieType::Integer64 { .. }
+                | ValkyrieType::Integer128 { .. }
+        )
+    })
 }
 
 /// 字符字面量可特化到的形参类型：`char`（内建变体、源码短名或 `[primitive("std::text::char")]`
@@ -279,9 +280,7 @@ pub(super) fn is_character_literal_formal_type(ty: &ValkyrieType, structs: &[sup
                 return true;
             }
             match super::MirStruct::find_by_declaration(structs, *declaration) {
-                Some(item) => {
-                    item.name.as_str() == "char" || is_numeric_primitive_identity(item.primitive_identity.as_deref())
-                }
+                Some(item) => item.name.as_str() == "char" || is_numeric_primitive_identity(item.primitive_identity.as_deref()),
                 None => false,
             }
         }

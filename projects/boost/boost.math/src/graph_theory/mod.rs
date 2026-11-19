@@ -200,7 +200,8 @@ where
                 seen[next] = true;
                 stack.push((next, 0));
             }
-        } else {
+        }
+        else {
             post.push(node);
             stack.pop();
         }
@@ -326,7 +327,8 @@ where
                     }
                     _ => {}
                 }
-            } else {
+            }
+            else {
                 color[node] = 2;
                 path.pop();
                 stack.pop();
@@ -405,7 +407,8 @@ where
                     seen[next] = true;
                     stack.push((next, 0));
                 }
-            } else {
+            }
+            else {
                 order.push(node);
                 stack.pop();
             }
@@ -495,7 +498,8 @@ where
         }
     }
 
-    let Some(total) = distance[goal] else {
+    let Some(total) = distance[goal]
+    else {
         return Ok(ShortestPath {
             distance: None,
             path: Vec::new(),
@@ -508,7 +512,8 @@ where
     let mut path = vec![goal];
     let mut cursor = goal;
     while cursor != start {
-        let Some(parent) = previous[cursor] else {
+        let Some(parent) = previous[cursor]
+        else {
             return Err(GraphError::UnknownVertex);
         };
         path.push(parent);

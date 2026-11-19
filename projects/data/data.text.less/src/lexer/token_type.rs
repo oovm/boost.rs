@@ -177,7 +177,15 @@ impl TokenType for LessTokenType {
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
             Self::StringLiteral | Self::NumberLiteral | Self::ColorLiteral | Self::UrlLiteral => UniversalTokenRole::Literal,
-            Self::Identifier | Self::ClassName | Self::IdSelector | Self::TagName | Self::PseudoClass | Self::PseudoElement | Self::AttributeName | Self::PropertyName | Self::FunctionName => UniversalTokenRole::Name,
+            Self::Identifier
+            | Self::ClassName
+            | Self::IdSelector
+            | Self::TagName
+            | Self::PseudoClass
+            | Self::PseudoElement
+            | Self::AttributeName
+            | Self::PropertyName
+            | Self::FunctionName => UniversalTokenRole::Name,
             Self::Important
             | Self::Inherit
             | Self::Initial
@@ -194,10 +202,24 @@ impl TokenType for LessTokenType {
             | Self::AtSupports
             | Self::AtPage
             | Self::AtDocument => UniversalTokenRole::Keyword,
-            Self::Colon | Self::Semicolon | Self::Comma | Self::Dot | Self::Hash | Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Equals | Self::Tilde | Self::Pipe | Self::Caret | Self::Dollar | Self::GreaterThan => {
-                UniversalTokenRole::Operator
+            Self::Colon
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::Hash
+            | Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Equals
+            | Self::Tilde
+            | Self::Pipe
+            | Self::Caret
+            | Self::Dollar
+            | Self::GreaterThan => UniversalTokenRole::Operator,
+            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => {
+                UniversalTokenRole::Punctuation
             }
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => UniversalTokenRole::Punctuation,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,
             _ => UniversalTokenRole::None,

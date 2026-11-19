@@ -7,11 +7,11 @@
 use std::{fs, path::Path};
 
 use crate::Result;
-use data_binary_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
 use compiler_target::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
 };
+use data_binary_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
 
 use crate::{
     backend::binding_builders::{BindingGenerationContext, HostBindingBuilder},

@@ -30,7 +30,12 @@ impl<'a> NoteParser<'a> {
 }
 
 impl<'p> Parser<NotedownLanguage> for NoteParser<'p> {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<NotedownLanguage>) -> ParseOutput<'a, NotedownLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<NotedownLanguage>,
+    ) -> ParseOutput<'a, NotedownLanguage> {
         let lexer = NotedownLexer::new(self.language);
         data_text_core::parser::parse_with_lexer(&lexer, source, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -190,7 +195,12 @@ impl<'p> NoteParser<'p> {
                     }
                 }
                 else if can_open {
-                    let element = if run_len >= 2 { NoteElementType::Token(NoteTokenType::Strong) } else { NoteElementType::Token(NoteTokenType::Emphasis) };
+                    let element = if run_len >= 2 {
+                        NoteElementType::Token(NoteTokenType::Strong)
+                    }
+                    else {
+                        NoteElementType::Token(NoteTokenType::Emphasis)
+                    };
                     let start = state.checkpoint();
                     for _ in 0..run_len {
                         state.bump();
@@ -289,7 +299,13 @@ impl<'p> NoteParser<'p> {
     }
 
     /// 用一段定界符连串收尾同字符的已打开元素，最内层优先；返回未被消费的字符数。
-    fn close_emphasis_run<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, opens: &mut Vec<((usize, usize), NoteElementType, char, usize)>, ch: char, run_len: usize) -> usize {
+    fn close_emphasis_run<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        opens: &mut Vec<((usize, usize), NoteElementType, char, usize)>,
+        ch: char,
+        run_len: usize,
+    ) -> usize {
         let mut remaining = run_len;
         loop {
             let Some(pos) = opens.iter().rposition(|(_, _, open_char, _)| *open_char == ch)

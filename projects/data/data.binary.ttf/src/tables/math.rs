@@ -45,10 +45,7 @@ fn subtable<'a>(data: &'a [u8], base: usize, offset: usize, what: &'static str) 
     }
     let abs = base.checked_add(offset).ok_or_else(|| ParseMathError::Malformed(format!("{what} offset {offset} overflows")))?;
     if abs > data.len() {
-        return Err(ParseMathError::Malformed(format!(
-            "{what} offset {offset} resolves to {abs}, past the table length {}",
-            data.len()
-        )));
+        return Err(ParseMathError::Malformed(format!("{what} offset {offset} resolves to {abs}, past the table length {}", data.len())));
     }
     Ok(Some(Reader::at(data, abs, data.len() - abs)))
 }
@@ -79,13 +76,7 @@ fn check_glyph(glyph_id: u16, num_glyphs: Option<u16>, what: &'static str) -> Re
 /// expanded with a hard cap so a pathological `start..=end` pair cannot make
 /// the parser allocate without bound. Unknown formats are malformed tables
 /// rather than empty coverage.
-fn parse_coverage(
-    data: &[u8],
-    base: usize,
-    offset: usize,
-    num_glyphs: Option<u16>,
-    what: &'static str,
-) -> Result<Vec<u16>, ParseMathError> {
+fn parse_coverage(data: &[u8], base: usize, offset: usize, num_glyphs: Option<u16>, what: &'static str) -> Result<Vec<u16>, ParseMathError> {
     let abs = base.checked_add(offset).ok_or_else(|| ParseMathError::Malformed(format!("{what} coverage offset overflows")))?;
     let mut r = window(data, abs)?;
     let format = r.read_u16()?;
@@ -580,10 +571,7 @@ impl MathGlyphInfo {
             let count = sub.read_u16()? as usize;
             let glyphs = parse_coverage(data, sub_base, coverage_off, num_glyphs, "MathKernInfo")?;
             if count != glyphs.len() {
-                return Err(ParseMathError::Malformed(format!(
-                    "MathKernInfo count {count} disagrees with coverage {}",
-                    glyphs.len()
-                )));
+                return Err(ParseMathError::Malformed(format!("MathKernInfo count {count} disagrees with coverage {}", glyphs.len())));
             }
             for glyph_id in glyphs {
                 let top_right = sub.read_u16()? as usize;
@@ -767,18 +755,10 @@ impl MathVariants {
         let horiz_count = r.read_u16()? as usize;
         let data = r.bytes;
 
-        let vert_coverages = if vert_cov_off == 0 {
-            Vec::new()
-        }
-        else {
-            parse_coverage(data, base, vert_cov_off, num_glyphs, "VertGlyphCoverage")?
-        };
-        let horiz_coverages = if horiz_cov_off == 0 {
-            Vec::new()
-        }
-        else {
-            parse_coverage(data, base, horiz_cov_off, num_glyphs, "HorizGlyphCoverage")?
-        };
+        let vert_coverages =
+            if vert_cov_off == 0 { Vec::new() } else { parse_coverage(data, base, vert_cov_off, num_glyphs, "VertGlyphCoverage")? };
+        let horiz_coverages =
+            if horiz_cov_off == 0 { Vec::new() } else { parse_coverage(data, base, horiz_cov_off, num_glyphs, "HorizGlyphCoverage")? };
         if vert_count != vert_coverages.len() {
             return Err(ParseMathError::Malformed(format!(
                 "VertGlyphCount {vert_count} disagrees with VertGlyphCoverage {}",
@@ -795,18 +775,16 @@ impl MathVariants {
         let mut vert_constructions = HashMap::with_capacity(vert_count);
         for &glyph_id in &vert_coverages {
             let off = r.read_u16()? as usize;
-            let mut sub = subtable(data, base, off, "VertGlyphConstruction")?.ok_or_else(|| {
-                ParseMathError::Malformed(format!("VertGlyphConstruction for glyph {glyph_id} has a zero offset"))
-            })?;
+            let mut sub = subtable(data, base, off, "VertGlyphConstruction")?
+                .ok_or_else(|| ParseMathError::Malformed(format!("VertGlyphConstruction for glyph {glyph_id} has a zero offset")))?;
             vert_constructions.insert(glyph_id, MathGlyphConstruction::parse(&mut sub, glyph_id, num_glyphs)?);
         }
 
         let mut horiz_constructions = HashMap::with_capacity(horiz_count);
         for &glyph_id in &horiz_coverages {
             let off = r.read_u16()? as usize;
-            let mut sub = subtable(data, base, off, "HorizGlyphConstruction")?.ok_or_else(|| {
-                ParseMathError::Malformed(format!("HorizGlyphConstruction for glyph {glyph_id} has a zero offset"))
-            })?;
+            let mut sub = subtable(data, base, off, "HorizGlyphConstruction")?
+                .ok_or_else(|| ParseMathError::Malformed(format!("HorizGlyphConstruction for glyph {glyph_id} has a zero offset")))?;
             horiz_constructions.insert(glyph_id, MathGlyphConstruction::parse(&mut sub, glyph_id, num_glyphs)?);
         }
 

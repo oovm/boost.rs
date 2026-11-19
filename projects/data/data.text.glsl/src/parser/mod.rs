@@ -2,12 +2,12 @@
 pub mod element_type;
 
 use crate::{language::GlslLanguage, lexer::token_type::GlslTokenType};
-use element_type::GlslElementType;
 use data_text_core::{
     GreenNode, Parser, ParserState, TokenType, UniversalTokenRole,
     parser::parse_with_lexer,
     source::{Source, TextEdit},
 };
+use element_type::GlslElementType;
 
 /// A parser state for the GLSL language.
 pub(crate) type State<'a, S> = ParserState<'a, GlslLanguage, S>;
@@ -26,7 +26,12 @@ impl<'config> GlslParser<'config> {
 }
 
 impl<'config> Parser<GlslLanguage> for GlslParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<GlslLanguage>) -> data_text_core::ParseOutput<'a, GlslLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<GlslLanguage>,
+    ) -> data_text_core::ParseOutput<'a, GlslLanguage> {
         let lexer = crate::lexer::GlslLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -557,7 +562,14 @@ impl<'config> GlslParser<'config> {
 
     /// Parses a prefix or postfix expression.
     fn parse_unary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, GlslLanguage> {
-        if matches!(state.peek_kind(), Some(GlslTokenType::Minus) | Some(GlslTokenType::LogicalNot) | Some(GlslTokenType::BitwiseNot) | Some(GlslTokenType::Increment) | Some(GlslTokenType::Decrement)) {
+        if matches!(
+            state.peek_kind(),
+            Some(GlslTokenType::Minus)
+                | Some(GlslTokenType::LogicalNot)
+                | Some(GlslTokenType::BitwiseNot)
+                | Some(GlslTokenType::Increment)
+                | Some(GlslTokenType::Decrement)
+        ) {
             let cp = state.checkpoint();
             state.bump();
             self.parse_unary_expression(state);
@@ -640,7 +652,10 @@ impl<'config> GlslParser<'config> {
         let cp = state.checkpoint();
 
         match state.peek_kind() {
-            Some(GlslTokenType::IntegerLiteral) | Some(GlslTokenType::FloatLiteral) | Some(GlslTokenType::StringLiteral) | Some(GlslTokenType::BooleanLiteral) => {
+            Some(GlslTokenType::IntegerLiteral)
+            | Some(GlslTokenType::FloatLiteral)
+            | Some(GlslTokenType::StringLiteral)
+            | Some(GlslTokenType::BooleanLiteral) => {
                 state.bump();
                 state.finish_at(cp, GlslElementType::Expr)
             }
@@ -774,7 +789,16 @@ fn is_type_token(kind: GlslTokenType) -> bool {
 
 /// Returns `true` for tokens that terminate a type position.
 fn is_type_terminator(kind: GlslTokenType) -> bool {
-    matches!(kind, GlslTokenType::Comma | GlslTokenType::RightParen | GlslTokenType::RightBrace | GlslTokenType::RightBracket | GlslTokenType::Greater | GlslTokenType::Semicolon | GlslTokenType::Assign)
+    matches!(
+        kind,
+        GlslTokenType::Comma
+            | GlslTokenType::RightParen
+            | GlslTokenType::RightBrace
+            | GlslTokenType::RightBracket
+            | GlslTokenType::Greater
+            | GlslTokenType::Semicolon
+            | GlslTokenType::Assign
+    )
 }
 
 /// Returns the precedence and token count of the binary operator at the cursor.

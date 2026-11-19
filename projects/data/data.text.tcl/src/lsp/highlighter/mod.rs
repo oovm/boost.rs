@@ -42,7 +42,10 @@ impl TclHighlighter {
 
     fn highlight_keywords(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
-        let keywords = ["set", "proc", "if", "else", "elseif", "for", "foreach", "while", "return", "break", "continue", "global", "upvar", "variable", "unset", "switch", "case", "default", "try", "catch", "finally", "throw"];
+        let keywords = [
+            "set", "proc", "if", "else", "elseif", "for", "foreach", "while", "return", "break", "continue", "global", "upvar", "variable",
+            "unset", "switch", "case", "default", "try", "catch", "finally", "throw",
+        ];
 
         for keyword in &keywords {
             let mut start = 0;

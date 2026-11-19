@@ -9,7 +9,10 @@ pub mod lexing;
 /// Testing utilities for parsing.
 pub mod parsing;
 
-use data_text_core::{errors::TextError, source::SourceRef, source::SourceText};
+use data_text_core::{
+    errors::TextError,
+    source::{SourceRef, SourceText},
+};
 use std::{fs::File, path::Path};
 
 /// Builds a [`SourceRef`] identifying a file path, for attaching to IO errors.

@@ -81,7 +81,8 @@ impl<'config> HaskellParser<'config> {
         if state.eat(HaskellTokenType::Assign) {
             loop {
                 state.expect(HaskellTokenType::Constructor).ok();
-                while state.at(HaskellTokenType::Constructor) || state.at(HaskellTokenType::Identifier) || state.at(HaskellTokenType::LeftParen) {
+                while state.at(HaskellTokenType::Constructor) || state.at(HaskellTokenType::Identifier) || state.at(HaskellTokenType::LeftParen)
+                {
                     if state.at(HaskellTokenType::LeftParen) {
                         state.bump();
                         while !state.at(HaskellTokenType::RightParen) && state.not_at_end() {
@@ -139,7 +140,12 @@ impl<'config> HaskellParser<'config> {
 }
 
 impl<'config> Parser<HaskellLanguage> for HaskellParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<HaskellLanguage>) -> ParseOutput<'a, HaskellLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<HaskellLanguage>,
+    ) -> ParseOutput<'a, HaskellLanguage> {
         let lexer = HaskellLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -193,12 +199,19 @@ impl<'config> Pratt<HaskellLanguage> for HaskellParser<'config> {
         };
 
         match kind {
-            HaskellTokenType::Minus => unary(state, kind, 9, HaskellElementType::PrefixExpression.into(), |s, p| PrattParser::parse(s, p, self)),
+            HaskellTokenType::Minus => {
+                unary(state, kind, 9, HaskellElementType::PrefixExpression.into(), |s, p| PrattParser::parse(s, p, self))
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, HaskellLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, HaskellLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, HaskellLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, HaskellLanguage>> {
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
@@ -206,7 +219,12 @@ impl<'config> Pratt<HaskellLanguage> for HaskellParser<'config> {
             HaskellTokenType::Star | HaskellTokenType::Slash | HaskellTokenType::Percent => (7, Associativity::Left),
             HaskellTokenType::Plus | HaskellTokenType::Minus => (6, Associativity::Left),
             HaskellTokenType::Append => (5, Associativity::Right),
-            HaskellTokenType::Equal | HaskellTokenType::NotEqual | HaskellTokenType::Less | HaskellTokenType::LessEqual | HaskellTokenType::Greater | HaskellTokenType::GreaterEqual => (4, Associativity::None),
+            HaskellTokenType::Equal
+            | HaskellTokenType::NotEqual
+            | HaskellTokenType::Less
+            | HaskellTokenType::LessEqual
+            | HaskellTokenType::Greater
+            | HaskellTokenType::GreaterEqual => (4, Associativity::None),
             HaskellTokenType::And => (3, Associativity::Right),
             HaskellTokenType::Or => (2, Associativity::Right),
             HaskellTokenType::Dollar => (0, Associativity::Right),

@@ -266,8 +266,8 @@ impl SqlSchemaRegistry {
 fn load(path: &Path) -> Result<RegistryState, SqlFrontendError> {
     let source = fs::read_to_string(path)
         .map_err(|error| SqlFrontendError::internal(format!("cannot read SQL schema `{}`: {error}", path.display())))?;
-    let document = decode(&source)
-        .map_err(|error| SqlFrontendError::internal(format!("cannot parse SQL schema `{}`: {error}", path.display())))?;
+    let document =
+        decode(&source).map_err(|error| SqlFrontendError::internal(format!("cannot parse SQL schema `{}`: {error}", path.display())))?;
     let state = state_from_document(document);
     state.validate()?;
     Ok(state)
@@ -281,17 +281,15 @@ fn load(path: &Path) -> Result<RegistryState, SqlFrontendError> {
 fn save(path: &Path, state: &RegistryState) -> Result<(), SqlFrontendError> {
     let document = document_from_state(state);
     let json = encode(&document).map_err(|error| SqlFrontendError::internal(format!("cannot encode SQL schema: {error}")))?;
-    publish_atomic(path, json.as_bytes())
-        .map(|_receipt| ())
-        .map_err(|error| {
-            SqlFrontendError::internal(format!(
-                "cannot publish SQL schema `{}` at {:?} ({:?}, retryable={}): {error}",
-                path.display(),
-                error.stage(),
-                error.outcome(),
-                error.retryable()
-            ))
-        })
+    publish_atomic(path, json.as_bytes()).map(|_receipt| ()).map_err(|error| {
+        SqlFrontendError::internal(format!(
+            "cannot publish SQL schema `{}` at {:?} ({:?}, retryable={}): {error}",
+            path.display(),
+            error.stage(),
+            error.outcome(),
+            error.retryable()
+        ))
+    })
 }
 
 fn document_from_state(state: &RegistryState) -> SqlSchemaDocument {

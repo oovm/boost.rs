@@ -31,7 +31,16 @@ impl<'a> NginxParser<'a> {
             return;
         }
 
-        let is_block_directive = matches!(state.peek_kind(), Some(NginxTokenType::HttpKeyword | NginxTokenType::ServerKeyword | NginxTokenType::LocationKeyword | NginxTokenType::EventsKeyword | NginxTokenType::UpstreamKeyword));
+        let is_block_directive = matches!(
+            state.peek_kind(),
+            Some(
+                NginxTokenType::HttpKeyword
+                    | NginxTokenType::ServerKeyword
+                    | NginxTokenType::LocationKeyword
+                    | NginxTokenType::EventsKeyword
+                    | NginxTokenType::UpstreamKeyword
+            )
+        );
 
         if is_block_directive {
             self.parse_block(state);
@@ -76,7 +85,12 @@ impl<'a> NginxParser<'a> {
 }
 
 impl<'a> Parser<NginxLanguage> for NginxParser<'a> {
-    fn parse<'b, S: Source + ?Sized>(&self, text: &'b S, edits: &[TextEdit], cache: &'b mut impl ParseCache<NginxLanguage>) -> ParseOutput<'b, NginxLanguage> {
+    fn parse<'b, S: Source + ?Sized>(
+        &self,
+        text: &'b S,
+        edits: &[TextEdit],
+        cache: &'b mut impl ParseCache<NginxLanguage>,
+    ) -> ParseOutput<'b, NginxLanguage> {
         let lexer = NginxLexer::new(self.language);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

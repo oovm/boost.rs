@@ -80,7 +80,10 @@ fn stack_map_jit_backend_returns_artifact_maps() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_adds_i32_args() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
@@ -142,7 +145,10 @@ fn load_i32_binop_module(name: &str, export: &str, op: OdinHeadCode) -> interpre
 
 #[test]
 fn baseline_scalar_jit_fast_path_cmp_and_select() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));
@@ -202,7 +208,10 @@ fn load_named_module(name: &str, export: &str, arity: i32, code: Vec<u8>) -> int
 
 #[test]
 fn baseline_scalar_jit_fast_path_load_dup_mul() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
@@ -218,7 +227,10 @@ fn baseline_scalar_jit_fast_path_load_dup_mul() {
 
 #[test]
 fn baseline_scalar_jit_folds_const_const_binop() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::Constant as u8);
@@ -312,7 +324,7 @@ fn install_deopt_frames_invalidates_scalar_and_restores_locals() {
 fn invalidate_assumption_drops_scalar_leaf_cache() {
     use interpreter_vm_ovm::{
         Value,
-        jit::{BaselineScalarJit, OdinScalarMatcher, JitAssumption},
+        jit::{BaselineScalarJit, JitAssumption, OdinScalarMatcher},
     };
 
     let mut code = Vec::new();
@@ -330,7 +342,10 @@ fn invalidate_assumption_drops_scalar_leaf_cache() {
 
 #[test]
 fn invalidate_scalar_cache_clears_compiled_blobs() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::LoadArg as u8);
@@ -351,7 +366,10 @@ fn invalidate_scalar_cache_clears_compiled_blobs() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_const_local_binop() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut code = Vec::new();
     code.push(OdinHeadCode::Constant as u8);
@@ -382,7 +400,10 @@ fn baseline_scalar_jit_fast_path_const_local_binop() {
 
 #[test]
 fn baseline_scalar_jit_fast_path_sub_and_mul() {
-    use interpreter_vm_ovm::{Value, jit::{BaselineScalarJit, OdinScalarMatcher}};
+    use interpreter_vm_ovm::{
+        Value,
+        jit::{BaselineScalarJit, OdinScalarMatcher},
+    };
 
     let mut vm = OdinVm::new();
     vm.set_jit(Box::new(BaselineScalarJit::new(OdinScalarMatcher)));

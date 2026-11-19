@@ -1,5 +1,6 @@
 use crate::legion::{
     cmds::error::{LegionError, LegionResult},
+    runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily},
     workspace::{
         labeled_report_with_context,
         manifest::{ProjectArtifactKind, RunnerBinding},
@@ -8,7 +9,6 @@ use crate::legion::{
     },
 };
 use compiler_target::{CanonicalAbi, CanonicalTarget, RunnerFamily};
-use crate::legion::runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -249,7 +249,11 @@ impl ExecutionManifest {
     pub fn write_to_output_dir(&self, output_dir: &Path) -> LegionResult<()> {
         let manifest_path = output_dir.join(EXECUTION_MANIFEST_FILE_NAME);
         let content = crate::legion::write_von_indented(self).map_err(|error| {
-            labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("序列化 execution manifest 失败 {}", manifest_path.display()), "VON 序列化失败位置")
+            labeled_report_with_context(
+                data_text_core::TextError::format_error(error.to_string()),
+                format!("序列化 execution manifest 失败 {}", manifest_path.display()),
+                "VON 序列化失败位置",
+            )
         })?;
         fs::write(&manifest_path, content)
             .map_err(|e| LegionError::msg(format!("写入 execution manifest 失败 {}: {e}", manifest_path.display())))?;
@@ -270,7 +274,11 @@ impl ExecutionManifest {
         let source =
             fs::read_to_string(path).map_err(|e| LegionError::msg(format!("failed to read execution manifest '{}': {e}", path.display())))?;
         crate::legion::parse_von::<Self>(&source).map(Some).map_err(|error| {
-            labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("failed to parse execution manifest '{}'", path.display()), "VON 解析失败位置")
+            labeled_report_with_context(
+                data_text_core::TextError::format_error(error.to_string()),
+                format!("failed to parse execution manifest '{}'", path.display()),
+                "VON 解析失败位置",
+            )
         })
     }
 
@@ -347,7 +355,10 @@ impl ExecutionManifest {
         }
         let current = crate::legion::cache::toolchain_fingerprint();
         if self.toolchain_fingerprint != current {
-            return Ok(ManifestVerdict::Stale(format!("manifest toolchain fingerprint `{}` != current `{current}`", self.toolchain_fingerprint)));
+            return Ok(ManifestVerdict::Stale(format!(
+                "manifest toolchain fingerprint `{}` != current `{current}`",
+                self.toolchain_fingerprint
+            )));
         }
         if let Some((name, target, kind)) = context.expected_project {
             if self.project_name != name {
@@ -396,7 +407,8 @@ impl ExecutionManifest {
             }
             _ => {}
         }
-        let Some(stored) = &self.compile_evidence else {
+        let Some(stored) = &self.compile_evidence
+        else {
             return Ok(ManifestVerdict::Stale("manifest missing compile_evidence".into()));
         };
         if let Some(expected) = context.expected_evidence {
@@ -407,7 +419,8 @@ impl ExecutionManifest {
                 return Ok(ManifestVerdict::Stale("manifest compile_evidence differs from current resolver evidence".into()));
             }
         }
-        let Some(file_evidence) = read_compile_evidence_digest(output_dir)? else {
+        let Some(file_evidence) = read_compile_evidence_digest(output_dir)?
+        else {
             return Ok(ManifestVerdict::Stale(format!("compile evidence sidecar `{COMPILE_EVIDENCE_FILE_NAME}` missing")));
         };
         if file_evidence != *stored {
@@ -456,8 +469,14 @@ fn read_compile_evidence_digest(output_dir: &Path) -> LegionResult<Option<Compil
         return Ok(None);
     }
     let source = fs::read_to_string(&path).map_err(|e| LegionError::msg(format!("读取 compile evidence 失败 {}: {e}", path.display())))?;
-    let evidence = crate::legion::parse_von::<compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source)
-        .map_err(|error| labeled_report_with_context(data_text_core::TextError::format_error(error.to_string()), format!("解析 compile evidence 失败 {}", path.display()), "VON 解析失败位置"))?;
+    let evidence =
+        crate::legion::parse_von::<compiler_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence>(&source).map_err(|error| {
+            labeled_report_with_context(
+                data_text_core::TextError::format_error(error.to_string()),
+                format!("解析 compile evidence 失败 {}", path.display()),
+                "VON 解析失败位置",
+            )
+        })?;
     Ok(Some(CompileEvidenceDigest::from(&evidence)))
 }
 

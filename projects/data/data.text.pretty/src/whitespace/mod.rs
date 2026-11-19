@@ -111,7 +111,14 @@ impl WhitespaceProcessor {
 
     /// Removes repeated and delimiter-adjacent spacing.
     pub fn remove_unnecessary_spacing(&self, content: &str) -> String {
-        content.replace("  ", " ").replace(" (", "(").replace(") ", ")").replace(" [", "[").replace("] ", "]").replace(" {", "{").replace("} ", "}")
+        content
+            .replace("  ", " ")
+            .replace(" (", "(")
+            .replace(") ", ")")
+            .replace(" [", "[")
+            .replace("] ", "]")
+            .replace(" {", "{")
+            .replace("} ", "}")
     }
 }
 

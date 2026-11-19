@@ -319,7 +319,12 @@ impl<'a> OrgModeParser<'a> {
 }
 
 impl<'a> Parser<OrgModeLanguage> for OrgModeParser<'a> {
-    fn parse<'b, S: Source + ?Sized>(&self, text: &'b S, edits: &[TextEdit], cache: &'b mut impl ParseCache<OrgModeLanguage>) -> ParseOutput<'b, OrgModeLanguage> {
+    fn parse<'b, S: Source + ?Sized>(
+        &self,
+        text: &'b S,
+        edits: &[TextEdit],
+        cache: &'b mut impl ParseCache<OrgModeLanguage>,
+    ) -> ParseOutput<'b, OrgModeLanguage> {
         let lexer = OrgModeLexer::new(self.language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

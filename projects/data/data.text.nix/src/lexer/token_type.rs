@@ -16,7 +16,22 @@ impl NixTokenType {
 
     /// Returns true if the token is a language keyword.
     pub fn is_keyword(&self) -> bool {
-        matches!(self, Self::Let | Self::In | Self::If | Self::Then | Self::Else | Self::With | Self::Inherit | Self::Rec | Self::Import | Self::Assert | Self::Or | Self::And | Self::Not)
+        matches!(
+            self,
+            Self::Let
+                | Self::In
+                | Self::If
+                | Self::Then
+                | Self::Else
+                | Self::With
+                | Self::Inherit
+                | Self::Rec
+                | Self::Import
+                | Self::Assert
+                | Self::Or
+                | Self::And
+                | Self::Not
+        )
     }
 
     /// Returns true if the token is an operator.
@@ -46,7 +61,22 @@ impl NixTokenType {
 
     /// Returns true if the token is a punctuation mark.
     pub fn is_punctuation(&self) -> bool {
-        matches!(self, Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Semicolon | Self::Colon | Self::Comma | Self::Dot | Self::At | Self::Dollar | Self::Hash)
+        matches!(
+            self,
+            Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBrace
+                | Self::RightBrace
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::Semicolon
+                | Self::Colon
+                | Self::Comma
+                | Self::Dot
+                | Self::At
+                | Self::Dollar
+                | Self::Hash
+        )
     }
 }
 

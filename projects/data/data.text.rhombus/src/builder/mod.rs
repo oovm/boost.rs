@@ -6,7 +6,7 @@ use crate::{
     parser::RhombusParser,
 };
 use data_text_core::{
-    Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit,
+    Builder, BuilderCache, Lexer, Parser, TextDiagnostics, TextEdit,
     source::{Source, SourceText},
 };
 
@@ -23,13 +23,22 @@ impl<'config> RhombusBuilder<'config> {
     }
 
     /// Builds a RhombusRoot AST node from a green tree and source text.
-    pub fn build_root(&self, green_tree: &data_text_core::GreenNode<RhombusLanguage>, source_text: &data_text_core::SourceText) -> Result<crate::ast::RhombusRoot, data_text_core::TextError> {
+    pub fn build_root(
+        &self,
+        green_tree: &data_text_core::GreenNode<RhombusLanguage>,
+        source_text: &data_text_core::SourceText,
+    ) -> Result<crate::ast::RhombusRoot, data_text_core::TextError> {
         Ok(crate::ast::RhombusRoot { expressions: vec![] })
     }
 }
 
 impl<'config> Builder<RhombusLanguage> for RhombusBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RhombusLanguage>) -> TextDiagnostics<RhombusRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<RhombusLanguage>,
+    ) -> TextDiagnostics<RhombusRoot> {
         let parser = RhombusParser::new(self.config);
         let lexer = crate::lexer::RhombusLexer::new(&self.config);
 

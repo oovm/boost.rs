@@ -1,11 +1,14 @@
 use crate::{
     DejavuBuilder, DejavuLanguage,
-    ast::{AttributeNode, EffectDefinition, ExpressionNode, ExpressionStatement, IdentifierNode, LetStatement, NamePathNode, PatternNode, StatementNode, UsingStatement, VariablePatternNode},
+    ast::{
+        AttributeNode, EffectDefinition, ExpressionNode, ExpressionStatement, IdentifierNode, LetStatement, NamePathNode, PatternNode,
+        StatementNode, UsingStatement, VariablePatternNode,
+    },
     builder::text,
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     pub(crate) fn build_statement<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<StatementNode, TextError> {
@@ -21,8 +24,12 @@ impl<'config> DejavuBuilder<'config> {
         let mut children_iter = node
             .children()
             .filter(|c| match c {
-                RedTree::Leaf(l) => !matches!(l.kind, DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment),
-                RedTree::Node(n) => !matches!(n.green.kind, DejavuElementType::Whitespace | DejavuElementType::LineComment | DejavuElementType::BlockComment),
+                RedTree::Leaf(l) => {
+                    !matches!(l.kind, DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment)
+                }
+                RedTree::Node(n) => {
+                    !matches!(n.green.kind, DejavuElementType::Whitespace | DejavuElementType::LineComment | DejavuElementType::BlockComment)
+                }
             })
             .peekable();
 
@@ -54,7 +61,8 @@ impl<'config> DejavuBuilder<'config> {
             }
         }
 
-        let pattern_node = children_iter.next().ok_or_else(|| source.syntax_error("Missing pattern in let statement".to_string(), span.start))?;
+        let pattern_node =
+            children_iter.next().ok_or_else(|| source.syntax_error("Missing pattern in let statement".to_string(), span.start))?;
         let pattern = match pattern_node {
             RedTree::Node(n) => self.build_pattern(n, source)?,
             RedTree::Leaf(t) if t.kind == DejavuTokenType::Identifier => {
@@ -72,12 +80,16 @@ impl<'config> DejavuBuilder<'config> {
             if t.kind == DejavuTokenType::Eq {
                 children_iter.next();
 
-                let expr_node = children_iter.next().ok_or_else(|| source.syntax_error("Missing expression after '=' in let statement".to_string(), span.end))?;
+                let expr_node = children_iter
+                    .next()
+                    .ok_or_else(|| source.syntax_error("Missing expression after '=' in let statement".to_string(), span.end))?;
 
                 expr = Some(match expr_node {
                     RedTree::Node(n) => self.build_expr(n, source)?,
                     RedTree::Leaf(t) => {
-                        return Err(source.syntax_error("Expected an expression, found a token after '=' in let statement".to_string(), t.span.start));
+                        return Err(
+                            source.syntax_error("Expected an expression, found a token after '=' in let statement".to_string(), t.span.start)
+                        );
                     }
                 });
             }
@@ -91,7 +103,9 @@ impl<'config> DejavuBuilder<'config> {
                     if span.start == span.end {
                         continue;
                     }
-                    return Err(source.syntax_error("Unexpected token or expression after let statement".to_string(), unexpected_child.span().start));
+                    return Err(
+                        source.syntax_error("Unexpected token or expression after let statement".to_string(), unexpected_child.span().start)
+                    );
                 }
             }
         }
@@ -106,8 +120,12 @@ impl<'config> DejavuBuilder<'config> {
         let mut children_iter = node
             .children()
             .filter(|c| match c {
-                RedTree::Leaf(l) => !matches!(l.kind, DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment),
-                RedTree::Node(n) => !matches!(n.green.kind, DejavuElementType::Whitespace | DejavuElementType::LineComment | DejavuElementType::BlockComment),
+                RedTree::Leaf(l) => {
+                    !matches!(l.kind, DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment)
+                }
+                RedTree::Node(n) => {
+                    !matches!(n.green.kind, DejavuElementType::Whitespace | DejavuElementType::LineComment | DejavuElementType::BlockComment)
+                }
             })
             .peekable();
 
@@ -123,7 +141,8 @@ impl<'config> DejavuBuilder<'config> {
             break;
         }
 
-        let expr_node = children_iter.next().ok_or_else(|| source.syntax_error("Missing expression in expression statement".to_string(), span.start))?;
+        let expr_node =
+            children_iter.next().ok_or_else(|| source.syntax_error("Missing expression in expression statement".to_string(), span.start))?;
 
         let expr = match expr_node {
             RedTree::Node(n) => self.build_expr(n, source)?,
@@ -252,7 +271,9 @@ impl<'config> DejavuBuilder<'config> {
             if let RedTree::Leaf(t) = child {
                 match t.kind {
                     DejavuTokenType::Whitespace | DejavuTokenType::LineComment | DejavuTokenType::BlockComment => continue,
-                    DejavuTokenType::Identifier => parts.push(IdentifierNode { name: text(source, t.span.clone().into()), span: t.span.clone() }),
+                    DejavuTokenType::Identifier => {
+                        parts.push(IdentifierNode { name: text(source, t.span.clone().into()), span: t.span.clone() })
+                    }
                     _ => {}
                 }
             }

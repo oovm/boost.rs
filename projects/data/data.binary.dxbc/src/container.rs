@@ -1,7 +1,7 @@
 //! Bounded container view and the structural validation entry.
 
-use data_binary_core::{BudgetTracker, ByteExtent};
 use boost_source::binary::{ByteSource, ReadError};
+use data_binary_core::{BudgetTracker, ByteExtent};
 
 use crate::{
     chunk::{DxbcChunk, DxbcChunkKind},
@@ -66,13 +66,8 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
             });
         }
 
-        let header_bytes = read_exact(
-            source,
-            ledger,
-            0,
-            DXBC_HEADER_BYTES,
-            DxbcEvidence::container(ByteExtent { start: 0, len: DXBC_HEADER_BYTES }),
-        )?;
+        let header_bytes =
+            read_exact(source, ledger, 0, DXBC_HEADER_BYTES, DxbcEvidence::container(ByteExtent { start: 0, len: DXBC_HEADER_BYTES }))?;
         let magic: [u8; 4] = header_bytes[0..4].try_into().expect("4-byte magic");
         if magic != DXBC_MAGIC {
             return Err(DxbcLayoutError::BadMagic { magic, evidence: DxbcEvidence::container(ByteExtent { start: 0, len: 4 }) });
@@ -170,10 +165,7 @@ impl<'a, S: ByteSource + ?Sized> DxbcContainer<'a, S> {
                     size,
                     offset,
                     declared_length: self.total_length,
-                    evidence: DxbcEvidence::chunk(
-                        index,
-                        ByteExtent { start: offset_wide + DXBC_CHUNK_HEADER_BYTES, len: payload_len },
-                    ),
+                    evidence: DxbcEvidence::chunk(index, ByteExtent { start: offset_wide + DXBC_CHUNK_HEADER_BYTES, len: payload_len }),
                 });
             }
 
@@ -256,7 +248,8 @@ pub(crate) fn read_exact<S: ByteSource + ?Sized>(
     evidence: DxbcEvidence,
 ) -> Result<Vec<u8>, DxbcLayoutError> {
     ledger.reserve_read_bytes(len).map_err(DxbcLayoutError::Budget)?;
-    let Some(range) = boost_source::ByteRange::with_len(start, len) else {
+    let Some(range) = boost_source::ByteRange::with_len(start, len)
+    else {
         ledger.release_read_bytes(len).map_err(DxbcLayoutError::Budget)?;
         return Err(DxbcLayoutError::Unavailable { reason: "byte range overflows `u64`".into(), evidence });
     };

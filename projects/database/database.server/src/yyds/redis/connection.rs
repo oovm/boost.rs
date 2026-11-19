@@ -700,8 +700,9 @@ fn respond(
                     stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
                 }
                 else if collections::is_list_command(command) {
-                    let reply = collections::handle_list(request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())
-                        .unwrap_or_else(|error| error.to_reply());
+                    let reply =
+                        collections::handle_list(request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())
+                            .unwrap_or_else(|error| error.to_reply());
                     stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
                 }
                 else if collections::is_set_command(command) {

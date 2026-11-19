@@ -355,7 +355,12 @@ impl MsilLexer {
 }
 
 impl Lexer<MsilLanguage> for MsilLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<MsilLanguage>) -> LexOutput<MsilLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<MsilLanguage>,
+    ) -> LexOutput<MsilLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

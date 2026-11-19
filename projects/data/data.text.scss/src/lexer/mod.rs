@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::ScssLanguage, lexer::token_type::ScssTokenType};
 use data_text_core::{
-    Lexer, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerState, Source, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, ScssLanguage>;
 
 static SCSS_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static SCSS_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
+static SCSS_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
 static SCSS_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer for the SCSS language.
@@ -24,7 +25,12 @@ pub struct ScssLexer<'config> {
 
 impl<'config> Lexer<ScssLanguage> for ScssLexer<'config> {
     /// Tokenizes the input source text.
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ScssLanguage>) -> LexOutput<ScssLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ScssLanguage>,
+    ) -> LexOutput<ScssLanguage> {
         let mut state = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

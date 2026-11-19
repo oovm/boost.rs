@@ -2,15 +2,19 @@
 
 use crate::{
     ast::{
-        ActivationSpan, ActivityAction, ActivityBranch, ActivityBranchKind, ActivityDecision, ActivityDiagram, ActivityEndpoint, ActivityFork, ActivityForkBranch, ActivityNode, ActivitySwimlane, ActivityTransition, ClassDeclaration, ClassDiagram,
-        ClassKeyword, ClassMember, ClassRelation, ClassRelationKind, ComponentDiagram, ComponentElement, ComponentNode, ComponentPackage, ComponentPort, ComponentRelation, MemberVisibility, MessageArrow, Participant, ParticipantKind, PlantUmlDiagram,
-        PlantUmlRoot, PortDirection, SequenceDiagram, SequenceMessage, StateDefinition, StateDiagram, StateElement, StateEndpoint, StateKind, StateRegion, StateTransition,
+        ActivationSpan, ActivityAction, ActivityBranch, ActivityBranchKind, ActivityDecision, ActivityDiagram, ActivityEndpoint, ActivityFork,
+        ActivityForkBranch, ActivityNode, ActivitySwimlane, ActivityTransition, ClassDeclaration, ClassDiagram, ClassKeyword, ClassMember,
+        ClassRelation, ClassRelationKind, ComponentDiagram, ComponentElement, ComponentNode, ComponentPackage, ComponentPort,
+        ComponentRelation, MemberVisibility, MessageArrow, Participant, ParticipantKind, PlantUmlDiagram, PlantUmlRoot, PortDirection,
+        SequenceDiagram, SequenceMessage, StateDefinition, StateDiagram, StateElement, StateEndpoint, StateKind, StateRegion, StateTransition,
     },
     language::PlantUmlLanguage,
     lexer::token_type::PlantUmlTokenType,
     parser::element_type::PlantUmlElementType,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedLeaf, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedLeaf, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 use std::collections::HashMap;
 
 /// Builder for converting a PlantUML syntax tree into the typed AST.
@@ -27,7 +31,12 @@ impl<'config> PlantUmlBuilder<'config> {
 }
 
 impl Builder<PlantUmlLanguage> for PlantUmlBuilder<'_> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PlantUmlLanguage>) -> TextDiagnostics<PlantUmlRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<PlantUmlLanguage>,
+    ) -> TextDiagnostics<PlantUmlRoot> {
         let parser = crate::parser::PlantUmlParser::new(self._config);
         let mut cache = data_text_core::parser::session::ParseSession::<PlantUmlLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -51,7 +60,12 @@ impl Builder<PlantUmlLanguage> for PlantUmlBuilder<'_> {
 
 impl PlantUmlBuilder<'_> {
     /// Builds the AST root from a green tree.
-    pub(crate) fn build_root(&self, green_tree: &GreenNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Result<PlantUmlRoot, TextError> {
+    pub(crate) fn build_root(
+        &self,
+        green_tree: &GreenNode<PlantUmlLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+    ) -> Result<PlantUmlRoot, TextError> {
         if green_tree.kind != PlantUmlElementType::Root {
             return Err(TextError::internal_error("the PlantUML syntax tree is missing its root element"));
         }
@@ -76,7 +90,12 @@ impl PlantUmlBuilder<'_> {
                 PlantUmlElementType::EndMarker => {
                     end = Some(node.span().end);
                 }
-                PlantUmlElementType::ClassDeclaration | PlantUmlElementType::ClassRelation | PlantUmlElementType::ParticipantDeclaration | PlantUmlElementType::SequenceMessage | PlantUmlElementType::Activate | PlantUmlElementType::Deactivate => {
+                PlantUmlElementType::ClassDeclaration
+                | PlantUmlElementType::ClassRelation
+                | PlantUmlElementType::ParticipantDeclaration
+                | PlantUmlElementType::SequenceMessage
+                | PlantUmlElementType::Activate
+                | PlantUmlElementType::Deactivate => {
                     start.get_or_insert(node.span().start);
                     end = Some(node.span().end);
                     elements.push(node);
@@ -92,7 +111,8 @@ impl PlantUmlBuilder<'_> {
                     }
                 }
                 _ => {
-                    diagnostics.push(source.syntax_error(format!("unexpected element in PlantUML root: `{:?}`", node.green.kind), node.span().start));
+                    diagnostics
+                        .push(source.syntax_error(format!("unexpected element in PlantUML root: `{:?}`", node.green.kind), node.span().start));
                 }
             }
         }
@@ -107,19 +127,40 @@ impl PlantUmlBuilder<'_> {
             Some(node) => match node.green.kind {
                 PlantUmlElementType::ActivityDiagram => PlantUmlDiagram::Activity(self.build_activity_diagram(node, source, diagnostics, span)),
                 PlantUmlElementType::StateDiagram => PlantUmlDiagram::State(self.build_state_diagram(node, source, diagnostics, span)),
-                PlantUmlElementType::ComponentDiagram => PlantUmlDiagram::Component(self.build_component_diagram(node, source, diagnostics, span)),
+                PlantUmlElementType::ComponentDiagram => {
+                    PlantUmlDiagram::Component(self.build_component_diagram(node, source, diagnostics, span))
+                }
                 _ => unreachable!("only diagram containers reach this branch"),
             },
             None => {
-                let is_sequence = elements.iter().any(|node| matches!(node.green.kind, PlantUmlElementType::ParticipantDeclaration | PlantUmlElementType::SequenceMessage | PlantUmlElementType::Activate | PlantUmlElementType::Deactivate));
-                if is_sequence { PlantUmlDiagram::Sequence(self.build_sequence_diagram(&elements, source, diagnostics, span)) } else { PlantUmlDiagram::Class(self.build_class_diagram(&elements, source, diagnostics, span)) }
+                let is_sequence = elements.iter().any(|node| {
+                    matches!(
+                        node.green.kind,
+                        PlantUmlElementType::ParticipantDeclaration
+                            | PlantUmlElementType::SequenceMessage
+                            | PlantUmlElementType::Activate
+                            | PlantUmlElementType::Deactivate
+                    )
+                });
+                if is_sequence {
+                    PlantUmlDiagram::Sequence(self.build_sequence_diagram(&elements, source, diagnostics, span))
+                }
+                else {
+                    PlantUmlDiagram::Class(self.build_class_diagram(&elements, source, diagnostics, span))
+                }
             }
         };
 
         Ok(PlantUmlRoot { diagrams: vec![diagram] })
     }
 
-    fn build_class_diagram(&self, elements: &[RedNode<PlantUmlLanguage>], source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> ClassDiagram {
+    fn build_class_diagram(
+        &self,
+        elements: &[RedNode<PlantUmlLanguage>],
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+        span: core::range::Range<usize>,
+    ) -> ClassDiagram {
         let mut classes = Vec::new();
         let mut relations = Vec::new();
 
@@ -138,7 +179,12 @@ impl PlantUmlBuilder<'_> {
         ClassDiagram { classes, relations, span }
     }
 
-    fn build_class_declaration(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> ClassDeclaration {
+    fn build_class_declaration(
+        &self,
+        node: RedNode<PlantUmlLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+    ) -> ClassDeclaration {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let mut index = 0;
@@ -235,7 +281,12 @@ impl PlantUmlBuilder<'_> {
         ClassMember { visibility, text, is_method, span }
     }
 
-    fn build_class_relation(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Option<ClassRelation> {
+    fn build_class_relation(
+        &self,
+        node: RedNode<PlantUmlLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+    ) -> Option<ClassRelation> {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let Some(left_leaf) = leaves.first()
@@ -305,8 +356,18 @@ impl PlantUmlBuilder<'_> {
         Some(ClassRelation { left, right, left_multiplicity, right_multiplicity, kind, marker_at_left, label, span })
     }
 
-    fn build_sequence_diagram(&self, elements: &[RedNode<PlantUmlLanguage>], source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> SequenceDiagram {
-        let participants: Vec<Participant> = elements.iter().filter(|node| node.green.kind == PlantUmlElementType::ParticipantDeclaration).map(|node| self.build_participant(*node, source, diagnostics)).collect();
+    fn build_sequence_diagram(
+        &self,
+        elements: &[RedNode<PlantUmlLanguage>],
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+        span: core::range::Range<usize>,
+    ) -> SequenceDiagram {
+        let participants: Vec<Participant> = elements
+            .iter()
+            .filter(|node| node.green.kind == PlantUmlElementType::ParticipantDeclaration)
+            .map(|node| self.build_participant(*node, source, diagnostics))
+            .collect();
 
         let mut names = HashMap::new();
         for participant in &participants {
@@ -397,7 +458,13 @@ impl PlantUmlBuilder<'_> {
         Participant { id, display, kind, span }
     }
 
-    fn build_sequence_message(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, names: &HashMap<String, String>, diagnostics: &mut Vec<TextError>) -> SequenceMessage {
+    fn build_sequence_message(
+        &self,
+        node: RedNode<PlantUmlLanguage>,
+        source: &SourceText,
+        names: &HashMap<String, String>,
+        diagnostics: &mut Vec<TextError>,
+    ) -> SequenceMessage {
         let span = node.span();
         let leaves = significant_leaves(&node);
         let from_leaf = leaves.first();
@@ -422,19 +489,36 @@ impl PlantUmlBuilder<'_> {
             }
         };
 
-        let text = leaves.iter().find(|leaf| leaf.kind == PlantUmlTokenType::Colon).map(|colon| source.get_text_in(core::range::Range { start: colon.span.end, end: span.end }).trim().to_string()).filter(|text| !text.is_empty());
+        let text = leaves
+            .iter()
+            .find(|leaf| leaf.kind == PlantUmlTokenType::Colon)
+            .map(|colon| source.get_text_in(core::range::Range { start: colon.span.end, end: span.end }).trim().to_string())
+            .filter(|text| !text.is_empty());
 
         SequenceMessage { from, to, text, arrow, span }
     }
 
-    fn build_activity_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> ActivityDiagram {
+    fn build_activity_diagram(
+        &self,
+        node: RedNode<PlantUmlLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+        span: core::range::Range<usize>,
+    ) -> ActivityDiagram {
         let lines = collect_lines(&node, source);
         let mut index = 0;
         let nodes = self.build_activity_nodes(&lines, &mut index, &[], false, diagnostics);
         ActivityDiagram { nodes, span }
     }
 
-    fn build_activity_nodes(&self, lines: &[StatementLine], index: &mut usize, terminators: &[&str], stop_at_lane: bool, diagnostics: &mut Vec<TextError>) -> Vec<ActivityNode> {
+    fn build_activity_nodes(
+        &self,
+        lines: &[StatementLine],
+        index: &mut usize,
+        terminators: &[&str],
+        stop_at_lane: bool,
+        diagnostics: &mut Vec<TextError>,
+    ) -> Vec<ActivityNode> {
         let mut nodes = Vec::new();
 
         while *index < lines.len() {
@@ -475,7 +559,9 @@ impl PlantUmlBuilder<'_> {
                     }
                     "if" => nodes.push(ActivityNode::Decision(self.build_activity_decision(lines, index, diagnostics))),
                     "fork" => nodes.push(ActivityNode::Fork(self.build_activity_fork(lines, index, diagnostics))),
-                    _ if text.starts_with('|') => nodes.push(ActivityNode::Swimlane(self.build_activity_swimlane(lines, index, terminators, diagnostics))),
+                    _ if text.starts_with('|') => {
+                        nodes.push(ActivityNode::Swimlane(self.build_activity_swimlane(lines, index, terminators, diagnostics)))
+                    }
                     _ => *index += 1,
                 }
             }
@@ -510,14 +596,26 @@ impl PlantUmlBuilder<'_> {
                 *index += 1;
                 let nodes = self.build_activity_nodes(lines, index, &["elseif", "else", "endif"], false, diagnostics);
                 let end = consumed_end(lines, *index, branch_start);
-                branches.push(ActivityBranch { kind: ActivityBranchKind::ElseIf, condition, label, nodes, span: core::range::Range { start: branch_start, end } });
+                branches.push(ActivityBranch {
+                    kind: ActivityBranchKind::ElseIf,
+                    condition,
+                    label,
+                    nodes,
+                    span: core::range::Range { start: branch_start, end },
+                });
             }
             else if normalized.starts_with("else") {
                 let label = parenthesized(&line.text);
                 *index += 1;
                 let nodes = self.build_activity_nodes(lines, index, &["elseif", "else", "endif"], false, diagnostics);
                 let end = consumed_end(lines, *index, branch_start);
-                branches.push(ActivityBranch { kind: ActivityBranchKind::Else, condition: None, label, nodes, span: core::range::Range { start: branch_start, end } });
+                branches.push(ActivityBranch {
+                    kind: ActivityBranchKind::Else,
+                    condition: None,
+                    label,
+                    nodes,
+                    span: core::range::Range { start: branch_start, end },
+                });
             }
             else if normalized.starts_with("endif") {
                 *index += 1;
@@ -564,7 +662,13 @@ impl PlantUmlBuilder<'_> {
         ActivityFork { branches, span: core::range::Range { start, end } }
     }
 
-    fn build_activity_swimlane(&self, lines: &[StatementLine], index: &mut usize, terminators: &[&str], diagnostics: &mut Vec<TextError>) -> ActivitySwimlane {
+    fn build_activity_swimlane(
+        &self,
+        lines: &[StatementLine],
+        index: &mut usize,
+        terminators: &[&str],
+        diagnostics: &mut Vec<TextError>,
+    ) -> ActivitySwimlane {
         let line = &lines[*index];
         let span = line.span;
         let (name, color) = parse_swimlane(&line.text);
@@ -574,7 +678,13 @@ impl PlantUmlBuilder<'_> {
         ActivitySwimlane { name, color, nodes, span: core::range::Range { start: span.start, end } }
     }
 
-    fn build_state_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> StateDiagram {
+    fn build_state_diagram(
+        &self,
+        node: RedNode<PlantUmlLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+        span: core::range::Range<usize>,
+    ) -> StateDiagram {
         let lines = collect_lines(&node, source);
         let mut index = 0;
         let mut elements = Vec::new();
@@ -637,7 +747,13 @@ impl PlantUmlBuilder<'_> {
         regions
     }
 
-    fn build_component_diagram(&self, node: RedNode<PlantUmlLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>, span: core::range::Range<usize>) -> ComponentDiagram {
+    fn build_component_diagram(
+        &self,
+        node: RedNode<PlantUmlLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+        span: core::range::Range<usize>,
+    ) -> ComponentDiagram {
         let lines = collect_lines(&node, source);
         let mut index = 0;
         let mut elements = Vec::new();
@@ -648,7 +764,15 @@ impl PlantUmlBuilder<'_> {
         ComponentDiagram { elements, relations, span }
     }
 
-    fn parse_component_block(&self, lines: &[StatementLine], index: &mut usize, in_block: bool, elements: &mut Vec<ComponentElement>, relations: &mut Vec<ComponentRelation>, diagnostics: &mut Vec<TextError>) {
+    fn parse_component_block(
+        &self,
+        lines: &[StatementLine],
+        index: &mut usize,
+        in_block: bool,
+        elements: &mut Vec<ComponentElement>,
+        relations: &mut Vec<ComponentRelation>,
+        diagnostics: &mut Vec<TextError>,
+    ) {
         while *index < lines.len() {
             let line = &lines[*index];
             let text = line.text.as_str();
@@ -671,7 +795,13 @@ impl PlantUmlBuilder<'_> {
                         self.parse_component_block(lines, index, true, &mut nested, relations, diagnostics);
                     }
                     let end = consumed_end(lines, *index, line.span.end);
-                    elements.push(ComponentElement::Package(ComponentPackage { name, display, alias, elements: nested, span: core::range::Range { start: line.span.start, end } }));
+                    elements.push(ComponentElement::Package(ComponentPackage {
+                        name,
+                        display,
+                        alias,
+                        elements: nested,
+                        span: core::range::Range { start: line.span.start, end },
+                    }));
                 }
                 "component" | "interface" => {
                     let keyword = head.clone();
@@ -763,7 +893,9 @@ fn matches_terminator(text: &str, terminators: &[&str]) -> bool {
         return false;
     }
     let normalized = text.trim().to_ascii_lowercase();
-    terminators.iter().any(|terminator| normalized == *terminator || normalized.starts_with(&format!("{terminator} ")) || normalized.starts_with(&format!("{terminator}(")))
+    terminators.iter().any(|terminator| {
+        normalized == *terminator || normalized.starts_with(&format!("{terminator} ")) || normalized.starts_with(&format!("{terminator}("))
+    })
 }
 
 fn consumed_end(lines: &[StatementLine], index: usize, fallback: usize) -> usize {
@@ -785,7 +917,12 @@ fn parse_activity_transition(line: &StatementLine) -> Option<ActivityTransition>
 
 fn activity_endpoint(raw: &str, is_left: bool) -> ActivityEndpoint {
     let value = unquote(raw);
-    if value.starts_with("(*)") { if is_left { ActivityEndpoint::Start } else { ActivityEndpoint::Stop } } else { ActivityEndpoint::Named(value) }
+    if value.starts_with("(*)") {
+        if is_left { ActivityEndpoint::Start } else { ActivityEndpoint::Stop }
+    }
+    else {
+        ActivityEndpoint::Named(value)
+    }
 }
 
 fn parse_swimlane(text: &str) -> (String, Option<String>) {

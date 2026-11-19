@@ -177,7 +177,13 @@ impl AdaHighlighter {
                 let mut end = i + 1;
 
                 while let Some(&(j, next_ch)) = chars.peek() {
-                    if next_ch.is_ascii_digit() || next_ch == '.' || next_ch == '_' || next_ch == '#' || (next_ch >= 'a' && next_ch <= 'f') || (next_ch >= 'A' && next_ch <= 'F') {
+                    if next_ch.is_ascii_digit()
+                        || next_ch == '.'
+                        || next_ch == '_'
+                        || next_ch == '#'
+                        || (next_ch >= 'a' && next_ch <= 'f')
+                        || (next_ch >= 'A' && next_ch <= 'F')
+                    {
                         end = j + next_ch.len_utf8();
                         chars.next();
                     }

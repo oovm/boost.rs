@@ -103,7 +103,15 @@ pub(crate) fn upsert_row(
                 match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed)? {
                     Some((rowid, bytes)) => (rowid, bytes),
                     None => {
-                        enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &proposed, dialect)?;
+                        enforce_row_guards(
+                            executor,
+                            transaction,
+                            &plan.check_constraints,
+                            &plan.foreign_keys,
+                            &plan.field_types,
+                            &proposed,
+                            dialect,
+                        )?;
                         indexes.remember_insert(&proposed, &plan.rowid);
                         let index_commands = indexes.take_commands();
                         let command = KeyValueCommand {
@@ -479,7 +487,8 @@ fn fold_insert_plans(
                 order.push(plan.rowid.clone());
                 let mut current = write_plan_to_row(plan)?;
                 apply_generated(&plan.generated, &plan.field_types, &mut current, dialect)?;
-                folded.insert(plan.rowid.clone(), BatchedRow { current: Some(current), applied: true, condition: CommitCondition::PutIfAbsent });
+                folded
+                    .insert(plan.rowid.clone(), BatchedRow { current: Some(current), applied: true, condition: CommitCondition::PutIfAbsent });
             }
             Some(ConflictPolicy::DoNothing) => {
                 if folded.contains_key(&plan.rowid) {

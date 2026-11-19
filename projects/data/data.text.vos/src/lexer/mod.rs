@@ -69,7 +69,12 @@ impl VosLexer {
 }
 
 impl Lexer<VosLanguage> for VosLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], _cache: &'a mut impl data_text_core::LexerCache<VosLanguage>) -> LexOutput<VosLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        _cache: &'a mut impl data_text_core::LexerCache<VosLanguage>,
+    ) -> LexOutput<VosLanguage> {
         let mut state = State::new(source);
         while state.not_at_end() {
             let start = state.get_position();

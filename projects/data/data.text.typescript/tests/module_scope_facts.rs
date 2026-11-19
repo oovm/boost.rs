@@ -254,10 +254,18 @@ fn duplicate_module_binding_names_its_reason_and_keeps_first() {
 #[test]
 fn top_level_return_names_its_reason() {
     let f = facts("let foo = 1;\nreturn foo;");
-    assert_eq!(f.incomplete_reasons, vec![ScopeIncompleteReason::TopLevelReturn], "a module-level return cannot live in a standalone ESM file: {f:?}");
+    assert_eq!(
+        f.incomplete_reasons,
+        vec![ScopeIncompleteReason::TopLevelReturn],
+        "a module-level return cannot live in a standalone ESM file: {f:?}"
+    );
 
     let nested = facts("let foo = 1;\nif (x) { return foo; }");
-    assert_eq!(nested.incomplete_reasons, vec![ScopeIncompleteReason::TopLevelReturn], "a return inside a module-level block is still top-level: {nested:?}");
+    assert_eq!(
+        nested.incomplete_reasons,
+        vec![ScopeIncompleteReason::TopLevelReturn],
+        "a return inside a module-level block is still top-level: {nested:?}"
+    );
 }
 
 #[test]

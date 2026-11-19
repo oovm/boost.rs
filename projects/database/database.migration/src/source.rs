@@ -7,9 +7,9 @@
 use database_client::pgsql::{ClientConfig, Connection};
 
 use crate::{
+    ColumnDef, Error, TableShape,
     ddl::{quote_ident, quote_literal},
     literal::raw_literal,
-    ColumnDef, Error, TableShape,
 };
 
 /// One row as text cells; `None` is SQL `NULL`.
@@ -111,11 +111,7 @@ impl MigrationSource for PgSource {
             "SELECT table_name FROM information_schema.tables WHERE table_schema = {} AND table_type = 'BASE TABLE' ORDER BY table_name",
             quote_literal(schema)
         );
-        Ok(self
-            .rows_of(&sql)?
-            .into_iter()
-            .filter_map(|row| row.into_iter().next().flatten())
-            .collect())
+        Ok(self.rows_of(&sql)?.into_iter().filter_map(|row| row.into_iter().next().flatten()).collect())
     }
 
     fn shape(&mut self, schema: &str, table: &str) -> Result<TableShape, Error> {
@@ -167,11 +163,7 @@ impl MigrationSource for PgSource {
     }
 
     fn rows(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error> {
-        let mut sql = format!(
-            "SELECT * FROM {}.{}",
-            quote_ident(request.schema),
-            quote_ident(request.table)
-        );
+        let mut sql = format!("SELECT * FROM {}.{}", quote_ident(request.schema), quote_ident(request.table));
         let mut conditions = Vec::new();
         if let Some(since) = request.since {
             conditions.push(format!("{} >= {}", quote_ident("updated_at"), quote_literal(since)));
@@ -198,12 +190,7 @@ impl MigrationSource for PgSource {
 
     fn keys(&mut self, request: &PageRequest<'_>) -> Result<Vec<Row>, Error> {
         let columns: Vec<String> = request.order.iter().map(|column| quote_ident(column)).collect();
-        let mut sql = format!(
-            "SELECT {} FROM {}.{}",
-            columns.join(", "),
-            quote_ident(request.schema),
-            quote_ident(request.table)
-        );
+        let mut sql = format!("SELECT {} FROM {}.{}", columns.join(", "), quote_ident(request.schema), quote_ident(request.table));
         if let Some(after) = request.after {
             let values: Vec<String> = after
                 .iter()
@@ -230,11 +217,7 @@ impl PgSource {
             quote_literal(schema),
             quote_literal(table)
         );
-        Ok(self
-            .rows_of(&sql)?
-            .into_iter()
-            .filter_map(|row| row.into_iter().next().flatten())
-            .collect())
+        Ok(self.rows_of(&sql)?.into_iter().filter_map(|row| row.into_iter().next().flatten()).collect())
     }
 }
 

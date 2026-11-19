@@ -198,20 +198,15 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
                 SqlScalarFunction::Nextval => Integer(catalog.nextval(&name)?),
                 SqlScalarFunction::Currval => Integer(catalog.currval(&name)?),
                 _ => {
-                    let Some(Integer(value)) = args.get(1) else {
-                        return Err(SqlFrontendError::new(
-                            SqlErrorKind::TypeMismatch,
-                            "SETVAL() takes an integer value",
-                        ));
+                    let Some(Integer(value)) = args.get(1)
+                    else {
+                        return Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "SETVAL() takes an integer value"));
                     };
                     let is_called = match args.get(2) {
                         None => true,
                         Some(SqlValue::Boolean(flag)) => *flag,
                         Some(_) => {
-                            return Err(SqlFrontendError::new(
-                                SqlErrorKind::TypeMismatch,
-                                "SETVAL() takes a boolean `is_called`",
-                            ));
+                            return Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "SETVAL() takes a boolean `is_called`"));
                         }
                     };
                     Integer(catalog.setval(&name, *value, is_called)?)
@@ -250,7 +245,8 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
             }
         }
         SqlScalarFunction::NullIf => {
-            let (Some(a), Some(b)) = (args.first(), args.get(1)) else {
+            let (Some(a), Some(b)) = (args.first(), args.get(1))
+            else {
                 return Ok(Null);
             };
             if !matches!(a, Null) && !matches!(b, Null) && compare_values(Some(a), Some(b)) == std::cmp::Ordering::Equal {
@@ -285,7 +281,8 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
                     "DATE_TRUNC() is a PostgreSQL function, MySQL has no equivalent",
                 ));
             }
-            let (Some(field), Some(source)) = (scalar_text(args, 0), scalar_text(args, 1)) else {
+            let (Some(field), Some(source)) = (scalar_text(args, 0), scalar_text(args, 1))
+            else {
                 return Ok(Null);
             };
             date_trunc_value(&field, &source)?
@@ -297,23 +294,22 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
 ///
 /// 网关的时间表示是 UTC 文本，截断是纯文本算术；小数秒与时区后缀在秒位之后被丢弃。
 fn date_trunc_value(field: &str, source: &str) -> Result<SqlValue, SqlFrontendError> {
-    let invalid = || {
-        SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("DATE_TRUNC source `{source}` is not a date or timestamp"))
-    };
+    let invalid = || SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("DATE_TRUNC source `{source}` is not a date or timestamp"));
     let (date_part, time_part) = match source.split_once([' ', 'T']) {
         Some((date, time)) => (date, time),
         None => (source, ""),
     };
     let mut dates = date_part.split('-');
-    let (Some(year), Some(month), Some(day)) = (dates.next(), dates.next(), dates.next()) else {
+    let (Some(year), Some(month), Some(day)) = (dates.next(), dates.next(), dates.next())
+    else {
         return Err(invalid());
     };
-    let (Ok(year), Ok(month), Ok(day)) = (year.parse::<u32>(), month.parse::<u32>(), day.parse::<u32>()) else {
+    let (Ok(year), Ok(month), Ok(day)) = (year.parse::<u32>(), month.parse::<u32>(), day.parse::<u32>())
+    else {
         return Err(invalid());
     };
-    let digits = |text: Option<&str>| -> u32 {
-        text.unwrap_or("0").chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0)
-    };
+    let digits =
+        |text: Option<&str>| -> u32 { text.unwrap_or("0").chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0) };
     let mut times = time_part.split(':');
     let (hour, minute, second) = (digits(times.next()), digits(times.next()), digits(times.next()));
     let date = format!("{year:04}-{month:02}-{day:02}");

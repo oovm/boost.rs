@@ -19,9 +19,9 @@ use crate::compiler::{
     emitter::pipeline::{CompilerHostProviderBinding, host_provider_root_declarations},
     syntax::surface::ParseError,
     types::hir::{
-        HirBlock, HirExpr, HirExprKind, HirFunction, HirInstantiatedCallable, HirLiteral, HirMatchArm, HirModule, HirPattern,
-        HirResolvedCall, HirStatement, HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType,
-        parse_export_spec_from_annotations, resolve_attribute_id,
+        HirBlock, HirExpr, HirExprKind, HirFunction, HirInstantiatedCallable, HirLiteral, HirMatchArm, HirModule, HirPattern, HirResolvedCall,
+        HirStatement, HirStatementKind, HirStringLiteral, HirWhereConstraint, ValkyrieType, parse_export_spec_from_annotations,
+        resolve_attribute_id,
     },
 };
 
@@ -59,8 +59,7 @@ impl HirMaterializationGate {
     /// （如 `Comparable::compare` 体内的 i32 固有 `infix <`），其声明身份不在可达集；
     /// 实例才是调用图上的真实身份。
     fn permits_function(&self, function: &HirFunction) -> bool {
-        self.permits_declaration(function.declaration)
-            || function.instance.is_some_and(|instance| self.permits_instance(Some(instance)))
+        self.permits_declaration(function.declaration) || function.instance.is_some_and(|instance| self.permits_instance(Some(instance)))
     }
 
     /// 可达 callable 实例集合（只读事实面，供诊断与回归断言）。
@@ -144,9 +143,8 @@ impl HirMaterializationGate {
             // 模板体（声明可达但从未具体化）里可能残留开放克隆的已回填实例；
             // 这类实例没有定义也没有导入合同，必须挡在实例集之外，否则 MIR 会
             // 照常发射调用，链接期才炸成「有 caller、无合同」。
-            self.reachable_instances.extend(walker.instances.into_iter().filter(|instance| {
-                !clones.contains_key(instance) || closed_clones.contains(instance)
-            }));
+            self.reachable_instances
+                .extend(walker.instances.into_iter().filter(|instance| !clones.contains_key(instance) || closed_clones.contains(instance)));
             if self.reachable_declarations.len() == declarations_before && self.reachable_instances.len() == instances_before {
                 break;
             }
@@ -241,9 +239,8 @@ fn modules_use_range_pattern(modules: &[HirModule]) -> bool {
 /// 开放克隆或非整数类型的比较实现误放进门禁。
 fn collect_integer_comparison_instances(module: &HirModule, out: &mut BTreeSet<ItemInstanceId>) {
     // 成员名只认 `operator_members` 的唯一事实源：HIR 里是 `infix <`，不是词素 `<`。
-    let member = crate::compiler::semantic::operator_members::infix_member_name(
-        &data_text_valkyrie::lexer::token_type::ValkyrieTokenType::LessThan,
-    );
+    let member =
+        crate::compiler::semantic::operator_members::infix_member_name(&data_text_valkyrie::lexer::token_type::ValkyrieTokenType::LessThan);
     for implementation in &module.impls {
         if implementation.trait_declaration.is_some() || !is_integer_primitive_type(&implementation.target) {
             continue;
@@ -270,19 +267,16 @@ fn is_integer_primitive_type(ty: &ValkyrieType) -> bool {
         | ValkyrieType::Integer64 { .. }
         | ValkyrieType::Integer128 { .. } => true,
         ValkyrieType::Nominal { arguments, primitive_identity, .. } if arguments.is_empty() => {
-            primitive_identity
-                .as_deref()
-                .and_then(crate::compiler::types::hir::primitive_identity_builtin_type)
-                .is_some_and(|builtin| {
-                    matches!(
-                        builtin,
-                        ValkyrieType::Integer8 { .. }
-                            | ValkyrieType::Integer16 { .. }
-                            | ValkyrieType::Integer32 { .. }
-                            | ValkyrieType::Integer64 { .. }
-                            | ValkyrieType::Integer128 { .. }
-                    )
-                })
+            primitive_identity.as_deref().and_then(crate::compiler::types::hir::primitive_identity_builtin_type).is_some_and(|builtin| {
+                matches!(
+                    builtin,
+                    ValkyrieType::Integer8 { .. }
+                        | ValkyrieType::Integer16 { .. }
+                        | ValkyrieType::Integer32 { .. }
+                        | ValkyrieType::Integer64 { .. }
+                        | ValkyrieType::Integer128 { .. }
+                )
+            })
         }
         _ => false,
     }
@@ -294,11 +288,7 @@ fn is_integer_primitive_type(ty: &ValkyrieType) -> bool {
 /// 的中间态，既不能发射 MIR，也不能进入依赖组导入清单——否则链接期会出现调用方
 /// （开放克隆）引用一个既无定义也无导入合同的实例。只有签名、返回与 owner 全部
 /// 落到具体类型的实例才放行。
-fn collect_instantiated_instances(
-    module: &HirModule,
-    gate: &mut HirMaterializationGate,
-    closed_clones: &BTreeSet<ItemInstanceId>,
-) {
+fn collect_instantiated_instances(module: &HirModule, gate: &mut HirMaterializationGate, closed_clones: &BTreeSet<ItemInstanceId>) {
     for callable in &module.instantiated_callables {
         if gate.permits_declaration(callable.function.declaration)
             && let Some(instance) = callable.function.instance
@@ -313,10 +303,7 @@ fn collect_instantiated_instances(
 }
 
 /// 收集全部铸造副本（含子模块），以实例身份索引。
-fn collect_instantiated_clones<'a>(
-    module: &'a HirModule,
-    out: &mut BTreeMap<ItemInstanceId, &'a HirInstantiatedCallable>,
-) {
+fn collect_instantiated_clones<'a>(module: &'a HirModule, out: &mut BTreeMap<ItemInstanceId, &'a HirInstantiatedCallable>) {
     for callable in &module.instantiated_callables {
         if let Some(instance) = callable.function.instance {
             out.entry(instance).or_insert(callable);
@@ -346,8 +333,7 @@ fn closed_instantiated_instances(clones: &BTreeMap<ItemInstanceId, &HirInstantia
         let removing = edges
             .iter()
             .filter(|(instance, callees)| {
-                closed.contains(*instance)
-                    && callees.iter().any(|callee| clones.contains_key(callee) && !closed.contains(callee))
+                closed.contains(*instance) && callees.iter().any(|callee| clones.contains_key(callee) && !closed.contains(callee))
             })
             .map(|(instance, _)| *instance)
             .collect::<Vec<_>>();
@@ -663,9 +649,7 @@ impl<'a> ReachabilityWalker<'a> {
             return;
         };
         self.callee_instances.insert(instance);
-        if call.parameter_types.iter().any(has_unresolved_generic_arguments)
-            || has_unresolved_generic_arguments(&call.return_type)
-        {
+        if call.parameter_types.iter().any(has_unresolved_generic_arguments) || has_unresolved_generic_arguments(&call.return_type) {
             self.has_open_callee = true;
         }
     }

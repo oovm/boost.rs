@@ -134,7 +134,8 @@ pub fn encode_delta_frame(next_revision: u64, ops: &[DeltaOp]) -> Result<Vec<u8>
 /// Use [`decode_snapshot_strict`] when the caller must reject pre-contract shards instead
 /// of normalizing them.
 pub fn decode_snapshot(bytes: &[u8]) -> Result<Snapshot> {
-    decode_with(bytes, RevisionMode::LegacyTolerant, ValueMode::Any).map(|image| Snapshot { next_revision: image.next_revision, records: image.records })
+    decode_with(bytes, RevisionMode::LegacyTolerant, ValueMode::Any)
+        .map(|image| Snapshot { next_revision: image.next_revision, records: image.records })
 }
 
 /// Decode `.yykv` bytes while enforcing the PostgreSQL revision contract.
@@ -143,7 +144,8 @@ pub fn decode_snapshot(bytes: &[u8]) -> Result<Snapshot> {
 /// on `next_revision`. Corruption carries [`ReasonCode`] so a host can branch on the failure
 /// class without parsing text.
 pub fn decode_snapshot_strict(bytes: &[u8]) -> Result<Snapshot> {
-    decode_with(bytes, RevisionMode::Contract, ValueMode::Any).map(|image| Snapshot { next_revision: image.next_revision, records: image.records })
+    decode_with(bytes, RevisionMode::Contract, ValueMode::Any)
+        .map(|image| Snapshot { next_revision: image.next_revision, records: image.records })
 }
 
 /// Strict decode that also rejects object-backed values.
@@ -201,7 +203,13 @@ fn decode_with(bytes: &[u8], revision_mode: RevisionMode, value_mode: ValueMode)
             return Err(corrupt(ReasonCode::ChecksumMismatch, "yykv checksum mismatch"));
         }
         let snapshot = decode_body(body, revision_mode, value_mode)?;
-        return Ok(ShardImage { next_revision: snapshot.next_revision, records: snapshot.records, base_len: bytes.len(), delta_len: 0, torn_tail: false });
+        return Ok(ShardImage {
+            next_revision: snapshot.next_revision,
+            records: snapshot.records,
+            base_len: bytes.len(),
+            delta_len: 0,
+            torn_tail: false,
+        });
     }
     if !bytes.starts_with(MAGIC) {
         return Err(corrupt(ReasonCode::BadMagic, "unknown yykv header"));

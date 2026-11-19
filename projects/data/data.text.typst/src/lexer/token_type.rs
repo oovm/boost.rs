@@ -17,12 +17,35 @@ impl TokenType for TypstTokenType {
         match self {
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::LineComment | Self::BlockComment => UniversalTokenRole::Comment,
-            Self::Let | Self::If | Self::Else | Self::For | Self::While | Self::Break | Self::Continue | Self::Return | Self::Import | Self::Include | Self::Set | Self::Show => UniversalTokenRole::Keyword,
+            Self::Let
+            | Self::If
+            | Self::Else
+            | Self::For
+            | Self::While
+            | Self::Break
+            | Self::Continue
+            | Self::Return
+            | Self::Import
+            | Self::Include
+            | Self::Set
+            | Self::Show => UniversalTokenRole::Keyword,
             Self::True | Self::False | Self::StringLiteral | Self::NumericLiteral => UniversalTokenRole::Literal,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Equal | Self::EqualEqual | Self::NotEqual | Self::Less | Self::Greater | Self::LessEqual | Self::GreaterEqual | Self::And | Self::Or | Self::Not => {
-                UniversalTokenRole::Operator
-            }
+            Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Percent
+            | Self::Equal
+            | Self::EqualEqual
+            | Self::NotEqual
+            | Self::Less
+            | Self::Greater
+            | Self::LessEqual
+            | Self::GreaterEqual
+            | Self::And
+            | Self::Or
+            | Self::Not => UniversalTokenRole::Operator,
             Self::LeftParen
             | Self::RightParen
             | Self::LeftBrace

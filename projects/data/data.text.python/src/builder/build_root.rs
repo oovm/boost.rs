@@ -2,7 +2,7 @@ use crate::{
     ast::{Program, PythonRoot},
     language::PythonLanguage,
 };
-use data_text_core::{GreenNode, TextError, SourceText};
+use data_text_core::{GreenNode, SourceText, TextError};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Builds a Python root from a green tree.

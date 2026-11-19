@@ -24,16 +24,17 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::diag::PackDiagnostic;
-use crate::graph::{EdgeKind, EdgeSite, NodeKind};
-use crate::module::{
-    ExportFact, ImportBinding, ImportFact, ImportKind, ImportedName, ScopeIncompleteReason,
+use crate::{
+    diag::PackDiagnostic,
+    graph::{EdgeKind, EdgeSite, NodeKind},
+    module::{ExportFact, ImportBinding, ImportFact, ImportKind, ImportedName, ScopeIncompleteReason},
 };
 
-use super::assemble::{
-    AssembledChunk, ChunkSegment, apply_replacements, chunk_of_node, json_text, map_replaced_offset,
+use super::{
+    EmitContext, PLACEHOLDER_PREFIX,
+    assemble::{AssembledChunk, ChunkSegment, apply_replacements, chunk_of_node, json_text, map_replaced_offset},
+    json_string, normalize_path, placeholder,
 };
-use super::{EmitContext, PLACEHOLDER_PREFIX, json_string, normalize_path, placeholder};
 
 /// 该 chunk 是否为 opaque 独立发射单元（单成员且 scope 事实不完整）。
 /// 判定只依据模块事实，与 chunk 层的 singleton 分区同一谓词。
@@ -41,11 +42,7 @@ use super::{EmitContext, PLACEHOLDER_PREFIX, json_string, normalize_path, placeh
 pub(crate) fn is_isolated_chunk(context: &EmitContext<'_>, chunk_index: usize) -> bool {
     let chunk = &context.chunks.chunks[chunk_index];
     chunk.modules.len() == 1
-        && context
-            .graph
-            .nodes
-            .get(chunk.modules[0])
-            .is_some_and(|node| node.record.is_scope_incomplete() || node.kind == NodeKind::Cjs)
+        && context.graph.nodes.get(chunk.modules[0]).is_some_and(|node| node.record.is_scope_incomplete() || node.kind == NodeKind::Cjs)
 }
 
 /// 独立发射装配：整文件文本 + 全文件替换表 → 类型擦除 → 行级映射段。
@@ -68,25 +65,18 @@ pub(crate) fn assemble_isolated(
 
     if source.contains(PLACEHOLDER_PREFIX) {
         errors.push(
-            PackDiagnostic::new(
-                "vmz::pack::emit::placeholder_collision",
-                "源文本包含产物占位符前缀，替换会有歧义",
-            )
-            .with_path(module_path.clone()),
+            PackDiagnostic::new("vmz::pack::emit::placeholder_collision", "源文本包含产物占位符前缀，替换会有歧义")
+                .with_path(module_path.clone()),
         );
         return None;
     }
 
     // 隔离事实如实报告（Living §同 chunk 作用域隔离第 3 条：降级非静默）。
-    let reasons: Vec<&'static str> =
-        record.scope_incomplete_reasons.iter().copied().map(reason_label).collect();
+    let reasons: Vec<&'static str> = record.scope_incomplete_reasons.iter().copied().map(reason_label).collect();
     warnings.push(
         PackDiagnostic::new(
             "vmz::pack::emit::module_isolated",
-            format!(
-                "模块 scope 事实不完整（{}），按模块级隔离独立发射为真 ESM 文件：剪枝只到模块级，文件内语句全部保留",
-                reasons.join(", ")
-            ),
+            format!("模块 scope 事实不完整（{}），按模块级隔离独立发射为真 ESM 文件：剪枝只到模块级，文件内语句全部保留", reasons.join(", ")),
         )
         .with_path(module_path.clone()),
     );
@@ -94,11 +84,8 @@ pub(crate) fn assemble_isolated(
     // 顶层 return 独立发射即 SyntaxError，无法作为 ESM 文件交付。
     if record.scope_incomplete_reasons.contains(&ScopeIncompleteReason::TopLevelReturn) {
         errors.push(
-            PackDiagnostic::new(
-                "vmz::pack::emit::isolated_unemittable",
-                "模块含顶层 `return`，无法作为独立 ESM 文件发射",
-            )
-            .with_path(module_path.clone()),
+            PackDiagnostic::new("vmz::pack::emit::isolated_unemittable", "模块含顶层 `return`，无法作为独立 ESM 文件发射")
+                .with_path(module_path.clone()),
         );
         return None;
     }
@@ -110,16 +97,7 @@ pub(crate) fn assemble_isolated(
     for (import_index, import) in record.imports.iter().enumerate() {
         match import.kind {
             ImportKind::Dynamic => {
-                plan_dynamic_import(
-                    context,
-                    node,
-                    import,
-                    import_index,
-                    &module_path,
-                    &mut replacements,
-                    errors,
-                    warnings,
-                );
+                plan_dynamic_import(context, node, import, import_index, &module_path, &mut replacements, errors, warnings);
             }
             ImportKind::Static | ImportKind::SideEffect => {
                 let type_only = import.type_only
@@ -132,18 +110,13 @@ pub(crate) fn assemble_isolated(
                     continue;
                 }
                 // 边按调用点身份取，不按说明符搜索：同一说明符可以有多个站点。
-                let Some(edge) = node
-                    .static_edges
-                    .iter()
-                    .find(|edge| edge.site == EdgeSite::Import(import_index))
+                let Some(edge) = node.static_edges.iter().find(|edge| edge.site == EdgeSite::Import(import_index))
                 else {
-                    errors.push(
-                        inconsistent(format!("import `{}` 找不到对应静态边", import.specifier))
-                            .with_path(module_path.clone()),
-                    );
+                    errors.push(inconsistent(format!("import `{}` 找不到对应静态边", import.specifier)).with_path(module_path.clone()));
                     continue;
                 };
-                let Ok(id) = edge.target.as_ref() else {
+                let Ok(id) = edge.target.as_ref()
+                else {
                     if matches!(
                         edge.target.as_ref().err(),
                         Some(diagnostic) if diagnostic.code == crate::resolve::CODE_NODE_BUILTIN
@@ -155,10 +128,7 @@ pub(crate) fn assemble_isolated(
                             warnings.push(
                                 PackDiagnostic::new(
                                     "vmz::pack::emit::node_builtin_static_kept",
-                                    format!(
-                                        "静态导入 `{}` 是 Node.js 内建模块，整文件发射原样保留，由 Node 宿主解析",
-                                        import.specifier
-                                    ),
+                                    format!("静态导入 `{}` 是 Node.js 内建模块，整文件发射原样保留，由 Node 宿主解析", import.specifier),
                                 )
                                 .with_path(module_path.clone())
                                 .with_span(import.span),
@@ -179,22 +149,15 @@ pub(crate) fn assemble_isolated(
                         continue;
                     }
                     errors.push(
-                        super::edge_unresolved(
-                            "静态导入",
-                            &import.specifier,
-                            "独立发射无法重写说明符",
-                            edge.target.as_ref().err(),
-                        )
-                        .with_path(module_path.clone())
-                        .with_span(import.span),
+                        super::edge_unresolved("静态导入", &import.specifier, "独立发射无法重写说明符", edge.target.as_ref().err())
+                            .with_path(module_path.clone())
+                            .with_span(import.span),
                     );
                     continue;
                 };
-                let Some(target) = context.graph.index_of(id) else {
-                    errors.push(
-                        inconsistent(format!("import `{}` 目标不在图中", import.specifier))
-                            .with_path(module_path.clone()),
-                    );
+                let Some(target) = context.graph.index_of(id)
+                else {
+                    errors.push(inconsistent(format!("import `{}` 目标不在图中", import.specifier)).with_path(module_path.clone()));
                     continue;
                 };
                 match context.graph.nodes[target].kind {
@@ -203,10 +166,7 @@ pub(crate) fn assemble_isolated(
                             errors.push(
                                 PackDiagnostic::new(
                                     "vmz::pack::emit::style_binding_unsupported",
-                                    format!(
-                                        "import `{}` 从 CSS 获取绑定：样式节点不透明，无导出绑定",
-                                        import.specifier
-                                    ),
+                                    format!("import `{}` 从 CSS 获取绑定：样式节点不透明，无导出绑定", import.specifier),
                                 )
                                 .with_path(module_path.clone())
                                 .with_span(import.span),
@@ -230,10 +190,7 @@ pub(crate) fn assemble_isolated(
                                 _ => errors.push(
                                     PackDiagnostic::new(
                                         "vmz::pack::emit::json_binding_unsupported",
-                                        format!(
-                                            "import `{}` 从 JSON 获取非 default 绑定：值节点只支持 default 导入，未实现",
-                                            import.specifier
-                                        ),
+                                        format!("import `{}` 从 JSON 获取非 default 绑定：值节点只支持 default 导入，未实现", import.specifier),
                                     )
                                     .with_path(module_path.clone())
                                     .with_span(import.span),
@@ -242,13 +199,11 @@ pub(crate) fn assemble_isolated(
                         }
                         match default_local {
                             Some(local) => {
-                                let Some(text) =
-                                    json_text(context, target, &mut json_texts, errors)
+                                let Some(text) = json_text(context, target, &mut json_texts, errors)
                                 else {
                                     continue;
                                 };
-                                replacements
-                                    .insert(import.span, format!("const {local} = {text};"));
+                                replacements.insert(import.span, format!("const {local} = {text};"));
                             }
                             None => {
                                 // 副作用 JSON 导入：值节点求值无可观察效果，整句删除。
@@ -262,8 +217,7 @@ pub(crate) fn assemble_isolated(
                             replacements.insert(import.span, String::new());
                             continue;
                         }
-                        let Some(target_chunk) =
-                            chunk_of_node(context, target, &module_path, errors)
+                        let Some(target_chunk) = chunk_of_node(context, target, &module_path, errors)
                         else {
                             continue;
                         };
@@ -284,26 +238,17 @@ pub(crate) fn assemble_isolated(
                                 };
                                 let emitted = if source_name.is_empty() {
                                     source_name.clone()
-                                } else {
-                                    super::assemble::resolve_emitted_face(
-                                        context,
-                                        target_chunk,
-                                        target,
-                                        &source_name,
-                                    )
+                                }
+                                else {
+                                    super::assemble::resolve_emitted_face(context, target_chunk, target, &source_name)
                                 };
                                 (binding, source_name, emitted)
                             })
                             .collect::<Vec<_>>();
-                        let needs_rebuild = face_map.iter().any(|(_, source_name, emitted)| {
-                            !source_name.is_empty() && *emitted != *source_name
-                        });
+                        let needs_rebuild =
+                            face_map.iter().any(|(_, source_name, emitted)| !source_name.is_empty() && *emitted != *source_name);
                         if needs_rebuild {
-                            let text = rebuild_static_import(
-                                import,
-                                &face_map,
-                                &placeholder(target_chunk),
-                            );
+                            let text = rebuild_static_import(import, &face_map, &placeholder(target_chunk));
                             replacements.insert(import.span, text);
                             continue;
                         }
@@ -314,10 +259,7 @@ pub(crate) fn assemble_isolated(
                             None => errors.push(
                                 PackDiagnostic::new(
                                     "vmz::pack::emit::import_unrewritable",
-                                    format!(
-                                        "import `{}` 缺少说明符 span，独立发射无法原地重写",
-                                        import.specifier
-                                    ),
+                                    format!("import `{}` 缺少说明符 span，独立发射无法原地重写", import.specifier),
                                 )
                                 .with_path(module_path.clone())
                                 .with_span(import.span),
@@ -336,9 +278,7 @@ pub(crate) fn assemble_isolated(
             ExportFact::ReexportNamed { source, source_span, span, type_only, .. } => {
                 (EdgeKind::ReexportNamed, source, *source_span, *span, *type_only)
             }
-            ExportFact::ReexportAll { source, source_span, span, .. } => {
-                (EdgeKind::ReexportAll, source, *source_span, *span, false)
-            }
+            ExportFact::ReexportAll { source, source_span, span, .. } => (EdgeKind::ReexportAll, source, *source_span, *span, false),
             ExportFact::ReexportNamespace { source, source_span, span, type_only, .. } => {
                 (EdgeKind::ReexportNamespace, source, *source_span, *span, *type_only)
             }
@@ -347,33 +287,23 @@ pub(crate) fn assemble_isolated(
             replacements.insert(span, String::new());
             continue;
         }
-        let Some(edge) =
-            node.static_edges.iter().find(|edge| edge.kind == kind && edge.specifier == *source)
+        let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == kind && edge.specifier == *source)
+        else {
+            errors.push(inconsistent(format!("重导出 `{source}` 找不到对应静态边")).with_path(module_path.clone()));
+            continue;
+        };
+        let Ok(id) = edge.target.as_ref()
         else {
             errors.push(
-                inconsistent(format!("重导出 `{source}` 找不到对应静态边"))
-                    .with_path(module_path.clone()),
+                super::edge_unresolved("重导出", source, "独立发射无法重写说明符", edge.target.as_ref().err())
+                    .with_path(module_path.clone())
+                    .with_span(span),
             );
             continue;
         };
-        let Ok(id) = edge.target.as_ref() else {
-            errors.push(
-                super::edge_unresolved(
-                    "重导出",
-                    source,
-                    "独立发射无法重写说明符",
-                    edge.target.as_ref().err(),
-                )
-                .with_path(module_path.clone())
-                .with_span(span),
-            );
-            continue;
-        };
-        let Some(target) = context.graph.index_of(id) else {
-            errors.push(
-                inconsistent(format!("重导出 `{source}` 目标不在图中"))
-                    .with_path(module_path.clone()),
-            );
+        let Some(target) = context.graph.index_of(id)
+        else {
+            errors.push(inconsistent(format!("重导出 `{source}` 目标不在图中")).with_path(module_path.clone()));
             continue;
         };
         match context.graph.nodes[target].kind {
@@ -406,23 +336,16 @@ pub(crate) fn assemble_isolated(
                 // 具名重导出的来源名同样要过面名分裂映射（与 import 同合同）：
                 // 来源名漂移时整句重建为 `export { <发射面名> as <对外名> }`。
                 if let ExportFact::ReexportNamed { local, exported, .. } = export {
-                    let emitted =
-                        super::assemble::resolve_emitted_face(context, target_chunk, target, local);
+                    let emitted = super::assemble::resolve_emitted_face(context, target_chunk, target, local);
                     if emitted != *local {
-                        let text = format!(
-                            "export {{ {} as {} }} from {};",
-                            emitted,
-                            exported,
-                            json_string(&placeholder(target_chunk))
-                        );
+                        let text = format!("export {{ {} as {} }} from {};", emitted, exported, json_string(&placeholder(target_chunk)));
                         replacements.insert(span, text);
                         continue;
                     }
                 }
                 match source_span {
                     Some(specifier_span) => {
-                        replacements
-                            .insert(specifier_span, json_string(&placeholder(target_chunk)));
+                        replacements.insert(specifier_span, json_string(&placeholder(target_chunk)));
                     }
                     None => errors.push(
                         PackDiagnostic::new(
@@ -444,15 +367,16 @@ pub(crate) fn assemble_isolated(
             continue;
         }
         let key = (module_path.clone(), asset.specifier.clone());
-        let Some(artifact) = context.asset_index.get(&key) else { continue };
-        let Some(specifier_span) = asset.specifier_span else {
+        let Some(artifact) = context.asset_index.get(&key)
+        else {
+            continue;
+        };
+        let Some(specifier_span) = asset.specifier_span
+        else {
             errors.push(
                 PackDiagnostic::new(
                     "vmz::pack::emit::asset_unrewritable",
-                    format!(
-                        "资源 `{}` 字面量 span 缺失，无法重写 `new URL` 第一参数",
-                        asset.specifier
-                    ),
+                    format!("资源 `{}` 字面量 span 缺失，无法重写 `new URL` 第一参数", asset.specifier),
                 )
                 .with_path(module_path.clone())
                 .with_span(asset.span),
@@ -477,11 +401,7 @@ pub(crate) fn assemble_isolated(
         Ok(pair) => pair,
         Err(err) => {
             errors.push(
-                PackDiagnostic::new(
-                    "vmz::pack::emit::erase_failed",
-                    format!("TypeScript 类型擦除失败: {err}"),
-                )
-                .with_path(module_path.clone()),
+                PackDiagnostic::new("vmz::pack::emit::erase_failed", format!("TypeScript 类型擦除失败: {err}")).with_path(module_path.clone()),
             );
             return None;
         }
@@ -496,12 +416,7 @@ pub(crate) fn assemble_isolated(
         let replaced_off = compiler_emitter::js::map_erased_offset(line_off, &deletions);
         let raw_off = map_replaced_offset(replaced_off, source, 0, &replacements);
         let (src_line, src_col) = source_lines.line_col(raw_off);
-        segments.push(ChunkSegment {
-            gen_line: line_index as u32,
-            source: module_path.clone(),
-            src_line,
-            src_col,
-        });
+        segments.push(ChunkSegment { gen_line: line_index as u32, source: module_path.clone(), src_line, src_col });
         line_off += generated.len() + 1;
     }
 
@@ -512,11 +427,7 @@ pub(crate) fn assemble_isolated(
 /// 具名子句），具名子句的来源名写发射面名（与本地名不同时 `as <本地名>`
 /// 保住本地绑定）。内联 `type` 绑定不参与面分裂，原文保留进具名子句。
 /// `face_map` 逐项对应非内联类型绑定与其发射面名（命名空间项为空串）。
-fn rebuild_static_import(
-    import: &ImportFact,
-    face_map: &[(&ImportBinding, String, String)],
-    placeholder_spec: &str,
-) -> String {
+fn rebuild_static_import(import: &ImportFact, face_map: &[(&ImportBinding, String, String)], placeholder_spec: &str) -> String {
     let mut default_part: Option<String> = None;
     let mut namespace_part: Option<String> = None;
     let mut named: Vec<String> = Vec::new();
@@ -527,23 +438,16 @@ fn rebuild_static_import(
                 ImportedName::Default => "default".to_string(),
                 ImportedName::Namespace => continue,
             };
-            named.push(if inner == binding.local {
-                format!("type {inner}")
-            } else {
-                format!("type {inner} as {}", binding.local)
-            });
+            named.push(if inner == binding.local { format!("type {inner}") } else { format!("type {inner} as {}", binding.local) });
             continue;
         }
-        let emitted = face_map
-            .iter()
-            .find(|(b, _, _)| std::ptr::eq(*b, binding))
-            .map(|(_, _, emitted)| emitted.clone())
-            .unwrap_or_default();
+        let emitted = face_map.iter().find(|(b, _, _)| std::ptr::eq(*b, binding)).map(|(_, _, emitted)| emitted.clone()).unwrap_or_default();
         match &binding.imported {
             ImportedName::Default => {
                 if emitted.is_empty() || emitted == "default" {
                     default_part = Some(binding.local.clone());
-                } else {
+                }
+                else {
                     named.push(format!("{emitted} as {}", binding.local));
                 }
             }
@@ -552,11 +456,7 @@ fn rebuild_static_import(
             }
             ImportedName::Name(name) => {
                 let face = if emitted.is_empty() { name.clone() } else { emitted };
-                named.push(if face == binding.local {
-                    face
-                } else {
-                    format!("{face} as {}", binding.local)
-                });
+                named.push(if face == binding.local { face } else { format!("{face} as {}", binding.local) });
             }
         }
     }
@@ -617,19 +517,14 @@ fn assemble_cjs(
 
     if source.contains(PLACEHOLDER_PREFIX) {
         errors.push(
-            PackDiagnostic::new(
-                "vmz::pack::emit::placeholder_collision",
-                "源文本包含产物占位符前缀，替换会有歧义",
-            )
-            .with_path(module_path.clone()),
+            PackDiagnostic::new("vmz::pack::emit::placeholder_collision", "源文本包含产物占位符前缀，替换会有歧义")
+                .with_path(module_path.clone()),
         );
         return None;
     }
 
     // 混入运行时 ESM 语法在 Node 里即 SyntaxError，打包层同样显式拒绝。
-    if record.imports.iter().any(|import| !import.type_only && import.kind != ImportKind::Dynamic)
-        || !record.exports.is_empty()
-    {
+    if record.imports.iter().any(|import| !import.type_only && import.kind != ImportKind::Dynamic) || !record.exports.is_empty() {
         errors.push(
             PackDiagnostic::new(
                 "vmz::pack::emit::cjs_esm_syntax",
@@ -640,11 +535,8 @@ fn assemble_cjs(
     }
     if record.flags.require_nonliteral {
         errors.push(
-            PackDiagnostic::new(
-                "vmz::pack::emit::cjs_require_nonliteral",
-                "CJS 模块含非字符串字面量 require：无法静态装填依赖表",
-            )
-            .with_path(module_path.clone()),
+            PackDiagnostic::new("vmz::pack::emit::cjs_require_nonliteral", "CJS 模块含非字符串字面量 require：无法静态装填依赖表")
+                .with_path(module_path.clone()),
         );
     }
     // 壳材料名（`module`/`exports`/`require`）与顶层声明冲突时拒绝。
@@ -653,10 +545,7 @@ fn assemble_cjs(
             errors.push(
                 PackDiagnostic::new(
                     "vmz::pack::emit::cjs_shim_collision",
-                    format!(
-                        "CJS 模块顶层声明了壳材料名 `{}`：互操作装填会与之冲突，显式拒绝",
-                        binding.name
-                    ),
+                    format!("CJS 模块顶层声明了壳材料名 `{}`：互操作装填会与之冲突，显式拒绝", binding.name),
                 )
                 .with_path(module_path.clone()),
             );
@@ -678,18 +567,13 @@ fn assemble_cjs(
         }
         seen.push(specifier);
         let binding = format!("__vmz_require_{}", seen.len() - 1);
-        let Some(edge) = node
-            .static_edges
-            .iter()
-            .find(|edge| edge.kind == EdgeKind::Static && edge.specifier == specifier)
+        let Some(edge) = node.static_edges.iter().find(|edge| edge.kind == EdgeKind::Static && edge.specifier == specifier)
         else {
-            errors.push(
-                inconsistent(format!("require `{specifier}` 找不到对应静态边"))
-                    .with_path(module_path.clone()),
-            );
+            errors.push(inconsistent(format!("require `{specifier}` 找不到对应静态边")).with_path(module_path.clone()));
             continue;
         };
-        let Ok(id) = edge.target.as_ref() else {
+        let Ok(id) = edge.target.as_ref()
+        else {
             if matches!(
                 edge.target.as_ref().err(),
                 Some(diagnostic) if diagnostic.code == crate::resolve::CODE_NODE_BUILTIN
@@ -698,22 +582,15 @@ fn assemble_cjs(
                 continue;
             }
             errors.push(
-                super::edge_unresolved(
-                    "require",
-                    specifier,
-                    "互操作壳无法装填依赖",
-                    edge.target.as_ref().err(),
-                )
-                .with_path(module_path.clone())
-                .with_span(require.span),
+                super::edge_unresolved("require", specifier, "互操作壳无法装填依赖", edge.target.as_ref().err())
+                    .with_path(module_path.clone())
+                    .with_span(require.span),
             );
             continue;
         };
-        let Some(target) = context.graph.index_of(id) else {
-            errors.push(
-                inconsistent(format!("require `{specifier}` 目标不在图中"))
-                    .with_path(module_path.clone()),
-            );
+        let Some(target) = context.graph.index_of(id)
+        else {
+            errors.push(inconsistent(format!("require `{specifier}` 目标不在图中")).with_path(module_path.clone()));
             continue;
         };
         match context.graph.nodes[target].kind {
@@ -722,19 +599,14 @@ fn assemble_cjs(
                 else {
                     continue;
                 };
-                header.push_str(&format!(
-                    "import {binding} from {};\n",
-                    json_string(&placeholder(target_chunk))
-                ));
+                header.push_str(&format!("import {binding} from {};\n", json_string(&placeholder(target_chunk))));
                 cases.push_str(&format!("case {}: return {binding};\n", json_string(specifier)));
             }
             NodeKind::Js => {
                 errors.push(
                     PackDiagnostic::new(
                         "vmz::pack::emit::cjs_require_esm",
-                        format!(
-                            "require `{specifier}` 的目标是 ESM 模块：CJS 同步 require 不能装载 ESM（Node 同形拒绝），请改动态 import"
-                        ),
+                        format!("require `{specifier}` 的目标是 ESM 模块：CJS 同步 require 不能装载 ESM（Node 同形拒绝），请改动态 import"),
                     )
                     .with_path(module_path.clone())
                     .with_span(require.span),
@@ -773,30 +645,22 @@ fn assemble_cjs(
     // 动态 import：与 ESM 独立发射同一处置。
     for (import_index, import) in record.imports.iter().enumerate() {
         if import.kind == ImportKind::Dynamic {
-            plan_dynamic_import(
-                context,
-                node,
-                import,
-                import_index,
-                &module_path,
-                &mut replacements,
-                errors,
-                warnings,
-            );
+            plan_dynamic_import(context, node, import, import_index, &module_path, &mut replacements, errors, warnings);
         }
     }
     // 资源引用：整文件存活，与 ESM 独立发射同一路径。
     for asset in &record.assets {
         let key = (module_path.clone(), asset.specifier.clone());
-        let Some(artifact) = context.asset_index.get(&key) else { continue };
-        let Some(specifier_span) = asset.specifier_span else {
+        let Some(artifact) = context.asset_index.get(&key)
+        else {
+            continue;
+        };
+        let Some(specifier_span) = asset.specifier_span
+        else {
             errors.push(
                 PackDiagnostic::new(
                     "vmz::pack::emit::asset_unrewritable",
-                    format!(
-                        "资源 `{}` 字面量 span 缺失，无法重写 `new URL` 第一参数",
-                        asset.specifier
-                    ),
+                    format!("资源 `{}` 字面量 span 缺失，无法重写 `new URL` 第一参数", asset.specifier),
                 )
                 .with_path(module_path.clone())
                 .with_span(asset.span),
@@ -821,11 +685,7 @@ fn assemble_cjs(
         Ok(pair) => pair,
         Err(err) => {
             errors.push(
-                PackDiagnostic::new(
-                    "vmz::pack::emit::erase_failed",
-                    format!("TypeScript 类型擦除失败: {err}"),
-                )
-                .with_path(module_path.clone()),
+                PackDiagnostic::new("vmz::pack::emit::erase_failed", format!("TypeScript 类型擦除失败: {err}")).with_path(module_path.clone()),
             );
             return None;
         }
@@ -838,25 +698,15 @@ fn assemble_cjs(
     if node_fallback {
         header.push_str("import { createRequire as __vmz_createRequire } from \"node:module\";\n");
     }
-    let fallback = if node_fallback {
-        "default: return __vmz_cjs_require(id);"
-    } else {
-        "default: throw new Error(\"vmz-pack: unbound require \" + id);"
-    };
+    let fallback =
+        if node_fallback { "default: return __vmz_cjs_require(id);" } else { "default: throw new Error(\"vmz-pack: unbound require \" + id);" };
     let shim = format!(
         "let module = {{ exports: {{}} }};\nlet exports = module.exports;\n{create_require}function require(id) {{\nswitch (id) {{\n{cases}{fallback}\n}}\n}}\n",
-        create_require = if node_fallback {
-            "const __vmz_cjs_require = __vmz_createRequire(import.meta.url);\n"
-        } else {
-            ""
-        },
+        create_require = if node_fallback { "const __vmz_cjs_require = __vmz_createRequire(import.meta.url);\n" } else { "" },
     );
-    let mut footer =
-        String::from("const __vmz_exports = module.exports;\nexport default __vmz_exports;\n");
+    let mut footer = String::from("const __vmz_exports = module.exports;\nexport default __vmz_exports;\n");
     for (index, name) in record.cjs_named_exports.iter().enumerate() {
-        footer.push_str(&format!(
-            "const __vmz_named_{index} = __vmz_exports.{name};\nexport {{ __vmz_named_{index} as {name} }};\n"
-        ));
+        footer.push_str(&format!("const __vmz_named_{index} = __vmz_exports.{name};\nexport {{ __vmz_named_{index} as {name} }};\n"));
     }
 
     let head_lines = header.matches('\n').count() + shim.matches('\n').count();
@@ -897,12 +747,9 @@ fn plan_dynamic_import(
     if import.specifier.is_empty() {
         // 非字面量动态 import：文本原样保留，产物层不保证运行时可解析。
         warnings.push(
-            PackDiagnostic::new(
-                "vmz::pack::emit::dynamic_unresolved_kept",
-                "非字面量动态 import 说明符原样保留，产物层不保证运行时可解析",
-            )
-            .with_path(module_path.to_string())
-            .with_span(import.span),
+            PackDiagnostic::new("vmz::pack::emit::dynamic_unresolved_kept", "非字面量动态 import 说明符原样保留，产物层不保证运行时可解析")
+                .with_path(module_path.to_string())
+                .with_span(import.span),
         );
         return;
     }
@@ -910,10 +757,7 @@ fn plan_dynamic_import(
         warnings.push(
             PackDiagnostic::new(
                 "vmz::pack::emit::dynamic_url_kept",
-                format!(
-                    "根绝对 URL 动态 import `{}` 原样保留，由站点 origin 运行时解析",
-                    import.specifier
-                ),
+                format!("根绝对 URL 动态 import `{}` 原样保留，由站点 origin 运行时解析", import.specifier),
             )
             .with_path(module_path.to_string())
             .with_span(import.span),
@@ -926,26 +770,20 @@ fn plan_dynamic_import(
         warnings.push(
             PackDiagnostic::new(
                 "vmz::pack::emit::dynamic_external_kept",
-                format!(
-                    "动态 import `{}` 是 Node.js 内建模块，说明符原样保留，由运行时宿主解析",
-                    import.specifier
-                ),
+                format!("动态 import `{}` 是 Node.js 内建模块，说明符原样保留，由运行时宿主解析", import.specifier),
             )
             .with_path(module_path.to_string())
             .with_span(import.span),
         );
         return;
     }
-    let Some(edge) =
-        node.dynamic_edges.iter().find(|edge| edge.site == EdgeSite::Import(import_index))
+    let Some(edge) = node.dynamic_edges.iter().find(|edge| edge.site == EdgeSite::Import(import_index))
     else {
-        errors.push(
-            inconsistent(format!("动态 import `{}` 找不到对应动态边", import.specifier))
-                .with_path(module_path.to_string()),
-        );
+        errors.push(inconsistent(format!("动态 import `{}` 找不到对应动态边", import.specifier)).with_path(module_path.to_string()));
         return;
     };
-    let Ok(id) = edge.target.as_ref() else {
+    let Ok(id) = edge.target.as_ref()
+    else {
         errors.push(
             PackDiagnostic::new(
                 "vmz::pack::emit::dynamic_unresolved",
@@ -956,21 +794,16 @@ fn plan_dynamic_import(
         );
         return;
     };
-    let Some(target) = context.graph.index_of(id) else {
-        errors.push(
-            inconsistent(format!("动态 import 目标不在图中: `{}`", import.specifier))
-                .with_path(module_path.to_string()),
-        );
+    let Some(target) = context.graph.index_of(id)
+    else {
+        errors.push(inconsistent(format!("动态 import 目标不在图中: `{}`", import.specifier)).with_path(module_path.to_string()));
         return;
     };
     match context.graph.nodes[target].kind {
         NodeKind::Style => errors.push(
             PackDiagnostic::new(
                 "vmz::pack::emit::dynamic_style_unsupported",
-                format!(
-                    "动态 import `{}` 目标是 CSS：样式只经宿主模块静态副作用边进入级联",
-                    import.specifier
-                ),
+                format!("动态 import `{}` 目标是 CSS：样式只经宿主模块静态副作用边进入级联", import.specifier),
             )
             .with_path(module_path.to_string())
             .with_span(import.span),
@@ -978,10 +811,7 @@ fn plan_dynamic_import(
         NodeKind::Json => errors.push(
             PackDiagnostic::new(
                 "vmz::pack::emit::dynamic_json_unsupported",
-                format!(
-                    "动态 import `{}` 目标是 JSON：值节点只经宿主模块静态 default 导入合成绑定",
-                    import.specifier
-                ),
+                format!("动态 import `{}` 目标是 JSON：值节点只经宿主模块静态 default 导入合成绑定", import.specifier),
             )
             .with_path(module_path.to_string())
             .with_span(import.span),
@@ -993,17 +823,15 @@ fn plan_dynamic_import(
                 warnings.push(
                     PackDiagnostic::new(
                         "vmz::pack::emit::dynamic_target_pruned_kept",
-                        format!(
-                            "动态 import `{}` 目标已被链接层剪除，说明符原样保留",
-                            import.specifier
-                        ),
+                        format!("动态 import `{}` 目标已被链接层剪除，说明符原样保留", import.specifier),
                     )
                     .with_path(module_path.to_string())
                     .with_span(import.span),
                 );
                 return;
             }
-            let Some(target_chunk) = chunk_of_node(context, target, module_path, errors) else {
+            let Some(target_chunk) = chunk_of_node(context, target, module_path, errors)
+            else {
                 return;
             };
             match import.specifier_span {

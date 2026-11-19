@@ -6,7 +6,9 @@ use crate::{
     lexer::token_type::JasmTokenType,
     parser::{JasmParser, element_type::JasmElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 
 /// AST builder for the JASM language.
 #[derive(Clone)]
@@ -23,7 +25,12 @@ impl<'config> JasmBuilder<'config> {
 }
 
 impl<'config> Builder<JasmLanguage> for JasmBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<JasmLanguage>) -> TextDiagnostics<JasmRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<JasmLanguage>,
+    ) -> TextDiagnostics<JasmRoot> {
         let parser = JasmParser::new(self.config);
 
         let parse_result = parser.parse(source, edits, cache);
@@ -58,7 +65,20 @@ impl<'config> JasmBuilder<'config> {
             }
         }
 
-        Ok(JasmRoot { class: class.unwrap_or_else(|| JasmClass { modifiers: vec![], name: String::new(), version: None, methods: vec![], fields: vec![], source_file: None, super_class: None, interfaces: vec![], annotations: vec![], attributes: vec![] }) })
+        Ok(JasmRoot {
+            class: class.unwrap_or_else(|| JasmClass {
+                modifiers: vec![],
+                name: String::new(),
+                version: None,
+                methods: vec![],
+                fields: vec![],
+                source_file: None,
+                super_class: None,
+                interfaces: vec![],
+                annotations: vec![],
+                attributes: vec![],
+            }),
+        })
     }
 
     fn build_class(&self, node: RedNode<JasmLanguage>, source: &SourceText) -> Result<JasmClass, TextError> {
@@ -72,7 +92,14 @@ impl<'config> JasmBuilder<'config> {
                 RedTree::Leaf(t) => {
                     let text = source.get_text_in(t.span.clone().into()).to_string();
                     match t.kind {
-                        JasmTokenType::Public | JasmTokenType::Private | JasmTokenType::Protected | JasmTokenType::Static | JasmTokenType::Final | JasmTokenType::Abstract | JasmTokenType::Synthetic | JasmTokenType::Deprecated => {
+                        JasmTokenType::Public
+                        | JasmTokenType::Private
+                        | JasmTokenType::Protected
+                        | JasmTokenType::Static
+                        | JasmTokenType::Final
+                        | JasmTokenType::Abstract
+                        | JasmTokenType::Synthetic
+                        | JasmTokenType::Deprecated => {
                             modifiers.push(text);
                         }
                         JasmTokenType::Identifier => {
@@ -93,7 +120,18 @@ impl<'config> JasmBuilder<'config> {
             }
         }
 
-        Ok(JasmClass { modifiers, name, version: None, methods, fields, source_file: None, super_class: None, interfaces: vec![], annotations: vec![], attributes: vec![] })
+        Ok(JasmClass {
+            modifiers,
+            name,
+            version: None,
+            methods,
+            fields,
+            source_file: None,
+            super_class: None,
+            interfaces: vec![],
+            annotations: vec![],
+            attributes: vec![],
+        })
     }
 
     fn build_method(&self, node: RedNode<JasmLanguage>, source: &SourceText) -> Result<JasmMethod, TextError> {
@@ -152,7 +190,16 @@ impl<'config> JasmBuilder<'config> {
 
         let name_and_descriptor = if descriptor.is_empty() { name } else { format!("{}{}", name, descriptor) };
 
-        Ok(JasmMethod { modifiers, name_and_descriptor, stack_size: stack, locals_count: locals, instructions, exception_handlers: vec![], annotations: vec![], attributes: vec![] })
+        Ok(JasmMethod {
+            modifiers,
+            name_and_descriptor,
+            stack_size: stack,
+            locals_count: locals,
+            instructions,
+            exception_handlers: vec![],
+            annotations: vec![],
+            attributes: vec![],
+        })
     }
 
     fn build_field(&self, node: RedNode<JasmLanguage>, source: &SourceText) -> Result<JasmField, TextError> {
@@ -164,7 +211,13 @@ impl<'config> JasmBuilder<'config> {
             if let RedTree::Leaf(t) = child {
                 let text = source.get_text_in(t.span.clone().into()).to_string();
                 match t.kind {
-                    JasmTokenType::Public | JasmTokenType::Private | JasmTokenType::Protected | JasmTokenType::Static | JasmTokenType::Final | JasmTokenType::Synthetic | JasmTokenType::Deprecated => {
+                    JasmTokenType::Public
+                    | JasmTokenType::Private
+                    | JasmTokenType::Protected
+                    | JasmTokenType::Static
+                    | JasmTokenType::Final
+                    | JasmTokenType::Synthetic
+                    | JasmTokenType::Deprecated => {
                         modifiers.push(text);
                     }
                     JasmTokenType::Identifier => {

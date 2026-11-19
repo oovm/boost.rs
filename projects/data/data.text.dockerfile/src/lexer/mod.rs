@@ -3,7 +3,7 @@ pub mod token_type;
 
 use crate::{language::DockerfileLanguage, lexer::token_type::DockerfileTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, Source, TextEdit, TextError,
     lexer::{LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -19,7 +19,12 @@ pub struct DockerfileLexer<'config> {
 }
 
 impl<'config> Lexer<DockerfileLanguage> for DockerfileLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<DockerfileLanguage>) -> LexOutput<DockerfileLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<DockerfileLanguage>,
+    ) -> LexOutput<DockerfileLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

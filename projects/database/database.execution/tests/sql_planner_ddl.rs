@@ -6,8 +6,8 @@
 
 use database_execution::sql_schema::SqlSchemaRegistry;
 use database_query::{
-    SqlCatalog, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFieldType, SqlFrontendError,
-    bind_sql_catalog,
+    SqlCatalog, SqlCatalogBoundExpression, SqlCatalogBoundStatement, SqlDialect, SqlErrorKind, SqlExecutionPlan, SqlFieldType,
+    SqlFrontendError, bind_sql_catalog,
     sql::SqlBoundBinaryOperator,
     sql_ddl::parse_ddl,
     sql_index::index_namespace,
@@ -92,7 +92,8 @@ fn integer_pk_range_stays_row_level_without_byte_bounds() {
         "SELECT id FROM t WHERE id BETWEEN 6 AND 46",
         "SELECT id FROM t WHERE id > 6 AND id < 46",
     ] {
-        let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, sql) else {
+        let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, sql)
+        else {
             panic!("`{sql}` must plan to a scan")
         };
         assert!(scan.rowid_after.is_none(), "`{sql}` must not push a byte lower bound");
@@ -107,12 +108,14 @@ fn integer_pk_range_stays_row_level_without_byte_bounds() {
 #[test]
 fn update_and_delete_range_stays_row_level() {
     let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, v INT)");
-    let SqlExecutionPlan::UpdateScan(update) = plan_mysql(&catalog, "UPDATE t SET v = 1 WHERE id > 6") else {
+    let SqlExecutionPlan::UpdateScan(update) = plan_mysql(&catalog, "UPDATE t SET v = 1 WHERE id > 6")
+    else {
         panic!("UPDATE must scan")
     };
     assert!(update.rowid_after.is_none() && update.rowid_before.is_none());
     assert!(update.predicate.is_some(), "UPDATE must keep the range as a row filter");
-    let SqlExecutionPlan::DeleteScan(delete) = plan_mysql(&catalog, "DELETE FROM t WHERE id >= 50") else {
+    let SqlExecutionPlan::DeleteScan(delete) = plan_mysql(&catalog, "DELETE FROM t WHERE id >= 50")
+    else {
         panic!("DELETE must scan")
     };
     assert!(delete.rowid_after.is_none() && delete.rowid_before.is_none());
@@ -123,7 +126,8 @@ fn update_and_delete_range_stays_row_level() {
 #[test]
 fn pk_equality_still_reads_one_rowid_point() {
     let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, v INT)");
-    let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42") else {
+    let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42")
+    else {
         panic!("equality must plan to a point read")
     };
     assert_eq!(read.rowid, b"42".to_vec());
@@ -134,7 +138,8 @@ fn pk_equality_still_reads_one_rowid_point() {
 #[test]
 fn pk_equality_with_conjunct_keeps_remaining_filter() {
     let catalog = mysql_catalog("CREATE TABLE t (id INT NOT NULL PRIMARY KEY, v INT)");
-    let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42 AND v > 1") else {
+    let SqlExecutionPlan::Read(read) = plan_mysql(&catalog, "SELECT id FROM t WHERE id = 42 AND v > 1")
+    else {
         panic!("equality must plan to a point read")
     };
     assert_eq!(read.rowid, b"42".to_vec());
@@ -145,7 +150,8 @@ fn pk_equality_with_conjunct_keeps_remaining_filter() {
 #[test]
 fn string_pk_like_prefix_still_pushes_down() {
     let catalog = mysql_catalog("CREATE TABLE s (name TEXT NOT NULL PRIMARY KEY, v INT)");
-    let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'abc%'") else {
+    let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'abc%'")
+    else {
         panic!("LIKE prefix must plan to a scan")
     };
     assert_eq!(scan.rowid_prefix, b"abc".to_vec());
@@ -156,7 +162,8 @@ fn string_pk_like_prefix_still_pushes_down() {
 #[test]
 fn like_pattern_beyond_prefix_stays_row_level() {
     let catalog = mysql_catalog("CREATE TABLE s (name TEXT NOT NULL PRIMARY KEY, v INT)");
-    let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'a%c'") else {
+    let SqlExecutionPlan::Scan(scan) = plan_mysql(&catalog, "SELECT name FROM s WHERE name LIKE 'a%c'")
+    else {
         panic!("LIKE must plan to a scan")
     };
     assert!(scan.rowid_prefix.is_empty());
@@ -167,17 +174,20 @@ fn like_pattern_beyond_prefix_stays_row_level() {
 #[test]
 fn update_set_carries_bound_row_expressions() {
     let catalog = mysql_catalog("CREATE TABLE inv (id INT NOT NULL PRIMARY KEY, stock INT, name TEXT)");
-    let SqlExecutionPlan::Update(update) = plan_mysql(&catalog, "UPDATE inv SET stock = stock - 1 WHERE id = 1") else {
+    let SqlExecutionPlan::Update(update) = plan_mysql(&catalog, "UPDATE inv SET stock = stock - 1 WHERE id = 1")
+    else {
         panic!("point update")
     };
     let UpdateAssignment { field_name, value, .. } = &update.fields[0];
     assert_eq!(field_name, "stock");
-    let SqlCatalogBoundExpression::Binary { operator, .. } = value else {
+    let SqlCatalogBoundExpression::Binary { operator, .. } = value
+    else {
         panic!("arithmetic RHS must stay a Binary expression")
     };
     assert_eq!(*operator, SqlBoundBinaryOperator::Minus);
     // 字面量右值保持原形状。
-    let SqlExecutionPlan::Update(literal_update) = plan_mysql(&catalog, "UPDATE inv SET stock = 5 WHERE id = 1") else {
+    let SqlExecutionPlan::Update(literal_update) = plan_mysql(&catalog, "UPDATE inv SET stock = 5 WHERE id = 1")
+    else {
         panic!("point update")
     };
     assert!(matches!(&literal_update.fields[0].value, SqlCatalogBoundExpression::Literal(database_query::SqlBoundLiteral::Integer(5))));

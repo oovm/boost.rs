@@ -19,13 +19,17 @@
 //! （`vmz::pack::graph::json_entry_unsupported`）：值节点只有被 JS 宿主模块
 //! 消费才有意义，入口没有可绑定的宿主。
 
-use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::{Path, PathBuf},
+};
 
-use crate::diag::PackDiagnostic;
-use crate::module::{ImportFact, ModuleFactSource, ModuleRecord};
-use crate::resolve::{ResolveRequest, Resolved, Target, resolve};
-use crate::source::SourceReader;
+use crate::{
+    diag::PackDiagnostic,
+    module::{ImportFact, ModuleFactSource, ModuleRecord},
+    resolve::{ResolveRequest, Resolved, Target, resolve},
+    source::SourceReader,
+};
 
 /// 模块节点身份：canonical 后的真实文件路径。
 pub type ModuleId = PathBuf;
@@ -242,11 +246,7 @@ pub fn build_graph_with_roots(
             );
             continue;
         }
-        let resolved = Resolved {
-            path: canonical.clone(),
-            package: crate::resolve::package_of_path(&canonical),
-            stub: false,
-        };
+        let resolved = Resolved { path: canonical.clone(), package: crate::resolve::package_of_path(&canonical), stub: false };
         graph.entries.push(GraphEntry { logical: logical.clone(), id: canonical.clone() });
         if by_id.contains_key(&canonical) {
             continue;
@@ -266,14 +266,14 @@ pub fn build_graph_with_roots(
         graph.nodes[index] = node;
 
         for edge in edges_static.iter().chain(edges_dynamic.iter()) {
-            let Ok(target_id) = edge.target.as_ref() else {
+            let Ok(target_id) = edge.target.as_ref()
+            else {
                 continue;
             };
             if by_id.contains_key(target_id) {
                 continue;
             }
-            let Some(resolved) =
-                edge_resolved.get(target_id).cloned().or_else(|| resolved_from_id(target_id))
+            let Some(resolved) = edge_resolved.get(target_id).cloned().or_else(|| resolved_from_id(target_id))
             else {
                 continue;
             };
@@ -341,11 +341,8 @@ fn expand(
         Ok(source) => source,
         Err(err) => {
             graph_diags.push(
-                PackDiagnostic::new(
-                    "vmz::pack::graph::read_failed",
-                    format!("cannot read module file: {err}"),
-                )
-                .with_path(path.display().to_string()),
+                PackDiagnostic::new("vmz::pack::graph::read_failed", format!("cannot read module file: {err}"))
+                    .with_path(path.display().to_string()),
             );
             return ModuleNode {
                 kind: NodeKind::Js,
@@ -377,11 +374,8 @@ fn expand(
     let mut dynamic_edges = Vec::new();
 
     for (import_index, import) in record.imports.iter().enumerate() {
-        let bindings_all_type =
-            !import.bindings.is_empty() && import.bindings.iter().all(|b| b.inline_type_only);
-        if import.type_only
-            || (matches!(import.kind, crate::module::ImportKind::Static) && bindings_all_type)
-        {
+        let bindings_all_type = !import.bindings.is_empty() && import.bindings.iter().all(|b| b.inline_type_only);
+        if import.type_only || (matches!(import.kind, crate::module::ImportKind::Static) && bindings_all_type) {
             // 类型导入不进入运行时图。
             continue;
         }
@@ -407,7 +401,8 @@ fn expand(
         };
         if kind == EdgeKind::Dynamic {
             dynamic_edges.push(edge);
-        } else {
+        }
+        else {
             static_edges.push(edge);
         }
     }
@@ -420,16 +415,7 @@ fn expand(
                 specifier: require.specifier.clone(),
                 kind: EdgeKind::Static,
                 site: EdgeSite::Require(require_index),
-                target: edge_target(
-                    require.specifier.as_str(),
-                    false,
-                    path,
-                    origin.as_deref(),
-                    target,
-                    root,
-                    &record,
-                    edge_resolved,
-                ),
+                target: edge_target(require.specifier.as_str(), false, path, origin.as_deref(), target, root, &record, edge_resolved),
             });
         }
     }
@@ -442,9 +428,7 @@ fn expand(
                 }
                 (source.as_str(), EdgeKind::ReexportNamed)
             }
-            crate::module::ExportFact::ReexportAll { source, .. } => {
-                (source.as_str(), EdgeKind::ReexportAll)
-            }
+            crate::module::ExportFact::ReexportAll { source, .. } => (source.as_str(), EdgeKind::ReexportAll),
             crate::module::ExportFact::ReexportNamespace { source, type_only, .. } => {
                 if *type_only {
                     continue;
@@ -457,25 +441,12 @@ fn expand(
             specifier: specifier.to_string(),
             kind,
             site: EdgeSite::Export(export_index),
-            target: edge_target(
-                specifier,
-                false,
-                path,
-                origin.as_deref(),
-                target,
-                root,
-                &record,
-                edge_resolved,
-            ),
+            target: edge_target(specifier, false, path, origin.as_deref(), target, root, &record, edge_resolved),
         });
     }
 
     ModuleNode {
-        kind: if format == crate::resolve::ModuleFormat::Cjs {
-            NodeKind::Cjs
-        } else {
-            NodeKind::Js
-        },
+        kind: if format == crate::resolve::ModuleFormat::Cjs { NodeKind::Cjs } else { NodeKind::Js },
         resolved: resolved.clone(),
         record,
         static_edges,
@@ -499,17 +470,10 @@ fn edge_target(
     edge_resolved: &mut HashMap<ModuleId, Resolved>,
 ) -> Result<ModuleId, PackDiagnostic> {
     if specifier.is_empty() {
-        let diagnostic = record
-            .diagnostics
-            .iter()
-            .find(|d| d.code == "vmz::pack::module::dynamic_import_unresolved")
-            .cloned()
-            .unwrap_or_else(|| {
-                PackDiagnostic::new(
-                    "vmz::pack::module::dynamic_import_unresolved",
-                    "dynamic import specifier is not a static string literal",
-                )
-                .with_path(importer.display().to_string())
+        let diagnostic =
+            record.diagnostics.iter().find(|d| d.code == "vmz::pack::module::dynamic_import_unresolved").cloned().unwrap_or_else(|| {
+                PackDiagnostic::new("vmz::pack::module::dynamic_import_unresolved", "dynamic import specifier is not a static string literal")
+                    .with_path(importer.display().to_string())
             });
         return Err(diagnostic);
     }
@@ -523,9 +487,7 @@ fn edge_target(
     // `node:` 内建说明符不进入文件解析：身份是运行时外部模块，统一诊断码
     // 供 emit 层按「原样保留」处置（动态 import 合法，静态见 emit 合同）。
     // Node target 上裸名内建（CJS 包常见的 `require('fs')` 形态）同为外部模块。
-    if crate::resolve::is_node_builtin_specifier(specifier)
-        || (target == Target::Node && crate::resolve::is_node_builtin_name(specifier))
-    {
+    if crate::resolve::is_node_builtin_specifier(specifier) || (target == Target::Node && crate::resolve::is_node_builtin_name(specifier)) {
         return Err(crate::resolve::node_builtin_diagnostic(specifier, importer));
     }
     // 根绝对 URL 动态 import（`import('/dom.browser.js')`，可带 `?t=` 缓存破坏
@@ -540,7 +502,8 @@ fn edge_target(
             // 按落点路径回溯补齐，与旧 `resolved_from_id` 行为一致。
             let resolved = if resolved.package.is_some() || resolved.stub {
                 resolved
-            } else {
+            }
+            else {
                 Resolved { package: crate::resolve::package_of_path(&resolved.path), ..resolved }
             };
             edge_resolved.insert(resolved.path.clone(), resolved.clone());
@@ -557,11 +520,7 @@ fn edge_target(
 
 fn entry_canonical(path: &Path) -> Result<ModuleId, PackDiagnostic> {
     std::fs::canonicalize(path).map_err(|err| {
-        PackDiagnostic::new(
-            "vmz::pack::graph::entry_unresolved",
-            format!("cannot resolve entry: {err}"),
-        )
-        .with_path(path.display().to_string())
+        PackDiagnostic::new("vmz::pack::graph::entry_unresolved", format!("cannot resolve entry: {err}")).with_path(path.display().to_string())
     })
 }
 

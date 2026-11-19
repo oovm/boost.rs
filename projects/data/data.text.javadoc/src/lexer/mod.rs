@@ -264,7 +264,12 @@ impl<'config> JavadocLexer<'config> {
 }
 
 impl<'config> Lexer<JavadocLanguage> for JavadocLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<JavadocLanguage>) -> LexOutput<JavadocLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<JavadocLanguage>,
+    ) -> LexOutput<JavadocLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

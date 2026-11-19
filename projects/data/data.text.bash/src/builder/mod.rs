@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::BashLanguage, parser::BashParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// Bash language AST builder
 #[derive(Clone)]
@@ -22,7 +22,12 @@ impl<'config> BashBuilder<'config> {
 }
 
 impl<'config> Builder<BashLanguage> for BashBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<BashLanguage>) -> data_text_core::builder::BuildOutput<BashLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<BashLanguage>,
+    ) -> data_text_core::builder::BuildOutput<BashLanguage> {
         let parser = BashParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<BashLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

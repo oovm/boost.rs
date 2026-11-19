@@ -17,7 +17,10 @@ use crate::compiler::{
     text_carrier,
     types::{
         Identifier, NamePath,
-        hir::{GenericBinderId, HirAssociatedTypeBinding, HirEnum, HirModule, HirStruct, HirTextEncoding, HirTraitBound, HirWhereConstraint, RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type},
+        hir::{
+            GenericBinderId, HirAssociatedTypeBinding, HirEnum, HirModule, HirStruct, HirTextEncoding, HirTraitBound, HirWhereConstraint,
+            RowType, TraitObject, ValkyrieType, primitive_identity_builtin_type,
+        },
     },
 };
 
@@ -362,9 +365,9 @@ impl TypeRelationContext {
     fn is_char_identity(&self, ty: &ValkyrieType) -> bool {
         match ty {
             ValkyrieType::Nominal { declaration, arguments, primitive_identity } if arguments.is_empty() => {
-                let declared_identity = primitive_identity.as_deref().or_else(|| {
-                    self.structs_by_declaration.get(declaration).and_then(|item| item.primitive_identity.as_deref())
-                });
+                let declared_identity = primitive_identity
+                    .as_deref()
+                    .or_else(|| self.structs_by_declaration.get(declaration).and_then(|item| item.primitive_identity.as_deref()));
                 declared_identity == Some("std::text::char")
             }
             other => crate::compiler::hir::type_relation::is_character_type_name_of(other),
@@ -700,7 +703,8 @@ impl TypeRelationContext {
                 continue;
             }
             for required_equation in &required.associated_types {
-                let Some(provided_equation) = provided.associated_types.iter().find(|equation| equation.name == required_equation.name) else {
+                let Some(provided_equation) = provided.associated_types.iter().find(|equation| equation.name == required_equation.name)
+                else {
                     continue;
                 };
                 let expected = substitute_relation_type(&required_equation.ty, substitutions);
@@ -755,7 +759,8 @@ impl TypeRelationContext {
                     else {
                         continue;
                     };
-                    let Some(solution) = witness.associated_types.get(&associated.name) else {
+                    let Some(solution) = witness.associated_types.get(&associated.name)
+                    else {
                         continue;
                     };
                     let solution = substitute_relation_type(solution, substitutions);

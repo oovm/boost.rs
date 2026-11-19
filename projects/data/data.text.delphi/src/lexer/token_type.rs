@@ -174,8 +174,28 @@ impl TokenType for DelphiTokenType {
         match self {
             Self::Identifier => UniversalTokenRole::Name,
             Self::String | Self::Number | Self::Float | Self::True_ | Self::False_ | Self::Nil => UniversalTokenRole::Literal,
-            Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Equal | Self::NotEqual | Self::Less | Self::Greater | Self::LessEqual | Self::GreaterEqual | Self::Assign | Self::Caret | Self::At => UniversalTokenRole::Operator,
-            Self::Dot | Self::DotDot | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::Semicolon | Self::Comma | Self::Colon => UniversalTokenRole::Punctuation,
+            Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Equal
+            | Self::NotEqual
+            | Self::Less
+            | Self::Greater
+            | Self::LessEqual
+            | Self::GreaterEqual
+            | Self::Assign
+            | Self::Caret
+            | Self::At => UniversalTokenRole::Operator,
+            Self::Dot
+            | Self::DotDot
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Colon => UniversalTokenRole::Punctuation,
             Self::Comment | Self::LineComment | Self::BlockComment => UniversalTokenRole::Comment,
             Self::Whitespace | Self::Newline => UniversalTokenRole::Whitespace,
             Self::Error => UniversalTokenRole::Error,

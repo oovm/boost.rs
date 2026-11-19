@@ -1,5 +1,5 @@
 use data_text_core::{
-    TextError, TextErrorKind, Parser, SourceText,
+    Parser, SourceText, TextError, TextErrorKind,
     parser::session::ParseSession,
     tree::{RedNode, RedTree},
 };
@@ -200,7 +200,10 @@ fn test_reports_unterminated_graph() {
 
     parse(source, |root, diagnostics| {
         assert_eq!(root.green.kind, DotElementType::Root);
-        assert!(diagnostics.iter().any(|error| matches!(error.kind(), TextErrorKind::UnexpectedEof { .. })), "expected an EOF diagnostic, got {diagnostics:?}");
+        assert!(
+            diagnostics.iter().any(|error| matches!(error.kind(), TextErrorKind::UnexpectedEof { .. })),
+            "expected an EOF diagnostic, got {diagnostics:?}"
+        );
     });
 }
 

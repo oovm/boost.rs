@@ -2,10 +2,12 @@ use std::format;
 
 use crate::range::ByteRange;
 
-use super::capabilities::SourceCapabilities;
-use super::identity::ContentIdentity;
-use super::read::{ReadOutcome, ReadResult};
-use super::source::ByteSource;
+use super::{
+    capabilities::SourceCapabilities,
+    identity::ContentIdentity,
+    read::{ReadOutcome, ReadResult},
+    source::ByteSource,
+};
 
 /// A bounded view over another [`ByteSource`].
 #[derive(Debug, Clone)]
@@ -54,12 +56,7 @@ impl<S: ByteSource> ByteSource for ByteWindow<S> {
         match self.source.read_at(outer_offset, &mut scratch)? {
             ReadOutcome::Complete => {
                 destination[..bounded].copy_from_slice(&scratch);
-                if bounded == destination.len() {
-                    Ok(ReadOutcome::Complete)
-                }
-                else {
-                    Ok(ReadOutcome::Partial { bytes_read: bounded as u64 })
-                }
+                if bounded == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: bounded as u64 }) }
             }
             ReadOutcome::Partial { bytes_read } => {
                 destination[..bytes_read as usize].copy_from_slice(&scratch[..bytes_read as usize]);
@@ -89,10 +86,6 @@ impl<S: ByteSource> ByteSource for ByteWindow<S> {
         let outer = self.source.identity();
         let start = self.base.saturating_add(self.range.start());
         let end = start.saturating_add(self.range.len());
-        ContentIdentity {
-            label: format!("{}[{}..{}]", outer.label, start, end),
-            version: outer.version,
-            content_digest: outer.content_digest,
-        }
+        ContentIdentity { label: format!("{}[{}..{}]", outer.label, start, end), version: outer.version, content_digest: outer.content_digest }
     }
 }

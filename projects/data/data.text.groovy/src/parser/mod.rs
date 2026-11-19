@@ -24,7 +24,12 @@ impl<'config> GroovyParser<'config> {
 }
 
 impl<'config> Parser<GroovyLanguage> for GroovyParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<GroovyLanguage>) -> ParseOutput<'a, GroovyLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<GroovyLanguage>,
+    ) -> ParseOutput<'a, GroovyLanguage> {
         let lexer = crate::lexer::GroovyLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

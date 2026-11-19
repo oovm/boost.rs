@@ -3,7 +3,7 @@ use crate::{
     language::PythonLanguage,
     parser::{PythonElementType, PythonParser},
 };
-use data_text_core::{GreenTree, TextError, Parser, SourceText};
+use data_text_core::{GreenTree, Parser, SourceText, TextError};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Parses an f-string's text content into a list of expressions.

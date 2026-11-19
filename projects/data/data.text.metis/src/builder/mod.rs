@@ -9,13 +9,21 @@ use crate::language::MetisLanguage;
 pub struct MetisBuilder;
 
 impl Builder<MetisLanguage> for MetisBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl data_text_core::builder::BuilderCache<MetisLanguage>) -> data_text_core::builder::BuildOutput<MetisLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::builder::BuilderCache<MetisLanguage>,
+    ) -> data_text_core::builder::BuildOutput<MetisLanguage> {
         use data_text_core::parser::Parser;
 
         let language = MetisLanguage::default();
         let parser = language.parser();
         let green_tree = parser.parse(text, edits, cache);
-        data_text_core::errors::TextDiagnostics { result: Err(data_text_core::errors::TextError::custom_error("Metis CST builder not implemented yet")), diagnostics: green_tree.diagnostics }
+        data_text_core::errors::TextDiagnostics {
+            result: Err(data_text_core::errors::TextError::custom_error("Metis CST builder not implemented yet")),
+            diagnostics: green_tree.diagnostics,
+        }
     }
 }
 

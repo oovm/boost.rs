@@ -10,12 +10,12 @@
 use crate::numeric::kernel::error::Result;
 
 use crate::numeric::{
+    budget::ExecutionBudget,
     kernel::{
         buffer::{LimbBuffer, ScratchWorkspace},
         portable::{self, LimbKernel, PortableLimbKernel},
         table::KernelTable,
     },
-    budget::ExecutionBudget,
 };
 
 mod div;

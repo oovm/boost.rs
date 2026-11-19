@@ -98,7 +98,11 @@ impl<'config> VhdlParser<'config> {
         state.expect(VhdlTokenType::Colon).ok();
 
         // direction
-        if state.at(VhdlTokenType::InKw) || state.at(VhdlTokenType::OutKw) || state.at(VhdlTokenType::InoutKw) || state.at(VhdlTokenType::BufferKw) {
+        if state.at(VhdlTokenType::InKw)
+            || state.at(VhdlTokenType::OutKw)
+            || state.at(VhdlTokenType::InoutKw)
+            || state.at(VhdlTokenType::BufferKw)
+        {
             state.bump();
         }
 
@@ -271,7 +275,12 @@ impl<'config> VhdlParser<'config> {
 }
 
 impl<'config> Parser<VhdlLanguage> for VhdlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VhdlLanguage>) -> ParseOutput<'a, VhdlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VhdlLanguage>,
+    ) -> ParseOutput<'a, VhdlLanguage> {
         let lexer = VhdlLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

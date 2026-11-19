@@ -29,7 +29,9 @@ impl<'config> ScssParser<'config> {
         match state.peek_kind() {
             Some(ScssTokenType::Dollar) => self.parse_variable_declaration(state),
             Some(ScssTokenType::At) => self.parse_at_rule(state),
-            Some(ScssTokenType::Identifier) | Some(ScssTokenType::Dot) | Some(ScssTokenType::Hash) | Some(ScssTokenType::Star) => self.parse_rule(state),
+            Some(ScssTokenType::Identifier) | Some(ScssTokenType::Dot) | Some(ScssTokenType::Hash) | Some(ScssTokenType::Star) => {
+                self.parse_rule(state)
+            }
             Some(ScssTokenType::Comment) => {
                 let cp = state.checkpoint();
                 state.bump();
@@ -263,7 +265,12 @@ impl<'config> ScssParser<'config> {
 }
 
 impl<'config> Parser<ScssLanguage> for ScssParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ScssLanguage>) -> ParseOutput<'a, ScssLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ScssLanguage>,
+    ) -> ParseOutput<'a, ScssLanguage> {
         let lexer = ScssLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

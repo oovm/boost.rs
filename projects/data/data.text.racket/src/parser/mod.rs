@@ -13,7 +13,12 @@ pub use element_type::ElementType;
 pub struct Parser;
 
 impl CoreParser<RacketLanguage> for Parser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<RacketLanguage>) -> ParseOutput<'a, RacketLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<RacketLanguage>,
+    ) -> ParseOutput<'a, RacketLanguage> {
         parse_with_lexer(&Lexer, text, edits, cache, |state| {
             let root = state.arena().alloc(GreenNode::new(ElementType::Expression, &[]));
             Ok(root)

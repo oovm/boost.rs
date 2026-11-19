@@ -52,7 +52,16 @@ impl ValkyrieLanguage {
 
 impl Default for ValkyrieLanguage {
     fn default() -> Self {
-        Self { support_shader_extension: false, support_orm_extension: false, support_ecs_extension: false, support_x_grammar: false, support_t_grammar: true, allow_legacy_for: false, allow_legacy_function: false, allow_legacy_struct: false }
+        Self {
+            support_shader_extension: false,
+            support_orm_extension: false,
+            support_ecs_extension: false,
+            support_x_grammar: false,
+            support_t_grammar: true,
+            allow_legacy_for: false,
+            allow_legacy_function: false,
+            allow_legacy_struct: false,
+        }
     }
 }
 

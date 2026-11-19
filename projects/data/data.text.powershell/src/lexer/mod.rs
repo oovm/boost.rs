@@ -598,7 +598,12 @@ impl<'config> PowerShellLexer<'config> {
 }
 
 impl<'config> Lexer<PowerShellLanguage> for PowerShellLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<PowerShellLanguage>) -> LexOutput<PowerShellLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<PowerShellLanguage>,
+    ) -> LexOutput<PowerShellLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

@@ -56,8 +56,7 @@ impl LicenseInfo {
 
         let os2_fs_type = face.os2().map(|o| o.fs_type);
 
-        let kind =
-            classify(license_text.as_deref(), license_url.as_deref(), vendor.as_deref(), os2_fs_type, copyright.as_deref());
+        let kind = classify(license_text.as_deref(), license_url.as_deref(), vendor.as_deref(), os2_fs_type, copyright.as_deref());
 
         let embedding_permitted = os2_fs_type
             .map(|fs| {
@@ -76,13 +75,7 @@ impl LicenseInfo {
     }
 }
 
-fn classify(
-    text: Option<&str>,
-    url: Option<&str>,
-    vendor: Option<&str>,
-    os2_fs_type: Option<u16>,
-    copyright: Option<&str>,
-) -> LicenseKind {
+fn classify(text: Option<&str>, url: Option<&str>, vendor: Option<&str>, os2_fs_type: Option<u16>, copyright: Option<&str>) -> LicenseKind {
     if let Some(fs) = os2_fs_type {
         if (fs & 0x0003) == 0x0003 {
             return LicenseKind::EmbeddingForbidden;

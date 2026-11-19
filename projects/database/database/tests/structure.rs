@@ -70,18 +70,12 @@ fn metadata() -> Vec<Package> {
 /// 包目录位于 `projects/database/<prefix>` 之下的 workspace package。
 fn under<'a>(packages: &'a [Package], prefix: &Path) -> Vec<&'a Package> {
     let boundary = database_root().join(prefix);
-    packages
-        .iter()
-        .filter(|package| package.manifest_path.parent().is_some_and(|dir| dir.starts_with(&boundary)))
-        .collect()
+    packages.iter().filter(|package| package.manifest_path.parent().is_some_and(|dir| dir.starts_with(&boundary))).collect()
 }
 
 /// `projects/database` 目录（本 crate 的祖父目录）。
 fn database_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("`database` crate lives under `projects/database`")
-        .to_path_buf()
+    Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("`database` crate lives under `projects/database`").to_path_buf()
 }
 
 #[test]
@@ -97,28 +91,18 @@ fn database_crates_never_depend_on_product_facades() {
         }
         for dependency in &package.dependencies {
             if facades.contains(&dependency.name) {
-                violations.push(format!(
-                    "{} (dev/build={:?}) depends on facade `{}`",
-                    package.id, dependency.kind, dependency.name
-                ));
+                violations.push(format!("{} (dev/build={:?}) depends on facade `{}`", package.id, dependency.kind, dependency.name));
             }
         }
     }
 
-    assert!(
-        violations.is_empty(),
-        "`database.*` must consume owners, never product facades:\n{}",
-        violations.join("\n")
-    );
+    assert!(violations.is_empty(), "`database.*` must consume owners, never product facades:\n{}", violations.join("\n"));
 }
 
 #[test]
 fn query_never_depends_on_execution() {
     let packages = metadata();
-    let query = packages
-        .iter()
-        .find(|package| package.name == "database-query")
-        .expect("`database-query` is a workspace package");
+    let query = packages.iter().find(|package| package.name == "database-query").expect("`database-query` is a workspace package");
     assert!(
         query.manifest_path.starts_with(database_root().join("database.query")),
         "`database-query` must live at its owned path, found {}",

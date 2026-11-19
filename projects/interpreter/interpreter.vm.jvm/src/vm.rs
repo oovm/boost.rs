@@ -1,11 +1,6 @@
 //! 有界执行循环。
 
-use crate::{
-    error::JvmError,
-    frame::Frame,
-    host::NativeRegistry,
-    op::Instruction,
-};
+use crate::{error::JvmError, frame::Frame, host::NativeRegistry, op::Instruction};
 
 /// 一次执行的统计。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

@@ -1,14 +1,16 @@
 //! Wasm singleton 元数据与访问器编码。
 
 use crate::{
-    lowering::backends::wasm::mir::{WasmBodyInstruction, encode_wasm_body},
     emitter_backend_wasi::WasmBinaryModule,
+    lowering::backends::wasm::mir::{WasmBodyInstruction, encode_wasm_body},
 };
-use data_binary_wasm::WasmOpcode;
 use compiler_types::SingletonInstancePlan;
+use data_binary_wasm::WasmOpcode;
 
-use crate::lowering::features::semantic_mir_contract::SemanticMirContractError;
-use crate::{FragmentSubmission, lowering::backends::wasm};
+use crate::{
+    FragmentSubmission,
+    lowering::{backends::wasm, features::semantic_mir_contract::SemanticMirContractError},
+};
 
 pub(crate) fn singleton_metadata_line(plan: &SingletonInstancePlan) -> String {
     let mode = if plan.is_lazy { "lazy" } else { "static" };
@@ -44,7 +46,11 @@ pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, 
         let payload = singleton_metadata_line(plan);
         module.sections.insert(
             0,
-            crate::emitter_backend_wasi::WasmSection { id: 0, name: Some(format!("nyar.singleton.{}", plan.name)), bytes: payload.into_bytes() },
+            crate::emitter_backend_wasi::WasmSection {
+                id: 0,
+                name: Some(format!("nyar.singleton.{}", plan.name)),
+                bytes: payload.into_bytes(),
+            },
         );
     }
 }

@@ -139,7 +139,12 @@ impl<'config> IniParser<'config> {
         })?;
 
         match kind {
-            IniTokenType::Identifier | IniTokenType::String | IniTokenType::Integer | IniTokenType::Float | IniTokenType::Boolean | IniTokenType::DateTime => {
+            IniTokenType::Identifier
+            | IniTokenType::String
+            | IniTokenType::Integer
+            | IniTokenType::Float
+            | IniTokenType::Boolean
+            | IniTokenType::DateTime => {
                 state.bump();
             }
             IniTokenType::LeftBracket => {
@@ -218,7 +223,12 @@ impl<'config> IniParser<'config> {
 }
 
 impl<'config> Parser<IniLanguage> for IniParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<IniLanguage>) -> ParseOutput<'a, IniLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<IniLanguage>,
+    ) -> ParseOutput<'a, IniLanguage> {
         let lexer = IniLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -228,7 +238,12 @@ impl<'config> Parser<IniLanguage> for IniParser<'config> {
                     break;
                 }
 
-                if state.at(IniTokenType::LeftBracket) || state.at(IniTokenType::DoubleLeftBracket) { self.parse_table(state)? } else { self.parse_key_value(state)? }
+                if state.at(IniTokenType::LeftBracket) || state.at(IniTokenType::DoubleLeftBracket) {
+                    self.parse_table(state)?
+                }
+                else {
+                    self.parse_key_value(state)?
+                }
             }
 
             Ok(state.finish_at(checkpoint, element_type::IniElementType::Root))

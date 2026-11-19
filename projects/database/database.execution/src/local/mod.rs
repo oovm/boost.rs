@@ -22,4 +22,3 @@ pub use prepared::{
 };
 pub use result::{ColumnMeta, EncodedResult, ResultCell, ResultFormat, encode_result};
 pub use write::WriteOutcome;
-

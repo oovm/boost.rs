@@ -87,7 +87,16 @@ pub struct ElementStyle {
 
 impl Default for ElementStyle {
     fn default() -> Self {
-        Self { fill_color: None, stroke_color: None, stroke_width: None, text_color: None, text_size: None, opacity: None, class_name: None, attributes: HashMap::new() }
+        Self {
+            fill_color: None,
+            stroke_color: None,
+            stroke_width: None,
+            text_color: None,
+            text_size: None,
+            opacity: None,
+            class_name: None,
+            attributes: HashMap::new(),
+        }
     }
 }
 
@@ -217,7 +226,11 @@ impl SvgRenderer {
         svg.push_str("  </defs>\n");
 
         // Transform group to apply padding offset
-        svg.push_str(&format!(r#"  <g transform="translate({}, {})">"#, self.config.padding - bounds.origin.x, self.config.padding - bounds.origin.y));
+        svg.push_str(&format!(
+            r#"  <g transform="translate({}, {})">"#,
+            self.config.padding - bounds.origin.x,
+            self.config.padding - bounds.origin.y
+        ));
         svg.push('\n');
 
         // Render edges first (so they appear behind nodes)
@@ -245,7 +258,10 @@ impl SvgRenderer {
         let stroke_width = style.and_then(|s| s.stroke_width).unwrap_or(self.config.node_stroke_width);
 
         // Node rectangle
-        svg.push_str(&format!(r#"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="{}" class="node""#, rect.origin.x, rect.origin.y, rect.size.width, rect.size.height, fill_color, stroke_color, stroke_width));
+        svg.push_str(&format!(
+            r#"    <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="{}" class="node""#,
+            rect.origin.x, rect.origin.y, rect.size.width, rect.size.height, fill_color, stroke_color, stroke_width
+        ));
 
         // Add custom attributes
         if let Some(style) = style {
@@ -297,7 +313,10 @@ impl SvgRenderer {
             path_data.push_str(&format!(" L {} {}", point.x, point.y))
         }
 
-        svg.push_str(&format!(r#"    <path d="{}" stroke="{}" stroke-width="{}" fill="none" class="edge""#, path_data, stroke_color, stroke_width));
+        svg.push_str(&format!(
+            r#"    <path d="{}" stroke="{}" stroke-width="{}" fill="none" class="edge""#,
+            path_data, stroke_color, stroke_width
+        ));
 
         // Add arrow marker for directed edges
         if self.config.show_arrows {

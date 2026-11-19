@@ -40,7 +40,12 @@ pub struct NimLanguageService<V: Vfs> {
 impl<V: Vfs> NimLanguageService<V> {
     /// Creates a new Nim language service
     pub fn new(vfs: V) -> Self {
-        Self { vfs, workspace: language_server::workspace::WorkspaceManager::default(), hover_provider: NimHoverProvider, _cache: Arc::new(DashMap::new()) }
+        Self {
+            vfs,
+            workspace: language_server::workspace::WorkspaceManager::default(),
+            hover_provider: NimHoverProvider,
+            _cache: Arc::new(DashMap::new()),
+        }
     }
 }
 impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> LanguageService for NimLanguageService<V> {

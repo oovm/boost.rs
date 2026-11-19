@@ -149,12 +149,12 @@ pub fn read_runtime_status(directory: &Path) -> Result<Option<RuntimeStatus>, Ru
     if bytes.len() as u64 > MAX_STATUS_BYTES {
         return Err(RuntimeStatusError::Corrupt("runtime status exceeds byte limit"));
     }
-    let status: RuntimeStatus =
-        serde_json::from_slice(&bytes).map_err(|_| RuntimeStatusError::Corrupt("runtime status is not valid JSON"))?;
+    let status: RuntimeStatus = serde_json::from_slice(&bytes).map_err(|_| RuntimeStatusError::Corrupt("runtime status is not valid JSON"))?;
     if status.version != CONTROL_VERSION || status.generation.is_nil() {
         return Err(RuntimeStatusError::Corrupt("unsupported or invalid runtime status"));
     }
-    for address in [Some(status.redis_address.as_str()), status.pgsql_address.as_deref(), status.mysql_address.as_deref()].into_iter().flatten() {
+    for address in [Some(status.redis_address.as_str()), status.pgsql_address.as_deref(), status.mysql_address.as_deref()].into_iter().flatten()
+    {
         if !address.starts_with("127.0.0.1:") && !address.starts_with("[::1]:") {
             return Err(RuntimeStatusError::Corrupt("unsupported or invalid runtime status"));
         }

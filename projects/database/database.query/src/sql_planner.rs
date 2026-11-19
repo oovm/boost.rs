@@ -636,7 +636,8 @@ fn plan_generated_columns(
     for field in table.fields.iter().filter(|field| field.generated.is_some()) {
         let text = field.generated.as_deref().unwrap_or_default();
         let source = format!("SELECT ({text}) FROM {quoted}");
-        let SqlCatalogBoundStatement::Select(select) = bind_sql_catalog(&source, catalog, catalog.schema_version(), dialect)? else {
+        let SqlCatalogBoundStatement::Select(select) = bind_sql_catalog(&source, catalog, catalog.schema_version(), dialect)?
+        else {
             return Err(SqlFrontendError::internal("generated column binding produced a non-SELECT statement"));
         };
         let projection = select
@@ -644,7 +645,8 @@ fn plan_generated_columns(
             .into_iter()
             .next()
             .ok_or_else(|| SqlFrontendError::internal("generated column binding produced no projection"))?;
-        let SqlCatalogBoundProjection::Expression { expression, .. } = projection else {
+        let SqlCatalogBoundProjection::Expression { expression, .. } = projection
+        else {
             return Err(SqlFrontendError::internal("generated column binding produced a star projection"));
         };
         if expression_has_subquery(&expression) {
@@ -685,7 +687,8 @@ fn plan_check_constraints(
     };
     for text in table.check_constraints.iter().chain(table.fields.iter().filter_map(|field| field.check.as_ref())) {
         let source = format!("SELECT ({text}) FROM {quoted}");
-        let SqlCatalogBoundStatement::Select(select) = bind_sql_catalog(&source, catalog, catalog.schema_version(), dialect)? else {
+        let SqlCatalogBoundStatement::Select(select) = bind_sql_catalog(&source, catalog, catalog.schema_version(), dialect)?
+        else {
             return Err(SqlFrontendError::internal("`CHECK` constraint binding produced a non-SELECT statement"));
         };
         let projection = select
@@ -693,7 +696,8 @@ fn plan_check_constraints(
             .into_iter()
             .next()
             .ok_or_else(|| SqlFrontendError::internal("`CHECK` constraint binding produced no projection"))?;
-        let SqlCatalogBoundProjection::Expression { expression, .. } = projection else {
+        let SqlCatalogBoundProjection::Expression { expression, .. } = projection
+        else {
             return Err(SqlFrontendError::internal("`CHECK` constraint binding produced a star projection"));
         };
         if expression_has_subquery(&expression) {
@@ -2173,9 +2177,7 @@ pub fn pk_literal_to_rowid(literal: &SqlBoundLiteral, field_type: &crate::catalo
     if matches!(literal, SqlBoundLiteral::Null) {
         return Err(SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"));
     }
-    field_type
-        .storage_bytes_of(literal)?
-        .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"))
+    field_type.storage_bytes_of(literal)?.ok_or_else(|| SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"))
 }
 
 fn primary_key_of(table: &crate::SqlCatalogTable) -> Result<&crate::SqlCatalogField, SqlFrontendError> {
@@ -2776,4 +2778,3 @@ mod default_value_tests {
         assert_eq!(parse_default_value("CURRENT_TIMESTAMP"), None);
     }
 }
-

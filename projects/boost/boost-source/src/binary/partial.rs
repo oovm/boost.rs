@@ -1,12 +1,16 @@
-use std::string::{String, ToString};
-use std::vec::Vec;
+use std::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::range::ByteRange;
 
-use super::capabilities::SourceCapabilities;
-use super::identity::ContentIdentity;
-use super::read::{ReadOutcome, ReadResult};
-use super::source::{ByteSource, ReadError};
+use super::{
+    capabilities::SourceCapabilities,
+    identity::ContentIdentity,
+    read::{ReadOutcome, ReadResult},
+    source::{ByteSource, ReadError},
+};
 
 /// A source that only exposes a set of known byte ranges.
 #[derive(Debug, Clone)]
@@ -38,7 +42,8 @@ impl RangeMapSource {
         if bytes.is_empty() {
             return Ok(());
         }
-        let Some(range) = ByteRange::with_len(start, bytes.len() as u64) else {
+        let Some(range) = ByteRange::with_len(start, bytes.len() as u64)
+        else {
             return Err(ReadError::ConflictingRange { range: ByteRange::new(start, start).expect("zero-length range is valid") });
         };
         let end = range.end();
@@ -54,9 +59,7 @@ impl RangeMapSource {
                 let existing = &seg_bytes[(overlap_start - seg_start) as usize..(overlap_end - seg_start) as usize];
                 let supplied = &bytes[(overlap_start - start) as usize..(overlap_end - start) as usize];
                 if existing != supplied {
-                    return Err(ReadError::ConflictingRange {
-                        range: ByteRange::new(overlap_start, overlap_end).expect("overlap is ordered"),
-                    });
+                    return Err(ReadError::ConflictingRange { range: ByteRange::new(overlap_start, overlap_end).expect("overlap is ordered") });
                 }
             }
         }
@@ -89,12 +92,7 @@ impl ByteSource for RangeMapSource {
             Some(available) => {
                 let to_copy = destination.len().min(available.len());
                 destination[..to_copy].copy_from_slice(&available[..to_copy]);
-                if to_copy == destination.len() {
-                    Ok(ReadOutcome::Complete)
-                }
-                else {
-                    Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 })
-                }
+                if to_copy == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 }) }
             }
             None => {
                 let missing = ByteRange::with_len(offset, destination.len() as u64)

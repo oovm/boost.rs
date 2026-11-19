@@ -6,7 +6,7 @@ pub use token_type::SqlTokenType;
 
 use crate::language::SqlLanguage;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, TextEdit,
+    Lexer, LexerCache, LexerState, TextEdit, TextError,
     lexer::{LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -33,7 +33,12 @@ pub struct SqlLexer<'config> {
 }
 
 impl<'config> Lexer<SqlLanguage> for SqlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<SqlLanguage>) -> LexOutput<SqlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<SqlLanguage>,
+    ) -> LexOutput<SqlLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

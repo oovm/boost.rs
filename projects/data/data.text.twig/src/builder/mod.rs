@@ -1,5 +1,5 @@
 use crate::{ast::TwigRoot, language::TwigLanguage, lexer::TwigLexer, parser::TwigParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, RedNode, SourceText, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// AST builder for Twig language
 #[derive(Clone)]
@@ -16,7 +16,12 @@ impl<'config> TwigBuilder<'config> {
 }
 
 impl<'config> Builder<TwigLanguage> for TwigBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<TwigLanguage>) -> data_text_core::builder::BuildOutput<TwigLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<TwigLanguage>,
+    ) -> data_text_core::builder::BuildOutput<TwigLanguage> {
         let parser = TwigParser::new(self.config);
         let lexer = TwigLexer::new(&self.config);
 

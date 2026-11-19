@@ -8,8 +8,8 @@ mod value;
 pub use key::Key;
 pub use kv::{
     BASE_HEADER_BYTES, DeltaOp, FILE_HEADER_BYTES, FRAME_HEADER_BYTES, LEGACY_MAGIC as KV_LEGACY_MAGIC, MAGIC as KV_MAGIC, MAX_FRAME_BYTES,
-    PREVIOUS_MAGIC as KV_PREVIOUS_MAGIC, ShardImage, Snapshot, decode_snapshot, decode_snapshot_inline_only, decode_snapshot_strict,
-    decode_shard_image, encode_delta_frame, encode_snapshot,
+    PREVIOUS_MAGIC as KV_PREVIOUS_MAGIC, ShardImage, Snapshot, decode_shard_image, decode_snapshot, decode_snapshot_inline_only,
+    decode_snapshot_strict, encode_delta_frame, encode_snapshot,
 };
 pub use record::Record;
 pub use value::{InlineValue, ObjectRef, StoredValue};

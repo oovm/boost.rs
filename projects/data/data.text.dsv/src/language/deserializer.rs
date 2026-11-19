@@ -210,7 +210,12 @@ impl<'de, const LANG: DsvLanguage> serde::de::Deserializer<'de> for DsvField<LAN
     where
         V: serde::de::Visitor<'de>,
     {
-        if self.value.len() == 1 { visitor.visit_char(self.value.chars().next().unwrap()) } else { Err(<Error as serde::de::Error>::custom(format!("invalid char value: {}", self.value))) }
+        if self.value.len() == 1 {
+            visitor.visit_char(self.value.chars().next().unwrap())
+        }
+        else {
+            Err(<Error as serde::de::Error>::custom(format!("invalid char value: {}", self.value)))
+        }
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>

@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::*, language::PowerShellLanguage, parser::PowerShellParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, RedNode, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// Builder for the PowerShell language.
 pub struct PowerShellBuilder<'config> {
@@ -16,7 +16,11 @@ impl<'config> PowerShellBuilder<'config> {
     }
 
     /// Builds the root node of the AST.
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, PowerShellLanguage>, _source: &SourceText) -> Result<PowerShellRoot, data_text_core::TextError> {
+    pub(crate) fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, PowerShellLanguage>,
+        _source: &SourceText,
+    ) -> Result<PowerShellRoot, data_text_core::TextError> {
         let _red_root = RedNode::new(green_tree, 0);
         // Minimal implementation
         Ok(PowerShellRoot { items: Vec::new() })
@@ -24,7 +28,12 @@ impl<'config> PowerShellBuilder<'config> {
 }
 
 impl<'config> Builder<PowerShellLanguage> for PowerShellBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<PowerShellLanguage>) -> TextDiagnostics<PowerShellRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<PowerShellLanguage>,
+    ) -> TextDiagnostics<PowerShellRoot> {
         let parser = PowerShellParser::new(self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<PowerShellLanguage>::default();

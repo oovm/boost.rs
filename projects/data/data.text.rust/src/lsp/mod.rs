@@ -48,7 +48,12 @@ pub struct RustLanguageService<V: Vfs> {
 impl<V: Vfs> RustLanguageService<V> {
     /// Creates a new `RustLanguageService`.
     pub fn new(vfs: V) -> Self {
-        Self { vfs, workspace: language_server::workspace::WorkspaceManager::default(), hover_provider: RustHoverProvider, sessions: DashMap::new() }
+        Self {
+            vfs,
+            workspace: language_server::workspace::WorkspaceManager::default(),
+            hover_provider: RustHoverProvider,
+            sessions: DashMap::new(),
+        }
     }
     /// Collects definitions of a name starting from the given node.
     ///
@@ -63,7 +68,14 @@ impl<V: Vfs> RustLanguageService<V> {
     /// * `source` - The source text of the file.
     /// * `uri` - The URI of the file being searched.
     /// * `definitions` - A mutable vector to store the found locations.
-    fn collect_definitions<S: Source + ?Sized>(&self, node: &RedNode<RustLanguage>, name: &str, source: &S, uri: &str, definitions: &mut Vec<language_server::LocationRange>) {
+    fn collect_definitions<S: Source + ?Sized>(
+        &self,
+        node: &RedNode<RustLanguage>,
+        name: &str,
+        source: &S,
+        uri: &str,
+        definitions: &mut Vec<language_server::LocationRange>,
+    ) {
         use data_text_core::{
             language::{ElementRole, UniversalElementRole},
             tree::RedTree,
@@ -149,7 +161,12 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             .unwrap_or_default()
         }
     }
-    fn rename<'a>(&'a self, uri: &'a str, range: Range<usize>, new_name: String) -> impl Future<Output = Option<language_server::WorkspaceEdit>> + Send + 'a {
+    fn rename<'a>(
+        &'a self,
+        uri: &'a str,
+        range: Range<usize>,
+        new_name: String,
+    ) -> impl Future<Output = Option<language_server::WorkspaceEdit>> + Send + 'a {
         let uri = uri.to_string();
         async move {
             let refs = self.references(&uri, range).await;
@@ -158,7 +175,10 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             }
             let mut changes = std::collections::HashMap::new();
             for r in refs {
-                changes.entry(r.uri.to_string()).or_insert_with(Vec::new).push(language_server::TextEdit { range: r.range, new_text: new_name.clone() });
+                changes
+                    .entry(r.uri.to_string())
+                    .or_insert_with(Vec::new)
+                    .push(language_server::TextEdit { range: r.range, new_text: new_name.clone() });
             }
             Some(language_server::WorkspaceEdit { changes })
         }

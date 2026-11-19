@@ -1,5 +1,8 @@
 use crate::{VerilogParser, ast::*, language::VerilogLanguage, lexer::token_type::VerilogKind};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    source::Source,
+};
 
 /// AST builder for Verilog.
 #[derive(Clone, Copy)]
@@ -14,7 +17,12 @@ impl<'config> VerilogBuilder<'config> {
 }
 
 impl<'config> Builder<VerilogLanguage> for VerilogBuilder<'config> {
-    fn build<'a, S: data_text_core::source::Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<VerilogLanguage>) -> BuildOutput<VerilogLanguage> {
+    fn build<'a, S: data_text_core::source::Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<VerilogLanguage>,
+    ) -> BuildOutput<VerilogLanguage> {
         let parser = VerilogParser::new(self.config);
         let mut session = data_text_core::parser::session::ParseSession::<VerilogLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut session);

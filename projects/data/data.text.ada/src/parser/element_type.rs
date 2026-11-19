@@ -91,7 +91,14 @@ impl ElementType for AdaElementType {
         use UniversalElementRole::*;
         match self {
             Self::Root | Self::SourceFile => Root,
-            Self::CompilationUnit | Self::SubprogramDeclaration | Self::PackageDeclaration | Self::TypeDeclaration | Self::ObjectDeclaration | Self::ModuleItem | Self::StructItem | Self::EnumItem => Definition,
+            Self::CompilationUnit
+            | Self::SubprogramDeclaration
+            | Self::PackageDeclaration
+            | Self::TypeDeclaration
+            | Self::ObjectDeclaration
+            | Self::ModuleItem
+            | Self::StructItem
+            | Self::EnumItem => Definition,
             Self::ContextClause | Self::BlockExpression | Self::ParameterList | Self::ParenthesizedExpression => Container,
             Self::Statement | Self::Pragma | Self::UseItem | Self::LetStatement => Statement,
             Self::Expression

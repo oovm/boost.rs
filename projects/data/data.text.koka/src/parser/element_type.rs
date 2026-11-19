@@ -269,7 +269,11 @@ impl ElementType for KokaElementType {
         match self {
             KokaElementType::SourceFile | KokaElementType::Root => UniversalElementRole::Root,
             KokaElementType::ClassDeclaration | KokaElementType::FunctionDeclaration => UniversalElementRole::Definition,
-            KokaElementType::VariableDeclaration | KokaElementType::IfStatement | KokaElementType::WhileStatement | KokaElementType::ReturnStatement | KokaElementType::Block => UniversalElementRole::Statement,
+            KokaElementType::VariableDeclaration
+            | KokaElementType::IfStatement
+            | KokaElementType::WhileStatement
+            | KokaElementType::ReturnStatement
+            | KokaElementType::Block => UniversalElementRole::Statement,
             KokaElementType::Error => UniversalElementRole::Error,
             _ => UniversalElementRole::None,
         }

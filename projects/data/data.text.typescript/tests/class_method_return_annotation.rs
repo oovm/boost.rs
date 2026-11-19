@@ -76,6 +76,8 @@ fn plain_return_annotations_still_parse() {
 
 #[test]
 fn overload_signature_without_body_still_parses() {
-    let members = class_members("class C {\n  m(x: string): { ok: boolean };\n  m(x: number): { ok: number };\n  m(x: unknown): { ok: unknown } {\n    return { ok: x };\n  }\n}");
+    let members = class_members(
+        "class C {\n  m(x: string): { ok: boolean };\n  m(x: number): { ok: number };\n  m(x: unknown): { ok: unknown } {\n    return { ok: x };\n  }\n}",
+    );
     assert_eq!(member_names(&members), ["m", "m", "m"]);
 }

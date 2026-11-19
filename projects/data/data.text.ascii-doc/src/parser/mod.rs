@@ -49,7 +49,12 @@ impl<'config> AsciiDocParser<'config> {
         };
 
         match kind {
-            AsciiDocTokenType::Header1 | AsciiDocTokenType::Header2 | AsciiDocTokenType::Header3 | AsciiDocTokenType::Header4 | AsciiDocTokenType::Header5 | AsciiDocTokenType::Header6 => self.parse_header(state),
+            AsciiDocTokenType::Header1
+            | AsciiDocTokenType::Header2
+            | AsciiDocTokenType::Header3
+            | AsciiDocTokenType::Header4
+            | AsciiDocTokenType::Header5
+            | AsciiDocTokenType::Header6 => self.parse_header(state),
             AsciiDocTokenType::ListMarker => self.parse_list(state),
             AsciiDocTokenType::CodeBlockMarker => self.parse_code_block(state),
             AsciiDocTokenType::AttributeMarker => self.parse_attribute(state),
@@ -233,7 +238,12 @@ impl<'config> AsciiDocParser<'config> {
 }
 
 impl<'config> Parser<AsciiDocLanguage> for AsciiDocParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<AsciiDocLanguage>) -> data_text_core::ParseOutput<'a, AsciiDocLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<AsciiDocLanguage>,
+    ) -> data_text_core::ParseOutput<'a, AsciiDocLanguage> {
         let lexer = crate::lexer::AsciiDocLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

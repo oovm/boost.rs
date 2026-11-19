@@ -19,7 +19,9 @@ use crate::compiler::{
     },
 };
 
-pub use compiler_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SumTypeLayout, SumVariantLayout};
+pub use compiler_types::{
+    AggregateLayout, AggregateLayoutPlan, FieldLayout, FlagsLayout, LayoutId, LayoutKey, SumTypeLayout, SumVariantLayout,
+};
 
 /// Physical storage class for aggregate values at lowering time.
 ///
@@ -204,7 +206,8 @@ fn bind_host_projection_layout(plan: &mut AggregateLayoutPlan, structure: &HirSt
     if !has_host_projection(structure) {
         return;
     }
-    let Some(declaration) = structure.constructor_declaration else {
+    let Some(declaration) = structure.constructor_declaration
+    else {
         return;
     };
     if let Some(layout_id) = plan.declaration_to_layout.get(&declaration).copied() {
@@ -538,7 +541,9 @@ fn layout_field_type(
             Box::new(layout_field_type(base, declaration_spellings, plan)?),
             arguments.iter().map(|argument| layout_field_type(argument, declaration_spellings, plan)).collect::<Option<Vec<_>>>()?,
         )),
-        ValkyrieType::Array(element) => Some(compiler_types::SemanticType::Array(Box::new(layout_field_type(element, declaration_spellings, plan)?))),
+        ValkyrieType::Array(element) => {
+            Some(compiler_types::SemanticType::Array(Box::new(layout_field_type(element, declaration_spellings, plan)?)))
+        }
         ValkyrieType::FixedArray { element, length } => Some(compiler_types::SemanticType::FixedArray {
             element: Box::new(layout_field_type(element, declaration_spellings, plan)?),
             length: *length,

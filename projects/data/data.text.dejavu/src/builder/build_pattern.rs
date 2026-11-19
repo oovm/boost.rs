@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::DejavuTokenType,
     parser::element_type::DejavuElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> DejavuBuilder<'config> {
     pub(crate) fn build_pattern<S: Source + ?Sized>(&self, node: RedNode<DejavuLanguage>, source: &S) -> Result<PatternNode, TextError> {
@@ -16,7 +16,10 @@ impl<'config> DejavuBuilder<'config> {
                     match child {
                         RedTree::Leaf(t) if t.kind == DejavuTokenType::Identifier => {
                             let t_text = text(source, t.span.clone().into());
-                            return Ok(PatternNode::Variable(VariablePatternNode { name: IdentifierNode { name: t_text, span: t.span.clone() }, span: t.span.clone() }));
+                            return Ok(PatternNode::Variable(VariablePatternNode {
+                                name: IdentifierNode { name: t_text, span: t.span.clone() },
+                                span: t.span.clone(),
+                            }));
                         }
                         RedTree::Node(n) => return self.build_pattern(n, source),
                         _ => {}

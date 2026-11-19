@@ -56,7 +56,8 @@ fn odin_src_must_only_import_declared_dependencies() {
 
 #[test]
 fn odin_manifest_must_depend_only_on_format_and_substrate_crates() {
-    let manifest = fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read interpreter-vm-ovm Cargo.toml");
+    let manifest =
+        fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).expect("read interpreter-vm-ovm Cargo.toml");
     let mut in_dependencies = false;
     let mut offenders: Vec<String> = Vec::new();
     for line in manifest.lines() {

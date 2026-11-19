@@ -5,7 +5,10 @@ use crate::{
     lexer::token_type::GraphQLTokenType,
     parser::{GraphQLParser, element_type::GraphQLElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, Range, RedNode, RedTree, SourceText, TextEdit, TokenType, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, Range, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, TokenType,
+    builder::BuildOutput, source::Source,
+};
 
 /// AST builder for GraphQL.
 #[derive(Clone)]
@@ -25,7 +28,12 @@ impl<'config> GraphQLBuilder<'config> {
 }
 
 impl<'config> Builder<GraphQLLanguage> for GraphQLBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<GraphQLLanguage>) -> BuildOutput<GraphQLLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<GraphQLLanguage>,
+    ) -> BuildOutput<GraphQLLanguage> {
         let parser = GraphQLParser::new(self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<GraphQLLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);
@@ -77,7 +85,11 @@ impl<'config> GraphQLBuilder<'config> {
         Ok(GraphQLRoot { document: Document { definitions, span: root_node.span() } })
     }
 
-    fn build_operation_definition<'a>(&self, node: RedNode<'a, GraphQLLanguage>, source: &SourceText) -> Result<OperationDefinition, TextError> {
+    fn build_operation_definition<'a>(
+        &self,
+        node: RedNode<'a, GraphQLLanguage>,
+        source: &SourceText,
+    ) -> Result<OperationDefinition, TextError> {
         let mut operation_type = OperationType::Query;
         let mut name = None;
 

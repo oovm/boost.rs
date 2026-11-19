@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use core::range::Range;
 
-use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, GreenTree, Parser, SourceText, TextDiagnostics, TextEdit, TextError, parser::session::ParseSession,
+    source::Source,
+};
 
 use crate::{
     ast::{SmilesArrow, SmilesArrowKind, SmilesAtom, SmilesBond, SmilesBondOrder, SmilesChirality, SmilesItem, SmilesRoot, SmilesStereo},
@@ -17,7 +20,12 @@ use crate::{
 pub struct SmilesBuilder;
 
 impl Builder<SmilesLanguage> for SmilesBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<SmilesLanguage>) -> TextDiagnostics<SmilesRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<SmilesLanguage>,
+    ) -> TextDiagnostics<SmilesRoot> {
         let parser = SmilesParser;
         let mut cache = ParseSession::<SmilesLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -148,7 +156,11 @@ impl SmilesBuilder {
                     let text = source.get_text_in((start..end).into()).into_owned();
                     let Some(label) = ring_label(&text)
                     else {
-                        return Err(TextError::syntax_error(format!("ring label `{text}` is outside the modelled subset, only `0`-`9` and `%nn` are accepted"), start, source.source_ref()));
+                        return Err(TextError::syntax_error(
+                            format!("ring label `{text}` is outside the modelled subset, only `0`-`9` and `%nn` are accepted"),
+                            start,
+                            source.source_ref(),
+                        ));
                     };
                     let Some(current) = traversal.current
                     else {
@@ -156,8 +168,15 @@ impl SmilesBuilder {
                     };
                     match traversal.rings.remove(&label) {
                         Some((other, order)) => {
-                            let order = traversal.pending.take().or(order).unwrap_or_else(|| implied_order(&item.atoms[other], &item.atoms[current]));
-                            item.bonds.push(SmilesBond { from: other, to: current, order: order.0, stereo: order.1, span: (start..end).into() });
+                            let order =
+                                traversal.pending.take().or(order).unwrap_or_else(|| implied_order(&item.atoms[other], &item.atoms[current]));
+                            item.bonds.push(SmilesBond {
+                                from: other,
+                                to: current,
+                                order: order.0,
+                                stereo: order.1,
+                                span: (start..end).into(),
+                            });
                         }
                         None => {
                             traversal.rings.insert(label, (current, traversal.pending.take()));
@@ -173,7 +192,13 @@ impl SmilesBuilder {
                     if let Some(reagent_start) = reagent_start.take() {
                         // The second boundary closes the reagent text.
                         reagent_end = start;
-                        arrow = Some(SmilesArrow { kind: SmilesArrowKind::Single, above: Some(source.get_text_in((reagent_start..reagent_end).into()).trim().to_string()).filter(|text| !text.is_empty()), below: None, span: (reagent_start..end).into() });
+                        arrow = Some(SmilesArrow {
+                            kind: SmilesArrowKind::Single,
+                            above: Some(source.get_text_in((reagent_start..reagent_end).into()).trim().to_string())
+                                .filter(|text| !text.is_empty()),
+                            below: None,
+                            span: (reagent_start..end).into(),
+                        });
                     }
                     self.finish_item(&mut item, &mut traversal, phase, start, source, &mut reactants, &mut reagents, &mut products)?;
                     if double {
@@ -194,7 +219,12 @@ impl SmilesBuilder {
 
         self.finish_item(&mut item, &mut traversal, phase, document_end, source, &mut reactants, &mut reagents, &mut products)?;
         if let Some(reagent_start) = reagent_start {
-            arrow = Some(SmilesArrow { kind: SmilesArrowKind::Single, above: Some(source.get_text_in((reagent_start..document_end).into()).trim().to_string()).filter(|text| !text.is_empty()), below: None, span: (reagent_start..document_end).into() });
+            arrow = Some(SmilesArrow {
+                kind: SmilesArrowKind::Single,
+                above: Some(source.get_text_in((reagent_start..document_end).into()).trim().to_string()).filter(|text| !text.is_empty()),
+                below: None,
+                span: (reagent_start..document_end).into(),
+            });
         }
 
         Ok(SmilesRoot { items: reactants, arrow, reagents, products, span: (document_start..document_end).into() })
@@ -202,7 +232,17 @@ impl SmilesBuilder {
 
     /// Close the fragment under construction and reset the traversal.
     #[allow(clippy::too_many_arguments)]
-    fn finish_item(&self, item: &mut Item, traversal: &mut Traversal, phase: Phase, offset: usize, source: &SourceText, reactants: &mut Vec<SmilesItem>, reagents: &mut Vec<SmilesItem>, products: &mut Vec<SmilesItem>) -> Result<(), TextError> {
+    fn finish_item(
+        &self,
+        item: &mut Item,
+        traversal: &mut Traversal,
+        phase: Phase,
+        offset: usize,
+        source: &SourceText,
+        reactants: &mut Vec<SmilesItem>,
+        reagents: &mut Vec<SmilesItem>,
+        products: &mut Vec<SmilesItem>,
+    ) -> Result<(), TextError> {
         if !item.touched {
             return Ok(());
         }
@@ -239,9 +279,21 @@ fn parse_atom(text: &str, span: Range<usize>, source: &SourceText) -> Result<Smi
     else {
         let first = text.chars().next().unwrap_or('*');
         if !is_organic_symbol(text) {
-            return Err(TextError::syntax_error(format!("`{text}` is not an organic-subset atom or a bracket atom"), span.start, source.source_ref()));
+            return Err(TextError::syntax_error(
+                format!("`{text}` is not an organic-subset atom or a bracket atom"),
+                span.start,
+                source.source_ref(),
+            ));
         }
-        Ok(SmilesAtom { element: text.to_string(), aromatic: first.is_ascii_lowercase(), charge: 0, isotope: None, explicit_hydrogens: None, chirality: None, span })
+        Ok(SmilesAtom {
+            element: text.to_string(),
+            aromatic: first.is_ascii_lowercase(),
+            charge: 0,
+            isotope: None,
+            explicit_hydrogens: None,
+            chirality: None,
+            span,
+        })
     }
 }
 
@@ -321,7 +373,11 @@ fn parse_bracket_atom(text: &str, span: Range<usize>, source: &SourceText) -> Re
                 charge = direction * magnitude.max(1);
             }
             _ => {
-                return Err(TextError::syntax_error(format!("bracket atom part `{}` is outside the modelled subset", &inner[index..index + 1]), span.start, source.source_ref()));
+                return Err(TextError::syntax_error(
+                    format!("bracket atom part `{}` is outside the modelled subset", &inner[index..index + 1]),
+                    span.start,
+                    source.source_ref(),
+                ));
             }
         }
     }

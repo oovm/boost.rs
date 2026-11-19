@@ -1,5 +1,5 @@
 use crate::{ValkyrieLanguage, ast::*, builder::ValkyrieBuilder};
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
@@ -37,7 +37,9 @@ impl<'config> ValkyrieBuilder<'config> {
             crate::parser::element_type::ValkyrieElementType::CastExpression => self.build_cast(node, source),
             crate::parser::element_type::ValkyrieElementType::TryExpression => self.build_try_propagate(node, source),
             crate::parser::element_type::ValkyrieElementType::BlockExpression => Ok(TermExpression::Block(self.build_block(node, source)?)),
-            crate::parser::element_type::ValkyrieElementType::LambdaExpression => Ok(TermExpression::Micro(self.build_lambda_expr(node, source)?)),
+            crate::parser::element_type::ValkyrieElementType::LambdaExpression => {
+                Ok(TermExpression::Micro(self.build_lambda_expr(node, source)?))
+            }
             crate::parser::element_type::ValkyrieElementType::ObjectExpression => self.build_object(node, source),
             crate::parser::element_type::ValkyrieElementType::IfExpression => self.build_if(node, source),
             crate::parser::element_type::ValkyrieElementType::MatchExpression => self.build_match(node, source),

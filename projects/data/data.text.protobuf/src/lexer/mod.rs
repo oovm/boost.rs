@@ -394,7 +394,12 @@ impl<'config> ProtobufLexer<'config> {
 }
 
 impl<'config> Lexer<ProtobufLanguage> for ProtobufLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ProtobufLanguage>) -> LexOutput<ProtobufLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ProtobufLanguage>,
+    ) -> LexOutput<ProtobufLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

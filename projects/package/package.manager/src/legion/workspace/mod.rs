@@ -4,24 +4,24 @@
 
 /// `legion.von` / `legions.von` 清单模型与解析错误。
 pub mod manifest;
-pub mod text_diagnostics;
 /// workspace 发现、依赖解析与构建计划生成。
 pub mod planner;
 pub mod script;
 pub mod source_snapshot;
+pub mod text_diagnostics;
 
 pub use compiler_valkyrie::compiler::semantic::closure::{SemanticClosure, plan_semantic_closure};
 pub use manifest::{
     BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest, PublishTargetSpec,
     RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
 };
-pub use text_diagnostics::{labeled_report, labeled_report_with_context, source_point_span};
 pub use planner::{
     BuildPlan, BuildRequest, PlannedDependency, PlannedHostContract, PlannedHostProvider, PlannedProject, PlannedSemanticSourceGroup,
     PlannerError, ProjectResolutionMode, WorkspaceResolver, canonical_target, collect_project_root_v_files, collect_project_v_files,
     collect_test_build_sources, collect_test_v_files, project_uses_single_script_layout,
 };
 pub use source_snapshot::compile_source_snapshot;
+pub use text_diagnostics::{labeled_report, labeled_report_with_context, source_point_span};
 
 /// On-disk layout for Legion projects.
 pub const LEGION_PROJECT_LAYOUT: package_resolve::ProjectLayout = package_resolve::ProjectLayout {

@@ -1,8 +1,10 @@
 #![doc = include_str!("readme.md")]
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
 use crate::language::HtmlLanguage;
 use data_text_core::{Language, errors::ParseResult};
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 
 /// A highlighter for HTML source code that supports both lexer-based and parser-based highlighting.
 pub struct HtmlHighlighter {
@@ -27,7 +29,8 @@ impl HighlightSource for HtmlHighlighter {
             let config = HtmlLanguage::new();
             let parser = crate::parser::HtmlParser::new(&config);
             let lexer = crate::lexer::HtmlLexer::new(&config);
-            highlighter.highlight_with_language::<HtmlLanguage, crate::parser::HtmlParser, crate::lexer::HtmlLexer<'_>>(source, theme, &parser, &lexer)
+            highlighter
+                .highlight_with_language::<HtmlLanguage, crate::parser::HtmlParser, crate::lexer::HtmlLexer<'_>>(source, theme, &parser, &lexer)
         }
         else {
             highlighter.highlight(source, HtmlLanguage::NAME, theme)

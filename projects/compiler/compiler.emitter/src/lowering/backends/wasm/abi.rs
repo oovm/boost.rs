@@ -80,7 +80,9 @@ fn freeze_wasm_carrier(ty: &SemanticType) -> Result<WasmAbiCarrier> {
         SemanticType::Float32 => Ok(WasmAbiCarrier::F32),
         SemanticType::Float64 => Ok(WasmAbiCarrier::F64),
         SemanticType::Utf8 => Ok(WasmAbiCarrier::I32),
-        SemanticType::Array(_) | SemanticType::FixedArray { .. } | SemanticType::Nullable(_) | SemanticType::Tuple(_) => Ok(WasmAbiCarrier::Handle),
+        SemanticType::Array(_) | SemanticType::FixedArray { .. } | SemanticType::Nullable(_) | SemanticType::Tuple(_) => {
+            Ok(WasmAbiCarrier::Handle)
+        }
         SemanticType::Named(_) | SemanticType::Nominal { .. } | SemanticType::Apply(_, _) => Ok(WasmAbiCarrier::Handle),
         SemanticType::Integer128 { .. }
         | SemanticType::Utf16

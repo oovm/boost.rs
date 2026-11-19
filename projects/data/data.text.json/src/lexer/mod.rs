@@ -12,7 +12,8 @@ use std::sync::LazyLock;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, JsonLanguage>;
 
-static JSON_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: false });
+static JSON_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: false });
 static JSON_SINGLE_QUOTE_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['\''], escape: Some('\\') });
 
 /// Lexer for JSON.
@@ -22,7 +23,12 @@ pub struct JsonLexer<'config> {
 }
 
 impl<'config> Lexer<JsonLanguage> for JsonLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<JsonLanguage>) -> LexOutput<JsonLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<JsonLanguage>,
+    ) -> LexOutput<JsonLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

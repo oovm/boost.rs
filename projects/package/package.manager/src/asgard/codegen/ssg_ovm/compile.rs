@@ -7,8 +7,8 @@
 
 use std::{fs, path::Path};
 
-use compiler_target::{ArtifactKind, CanonicalTarget};
 use compiler_emitter::backend::wasi::WasmPackageKind;
+use compiler_target::{ArtifactKind, CanonicalTarget};
 
 use crate::{
     asgard::{
@@ -77,8 +77,8 @@ pub(crate) fn compile_ssg_ovm_bundle(
         WasmPackageKind::Library,
     )
     .with_artifact_purpose(compiler_target::ArtifactPurpose::Library)
-            .with_selected_host_providers(host_bindings)
-            .with_gated_out_host_providers(gated_out_host_providers);
+    .with_selected_host_providers(host_bindings)
+    .with_gated_out_host_providers(gated_out_host_providers);
     let input = compiler_input_for_with_dependencies(&groups, generated, GeneratedEntrySurface::GeneratedOnly, &contract_keys)?;
     fs::create_dir_all(scratch_dir)
         .map_err(|error| AsgardError::msg(report!("创建 SSG 中间产物目录失败 {}: {error}", scratch_dir.display())))?;

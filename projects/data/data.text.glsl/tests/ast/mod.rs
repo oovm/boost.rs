@@ -1,7 +1,9 @@
-use data_text_core::{Builder, TextError, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, TextError, parser::session::ParseSession};
 use data_text_glsl::{
     GlslBuilder, GlslLanguage,
-    ast::{GlslAssignOp, GlslBinaryOp, GlslExpression, GlslFunction, GlslGlobalVar, GlslItem, GlslQualifier, GlslRoot, GlslStatement, GlslUnaryOp},
+    ast::{
+        GlslAssignOp, GlslBinaryOp, GlslExpression, GlslFunction, GlslGlobalVar, GlslItem, GlslQualifier, GlslRoot, GlslStatement, GlslUnaryOp,
+    },
 };
 
 /// Builds the AST and the diagnostics for `source`.
@@ -137,17 +139,24 @@ fn parses_loops_and_branches() {
     ));
     assert!(matches!(cond, Some(GlslExpression::Binary { op: GlslBinaryOp::Lt, .. })));
     assert!(matches!(update.as_deref(), Some(GlslStatement::Expr(GlslExpression::Unary { op: GlslUnaryOp::PreIncrement, .. }))));
-    assert!(matches!(body.as_slice(), [GlslStatement::Assign { op: GlslAssignOp::AddAssign, value: GlslExpression::Binary { op: GlslBinaryOp::Mul, .. }, .. }]));
+    assert!(matches!(
+        body.as_slice(),
+        [GlslStatement::Assign { op: GlslAssignOp::AddAssign, value: GlslExpression::Binary { op: GlslBinaryOp::Mul, .. }, .. }]
+    ));
 
     match &accumulate.body[3] {
         GlslStatement::While { cond, body } => {
-            assert!(matches!(cond, GlslExpression::Paren(cond) if matches!(cond.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Gt, .. })));
+            assert!(
+                matches!(cond, GlslExpression::Paren(cond) if matches!(cond.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Gt, .. }))
+            );
             assert_eq!(body.len(), 3, "unexpected while body: {body:#?}");
             assert!(matches!(body[0], GlslStatement::Expr(GlslExpression::Unary { op: GlslUnaryOp::PostDecrement, .. })));
             match &body[1] {
                 GlslStatement::If { then_body, else_body, .. } => {
                     assert!(matches!(then_body.as_slice(), [GlslStatement::Continue]));
-                    assert!(matches!(else_body.as_slice(), [GlslStatement::If { then_body, .. }] if matches!(then_body.as_slice(), [GlslStatement::Break])));
+                    assert!(
+                        matches!(else_body.as_slice(), [GlslStatement::If { then_body, .. }] if matches!(then_body.as_slice(), [GlslStatement::Break]))
+                    );
                 }
                 other => panic!("expected the nested branch, got {other:?}"),
             }
@@ -157,8 +166,16 @@ fn parses_loops_and_branches() {
 
     match &accumulate.body[4] {
         GlslStatement::DoWhile { body, cond } => {
-            assert!(matches!(body.as_slice(), [GlslStatement::Assign { op: GlslAssignOp::MulAssign, .. }, GlslStatement::Expr(GlslExpression::Unary { op: GlslUnaryOp::PostIncrement, .. })]));
-            assert!(matches!(cond, GlslExpression::Paren(cond) if matches!(cond.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Lt, .. })));
+            assert!(matches!(
+                body.as_slice(),
+                [
+                    GlslStatement::Assign { op: GlslAssignOp::MulAssign, .. },
+                    GlslStatement::Expr(GlslExpression::Unary { op: GlslUnaryOp::PostIncrement, .. })
+                ]
+            ));
+            assert!(
+                matches!(cond, GlslExpression::Paren(cond) if matches!(cond.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Lt, .. }))
+            );
         }
         other => panic!("expected a `do ... while` loop, got {other:?}"),
     }
@@ -225,7 +242,9 @@ fn parses_structs_layouts_and_uniforms() {
     ));
     match &main.body[5] {
         GlslStatement::If { cond: GlslExpression::Paren(cond), then_body, .. } => {
-            assert!(matches!(cond.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Lt, lhs, .. } if matches!(lhs.as_ref(), GlslExpression::Member { field, .. } if field == "x")));
+            assert!(
+                matches!(cond.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Lt, lhs, .. } if matches!(lhs.as_ref(), GlslExpression::Member { field, .. } if field == "x"))
+            );
             assert!(matches!(then_body.as_slice(), [GlslStatement::Discard]));
         }
         other => panic!("expected the `discard` branch, got {other:?}"),
@@ -247,14 +266,18 @@ fn parses_expression_precedence() {
     }
     match &main.body[1] {
         GlslStatement::Var { init: Some(GlslExpression::Binary { op: GlslBinaryOp::Mul, lhs, .. }), .. } => {
-            assert!(matches!(lhs.as_ref(), GlslExpression::Paren(inner) if matches!(inner.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Add, .. })));
+            assert!(
+                matches!(lhs.as_ref(), GlslExpression::Paren(inner) if matches!(inner.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Add, .. }))
+            );
         }
         other => panic!("expected `(1.0 + 2.0) * 3.0`, got {other:?}"),
     }
     assert!(matches!(&main.body[2], GlslStatement::Var { init: Some(GlslExpression::IntegerLiteral(255)), .. }));
     match &main.body[3] {
         GlslStatement::Var { init: Some(GlslExpression::Binary { op: GlslBinaryOp::BitOr, lhs, rhs }), .. } => {
-            assert!(matches!(lhs.as_ref(), GlslExpression::Paren(inner) if matches!(inner.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Shl, .. })));
+            assert!(
+                matches!(lhs.as_ref(), GlslExpression::Paren(inner) if matches!(inner.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::Shl, .. }))
+            );
             assert!(matches!(rhs.as_ref(), GlslExpression::Binary { op: GlslBinaryOp::BitAnd, .. }));
         }
         other => panic!("expected a bitwise expression, got {other:?}"),

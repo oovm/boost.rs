@@ -232,10 +232,7 @@ fn large_div_rem_satisfies_the_algebraic_identity() {
 
 #[test]
 fn ordering_and_equality_follow_numeric_value() {
-    let mut values: Vec<BigInteger> = [5i64, -3, 0, 128, -128, 1]
-        .into_iter()
-        .map(BigInteger::from)
-        .collect();
+    let mut values: Vec<BigInteger> = [5i64, -3, 0, 128, -128, 1].into_iter().map(BigInteger::from).collect();
     values.push(BigInteger::from(u128::MAX));
     values.push(&BigInteger::from(1u128 << 64) * &BigInteger::from(1u128 << 64));
     values.sort();

@@ -2,7 +2,10 @@ use crate::parser::{State, TypeScriptParser, element_type::TypeScriptElementType
 use data_text_core::{GreenNode, parser::pratt::PrattParser, source::Source};
 
 impl<'config> TypeScriptParser<'config> {
-    pub(crate) fn parse_jsx_element<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, crate::language::TypeScriptLanguage> {
+    pub(crate) fn parse_jsx_element<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> &'a GreenNode<'a, crate::language::TypeScriptLanguage> {
         use crate::lexer::token_type::TypeScriptTokenType::*;
         let cp = state.checkpoint();
 
@@ -106,7 +109,8 @@ impl<'config> TypeScriptParser<'config> {
             let name_cp = state.checkpoint();
             // JSX attribute names accept keywords (`class`, `for`, `type`), the
             // same way object-literal member names do.
-            let keyword_name = state.peek_text().is_some_and(|text| crate::lexer::token_type::TypeScriptTokenType::from_keyword(&text).is_some());
+            let keyword_name =
+                state.peek_text().is_some_and(|text| crate::lexer::token_type::TypeScriptTokenType::from_keyword(&text).is_some());
             if self.at(state, IdentifierName) || keyword_name {
                 state.bump();
             }

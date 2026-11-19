@@ -40,8 +40,10 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let right = &pair[1];
         let span = Range { start: left.span.end, end: right.span.start };
         let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("lexer token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
+        let left_text =
+            source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text =
+            source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let mut constraint = conservative_constraint(left_text, gap, right_text);
         if left_text == ">" && is_jsx_attribute_gap(&significant, index, source) {
             constraint = data_text_formatter::GapConstraint::NoSpace;
@@ -55,14 +57,22 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         if left_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
             constraint = data_text_formatter::GapConstraint::NoSpace;
         }
-        if right_text.starts_with(['\'', '"', '`']) && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())) == Some("=") && is_jsx_attribute_gap(&significant, index, source) {
+        if right_text.starts_with(['\'', '"', '`'])
+            && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())) == Some("=")
+            && is_jsx_attribute_gap(&significant, index, source)
+        {
             constraint = data_text_formatter::GapConstraint::NoSpace;
         }
         // `?` is ambiguous in a token pair. In `name?: Type` and `name?()` it
         // binds to the member or parameter name, while in
         // `condition ? value : fallback` it is a ternary operator.
         if right_text == "?" {
-            constraint = if optional_marker[index + 1] { data_text_formatter::GapConstraint::NoSpace } else { data_text_formatter::GapConstraint::RequiredSpace };
+            constraint = if optional_marker[index + 1] {
+                data_text_formatter::GapConstraint::NoSpace
+            }
+            else {
+                data_text_formatter::GapConstraint::RequiredSpace
+            };
         }
         if left_text == "?" && matches!(right_text, "(" | "<") && optional_marker[index] {
             constraint = data_text_formatter::GapConstraint::NoSpace;
@@ -102,7 +112,12 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
             else if right_text == ">" && is_type_argument_close(&significant, index + 1, source) {
                 constraint = data_text_formatter::GapConstraint::NoSpace;
             }
-            else if right_text == ">" && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())).is_some_and(|text| text == "<" || text == "/") {
+            else if right_text == ">"
+                && significant
+                    .get(index.wrapping_sub(1))
+                    .and_then(|token| source.get(token.span.clone()))
+                    .is_some_and(|text| text == "<" || text == "/")
+            {
                 constraint = data_text_formatter::GapConstraint::NoSpace;
             }
             else if left_text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']')) {
@@ -111,14 +126,15 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         }
 
         if matches!(left_text, "<" | ">" | ">>" | ">>>") {
-            let generic_angle = (left_text == "<" && looks_like_type_arguments(&significant, index, source)) || (matches!(left_text, ">" | ">>" | ">>>") && is_type_argument_close(&significant, index, source));
+            let generic_angle = (left_text == "<" && looks_like_type_arguments(&significant, index, source))
+                || (matches!(left_text, ">" | ">>" | ">>>") && is_type_argument_close(&significant, index, source));
             // A `<` after an operand is a comparison. A postfix `++`/`--`
             // also ends the left operand, so `guard++ < 64` keeps its spaces.
             let comparison = !generic_angle
-                && significant
-                    .get(index.wrapping_sub(1))
-                    .and_then(|token| source.get(token.span.clone()))
-                    .is_some_and(|text| matches!(text, "++" | "--") || text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']')));
+                && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())).is_some_and(|text| {
+                    matches!(text, "++" | "--")
+                        || text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']'))
+                });
             if !right_text.is_empty() && comparison && right_text != "/" && !matches!(right_text, ";" | "," | ")" | "]" | "." | "?") {
                 constraint = data_text_formatter::GapConstraint::RequiredSpace;
             }
@@ -133,7 +149,8 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         // nested type arguments, which must stay tight.
         if matches!(right_text, "<<" | ">>" | ">>>") {
             let type_close = matches!(right_text, ">>" | ">>>") && is_type_argument_close(&significant, index + 1, source);
-            constraint = if type_close { data_text_formatter::GapConstraint::NoSpace } else { data_text_formatter::GapConstraint::RequiredSpace };
+            constraint =
+                if type_close { data_text_formatter::GapConstraint::NoSpace } else { data_text_formatter::GapConstraint::RequiredSpace };
         }
         // Shift assignment is one operator, but the lexer emits `>>>=` as
         // `>>>` + `=`, so that compound gap stays closed. A `>>>` that closes
@@ -254,7 +271,10 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                     Some("(") => {
                         nesting = nesting.saturating_sub(1);
                         if nesting == 0 {
-                            let keyword = position.checked_sub(1).and_then(|before| significant.get(before)).and_then(|token| source.get(token.span.clone()));
+                            let keyword = position
+                                .checked_sub(1)
+                                .and_then(|before| significant.get(before))
+                                .and_then(|token| source.get(token.span.clone()));
                             if matches!(keyword, Some("if" | "for" | "while" | "switch" | "catch" | "with")) {
                                 constraint = data_text_formatter::GapConstraint::RequiredSpace;
                             }
@@ -273,7 +293,13 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                 constraint = data_text_formatter::GapConstraint::RequiredSpace;
             }
         }
-        if gap.contains('\n') || left_text.starts_with("//") || left_text.starts_with("/*") || right_text.starts_with("//") || right_text.starts_with("/*") || (source.starts_with("#!") && left.span.start < source.find('\n').unwrap_or(source.len())) {
+        if gap.contains('\n')
+            || left_text.starts_with("//")
+            || left_text.starts_with("/*")
+            || right_text.starts_with("//")
+            || right_text.starts_with("/*")
+            || (source.starts_with("#!") && left.span.start < source.find('\n').unwrap_or(source.len()))
+        {
             constraint = data_text_formatter::GapConstraint::Preserve;
         }
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
@@ -285,7 +311,26 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
 }
 
 fn is_reserved_word(text: &str) -> bool {
-    matches!(text, "if" | "for" | "while" | "switch" | "catch" | "with" | "function" | "return" | "throw" | "new" | "typeof" | "void" | "delete" | "await" | "yield" | "as" | "in" | "instanceof")
+    matches!(
+        text,
+        "if" | "for"
+            | "while"
+            | "switch"
+            | "catch"
+            | "with"
+            | "function"
+            | "return"
+            | "throw"
+            | "new"
+            | "typeof"
+            | "void"
+            | "delete"
+            | "await"
+            | "yield"
+            | "as"
+            | "in"
+            | "instanceof"
+    )
 }
 /// A postfix `?` marks an optional property, parameter or method. `name?: T`
 /// is unambiguous, while `name?(` and `name?<` are only optional markers when
@@ -322,7 +367,22 @@ fn is_member_name_position(significant: &[&data_text_core::Token<TypeScriptToken
         else {
             return false;
         };
-        if matches!(text, "static" | "public" | "private" | "protected" | "readonly" | "abstract" | "override" | "declare" | "accessor" | "async" | "get" | "set" | "*") {
+        if matches!(
+            text,
+            "static"
+                | "public"
+                | "private"
+                | "protected"
+                | "readonly"
+                | "abstract"
+                | "override"
+                | "declare"
+                | "accessor"
+                | "async"
+                | "get"
+                | "set"
+                | "*"
+        ) {
             cursor = previous;
             modifier = true;
             continue;
@@ -385,7 +445,8 @@ fn brace_opens_member_body(significant: &[&data_text_core::Token<TypeScriptToken
             // the brace opens its body. When the colon follows a parameter list
             // that annotation is a return type and the body is a function body.
             ":" => return previous.checked_sub(1).and_then(token) != Some(")"),
-            "function" | "if" | "for" | "while" | "switch" | "catch" | "with" | "try" | "else" | "do" | "finally" | "=>" | "namespace" | "module" | "type" | ")" | "]" | "}" | "{" => return false,
+            "function" | "if" | "for" | "while" | "switch" | "catch" | "with" | "try" | "else" | "do" | "finally" | "=>" | "namespace"
+            | "module" | "type" | ")" | "]" | "}" | "{" => return false,
             _ => {}
         }
         cursor = previous;
@@ -432,13 +493,17 @@ fn is_jsx_attribute_gap(significant: &[&data_text_core::Token<TypeScriptTokenTyp
             ">>" => nesting += 2,
             ">>>" => nesting += 3,
             "<" if nesting == 0 => {
-                let previous = token_index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+                let previous =
+                    token_index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
                 return matches!(previous, Some("=" | "return" | "=>" | "(" | "[" | "{" | "," | ":" | ">"));
             }
             "<" if nesting > 0 => {
                 nesting -= 1;
                 if nesting == 0 {
-                    let previous = token_index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
+                    let previous = token_index
+                        .checked_sub(1)
+                        .and_then(|previous| significant.get(previous))
+                        .and_then(|token| source.get(token.span.clone()));
                     return matches!(previous, Some("=" | "return" | "=>" | "(" | "["));
                 }
             }
@@ -457,7 +522,9 @@ fn looks_like_type_arguments(significant: &[&data_text_core::Token<TypeScriptTok
     // arguments follow their callee or type name without a gap.
     if let (Some(open), Some(left)) = (significant.get(index), index.checked_sub(1).and_then(|before| significant.get(before))) {
         let gap = source.get(Range { start: left.span.end, end: open.span.start });
-        let operand = source.get(left.span.clone()).is_some_and(|text| text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']' | '}')));
+        let operand = source
+            .get(left.span.clone())
+            .is_some_and(|text| text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']' | '}')));
         if operand && gap.is_some_and(|gap| !gap.is_empty()) {
             return false;
         }
@@ -474,7 +541,9 @@ fn looks_like_type_arguments(significant: &[&data_text_core::Token<TypeScriptTok
         if depth == 0 && delimiters == 0 {
             let expression_operator = match text {
                 "||" | "&&" | "==" | "===" | "!=" | "!==" | "*" | "%" | "/" | ";" | "??" | "?" | ":" => true,
-                "+" | "-" => previous.is_some_and(|left| left.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']' | '}'))),
+                "+" | "-" => previous.is_some_and(|left| {
+                    left.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']' | '}'))
+                }),
                 _ => false,
             };
             if expression_operator {
@@ -490,20 +559,117 @@ fn looks_like_type_arguments(significant: &[&data_text_core::Token<TypeScriptTok
             "/" => return false,
             "<" => depth += 1,
             ">" if depth == 0 && delimiters == 0 => {
-                let after = significant.iter().skip_while(|candidate| candidate.span.start <= token.span.start).find_map(|candidate| source.get(candidate.span.clone()));
-                return after.is_none_or(|next| next.is_empty() || matches!(next, "=" | "," | ";" | ")" | "]" | "[" | "}" | "." | "(" | "{" | ">" | "|" | "&" | "=>" | "?" | ":" | "-" | "+" | "*" | "%" | "==" | "===" | "!=" | "!==" | "&&" | "||"));
+                let after = significant
+                    .iter()
+                    .skip_while(|candidate| candidate.span.start <= token.span.start)
+                    .find_map(|candidate| source.get(candidate.span.clone()));
+                return after.is_none_or(|next| {
+                    next.is_empty()
+                        || matches!(
+                            next,
+                            "=" | ","
+                                | ";"
+                                | ")"
+                                | "]"
+                                | "["
+                                | "}"
+                                | "."
+                                | "("
+                                | "{"
+                                | ">"
+                                | "|"
+                                | "&"
+                                | "=>"
+                                | "?"
+                                | ":"
+                                | "-"
+                                | "+"
+                                | "*"
+                                | "%"
+                                | "=="
+                                | "==="
+                                | "!="
+                                | "!=="
+                                | "&&"
+                                | "||"
+                        )
+                });
             }
             ">" if depth == 0 => return false,
             ">" => depth -= 1,
             ">>>" if depth <= 2 && delimiters == 0 => {
-                let after = significant.iter().skip_while(|candidate| candidate.span.start <= token.span.start).find_map(|candidate| source.get(candidate.span.clone()));
-                return after.is_none_or(|next| next.is_empty() || matches!(next, "=" | "," | ";" | ")" | "]" | "[" | "}" | "." | "(" | "{" | "|" | "&" | "=>" | "?" | ":" | "-" | "+" | "*" | "%" | "==" | "===" | "!=" | "!==" | "&&" | "||"));
+                let after = significant
+                    .iter()
+                    .skip_while(|candidate| candidate.span.start <= token.span.start)
+                    .find_map(|candidate| source.get(candidate.span.clone()));
+                return after.is_none_or(|next| {
+                    next.is_empty()
+                        || matches!(
+                            next,
+                            "=" | ","
+                                | ";"
+                                | ")"
+                                | "]"
+                                | "["
+                                | "}"
+                                | "."
+                                | "("
+                                | "{"
+                                | "|"
+                                | "&"
+                                | "=>"
+                                | "?"
+                                | ":"
+                                | "-"
+                                | "+"
+                                | "*"
+                                | "%"
+                                | "=="
+                                | "==="
+                                | "!="
+                                | "!=="
+                                | "&&"
+                                | "||"
+                        )
+                });
             }
             ">>>" if depth < 3 => return false,
             ">>>" => depth -= 3,
             ">>" if depth <= 2 && delimiters == 0 => {
-                let after = significant.iter().skip_while(|candidate| candidate.span.start <= token.span.start).find_map(|candidate| source.get(candidate.span.clone()));
-                return after.is_none_or(|next| next.is_empty() || matches!(next, "=" | "," | ";" | ")" | "]" | "[" | "}" | "." | "(" | "{" | "|" | "&" | "=>" | "?" | ":" | "-" | "+" | "*" | "%" | "==" | "===" | "!=" | "!==" | "&&" | "||"));
+                let after = significant
+                    .iter()
+                    .skip_while(|candidate| candidate.span.start <= token.span.start)
+                    .find_map(|candidate| source.get(candidate.span.clone()));
+                return after.is_none_or(|next| {
+                    next.is_empty()
+                        || matches!(
+                            next,
+                            "=" | ","
+                                | ";"
+                                | ")"
+                                | "]"
+                                | "["
+                                | "}"
+                                | "."
+                                | "("
+                                | "{"
+                                | "|"
+                                | "&"
+                                | "=>"
+                                | "?"
+                                | ":"
+                                | "-"
+                                | "+"
+                                | "*"
+                                | "%"
+                                | "=="
+                                | "==="
+                                | "!="
+                                | "!=="
+                                | "&&"
+                                | "||"
+                        )
+                });
             }
             ">>" if depth < 2 => return false,
             ">>" => depth -= 2,
@@ -545,7 +711,14 @@ fn is_layout(kind: TypeScriptTokenType) -> bool {
 fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<TypeScriptTokenType>]) -> Result<(), data_text_core::TextError> {
     let mut stack = Vec::new();
     for token in tokens {
-        if matches!(token.kind, TypeScriptTokenType::StringLiteral | TypeScriptTokenType::TemplateString | TypeScriptTokenType::RegexLiteral | TypeScriptTokenType::LineComment | TypeScriptTokenType::BlockComment) {
+        if matches!(
+            token.kind,
+            TypeScriptTokenType::StringLiteral
+                | TypeScriptTokenType::TemplateString
+                | TypeScriptTokenType::RegexLiteral
+                | TypeScriptTokenType::LineComment
+                | TypeScriptTokenType::BlockComment
+        ) {
             continue;
         }
         match token.kind {

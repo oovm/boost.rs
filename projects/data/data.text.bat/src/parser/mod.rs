@@ -12,7 +12,7 @@ use crate::{
     lexer::{BatLexer, BatTokenType},
 };
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{ParseCache, Parser, ParserState},
     source::Source,
 };
@@ -114,7 +114,12 @@ impl<'config> BatParser<'config> {
 }
 
 impl<'config> Parser<BatLanguage> for BatParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<BatLanguage>) -> data_text_core::ParseOutput<'a, BatLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<BatLanguage>,
+    ) -> data_text_core::ParseOutput<'a, BatLanguage> {
         let lexer = BatLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

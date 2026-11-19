@@ -257,8 +257,10 @@ mod tests {
 
     #[test]
     fn strict_reader_rejects_empty_service_name() {
-        let artifact =
-            parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
+        let artifact = parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }")
+            .unwrap()
+            .project_services_artifact()
+            .unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["services"][0]["name"] = serde_json::Value::String("".to_owned());
         let error = ServiceProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -285,8 +287,10 @@ mod tests {
 
     #[test]
     fn strict_reader_rejects_unknown_fields_on_service_projection() {
-        let artifact =
-            parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
+        let artifact = parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }")
+            .unwrap()
+            .project_services_artifact()
+            .unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["services"][0]["unexpectedField"] = serde_json::Value::Bool(true);
         let error = ServiceProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -295,8 +299,10 @@ mod tests {
 
     #[test]
     fn strict_reader_rejects_service_span_mismatch() {
-        let artifact =
-            parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }").unwrap().project_services_artifact().unwrap();
+        let artifact = parse_schema("service IdentityService { create(request: CreateRequest) -> Identity }")
+            .unwrap()
+            .project_services_artifact()
+            .unwrap();
         let mut json: serde_json::Value = serde_json::from_str(&artifact.to_json().unwrap()).unwrap();
         json["services"][0]["span"]["end"] = serde_json::Value::Number(9999.into());
         let error = ServiceProjectionArtifact::from_json(&json.to_string()).unwrap_err();
@@ -349,5 +355,4 @@ mod tests {
         assert_eq!(plain.types.len(), 1);
         assert_eq!(plain.types[0].canonical_path, ["User"]);
     }
-
 }

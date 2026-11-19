@@ -140,21 +140,13 @@ pub fn is_node_builtin_name(specifier: &str) -> bool {
 
 /// 为 `node:` 内建说明符构造统一诊断：身份为「运行时外部模块」，不参与文件解析。
 pub fn node_builtin_diagnostic(specifier: &str, importer: &Path) -> PackDiagnostic {
-    diag(
-        CODE_NODE_BUILTIN,
-        format!("`{specifier}` 是 Node.js 内建模块，由运行时提供，打包层保留原文"),
-        importer,
-    )
+    diag(CODE_NODE_BUILTIN, format!("`{specifier}` 是 Node.js 内建模块，由运行时提供，打包层保留原文"), importer)
 }
 
 /// 为根绝对 URL 动态 import 构造统一诊断：身份为「站点运行时 URL」，
 /// 不参与文件解析，发射层原样保留（见 `CODE_DYNAMIC_URL_EXTERNAL`）。
 pub fn dynamic_url_external_diagnostic(specifier: &str, importer: &Path) -> PackDiagnostic {
-    diag(
-        CODE_DYNAMIC_URL_EXTERNAL,
-        format!("`{specifier}` 是根绝对 URL 动态 import，发射层保留原文"),
-        importer,
-    )
+    diag(CODE_DYNAMIC_URL_EXTERNAL, format!("`{specifier}` 是根绝对 URL 动态 import，发射层保留原文"), importer)
 }
 
 /// `#imports` 递归深度上限（防止 imports 自引用循环）。
@@ -247,9 +239,18 @@ pub fn module_format(file: &Path) -> ModuleFormat {
     if !in_dependency_tree {
         return ModuleFormat::Esm;
     }
-    let Some(dir) = file.parent() else { return ModuleFormat::Esm };
-    let Some(root) = walk::find_owning_package_root(dir) else { return ModuleFormat::Esm };
-    let Ok(manifest) = Manifest::load(&root) else { return ModuleFormat::Esm };
+    let Some(dir) = file.parent()
+    else {
+        return ModuleFormat::Esm;
+    };
+    let Some(root) = walk::find_owning_package_root(dir)
+    else {
+        return ModuleFormat::Esm;
+    };
+    let Ok(manifest) = Manifest::load(&root)
+    else {
+        return ModuleFormat::Esm;
+    };
     match manifest.field("type").and_then(json_str) {
         Some("module") => ModuleFormat::Esm,
         _ => ModuleFormat::Cjs,
@@ -263,10 +264,7 @@ pub fn package_of_path(file: &Path) -> Option<PackageIdentity> {
     let dir = walk::find_owning_package_root(file.parent()?)?;
     let root = std::fs::canonicalize(&dir).ok()?;
     let manifest = manifest::Manifest::load(&root).ok()?;
-    let name = manifest
-        .name()
-        .map(str::to_string)
-        .or_else(|| root.file_name().map(|segment| segment.to_string_lossy().into_owned()))?;
+    let name = manifest.name().map(str::to_string).or_else(|| root.file_name().map(|segment| segment.to_string_lossy().into_owned()))?;
     Some(PackageIdentity { name, root, version: manifest.version().map(str::to_string) })
 }
 
@@ -280,8 +278,7 @@ pub fn resolve(req: &ResolveRequest) -> Result<Resolved, PackDiagnostic> {
         return Err(diag(CODE_INVALID_SPECIFIER, "specifier 不能为空", &req.importer));
     }
     if spec.starts_with('#') {
-        return resolve_hash(req, spec, 0)
-            .and_then(|resolved| apply_browser_path_alias(req, resolved));
+        return resolve_hash(req, spec, 0).and_then(|resolved| apply_browser_path_alias(req, resolved));
     }
     // 身份规则：`?` 查询与 `#` 片段按首个出现处剥离，剥离后才是文件路径；
     // 裸包名段不含这两个字符，剥离发生在拆分包段之前（相对与子路径同样适用）。
@@ -294,15 +291,9 @@ pub fn resolve(req: &ResolveRequest) -> Result<Resolved, PackDiagnostic> {
         None => importer_dir,
     };
     if is_relative_spec(spec) || spec.starts_with('/') || Path::new(spec).is_absolute() {
-        let base =
-            if is_relative_spec(spec) { importer_dir.join(spec) } else { PathBuf::from(spec) };
-        let path = files::resolve_file(&base).ok_or_else(|| {
-            diag(
-                CODE_NOT_FOUND,
-                format!("`{spec}` 未命中任何候选文件（扩展与 `index.*`）"),
-                &req.importer,
-            )
-        })?;
+        let base = if is_relative_spec(spec) { importer_dir.join(spec) } else { PathBuf::from(spec) };
+        let path = files::resolve_file(&base)
+            .ok_or_else(|| diag(CODE_NOT_FOUND, format!("`{spec}` 未命中任何候选文件（扩展与 `index.*`）"), &req.importer))?;
         let resolved = Resolved { path, package: None, stub: false };
         return apply_browser_path_alias(req, resolved);
     }
@@ -312,40 +303,26 @@ pub fn resolve(req: &ResolveRequest) -> Result<Resolved, PackDiagnostic> {
 /// 裸 specifier：node_modules 上溯 → exports / legacy → 包实例身份。
 /// Browser target 下先经 importer 所属包的 `browser` 对象字段分流说明符
 /// （`fs: false` 这类内建 stub 在此生效）。
-fn resolve_bare(
-    req: &ResolveRequest,
-    from_dir: &Path,
-    spec: &str,
-) -> Result<Resolved, PackDiagnostic> {
+fn resolve_bare(req: &ResolveRequest, from_dir: &Path, spec: &str) -> Result<Resolved, PackDiagnostic> {
     if req.target == Target::Browser {
         if let Some(aliased) = browser_specifier_alias(req, from_dir, spec)? {
             return Ok(aliased);
         }
     }
     let (pkg_name, subpath) = split_package_specifier(spec, &req.importer)?;
-    let dir = walk::find_package_dir(&pkg_name, from_dir)
-        .or_else(|| walk::find_package_dir(&pkg_name, &req.root))
-        .ok_or_else(|| {
-            let origin_note = match req.origin.as_ref() {
-                Some(origin) => format!("（投影来源 `{}` 的树上溯同样不可见）", origin.display()),
-                None => String::new(),
-            };
-            diag(
-                CODE_NOT_FOUND,
-                format!(
-                    "包 `{pkg_name}` 未在任何上溯层的 node_modules 中找到（自 `{}` 起）{origin_note}",
-                    from_dir.display()
-                ),
-                &req.importer,
-            )
-        })?;
-    let root = std::fs::canonicalize(&dir).map_err(|err| {
+    let dir = walk::find_package_dir(&pkg_name, from_dir).or_else(|| walk::find_package_dir(&pkg_name, &req.root)).ok_or_else(|| {
+        let origin_note = match req.origin.as_ref() {
+            Some(origin) => format!("（投影来源 `{}` 的树上溯同样不可见）", origin.display()),
+            None => String::new(),
+        };
         diag(
             CODE_NOT_FOUND,
-            format!("包目录 `{}` 无法 canonicalize：{err}", dir.display()),
+            format!("包 `{pkg_name}` 未在任何上溯层的 node_modules 中找到（自 `{}` 起）{origin_note}", from_dir.display()),
             &req.importer,
         )
     })?;
+    let root = std::fs::canonicalize(&dir)
+        .map_err(|err| diag(CODE_NOT_FOUND, format!("包目录 `{}` 无法 canonicalize：{err}", dir.display()), &req.importer))?;
     let manifest = Manifest::load(&root)?;
     let identity = PackageIdentity {
         name: manifest.name().unwrap_or(&pkg_name).to_string(),
@@ -356,24 +333,14 @@ fn resolve_bare(
     let path = match manifest.field("exports") {
         // 包有 exports：只认 exports，绝不回退 legacy 字段或猜路径。
         Some(exports) => {
-            let target =
-                fields::match_exports(exports, &subpath, req.target).map_err(|failure| {
-                    map_failure(failure, req.target, spec, &root, CODE_BAD_EXPORTS)
-                })?;
-            let TargetRef::Relative(rel) = target else {
-                return Err(diag(
-                    CODE_BAD_EXPORTS,
-                    format!("`{spec}` 的 exports 目标不是包内 `./` 相对路径"),
-                    &root,
-                ));
+            let target = fields::match_exports(exports, &subpath, req.target)
+                .map_err(|failure| map_failure(failure, req.target, spec, &root, CODE_BAD_EXPORTS))?;
+            let TargetRef::Relative(rel) = target
+            else {
+                return Err(diag(CODE_BAD_EXPORTS, format!("`{spec}` 的 exports 目标不是包内 `./` 相对路径"), &root));
             };
-            files::resolve_file(&root.join(&rel)).ok_or_else(|| {
-                diag(
-                    CODE_NOT_FOUND,
-                    format!("`{spec}` 的 exports 目标 `{rel}` 未命中任何候选文件"),
-                    &root,
-                )
-            })?
+            files::resolve_file(&root.join(&rel))
+                .ok_or_else(|| diag(CODE_NOT_FOUND, format!("`{spec}` 的 exports 目标 `{rel}` 未命中任何候选文件"), &root))?
         }
         // 无 exports 的遗留包：常规文件查找（无 exports 即无封装）。
         None => legacy_resolve(&root, &manifest, &subpath, req.target)?,
@@ -385,45 +352,34 @@ fn resolve_bare(
 /// `browser` 对象字段的说明符级别名：在 importer 所属包（origin 投影时按来源
 /// 位置的 owning 包）的 manifest 上精确命中说明符键时生效。值 `false` 合成
 /// 空 stub，字符串为包内替换文件。仅 Browser target 调用。
-fn browser_specifier_alias(
-    req: &ResolveRequest,
-    from_dir: &Path,
-    spec: &str,
-) -> Result<Option<Resolved>, PackDiagnostic> {
-    let Some(pkg_dir) = walk::find_owning_package_root(from_dir) else { return Ok(None) };
-    let Ok(manifest) = Manifest::load(&pkg_dir) else { return Ok(None) };
-    let Some(map) = manifest.field("browser").and_then(|field| field.as_object()) else {
+fn browser_specifier_alias(req: &ResolveRequest, from_dir: &Path, spec: &str) -> Result<Option<Resolved>, PackDiagnostic> {
+    let Some(pkg_dir) = walk::find_owning_package_root(from_dir)
+    else {
         return Ok(None);
     };
-    let Some(value) = map.iter().find(|(key, _)| key == spec).map(|(_, value)| value) else {
+    let Ok(manifest) = Manifest::load(&pkg_dir)
+    else {
+        return Ok(None);
+    };
+    let Some(map) = manifest.field("browser").and_then(|field| field.as_object())
+    else {
+        return Ok(None);
+    };
+    let Some(value) = map.iter().find(|(key, _)| key == spec).map(|(_, value)| value)
+    else {
         return Ok(None);
     };
     let root = std::fs::canonicalize(&pkg_dir).unwrap_or(pkg_dir.clone());
     let name = manifest.name().unwrap_or(spec);
-    let identity = PackageIdentity {
-        name: name.to_string(),
-        root: root.clone(),
-        version: manifest.version().map(str::to_string),
-    };
+    let identity = PackageIdentity { name: name.to_string(), root: root.clone(), version: manifest.version().map(str::to_string) };
     match value {
-        json::Json::Bool(false) => Ok(Some(Resolved {
-            path: browser_stub_path(&root, spec),
-            package: Some(identity),
-            stub: true,
-        })),
-        json::Json::Bool(true) => Err(diag(
-            CODE_BAD_MANIFEST,
-            format!("`browser` 字段 `{spec}` 的值不能为 true（只能为替换路径或 false）"),
-            &root,
-        )),
+        json::Json::Bool(false) => Ok(Some(Resolved { path: browser_stub_path(&root, spec), package: Some(identity), stub: true })),
+        json::Json::Bool(true) => {
+            Err(diag(CODE_BAD_MANIFEST, format!("`browser` 字段 `{spec}` 的值不能为 true（只能为替换路径或 false）"), &root))
+        }
         json::Json::String(target) => {
-            let path = files::resolve_file(&root.join(target)).ok_or_else(|| {
-                diag(
-                    CODE_NOT_FOUND,
-                    format!("`browser` 字段 `{spec}` 的替换目标 `{target}` 未命中任何候选文件"),
-                    &root,
-                )
-            })?;
+            let path = files::resolve_file(&root.join(target))
+                .ok_or_else(|| diag(CODE_NOT_FOUND, format!("`browser` 字段 `{spec}` 的替换目标 `{target}` 未命中任何候选文件"), &root))?;
             Ok(Some(Resolved { path, package: Some(identity), stub: false }))
         }
         _ => Ok(None),
@@ -432,24 +388,35 @@ fn browser_specifier_alias(
 
 /// `browser` 对象字段的路径级别名：解析落点文件在其所属包的映射键
 /// （`./lib/index.js` 形态）命中时替换为值文件或合成 stub。仅 Browser target。
-fn apply_browser_path_alias(
-    req: &ResolveRequest,
-    resolved: Resolved,
-) -> Result<Resolved, PackDiagnostic> {
+fn apply_browser_path_alias(req: &ResolveRequest, resolved: Resolved) -> Result<Resolved, PackDiagnostic> {
     if req.target != Target::Browser || resolved.stub {
         return Ok(resolved);
     }
-    let Some(parent) = resolved.path.parent() else { return Ok(resolved) };
-    let Some(pkg_dir) = walk::find_owning_package_root(parent) else { return Ok(resolved) };
-    let Ok(manifest) = Manifest::load(&pkg_dir) else { return Ok(resolved) };
-    let Some(map) = manifest.field("browser").and_then(|field| field.as_object()) else {
+    let Some(parent) = resolved.path.parent()
+    else {
+        return Ok(resolved);
+    };
+    let Some(pkg_dir) = walk::find_owning_package_root(parent)
+    else {
+        return Ok(resolved);
+    };
+    let Ok(manifest) = Manifest::load(&pkg_dir)
+    else {
+        return Ok(resolved);
+    };
+    let Some(map) = manifest.field("browser").and_then(|field| field.as_object())
+    else {
         return Ok(resolved);
     };
     let root = std::fs::canonicalize(&pkg_dir).unwrap_or_else(|_| pkg_dir.clone());
-    let Ok(rel) = resolved.path.strip_prefix(&root) else { return Ok(resolved) };
+    let Ok(rel) = resolved.path.strip_prefix(&root)
+    else {
+        return Ok(resolved);
+    };
     // 键口径：`./` 前缀 + `/` 分隔（package.json 作者书写形态）。
     let key = format!("./{}", rel.to_string_lossy().replace('\\', "/"));
-    let Some(value) = map.iter().find(|(name, _)| *name == key).map(|(_, value)| value) else {
+    let Some(value) = map.iter().find(|(name, _)| *name == key).map(|(_, value)| value)
+    else {
         return Ok(resolved);
     };
     let identity = resolved.package.clone().or_else(|| {
@@ -460,22 +427,13 @@ fn apply_browser_path_alias(
         })
     });
     match value {
-        json::Json::Bool(false) => {
-            Ok(Resolved { path: browser_stub_path(&root, &key), package: identity, stub: true })
+        json::Json::Bool(false) => Ok(Resolved { path: browser_stub_path(&root, &key), package: identity, stub: true }),
+        json::Json::Bool(true) => {
+            Err(diag(CODE_BAD_MANIFEST, format!("`browser` 字段 `{key}` 的值不能为 true（只能为替换路径或 false）"), &root))
         }
-        json::Json::Bool(true) => Err(diag(
-            CODE_BAD_MANIFEST,
-            format!("`browser` 字段 `{key}` 的值不能为 true（只能为替换路径或 false）"),
-            &root,
-        )),
         json::Json::String(target) => {
-            let path = files::resolve_file(&root.join(target)).ok_or_else(|| {
-                diag(
-                    CODE_NOT_FOUND,
-                    format!("`browser` 字段 `{key}` 的替换目标 `{target}` 未命中任何候选文件"),
-                    &root,
-                )
-            })?;
+            let path = files::resolve_file(&root.join(target))
+                .ok_or_else(|| diag(CODE_NOT_FOUND, format!("`browser` 字段 `{key}` 的替换目标 `{target}` 未命中任何候选文件"), &root))?;
             Ok(Resolved { path, package: identity, stub: false })
         }
         _ => Ok(resolved),
@@ -488,7 +446,8 @@ fn browser_stub_path(pkg_root: &Path, key: &str) -> PathBuf {
     for ch in key.chars() {
         if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
             sanitized.push(ch);
-        } else {
+        }
+        else {
             sanitized.push('_');
         }
     }
@@ -498,12 +457,7 @@ fn browser_stub_path(pkg_root: &Path, key: &str) -> PathBuf {
 /// 遗留包（无 `exports`）解析。
 ///
 /// `.` 走入口字段优先级 + `index.*` 兜底；子路径走常规文件查找。
-fn legacy_resolve(
-    root: &Path,
-    manifest: &Manifest,
-    subpath: &str,
-    target: Target,
-) -> Result<PathBuf, PackDiagnostic> {
+fn legacy_resolve(root: &Path, manifest: &Manifest, subpath: &str, target: Target) -> Result<PathBuf, PackDiagnostic> {
     if subpath == "." {
         // 只取字符串形式；object 形式 `browser` 属链接层别名，本层不处理。
         let entry_fields: &[&str] = match target {
@@ -520,70 +474,39 @@ fn legacy_resolve(
         if let Some(path) = files::resolve_file(&root.join("index")) {
             return Ok(path);
         }
-        return Err(diag(
-            CODE_NOT_FOUND,
-            "遗留包没有可用入口（`browser`/`module`/`main`/`index.*` 均未命中）",
-            root,
-        ));
+        return Err(diag(CODE_NOT_FOUND, "遗留包没有可用入口（`browser`/`module`/`main`/`index.*` 均未命中）", root));
     }
-    files::resolve_file(&root.join(subpath)).ok_or_else(|| {
-        diag(CODE_NOT_FOUND, format!("`{subpath}` 在遗留包中未命中任何候选文件"), root)
-    })
+    files::resolve_file(&root.join(subpath)).ok_or_else(|| diag(CODE_NOT_FOUND, format!("`{subpath}` 在遗留包中未命中任何候选文件"), root))
 }
 
 /// `#` specifier：所属包 `imports` 解析（含条件、`*` pattern 与封装）。
 /// 所属包按投影来源（无则 importer）的 owning package 判定。
 fn resolve_hash(req: &ResolveRequest, spec: &str, depth: u32) -> Result<Resolved, PackDiagnostic> {
     if depth > MAX_IMPORTS_DEPTH {
-        return Err(diag(
-            CODE_BAD_MANIFEST,
-            format!("`{spec}` 的 imports 解析超过 {MAX_IMPORTS_DEPTH} 层（疑似循环定义）"),
-            &req.importer,
-        ));
+        return Err(diag(CODE_BAD_MANIFEST, format!("`{spec}` 的 imports 解析超过 {MAX_IMPORTS_DEPTH} 层（疑似循环定义）"), &req.importer));
     }
     let importer_dir = req.importer.parent().unwrap_or_else(|| Path::new("."));
     let walk_dir = match req.origin.as_ref() {
         Some(origin) => origin.parent().unwrap_or(importer_dir),
         None => importer_dir,
     };
-    let pkg_dir = walk::find_owning_package_root(walk_dir).ok_or_else(|| {
-        diag(
-            CODE_NOT_FOUND,
-            format!("`{spec}` 需要 importer 所在链上的 package.json，但未找到"),
-            &req.importer,
-        )
-    })?;
-    let root = std::fs::canonicalize(&pkg_dir).map_err(|err| {
-        diag(
-            CODE_NOT_FOUND,
-            format!("包目录 `{}` 无法 canonicalize：{err}", pkg_dir.display()),
-            &req.importer,
-        )
-    })?;
+    let pkg_dir = walk::find_owning_package_root(walk_dir)
+        .ok_or_else(|| diag(CODE_NOT_FOUND, format!("`{spec}` 需要 importer 所在链上的 package.json，但未找到"), &req.importer))?;
+    let root = std::fs::canonicalize(&pkg_dir)
+        .map_err(|err| diag(CODE_NOT_FOUND, format!("包目录 `{}` 无法 canonicalize：{err}", pkg_dir.display()), &req.importer))?;
     let manifest = Manifest::load(&root)?;
-    let Some(imports) = manifest.field("imports") else {
-        return Err(diag(
-            CODE_NOT_FOUND,
-            format!("`{spec}` 无法解析：所属包未定义 `imports` 字段"),
-            &root,
-        ));
+    let Some(imports) = manifest.field("imports")
+    else {
+        return Err(diag(CODE_NOT_FOUND, format!("`{spec}` 无法解析：所属包未定义 `imports` 字段"), &root));
     };
-    let target = fields::match_imports(imports, spec, req.target)
-        .map_err(|failure| map_failure(failure, req.target, spec, &root, CODE_BAD_MANIFEST))?;
+    let target =
+        fields::match_imports(imports, spec, req.target).map_err(|failure| map_failure(failure, req.target, spec, &root, CODE_BAD_MANIFEST))?;
 
     match target {
         TargetRef::Relative(rel) => {
-            let path = files::resolve_file(&root.join(&rel)).ok_or_else(|| {
-                diag(
-                    CODE_NOT_FOUND,
-                    format!("`{spec}` 的 imports 目标 `{rel}` 未命中任何候选文件"),
-                    &root,
-                )
-            })?;
-            let fallback = root
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            let path = files::resolve_file(&root.join(&rel))
+                .ok_or_else(|| diag(CODE_NOT_FOUND, format!("`{spec}` 的 imports 目标 `{rel}` 未命中任何候选文件"), &root))?;
+            let fallback = root.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
             let identity = PackageIdentity {
                 name: manifest.name().unwrap_or(&fallback).to_string(),
                 root: root.clone(),
@@ -599,31 +522,14 @@ fn resolve_hash(req: &ResolveRequest, spec: &str, depth: u32) -> Result<Resolved
 }
 
 /// 把字段匹配失败映射为共享诊断（code + importer/包根路径）。
-fn map_failure(
-    failure: FieldFailure,
-    target: Target,
-    spec: &str,
-    path: &Path,
-    invalid_code: &'static str,
-) -> PackDiagnostic {
+fn map_failure(failure: FieldFailure, target: Target, spec: &str, path: &Path, invalid_code: &'static str) -> PackDiagnostic {
     match failure {
-        FieldFailure::Encapsulated => diag(
-            CODE_ENCAPSULATED,
-            format!("`{spec}` 未被包 `exports` 导出，封装拒绝且不回退未导出路径"),
-            path,
-        ),
-        FieldFailure::Undefined => {
-            diag(CODE_NOT_FOUND, format!("`{spec}` 未在包 `imports` 中定义"), path)
-        }
-        FieldFailure::Forbidden => {
-            diag(CODE_FORBIDDEN, format!("`{spec}` 的解析目标被 `null` 显式禁止"), path)
-        }
+        FieldFailure::Encapsulated => diag(CODE_ENCAPSULATED, format!("`{spec}` 未被包 `exports` 导出，封装拒绝且不回退未导出路径"), path),
+        FieldFailure::Undefined => diag(CODE_NOT_FOUND, format!("`{spec}` 未在包 `imports` 中定义"), path),
+        FieldFailure::Forbidden => diag(CODE_FORBIDDEN, format!("`{spec}` 的解析目标被 `null` 显式禁止"), path),
         FieldFailure::NoApplicableCondition(keys) => diag(
             CODE_UNSUPPORTED_CONDITION,
-            format!(
-                "`{spec}` 对 target {target:?} 没有适用条件，激活条件 {:?}，目标可见键 {keys:?}",
-                target.conditions()
-            ),
+            format!("`{spec}` 对 target {target:?} 没有适用条件，激活条件 {:?}，目标可见键 {keys:?}", target.conditions()),
             path,
         ),
         FieldFailure::Invalid(message) => diag(invalid_code, message, path),
@@ -631,24 +537,19 @@ fn map_failure(
 }
 
 /// 拆分裸 specifier 为 (包目录段, 子路径)。子路径恒为 `"."` 或 `"./..."`。
-fn split_package_specifier(
-    spec: &str,
-    importer: &Path,
-) -> Result<(String, String), PackDiagnostic> {
+fn split_package_specifier(spec: &str, importer: &Path) -> Result<(String, String), PackDiagnostic> {
     let mut segments = spec.split('/');
     let first = segments.next().unwrap_or_default();
     let pkg_name = if first.starts_with('@') {
-        let scope = segments.next().filter(|part| !part.is_empty()).ok_or_else(|| {
-            diag(CODE_INVALID_SPECIFIER, format!("scoped specifier 缺少包名段：`{spec}`"), importer)
-        })?;
+        let scope = segments
+            .next()
+            .filter(|part| !part.is_empty())
+            .ok_or_else(|| diag(CODE_INVALID_SPECIFIER, format!("scoped specifier 缺少包名段：`{spec}`"), importer))?;
         format!("{first}/{scope}")
-    } else {
+    }
+    else {
         if first.is_empty() {
-            return Err(diag(
-                CODE_INVALID_SPECIFIER,
-                format!("specifier 包名段为空：`{spec}`"),
-                importer,
-            ));
+            return Err(diag(CODE_INVALID_SPECIFIER, format!("specifier 包名段为空：`{spec}`"), importer));
         }
         first.to_string()
     };

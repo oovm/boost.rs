@@ -4,7 +4,7 @@ use core::range::Range;
 use data_text_core::tree::RedNode;
 
 #[cfg(feature = "lsp")]
-use {futures::Future, language_server::service::LanguageService, language_server::types::Hover as LspHover, language_server::Vfs};
+use {futures::Future, language_server::Vfs, language_server::service::LanguageService, language_server::types::Hover as LspHover};
 
 use crate::language::CppLanguage;
 #[cfg(feature = "lsp")]

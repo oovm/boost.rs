@@ -1,14 +1,9 @@
 #![doc = include_str!("readme.md")]
-#[cfg(feature = "lsp")]
-use {
-    language_server::service::LanguageService,
-    language_server::Vfs,
-    futures::Future,
-    language_server::types::Hover as LspHover,
-};
 use crate::language::MojoLanguage;
-use data_text_core::tree::RedNode;
 use core::range::Range;
+use data_text_core::tree::RedNode;
+#[cfg(feature = "lsp")]
+use {futures::Future, language_server::Vfs, language_server::service::LanguageService, language_server::types::Hover as LspHover};
 #[cfg(feature = "lsp")]
 pub struct MojoLanguageService<V: Vfs> {
     vfs: V,

@@ -3,7 +3,7 @@ use crate::{language::TexLanguage, lexer::token_type::TexTokenType};
 /// Token types for the TeX lexer.
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerCache, LexerState, Source, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -11,7 +11,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, TexLanguage>;
 
 static TEX_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static TEX_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "%", block_start: "", block_end: "", nested_blocks: false });
+static TEX_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "%", block_start: "", block_end: "", nested_blocks: false });
 
 /// A lexer for TeX source files.
 #[derive(Clone, Debug)]
@@ -22,7 +23,12 @@ pub struct TexLexer<'config> {
 
 impl<'config> Lexer<TexLanguage> for TexLexer<'config> {
     /// Lexes the source text into tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<TexLanguage>) -> LexOutput<TexLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<TexLanguage>,
+    ) -> LexOutput<TexLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -321,7 +327,21 @@ impl<'config> TexLexer<'config> {
         let mut has_text = false;
 
         while let Some(ch) = state.peek() {
-            if ch.is_whitespace() || ch == '\\' || ch == '%' || ch == '$' || ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == '&' || ch == '_' || ch == '^' || ch == '~' || ch == '#' || ch.is_ascii_digit() {
+            if ch.is_whitespace()
+                || ch == '\\'
+                || ch == '%'
+                || ch == '$'
+                || ch == '{'
+                || ch == '}'
+                || ch == '['
+                || ch == ']'
+                || ch == '&'
+                || ch == '_'
+                || ch == '^'
+                || ch == '~'
+                || ch == '#'
+                || ch.is_ascii_digit()
+            {
                 break;
             }
             state.advance(ch.len_utf8());

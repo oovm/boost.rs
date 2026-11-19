@@ -21,14 +21,14 @@ use std::{
     sync::{OnceLock, RwLock, RwLockReadGuard},
 };
 
+pub use crate::contract::{
+    ByteRange, Document, FormatConfigLoader, FormatConfigResolution, FormatError, FormatOptions, FormattedOutput, PrintStyle, Printer,
+    PrinterProvider, PrinterRegistry, SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry, SourceMap,
+};
 pub use batch::{FormatBatchOptions, FormatBatchReport, format_paths};
 pub use cli::{
     FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli, report_format_cli_with, run_format_cli,
     run_format_cli_with,
-};
-pub use crate::contract::{
-    ByteRange, Document, FormatConfigLoader, FormatConfigResolution, FormatError, FormatOptions, FormattedOutput, PrintStyle, Printer,
-    PrinterProvider, PrinterRegistry, SourceFormatter, SourceFormatterProvider, SourceFormatterRegistry, SourceMap,
 };
 
 /// VON 配置/清单。

@@ -9,17 +9,16 @@ use crate::compiler::{
         ast::{
             AssociatedType, Attribute, ClassDeclaration, EnumVariant, Enums, FieldDeclaration, Flags, GenericParam, ImplyDeclaration,
             MethodDeclaration, NamePath as AstNamePath, NamespaceDeclaration, Param, Parent, SingletonDeclaration, StatementNode,
-            StructureDeclaration,
-            TermExpression, Trait, TypeExpression, TypeFunction, UsingDeclaration, WidgetDeclaration,
+            StructureDeclaration, TermExpression, Trait, TypeExpression, TypeFunction, UsingDeclaration, WidgetDeclaration,
         },
     },
     types::{
         Identifier, NamePath, SourceID, SourceSpan,
         hir::{
             GenericType, HirArgument, HirAssociatedType, HirAttribute, HirBlock, HirDocumentation, HirEnum, HirExpr, HirExprKind, HirField,
-            HirFlagMember, HirFunction, HirImport, HirImportBinding, HirLiteral, HirParam, HirParameterBindingKind, HirParent,
-            HirSingleton, HirStatement, HirStatementKind, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant,
-            HirVisibility, HirWhereConstraint,
+            HirFlagMember, HirFunction, HirImport, HirImportBinding, HirLiteral, HirParam, HirParameterBindingKind, HirParent, HirSingleton,
+            HirStatement, HirStatementKind, HirTraitBound, HirTypeAlias, HirTypeFunction, HirVariadicKind, HirVariant, HirVisibility,
+            HirWhereConstraint,
         },
     },
 };

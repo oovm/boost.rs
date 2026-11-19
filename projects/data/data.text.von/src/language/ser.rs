@@ -139,7 +139,13 @@ impl serde::ser::Serializer for VonValueSerializer {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T>(self, _name: &'static str, _variant_index: u32, variant: &'static str, value: &T) -> Result<Self::Ok, Self::Error>
+    fn serialize_newtype_variant<T>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -159,7 +165,13 @@ impl serde::ser::Serializer for VonValueSerializer {
         Ok(VonSeqSerializer { elements: Vec::with_capacity(len) })
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Ok(VonSeqSerializer { elements: Vec::with_capacity(len) })
     }
 
@@ -171,7 +183,13 @@ impl serde::ser::Serializer for VonValueSerializer {
         Ok(VonMapSerializer { fields: Vec::with_capacity(len), current_key: None })
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Ok(VonMapSerializer { fields: Vec::with_capacity(len), current_key: Some(VonValue::String(variant.to_string())) })
     }
 }

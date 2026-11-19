@@ -33,7 +33,8 @@ impl MirBuilder {
             Some(ValkyrieType::Function(function)) => Some(function.as_ref()),
             _ => None,
         };
-        let Some(signature) = self.resolve_lambda_signature(params, return_type, expected, span) else {
+        let Some(signature) = self.resolve_lambda_signature(params, return_type, expected, span)
+        else {
             return MirOperand::Constant(MirConstant::Unit);
         };
 
@@ -54,7 +55,8 @@ impl MirBuilder {
             return MirOperand::Constant(MirConstant::Unit);
         }
 
-        let Some(instance) = instance else {
+        let Some(instance) = instance
+        else {
             self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                 span: span.clone(),
                 kind: "lambda synthetic function identity is missing from HIR; MIR must not mint it".to_string(),
@@ -64,15 +66,21 @@ impl MirBuilder {
 
         let environment = if captures.is_empty() {
             None
-        } else {
-            let Some(identity) = hoisted else {
+        }
+        else {
+            let Some(identity) = hoisted
+            else {
                 self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                     span: span.clone(),
-                    kind: format!("lambda instance `{instance_label}` captures [{}] but its HIR identity is missing", captured_names.join(", ")),
+                    kind: format!(
+                        "lambda instance `{instance_label}` captures [{}] but its HIR identity is missing",
+                        captured_names.join(", ")
+                    ),
                 });
                 return MirOperand::Constant(MirConstant::Unit);
             };
-            let Some(environment) = identity.environment.as_ref() else {
+            let Some(environment) = identity.environment.as_ref()
+            else {
                 self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                     span: span.clone(),
                     kind: format!(
@@ -82,7 +90,8 @@ impl MirBuilder {
                 });
                 return MirOperand::Constant(MirConstant::Unit);
             };
-            let Some(ty) = environment.ty.clone() else {
+            let Some(ty) = environment.ty.clone()
+            else {
                 self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                     span: span.clone(),
                     kind: format!(
@@ -104,7 +113,8 @@ impl MirBuilder {
                 });
                 return MirOperand::Constant(MirConstant::Unit);
             }
-            let Some(declaration) = ty.nominal_declaration() else {
+            let Some(declaration) = ty.nominal_declaration()
+            else {
                 self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                     span: span.clone(),
                     kind: format!(
@@ -114,7 +124,8 @@ impl MirBuilder {
                 });
                 return MirOperand::Constant(MirConstant::Unit);
             };
-            let Some(nominal) = self.nominal_identity_for_declaration(declaration) else {
+            let Some(nominal) = self.nominal_identity_for_declaration(declaration)
+            else {
                 self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                     span: span.clone(),
                     kind: format!(
@@ -126,7 +137,8 @@ impl MirBuilder {
             };
             let mut fields = Vec::with_capacity(captures.len());
             for (capture, field_id) in captures.iter().zip(environment.field_ids.iter()) {
-                let Some(operand) = self.bindings.get(capture.identifier.name.as_str()).cloned() else {
+                let Some(operand) = self.bindings.get(capture.identifier.name.as_str()).cloned()
+                else {
                     self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                         span: span.clone(),
                         kind: format!(
@@ -145,10 +157,7 @@ impl MirBuilder {
         };
 
         let value = self.next_value(MirValueOrigin::Temporary);
-        self.push_instruction(
-            MirOperation::LoadFunctionRef { instance, environment, captured: captured_names },
-            vec![value],
-        );
+        self.push_instruction(MirOperation::LoadFunctionRef { instance, environment, captured: captured_names }, vec![value]);
         self.value_types.insert(value, ValkyrieType::Function(Box::new(signature)));
         MirOperand::Value(value)
     }
@@ -215,8 +224,7 @@ impl MirBuilder {
                 if declared_params.iter().any(annotation_is_unknown) || annotation_is_unknown(return_type) {
                     self.diagnostics.push(MirDiagnostic::UnsupportedExpression {
                         span: span.clone(),
-                        kind: "lambda signature needs a contextual function type or fully annotated parameters and return type"
-                            .to_string(),
+                        kind: "lambda signature needs a contextual function type or fully annotated parameters and return type".to_string(),
                     });
                     return None;
                 }

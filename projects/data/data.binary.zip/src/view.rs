@@ -1,5 +1,7 @@
-use boost_source::binary::{ByteSource, ByteWindow, ReadOutcome};
-use boost_source::ByteRange;
+use boost_source::{
+    ByteRange,
+    binary::{ByteSource, ByteWindow, ReadOutcome},
+};
 use data_binary_core::{AddressSpaceId, ByteExtent, NeedRange};
 use data_checksum::Crc32;
 use data_compression::{CodecError, CodecLimits, DeflateStreamDecoder, StreamChunk};
@@ -107,8 +109,7 @@ pub fn read_raw_payload<S: ByteSource>(source: S, member: &ZipMember) -> Result<
         }
         Ok(ReadOutcome::Eof) => Err(ZipViewError::InvalidRange),
         Ok(ReadOutcome::Unavailable { range, .. }) => {
-            let range = ByteExtent::new_allowing_empty(range.start(), range.len())
-                .map_err(|error| ZipViewError::Window(error.to_string()))?;
+            let range = ByteExtent::new_allowing_empty(range.start(), range.len()).map_err(|error| ZipViewError::Window(error.to_string()))?;
             Err(ZipViewError::NeedRange { range })
         }
         Err(error) => Err(ZipViewError::Window(error.to_string())),
@@ -170,12 +171,7 @@ impl<S: ByteSource> ZipMemberStream<S> {
     ///
     /// `chunk_size` bounds the compressed bytes held by the reader. It does not
     /// bound decoded output, which follows the destination passed to `read`.
-    pub fn with_chunk_size(
-        source: S,
-        member: &ZipMember,
-        limits: CodecLimits,
-        chunk_size: usize,
-    ) -> Result<Self, ZipViewError> {
+    pub fn with_chunk_size(source: S, member: &ZipMember, limits: CodecLimits, chunk_size: usize) -> Result<Self, ZipViewError> {
         if member.payload_range.len != member.compressed_size {
             return Err(ZipViewError::SizeMismatch);
         }

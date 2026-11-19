@@ -13,11 +13,16 @@ pub(crate) fn parse_expression<S: data_text_core::Source + ?Sized>(state: &mut S
 }
 
 /// 解析 if / while 等紧随 block 的条件表达式，禁止把 `{` 当作对象字面量后缀。
-pub(crate) fn parse_condition_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_condition_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     parse_expression_with_options(state, false)
 }
 
-fn parse_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     parse_or_expression_with_options(state, allow_object_literal)?;
     // 赋值低于逻辑运算，右侧递归保证右结合；保留两侧完整 CST。
@@ -34,7 +39,10 @@ pub(crate) fn parse_or_expression<S: data_text_core::Source + ?Sized>(state: &mu
     parse_or_expression_with_options(state, true)
 }
 
-fn parse_or_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_or_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_and_expression_with_options(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::OrOr) {
         let cp = state.sink.last_node_checkpoint();
@@ -50,7 +58,10 @@ pub(crate) fn parse_and_expression<S: data_text_core::Source + ?Sized>(state: &m
     parse_and_expression_with_options(state, true)
 }
 
-fn parse_and_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_and_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_range_expression(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::AndAnd) {
         let cp = state.sink.last_node_checkpoint();
@@ -62,7 +73,10 @@ fn parse_and_expression_with_options<S: data_text_core::Source + ?Sized>(state: 
 }
 
 /// 范围保留普通运算符节点，不在 parser 中展开迭代行为。
-fn parse_range_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_range_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_equality_expression_with_options(state, allow_object_literal)?;
     // 区间运算符非结合：同一层只接受一个 `..` / `..=`，`a..b..c` 不构造成立。
     if state.at(ValkyrieTokenType::DotDot) || state.at(ValkyrieTokenType::DotDotEq) {
@@ -79,7 +93,10 @@ pub(crate) fn parse_equality_expression<S: data_text_core::Source + ?Sized>(stat
     parse_equality_expression_with_options(state, true)
 }
 
-fn parse_equality_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_equality_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_comparison_expression_with_options(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::EqEq) || state.at(ValkyrieTokenType::NotEq) {
         let cp = state.sink.last_node_checkpoint();
@@ -91,13 +108,23 @@ fn parse_equality_expression_with_options<S: data_text_core::Source + ?Sized>(st
 }
 
 /// 解析 < <= <=> > >= 表达式
-pub(crate) fn parse_comparison_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_comparison_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     parse_comparison_expression_with_options(state, true)
 }
 
-fn parse_comparison_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_comparison_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_bit_or_expression(state, allow_object_literal)?;
-    while state.at(ValkyrieTokenType::LessThan) || state.at(ValkyrieTokenType::LessEq) || state.at(ValkyrieTokenType::LessEqGreater) || state.at(ValkyrieTokenType::GreaterThan) || state.at(ValkyrieTokenType::GreaterEq) {
+    while state.at(ValkyrieTokenType::LessThan)
+        || state.at(ValkyrieTokenType::LessEq)
+        || state.at(ValkyrieTokenType::LessEqGreater)
+        || state.at(ValkyrieTokenType::GreaterThan)
+        || state.at(ValkyrieTokenType::GreaterEq)
+    {
         let cp = state.sink.last_node_checkpoint();
         state.bump();
         parse_bit_or_expression(state, allow_object_literal)?;
@@ -107,7 +134,10 @@ fn parse_comparison_expression_with_options<S: data_text_core::Source + ?Sized>(
 }
 
 /// 位或低于位与，两者均高于比较；仅产生普通二元 CST。
-fn parse_bit_or_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_bit_or_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_bit_and_expression(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::Pipe) {
         let cp = state.sink.last_node_checkpoint();
@@ -119,12 +149,21 @@ fn parse_bit_or_expression<S: data_text_core::Source + ?Sized>(state: &mut State
 }
 
 /// 移位与位与消费完整算术表达式，禁止把运算符作为无意义 token 丢弃。
-fn parse_bit_and_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_bit_and_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_additive_expression_with_options(state, allow_object_literal)?;
     loop {
         // 泛型闭合仍是两个 `>` token；表达式位置只把相邻的两枚识别为移位。
-        let split_right_shift = state.current().zip(state.peek_at(1)).is_some_and(|(left, right)| left.kind == ValkyrieTokenType::GreaterThan && right.kind == ValkyrieTokenType::GreaterThan && left.span.end == right.span.start);
-        if !(split_right_shift || state.at(ValkyrieTokenType::Ampersand) || state.at(ValkyrieTokenType::LeftShift) || state.at(ValkyrieTokenType::RightShift)) {
+        let split_right_shift = state.current().zip(state.peek_at(1)).is_some_and(|(left, right)| {
+            left.kind == ValkyrieTokenType::GreaterThan && right.kind == ValkyrieTokenType::GreaterThan && left.span.end == right.span.start
+        });
+        if !(split_right_shift
+            || state.at(ValkyrieTokenType::Ampersand)
+            || state.at(ValkyrieTokenType::LeftShift)
+            || state.at(ValkyrieTokenType::RightShift))
+        {
             break;
         }
         let cp = state.sink.last_node_checkpoint();
@@ -143,7 +182,10 @@ pub(crate) fn parse_additive_expression<S: data_text_core::Source + ?Sized>(stat
     parse_additive_expression_with_options(state, true)
 }
 
-fn parse_additive_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_additive_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_multiplicative_expression_with_options(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::Plus) || state.at(ValkyrieTokenType::PlusPlus) || state.at(ValkyrieTokenType::Minus) {
         let cp = state.sink.last_node_checkpoint();
@@ -155,11 +197,16 @@ fn parse_additive_expression_with_options<S: data_text_core::Source + ?Sized>(st
 }
 
 /// 解析 * / % 表达式
-pub(crate) fn parse_multiplicative_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_multiplicative_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     parse_multiplicative_expression_with_options(state, true)
 }
 
-fn parse_multiplicative_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_multiplicative_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_caret_expression(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::Star) || state.at(ValkyrieTokenType::Slash) || state.at(ValkyrieTokenType::Percent) {
         let cp = state.sink.last_node_checkpoint();
@@ -171,7 +218,10 @@ fn parse_multiplicative_expression_with_options<S: data_text_core::Source + ?Siz
 }
 
 /// 保留现有运算符合同中 caret 的独立结合层级。
-fn parse_caret_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_caret_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_unary_expression_with_options(state, allow_object_literal)?;
     while state.at(ValkyrieTokenType::Caret) {
         let cp = state.sink.last_node_checkpoint();
@@ -187,7 +237,10 @@ pub(crate) fn parse_unary_expression<S: data_text_core::Source + ?Sized>(state: 
     parse_unary_expression_with_options(state, true)
 }
 
-fn parse_unary_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_unary_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     if state.at(ValkyrieTokenType::Minus) || state.at(ValkyrieTokenType::Bang) {
         let cp = state.sink.checkpoint();
         state.bump();
@@ -204,19 +257,30 @@ pub(crate) fn parse_postfix_expression<S: data_text_core::Source + ?Sized>(state
 }
 
 /// 解析 match / catch 等结构的 scrutinee，禁止把紧随其后的 `{` 当作对象字面量。
-pub(crate) fn parse_scrutinee_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_scrutinee_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     parse_condition_expression(state)
 }
 
 /// `::<`（turbofish）与 `::[`（基数下标 ASCII 别名）是 postfix 后缀而非路径段。
 fn at_postfix_colon_colon<S: data_text_core::Source + ?Sized>(state: &State<'_, S>) -> bool {
-    state.at(ValkyrieTokenType::ColonColon) && (state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::LessThan) || state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::BracketL))
+    state.at(ValkyrieTokenType::ColonColon)
+        && (state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::LessThan)
+            || state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::BracketL))
 }
 
-fn parse_postfix_expression_with_options<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, allow_object_literal: bool) -> Result<(), data_text_core::TextError> {
+fn parse_postfix_expression_with_options<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    allow_object_literal: bool,
+) -> Result<(), data_text_core::TextError> {
     parse_primary_expression(state)?;
     loop {
-        if state.at(ValkyrieTokenType::Dot) || (state.at(ValkyrieTokenType::ColonColon) && state.peek_non_trivia_kind_at(1) != Some(ValkyrieTokenType::LessThan) && state.peek_non_trivia_kind_at(1) != Some(ValkyrieTokenType::BracketL)) {
+        if state.at(ValkyrieTokenType::Dot)
+            || (state.at(ValkyrieTokenType::ColonColon)
+                && state.peek_non_trivia_kind_at(1) != Some(ValkyrieTokenType::LessThan)
+                && state.peek_non_trivia_kind_at(1) != Some(ValkyrieTokenType::BracketL))
+        {
             let cp = state.sink.last_node_checkpoint();
             state.bump();
             // 成员名可以是软标识符，也可以是元组位置索引的整数字面量（`pair.0`）；
@@ -229,7 +293,9 @@ fn parse_postfix_expression_with_options<S: data_text_core::Source + ?Sized>(sta
             }
             state.sink.finish_node(cp, ValkyrieElementType::FieldExpression);
         }
-        else if state.at(ValkyrieTokenType::OffsetL) || (state.at(ValkyrieTokenType::ColonColon) && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::BracketL)) {
+        else if state.at(ValkyrieTokenType::OffsetL)
+            || (state.at(ValkyrieTokenType::ColonColon) && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::BracketL))
+        {
             let cp = state.sink.last_node_checkpoint();
             let closing = if state.at(ValkyrieTokenType::ColonColon) {
                 state.bump();
@@ -337,7 +403,9 @@ pub(crate) fn parse_primary_expression<S: data_text_core::Source + ?Sized>(state
                     }
                     state.sink.finish_node(cp, ValkyrieElementType::PathExpression);
                 }
-                else if matches!(state.peek_kind(), Some(ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral)) && state.current().is_some_and(|literal| literal.span.start == identifier_end) {
+                else if matches!(state.peek_kind(), Some(ValkyrieTokenType::StringLiteral | ValkyrieTokenType::CharLiteral))
+                    && state.current().is_some_and(|literal| literal.span.start == identifier_end)
+                {
                     // 紧邻的标识符 + 引号捕获粘合成一个字面量节点（如 `r'...'`、`b'0'`）。
                     // 词法不解释前缀含义；raw/byte 等语义由编译器在捕获之后判定。
                     state.bump();
@@ -366,7 +434,9 @@ pub(crate) fn parse_primary_expression<S: data_text_core::Source + ?Sized>(state
                 state.sink.finish_node(cp, ValkyrieElementType::LiteralExpression);
                 Ok(())
             }
-            ValkyrieTokenType::BoolLiteral | ValkyrieTokenType::Keyword(ValkyrieKeywords::True) | ValkyrieTokenType::Keyword(ValkyrieKeywords::False) => {
+            ValkyrieTokenType::BoolLiteral
+            | ValkyrieTokenType::Keyword(ValkyrieKeywords::True)
+            | ValkyrieTokenType::Keyword(ValkyrieKeywords::False) => {
                 let cp = state.sink.checkpoint();
                 state.bump();
                 state.sink.finish_node(cp, ValkyrieElementType::BooleanLiteral);
@@ -507,7 +577,9 @@ pub(crate) fn parse_match_expression<S: data_text_core::Source + ?Sized>(state: 
     crate::parser::parse_control::parse_match_expression(state)
 }
 
-pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_labeled_loop_expression<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     crate::parser::parse_control::parse_labeled_loop_expression(state)
 }
 

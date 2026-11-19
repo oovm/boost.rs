@@ -5,7 +5,7 @@ pub mod token_type;
 
 use crate::{language::KotlinLanguage, lexer::token_type::KotlinTokenType};
 use data_text_core::{
-    Lexer, LexerState, TextError, Source, TextEdit,
+    Lexer, LexerState, Source, TextEdit, TextError,
     lexer::{LexOutput, LexerCache},
 };
 
@@ -505,7 +505,12 @@ impl<'config> KotlinLexer<'config> {
 }
 
 impl<'config> Lexer<KotlinLanguage> for KotlinLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<KotlinLanguage>) -> LexOutput<KotlinLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<KotlinLanguage>,
+    ) -> LexOutput<KotlinLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

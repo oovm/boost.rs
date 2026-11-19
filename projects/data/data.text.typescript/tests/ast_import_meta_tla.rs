@@ -102,7 +102,15 @@ fn await_spans_text(root: &TypeScriptRoot, source: &str) -> Vec<String> {
 
 #[test]
 fn top_level_await_is_recorded() {
-    let positives: &[&str] = &["const x = await f();", "await f();", "if (await f()) { g(); }", "try { await f(); } catch (e) { }", "for await (const x of xs) { }", "for await (x of xs) { }", "let a = 1;\nawait f();\nawait g();"];
+    let positives: &[&str] = &[
+        "const x = await f();",
+        "await f();",
+        "if (await f()) { g(); }",
+        "try { await f(); } catch (e) { }",
+        "for await (const x of xs) { }",
+        "for await (x of xs) { }",
+        "let a = 1;\nawait f();\nawait g();",
+    ];
     for source in positives {
         let root = build(source);
         assert!(root.has_top_level_await(), "{source}: expected top-level await");

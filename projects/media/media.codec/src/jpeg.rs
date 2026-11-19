@@ -428,7 +428,8 @@ mod tests {
             if jpeg[at] == 0xFF {
                 assert_eq!(jpeg[at + 1], 0x00, "un-stuffed 0xFF in scan data");
                 at += 2;
-            } else {
+            }
+            else {
                 at += 1;
             }
         }
@@ -446,9 +447,7 @@ mod tests {
         std::fs::write(&path, &jpeg).expect("write jpg");
 
         let mut library = MediaLibrary::new();
-        let bitmap = library
-            .image(&path.to_string_lossy(), DecodeLimits::project_default())
-            .expect("WIC must decode our baseline stream");
+        let bitmap = library.image(&path.to_string_lossy(), DecodeLimits::project_default()).expect("WIC must decode our baseline stream");
         assert_eq!(bitmap.width, 64);
         assert_eq!(bitmap.height, 48);
 

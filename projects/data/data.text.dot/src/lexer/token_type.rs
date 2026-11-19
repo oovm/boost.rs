@@ -93,7 +93,9 @@ impl TokenType for DotTokenType {
             Self::String | Self::Number => UniversalTokenRole::Literal,
             Self::Graph | Self::Digraph | Self::Subgraph | Self::Node | Self::Edge | Self::Strict => UniversalTokenRole::Keyword,
             Self::Arrow | Self::Line | Self::Equal | Self::Semicolon | Self::Comma | Self::Colon => UniversalTokenRole::Operator,
-            Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::LeftParen | Self::RightParen => UniversalTokenRole::Punctuation,
+            Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::LeftParen | Self::RightParen => {
+                UniversalTokenRole::Punctuation
+            }
             Self::Comment => UniversalTokenRole::Comment,
             _ => UniversalTokenRole::None,
         }

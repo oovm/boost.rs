@@ -55,7 +55,8 @@ pub fn parse_word_srt(body: &str) -> Result<Vec<WordTiming>, Error> {
     let mut timings = Vec::new();
     for block in body.split("\n\n") {
         let mut lines = block.lines().filter(|line| !line.trim().is_empty());
-        let Some(header) = lines.find(|line| line.contains("-->")) else {
+        let Some(header) = lines.find(|line| line.contains("-->"))
+        else {
             continue;
         };
         let (start, end) = header.split_once("-->").ok_or_else(|| Error::invalid_input("word subtitle header is not `start --> end`"))?;
@@ -76,9 +77,7 @@ pub fn parse_word_srt(body: &str) -> Result<Vec<WordTiming>, Error> {
 /// Parses `HH:MM:SS,mmm` (or `.mmm`) into milliseconds.
 fn parse_srt_time(value: &str) -> Result<u64, Error> {
     let normalized = value.replace('.', ",");
-    let (clock, millis) = normalized
-        .split_once(',')
-        .ok_or_else(|| Error::invalid_input(format!("time `{value}` has no milliseconds")))?;
+    let (clock, millis) = normalized.split_once(',').ok_or_else(|| Error::invalid_input(format!("time `{value}` has no milliseconds")))?;
     let mut parts = clock.split(':');
     let (h, m, s) = match (parts.next(), parts.next(), parts.next(), parts.next()) {
         (Some(h), Some(m), Some(s), None) => (h, m, s),
@@ -104,12 +103,7 @@ pub fn run_bridge(command: &BridgeCommand) -> Result<(), Error> {
         .map_err(|error| Error::io(format!("cannot start `{}`: {error}", command.program)))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::encode(format!(
-            "`{}` exited with {}: {}",
-            command.program,
-            output.status.code().unwrap_or(-1),
-            stderr.trim()
-        )));
+        return Err(Error::encode(format!("`{}` exited with {}: {}", command.program, output.status.code().unwrap_or(-1), stderr.trim())));
     }
     Ok(())
 }

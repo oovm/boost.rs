@@ -89,9 +89,16 @@ impl TokenType for NginxTokenType {
 
     fn role(&self) -> Self::Role {
         match self {
-            Self::ServerKeyword | Self::LocationKeyword | Self::UpstreamKeyword | Self::HttpKeyword | Self::EventsKeyword | Self::ListenKeyword | Self::ServerNameKeyword | Self::RootKeyword | Self::IndexKeyword | Self::ProxyPassKeyword => {
-                UniversalTokenRole::Keyword
-            }
+            Self::ServerKeyword
+            | Self::LocationKeyword
+            | Self::UpstreamKeyword
+            | Self::HttpKeyword
+            | Self::EventsKeyword
+            | Self::ListenKeyword
+            | Self::ServerNameKeyword
+            | Self::RootKeyword
+            | Self::IndexKeyword
+            | Self::ProxyPassKeyword => UniversalTokenRole::Keyword,
 
             Self::LeftBrace | Self::RightBrace | Self::Semicolon => UniversalTokenRole::Punctuation,
 

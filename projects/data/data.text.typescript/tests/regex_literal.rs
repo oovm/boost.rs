@@ -32,7 +32,9 @@ fn regex_character_class_absorbs_slash_and_escapes() {
     assert_clean(r"const re = /[a/b]/;");
     assert_clean(r"const re = /[^\]\/\\]/g;");
     assert_clean(r"const re = /\p{P}[\u00B7\/]/u;");
-    assert_clean(r"export default /\p{P}|\p{S}|\p{Cf}|[\u00AD\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\p{Cn}|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu;");
+    assert_clean(
+        r"export default /\p{P}|\p{S}|\p{Cf}|[\u00AD\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|\p{Cn}|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/gu;",
+    );
 }
 
 #[test]

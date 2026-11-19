@@ -5,7 +5,9 @@ use crate::{
     parser::{HandlebarsParser, element_type::HandlebarsElementType},
 };
 use core::range::Range;
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 
 /// AST builder for the Handlebars language.
 #[derive(Clone)]
@@ -21,7 +23,12 @@ impl<'config> HandlebarsBuilder<'config> {
 }
 
 impl<'config> Builder<HandlebarsLanguage> for HandlebarsBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<HandlebarsLanguage>) -> TextDiagnostics<HandlebarsRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<HandlebarsLanguage>,
+    ) -> TextDiagnostics<HandlebarsRoot> {
         let parser = HandlebarsParser::new(self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<HandlebarsLanguage>::default();
@@ -45,7 +52,11 @@ impl<'config> Builder<HandlebarsLanguage> for HandlebarsBuilder<'config> {
 }
 
 impl<'config> HandlebarsBuilder<'config> {
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, HandlebarsLanguage>, source: &SourceText) -> Result<HandlebarsRoot, TextError> {
+    pub(crate) fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, HandlebarsLanguage>,
+        source: &SourceText,
+    ) -> Result<HandlebarsRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let mut nodes = Vec::new();
 
@@ -66,9 +77,19 @@ impl<'config> HandlebarsBuilder<'config> {
         match node.green.kind {
             HandlebarsElementType::Mustache => {
                 // Simplified Mustache building
-                Ok(TemplateNode::Mustache(Mustache { expression: Expression::Path(text(source, node.span())), is_unescaped: false, span: node.span() }))
+                Ok(TemplateNode::Mustache(Mustache {
+                    expression: Expression::Path(text(source, node.span())),
+                    is_unescaped: false,
+                    span: node.span(),
+                }))
             }
-            HandlebarsElementType::Block => Ok(TemplateNode::Block(Block { name: "todo".to_string(), params: Vec::new(), body: Vec::new(), inverse: None, span: node.span() })),
+            HandlebarsElementType::Block => Ok(TemplateNode::Block(Block {
+                name: "todo".to_string(),
+                params: Vec::new(),
+                body: Vec::new(),
+                inverse: None,
+                span: node.span(),
+            })),
             HandlebarsElementType::CommentNode => Ok(TemplateNode::Comment(Comment { text: text(source, node.span()), span: node.span() })),
             _ => Ok(TemplateNode::Content(Content { text: text(source, node.span()), span: node.span() })),
         }

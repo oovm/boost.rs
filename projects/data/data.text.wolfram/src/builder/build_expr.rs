@@ -5,7 +5,7 @@ use crate::{
     lexer::token_type::WolframTokenType,
     parser::element_type::WolframElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{RedNode, RedTree, Source, TextError, TokenType};
 
 impl<'config> WolframBuilder<'config> {
     pub(crate) fn build_expr<S: Source + ?Sized>(&self, node: RedNode<'_, WolframLanguage>, source: &S) -> Result<Expression, TextError> {
@@ -188,7 +188,17 @@ impl<'config> WolframBuilder<'config> {
                 continue;
             }
             match child {
-                RedTree::Leaf(t) if matches!(t.kind(), WolframTokenType::Ampersand | WolframTokenType::Factorial | WolframTokenType::Prime | WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore) => {
+                RedTree::Leaf(t)
+                    if matches!(
+                        t.kind(),
+                        WolframTokenType::Ampersand
+                            | WolframTokenType::Factorial
+                            | WolframTokenType::Prime
+                            | WolframTokenType::Underscore
+                            | WolframTokenType::DoubleUnderscore
+                            | WolframTokenType::TripleUnderscore
+                    ) =>
+                {
                     operator = Some(t.kind());
                 }
                 RedTree::Node(n) => operand = Some(self.build_expr(n, source)?),
@@ -235,7 +245,12 @@ impl<'config> WolframBuilder<'config> {
                 continue;
             }
             match child {
-                RedTree::Leaf(t) if matches!(t.kind(), WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore) => {
+                RedTree::Leaf(t)
+                    if matches!(
+                        t.kind(),
+                        WolframTokenType::Underscore | WolframTokenType::DoubleUnderscore | WolframTokenType::TripleUnderscore
+                    ) =>
+                {
                     blank = t.kind();
                 }
                 RedTree::Node(n) => name = Some(self.build_expr(n, source)?),

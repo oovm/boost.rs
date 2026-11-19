@@ -6,4 +6,4 @@
 /// 远程会话帧队列：拼帧、请求标识、`responseTo` 配对、握手门禁与中断清算。
 pub mod session;
 
-pub use session::{MongoWireSession, MORE_TO_COME_FLAG, SessionError, WireEvent};
+pub use session::{MORE_TO_COME_FLAG, MongoWireSession, SessionError, WireEvent};

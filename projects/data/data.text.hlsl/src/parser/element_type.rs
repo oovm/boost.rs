@@ -476,7 +476,11 @@ impl ElementType for HlslElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::Root => UniversalElementRole::Root,
-            Self::FunctionDeclaration | Self::StructDeclaration | Self::VariableDeclaration | Self::GlobalConstDeclaration | Self::TypeAliasDeclaration => UniversalElementRole::Definition,
+            Self::FunctionDeclaration
+            | Self::StructDeclaration
+            | Self::VariableDeclaration
+            | Self::GlobalConstDeclaration
+            | Self::TypeAliasDeclaration => UniversalElementRole::Definition,
             Self::BufferBlock => UniversalElementRole::Definition,
             Self::Block => UniversalElementRole::Container,
             Self::TypeReference => UniversalElementRole::Typing,
@@ -494,7 +498,9 @@ impl ElementType for HlslElementType {
             | Self::DiscardStatement
             | Self::ExpressionStatement
             | Self::Statement => UniversalElementRole::Statement,
-            Self::Expr | Self::ExprUnary | Self::ExprBinary | Self::ExprMember | Self::ExprIndex | Self::ExprParen | Self::Expression => UniversalElementRole::Expression,
+            Self::Expr | Self::ExprUnary | Self::ExprBinary | Self::ExprMember | Self::ExprIndex | Self::ExprParen | Self::Expression => {
+                UniversalElementRole::Expression
+            }
             Self::ExprCall => UniversalElementRole::Call,
             _ => UniversalElementRole::None,
         }

@@ -330,7 +330,10 @@ impl<'config> MarkdownLexer<'config> {
                     if state.peek() == Some('\n') {
                         state.advance(1)
                     }
-                    if state.peek() == Some('-') && state.source().get_char_at(state.get_position() + 1) == Some('-') && state.source().get_char_at(state.get_position() + 2) == Some('-') {
+                    if state.peek() == Some('-')
+                        && state.source().get_char_at(state.get_position() + 1) == Some('-')
+                        && state.source().get_char_at(state.get_position() + 2) == Some('-')
+                    {
                         state.advance(3);
                         found_end = true;
                         break;

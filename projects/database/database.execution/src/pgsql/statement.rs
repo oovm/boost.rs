@@ -10,13 +10,15 @@ use std::sync::Arc;
 
 use database_query::{
     OnCommit, PgObjectStatement, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind,
-    SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query,
-    bind_sql_catalog, describe_plan, is_ddl_statement, parse_ddl, parse_pg_object_statement, parse_pg_utility, parse_session_command,
-    plan_statement_for_dialect, rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
+    SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, bind_sql_catalog, describe_plan,
+    is_ddl_statement, parse_ddl, parse_pg_object_statement, parse_pg_utility, parse_session_command, plan_statement_for_dialect,
+    rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
 };
 
-use crate::cluster::TransactionHandle;
-use crate::sql_schema::{SqlDdlOutcome, apply_auto_increment};
+use crate::{
+    cluster::TransactionHandle,
+    sql_schema::{SqlDdlOutcome, apply_auto_increment},
+};
 
 use super::session::{ABORTED_BLOCK, PgsqlSqlRuntime, TransactionControl, TransactionSession};
 
@@ -210,10 +212,7 @@ pub fn dispatch_statement(
                     let rendered = render_setting(value);
                     if !session.set_statement_timeout(&rendered) {
                         session.fail();
-                        return Err(StatementError::new(
-                            "22023",
-                            format!("invalid value for parameter \"statement_timeout\": \"{rendered}\""),
-                        ));
+                        return Err(StatementError::new("22023", format!("invalid value for parameter \"statement_timeout\": \"{rendered}\"")));
                     }
                     return Ok(StatementOutcome::Command("SET"));
                 }
@@ -236,9 +235,9 @@ pub fn dispatch_statement(
                 session.fail();
                 return Err(StatementError::new("0A000", "PostgreSQL query execution is not implemented (no SQL runtime)"));
             };
-            run_statement(trimmed, runtime, session).map(StatementOutcome::Result).map_err(|(sqlstate, message)| {
-                StatementError::new(sqlstate, message)
-            })
+            run_statement(trimmed, runtime, session)
+                .map(StatementOutcome::Result)
+                .map_err(|(sqlstate, message)| StatementError::new(sqlstate, message))
         }
     }
 }
@@ -255,10 +254,7 @@ fn required_privilege(plan: &SqlExecutionPlan) -> Option<(database_storage::pgsq
         SqlExecutionPlan::UpdateScan(plan) => Some((PgPrivilege::Update, plan.namespace.as_str())),
         SqlExecutionPlan::Delete(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
         SqlExecutionPlan::DeleteScan(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
-        SqlExecutionPlan::Join(_)
-        | SqlExecutionPlan::Scalar(_)
-        | SqlExecutionPlan::SetOperation(_)
-        | SqlExecutionPlan::InsertSelect(_) => None,
+        SqlExecutionPlan::Join(_) | SqlExecutionPlan::Scalar(_) | SqlExecutionPlan::SetOperation(_) | SqlExecutionPlan::InsertSelect(_) => None,
     }
 }
 
@@ -337,8 +333,8 @@ fn apply_object_statement(
         PgObjectStatement::CreateRole { role, password, if_not_exists } => {
             let role = match password {
                 Some(password) => {
-                    let password = database_storage::pgsql::PgPassword::derive(&password, &role.name)
-                        .map_err(|error| failure(session, error))?;
+                    let password =
+                        database_storage::pgsql::PgPassword::derive(&password, &role.name).map_err(|error| failure(session, error))?;
                     database_storage::pgsql::PgRole { password: Some(password), ..role }
                 }
                 None => role,
@@ -416,10 +412,7 @@ fn validate_database(
 ) -> Result<(), database_storage::pgsql::ObjectError> {
     use database_storage::pgsql::ObjectError;
     if !matches!(database.encoding.to_ascii_uppercase().as_str(), "UTF8" | "UNICODE") {
-        return Err(ObjectError::InvalidOption(format!(
-            "encoding \"{}\" is not supported, the gateway stores UTF8",
-            database.encoding
-        )));
+        return Err(ObjectError::InvalidOption(format!("encoding \"{}\" is not supported, the gateway stores UTF8", database.encoding)));
     }
     if database.connection_limit < -1 {
         return Err(ObjectError::InvalidOption("`CONNECTION LIMIT` must be -1 or a non-negative number".to_string()));
@@ -555,19 +548,12 @@ fn backfill_added_generated_column(
     };
     let field_types = table_entry.fields.iter().map(|field| (field.field_id, field.field_type.clone())).collect();
     let namespace = format!("table:{}", table_entry.type_id);
-    crate::sql_exec::backfill_generated_rows(
-        runtime.executor.as_ref(),
-        session.transaction_handle(),
-        &namespace,
-        &plan,
-        &field_types,
-        dialect,
-    )
-    .map(|_| ())
-    .map_err(|error| {
-        let (code, message) = statement_error("backfill", error);
-        StatementError::new(code, message)
-    })
+    crate::sql_exec::backfill_generated_rows(runtime.executor.as_ref(), session.transaction_handle(), &namespace, &plan, &field_types, dialect)
+        .map(|_| ())
+        .map_err(|error| {
+            let (code, message) = statement_error("backfill", error);
+            StatementError::new(code, message)
+        })
 }
 
 /// bind → plan → execute，错误已映射为 SQLSTATE，并已标记事务失败。
@@ -679,8 +665,7 @@ fn run_statement_inner(
     let handle_ref: Option<&dyn TransactionHandle> = session.transaction_handle();
     // `nextval` / `currval` / `setval` read and advance the durable sequence
     // state in the object catalog; the statement installs it for its own run.
-    let sequences: Arc<dyn database_query::SqlSequenceCatalog> =
-        Arc::new(ObjectSequences(Arc::clone(&runtime.objects)));
+    let sequences: Arc<dyn database_query::SqlSequenceCatalog> = Arc::new(ObjectSequences(Arc::clone(&runtime.objects)));
     let result = database_query::with_sequence_catalog(sequences, || {
         crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres)
     })

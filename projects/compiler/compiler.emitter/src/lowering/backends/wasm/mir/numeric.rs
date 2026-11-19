@@ -33,44 +33,24 @@ const I64_NEGATE_STEPS: &[TargetOperandStep] =
     &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I64, value: 0 }, TargetOperandStep::Arguments];
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
-    TargetOperatorPlan {
-        arity: 2,
-        operand_type,
-        result_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: opcode,
-    }
+    TargetOperatorPlan { arity: 2, operand_type, result_type, recipe: TargetOperatorRecipe::Operands, encoding: opcode }
 }
 
 const fn unary(operand_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
-    TargetOperatorPlan {
-        arity: 1,
-        operand_type,
-        result_type: operand_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: opcode,
-    }
+    TargetOperatorPlan { arity: 1, operand_type, result_type: operand_type, recipe: TargetOperatorRecipe::Operands, encoding: opcode }
 }
 
 /// 单实参、结果载体与实参载体不同的目标指令（如位模式重解释）。
 const fn unary_to(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
-    TargetOperatorPlan {
-        arity: 1,
-        operand_type,
-        result_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: opcode,
-    }
+    TargetOperatorPlan { arity: 1, operand_type, result_type, recipe: TargetOperatorRecipe::Operands, encoding: opcode }
 }
 
-const fn integer_negate(operand_type: TargetOperandType, steps: &'static [TargetOperandStep], sub_opcode: WasmOpcode) -> TargetOperatorPlan<WasmOpcode> {
-    TargetOperatorPlan {
-        arity: 1,
-        operand_type,
-        result_type: operand_type,
-        recipe: TargetOperatorRecipe::Steps(steps),
-        encoding: sub_opcode,
-    }
+const fn integer_negate(
+    operand_type: TargetOperandType,
+    steps: &'static [TargetOperandStep],
+    sub_opcode: WasmOpcode,
+) -> TargetOperatorPlan<WasmOpcode> {
+    TargetOperatorPlan { arity: 1, operand_type, result_type: operand_type, recipe: TargetOperatorRecipe::Steps(steps), encoding: sub_opcode }
 }
 
 /// 唯一助记符表。未知助记符返回 `None`。

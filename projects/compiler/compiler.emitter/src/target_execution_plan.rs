@@ -321,11 +321,7 @@ impl TargetExecutionPlan {
 
     /// 登记 nominal sum 的冻结表示合同（集成测试专用）。
     #[doc(hidden)]
-    pub fn testing_register_sum_representation(
-        &mut self,
-        nominal: compiler_types::NominalInstanceId,
-        sum: SumRepresentation,
-    ) -> &mut Self {
+    pub fn testing_register_sum_representation(&mut self, nominal: compiler_types::NominalInstanceId, sum: SumRepresentation) -> &mut Self {
         self.sum_reps.insert(nominal, sum);
         self
     }

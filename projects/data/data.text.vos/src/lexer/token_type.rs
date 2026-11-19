@@ -113,9 +113,20 @@ impl TokenType for VosTokenType {
             Self::Identifier => UniversalTokenRole::Name,
             Self::Operator => UniversalTokenRole::Operator,
             Self::StringLiteral | Self::NumberLiteral | Self::BooleanLiteral | Self::NullLiteral => UniversalTokenRole::Literal,
-            Self::LeftBrace | Self::RightBrace | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::Colon | Self::Semicolon | Self::Comma | Self::Equal | Self::Question | Self::Less | Self::Greater | Self::Dot => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Colon
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Equal
+            | Self::Question
+            | Self::Less
+            | Self::Greater
+            | Self::Dot => UniversalTokenRole::Punctuation,
             _ => UniversalTokenRole::Keyword,
         }
     }

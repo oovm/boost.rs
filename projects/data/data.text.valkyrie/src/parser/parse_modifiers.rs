@@ -64,7 +64,10 @@ pub(crate) fn is_declaration_keyword(kind: &ValkyrieTokenType) -> bool {
 }
 
 /// 解析锚点关键字前的 `Identifier` 修饰符序列。
-pub(crate) fn parse_modifiers_followed_by<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>, is_follower: impl Fn(&ValkyrieTokenType) -> bool) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_modifiers_followed_by<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+    is_follower: impl Fn(&ValkyrieTokenType) -> bool,
+) -> Result<(), data_text_core::TextError> {
     while state.at(ValkyrieTokenType::Identifier) {
         let next = state.peek_non_trivia_kind_at(1);
         if !next.is_some_and(|kind| is_follower(&kind)) {
@@ -98,15 +101,23 @@ pub(crate) fn parse_parameter_modifiers<S: data_text_core::Source + ?Sized>(stat
 }
 
 /// `sealed class Foo` 等以 Identifier 开头的声明项。
-pub(crate) fn dispatch_prefixed_declaration<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
-    let next = state.peek_non_trivia_kind_at(1).ok_or_else(|| data_text_core::TextError::custom_error("expected declaration keyword after modifier"))?;
+pub(crate) fn dispatch_prefixed_declaration<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
+    let next = state
+        .peek_non_trivia_kind_at(1)
+        .ok_or_else(|| data_text_core::TextError::custom_error("expected declaration keyword after modifier"))?;
     match next {
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Micro) => super::parse_items::parse_micro(state),
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Mezzo) => super::parse_items::parse_mezzo(state),
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Namespace) => super::parse_items::parse_namespace(state),
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Class) => super::parse_items::parse_class(state),
-        ValkyrieTokenType::Keyword(ValkyrieKeywords::Struct) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Structure) => super::parse_items::parse_struct(state),
-        ValkyrieTokenType::Keyword(ValkyrieKeywords::Enums) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Unity) => super::parse_items::parse_enums(state),
+        ValkyrieTokenType::Keyword(ValkyrieKeywords::Struct) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Structure) => {
+            super::parse_items::parse_struct(state)
+        }
+        ValkyrieTokenType::Keyword(ValkyrieKeywords::Enums) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Unity) => {
+            super::parse_items::parse_enums(state)
+        }
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Enum) => super::parse_items::parse_enum(state),
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Flags) => super::parse_items::parse_flags(state),
         ValkyrieTokenType::Keyword(ValkyrieKeywords::Trait) => super::parse_items::parse_trait(state),

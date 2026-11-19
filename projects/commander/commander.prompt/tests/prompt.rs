@@ -1,14 +1,16 @@
 //! Conformance for the five prompt primitives over a scripted IO seam.
 
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+};
 
 use commander_core::{
-    AwaitActionOutcome, AwaitActionRequest, Clock, ConfirmRequest, Environment, InputRequest,
-    InputValidationError, Localizer, PasswordRequest, PromptApi, PromptHooks, SelectChoice,
-    SelectRequest,
-    Writer,
+    AwaitActionOutcome, AwaitActionRequest, Clock, ConfirmRequest, Environment, InputRequest, InputValidationError, Localizer, PasswordRequest,
+    PromptApi, PromptHooks, SelectChoice, SelectRequest, Writer,
 };
 use commander_prompt::{EchoRestore, EngineDeps, IoEvent, PromptEngine, PromptIo};
 use commander_types::{CommanderError, ExitCode, error_id};
@@ -107,12 +109,7 @@ fn make_engine(events: VecDeque<IoEvent>, echo_capable: bool, interactive: bool)
     let stdin_claimed = Arc::new(AtomicBool::new(false));
     let cancel = Arc::new(AtomicBool::new(false));
     let deps = EngineDeps {
-        io: Arc::new(Mutex::new(FakeIo {
-            events,
-            echo_capable,
-            echo_off: Arc::clone(&echo_off),
-            reads: Arc::clone(&reads),
-        })),
+        io: Arc::new(Mutex::new(FakeIo { events, echo_capable, echo_off: Arc::clone(&echo_off), reads: Arc::clone(&reads) })),
         writer: Arc::new(LogWriter(Arc::clone(&log))),
         localizer: Arc::new(MapLocalizer::new(&[
             ("cli.prompt.go", "Proceed?"),
@@ -221,13 +218,8 @@ fn confirm_absolute_deadline_times_out_immediately() {
 #[test]
 fn input_returns_raw_line_and_retries_on_validation() {
     let (engine, harness) = make_engine(bytes("ab\nabcd\n"), true, true);
-    let req = InputRequest::new("cli.prompt.name").validate(|value| {
-        if value.chars().count() < 3 {
-            Some(InputValidationError::new("demo::too_short"))
-        } else {
-            None
-        }
-    });
+    let req = InputRequest::new("cli.prompt.name")
+        .validate(|value| if value.chars().count() < 3 { Some(InputValidationError::new("demo::too_short")) } else { None });
     assert_eq!(engine.input(&req).unwrap(), "abcd");
     let captured = harness.lines();
     assert_eq!(captured[0], "Name");
@@ -238,13 +230,8 @@ fn input_returns_raw_line_and_retries_on_validation() {
 #[test]
 fn input_validation_falls_back_to_bare_code() {
     let (engine, harness) = make_engine(bytes("ab\nabcd\n"), true, true);
-    let req = InputRequest::new("cli.prompt.name").validate(|value| {
-        if value == "ab" {
-            Some(InputValidationError::new("demo::unlocalized"))
-        } else {
-            None
-        }
-    });
+    let req = InputRequest::new("cli.prompt.name")
+        .validate(|value| if value == "ab" { Some(InputValidationError::new("demo::unlocalized")) } else { None });
     assert_eq!(engine.input(&req).unwrap(), "abcd");
     assert!(harness.lines().iter().any(|l| l == "demo::unlocalized"));
 }
@@ -260,10 +247,7 @@ fn input_accepts_utf8_and_keeps_trailing_spaces() {
 #[test]
 fn select_lists_choices_and_returns_stable_value() {
     let (engine, harness) = make_engine(bytes("2\n"), true, true);
-    let req = SelectRequest::new(
-        "cli.prompt.pick",
-        vec![SelectChoice::new("alpha", "cli.label.a"), SelectChoice::new("beta", "cli.label.b")],
-    );
+    let req = SelectRequest::new("cli.prompt.pick", vec![SelectChoice::new("alpha", "cli.label.a"), SelectChoice::new("beta", "cli.label.b")]);
     assert_eq!(engine.select(&req).unwrap(), "beta");
     assert_eq!(harness.lines(), vec!["Pick one", "  1) Alpha", "  2) Beta", ""], "list on stderr");
 }
@@ -300,13 +284,7 @@ fn password_reads_secret_and_restores_echo() {
 #[test]
 fn password_backspace_and_escape_are_handled() {
     let mut events = VecDeque::new();
-    events.extend([
-        IoEvent::Byte(b'a'),
-        IoEvent::Byte(0x7f),
-        IoEvent::Byte(b'b'),
-        IoEvent::Byte(0x1b),
-        IoEvent::Byte(b'\n'),
-    ]);
+    events.extend([IoEvent::Byte(b'a'), IoEvent::Byte(0x7f), IoEvent::Byte(b'b'), IoEvent::Byte(0x1b), IoEvent::Byte(b'\n')]);
     let (engine, _h) = make_engine(events, true, true);
     let secret = engine.password(&PasswordRequest::new("cli.prompt.secret")).unwrap();
     assert_eq!(secret.expose_secret(), "b");
@@ -352,11 +330,7 @@ fn await_action_confirms_on_empty_line_and_defers_on_d() {
     let (engine, harness) = make_engine(bytes("\n"), true, true);
     let req = AwaitActionRequest::new("dns-txt", "cli.prompt.dns");
     assert_eq!(engine.await_action(&req).unwrap(), AwaitActionOutcome::Confirmed);
-    assert_eq!(
-        harness.lines(),
-        vec!["Add the TXT record", "Press enter to continue or d to defer.", ""],
-        "body and hint go to stderr"
-    );
+    assert_eq!(harness.lines(), vec!["Add the TXT record", "Press enter to continue or d to defer.", ""], "body and hint go to stderr");
 
     let (engine, _h) = make_engine(bytes("d\n"), true, true);
     assert_eq!(engine.await_action(&req).unwrap(), AwaitActionOutcome::Deferred);

@@ -10,19 +10,17 @@ use crate::{
     },
     lowering::backends::ovm::lir::{OdinLirInstruction, encode_odin_function},
 };
+use compiler_target::{ExternalImportLink, NamePath};
+use compiler_types::{ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
 use data_binary_odin::{
     IntrinsicOpcode, Odin_VERSION, OdinConstant, OdinExport, OdinExportKind, OdinFunction, OdinHeadCode, OdinImport, OdinImportKind,
     OdinLayout, OdinModuleData,
 };
-use compiler_target::{ExternalImportLink, NamePath};
-use compiler_types::{ItemInstanceId, LayoutId, NominalInstanceId, VariantId};
 
 use super::executable::{ExecutableLoweringContext, block_label, collect_reachable_blocks, slots::ExecutableSlotPlan};
 use crate::{
     FragmentSubmission, ProgramTextRepresentation, Result, TargetExecutionPlan,
-    target_operator::{
-        TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe,
-    },
+    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
 };
 
 /// 宿主 builtin 导入模块名（链接名在 imports section；热路径只用下标）。
@@ -453,7 +451,10 @@ fn build_nyar_function_entry_arities(exec: &TargetExecutionPlan, operations: &[I
 ///
 /// 常量实参的位宽必须由它决定；计划侧没有这张表时，Call 操作数位只能回落到
 /// semantic MIR 合同（`Constant::Int` = Integer64），会把 i32 形参静默拓宽。
-fn build_nyar_function_param_types(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> crate::Result<BTreeMap<i32, Vec<SemanticType>>> {
+fn build_nyar_function_param_types(
+    exec: &TargetExecutionPlan,
+    operations: &[ItemInstanceId],
+) -> crate::Result<BTreeMap<i32, Vec<SemanticType>>> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
         let Some(view) = exec.get_function(instance)
@@ -750,8 +751,7 @@ fn lower_mir_function_to_bytecode(
     let value_definitions = build_nyar_value_definitions(mir_fn, &slots);
     // 发射前冻结文本表示计划：缺载体事实的 `utf8` 值在此结构化拒收，
     // 发射期只读冻结表，不再沿 SSA 定义链恢复载体。
-    let text_representations =
-        freeze_text_representations(&submission.backend_plan, mir_fn, &value_definitions, &external_link_by_instance)?;
+    let text_representations = freeze_text_representations(&submission.backend_plan, mir_fn, &value_definitions, &external_link_by_instance)?;
 
     let mut lowerer = NyarMirLowerer {
         submission,

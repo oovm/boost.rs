@@ -5,7 +5,7 @@ mod build_root;
 mod utils;
 
 use crate::{WolframLanguage, WolframParser};
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, Parser, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, Parser, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source};
 
 /// Extract source text for a span.
 pub(crate) fn text(source: &(impl Source + ?Sized), range: data_text_core::Range<usize>) -> String {
@@ -27,7 +27,12 @@ impl<'config> WolframBuilder<'config> {
 }
 
 impl<'config> Builder<WolframLanguage> for WolframBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<WolframLanguage>) -> BuildOutput<WolframLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<WolframLanguage>,
+    ) -> BuildOutput<WolframLanguage> {
         let parser = WolframParser::new(self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<WolframLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);

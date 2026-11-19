@@ -192,8 +192,7 @@ pub struct SharedElfSpec<'a> {
 }
 
 /// 规格的空白底稿：除 `image`/`exports` 外全部为空。
-static EMPTY_SPEC_IMAGE: SharedElfImage =
-    SharedElfImage { text: Vec::new(), rodata: Vec::new(), data: Vec::new(), bss: Vec::new() };
+static EMPTY_SPEC_IMAGE: SharedElfImage = SharedElfImage { text: Vec::new(), rodata: Vec::new(), data: Vec::new(), bss: Vec::new() };
 
 impl Default for SharedElfSpec<'_> {
     fn default() -> Self {
@@ -268,10 +267,7 @@ impl SharedElfWriter {
         }
         for call in calls {
             if call.import as usize >= imports.len() {
-                return Err(SharedElfWriteError::ImportIndexOutOfRange {
-                    import: call.import,
-                    import_count: imports.len() as u32,
-                });
+                return Err(SharedElfWriteError::ImportIndexOutOfRange { import: call.import, import_count: imports.len() as u32 });
             }
         }
 
@@ -394,20 +390,14 @@ impl SharedElfWriter {
         }
         for reference in data_references {
             if reference.data_offset as usize >= image.data.len() {
-                return Err(SharedElfWriteError::DataOutOfRange {
-                    offset: reference.data_offset,
-                    data_len: image.data.len() as u32,
-                });
+                return Err(SharedElfWriteError::DataOutOfRange { offset: reference.data_offset, data_len: image.data.len() as u32 });
             }
             let target = i64::from(rw_off) + i64::from(reference.data_offset);
             fixup(reference.rel32_field, target, &mut text)?;
         }
         for relocation in data_relocations {
             if relocation.offset as usize + 8 > image.data.len() {
-                return Err(SharedElfWriteError::DataOutOfRange {
-                    offset: relocation.offset,
-                    data_len: image.data.len() as u32,
-                });
+                return Err(SharedElfWriteError::DataOutOfRange { offset: relocation.offset, data_len: image.data.len() as u32 });
             }
             match relocation.target {
                 SharedElfDataTarget::Text(offset) if offset as usize >= image.text.len() => {

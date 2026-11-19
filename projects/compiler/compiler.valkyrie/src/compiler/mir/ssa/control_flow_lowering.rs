@@ -253,8 +253,7 @@ impl MirBuilder {
             let returns = self.terminator.is_some();
             let exit = (self.current_block, self.bindings.clone());
             if self.terminator.is_none() {
-                let merge_ty =
-                    if carry_value { Self::branch_merge_type(&result, expected_type, &self.value_types) } else { None };
+                let merge_ty = if carry_value { Self::branch_merge_type(&result, expected_type, &self.value_types) } else { None };
                 if let (true, Some(exit)) = (carry_value, exit_value) {
                     self.report_branch_value_mismatch(&result, exit, else_body.span.clone(), "else", "then");
                 }
@@ -379,7 +378,10 @@ impl MirBuilder {
         }
 
         let result = if self.terminator.is_none() {
-            body.expr.as_ref().map(|expr| self.lower_expr_to_operand_with_hint(expr, expected_type)).unwrap_or(MirOperand::Constant(MirConstant::Unit))
+            body.expr
+                .as_ref()
+                .map(|expr| self.lower_expr_to_operand_with_hint(expr, expected_type))
+                .unwrap_or(MirOperand::Constant(MirConstant::Unit))
         }
         else {
             MirOperand::Constant(MirConstant::Unit)
@@ -899,8 +901,7 @@ impl MirBuilder {
         arm_name: &str,
         other_name: &str,
     ) {
-        let (Some(merged_ty), Some(arm_ty)) =
-            (self.value_types.get(&merged).cloned(), infer_builder_operand_type(arm, &self.value_types))
+        let (Some(merged_ty), Some(arm_ty)) = (self.value_types.get(&merged).cloned(), infer_builder_operand_type(arm, &self.value_types))
         else {
             return;
         };

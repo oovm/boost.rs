@@ -31,7 +31,13 @@ pub trait FormatRule<L: Language, C: Clone, S: Clone = crate::state::FormatState
     }
 
     /// Applies the formatting rule to a node, returning an optional document.
-    fn apply_node<'a>(&self, node: &RedNode<'_, L>, context: &FormatContext<L, C, S>, source: &'a str, format_children: &dyn Fn(&RedNode<'_, L>) -> FormatResult<Document<'a>>) -> FormatResult<Option<Document<'a>>>;
+    fn apply_node<'a>(
+        &self,
+        node: &RedNode<'_, L>,
+        context: &FormatContext<L, C, S>,
+        source: &'a str,
+        format_children: &dyn Fn(&RedNode<'_, L>) -> FormatResult<Document<'a>>,
+    ) -> FormatResult<Option<Document<'a>>>;
 
     /// Applies the formatting rule to a token, returning an optional document.
     fn apply_token<'a>(&self, token: &RedLeaf<L>, context: &FormatContext<L, C, S>, source: &'a str) -> FormatResult<Option<Document<'a>>>;
@@ -93,7 +99,13 @@ impl<L: Language, C: Clone, S: Clone> RuleSet<L, C, S> {
     }
 
     /// Applies all applicable node rules and returns the first successful document.
-    pub fn apply_node_rules<'a>(&self, node: &RedNode<'_, L>, context: &FormatContext<L, C, S>, source: &'a str, format_children: &dyn Fn(&RedNode<'_, L>) -> FormatResult<Document<'a>>) -> FormatResult<Option<Document<'a>>> {
+    pub fn apply_node_rules<'a>(
+        &self,
+        node: &RedNode<'_, L>,
+        context: &FormatContext<L, C, S>,
+        source: &'a str,
+        format_children: &dyn Fn(&RedNode<'_, L>) -> FormatResult<Document<'a>>,
+    ) -> FormatResult<Option<Document<'a>>> {
         for rule in self.applicable_rules_for_node(node) {
             if let Some(doc) = rule.apply_node(node, context, source, format_children)? {
                 return Ok(Some(doc));
@@ -103,7 +115,12 @@ impl<L: Language, C: Clone, S: Clone> RuleSet<L, C, S> {
     }
 
     /// Applies all applicable token rules and returns the first successful document.
-    pub fn apply_token_rules<'a>(&self, token: &RedLeaf<L>, context: &FormatContext<L, C, S>, source: &'a str) -> FormatResult<Option<Document<'a>>> {
+    pub fn apply_token_rules<'a>(
+        &self,
+        token: &RedLeaf<L>,
+        context: &FormatContext<L, C, S>,
+        source: &'a str,
+    ) -> FormatResult<Option<Document<'a>>> {
         for rule in self.applicable_rules_for_token(token) {
             if let Some(doc) = rule.apply_token(token, context, source)? {
                 return Ok(Some(doc));

@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use data_compression::{
-    CodecLimits,
-    {deflate::DeflateLevel, zlib::Zlib},
-};
+use data_compression::{CodecLimits, deflate::DeflateLevel, zlib::Zlib};
 
 use crate::FormatError;
 

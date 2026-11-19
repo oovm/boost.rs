@@ -2,7 +2,7 @@
 pub mod token_type;
 
 use crate::{language::DelphiLanguage, lexer::token_type::DelphiTokenType};
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, DelphiLanguage>;
 
@@ -293,7 +293,13 @@ impl<'config> DelphiLexer<'config> {
         let start = state.get_position();
 
         // Multi-character operators (longest first)
-        let patterns: &[(&str, DelphiTokenType)] = &[(":=", DelphiTokenType::Assign), ("<=", DelphiTokenType::LessEqual), (">=", DelphiTokenType::GreaterEqual), ("<>", DelphiTokenType::NotEqual), ("..", DelphiTokenType::DotDot)];
+        let patterns: &[(&str, DelphiTokenType)] = &[
+            (":=", DelphiTokenType::Assign),
+            ("<=", DelphiTokenType::LessEqual),
+            (">=", DelphiTokenType::GreaterEqual),
+            ("<>", DelphiTokenType::NotEqual),
+            ("..", DelphiTokenType::DotDot),
+        ];
 
         for (pat, kind) in patterns {
             if state.consume_if_starts_with(pat) {
@@ -354,7 +360,12 @@ impl<'config> DelphiLexer<'config> {
 }
 
 impl<'config> Lexer<DelphiLanguage> for DelphiLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<DelphiLanguage>) -> LexOutput<DelphiLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<DelphiLanguage>,
+    ) -> LexOutput<DelphiLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

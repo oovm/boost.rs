@@ -6,8 +6,8 @@ pub mod highlighter;
 use {
     crate::language::SqlLanguage,
     core::range::Range,
-    futures::Future,
     data_text_core::tree::RedNode,
+    futures::Future,
     language_hover::{Hover, HoverProvider},
     language_server::Vfs,
     language_server::service::LanguageService,

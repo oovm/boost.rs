@@ -1,5 +1,5 @@
-use data_binary_core::BudgetTracker;
 use boost_source::binary::{ByteSource, MemorySource};
+use data_binary_core::BudgetTracker;
 use data_binary_zip::{ZipArchiveIndex, ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, index_zip, read_member_payload};
 
 /// Errors opening or reading an OPC package.
@@ -98,9 +98,9 @@ impl OpcPackage {
 /// so a lossy fallback is enough here and the shared ZIP layer stays byte-level.
 fn member_name(member: &ZipMember) -> String {
     match member.name_encoding() {
-        ZipNameEncoding::Utf8 => std::str::from_utf8(&member.raw_name)
-            .map(str::to_owned)
-            .unwrap_or_else(|_| String::from_utf8_lossy(&member.raw_name).into_owned()),
+        ZipNameEncoding::Utf8 => {
+            std::str::from_utf8(&member.raw_name).map(str::to_owned).unwrap_or_else(|_| String::from_utf8_lossy(&member.raw_name).into_owned())
+        }
         ZipNameEncoding::Unspecified => String::from_utf8_lossy(&member.raw_name).into_owned(),
     }
 }

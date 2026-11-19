@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use compiler_types::{
-    CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, Identifier, ItemInstanceId, LinkedSemanticProgram,
-};
+use compiler_types::{CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, Identifier, ItemInstanceId, LinkedSemanticProgram};
 
 use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
 

@@ -530,7 +530,12 @@ impl<'config> EjsLexer<'config> {
 }
 
 impl<'config> Lexer<EjsLanguage> for EjsLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<EjsLanguage>) -> LexOutput<EjsLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<EjsLanguage>,
+    ) -> LexOutput<EjsLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
 

@@ -25,7 +25,12 @@ impl<'config> RubyBuilder<'config> {
 }
 
 impl<'config> Builder<RubyLanguage> for RubyBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RubyLanguage>) -> BuildOutput<RubyLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<RubyLanguage>,
+    ) -> BuildOutput<RubyLanguage> {
         let parser = RubyParser::new(self.config);
         let lexer = crate::lexer::RubyLexer::new(self.config);
 
@@ -53,7 +58,12 @@ impl<'config> RubyBuilder<'config> {
         Ok(RubyRoot { statements, span: Range { start: 0, end: source.length() } })
     }
 
-    fn build_statement_list<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Vec<StatementNode>, data_text_core::TextError> {
+    fn build_statement_list<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<Vec<StatementNode>, data_text_core::TextError> {
         let mut statements = Vec::new();
         let mut offset = base;
         for child in node.children() {
@@ -71,7 +81,12 @@ impl<'config> RubyBuilder<'config> {
     }
 
     /// `begin ... rescue ... end`：本阶段只展开 begin 主体，rescue / ensure 暂跳过。
-    fn build_begin_body<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Vec<StatementNode>, data_text_core::TextError> {
+    fn build_begin_body<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<Vec<StatementNode>, data_text_core::TextError> {
         let mut statements = Vec::new();
         let mut offset = base;
         for child in node.children() {
@@ -91,7 +106,12 @@ impl<'config> RubyBuilder<'config> {
         Ok(statements)
     }
 
-    fn build_statement<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, offset: usize) -> Result<Option<StatementNode>, data_text_core::TextError> {
+    fn build_statement<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        offset: usize,
+    ) -> Result<Option<StatementNode>, data_text_core::TextError> {
         let span = span_at(offset, node.byte_length);
         match node.kind {
             RubyElementType::MethodDefinition => {
@@ -105,7 +125,12 @@ impl<'config> RubyBuilder<'config> {
             }
             RubyElementType::IfStatement | RubyElementType::UnlessStatement => {
                 let (condition, then_body, else_body) = self.split_if(node, source, offset)?;
-                let condition = if node.kind == RubyElementType::UnlessStatement { ExpressionNode::UnaryOp { operator: "!".into(), operand: Box::new(condition), span: span.clone() } } else { condition };
+                let condition = if node.kind == RubyElementType::UnlessStatement {
+                    ExpressionNode::UnaryOp { operator: "!".into(), operand: Box::new(condition), span: span.clone() }
+                }
+                else {
+                    condition
+                };
                 Ok(Some(StatementNode::If { condition, then_body, else_body, span }))
             }
             RubyElementType::WhileStatement => {
@@ -117,8 +142,10 @@ impl<'config> RubyBuilder<'config> {
                 Ok(Some(StatementNode::Until { condition, body, span }))
             }
             RubyElementType::ForStatement => {
-                let var = first_token_text(node, source, offset, |kind| matches!(kind, RubyTokenType::Identifier | RubyTokenType::Constant)).unwrap_or_else(|| "_".into());
-                let iterable = self.first_expr(node, source, offset)?.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span: span.clone() }));
+                let var = first_token_text(node, source, offset, |kind| matches!(kind, RubyTokenType::Identifier | RubyTokenType::Constant))
+                    .unwrap_or_else(|| "_".into());
+                let iterable =
+                    self.first_expr(node, source, offset)?.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span: span.clone() }));
                 let body = self.build_statement_list(node, source, offset)?;
                 Ok(Some(StatementNode::For { var, iterable, body, span }))
             }
@@ -128,19 +155,62 @@ impl<'config> RubyBuilder<'config> {
             }
             RubyElementType::BreakStatement => Ok(Some(StatementNode::Break { span })),
             RubyElementType::AssignmentStatement => {
-                let target = first_token_text(node, source, offset, |kind| matches!(kind, RubyTokenType::Identifier | RubyTokenType::Constant | RubyTokenType::GlobalVariable | RubyTokenType::InstanceVariable | RubyTokenType::ClassVariable))
-                    .unwrap_or_else(|| "_".into());
+                let target = first_token_text(node, source, offset, |kind| {
+                    matches!(
+                        kind,
+                        RubyTokenType::Identifier
+                            | RubyTokenType::Constant
+                            | RubyTokenType::GlobalVariable
+                            | RubyTokenType::InstanceVariable
+                            | RubyTokenType::ClassVariable
+                    )
+                })
+                .unwrap_or_else(|| "_".into());
                 let op = first_token_text(node, source, offset, |kind| {
-                    matches!(kind, RubyTokenType::Assign | RubyTokenType::PlusAssign | RubyTokenType::MinusAssign | RubyTokenType::MultiplyAssign | RubyTokenType::DivideAssign | RubyTokenType::OrOrAssign | RubyTokenType::AndAndAssign)
+                    matches!(
+                        kind,
+                        RubyTokenType::Assign
+                            | RubyTokenType::PlusAssign
+                            | RubyTokenType::MinusAssign
+                            | RubyTokenType::MultiplyAssign
+                            | RubyTokenType::DivideAssign
+                            | RubyTokenType::OrOrAssign
+                            | RubyTokenType::AndAndAssign
+                    )
                 })
                 .unwrap_or_else(|| "=".into());
                 let rhs = self.first_expr(node, source, offset)?.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span: span.clone() }));
                 let value = match op.as_str() {
-                    "+=" => ExpressionNode::BinaryOp { left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }), operator: "+".into(), right: Box::new(rhs), span: span.clone() },
-                    "-=" => ExpressionNode::BinaryOp { left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }), operator: "-".into(), right: Box::new(rhs), span: span.clone() },
-                    "*=" => ExpressionNode::BinaryOp { left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }), operator: "*".into(), right: Box::new(rhs), span: span.clone() },
-                    "||=" => ExpressionNode::BinaryOp { left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }), operator: "||".into(), right: Box::new(rhs), span: span.clone() },
-                    "&&=" => ExpressionNode::BinaryOp { left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }), operator: "&&".into(), right: Box::new(rhs), span: span.clone() },
+                    "+=" => ExpressionNode::BinaryOp {
+                        left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }),
+                        operator: "+".into(),
+                        right: Box::new(rhs),
+                        span: span.clone(),
+                    },
+                    "-=" => ExpressionNode::BinaryOp {
+                        left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }),
+                        operator: "-".into(),
+                        right: Box::new(rhs),
+                        span: span.clone(),
+                    },
+                    "*=" => ExpressionNode::BinaryOp {
+                        left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }),
+                        operator: "*".into(),
+                        right: Box::new(rhs),
+                        span: span.clone(),
+                    },
+                    "||=" => ExpressionNode::BinaryOp {
+                        left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }),
+                        operator: "||".into(),
+                        right: Box::new(rhs),
+                        span: span.clone(),
+                    },
+                    "&&=" => ExpressionNode::BinaryOp {
+                        left: Box::new(ExpressionNode::Identifier { name: target.clone(), span: span.clone() }),
+                        operator: "&&".into(),
+                        right: Box::new(rhs),
+                        span: span.clone(),
+                    },
                     _ => rhs,
                 };
                 Ok(Some(StatementNode::Assignment { target, value, span }))
@@ -161,7 +231,12 @@ impl<'config> RubyBuilder<'config> {
         }
     }
 
-    fn split_method<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(String, Vec<String>, Vec<StatementNode>), data_text_core::TextError> {
+    fn split_method<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<(String, Vec<String>, Vec<StatementNode>), data_text_core::TextError> {
         let mut name = String::new();
         let mut params = Vec::new();
         let mut in_params = false;
@@ -192,7 +267,12 @@ impl<'config> RubyBuilder<'config> {
         Ok((name, params, body))
     }
 
-    fn split_if<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(ExpressionNode, Vec<StatementNode>, Option<Vec<StatementNode>>), data_text_core::TextError> {
+    fn split_if<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<(ExpressionNode, Vec<StatementNode>, Option<Vec<StatementNode>>), data_text_core::TextError> {
         // 修饰符形式：
         // 1) `body if/unless cond`（body 为表达式）
         // 2) `return/break/next if/unless cond`
@@ -202,7 +282,9 @@ impl<'config> RubyBuilder<'config> {
         let mut is_modifier = false;
         for child in node.children() {
             match child {
-                GreenTree::Leaf(leaf) if early_flow.is_none() && matches!(leaf.kind, RubyTokenType::Return | RubyTokenType::Break | RubyTokenType::Next) => {
+                GreenTree::Leaf(leaf)
+                    if early_flow.is_none() && matches!(leaf.kind, RubyTokenType::Return | RubyTokenType::Break | RubyTokenType::Next) =>
+                {
                     early_flow = Some(leaf.kind);
                 }
                 GreenTree::Node(child_node)
@@ -220,7 +302,9 @@ impl<'config> RubyBuilder<'config> {
                 {
                     saw_expr = true;
                 }
-                GreenTree::Leaf(leaf) if (saw_expr || early_flow.is_some()) && matches!(leaf.kind, RubyTokenType::If | RubyTokenType::Unless) => {
+                GreenTree::Leaf(leaf)
+                    if (saw_expr || early_flow.is_some()) && matches!(leaf.kind, RubyTokenType::If | RubyTokenType::Unless) =>
+                {
                     is_modifier = true;
                     break;
                 }
@@ -239,12 +323,30 @@ impl<'config> RubyBuilder<'config> {
             for child in node.children() {
                 match child {
                     GreenTree::Leaf(leaf) => {
-                        if !saw_assign_op && matches!(leaf.kind, RubyTokenType::Identifier | RubyTokenType::Constant | RubyTokenType::GlobalVariable | RubyTokenType::InstanceVariable | RubyTokenType::ClassVariable) {
+                        if !saw_assign_op
+                            && matches!(
+                                leaf.kind,
+                                RubyTokenType::Identifier
+                                    | RubyTokenType::Constant
+                                    | RubyTokenType::GlobalVariable
+                                    | RubyTokenType::InstanceVariable
+                                    | RubyTokenType::ClassVariable
+                            )
+                        {
                             if assign_target.is_none() {
                                 assign_target = Some(text_at(source, offset, leaf.length));
                             }
                         }
-                        else if matches!(leaf.kind, RubyTokenType::Assign | RubyTokenType::PlusAssign | RubyTokenType::MinusAssign | RubyTokenType::MultiplyAssign | RubyTokenType::DivideAssign | RubyTokenType::OrOrAssign | RubyTokenType::AndAndAssign) {
+                        else if matches!(
+                            leaf.kind,
+                            RubyTokenType::Assign
+                                | RubyTokenType::PlusAssign
+                                | RubyTokenType::MinusAssign
+                                | RubyTokenType::MultiplyAssign
+                                | RubyTokenType::DivideAssign
+                                | RubyTokenType::OrOrAssign
+                                | RubyTokenType::AndAndAssign
+                        ) {
                             saw_assign_op = true;
                         }
                     }
@@ -309,7 +411,12 @@ impl<'config> RubyBuilder<'config> {
                     if condition.is_none()
                         && matches!(
                             child_node.kind,
-                            RubyElementType::BinaryExpression | RubyElementType::UnaryExpression | RubyElementType::LiteralExpression | RubyElementType::Identifier | RubyElementType::CallExpression | RubyElementType::ParenExpression
+                            RubyElementType::BinaryExpression
+                                | RubyElementType::UnaryExpression
+                                | RubyElementType::LiteralExpression
+                                | RubyElementType::Identifier
+                                | RubyElementType::CallExpression
+                                | RubyElementType::ParenExpression
                         )
                     {
                         condition = self.build_expression(child_node, source, offset)?;
@@ -327,15 +434,29 @@ impl<'config> RubyBuilder<'config> {
             }
             offset += child.len() as usize;
         }
-        Ok((condition.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span })), then_body, if else_body.is_empty() { None } else { Some(else_body) }))
+        Ok((
+            condition.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span })),
+            then_body,
+            if else_body.is_empty() { None } else { Some(else_body) },
+        ))
     }
 
-    fn split_cond_body<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(ExpressionNode, Vec<StatementNode>), data_text_core::TextError> {
+    fn split_cond_body<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<(ExpressionNode, Vec<StatementNode>), data_text_core::TextError> {
         let (condition, body, _) = self.split_if(node, source, base)?;
         Ok((condition, body))
     }
 
-    fn first_expr<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<Option<ExpressionNode>, data_text_core::TextError> {
+    fn first_expr<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<Option<ExpressionNode>, data_text_core::TextError> {
         let mut offset = base;
         for child in node.children() {
             if let GreenTree::Node(child_node) = child {
@@ -348,7 +469,12 @@ impl<'config> RubyBuilder<'config> {
         Ok(None)
     }
 
-    fn split_block<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, base: usize) -> Result<(Vec<String>, Vec<StatementNode>), data_text_core::TextError> {
+    fn split_block<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        base: usize,
+    ) -> Result<(Vec<String>, Vec<StatementNode>), data_text_core::TextError> {
         let mut params = Vec::new();
         let mut in_params = false;
         let mut offset = base;
@@ -382,7 +508,12 @@ impl<'config> RubyBuilder<'config> {
         Ok((params, body))
     }
 
-    fn build_expression<S: Source + ?Sized>(&self, node: &GreenNode<RubyLanguage>, source: &S, offset: usize) -> Result<Option<ExpressionNode>, data_text_core::TextError> {
+    fn build_expression<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<RubyLanguage>,
+        source: &S,
+        offset: usize,
+    ) -> Result<Option<ExpressionNode>, data_text_core::TextError> {
         let span = span_at(offset, node.byte_length);
         match node.kind {
             RubyElementType::Identifier => {
@@ -391,12 +522,18 @@ impl<'config> RubyBuilder<'config> {
             }
             RubyElementType::LiteralExpression => {
                 // `self` 是标识符语义，不是 nil。
-                if first_token_kind(node) == Some(RubyTokenType::Self_) { Ok(Some(ExpressionNode::Identifier { name: "self".into(), span })) } else { Ok(Some(ExpressionNode::Literal(self.build_literal(node, source, offset)))) }
+                if first_token_kind(node) == Some(RubyTokenType::Self_) {
+                    Ok(Some(ExpressionNode::Identifier { name: "self".into(), span }))
+                }
+                else {
+                    Ok(Some(ExpressionNode::Literal(self.build_literal(node, source, offset))))
+                }
             }
             RubyElementType::ParenExpression | RubyElementType::ParenthesizedExpression => self.first_expr(node, source, offset),
             RubyElementType::UnaryExpression => {
                 let operator = first_token_text(node, source, offset, |kind| is_operator(kind)).unwrap_or_else(|| "!".into());
-                let operand = self.first_expr(node, source, offset)?.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span: span.clone() }));
+                let operand =
+                    self.first_expr(node, source, offset)?.unwrap_or(ExpressionNode::Literal(LiteralNode::Nil { span: span.clone() }));
                 Ok(Some(ExpressionNode::UnaryOp { operator, operand: Box::new(operand), span }))
             }
             RubyElementType::BinaryExpression => {
@@ -424,7 +561,9 @@ impl<'config> RubyBuilder<'config> {
                     child_offset += child.len() as usize;
                 }
                 match (left, right) {
-                    (Some(left), Some(right)) => Ok(Some(ExpressionNode::BinaryOp { left: Box::new(left), operator, right: Box::new(right), span })),
+                    (Some(left), Some(right)) => {
+                        Ok(Some(ExpressionNode::BinaryOp { left: Box::new(left), operator, right: Box::new(right), span }))
+                    }
                     (Some(expr), None) | (None, Some(expr)) => Ok(Some(expr)),
                     _ => Ok(None),
                 }
@@ -510,13 +649,19 @@ impl<'config> RubyBuilder<'config> {
                                     // `A::B.method`：路径到此结束，方法名由外层 saw_dot 处理。
                                     break;
                                 }
-                                else if !leaf.kind.is_ignored() && leaf.kind != RubyTokenType::LeftParen && leaf.kind != RubyTokenType::RightParen && leaf.kind != RubyTokenType::Comma {
+                                else if !leaf.kind.is_ignored()
+                                    && leaf.kind != RubyTokenType::LeftParen
+                                    && leaf.kind != RubyTokenType::RightParen
+                                    && leaf.kind != RubyTokenType::Comma
+                                {
                                     break;
                                 }
                             }
                             GreenTree::Node(child_node) => {
                                 if child_node.kind == RubyElementType::Identifier || child_node.kind == RubyElementType::LiteralExpression {
-                                    if let Some(ExpressionNode::Identifier { name, .. }) = self.build_expression(child_node, source, path_offset)? {
+                                    if let Some(ExpressionNode::Identifier { name, .. }) =
+                                        self.build_expression(child_node, source, path_offset)?
+                                    {
                                         parts.push(name);
                                     }
                                     else {
@@ -660,7 +805,12 @@ fn text_at<S: Source + ?Sized>(source: &S, start: usize, len: u32) -> String {
     source.get_text_in(data_text_core::Range { start, end: start + len as usize }).trim().to_string()
 }
 
-fn first_token_text<S: Source + ?Sized>(node: &GreenNode<RubyLanguage>, source: &S, base: usize, pred: impl Fn(RubyTokenType) -> bool) -> Option<String> {
+fn first_token_text<S: Source + ?Sized>(
+    node: &GreenNode<RubyLanguage>,
+    source: &S,
+    base: usize,
+    pred: impl Fn(RubyTokenType) -> bool,
+) -> Option<String> {
     let mut offset = base;
     for child in node.children() {
         if let GreenTree::Leaf(leaf) = child {
@@ -713,7 +863,9 @@ fn class_or_module_name<S: Source + ?Sized>(node: &GreenNode<RubyLanguage>, sour
             GreenTree::Node(child_node) => {
                 // 个别情况下常量被包进 Identifier 节点。
                 if saw_keyword {
-                    if let Some(text) = first_token_text(child_node, source, offset, |kind| matches!(kind, RubyTokenType::Constant | RubyTokenType::Identifier)) {
+                    if let Some(text) =
+                        first_token_text(child_node, source, offset, |kind| matches!(kind, RubyTokenType::Constant | RubyTokenType::Identifier))
+                    {
                         if !text.is_empty() && text != "class" && text != "module" {
                             return Some(text);
                         }
@@ -756,7 +908,12 @@ fn token_operator(kind: RubyTokenType) -> Option<String> {
 
 fn unquote(text: &str) -> String {
     let bytes = text.as_bytes();
-    if bytes.len() >= 2 && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"') || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\'')) { text[1..text.len() - 1].to_string() } else { text.to_string() }
+    if bytes.len() >= 2 && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"') || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\'')) {
+        text[1..text.len() - 1].to_string()
+    }
+    else {
+        text.to_string()
+    }
 }
 
 fn parse_ruby_int(text: &str) -> i64 {

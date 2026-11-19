@@ -1,7 +1,7 @@
 //! Wasm MIR contract tests. Included bodies construct [`ExecutableFunction`] directly.
 
-pub use compiler_target::{Identifier, QualifiedName};
 pub use compiler_emitter::FragmentSubmission;
+pub use compiler_target::{Identifier, QualifiedName};
 
 pub mod contracts {
     pub use compiler_emitter::contracts::*;

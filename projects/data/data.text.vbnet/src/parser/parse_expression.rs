@@ -289,7 +289,12 @@ impl<'config> VbNetParser<'config> {
             }
             else if state.at(VbNetTokenType::Where) {
                 state.bump();
-                while state.not_at_end() && !state.at(VbNetTokenType::Select) && !state.at(VbNetTokenType::Group) && !state.at(VbNetTokenType::Join) && !state.at(VbNetTokenType::Let) {
+                while state.not_at_end()
+                    && !state.at(VbNetTokenType::Select)
+                    && !state.at(VbNetTokenType::Group)
+                    && !state.at(VbNetTokenType::Join)
+                    && !state.at(VbNetTokenType::Let)
+                {
                     state.bump();
                 }
             }
@@ -315,14 +320,23 @@ impl<'config> VbNetParser<'config> {
                 }
                 if state.at(VbNetTokenType::On) {
                     state.bump();
-                    while state.not_at_end() && !state.at(VbNetTokenType::Select) && !state.at(VbNetTokenType::Where) && !state.at(VbNetTokenType::Group) {
+                    while state.not_at_end()
+                        && !state.at(VbNetTokenType::Select)
+                        && !state.at(VbNetTokenType::Where)
+                        && !state.at(VbNetTokenType::Group)
+                    {
                         state.bump();
                     }
                 }
             }
             else if state.at(VbNetTokenType::Let) {
                 state.bump();
-                while state.not_at_end() && !state.at(VbNetTokenType::Select) && !state.at(VbNetTokenType::Where) && !state.at(VbNetTokenType::Group) && !state.at(VbNetTokenType::Join) {
+                while state.not_at_end()
+                    && !state.at(VbNetTokenType::Select)
+                    && !state.at(VbNetTokenType::Where)
+                    && !state.at(VbNetTokenType::Group)
+                    && !state.at(VbNetTokenType::Join)
+                {
                     state.bump();
                 }
             }

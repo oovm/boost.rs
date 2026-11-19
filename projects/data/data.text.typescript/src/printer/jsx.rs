@@ -1,6 +1,9 @@
 //! TypeScript JSX → canonical text.
 
-use crate::ast::{Expression, JsxAttribute, JsxAttributeOrSpread, JsxAttributeValue, JsxChild, JsxClosingElement, JsxElement, JsxFragment, JsxOpeningElement, JsxSelfClosingElement, JsxTagName};
+use crate::ast::{
+    Expression, JsxAttribute, JsxAttributeOrSpread, JsxAttributeValue, JsxChild, JsxClosingElement, JsxElement, JsxFragment, JsxOpeningElement,
+    JsxSelfClosingElement, JsxTagName,
+};
 
 use super::expr::{print_expression, print_string};
 
@@ -74,7 +77,11 @@ fn print_jsx_attribute(attribute: &JsxAttribute) -> Option<String> {
 }
 
 fn decode_jsx_string_literal(raw: &str) -> String {
-    raw.strip_prefix('"').and_then(|s| s.strip_suffix('"')).or_else(|| raw.strip_prefix('\'').and_then(|s| s.strip_suffix('\''))).map(str::to_string).unwrap_or_else(|| raw.to_string())
+    raw.strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| raw.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        .map(str::to_string)
+        .unwrap_or_else(|| raw.to_string())
 }
 
 fn print_jsx_attribute_value(value: &JsxAttributeValue) -> Option<String> {

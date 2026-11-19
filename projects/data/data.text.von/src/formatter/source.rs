@@ -38,8 +38,10 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         let right = &pair[1];
         let span = Range { start: left.span.end, end: right.span.start };
         let gap = source.get(span.clone()).ok_or_else(|| data_text_core::TextError::format_error("lexer token span is outside source"))?;
-        let left_text = source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
-        let right_text = source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
+        let left_text =
+            source.get(left.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("left token span is outside source"))?;
+        let right_text =
+            source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let constraint = von_gap_constraint(left_text, gap, right_text, left.kind, right.kind, index, &significant, source);
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
     }
@@ -55,10 +57,24 @@ fn is_layout(kind: VonTokenType) -> bool {
 }
 
 fn should_preserve_gap(left: &str, gap: &str, right: &str, left_kind: VonTokenType, right_kind: VonTokenType) -> bool {
-    gap.contains('\n') || left.starts_with('#') || right.starts_with('#') || gap.trim_start().starts_with('#') || matches!(left_kind, VonTokenType::Comment) || matches!(right_kind, VonTokenType::Comment)
+    gap.contains('\n')
+        || left.starts_with('#')
+        || right.starts_with('#')
+        || gap.trim_start().starts_with('#')
+        || matches!(left_kind, VonTokenType::Comment)
+        || matches!(right_kind, VonTokenType::Comment)
 }
 
-fn von_gap_constraint(left: &str, gap: &str, right: &str, left_kind: VonTokenType, right_kind: VonTokenType, _index: usize, _significant: &[&data_text_core::Token<VonTokenType>], _source: &str) -> GapConstraint {
+fn von_gap_constraint(
+    left: &str,
+    gap: &str,
+    right: &str,
+    left_kind: VonTokenType,
+    right_kind: VonTokenType,
+    _index: usize,
+    _significant: &[&data_text_core::Token<VonTokenType>],
+    _source: &str,
+) -> GapConstraint {
     if should_preserve_gap(left, gap, right, left_kind, right_kind) {
         return GapConstraint::Preserve;
     }
@@ -93,7 +109,14 @@ fn von_gap_constraint(left: &str, gap: &str, right: &str, left_kind: VonTokenTyp
 fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<VonTokenType>]) -> Result<(), data_text_core::TextError> {
     let mut stack = Vec::new();
     for token in tokens {
-        if matches!(token.kind, VonTokenType::StringLiteral | VonTokenType::NumberLiteral | VonTokenType::Comment | VonTokenType::BoolLiteral | VonTokenType::NullLiteral) {
+        if matches!(
+            token.kind,
+            VonTokenType::StringLiteral
+                | VonTokenType::NumberLiteral
+                | VonTokenType::Comment
+                | VonTokenType::BoolLiteral
+                | VonTokenType::NullLiteral
+        ) {
             continue;
         }
         match token.kind {
@@ -118,7 +141,12 @@ fn validate_delimiters(source: &str, tokens: &[&data_text_core::Token<VonTokenTy
             _ => {}
         }
     }
-    if stack.is_empty() { Ok(()) } else { Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}"))) }
+    if stack.is_empty() {
+        Ok(())
+    }
+    else {
+        Err(data_text_core::TextError::format_error(format!("formatter input has unbalanced delimiters: unclosed {stack:?}")))
+    }
 }
 
 fn delimiter_error(source: &str, pos: usize) -> Result<(), data_text_core::TextError> {

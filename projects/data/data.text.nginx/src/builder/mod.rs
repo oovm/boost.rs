@@ -1,6 +1,6 @@
 use crate::{ast::*, language::NginxLanguage, lexer::token_type::NginxTokenType, parser::element_type::NginxElementType};
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, RedNode, RedTree, TextEdit,
+    Builder, BuilderCache, GreenNode, Lexer, Parser, RedNode, RedTree, TextDiagnostics, TextEdit, TextError,
     source::{Source, SourceText},
 };
 
@@ -17,7 +17,12 @@ impl<'config> NginxBuilder<'config> {
 }
 
 impl<'config> Builder<NginxLanguage> for NginxBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<NginxLanguage>) -> TextDiagnostics<NginxRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<NginxLanguage>,
+    ) -> TextDiagnostics<NginxRoot> {
         let parser = crate::parser::NginxParser::new(self.config);
         let lexer = crate::lexer::NginxLexer::new(&self.config);
 
@@ -91,7 +96,11 @@ impl<'config> NginxBuilder<'config> {
                 RedTree::Node(n) if n.green.kind == NginxElementType::Parameter => {
                     parameters.push(source.get_text_in(n.span()).as_ref().trim().to_string());
                 }
-                RedTree::Leaf(t) if t.kind != NginxTokenType::Whitespace && t.kind != NginxTokenType::Semicolon && t.kind != NginxTokenType::CommentToken => {
+                RedTree::Leaf(t)
+                    if t.kind != NginxTokenType::Whitespace
+                        && t.kind != NginxTokenType::Semicolon
+                        && t.kind != NginxTokenType::CommentToken =>
+                {
                     parameters.push(source.get_text_in(t.span()).as_ref().to_string());
                 }
                 _ => {}
@@ -138,7 +147,12 @@ impl<'config> NginxBuilder<'config> {
                     }
                     _ => {}
                 },
-                RedTree::Leaf(t) if t.kind != NginxTokenType::Whitespace && t.kind != NginxTokenType::LeftBrace && t.kind != NginxTokenType::RightBrace && t.kind != NginxTokenType::CommentToken => {
+                RedTree::Leaf(t)
+                    if t.kind != NginxTokenType::Whitespace
+                        && t.kind != NginxTokenType::LeftBrace
+                        && t.kind != NginxTokenType::RightBrace
+                        && t.kind != NginxTokenType::CommentToken =>
+                {
                     parameters.push(source.get_text_in(t.span()).as_ref().to_string());
                 }
                 _ => {}

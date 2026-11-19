@@ -161,7 +161,9 @@ impl TokenType for SassTokenType {
             Self::Error => UniversalTokenRole::Error,
             Self::Identifier => UniversalTokenRole::Name,
             Self::Variable => UniversalTokenRole::Name,
-            Self::StringLiteral | Self::CharLiteral | Self::NumberLiteral | Self::FloatLiteral | Self::ColorLiteral => UniversalTokenRole::Literal,
+            Self::StringLiteral | Self::CharLiteral | Self::NumberLiteral | Self::FloatLiteral | Self::ColorLiteral => {
+                UniversalTokenRole::Literal
+            }
             Self::LeftParen
             | Self::RightParen
             | Self::LeftBrace
@@ -179,7 +181,18 @@ impl TokenType for SassTokenType {
             | Self::Exclamation
             | Self::Question
             | Self::Tilde => UniversalTokenRole::Punctuation,
-            Self::EqEq | Self::Ne | Self::Le | Self::Ge | Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Eq | Self::Lt | Self::Gt => UniversalTokenRole::Operator,
+            Self::EqEq
+            | Self::Ne
+            | Self::Le
+            | Self::Ge
+            | Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Percent
+            | Self::Eq
+            | Self::Lt
+            | Self::Gt => UniversalTokenRole::Operator,
             _ => UniversalTokenRole::None,
         }
     }

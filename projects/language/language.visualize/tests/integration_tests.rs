@@ -49,13 +49,15 @@ fn test_complete_tree_visualization_pipeline() {
     // 1. Create tree data structure
     let root = TreeNode::new("root".to_string(), "Root Package".to_string(), "package".to_string());
 
-    let module1 = TreeNode::new("module1".to_string(), "Module 1".to_string(), "module".to_string()).with_child(TreeNode::new("func1".to_string(), "Function 1".to_string(), "function".to_string())).with_child(TreeNode::new(
-        "func2".to_string(),
-        "Function 2".to_string(),
-        "function".to_string(),
-    ));
+    let module1 = TreeNode::new("module1".to_string(), "Module 1".to_string(), "module".to_string())
+        .with_child(TreeNode::new("func1".to_string(), "Function 1".to_string(), "function".to_string()))
+        .with_child(TreeNode::new("func2".to_string(), "Function 2".to_string(), "function".to_string()));
 
-    let module2 = TreeNode::new("module2".to_string(), "Module 2".to_string(), "module".to_string()).with_child(TreeNode::new("class1".to_string(), "Class 1".to_string(), "class".to_string()));
+    let module2 = TreeNode::new("module2".to_string(), "Module 2".to_string(), "module".to_string()).with_child(TreeNode::new(
+        "class1".to_string(),
+        "Class 1".to_string(),
+        "class".to_string(),
+    ));
 
     let root = root.with_child(module1).with_child(module2);
 
@@ -85,7 +87,13 @@ fn test_theme_integration_with_rendering() {
     layout.add_node("test_node".to_string(), Rect::new(Point::new(50.0, 50.0), Size::new(100.0, 60.0)));
 
     // 2. Test rendering configuration with different themes
-    let themes = vec![VisualizationTheme::light(), VisualizationTheme::dark(), VisualizationTheme::one_light(), VisualizationTheme::one_dark_pro(), VisualizationTheme::github()];
+    let themes = vec![
+        VisualizationTheme::light(),
+        VisualizationTheme::dark(),
+        VisualizationTheme::one_light(),
+        VisualizationTheme::one_dark_pro(),
+        VisualizationTheme::github(),
+    ];
 
     for theme in themes {
         let config = theme.to_render_config();

@@ -79,7 +79,16 @@ impl From<TokenType> for ElementType {
             TokenType::Number => ElementType::Number,
             TokenType::String => ElementType::String,
             TokenType::Boolean => ElementType::Boolean,
-            TokenType::LParen | TokenType::RParen | TokenType::LBracket | TokenType::RBracket | TokenType::LBrace | TokenType::RBrace | TokenType::Comma | TokenType::Dot | TokenType::Colon | TokenType::Semicolon => ElementType::Expression,
+            TokenType::LParen
+            | TokenType::RParen
+            | TokenType::LBracket
+            | TokenType::RBracket
+            | TokenType::LBrace
+            | TokenType::RBrace
+            | TokenType::Comma
+            | TokenType::Dot
+            | TokenType::Colon
+            | TokenType::Semicolon => ElementType::Expression,
             TokenType::Plus
             | TokenType::Minus
             | TokenType::Multiply
@@ -95,7 +104,13 @@ impl From<TokenType> for ElementType {
             | TokenType::Or
             | TokenType::Not => ElementType::Expression,
             TokenType::Comment | TokenType::Whitespace => ElementType::Expression,
-            TokenType::Require | TokenType::Provide | TokenType::Struct | TokenType::Class | TokenType::Match | TokenType::WithHandlers | TokenType::Raise => ElementType::Expression,
+            TokenType::Require
+            | TokenType::Provide
+            | TokenType::Struct
+            | TokenType::Class
+            | TokenType::Match
+            | TokenType::WithHandlers
+            | TokenType::Raise => ElementType::Expression,
             TokenType::Eof => ElementType::Eof,
         }
     }

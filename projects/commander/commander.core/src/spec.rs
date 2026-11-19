@@ -1,7 +1,6 @@
 //! Command tree declaration: options, commands, and handler outcomes.
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use commander_types::{ActionRequiredDescriptor, CommanderError, InteractiveSpec, PromptPolicy};
 use serde_json::Value;
@@ -162,9 +161,8 @@ impl OptionSpec {
             return Err(parse_failed(&format!("option `--{}` has an empty enum value", self.long)));
         }
         if let Some(default) = &self.default {
-            validate_value(self, default).map_err(|_| {
-                parse_failed(&format!("option `--{}` default is outside its declared value set", self.long))
-            })?;
+            validate_value(self, default)
+                .map_err(|_| parse_failed(&format!("option `--{}` default is outside its declared value set", self.long)))?;
         }
         Ok(())
     }
@@ -329,13 +327,9 @@ impl Command {
 /// `non_interactive_inputs` plus `continuation.resume_inputs` must resolve to
 /// an option key, `flag:<option-key>`, or `config:<name>`. Violations are a
 /// registration error surfaced as `commander::interactive_spec_invalid` (exit 1).
-pub(crate) fn validate_interactive_spec(
-    spec: &InteractiveSpec,
-    option_keys: &BTreeSet<String>,
-) -> Result<(), CommanderError> {
+pub(crate) fn validate_interactive_spec(spec: &InteractiveSpec, option_keys: &BTreeSet<String>) -> Result<(), CommanderError> {
     let invalid = |detail: &str| -> CommanderError {
-        CommanderError::from_id("commander::interactive_spec_invalid")
-            .with_arg("detail", detail.to_string())
+        CommanderError::from_id("commander::interactive_spec_invalid").with_arg("detail", detail.to_string())
     };
     if spec.prompt_keys.values().any(|key| key.is_empty()) {
         return Err(invalid("prompt key values must be non-empty ids"));
@@ -360,11 +354,13 @@ pub(crate) fn validate_interactive_spec(
             if name.is_empty() || !option_keys.contains(name) {
                 return Err(invalid(&format!("unknown flag reference `{entry}`")));
             }
-        } else if let Some(name) = entry.strip_prefix("config:") {
+        }
+        else if let Some(name) = entry.strip_prefix("config:") {
             if name.is_empty() {
                 return Err(invalid("empty config reference"));
             }
-        } else if !option_keys.contains(entry) {
+        }
+        else if !option_keys.contains(entry) {
             return Err(invalid(&format!("unknown input reference `{entry}`")));
         }
     }
@@ -373,11 +369,9 @@ pub(crate) fn validate_interactive_spec(
 
 pub(crate) fn validate_value(spec: &OptionSpec, value: &str) -> Result<(), CommanderError> {
     if !spec.enum_values.is_empty() && !spec.enum_values.iter().any(|v| v == value) {
-        return Err(
-            CommanderError::from_id(commander_types::error_id::OPTION_NOT_IN_ENUM)
-                .with_arg("option", spec.long.clone())
-                .with_arg("value", value),
-        );
+        return Err(CommanderError::from_id(commander_types::error_id::OPTION_NOT_IN_ENUM)
+            .with_arg("option", spec.long.clone())
+            .with_arg("value", value));
     }
     let ok = match spec.coerce {
         Coerce::None => true,
@@ -386,11 +380,9 @@ pub(crate) fn validate_value(spec: &OptionSpec, value: &str) -> Result<(), Comma
         Coerce::Bool => matches!(value.to_ascii_lowercase().as_str(), "true" | "false" | "1" | "0"),
     };
     if !ok {
-        return Err(
-            CommanderError::from_id(commander_types::error_id::OPTION_COERCE_FAILED)
-                .with_arg("option", spec.long.clone())
-                .with_arg("value", value),
-        );
+        return Err(CommanderError::from_id(commander_types::error_id::OPTION_COERCE_FAILED)
+            .with_arg("option", spec.long.clone())
+            .with_arg("value", value));
     }
     Ok(())
 }

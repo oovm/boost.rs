@@ -256,7 +256,12 @@ impl TokenType for JavaTokenType {
             Self::Whitespace => Whitespace,
             Self::LineComment | Self::BlockComment => Comment,
             Self::Identifier => Name,
-            Self::StringLiteral | Self::CharacterLiteral | Self::IntegerLiteral | Self::FloatingPointLiteral | Self::BooleanLiteral | Self::NullLiteral => Literal,
+            Self::StringLiteral
+            | Self::CharacterLiteral
+            | Self::IntegerLiteral
+            | Self::FloatingPointLiteral
+            | Self::BooleanLiteral
+            | Self::NullLiteral => Literal,
             _ if self.is_keyword() => Keyword,
             Self::Plus
             | Self::PlusPlus

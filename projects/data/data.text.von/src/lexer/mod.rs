@@ -188,7 +188,9 @@ impl<'config> VonLexer<'config> {
 
         if let Some(ch) = state.peek() {
             // Number must start with a digit, negative sign, or dot (followed by digit)
-            let is_number_start = ch.is_ascii_digit() || (ch == '-' && state.peek_next_n(1).map_or(false, |c| c.is_ascii_digit())) || (ch == '.' && state.peek_next_n(1).map_or(false, |c| c.is_ascii_digit()));
+            let is_number_start = ch.is_ascii_digit()
+                || (ch == '-' && state.peek_next_n(1).map_or(false, |c| c.is_ascii_digit()))
+                || (ch == '.' && state.peek_next_n(1).map_or(false, |c| c.is_ascii_digit()));
 
             if !is_number_start {
                 return false;
@@ -249,7 +251,9 @@ impl<'config> VonLexer<'config> {
                         }
                     }
 
-                    let has_digits = state.peek_next_n(lookahead).map_or(false, |c| c.is_ascii_digit() || (c == '_' && state.peek_next_n(lookahead + 1).map_or(false, |n| n.is_ascii_digit())));
+                    let has_digits = state.peek_next_n(lookahead).map_or(false, |c| {
+                        c.is_ascii_digit() || (c == '_' && state.peek_next_n(lookahead + 1).map_or(false, |n| n.is_ascii_digit()))
+                    });
 
                     if has_digits {
                         state.advance(1); // Skip e/E
@@ -390,7 +394,12 @@ impl<'config> VonLexer<'config> {
 }
 
 impl<'config> Lexer<VonLanguage> for VonLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], _cache: &'a mut impl LexerCache<VonLanguage>) -> LexOutput<VonLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        _cache: &'a mut impl LexerCache<VonLanguage>,
+    ) -> LexOutput<VonLanguage> {
         let mut state = State::new(source);
         while state.not_at_end() {
             if self.skip_whitespace(&mut state) {

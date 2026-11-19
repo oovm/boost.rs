@@ -226,7 +226,13 @@ impl<'config> super::PythonParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, _left: &'a GreenNode<'a, PythonLanguage>, prec: u8, assoc: Associativity) -> Option<&'a GreenNode<'a, PythonLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        _left: &'a GreenNode<'a, PythonLanguage>,
+        prec: u8,
+        assoc: Associativity,
+    ) -> Option<&'a GreenNode<'a, PythonLanguage>> {
         use PythonTokenType::*;
         let cp = state.checkpoint_before(_left);
         let kind = state.peek_kind()?;

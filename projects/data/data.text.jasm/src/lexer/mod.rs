@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source,
+    Lexer, LexerCache, LexerState, Source, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig},
 };
 /// Token types for the JASM language.
@@ -11,7 +11,8 @@ use std::sync::LazyLock;
 
 pub(crate) type State<'a, S> = LexerState<'a, S, JasmLanguage>;
 
-static JASM_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "", block_end: "", nested_blocks: false });
+static JASM_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "", block_end: "", nested_blocks: false });
 static JASM_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer for the JASM language.
@@ -21,7 +22,12 @@ pub struct JasmLexer<'config> {
 }
 
 impl<'config> Lexer<JasmLanguage> for JasmLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], _cache: &'a mut impl LexerCache<JasmLanguage>) -> LexOutput<JasmLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        _cache: &'a mut impl LexerCache<JasmLanguage>,
+    ) -> LexOutput<JasmLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         state.finish(result)

@@ -131,10 +131,7 @@ pub fn validate_compilation_unit(components: &[LoweredComponent]) -> AsgardResul
     if errors.is_empty() {
         return Ok(());
     }
-    Err(AsgardError::msg(report!(
-        "组件 ABI 与脚本/模板对不上：\n{}",
-        errors.join("\n")
-    )))
+    Err(AsgardError::msg(report!("组件 ABI 与脚本/模板对不上：\n{}", errors.join("\n"))))
 }
 
 /// 生成前统一的“先校验、后降级”入口。

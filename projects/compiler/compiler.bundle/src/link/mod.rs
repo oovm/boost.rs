@@ -37,9 +37,11 @@
 
 use std::collections::{BTreeSet, HashSet, VecDeque};
 
-use crate::diag::PackDiagnostic;
-use crate::graph::{EdgeKind, ModuleGraph, NodeKind};
-use crate::module::{ExportFact, ImportKind, ImportedName, StatementEffect};
+use crate::{
+    diag::PackDiagnostic,
+    graph::{EdgeKind, ModuleGraph, NodeKind},
+    module::{ExportFact, ImportKind, ImportedName, StatementEffect},
+};
 
 /// 请求的导出名在模块导出事实中不存在。
 const UNKNOWN_EXPORT: &str = "vmz::pack::link::unknown_export";
@@ -174,8 +176,7 @@ pub fn effectful_modules(graph: &ModuleGraph) -> Vec<bool> {
     let mut queue: Vec<usize> = Vec::new();
     for (index, node) in graph.nodes.iter().enumerate() {
         let record = &node.record;
-        let own = record.statements.is_empty()
-            || record.statements.iter().any(|statement| statement.effect != StatementEffect::Pure);
+        let own = record.statements.is_empty() || record.statements.iter().any(|statement| statement.effect != StatementEffect::Pure);
         if own {
             effectful[index] = true;
             queue.push(index);
@@ -299,8 +300,14 @@ impl<'g> Linker<'g> {
             }
         }
         for edge in &self.graph.nodes[node].static_edges {
-            let Ok(target_id) = edge.target.as_ref() else { continue };
-            let Some(target) = self.graph.index_of(target_id) else { continue };
+            let Ok(target_id) = edge.target.as_ref()
+            else {
+                continue;
+            };
+            let Some(target) = self.graph.index_of(target_id)
+            else {
+                continue;
+            };
             if self.effectful[target] {
                 self.demand(Demand::Retain(target));
             }
@@ -311,9 +318,7 @@ impl<'g> Linker<'g> {
         // 保留的引用文本随之断链（死代码里的名字也必须解析成立）。升级为
         // Execute 全量需求语义，与整文件存活口径一致。CJS 模块同为整文件发射
         // （互操作壳引用全部语句与 require 边），同一升级。
-        if self.graph.nodes[node].record.is_scope_incomplete()
-            || self.graph.nodes[node].kind == NodeKind::Cjs
-        {
+        if self.graph.nodes[node].record.is_scope_incomplete() || self.graph.nodes[node].kind == NodeKind::Cjs {
             self.demand(Demand::Execute(node));
         }
     }
@@ -376,8 +381,7 @@ impl<'g> Linker<'g> {
         // CJS 互操作壳的导出面：`default`（module.exports）+ 检测到的具名导出，
         // 与 emit 层包装合成的导出语句同一份事实。
         if self.graph.nodes[node].kind == NodeKind::Cjs {
-            let provided = name == "default"
-                || self.graph.nodes[node].record.cjs_named_exports.iter().any(|n| n == name);
+            let provided = name == "default" || self.graph.nodes[node].record.cjs_named_exports.iter().any(|n| n == name);
             visiting.remove(&node);
             return provided;
         }
@@ -385,12 +389,10 @@ impl<'g> Linker<'g> {
             ExportFact::Local { exported, type_only, .. } => !type_only && exported == name,
             ExportFact::Default { .. } => name == "default",
             ExportFact::ReexportNamed { exported, type_only, .. } => !type_only && exported == name,
-            ExportFact::ReexportNamespace { namespace, type_only, .. } => {
-                !type_only && namespace == name
+            ExportFact::ReexportNamespace { namespace, type_only, .. } => !type_only && namespace == name,
+            ExportFact::ReexportAll { source, .. } => {
+                self.edge_node(node, EdgeKind::ReexportAll, source).is_some_and(|target| self.provides(target, name, visiting))
             }
-            ExportFact::ReexportAll { source, .. } => self
-                .edge_node(node, EdgeKind::ReexportAll, source)
-                .is_some_and(|target| self.provides(target, name, visiting)),
         });
         visiting.remove(&node);
         provided
@@ -407,12 +409,9 @@ impl<'g> Linker<'g> {
             .cloned()
             .collect();
         for import in imports {
-            let kind = if import.kind == ImportKind::SideEffect {
-                EdgeKind::SideEffect
-            } else {
-                EdgeKind::Static
-            };
-            let Some(target) = self.edge_node(node, kind, &import.specifier) else {
+            let kind = if import.kind == ImportKind::SideEffect { EdgeKind::SideEffect } else { EdgeKind::Static };
+            let Some(target) = self.edge_node(node, kind, &import.specifier)
+            else {
                 continue;
             };
             for binding in import.bindings {
@@ -439,10 +438,7 @@ impl<'g> Linker<'g> {
 
     fn unknown_export(&mut self, node: usize, name: &str) {
         if self.unknown_reported.insert((node, name.to_string())) {
-            let mut diagnostic = PackDiagnostic::new(
-                UNKNOWN_EXPORT,
-                format!("导出名 `{name}` 不在模块导出事实中，保守全量激活"),
-            );
+            let mut diagnostic = PackDiagnostic::new(UNKNOWN_EXPORT, format!("导出名 `{name}` 不在模块导出事实中，保守全量激活"));
             if let Some(path) = &self.graph.nodes[node].record.path {
                 diagnostic = diagnostic.with_path(path.clone());
             }
@@ -462,11 +458,11 @@ impl<'g> Linker<'g> {
         // 事实）。命中即整模块执行保留（无语句级剪枝）；未检测到的具名是
         // 结构化 unknown_export，不静默放行到运行时 SyntaxError。
         if self.graph.nodes[node].kind == NodeKind::Cjs {
-            let provided = name == "default"
-                || self.graph.nodes[node].record.cjs_named_exports.iter().any(|n| n == name);
+            let provided = name == "default" || self.graph.nodes[node].record.cjs_named_exports.iter().any(|n| n == name);
             if provided {
                 self.demand(Demand::Execute(node));
-            } else {
+            }
+            else {
                 self.unknown_export(node, name);
             }
             return;
@@ -483,9 +479,7 @@ impl<'g> Linker<'g> {
                     if type_only {
                         continue;
                     }
-                    if !self.activate_declared(node, &local)
-                        && !self.propagate_import_binding(node, &local)
-                    {
+                    if !self.activate_declared(node, &local) && !self.propagate_import_binding(node, &local) {
                         // scope 事实不完整时导出面仍是语法事实：名字确实导出，
                         // 只是语句级激活定位不到；整模块保留兜底，不报假未知导出。
                         if self.graph.nodes[node].record.is_scope_incomplete() {
@@ -502,10 +496,7 @@ impl<'g> Linker<'g> {
                     }
                     matched = true;
                     let resolved = match &local {
-                        Some(local) => {
-                            self.activate_declared(node, local)
-                                || self.propagate_import_binding(node, local)
-                        }
+                        Some(local) => self.activate_declared(node, local) || self.propagate_import_binding(node, local),
                         None => self.activate_span(node, span),
                     };
                     if !resolved {
@@ -526,11 +517,7 @@ impl<'g> Linker<'g> {
                         continue;
                     }
                     if let Some(target) = self.edge_node(node, EdgeKind::ReexportNamed, &source) {
-                        self.record_reexport(
-                            node,
-                            UsedReexport::Named { export_index: index, target_node: target },
-                            (index, target),
-                        );
+                        self.record_reexport(node, UsedReexport::Named { export_index: index, target_node: target }, (index, target));
                         self.demand(Demand::Export(target, local));
                     }
                 }
@@ -542,13 +529,8 @@ impl<'g> Linker<'g> {
                     if type_only {
                         continue;
                     }
-                    if let Some(target) = self.edge_node(node, EdgeKind::ReexportNamespace, &source)
-                    {
-                        self.record_reexport(
-                            node,
-                            UsedReexport::Namespace { export_index: index, target_node: target },
-                            (index, target),
-                        );
+                    if let Some(target) = self.edge_node(node, EdgeKind::ReexportNamespace, &source) {
+                        self.record_reexport(node, UsedReexport::Namespace { export_index: index, target_node: target }, (index, target));
                         self.demand(Demand::Execute(target));
                     }
                 }
@@ -557,17 +539,17 @@ impl<'g> Linker<'g> {
         }
         // 星号重导出：名字可能藏在来源模块里；提供不了则不产生需求。
         for (index, export) in self.graph.nodes[node].record.exports.iter().enumerate() {
-            let ExportFact::ReexportAll { source, .. } = export else { continue };
-            let Some(target) = self.edge_node(node, EdgeKind::ReexportAll, source) else {
+            let ExportFact::ReexportAll { source, .. } = export
+            else {
+                continue;
+            };
+            let Some(target) = self.edge_node(node, EdgeKind::ReexportAll, source)
+            else {
                 continue;
             };
             if self.provides(target, name, &mut HashSet::new()) {
                 matched = true;
-                self.record_reexport(
-                    node,
-                    UsedReexport::All { export_index: index, target_node: target },
-                    (index, target),
-                );
+                self.record_reexport(node, UsedReexport::All { export_index: index, target_node: target }, (index, target));
                 self.demand(Demand::Export(target, name.to_string()));
             }
         }
@@ -590,11 +572,7 @@ impl<'g> Linker<'g> {
     fn propagate_statement_refs(&mut self, node: usize) {
         let graph = self.graph;
         loop {
-            let mut pending: Vec<usize> = self.active[node]
-                .iter()
-                .copied()
-                .filter(|index| !self.propagated[node].contains(index))
-                .collect();
+            let mut pending: Vec<usize> = self.active[node].iter().copied().filter(|index| !self.propagated[node].contains(index)).collect();
             if pending.is_empty() {
                 return;
             }
@@ -625,7 +603,8 @@ impl<'g> Linker<'g> {
             }
             let alive = if full {
                 true
-            } else {
+            }
+            else {
                 let edge = &self.graph.nodes[node].dynamic_edges[edge_index];
                 match edge.import_fact(&self.graph.nodes[node].record) {
                     Some(import) => {
@@ -634,15 +613,11 @@ impl<'g> Linker<'g> {
                             .statements
                             .iter()
                             .enumerate()
-                            .filter(|(_, statement)| {
-                                statement.span.0 <= import.span.0
-                                    && import.span.1 <= statement.span.1
-                            })
+                            .filter(|(_, statement)| statement.span.0 <= import.span.0 && import.span.1 <= statement.span.1)
                             .map(|(index, _)| index)
                             .collect();
                         // 找不到包含语句：保守活（模块保留即执行）。
-                        contained.is_empty()
-                            || contained.iter().any(|index| self.active[node].contains(index))
+                        contained.is_empty() || contained.iter().any(|index| self.active[node].contains(index))
                     }
                     None => {
                         // 边与事实表漂移（只可能来自手工构造的图）：如实报告并
@@ -650,10 +625,7 @@ impl<'g> Linker<'g> {
                         if self.dynamic_site_reported.insert((node, edge_index)) {
                             let mut diagnostic = PackDiagnostic::new(
                                 DYNAMIC_SITE_MISSING,
-                                format!(
-                                    "动态边 `{}` 找不到对应调用点事实，按活处理",
-                                    edge.specifier
-                                ),
+                                format!("动态边 `{}` 找不到对应调用点事实，按活处理", edge.specifier),
                             );
                             if let Some(path) = &self.graph.nodes[node].record.path {
                                 diagnostic = diagnostic.with_path(path.clone());
@@ -690,35 +662,22 @@ impl<'g> Linker<'g> {
                         self.mark_dirty(node);
                         self.activate_all(node);
                         // 全量：所有非类型导出与 import 绑定都被消费。
-                        for (index, export) in
-                            self.graph.nodes[node].record.exports.iter().enumerate()
-                        {
+                        for (index, export) in self.graph.nodes[node].record.exports.iter().enumerate() {
                             match export.clone() {
                                 ExportFact::Local { local, type_only, .. } => {
                                     if !type_only {
                                         self.activate_declared(node, &local);
                                     }
                                 }
-                                ExportFact::ReexportNamed {
-                                    source,
-                                    local,
-                                    exported,
-                                    type_only,
-                                    ..
-                                } => {
+                                ExportFact::ReexportNamed { source, local, exported, type_only, .. } => {
                                     let _ = exported;
                                     if type_only {
                                         continue;
                                     }
-                                    if let Some(target) =
-                                        self.edge_node(node, EdgeKind::ReexportNamed, &source)
-                                    {
+                                    if let Some(target) = self.edge_node(node, EdgeKind::ReexportNamed, &source) {
                                         self.record_reexport(
                                             node,
-                                            UsedReexport::Named {
-                                                export_index: index,
-                                                target_node: target,
-                                            },
+                                            UsedReexport::Named { export_index: index, target_node: target },
                                             (index, target),
                                         );
                                         self.demand(Demand::Export(target, local));
@@ -732,39 +691,24 @@ impl<'g> Linker<'g> {
                                     }
                                 }
                                 ExportFact::ReexportAll { source, .. } => {
-                                    if let Some(target) =
-                                        self.edge_node(node, EdgeKind::ReexportAll, &source)
-                                    {
+                                    if let Some(target) = self.edge_node(node, EdgeKind::ReexportAll, &source) {
                                         self.record_reexport(
                                             node,
-                                            UsedReexport::All {
-                                                export_index: index,
-                                                target_node: target,
-                                            },
+                                            UsedReexport::All { export_index: index, target_node: target },
                                             (index, target),
                                         );
                                         self.demand(Demand::Execute(target));
                                     }
                                 }
-                                ExportFact::ReexportNamespace {
-                                    source,
-                                    namespace,
-                                    type_only,
-                                    ..
-                                } => {
+                                ExportFact::ReexportNamespace { source, namespace, type_only, .. } => {
                                     let _ = namespace;
                                     if type_only {
                                         continue;
                                     }
-                                    if let Some(target) =
-                                        self.edge_node(node, EdgeKind::ReexportNamespace, &source)
-                                    {
+                                    if let Some(target) = self.edge_node(node, EdgeKind::ReexportNamespace, &source) {
                                         self.record_reexport(
                                             node,
-                                            UsedReexport::Namespace {
-                                                export_index: index,
-                                                target_node: target,
-                                            },
+                                            UsedReexport::Namespace { export_index: index, target_node: target },
                                             (index, target),
                                         );
                                         self.demand(Demand::Execute(target));
@@ -814,22 +758,14 @@ impl<'g> Linker<'g> {
             if !self.retained[node] {
                 continue;
             }
-            for edge in self.graph.nodes[node]
-                .static_edges
-                .iter()
-                .chain(self.graph.nodes[node].dynamic_edges.iter())
-            {
+            for edge in self.graph.nodes[node].static_edges.iter().chain(self.graph.nodes[node].dynamic_edges.iter()) {
                 if let Err(diagnostic) = &edge.target {
                     if seen_edge.insert((diagnostic.code.clone(), diagnostic.span)) {
                         self.diagnostics.push(diagnostic.clone());
                     }
                 }
             }
-            for diagnostic in self.graph.nodes[node]
-                .diagnostics
-                .iter()
-                .chain(self.graph.nodes[node].record.diagnostics.iter())
-            {
+            for diagnostic in self.graph.nodes[node].diagnostics.iter().chain(self.graph.nodes[node].record.diagnostics.iter()) {
                 if seen_record.insert((diagnostic.code.clone(), diagnostic.span)) {
                     self.diagnostics.push(diagnostic.clone());
                 }
@@ -871,9 +807,11 @@ pub fn link(graph: &ModuleGraph, entry_uses: &[EntryUse]) -> LinkPlan {
     let effectful = effectful_modules(graph);
     let mut linker = Linker::new(graph, effectful);
     for entry in &graph.entries {
-        let Some(index) = graph.index_of(&entry.id) else { continue };
-        let Some(declaration) =
-            entry_uses.iter().find(|candidate| candidate.entry_logical == entry.logical)
+        let Some(index) = graph.index_of(&entry.id)
+        else {
+            continue;
+        };
+        let Some(declaration) = entry_uses.iter().find(|candidate| candidate.entry_logical == entry.logical)
         else {
             linker.demand(Demand::Execute(index));
             continue;
@@ -891,22 +829,16 @@ pub fn link(graph: &ModuleGraph, entry_uses: &[EntryUse]) -> LinkPlan {
                     }
                     EntryExports::All => {
                         let record = &graph.nodes[index].record;
-                        let enumerable = !record
-                            .exports
-                            .iter()
-                            .any(|export| matches!(export, ExportFact::ReexportAll { .. }));
+                        let enumerable = !record.exports.iter().any(|export| matches!(export, ExportFact::ReexportAll { .. }));
                         if enumerable {
                             let names: Vec<String> = record
                                 .exports
                                 .iter()
                                 .filter_map(|export| match export {
-                                    ExportFact::Local { exported, type_only, .. }
-                                    | ExportFact::ReexportNamed { exported, type_only, .. } => {
+                                    ExportFact::Local { exported, type_only, .. } | ExportFact::ReexportNamed { exported, type_only, .. } => {
                                         (!*type_only).then(|| exported.clone())
                                     }
-                                    ExportFact::ReexportNamespace {
-                                        namespace, type_only, ..
-                                    } => (!*type_only).then(|| namespace.clone()),
+                                    ExportFact::ReexportNamespace { namespace, type_only, .. } => (!*type_only).then(|| namespace.clone()),
                                     ExportFact::Default { .. } => Some("default".to_string()),
                                     ExportFact::ReexportAll { .. } => None,
                                 })
@@ -914,7 +846,8 @@ pub fn link(graph: &ModuleGraph, entry_uses: &[EntryUse]) -> LinkPlan {
                             for name in names {
                                 linker.demand(Demand::Export(index, name));
                             }
-                        } else {
+                        }
+                        else {
                             linker.demand(Demand::Execute(index));
                         }
                     }

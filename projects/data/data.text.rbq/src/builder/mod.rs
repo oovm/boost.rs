@@ -16,7 +16,12 @@ impl<'config> RbqBuilder<'config> {
 
 impl<'config> Builder<RbqLanguage> for RbqBuilder<'config> {
     /// Builds the RBQ AST from the source text and edits.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RbqLanguage>) -> data_text_core::builder::BuildOutput<RbqLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<RbqLanguage>,
+    ) -> data_text_core::builder::BuildOutput<RbqLanguage> {
         let parser = crate::parser::RbqParser::new(self.config);
         let lexer = crate::lexer::RbqLexer::new(&self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<RbqLanguage>::default();

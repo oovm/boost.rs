@@ -1,4 +1,6 @@
-use data_text_css_selector::{AttributeOperator, AttributeSelector, Combinator, CompoundSelector, Selector, SelectorList, SimpleSelector, parse_css_selector};
+use data_text_css_selector::{
+    AttributeOperator, AttributeSelector, Combinator, CompoundSelector, Selector, SelectorList, SimpleSelector, parse_css_selector,
+};
 
 #[test]
 fn parses_type_and_class() {
@@ -7,7 +9,9 @@ fn parses_type_and_class() {
         list,
         SelectorList {
             selectors: vec![Selector {
-                compound: CompoundSelector { simple: vec![SimpleSelector::Type("h1".to_string()), SimpleSelector::Class("title".to_string()),] },
+                compound: CompoundSelector {
+                    simple: vec![SimpleSelector::Type("h1".to_string()), SimpleSelector::Class("title".to_string()),]
+                },
                 ancestors: vec![(Combinator::Child, CompoundSelector { simple: vec![SimpleSelector::Type("article".to_string())] },)],
             }],
         }

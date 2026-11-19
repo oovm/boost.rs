@@ -67,7 +67,9 @@ fn test_suspend_function_parsing() {
 
 #[test]
 fn test_inline_function_parsing() {
-    let source = SourceText::new("inline fun <T> withLock(lock: Lock, action: () -> T): T { lock.lock(); try { return action() } finally { lock.unlock() } }");
+    let source = SourceText::new(
+        "inline fun <T> withLock(lock: Lock, action: () -> T): T { lock.lock(); try { return action() } finally { lock.unlock() } }",
+    );
     let config = KotlinLanguage::new();
     let lexer = KotlinLexer::new(&config);
     let lex_output = lexer.lex(&source, &[], &mut NoLexerCache);
@@ -131,7 +133,9 @@ fn test_if_expression_parsing() {
 
 #[test]
 fn test_try_expression_parsing() {
-    let source = SourceText::new("fun divide(a: Int, b: Int): Int? = try { a / b } catch (e: ArithmeticException) { null } finally { println(\"Done\") }");
+    let source = SourceText::new(
+        "fun divide(a: Int, b: Int): Int? = try { a / b } catch (e: ArithmeticException) { null } finally { println(\"Done\") }",
+    );
     let config = KotlinLanguage::new();
     let lexer = KotlinLexer::new(&config);
     let lex_output = lexer.lex(&source, &[], &mut NoLexerCache);

@@ -37,7 +37,13 @@ impl<'config> Pratt<ZigLanguage> for ZigParser<'config> {
                 state.bump();
                 state.finish_at(cp, ZigElementType::Identifier)
             }
-            Some(ZigTokenType::IntegerLiteral) | Some(ZigTokenType::FloatLiteral) | Some(ZigTokenType::StringLiteral) | Some(ZigTokenType::CharLiteral) | Some(ZigTokenType::BooleanLiteral) | Some(ZigTokenType::Null) | Some(ZigTokenType::Undefined) => {
+            Some(ZigTokenType::IntegerLiteral)
+            | Some(ZigTokenType::FloatLiteral)
+            | Some(ZigTokenType::StringLiteral)
+            | Some(ZigTokenType::CharLiteral)
+            | Some(ZigTokenType::BooleanLiteral)
+            | Some(ZigTokenType::Null)
+            | Some(ZigTokenType::Undefined) => {
                 state.bump();
                 state.finish_at(cp, ZigElementType::Literal)
             }
@@ -61,7 +67,12 @@ impl<'config> Pratt<ZigLanguage> for ZigParser<'config> {
         };
 
         match kind {
-            ZigTokenType::Minus | ZigTokenType::Tilde | ZigTokenType::Exclamation | ZigTokenType::Ampersand | ZigTokenType::TryKeyword | ZigTokenType::AwaitKeyword => {
+            ZigTokenType::Minus
+            | ZigTokenType::Tilde
+            | ZigTokenType::Exclamation
+            | ZigTokenType::Ampersand
+            | ZigTokenType::TryKeyword
+            | ZigTokenType::AwaitKeyword => {
                 // unary expects kind to be ZigLanguage::TokenType
                 unary(state, kind, 12, ZigElementType::UnaryExpr, |s, p| PrattParser::parse(s, p, self))
             }
@@ -69,7 +80,12 @@ impl<'config> Pratt<ZigLanguage> for ZigParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, ZigLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, ZigLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, ZigLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, ZigLanguage>> {
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
@@ -86,9 +102,18 @@ impl<'config> Pratt<ZigLanguage> for ZigParser<'config> {
             | ZigTokenType::GreaterGreaterAssign => (1, Associativity::Right),
             ZigTokenType::Or | ZigTokenType::OrOr => (2, Associativity::Left),
             ZigTokenType::And | ZigTokenType::AndAnd => (3, Associativity::Left),
-            ZigTokenType::Equal | ZigTokenType::NotEqual | ZigTokenType::Less | ZigTokenType::Greater | ZigTokenType::LessEqual | ZigTokenType::GreaterEqual => (4, Associativity::Left),
-            ZigTokenType::Plus | ZigTokenType::Minus | ZigTokenType::PlusPercent | ZigTokenType::MinusPercent | ZigTokenType::PlusPlus => (5, Associativity::Left),
-            ZigTokenType::Star | ZigTokenType::Slash | ZigTokenType::Percent | ZigTokenType::StarPercent | ZigTokenType::StarStar => (6, Associativity::Left),
+            ZigTokenType::Equal
+            | ZigTokenType::NotEqual
+            | ZigTokenType::Less
+            | ZigTokenType::Greater
+            | ZigTokenType::LessEqual
+            | ZigTokenType::GreaterEqual => (4, Associativity::Left),
+            ZigTokenType::Plus | ZigTokenType::Minus | ZigTokenType::PlusPercent | ZigTokenType::MinusPercent | ZigTokenType::PlusPlus => {
+                (5, Associativity::Left)
+            }
+            ZigTokenType::Star | ZigTokenType::Slash | ZigTokenType::Percent | ZigTokenType::StarPercent | ZigTokenType::StarStar => {
+                (6, Associativity::Left)
+            }
             ZigTokenType::CatchKeyword | ZigTokenType::OrElse => (7, Associativity::Right),
             ZigTokenType::Dot | ZigTokenType::LeftParen | ZigTokenType::LeftBracket => (10, Associativity::Left),
             _ => return None,
@@ -133,7 +158,12 @@ impl<'config> Pratt<ZigLanguage> for ZigParser<'config> {
 }
 
 impl<'config> Parser<ZigLanguage> for ZigParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ZigLanguage>) -> ParseOutput<'a, ZigLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ZigLanguage>,
+    ) -> ParseOutput<'a, ZigLanguage> {
         let lexer = ZigLexer::new(self.config);
         parse_with_lexer(&lexer, source, edits, cache, |state| {
             let checkpoint = state.checkpoint();

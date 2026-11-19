@@ -286,7 +286,18 @@ impl NimElementType {
 
     /// Returns true if the element type is a non-terminal element.
     pub fn is_element(&self) -> bool {
-        matches!(self, Self::Root | Self::ProcDecl | Self::TypeDecl | Self::VarDecl | Self::ConstDecl | Self::LetDecl | Self::ImportDecl | Self::Comment | Self::ErrorNode)
+        matches!(
+            self,
+            Self::Root
+                | Self::ProcDecl
+                | Self::TypeDecl
+                | Self::VarDecl
+                | Self::ConstDecl
+                | Self::LetDecl
+                | Self::ImportDecl
+                | Self::Comment
+                | Self::ErrorNode
+        )
     }
 }
 

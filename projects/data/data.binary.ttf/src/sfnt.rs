@@ -302,12 +302,7 @@ impl Face {
         let start = rec.offset as usize;
         let end = start.checked_add(rec.length as usize).ok_or(ParseError::Overflow)?;
         if end > self.bytes.len() {
-            return Err(ParseError::TableOutOfBounds {
-                tag: rec.tag,
-                offset: rec.offset,
-                length: rec.length,
-                face_len: self.bytes.len(),
-            });
+            return Err(ParseError::TableOutOfBounds { tag: rec.tag, offset: rec.offset, length: rec.length, face_len: self.bytes.len() });
         }
         Ok(&self.bytes[start..end])
     }

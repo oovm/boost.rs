@@ -1,4 +1,4 @@
-use crate::engine::{journal::JournalMode, storage::doctor, Result};
+use crate::engine::{Result, journal::JournalMode, storage::doctor};
 
 use super::{Backend, Connection};
 

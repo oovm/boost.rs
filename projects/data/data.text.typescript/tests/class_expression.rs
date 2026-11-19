@@ -117,7 +117,9 @@ fn class_expression_as_call_argument() {
 
 #[test]
 fn vscode_textmate_style_class_expression_parses_clean() {
-    let (name, _, body) = class_expression(variable_initializer("var RelativeReference = class { constructor(ruleName) { this.ruleName = ruleName; } kind = 2; };"));
+    let (name, _, body) = class_expression(variable_initializer(
+        "var RelativeReference = class { constructor(ruleName) { this.ruleName = ruleName; } kind = 2; };",
+    ));
     assert_eq!(name, None);
     assert_eq!(body.len(), 2);
     assert!(matches!(&body[0], ClassMember::Method { name, .. } if name == "constructor"));
@@ -171,7 +173,12 @@ fn named_class_declaration_regression() {
 
 #[test]
 fn class_expression_survives_the_formatter_round_trip() {
-    for source in ["var X = class { };\n", "var X = class { a = 1; constructor(v) { this.a = v; } };\n", "const C = class Named extends Base { static s = 1; m() { } };\n", "export default class { c = 3; }\n"] {
+    for source in [
+        "var X = class { };\n",
+        "var X = class { a = 1; constructor(v) { this.a = v; } };\n",
+        "const C = class Named extends Base { static s = 1; m() { } };\n",
+        "export default class { c = 3; }\n",
+    ] {
         let options = FormatOptions::default();
         let output = format_source(source, &options).expect("format");
         assert!(output.contains("class"), "class keyword lost: {output:?}");

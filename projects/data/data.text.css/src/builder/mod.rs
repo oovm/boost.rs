@@ -1,5 +1,7 @@
 use crate::{CssParser, ast::CssRoot, language::CssLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, RedNode, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, SourceText, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source,
+};
 
 /// A builder for CSS documents that coordinates parsing and AST construction.
 #[derive(Clone)]
@@ -15,7 +17,12 @@ impl CssBuilder {
 }
 
 impl Builder<CssLanguage> for CssBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CssLanguage>) -> BuildOutput<CssLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CssLanguage>,
+    ) -> BuildOutput<CssLanguage> {
         let parser = CssParser::new(&self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<CssLanguage>::default();

@@ -18,7 +18,12 @@ pub struct ErlangLexer<'config> {
 }
 
 impl<'config> Lexer<ErlangLanguage> for ErlangLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ErlangLanguage>) -> LexOutput<ErlangLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ErlangLanguage>,
+    ) -> LexOutput<ErlangLanguage> {
         let mut state = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -557,5 +562,10 @@ impl<'config> ErlangLexer<'config> {
 static WHITESPACE: LazyLock<HashSet<char>> = LazyLock::new(|| [' ', '\t', '\r', '\n'].into_iter().collect());
 
 static KEYWORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    ["after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor", "case", "catch", "cond", "div", "end", "fun", "if", "let", "not", "of", "or", "orelse", "query", "receive", "rem", "try", "when", "xor"].into_iter().collect()
+    [
+        "after", "and", "andalso", "band", "begin", "bnot", "bor", "bsl", "bsr", "bxor", "case", "catch", "cond", "div", "end", "fun", "if",
+        "let", "not", "of", "or", "orelse", "query", "receive", "rem", "try", "when", "xor",
+    ]
+    .into_iter()
+    .collect()
 });

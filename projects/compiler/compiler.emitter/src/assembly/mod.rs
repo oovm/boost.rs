@@ -25,10 +25,7 @@ pub struct AssembledFragment {
 
 impl std::fmt::Debug for AssembledFragment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AssembledFragment")
-            .field("partition", &self.partition)
-            .field("theory_bundle", &self.theory_bundle)
-            .finish()
+        f.debug_struct("AssembledFragment").field("partition", &self.partition).field("theory_bundle", &self.theory_bundle).finish()
     }
 }
 

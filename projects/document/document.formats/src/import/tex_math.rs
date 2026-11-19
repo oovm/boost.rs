@@ -5,12 +5,12 @@
 //! fact comes from `TexItem`, `TexRow`, `TexCell`, `TexCommand` and
 //! `TexLeftRightPair` nodes with their spans.
 
+use data_text_tex::ast::{
+    MathDelimiter as TexMathDelimiter, TexArgument, TexCell, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexMath, TexRoot, TexRow,
+};
 use document_ir::{
     MathAtom, MathClass, MathColumnAlignment, MathDelimiter, MathDelimiterKind, MathDisplay, MathEnvironment, MathEnvironmentKind,
     MathExpression, MathFormula, MathFractionLine, MathRow, MathRowNumbering, MathRowPlacement, MathSpace, MathSpan, MathStyle, MathStyleKind,
-};
-use data_text_tex::ast::{
-    MathDelimiter as TexMathDelimiter, TexArgument, TexCell, TexCommand, TexEnvironment, TexItem, TexLeftRightPair, TexMath, TexRoot, TexRow,
 };
 
 use super::math_common::{

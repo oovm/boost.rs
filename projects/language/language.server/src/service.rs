@@ -1,6 +1,9 @@
 use crate::{
     protocol::{InitializeResult, ServerCapabilities},
-    types::{CodeAction, CompletionItem, Diagnostic, DocumentHighlight, FoldingRange, Hover, InitializeParams, InlayHint, LocationRange, SemanticTokens, SignatureHelp, StructureItem, TextEdit, WorkspaceEdit, WorkspaceSymbol},
+    types::{
+        CodeAction, CompletionItem, Diagnostic, DocumentHighlight, FoldingRange, Hover, InitializeParams, InlayHint, LocationRange,
+        SemanticTokens, SignatureHelp, StructureItem, TextEdit, WorkspaceEdit, WorkspaceSymbol,
+    },
 };
 use core::range::Range;
 use data_text_core::{
@@ -9,12 +12,12 @@ use data_text_core::{
     tree::RedNode,
     vfs::{DocumentSession, Vfs},
 };
+use data_text_resolver::ModuleResolver;
+use data_text_symbols::SymbolProvider;
 use language_folding::FoldingProvider;
 use language_hover::HoverProvider;
 use language_navigation::{DefinitionProvider, ReferencesProvider};
-use data_text_resolver::ModuleResolver;
 use language_semantic_tokens::SemanticTokensProvider;
-use data_text_symbols::SymbolProvider;
 use std::future::Future;
 
 /// A trait that defines the capabilities and behavior of a language-specific service.

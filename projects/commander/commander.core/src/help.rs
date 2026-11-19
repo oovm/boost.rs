@@ -3,9 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use crate::diag::localized_or_id;
-use crate::ports::Localizer;
-use crate::spec::{Command, OptionSpec, ValueDecl};
+use crate::{
+    diag::localized_or_id,
+    ports::Localizer,
+    spec::{Command, OptionSpec, ValueDecl},
+};
 
 /// Renders the root help: optional intro, usage, command list, option list.
 pub(crate) fn root_help(
@@ -22,17 +24,9 @@ pub(crate) fn root_help(
     }
     let mut args = BTreeMap::new();
     args.insert("name".to_string(), cli_name.to_string());
-    lines.push(
-        localized_or_id(localizer, "commander.ui.usage", &args)
-            .unwrap_or_else(|| format!("Usage: {cli_name} <command> [options]")),
-    );
+    lines.push(localized_or_id(localizer, "commander.ui.usage", &args).unwrap_or_else(|| format!("Usage: {cli_name} <command> [options]")));
     lines.push(String::new());
-    lines.extend(help_section(
-        localizer,
-        "commander.ui.commands",
-        "Commands:",
-        &visible_commands(commands),
-    ));
+    lines.extend(help_section(localizer, "commander.ui.commands", "Commands:", &visible_commands(commands)));
     let opts = union_options(global_options, commands);
     lines.extend(help_section(localizer, "commander.ui.options", "Options:", &option_rows(&opts)));
     trim_trailing_blanks(lines).join("\n")
@@ -78,11 +72,7 @@ pub(crate) fn command_help(
 }
 
 fn visible_commands(commands: &[Command]) -> Vec<(String, Option<String>)> {
-    commands
-        .iter()
-        .filter(|c| !c.name.is_empty())
-        .map(|c| (c.name.clone(), c.help_key.clone()))
-        .collect()
+    commands.iter().filter(|c| !c.name.is_empty()).map(|c| (c.name.clone(), c.help_key.clone())).collect()
 }
 
 fn option_rows(options: &[OptionSpec]) -> Vec<(String, Option<String>)> {
@@ -107,17 +97,11 @@ fn option_rows(options: &[OptionSpec]) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
-fn help_section(
-    localizer: &dyn Localizer,
-    header_key: &str,
-    header_fallback: &str,
-    rows: &[(String, Option<String>)],
-) -> Vec<String> {
+fn help_section(localizer: &dyn Localizer, header_key: &str, header_fallback: &str, rows: &[(String, Option<String>)]) -> Vec<String> {
     if rows.is_empty() {
         return Vec::new();
     }
-    let header = localized_or_id(localizer, header_key, &BTreeMap::new())
-        .unwrap_or_else(|| header_fallback.to_string());
+    let header = localized_or_id(localizer, header_key, &BTreeMap::new()).unwrap_or_else(|| header_fallback.to_string());
     let width = rows.iter().map(|(token, _)| token.chars().count()).max().unwrap_or(0);
     let mut lines = vec![header.to_string()];
     for (token, help) in rows {
@@ -128,7 +112,8 @@ fn help_section(
         let pad = " ".repeat(width - token.chars().count() + 2);
         if text.is_empty() {
             lines.push(format!("  {token}"));
-        } else {
+        }
+        else {
             lines.push(format!("  {token}{pad}{text}"));
         }
     }

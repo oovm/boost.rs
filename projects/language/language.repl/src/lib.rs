@@ -264,7 +264,12 @@ impl<H: ReplHandler> Repl<H> {
             let current_line_text = &line_buf.lines[line_buf.current_line];
 
             // Syntax highlighting
-            let displayed_text = if let Some(highlighted) = self.handler.highlight(current_line_text) { exporter.export(&highlighted) } else { current_line_text.clone() };
+            let displayed_text = if let Some(highlighted) = self.handler.highlight(current_line_text) {
+                exporter.export(&highlighted)
+            }
+            else {
+                current_line_text.clone()
+            };
 
             write!(stdout, "{}{}", prompt, displayed_text)?;
 

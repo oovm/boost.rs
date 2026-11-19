@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use crate::lsp::RhombusLanguageService;
-use language_server::MemoryVfs;
 use language_mcp::McpServer;
+use language_server::MemoryVfs;
 
 /// Start an MCP server for Rhombus semantics (Stdio).
 pub async fn serve_rhombus_mcp(vfs: MemoryVfs) {

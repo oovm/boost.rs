@@ -13,8 +13,7 @@ use std::{
     },
 };
 
-use database_execution::cluster::KeyValueExecutor;
-use database_execution::mongo::cursor::CursorStore;
+use database_execution::{cluster::KeyValueExecutor, mongo::cursor::CursorStore};
 
 use super::wire::{FrameLimits, OP_QUERY, read_frame, write_frame, write_reply_frame};
 

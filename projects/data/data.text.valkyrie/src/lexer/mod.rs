@@ -17,7 +17,12 @@ pub struct ValkyrieLexer<'config> {
 }
 
 impl<'config> Lexer<ValkyrieLanguage> for ValkyrieLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ValkyrieLanguage>) -> LexOutput<ValkyrieLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ValkyrieLanguage>,
+    ) -> LexOutput<ValkyrieLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

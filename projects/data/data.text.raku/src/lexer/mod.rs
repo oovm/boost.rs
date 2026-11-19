@@ -18,7 +18,12 @@ impl RakuLexer {
 }
 
 impl Lexer<RakuLanguage> for RakuLexer {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<RakuLanguage>) -> LexOutput<RakuLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<RakuLanguage>,
+    ) -> LexOutput<RakuLanguage> {
         let mut state = LexerState::new(source);
         // Minimal implementation for now
         state.add_eof();

@@ -9,24 +9,22 @@
 pub mod catalog;
 /// Storage-owned failures of the data directory, catalog and lease.
 mod error;
-/// One server data directory: catalog, shard and directory lease.
-pub mod store;
-/// Durable namespace/key store over one catalog and one shard.
-pub mod shard;
 /// One directory lease plus the `shards/<shard-id>/` table-group layout.
 pub mod instance;
 /// Databases, roles and table grants, persisted beside the schema.
 pub mod objects;
+/// Durable namespace/key store over one catalog and one shard.
+pub mod shard;
+/// One server data directory: catalog, shard and directory lease.
+pub mod store;
 
 pub use error::Error;
 
 pub use catalog::{CATALOG_FILE, DEFAULT_SHARD_ID, LEGACY_CATALOG_FILE, LOCK_FILE};
-pub use instance::{
-    ServerInstance, SHARD_DIRECTORY_FILES, SHARD_ROOT, clear_stale_lock, process_exists, shard_directory, validate_shard_id,
-};
-pub use shard::Store;
-pub use store::{ServerChange, ServerRow, ServerStore};
+pub use instance::{SHARD_DIRECTORY_FILES, SHARD_ROOT, ServerInstance, clear_stale_lock, process_exists, shard_directory, validate_shard_id};
 pub use objects::{
     OBJECTS_CONTRACT, OBJECTS_FILE, ObjectError, PgDatabase, PgGrant, PgMembership, PgObjectCatalog, PgPassword, PgPrivilege, PgRole,
     PgScramVerifier, PgSequence, PgSequenceAlteration,
 };
+pub use shard::Store;
+pub use store::{ServerChange, ServerRow, ServerStore};

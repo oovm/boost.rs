@@ -6,7 +6,7 @@ mod build_stmt;
 mod utils;
 
 use crate::{MatlabLanguage, MatlabParser};
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, Parser, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, Parser, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source};
 
 /// Extract source text for a span.
 pub(crate) fn text(source: &(impl Source + ?Sized), range: data_text_core::Range<usize>) -> String {
@@ -28,7 +28,12 @@ impl<'config> MatlabBuilder<'config> {
 }
 
 impl<'config> Builder<MatlabLanguage> for MatlabBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<MatlabLanguage>) -> BuildOutput<MatlabLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<MatlabLanguage>,
+    ) -> BuildOutput<MatlabLanguage> {
         let parser = MatlabParser::new(self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<MatlabLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);

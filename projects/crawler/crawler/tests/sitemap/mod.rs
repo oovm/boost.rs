@@ -1,8 +1,8 @@
 //! Extracted from `src/sitemap.rs`.
 
-use data_compression::{deflate::DeflateLevel, gzip::Gzip};
 use crawler_fetch::build_artifact;
 use crawler_types::{BodyStorage, TransportProvenance};
+use data_compression::{deflate::DeflateLevel, gzip::Gzip};
 use url::Url;
 
 use crawler::{MAX_SITEMAP_LOCATIONS, locations, sitemap_body};

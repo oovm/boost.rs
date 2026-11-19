@@ -11,9 +11,7 @@
 use std::{collections::BTreeMap, sync::Mutex};
 
 use database_execution::cluster::{BufferedCommit, KeyValueExecutor};
-use database_formats::mongo::collection_record;
-use database_formats::mongo::oplog::OplogEntry;
-use database_formats::mongo::parse_collection_record;
+use database_formats::mongo::{collection_record, oplog::OplogEntry, parse_collection_record};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::mongo::{
     CollectionOptions, IndexSpec, MongoStorage, SessionWriteState, StoreError, TransactionAbort, TransactionBegin, TransactionCommit,
@@ -432,9 +430,7 @@ mod tests {
     use database_types::cluster::{Error, FenceToken, Namespace, Result as ClusterResult, ShardEpoch, ShardId};
 
     use super::ExecutorStorage;
-    use database_storage::mongo::{
-        MongoStorage, TransactionAbort, TransactionBegin, TransactionCommit, TransactionWrite,
-    };
+    use database_storage::mongo::{MongoStorage, TransactionAbort, TransactionBegin, TransactionCommit, TransactionWrite};
 
     fn local_executor() -> LocalExecutor<MemoryShard> {
         let shard = ShardId("mongo-contract".into());

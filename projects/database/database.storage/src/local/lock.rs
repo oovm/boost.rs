@@ -213,10 +213,7 @@ fn lock_file_ex(file: &File, exclusive: bool) -> Result<()> {
     if code == ERROR_LOCK_VIOLATION || code == ERROR_IO_PENDING {
         // Normalize on `WouldBlock` so the caller can report one contention
         // error shape on every platform.
-        return Err(Error::Io(std::io::Error::new(
-            std::io::ErrorKind::WouldBlock,
-            "database writer lock held by another holder",
-        )));
+        return Err(Error::Io(std::io::Error::new(std::io::ErrorKind::WouldBlock, "database writer lock held by another holder")));
     }
     Err(Error::Io(std::io::Error::from_raw_os_error(code as i32)))
 }
@@ -260,4 +257,3 @@ fn unlock_file(file: &File) {
         }
     }
 }
-

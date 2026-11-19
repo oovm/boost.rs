@@ -1,7 +1,10 @@
 use data_text_core::{Builder, parser::session::ParseSession};
 use data_text_plantuml::{
     PlantUmlBuilder, PlantUmlLanguage,
-    ast::{ActivityBranchKind, ActivityEndpoint, ActivityNode, ClassKeyword, ClassRelationKind, ComponentElement, MemberVisibility, MessageArrow, ParticipantKind, PlantUmlDiagram, PortDirection, StateElement, StateEndpoint, StateKind},
+    ast::{
+        ActivityBranchKind, ActivityEndpoint, ActivityNode, ClassKeyword, ClassRelationKind, ComponentElement, MemberVisibility, MessageArrow,
+        ParticipantKind, PlantUmlDiagram, PortDirection, StateElement, StateEndpoint, StateKind,
+    },
 };
 
 fn build(source: &str) -> data_text_plantuml::PlantUmlRoot {

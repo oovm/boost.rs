@@ -1,4 +1,4 @@
-use data_text_core::{TextError, ParseCache, Parser, Source, TextEdit, TokenType, parser::parse_with_lexer};
+use data_text_core::{ParseCache, Parser, Source, TextEdit, TextError, TokenType, parser::parse_with_lexer};
 
 use crate::{
     language::VosLanguage,
@@ -258,13 +258,17 @@ impl VosParser {
                     }
                     break;
                 }
-                if kind == VosTokenType::LeftParen && matches!(element, VosElementType::Query | VosElementType::Udf | VosElementType::Micro | VosElementType::Macro) {
+                if kind == VosTokenType::LeftParen
+                    && matches!(element, VosElementType::Query | VosElementType::Udf | VosElementType::Micro | VosElementType::Macro)
+                {
                     self.parse_parameters(state)?;
                 }
                 else if matches!(kind, VosTokenType::LeftParen | VosTokenType::LeftBracket) {
                     self.parse_group(state)?;
                 }
-                else if matches!(element, VosElementType::Query | VosElementType::Udf | VosElementType::Micro | VosElementType::Macro) && state.peek_text().as_deref() == Some("-") {
+                else if matches!(element, VosElementType::Query | VosElementType::Udf | VosElementType::Micro | VosElementType::Macro)
+                    && state.peek_text().as_deref() == Some("-")
+                {
                     let return_checkpoint = state.checkpoint();
                     state.bump();
                     self.skip_trivia(state);
@@ -428,7 +432,13 @@ impl VosParser {
             return state.expect(VosTokenType::NumberLiteral);
         }
         match state.peek_kind() {
-            Some(VosTokenType::StringLiteral | VosTokenType::NumberLiteral | VosTokenType::BooleanLiteral | VosTokenType::NullLiteral | VosTokenType::Identifier) => {
+            Some(
+                VosTokenType::StringLiteral
+                | VosTokenType::NumberLiteral
+                | VosTokenType::BooleanLiteral
+                | VosTokenType::NullLiteral
+                | VosTokenType::Identifier,
+            ) => {
                 state.bump();
                 Ok(())
             }
@@ -441,7 +451,10 @@ impl VosParser {
     }
 
     fn consume_token<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
-        if matches!(state.current().map(|token| token.kind), Some(VosTokenType::Error | VosTokenType::RightBrace | VosTokenType::RightParen | VosTokenType::RightBracket)) {
+        if matches!(
+            state.current().map(|token| token.kind),
+            Some(VosTokenType::Error | VosTokenType::RightBrace | VosTokenType::RightParen | VosTokenType::RightBracket)
+        ) {
             state.record_unexpected_token("invalid VOS token or unmatched delimiter");
             return Err(state.errors.last().cloned().expect("Oak records the syntax error"));
         }
@@ -496,7 +509,12 @@ impl VosParser {
 }
 
 impl Parser<VosLanguage> for VosParser {
-    fn parse<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VosLanguage>) -> data_text_core::ParseOutput<'a, VosLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VosLanguage>,
+    ) -> data_text_core::ParseOutput<'a, VosLanguage> {
         let lexer = VosLexer;
         parse_with_lexer(&lexer, source, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -518,7 +536,10 @@ impl Parser<VosLanguage> for VosParser {
                 else if self.starts_attribute(state) && self.attributes_lead_to_declaration(state) {
                     self.parse_declaration(state)?;
                 }
-                else if matches!(state.current().map(|token| token.kind), Some(VosTokenType::LeftBrace | VosTokenType::LeftParen | VosTokenType::LeftBracket)) {
+                else if matches!(
+                    state.current().map(|token| token.kind),
+                    Some(VosTokenType::LeftBrace | VosTokenType::LeftParen | VosTokenType::LeftBracket)
+                ) {
                     self.parse_group(state)?;
                 }
                 else {

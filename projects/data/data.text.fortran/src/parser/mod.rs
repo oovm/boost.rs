@@ -23,7 +23,12 @@ impl<'config> FortranParser<'config> {
 }
 
 impl<'config> Parser<FortranLanguage> for FortranParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<FortranLanguage>) -> ParseOutput<'a, FortranLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<FortranLanguage>,
+    ) -> ParseOutput<'a, FortranLanguage> {
         let lexer = crate::lexer::FortranLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

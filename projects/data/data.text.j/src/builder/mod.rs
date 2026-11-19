@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::JLanguage, parser::JParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the J language.
 #[derive(Clone)]
@@ -23,7 +23,12 @@ impl<'config> JBuilder<'config> {
 }
 
 impl<'config> Builder<JLanguage> for JBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<JLanguage>) -> data_text_core::builder::BuildOutput<JLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<JLanguage>,
+    ) -> data_text_core::builder::BuildOutput<JLanguage> {
         let parser = JParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<JLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

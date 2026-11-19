@@ -270,7 +270,11 @@ impl ElementType for KotlinElementType {
         match self {
             KotlinElementType::SourceFile | KotlinElementType::Root => UniversalElementRole::Root,
             KotlinElementType::ClassDeclaration | KotlinElementType::FunctionDeclaration => UniversalElementRole::Definition,
-            KotlinElementType::VariableDeclaration | KotlinElementType::IfStatement | KotlinElementType::WhileStatement | KotlinElementType::ReturnStatement | KotlinElementType::Block => UniversalElementRole::Statement,
+            KotlinElementType::VariableDeclaration
+            | KotlinElementType::IfStatement
+            | KotlinElementType::WhileStatement
+            | KotlinElementType::ReturnStatement
+            | KotlinElementType::Block => UniversalElementRole::Statement,
             KotlinElementType::Error => UniversalElementRole::Error,
             _ => UniversalElementRole::None,
         }

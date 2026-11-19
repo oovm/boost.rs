@@ -485,8 +485,7 @@ fn parse_optional_header(data: &[u8], offset: usize) -> Result<OptionalHeader, P
 
     let mut data_directories = [DataDirectory::default(); 16];
     for i in 0..16 {
-        data_directories[i] =
-            DataDirectory { rva: read_u32(data, dd_offset + i * 8)?, size: read_u32(data, dd_offset + i * 8 + 4)? };
+        data_directories[i] = DataDirectory { rva: read_u32(data, dd_offset + i * 8)?, size: read_u32(data, dd_offset + i * 8 + 4)? };
     }
 
     // PE32:  base_of_data 在 offset+24 (u32，已忽略), image_base 在 offset+28 (u32，扩展为 u64)

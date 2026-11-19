@@ -18,7 +18,9 @@ impl<const LANG: DsvLanguage, V: Vfs> DsvLanguageService<LANG, V> {
         Self { vfs, workspace: language_server::workspace::WorkspaceManager::new() }
     }
 }
-impl<const LANG: DsvLanguage, V: Vfs + Send + Sync + 'static + language_server::DocumentSession> LanguageService for DsvLanguageService<LANG, V> {
+impl<const LANG: DsvLanguage, V: Vfs + Send + Sync + 'static + language_server::DocumentSession> LanguageService
+    for DsvLanguageService<LANG, V>
+{
     type Lang = Dsv<LANG>;
     type Vfs = V;
     fn vfs(&self) -> &Self::Vfs {

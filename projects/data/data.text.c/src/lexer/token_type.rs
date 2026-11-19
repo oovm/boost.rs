@@ -293,7 +293,17 @@ impl TokenType for CTokenType {
             Self::IntConstant | Self::FloatConstant | Self::CharConstant | Self::StringLiteral => Literal,
             Self::Preprocessor => Keyword,
             Self::Text => None,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Comma | Self::Semicolon | Self::Colon | Self::Dot | Self::Question => Punctuation,
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Comma
+            | Self::Semicolon
+            | Self::Colon
+            | Self::Dot
+            | Self::Question => Punctuation,
             Self::Plus
             | Self::Minus
             | Self::Star

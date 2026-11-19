@@ -18,7 +18,12 @@ impl RakuBuilder {
 }
 
 impl Builder<RakuLanguage> for RakuBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<RakuLanguage>) -> BuildOutput<RakuLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<RakuLanguage>,
+    ) -> BuildOutput<RakuLanguage> {
         let parser = RakuParser::new(self.language);
         let output = parser.parse(text, edits, cache);
         let result = output.result.map(|green| RakuRoot { span: (0..green.byte_length as usize).into() });

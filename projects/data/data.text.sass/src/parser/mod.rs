@@ -74,7 +74,12 @@ impl<'config> SassParser<'config> {
 }
 
 impl<'config> Parser<SassLanguage> for SassParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<SassLanguage>) -> ParseOutput<'a, SassLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<SassLanguage>,
+    ) -> ParseOutput<'a, SassLanguage> {
         let lexer = SassLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

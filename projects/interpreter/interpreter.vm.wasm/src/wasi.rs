@@ -101,7 +101,8 @@ impl WasiPreview1Import {
 ///
 /// 非该模块的导入返回 `None`；模块名匹配但字段未知返回 `UnsupportedImport`。
 pub fn wasi_preview1_import(name: &str) -> Result<Option<WasiPreview1Import>, WasmError> {
-    let Some(field) = name.strip_prefix(WASI_PREVIEW1_MODULE).and_then(|rest| rest.strip_prefix('.')) else {
+    let Some(field) = name.strip_prefix(WASI_PREVIEW1_MODULE).and_then(|rest| rest.strip_prefix('.'))
+    else {
         return Ok(None);
     };
     let import = match field {

@@ -3,8 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use database_storage::local_io::{
-    FsVolumeStore, HostVolumeStore, MemoryPager, VolumeFile, VolumePublisher, main_bytes_from_memory_pager,
-    shm_sidecar_path, wal_sidecar_path,
+    FsVolumeStore, HostVolumeStore, MemoryPager, VolumeFile, VolumePublisher, main_bytes_from_memory_pager, shm_sidecar_path, wal_sidecar_path,
 };
 use database_types::Error;
 

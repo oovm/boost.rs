@@ -7,8 +7,8 @@ use crate::compiler::{
     types::{
         Identifier,
         hir::{
-            GenericBinderId, GenericType, HirBlock, HirEnum, HirExpr, HirExprKind, HirFunction, HirImpl, HirModule, HirStatementKind, HirStruct,
-            HirTrait, ValkyrieType,
+            GenericBinderId, GenericType, HirBlock, HirEnum, HirExpr, HirExprKind, HirFunction, HirImpl, HirModule, HirStatementKind,
+            HirStruct, HirTrait, ValkyrieType,
         },
     },
 };
@@ -325,10 +325,8 @@ pub fn freeze_trait_generic_binders(trait_definition: &mut HirTrait) {
 /// 调用点只读取该结果，不再按 receiver 实参回填。
 pub fn freeze_impl_generic_binders(implementation: &mut HirImpl, module: &HirModule) -> Result<(), HirError> {
     let owner_generics = owner_generics_for_target(module, &implementation.target);
-    let trait_generics = implementation
-        .trait_declaration
-        .map(|declaration| trait_generics_by_declaration(module, declaration))
-        .unwrap_or_default();
+    let trait_generics =
+        implementation.trait_declaration.map(|declaration| trait_generics_by_declaration(module, declaration)).unwrap_or_default();
     // impl 头部显式泛型按位置对齐 owner 声明参数；名字命中只作为次选，
     // 不按短名新铸身份。
     for (ordinal, generic) in implementation.generics.iter_mut().enumerate() {
@@ -473,7 +471,9 @@ fn unfrozen_generic_name(ty: &ValkyrieType) -> Option<&Identifier> {
             arguments.iter().find_map(unfrozen_generic_name)
         }
         ValkyrieType::Union(arguments) | ValkyrieType::Intersection(arguments) => arguments.iter().find_map(unfrozen_generic_name),
-        ValkyrieType::Array(inner) | ValkyrieType::Nullable(inner) | ValkyrieType::FixedArray { element: inner, .. } => unfrozen_generic_name(inner),
+        ValkyrieType::Array(inner) | ValkyrieType::Nullable(inner) | ValkyrieType::FixedArray { element: inner, .. } => {
+            unfrozen_generic_name(inner)
+        }
         ValkyrieType::Function(function) => {
             function.params.iter().find_map(unfrozen_generic_name).or_else(|| unfrozen_generic_name(&function.return_type))
         }
@@ -481,9 +481,10 @@ fn unfrozen_generic_name(ty: &ValkyrieType) -> Option<&Identifier> {
             unfrozen_generic_name(&associated.base).or_else(|| associated.type_arguments.iter().find_map(unfrozen_generic_name))
         }
         ValkyrieType::TraitObject(object) => object.type_arguments.iter().find_map(unfrozen_generic_name),
-        ValkyrieType::Row(row) => row.methods.iter().find_map(|method| {
-            method.params.iter().find_map(unfrozen_generic_name).or_else(|| unfrozen_generic_name(&method.return_type))
-        }),
+        ValkyrieType::Row(row) => row
+            .methods
+            .iter()
+            .find_map(|method| method.params.iter().find_map(unfrozen_generic_name).or_else(|| unfrozen_generic_name(&method.return_type))),
         ValkyrieType::TypeLambda(lambda) => unfrozen_generic_name(&lambda.body),
         ValkyrieType::LabeledTuple(fields) => fields.iter().find_map(|field| unfrozen_generic_name(&field.ty)),
         _ => None,

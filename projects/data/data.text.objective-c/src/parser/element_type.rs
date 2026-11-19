@@ -30,8 +30,12 @@ impl ElementType for ObjectiveCElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::Root => UniversalElementRole::Root,
-            Self::InterfaceDeclaration | Self::ProtocolDeclaration | Self::ImplementationDeclaration | Self::CategoryDeclaration | Self::ClassExtension => UniversalElementRole::Definition, // Best fit for declarations
-            Self::PropertyDeclaration | Self::MethodDeclaration => UniversalElementRole::Definition,                                                                                         // Best fit for members
+            Self::InterfaceDeclaration
+            | Self::ProtocolDeclaration
+            | Self::ImplementationDeclaration
+            | Self::CategoryDeclaration
+            | Self::ClassExtension => UniversalElementRole::Definition, // Best fit for declarations
+            Self::PropertyDeclaration | Self::MethodDeclaration => UniversalElementRole::Definition, // Best fit for members
             _ => UniversalElementRole::None,
         }
     }

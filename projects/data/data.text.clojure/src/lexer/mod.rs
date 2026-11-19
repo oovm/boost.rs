@@ -19,7 +19,12 @@ pub struct ClojureLexer<'config> {
 pub(crate) type State<'a, S> = LexerState<'a, S, ClojureLanguage>;
 
 impl<'config> Lexer<ClojureLanguage> for ClojureLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ClojureLanguage>) -> LexOutput<ClojureLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ClojureLanguage>,
+    ) -> LexOutput<ClojureLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -221,7 +226,12 @@ impl<'config> ClojureLexer<'config> {
         let start = state.get_position();
 
         while let Some(c) = state.peek() {
-            if c.is_alphanumeric() || c == '-' || c == '_' || c == '?' || c == '!' || c == '*' || c == '+' || c == '/' { state.advance(c.len_utf8()) } else { break }
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '?' || c == '!' || c == '*' || c == '+' || c == '/' {
+                state.advance(c.len_utf8())
+            }
+            else {
+                break;
+            }
         }
 
         state.add_token(ClojureTokenType::Symbol, start, state.get_position())

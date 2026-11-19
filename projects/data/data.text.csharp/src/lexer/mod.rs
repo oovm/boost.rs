@@ -573,7 +573,12 @@ impl<'config> CSharpLexer<'config> {
 }
 
 impl<'config> Lexer<CSharpLanguage> for CSharpLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &S, _edits: &[TextEdit], mut cache: &'a mut impl LexerCache<CSharpLanguage>) -> LexOutput<CSharpLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        _edits: &[TextEdit],
+        mut cache: &'a mut impl LexerCache<CSharpLanguage>,
+    ) -> LexOutput<CSharpLanguage> {
         let mut state = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

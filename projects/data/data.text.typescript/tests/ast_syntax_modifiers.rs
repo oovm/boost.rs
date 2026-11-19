@@ -1,7 +1,7 @@
 //! AST fields must record real syntax nodes with spans. `is_*` facts are derived
 //! methods, never inferred booleans.
 
-use data_text_core::{Builder, TextDiagnostics, SourceText, parser::ParseSession};
+use data_text_core::{Builder, SourceText, TextDiagnostics, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{ClassMember, ExportSpecifier, ImportSpecifier, ModifierKind, Statement, TypeScriptRoot},
@@ -32,7 +32,10 @@ fn mixed_named_import_is_not_declaration_level_type_only() {
     assert!(!declaration.is_type_only(), "a per-binding `type` keyword must not mark the whole import");
     assert!(declaration.modifiers.is_empty(), "no declaration-level modifier was written");
 
-    let [ImportSpecifier::Named { local: registry, type_modifier: registry_type, .. }, ImportSpecifier::Named { local: icon_def, type_modifier: icon_def_type, .. }] = declaration.specifiers.as_slice()
+    let [
+        ImportSpecifier::Named { local: registry, type_modifier: registry_type, .. },
+        ImportSpecifier::Named { local: icon_def, type_modifier: icon_def_type, .. },
+    ] = declaration.specifiers.as_slice()
     else {
         panic!("expected two named bindings, got {:?}", declaration.specifiers);
     };
@@ -148,7 +151,8 @@ fn class_members_record_modifier_tokens_and_optional_marker() {
     else {
         panic!("expected a class declaration");
     };
-    let [ClassMember::Property { modifiers, optional_marker, .. }, ClassMember::Method { modifiers: method_modifiers, .. }] = declaration.body.as_slice()
+    let [ClassMember::Property { modifiers, optional_marker, .. }, ClassMember::Method { modifiers: method_modifiers, .. }] =
+        declaration.body.as_slice()
     else {
         panic!("expected one property and one accessor, got {:?}", declaration.body);
     };

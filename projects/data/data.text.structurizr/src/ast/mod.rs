@@ -60,10 +60,24 @@ impl std::fmt::Display for StructurizrRoot {
                     writeln!(f, "        {} = softwareSystem \"{}\" \"{}\"", s.name, s.name, s.description.as_deref().unwrap_or(""))?;
                 }
                 C4Element::Container(c) => {
-                    writeln!(f, "        {} = container \"{}\" \"{}\" \"{}\"", c.name, c.name, c.description.as_deref().unwrap_or(""), c.technology.as_deref().unwrap_or(""))?;
+                    writeln!(
+                        f,
+                        "        {} = container \"{}\" \"{}\" \"{}\"",
+                        c.name,
+                        c.name,
+                        c.description.as_deref().unwrap_or(""),
+                        c.technology.as_deref().unwrap_or("")
+                    )?;
                 }
                 C4Element::Component(c) => {
-                    writeln!(f, "        {} = component \"{}\" \"{}\" \"{}\"", c.name, c.name, c.description.as_deref().unwrap_or(""), c.technology.as_deref().unwrap_or(""))?;
+                    writeln!(
+                        f,
+                        "        {} = component \"{}\" \"{}\" \"{}\"",
+                        c.name,
+                        c.name,
+                        c.description.as_deref().unwrap_or(""),
+                        c.technology.as_deref().unwrap_or("")
+                    )?;
                 }
                 C4Element::Relationship(r) => {
                     writeln!(f, "        {} -> {} \"{}\" \"{}\"", r.source, r.target, r.label, r.technology.as_deref().unwrap_or(""))?;

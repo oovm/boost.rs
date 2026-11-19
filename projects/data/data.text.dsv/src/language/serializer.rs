@@ -38,7 +38,12 @@ impl<const LANG: DsvLanguage> serde::Serializer for Serializer<LANG> {
     type SerializeStructVariant = serde::ser::Impossible<Self::Ok, Error>;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
-        Ok(DsvRoot { records: vec![DsvRecord { fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }], span: (0..0).into() }] })
+        Ok(DsvRoot {
+            records: vec![DsvRecord {
+                fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }],
+                span: (0..0).into(),
+            }],
+        })
     }
 
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
@@ -51,7 +56,12 @@ impl<const LANG: DsvLanguage> serde::Serializer for Serializer<LANG> {
         self.serialize_i64(v as i64)
     }
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        Ok(DsvRoot { records: vec![DsvRecord { fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }], span: (0..0).into() }] })
+        Ok(DsvRoot {
+            records: vec![DsvRecord {
+                fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }],
+                span: (0..0).into(),
+            }],
+        })
     }
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
         self.serialize_u64(v as u64)
@@ -63,19 +73,38 @@ impl<const LANG: DsvLanguage> serde::Serializer for Serializer<LANG> {
         self.serialize_u64(v as u64)
     }
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        Ok(DsvRoot { records: vec![DsvRecord { fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }], span: (0..0).into() }] })
+        Ok(DsvRoot {
+            records: vec![DsvRecord {
+                fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }],
+                span: (0..0).into(),
+            }],
+        })
     }
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         self.serialize_f64(v as f64)
     }
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        Ok(DsvRoot { records: vec![DsvRecord { fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }], span: (0..0).into() }] })
+        Ok(DsvRoot {
+            records: vec![DsvRecord {
+                fields: vec![DsvField { value: v.to_string(), is_quoted: false, span: (0..0).into() }],
+                span: (0..0).into(),
+            }],
+        })
     }
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
         self.serialize_str(&v.to_string())
     }
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(DsvRoot { records: vec![DsvRecord { fields: vec![DsvField { value: v.to_owned(), is_quoted: v.contains(LANG.field_separator) || v.contains(LANG.quote_char) || v.contains('\n'), span: (0..0).into() }], span: (0..0).into() }] })
+        Ok(DsvRoot {
+            records: vec![DsvRecord {
+                fields: vec![DsvField {
+                    value: v.to_owned(),
+                    is_quoted: v.contains(LANG.field_separator) || v.contains(LANG.quote_char) || v.contains('\n'),
+                    span: (0..0).into(),
+                }],
+                span: (0..0).into(),
+            }],
+        })
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
         self.serialize_str(&String::from_utf8_lossy(v))
@@ -98,7 +127,13 @@ impl<const LANG: DsvLanguage> serde::Serializer for Serializer<LANG> {
     fn serialize_newtype_struct<T: ?Sized + serde::Serialize>(self, _name: &'static str, value: &T) -> Result<Self::Ok, Self::Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(self, _name: &'static str, _variant_index: u32, _variant: &'static str, value: &T) -> Result<Self::Ok, Self::Error> {
+    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
         value.serialize(self)
     }
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -110,7 +145,13 @@ impl<const LANG: DsvLanguage> serde::Serializer for Serializer<LANG> {
     fn serialize_tuple_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeTupleStruct, Self::Error> {
         self.serialize_seq(Some(len))
     }
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Err(serde::ser::Error::custom("tuple variants are not supported"))
     }
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -119,7 +160,13 @@ impl<const LANG: DsvLanguage> serde::Serializer for Serializer<LANG> {
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct, Self::Error> {
         Ok(SerializeRecord::new())
     }
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Err(serde::ser::Error::custom("struct variants are not supported"))
     }
 }

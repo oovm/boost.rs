@@ -45,7 +45,32 @@ impl PrologHighlighter {
 
     fn highlight_keywords(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
-        let keywords = ["is", "mod", "div", "abs", "sin", "cos", "tan", "exp", "log", "sqrt", "dynamic", "multifile", "discontiguous", "module", "use_module", "export", "import", "if", "then", "else", "spy", "nospy", "trace", "notrace"];
+        let keywords = [
+            "is",
+            "mod",
+            "div",
+            "abs",
+            "sin",
+            "cos",
+            "tan",
+            "exp",
+            "log",
+            "sqrt",
+            "dynamic",
+            "multifile",
+            "discontiguous",
+            "module",
+            "use_module",
+            "export",
+            "import",
+            "if",
+            "then",
+            "else",
+            "spy",
+            "nospy",
+            "trace",
+            "notrace",
+        ];
 
         for keyword in &keywords {
             let mut start = 0;

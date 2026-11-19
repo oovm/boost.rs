@@ -39,9 +39,7 @@ fn check_id(kind: &str, raw: &str) -> Result<(), Error> {
         return Err(Error::invalid_input(format!("{kind} id `{raw}` must not be padded with whitespace")));
     }
     if !raw.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':')) {
-        return Err(Error::invalid_input(format!(
-            "{kind} id `{raw}` may only use ASCII letters, digits, `-`, `_`, `.` and `:`"
-        )));
+        return Err(Error::invalid_input(format!("{kind} id `{raw}` may only use ASCII letters, digits, `-`, `_`, `.` and `:`")));
     }
     Ok(())
 }
@@ -338,7 +336,14 @@ impl TaskRun {
     /// Records a successful attempt that published `outputs`.
     #[must_use]
     pub fn succeeded(task: &Task, outputs: Vec<String>) -> Self {
-        Self { task: task.id.clone(), status: TaskStatus::Succeeded, input: task.input.clone(), config: task.config.clone(), outputs, failure: None }
+        Self {
+            task: task.id.clone(),
+            status: TaskStatus::Succeeded,
+            input: task.input.clone(),
+            config: task.config.clone(),
+            outputs,
+            failure: None,
+        }
     }
 
     /// Records a host cancellation. Nothing is published.
@@ -465,12 +470,7 @@ impl Production {
     /// references survive.
     pub fn validate(&self) -> Result<(), Error> {
         let problems = self.problems();
-        if problems.is_empty() {
-            Ok(())
-        }
-        else {
-            Err(Error::invalid_input(problems.join("\n")))
-        }
+        if problems.is_empty() { Ok(()) } else { Err(Error::invalid_input(problems.join("\n"))) }
     }
 
     /// Declares or refreshes the voice task that produces one cue's audio.
@@ -546,11 +546,13 @@ impl Production {
     pub fn at_frame(&self, frame: u32) -> FrameLookup {
         let mut lookup = FrameLookup { frame, shots: Vec::new(), panels: Vec::new(), cues: Vec::new() };
         for shot in &self.shots {
-            let Some(scene) = self.project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str())) else {
+            let Some(scene) = self.project.scenes.iter().find(|scene| scene.id.as_deref() == Some(shot.scene.as_str()))
+            else {
                 continue;
             };
             let local = frame.checked_sub(scene.start);
-            let Some(local) = local.filter(|local| *local < scene.duration) else {
+            let Some(local) = local.filter(|local| *local < scene.duration)
+            else {
                 continue;
             };
             lookup.shots.push(shot.id.to_string());
@@ -594,7 +596,8 @@ impl Production {
         let mut index = HashMap::new();
         let referenced = !self.shots.is_empty();
         for (position, scene) in self.project.scenes.iter().enumerate() {
-            let Some(id) = scene.id.as_deref() else {
+            let Some(id) = scene.id.as_deref()
+            else {
                 if referenced {
                     problems.push(format!("scenes[{position}] has no id, so no shot can reference it"));
                 }
@@ -628,10 +631,7 @@ impl Production {
                 if let Some([x0, y0, x1, y1]) = panel.safe_area {
                     let inside = x0 >= 0.0 && y0 >= 0.0 && x1 <= 1.0 && y1 <= 1.0 && x0 < x1 && y0 < y1;
                     if !inside {
-                        problems.push(format!(
-                            "panel `{}` safe area {:?} must be a non-empty box inside 0..=1",
-                            panel.id, panel.safe_area
-                        ));
+                        problems.push(format!("panel `{}` safe area {:?} must be a non-empty box inside 0..=1", panel.id, panel.safe_area));
                     }
                 }
             }
@@ -684,7 +684,8 @@ impl Production {
 
     fn check_shots(&self, scenes: &HashMap<&str, usize>, problems: &mut Vec<String>) {
         for shot in &self.shots {
-            let Some(&position) = scenes.get(shot.scene.as_str()) else {
+            let Some(&position) = scenes.get(shot.scene.as_str())
+            else {
                 problems.push(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene));
                 continue;
             };
@@ -703,20 +704,19 @@ impl Production {
     fn check_cues(&self, scenes: &HashMap<&str, usize>, problems: &mut Vec<String>) {
         let shots: HashMap<&str, &Shot> = self.shots.iter().map(|shot| (shot.id.as_str(), shot)).collect();
         for cue in &self.cues {
-            let Some(shot) = shots.get(cue.shot.as_str()) else {
+            let Some(shot) = shots.get(cue.shot.as_str())
+            else {
                 problems.push(format!("cue `{}` references unknown shot `{}`", cue.id, cue.shot));
                 continue;
             };
-            let Some(&position) = scenes.get(shot.scene.as_str()) else {
+            let Some(&position) = scenes.get(shot.scene.as_str())
+            else {
                 // The shot itself already reports the missing scene.
                 continue;
             };
             let duration = self.project.scenes[position].duration;
             if cue.range[1] > duration {
-                problems.push(format!(
-                    "cue `{}` ends at frame {} but shot `{}` covers {duration} frames",
-                    cue.id, cue.range[1], shot.id
-                ));
+                problems.push(format!("cue `{}` ends at frame {} but shot `{}` covers {duration} frames", cue.id, cue.range[1], shot.id));
             }
         }
     }
@@ -747,7 +747,8 @@ impl Production {
         }
         let by_id: HashMap<&str, &Task> = self.tasks.iter().map(|task| (task.id.as_str(), task)).collect();
         for (position, run) in self.runs.iter().enumerate() {
-            let Some(task) = by_id.get(run.task.as_str()) else {
+            let Some(task) = by_id.get(run.task.as_str())
+            else {
                 problems.push(format!("runs[{position}] references unknown task `{}`", run.task));
                 continue;
             };
@@ -757,10 +758,7 @@ impl Production {
             match run.status {
                 TaskStatus::Succeeded => {
                     if run.outputs != task.outputs {
-                        problems.push(format!(
-                            "run for `{}` published {:?} but the task declares {:?}",
-                            run.task, run.outputs, task.outputs
-                        ));
+                        problems.push(format!("run for `{}` published {:?} but the task declares {:?}", run.task, run.outputs, task.outputs));
                     }
                     if run.failure.is_some() {
                         problems.push(format!("run for `{}` succeeded but carries a failure", run.task));
@@ -805,12 +803,7 @@ fn task_cycle(tasks: &[Task]) -> Option<Vec<String>> {
         Done,
     }
 
-    fn walk(
-        current: &str,
-        edges: &HashMap<&str, &[TaskId]>,
-        marks: &mut HashMap<String, Mark>,
-        path: &mut Vec<String>,
-    ) -> Option<Vec<String>> {
+    fn walk(current: &str, edges: &HashMap<&str, &[TaskId]>, marks: &mut HashMap<String, Mark>, path: &mut Vec<String>) -> Option<Vec<String>> {
         match marks.get(current) {
             Some(Mark::Done) => return None,
             Some(Mark::Open) => {
@@ -962,12 +955,7 @@ mod tests {
     #[test]
     fn unknown_references_are_reported() {
         let mut production = Production::new(project_with(false));
-        production.shots.push(Shot {
-            id: ShotId::new("shot-a").unwrap(),
-            scene: "missing".to_owned(),
-            locked: false,
-            panels: Vec::new(),
-        });
+        production.shots.push(Shot { id: ShotId::new("shot-a").unwrap(), scene: "missing".to_owned(), locked: false, panels: Vec::new() });
         production.cues.push(Cue {
             id: CueId::new("cue-a").unwrap(),
             shot: ShotId::new("shot-nowhere").unwrap(),
@@ -1071,10 +1059,7 @@ mod tests {
         };
         production.tasks.push(task);
         production.runs.push(TaskRun::succeeded(&production.tasks[0], vec!["out/other.mp4".to_owned()]));
-        production.runs.push(TaskRun {
-            task: TaskId::new("ghost").unwrap(),
-            ..TaskRun::cancelled(&production.tasks[0])
-        });
+        production.runs.push(TaskRun { task: TaskId::new("ghost").unwrap(), ..TaskRun::cancelled(&production.tasks[0]) });
         production.runs.push(TaskRun { status: TaskStatus::Failed, failure: None, ..TaskRun::cancelled(&production.tasks[0]) });
 
         let problems = production.problems();
@@ -1138,8 +1123,18 @@ mod tests {
             project: project_with(true),
             assets: Vec::new(),
             shots: vec![
-                Shot { id: ShotId::new("shot-mechanism").unwrap(), scene: "mechanism".to_owned(), locked: false, panels: vec![panel("panel-1", [0, 90])] },
-                Shot { id: ShotId::new("shot-spatial").unwrap(), scene: "spatial".to_owned(), locked: false, panels: vec![panel("panel-2", [0, 60])] },
+                Shot {
+                    id: ShotId::new("shot-mechanism").unwrap(),
+                    scene: "mechanism".to_owned(),
+                    locked: false,
+                    panels: vec![panel("panel-1", [0, 90])],
+                },
+                Shot {
+                    id: ShotId::new("shot-spatial").unwrap(),
+                    scene: "spatial".to_owned(),
+                    locked: false,
+                    panels: vec![panel("panel-2", [0, 60])],
+                },
             ],
             cues: vec![Cue {
                 id: CueId::new("cue-1").unwrap(),

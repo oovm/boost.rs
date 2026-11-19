@@ -2,8 +2,10 @@
 
 use std::fmt;
 
-use boost_source::ByteRange;
-use boost_source::binary::{ByteSource, ByteWindow, ReadOutcome};
+use boost_source::{
+    ByteRange,
+    binary::{ByteSource, ByteWindow, ReadOutcome},
+};
 use data_binary_core::ByteExtent;
 use data_compression::{CodecError, CodecLimits, DeflateLevel, Gzip, GzipStreamDecoder, StreamChunk};
 
@@ -117,8 +119,8 @@ struct GzipReader<S: ByteSource> {
 impl<S: ByteSource> GzipReader<S> {
     fn new(source: S, limits: CodecLimits, chunk_size: usize) -> Result<Self, TarGzError> {
         let compressed_size = source.length().ok_or(TarGzError::Tar(TarIndexError::UnknownLength))?;
-        let range = ByteRange::with_len(0, compressed_size)
-            .ok_or_else(|| TarGzError::Tar(TarIndexError::Source("byte extent overflow".into())))?;
+        let range =
+            ByteRange::with_len(0, compressed_size).ok_or_else(|| TarGzError::Tar(TarIndexError::Source("byte extent overflow".into())))?;
         let window = ByteWindow::new(source, 0, range);
         Ok(Self {
             decoder: GzipStreamDecoder::new(limits),
@@ -160,20 +162,14 @@ impl<S: ByteSource> GzipReader<S> {
                 }
                 StreamChunk::NeedInput => {
                     if self.position >= self.compressed_size {
-                        return Err(TarGzError::Codec(CodecError::InputExhausted {
-                            offset: self.position as usize,
-                            needed: 1,
-                        }));
+                        return Err(TarGzError::Codec(CodecError::InputExhausted { offset: self.position as usize, needed: 1 }));
                     }
                     let take = (self.chunk.len() as u64).min(self.compressed_size - self.position) as usize;
                     let bytes_read = match self.window.read_at(self.position, &mut self.chunk[..take]) {
                         Ok(ReadOutcome::Complete) => take,
                         Ok(ReadOutcome::Partial { bytes_read }) => bytes_read as usize,
                         Ok(ReadOutcome::Eof) => {
-                            return Err(TarGzError::Codec(CodecError::InputExhausted {
-                                offset: self.position as usize,
-                                needed: 1,
-                            }));
+                            return Err(TarGzError::Codec(CodecError::InputExhausted { offset: self.position as usize, needed: 1 }));
                         }
                         Ok(ReadOutcome::Unavailable { range, reason }) => {
                             let range = ByteExtent::new_allowing_empty(range.start(), range.len())
@@ -183,10 +179,7 @@ impl<S: ByteSource> GzipReader<S> {
                         Err(error) => return Err(TarGzError::Tar(TarIndexError::Source(error.to_string()))),
                     };
                     if bytes_read == 0 {
-                        return Err(TarGzError::Codec(CodecError::InputExhausted {
-                            offset: self.position as usize,
-                            needed: 1,
-                        }));
+                        return Err(TarGzError::Codec(CodecError::InputExhausted { offset: self.position as usize, needed: 1 }));
                     }
                     self.decoder.push(&self.chunk[..bytes_read]).map_err(TarGzError::Codec)?;
                     self.position += bytes_read as u64;
@@ -250,12 +243,7 @@ impl<S: ByteSource> TarGzStream<S> {
 
     /// Opens a tar-gzip stream with an explicit compressed read-ahead size.
     pub fn with_chunk_size(source: S, limits: CodecLimits, chunk_size: usize) -> Result<Self, TarGzError> {
-        Ok(Self {
-            reader: GzipReader::new(source, limits, chunk_size)?,
-            pending: PendingMetadata::default(),
-            entry_end: 0,
-            finished: false,
-        })
+        Ok(Self { reader: GzipReader::new(source, limits, chunk_size)?, pending: PendingMetadata::default(), entry_end: 0, finished: false })
     }
 
     /// Returns how many decoded tar bytes the stream produced.
@@ -320,8 +308,7 @@ impl<S: ByteSource> TarGzStream<S> {
             }
 
             let (path, link_name, size, modified_unix) = self.pending.resolve(&header);
-            let data_end =
-                data_offset.checked_add(size).ok_or(TarGzError::Tar(TarIndexError::Truncated { offset: data_offset }))?;
+            let data_end = data_offset.checked_add(size).ok_or(TarGzError::Tar(TarIndexError::Truncated { offset: data_offset }))?;
             let data_range = ByteExtent::new_allowing_empty(data_offset, size)
                 .map_err(|_| TarGzError::Tar(TarIndexError::InvalidHeaderField { offset, field: "data range" }))?;
             self.entry_end = padded_offset(data_end);

@@ -444,9 +444,19 @@ impl TokenType for TexTokenType {
             | Self::Ampersand
             | Self::Hash
             | Self::At => UniversalTokenRole::Operator,
-            Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::LeftParen | Self::RightParen | Self::Comma | Self::Dot | Self::Colon | Self::Semicolon | Self::Exclamation | Self::Question | Self::Percent => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::Comma
+            | Self::Dot
+            | Self::Colon
+            | Self::Semicolon
+            | Self::Exclamation
+            | Self::Question
+            | Self::Percent => UniversalTokenRole::Punctuation,
             Self::Identifier | Self::Text => UniversalTokenRole::Name,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,

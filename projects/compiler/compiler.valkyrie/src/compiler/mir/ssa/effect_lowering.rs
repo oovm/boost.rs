@@ -203,9 +203,7 @@ fn hir_expr_calls_callable(expr: &HirExpr, key: CallableKey) -> bool {
         HirExprKind::YieldFrom(inner) | HirExprKind::Await(inner) | HirExprKind::Awake(inner) | HirExprKind::BlockOn(inner) => {
             hir_expr_calls_callable(inner, key)
         }
-        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => {
-            hir_expr_calls_callable(inner, key)
-        }
+        HirExprKind::Raise(inner) | HirExprKind::Resume(inner) | HirExprKind::TryPropagate { inner, .. } => hir_expr_calls_callable(inner, key),
         HirExprKind::Catch { expr, arms } => {
             hir_expr_calls_callable(expr, key) || arms.iter().any(|arm| hir_expr_calls_callable(&arm.body, key))
         }
@@ -268,7 +266,8 @@ pub(super) fn collect_effectful_callees(module: &HirModule) -> EffectfulCallees 
     let mut inlineable = BTreeMap::new();
     let mut effectful = std::collections::BTreeSet::new();
     for function in &module.functions {
-        let Some(key) = function_key(function) else {
+        let Some(key) = function_key(function)
+        else {
             continue;
         };
         if !hir_block_contains_raise(&function.body) {
@@ -644,10 +643,7 @@ impl MirBuilder {
                     if self.effectful_callees.is_effectful(resolved) {
                         self.diagnostics.push(crate::compiler::mir::ssa::MirDiagnostic::UnsupportedExpression {
                             span: expr.span.clone(),
-                            kind: format!(
-                                "跨函数效应传播未建模：`{}` 含 `raise` 且不属于可内联的冻结实例",
-                                resolved.symbol
-                            ),
+                            kind: format!("跨函数效应传播未建模：`{}` 含 `raise` 且不属于可内联的冻结实例", resolved.symbol),
                         });
                     }
                 }

@@ -12,8 +12,7 @@ use std::{
 };
 
 use database_cluster::control::NodeLease;
-use database_execution::cluster::KeyValueExecutor;
-use database_execution::mongo::cursor::CursorStore;
+use database_execution::{cluster::KeyValueExecutor, mongo::cursor::CursorStore};
 
 use super::{
     connection::{serve_cancellable, serve_cancellable_with_executor},

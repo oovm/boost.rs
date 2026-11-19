@@ -10,7 +10,7 @@ use crate::{
     lexer::{VerilogLexer, token_type::VerilogKind},
 };
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{ParseCache, Parser, ParserState, parse_with_lexer},
     source::Source,
 };
@@ -30,7 +30,12 @@ impl<'config> VerilogParser<'config> {
 }
 
 impl<'config> Parser<VerilogLanguage> for VerilogParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VerilogLanguage>) -> data_text_core::ParseOutput<'a, VerilogLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VerilogLanguage>,
+    ) -> data_text_core::ParseOutput<'a, VerilogLanguage> {
         let lexer = VerilogLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

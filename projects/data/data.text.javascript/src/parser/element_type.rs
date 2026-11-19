@@ -159,8 +159,23 @@ impl ElementType for JavaScriptElementType {
         use UniversalElementRole::*;
         match self {
             Self::Root => Root,
-            Self::Statement | Self::Block | Self::BlockStatement | Self::IfStatement | Self::WhileStatement | Self::ForStatement | Self::ReturnStatement | Self::FunctionDeclaration | Self::VariableDeclaration => Statement,
-            Self::Expression | Self::AssignmentExpression | Self::LogicalExpression | Self::BinaryExpression | Self::CallExpression | Self::MemberExpression | Self::Identifier | Self::Literal => Expression,
+            Self::Statement
+            | Self::Block
+            | Self::BlockStatement
+            | Self::IfStatement
+            | Self::WhileStatement
+            | Self::ForStatement
+            | Self::ReturnStatement
+            | Self::FunctionDeclaration
+            | Self::VariableDeclaration => Statement,
+            Self::Expression
+            | Self::AssignmentExpression
+            | Self::LogicalExpression
+            | Self::BinaryExpression
+            | Self::CallExpression
+            | Self::MemberExpression
+            | Self::Identifier
+            | Self::Literal => Expression,
             Self::Error => Error,
             _ => None,
         }

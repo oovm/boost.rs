@@ -41,7 +41,10 @@ pub mod archive;
 pub use archive::{ArchiveReport, AssetCheck, check_archive};
 
 #[cfg(feature = "scene")]
-pub use render::{BurnInCue, FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_frame_at, render_project, render_project_with};
+pub use render::{
+    BurnInCue, FrameRange, PreviewStats, RenderOptions, RenderStats, lower_audio, preview_frame, render_frame_at, render_project,
+    render_project_with,
+};
 
 #[cfg(all(feature = "scene", feature = "layout-export"))]
 pub mod storyboard;
@@ -49,7 +52,8 @@ pub mod storyboard;
 #[cfg(all(feature = "scene", feature = "layout-export"))]
 pub use storyboard::{
     ComparisonPage, CoverCandidate, StoryboardCell, StoryboardOptions, StoryboardPage, write_chapters, write_comparison, write_contact_sheet,
-    write_cover_candidates, write_motion_preview, write_scene_overview, write_seams, write_storyboard, write_storyboard_selected, write_timeline,
+    write_cover_candidates, write_motion_preview, write_scene_overview, write_seams, write_storyboard, write_storyboard_selected,
+    write_timeline,
 };
 
 #[cfg(all(feature = "scene", feature = "trace"))]

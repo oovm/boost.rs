@@ -48,7 +48,12 @@ impl<'config> MapleParser<'config> {
     }
 }
 impl<'config> Parser<MapleLanguage> for MapleParser<'config> {
-    fn parse<'a, SourceType: Source + ?Sized>(&self, text: &'a SourceType, edits: &[TextEdit], cache: &'a mut impl ParseCache<MapleLanguage>) -> ParseOutput<'a, MapleLanguage> {
+    fn parse<'a, SourceType: Source + ?Sized>(
+        &self,
+        text: &'a SourceType,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<MapleLanguage>,
+    ) -> ParseOutput<'a, MapleLanguage> {
         let lexer = MapleLexer::new(self.config);
         cache.prepare_generation();
         parse_with_lexer(&lexer, text, edits, cache, |state| {
@@ -95,7 +100,16 @@ impl<'config> Pratt<MapleLanguage> for MapleParser<'config> {
             return state.finish_at(checkpoint, MapleElementType::List);
         }
         state.syntax_error("Expected Maple expression");
-        if !matches!(state.peek_kind(), None | Some(MapleTokenType::Eof | MapleTokenType::RightParen | MapleTokenType::RightBracket | MapleTokenType::Comma | MapleTokenType::Semicolon)) {
+        if !matches!(
+            state.peek_kind(),
+            None | Some(
+                MapleTokenType::Eof
+                    | MapleTokenType::RightParen
+                    | MapleTokenType::RightBracket
+                    | MapleTokenType::Comma
+                    | MapleTokenType::Semicolon
+            )
+        ) {
             state.bump();
         }
         state.finish_at(checkpoint, MapleElementType::Error)
@@ -107,7 +121,12 @@ impl<'config> Pratt<MapleLanguage> for MapleParser<'config> {
         }
         self.primary(state)
     }
-    fn infix<'a, SourceType: Source + ?Sized>(&self, state: &mut State<'a, SourceType>, left: &'a GreenNode<'a, MapleLanguage>, minimum: u8) -> Option<&'a GreenNode<'a, MapleLanguage>> {
+    fn infix<'a, SourceType: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, SourceType>,
+        left: &'a GreenNode<'a, MapleLanguage>,
+        minimum: u8,
+    ) -> Option<&'a GreenNode<'a, MapleLanguage>> {
         let operator = state.peek_kind()?;
         let info = match operator {
             MapleTokenType::Plus | MapleTokenType::Minus => OperatorInfo::left(80),
@@ -118,10 +137,15 @@ impl<'config> Pratt<MapleLanguage> for MapleParser<'config> {
         if info.precedence < minimum {
             return None;
         }
-        if operator == MapleTokenType::Power && left.kind == MapleElementType::BinaryExpr && left.children.iter().any(|child| matches!(child, GreenTree::Leaf(leaf) if leaf.kind == MapleTokenType::Power)) {
+        if operator == MapleTokenType::Power
+            && left.kind == MapleElementType::BinaryExpr
+            && left.children.iter().any(|child| matches!(child, GreenTree::Leaf(leaf) if leaf.kind == MapleTokenType::Power))
+        {
             state.syntax_error("Ambiguous exponentiation requires parentheses");
             return None;
         }
-        Some(binary(state, left, operator, info.precedence, info.associativity, MapleElementType::BinaryExpr, |state, minimum| self.parse_pratt(state, minimum)))
+        Some(binary(state, left, operator, info.precedence, info.associativity, MapleElementType::BinaryExpr, |state, minimum| {
+            self.parse_pratt(state, minimum)
+        }))
     }
 }

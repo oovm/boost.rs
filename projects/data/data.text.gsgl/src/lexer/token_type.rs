@@ -307,7 +307,21 @@ impl GsglTokenType {
 
     /// Checks if the kind is a data type.
     pub fn is_type(self) -> bool {
-        matches!(self, Self::Float | Self::Int | Self::Bool | Self::Vec2 | Self::Vec3 | Self::Vec4 | Self::Mat2 | Self::Mat3 | Self::Mat4 | Self::Sampler2D | Self::SamplerCube | Self::Void)
+        matches!(
+            self,
+            Self::Float
+                | Self::Int
+                | Self::Bool
+                | Self::Vec2
+                | Self::Vec3
+                | Self::Vec4
+                | Self::Mat2
+                | Self::Mat3
+                | Self::Mat4
+                | Self::Sampler2D
+                | Self::SamplerCube
+                | Self::Void
+        )
     }
 
     /// Checks if the kind is an operator.
@@ -505,7 +519,9 @@ impl TokenType for GsglTokenType {
             Self::String => UniversalTokenRole::Literal,
             Self::True | Self::False => UniversalTokenRole::Literal,
             Self::Comment => UniversalTokenRole::Comment,
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => UniversalTokenRole::Punctuation,
+            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => {
+                UniversalTokenRole::Punctuation
+            }
             _ => UniversalTokenRole::None,
         }
     }

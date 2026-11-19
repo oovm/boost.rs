@@ -93,7 +93,11 @@ impl CatalogLoadError {
     /// 调用方给出的 catalog 路径。
     pub fn path(&self) -> &Path {
         match self {
-            Self::NotFound { path } | Self::Io { path, .. } | Self::Parse { path, .. } | Self::Schema { path, .. } | Self::RoutingMissing { path } => path,
+            Self::NotFound { path }
+            | Self::Io { path, .. }
+            | Self::Parse { path, .. }
+            | Self::Schema { path, .. }
+            | Self::RoutingMissing { path } => path,
         }
     }
 
@@ -135,7 +139,8 @@ impl std::error::Error for CatalogLoadError {
 /// `catalog_path` 为 `None` 表示调用方显式选择单节点模式；为 `Some` 时必须读到
 /// 一个带已发布路由的 catalog，任何失败都原样返回，不回退成本地分片。
 pub fn load_node_catalog(catalog_path: Option<&Path>) -> Result<NodeCatalogFacts, CatalogLoadError> {
-    let Some(path) = catalog_path else {
+    let Some(path) = catalog_path
+    else {
         let map = local_shard_map();
         return Ok(NodeCatalogFacts { schema_revision: None, routing: NodeRouting::Local(map) });
     };
@@ -143,13 +148,17 @@ pub fn load_node_catalog(catalog_path: Option<&Path>) -> Result<NodeCatalogFacts
         return Err(CatalogLoadError::NotFound { path: path.to_path_buf() });
     }
     let catalog = Catalog::open(path).map_err(|error| classify(path, error))?;
-    let map = catalog.routing().map_err(|error| classify(path, error))?.ok_or_else(|| CatalogLoadError::RoutingMissing { path: path.to_path_buf() })?;
+    let map = catalog
+        .routing()
+        .map_err(|error| classify(path, error))?
+        .ok_or_else(|| CatalogLoadError::RoutingMissing { path: path.to_path_buf() })?;
     Ok(NodeCatalogFacts { schema_revision: catalog.schema().map(|schema| schema.version), routing: NodeRouting::Catalog(map) })
 }
 
 /// 单节点模式的路由图。
 fn local_shard_map() -> ShardMap {
-    ShardMap::new(ShardEpoch(LOCAL_ROUTING_EPOCH), vec![ShardId(LOCAL_SHARD_ID.to_owned())]).expect("the built-in single-node routing map is valid")
+    ShardMap::new(ShardEpoch(LOCAL_ROUTING_EPOCH), vec![ShardId(LOCAL_SHARD_ID.to_owned())])
+        .expect("the built-in single-node routing map is valid")
 }
 
 fn classify(path: &Path, error: Error) -> CatalogLoadError {

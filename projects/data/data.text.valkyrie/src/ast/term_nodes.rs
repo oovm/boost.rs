@@ -710,7 +710,9 @@ impl TermExpression {
             TermExpression::QuoteLiteral(literal) => literal.span,
             TermExpression::IntegerLiteral { span, .. } => *span,
             TermExpression::FloatLiteral { span, .. } => *span,
-            TermExpression::BooleanLiteral { span, .. } | TermExpression::ArrayLiteral { span, .. } | TermExpression::TupleLiteral { span, .. } => *span,
+            TermExpression::BooleanLiteral { span, .. }
+            | TermExpression::ArrayLiteral { span, .. }
+            | TermExpression::TupleLiteral { span, .. } => *span,
             TermExpression::UnitLiteral { span } => *span,
             TermExpression::Binary(node) => node.span,
             TermExpression::Unary(node) => node.span,

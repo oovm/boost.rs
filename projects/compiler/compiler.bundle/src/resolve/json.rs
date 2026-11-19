@@ -6,8 +6,10 @@
 //! 条件顺序打乱，因此这里手写一个顺序敏感的 `Deserialize` 收集为
 //! `Vec<(String, Json)>`，object 键严格按文档出现顺序入列。
 
-use serde::de::{self, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, MapAccess, SeqAccess, Visitor},
+};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]

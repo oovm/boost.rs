@@ -16,7 +16,10 @@ pub mod mcp;
 /// Parser module.
 pub mod parser;
 
-pub use crate::{ast::PowerShellRoot, builder::PowerShellBuilder, language::PowerShellLanguage, lexer::token_type::PowerShellTokenType, parser::PowerShellParser};
+pub use crate::{
+    ast::PowerShellRoot, builder::PowerShellBuilder, language::PowerShellLanguage, lexer::token_type::PowerShellTokenType,
+    parser::PowerShellParser,
+};
 
 #[cfg(feature = "lsp")]
 pub use crate::lsp::highlighter::{HighlightKind, Highlighter, PowerShellHighlighter};

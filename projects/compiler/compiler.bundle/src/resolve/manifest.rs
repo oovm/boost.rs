@@ -21,20 +21,16 @@ impl Manifest {
                 return Ok(Self { raw: None });
             }
             Err(err) => {
-                return Err(PackDiagnostic::new(
-                    CODE_BAD_MANIFEST,
-                    format!("读取 package.json 失败：{err}"),
-                )
-                .with_path(path.display().to_string()));
+                return Err(
+                    PackDiagnostic::new(CODE_BAD_MANIFEST, format!("读取 package.json 失败：{err}")).with_path(path.display().to_string())
+                );
             }
         };
         let raw: Json = serde_json::from_str(&text).map_err(|err| {
-            PackDiagnostic::new(CODE_BAD_MANIFEST, format!("package.json 不是合法 JSON：{err}"))
-                .with_path(path.display().to_string())
+            PackDiagnostic::new(CODE_BAD_MANIFEST, format!("package.json 不是合法 JSON：{err}")).with_path(path.display().to_string())
         })?;
         if !matches!(raw, Json::Object(_)) {
-            return Err(PackDiagnostic::new(CODE_BAD_MANIFEST, "package.json 顶层必须是对象")
-                .with_path(path.display().to_string()));
+            return Err(PackDiagnostic::new(CODE_BAD_MANIFEST, "package.json 顶层必须是对象").with_path(path.display().to_string()));
         }
         Ok(Self { raw: Some(raw) })
     }

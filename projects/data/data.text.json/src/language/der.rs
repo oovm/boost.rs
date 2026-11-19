@@ -100,9 +100,19 @@ impl serde::ser::Serializer for Serializer {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(self, _name: &'static str, _variant_index: u32, variant: &'static str, value: &T) -> Result<Self::Ok, Self::Error> {
+    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
         let mut fields = Vec::new();
-        fields.push(JsonField { name: JsonString { value: variant.to_string(), span: (0..0).into() }, value: value.serialize(self)?, span: (0..0).into() });
+        fields.push(JsonField {
+            name: JsonString { value: variant.to_string(), span: (0..0).into() },
+            value: value.serialize(self)?,
+            span: (0..0).into(),
+        });
         Ok(JsonValueNode::Object(JsonObject { fields, span: (0..0).into() }))
     }
 
@@ -118,7 +128,13 @@ impl serde::ser::Serializer for Serializer {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Ok(SerializeVariant { name: variant.to_string(), elements: Vec::with_capacity(len) })
     }
 
@@ -130,7 +146,13 @@ impl serde::ser::Serializer for Serializer {
         self.serialize_map(Some(len))
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Ok(SerializeVariant { name: variant.to_string(), elements: Vec::with_capacity(len) })
     }
 }
@@ -196,8 +218,13 @@ impl serde::ser::SerializeMap for SerializeObject {
     }
 
     fn serialize_value<T: ?Sized + serde::Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let key = self.current_key.take().ok_or_else(|| <Self::Error as serde::ser::Error>::custom("serialize_value called before serialize_key"))?;
-        self.fields.push(JsonField { name: JsonString { value: key, span: (0..0).into() }, value: value.serialize(Serializer)?, span: (0..0).into() });
+        let key =
+            self.current_key.take().ok_or_else(|| <Self::Error as serde::ser::Error>::custom("serialize_value called before serialize_key"))?;
+        self.fields.push(JsonField {
+            name: JsonString { value: key, span: (0..0).into() },
+            value: value.serialize(Serializer)?,
+            span: (0..0).into(),
+        });
         Ok(())
     }
 
@@ -211,7 +238,11 @@ impl serde::ser::SerializeStruct for SerializeObject {
     type Error = Error;
 
     fn serialize_field<T: ?Sized + serde::Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error> {
-        self.fields.push(JsonField { name: JsonString { value: key.to_string(), span: (0..0).into() }, value: value.serialize(Serializer)?, span: (0..0).into() });
+        self.fields.push(JsonField {
+            name: JsonString { value: key.to_string(), span: (0..0).into() },
+            value: value.serialize(Serializer)?,
+            span: (0..0).into(),
+        });
         Ok(())
     }
 
@@ -237,7 +268,11 @@ impl serde::ser::SerializeTupleVariant for SerializeVariant {
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         let mut fields = Vec::new();
-        fields.push(JsonField { name: JsonString { value: self.name, span: (0..0).into() }, value: JsonValueNode::Array(JsonArray { elements: self.elements, span: (0..0).into() }), span: (0..0).into() });
+        fields.push(JsonField {
+            name: JsonString { value: self.name, span: (0..0).into() },
+            value: JsonValueNode::Array(JsonArray { elements: self.elements, span: (0..0).into() }),
+            span: (0..0).into(),
+        });
         Ok(JsonValueNode::Object(JsonObject { fields, span: (0..0).into() }))
     }
 }
@@ -247,13 +282,24 @@ impl serde::ser::SerializeStructVariant for SerializeVariant {
     type Error = Error;
 
     fn serialize_field<T: ?Sized + serde::Serialize>(&mut self, key: &'static str, value: &T) -> Result<(), Self::Error> {
-        self.elements.push(JsonValueNode::Object(JsonObject { fields: vec![JsonField { name: JsonString { value: key.to_string(), span: (0..0).into() }, value: value.serialize(Serializer)?, span: (0..0).into() }], span: (0..0).into() }));
+        self.elements.push(JsonValueNode::Object(JsonObject {
+            fields: vec![JsonField {
+                name: JsonString { value: key.to_string(), span: (0..0).into() },
+                value: value.serialize(Serializer)?,
+                span: (0..0).into(),
+            }],
+            span: (0..0).into(),
+        }));
         Ok(())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         let mut fields = Vec::new();
-        fields.push(JsonField { name: JsonString { value: self.name, span: (0..0).into() }, value: JsonValueNode::Array(JsonArray { elements: self.elements, span: (0..0).into() }), span: (0..0).into() });
+        fields.push(JsonField {
+            name: JsonString { value: self.name, span: (0..0).into() },
+            value: JsonValueNode::Array(JsonArray { elements: self.elements, span: (0..0).into() }),
+            span: (0..0).into(),
+        });
         Ok(JsonValueNode::Object(JsonObject { fields, span: (0..0).into() }))
     }
 }
@@ -331,7 +377,13 @@ impl serde::ser::Serializer for KeySerializer {
     fn serialize_newtype_struct<T: ?Sized + serde::Serialize>(self, _name: &'static str, value: &T) -> Result<Self::Ok, Self::Error> {
         value.serialize(self)
     }
-    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _value: &T) -> Result<Self::Ok, Self::Error> {
+    fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T,
+    ) -> Result<Self::Ok, Self::Error> {
         Err(<Error as serde::ser::Error>::custom("variant cannot be a map key"))
     }
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -343,7 +395,13 @@ impl serde::ser::Serializer for KeySerializer {
     fn serialize_tuple_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeTupleStruct, Self::Error> {
         Err(<Error as serde::ser::Error>::custom("tuple struct cannot be a map key"))
     }
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Err(<Error as serde::ser::Error>::custom("tuple variant cannot be a map key"))
     }
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -352,7 +410,13 @@ impl serde::ser::Serializer for KeySerializer {
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct, Self::Error> {
         Err(<Error as serde::ser::Error>::custom("struct cannot be a map key"))
     }
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, _len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Err(<Error as serde::ser::Error>::custom("struct variant cannot be a map key"))
     }
 }
@@ -392,7 +456,10 @@ impl<'de> serde::de::Deserializer<'de> for JsonValueNode {
             JsonValueNode::String(s) => visitor.visit_enum(EnumDeserializer::new(s.value, None)),
             JsonValueNode::Object(o) => {
                 if o.fields.len() != 1 {
-                    return Err(<Error as serde::de::Error>::custom(format!("Expected object with 1 field for enum, found {}", o.fields.len())));
+                    return Err(<Error as serde::de::Error>::custom(format!(
+                        "Expected object with 1 field for enum, found {}",
+                        o.fields.len()
+                    )));
                 }
                 let field = &o.fields[0];
                 visitor.visit_enum(EnumDeserializer::new(field.name.value.clone(), Some(field.value.clone())))

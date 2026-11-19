@@ -17,7 +17,12 @@ pub struct CmdLexer<'config> {
 }
 
 impl<'config> Lexer<CmdLanguage> for CmdLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<CmdLanguage>) -> LexOutput<CmdLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<CmdLanguage>,
+    ) -> LexOutput<CmdLanguage> {
         let mut state = LexerState::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

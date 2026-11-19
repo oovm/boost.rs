@@ -96,7 +96,8 @@ fn scalar_functions_nullif_greatest_least_date_trunc() {
     let row = engine.query("SELECT NULLIF(1, 1), NULLIF(2, 1), GREATEST(3, 7, 5), LEAST(3, 7, 5), GREATEST(3, NULL) FROM t").unwrap();
     // PostgreSQL 的 GREATEST/LEAST 忽略 NULL 实参。
     assert_eq!(rows_of(&row), vec![vec!["Null", "2", "7", "3", "3"]]);
-    let times = engine.query("SELECT DATE_TRUNC('day', created_at), DATE_TRUNC('month', created_at), DATE_TRUNC('hour', created_at) FROM t").unwrap();
+    let times =
+        engine.query("SELECT DATE_TRUNC('day', created_at), DATE_TRUNC('month', created_at), DATE_TRUNC('hour', created_at) FROM t").unwrap();
     assert_eq!(rows_of(&times), vec![vec!["2026-11-18 00:00:00", "2026-11-01 00:00:00", "2026-11-18 13:00:00"]]);
     engine.close().unwrap();
 }
@@ -210,17 +211,15 @@ fn listeners_require_the_configured_password_authentication() {
     ] {
         let label = format!("{authentication:?}");
         let listener = engine.listen_with(endpoint, authentication).unwrap();
-        let mut accepted = PostgreSQLClient::open(
-            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password("s3cret"),
-        )
-        .unwrap_or_else(|error| panic!("{label} rejected the configured password: {error}"));
+        let mut accepted =
+            PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password("s3cret"))
+                .unwrap_or_else(|error| panic!("{label} rejected the configured password: {error}"));
         let results = accepted.execute("SELECT name FROM secret WHERE id = 1").unwrap();
         assert_eq!(results[0].cell(0, 0), Some(Some("guarded")));
         accepted.close();
 
-        let rejected = PostgreSQLClient::open(
-            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password("wrong"),
-        );
+        let rejected =
+            PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password("wrong"));
         let error = match rejected {
             Ok(mut client) => {
                 let error = client.execute("SELECT 1").unwrap_err();
@@ -254,17 +253,15 @@ fn listeners_verify_the_password_a_role_stores() {
     let endpoint = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
     for method in [postgres::PasswordMethod::Cleartext, postgres::PasswordMethod::Md5, postgres::PasswordMethod::ScramSha256] {
         let listener = engine.listen_with(endpoint, postgres::Authentication::role_password(method)).unwrap();
-        let mut accepted = PostgreSQLClient::open(
-            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "app", "smoke").with_password("r0le"),
-        )
-        .unwrap_or_else(|error| panic!("{method:?} rejected the catalog password: {error}"));
+        let mut accepted =
+            PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "app", "smoke").with_password("r0le"))
+                .unwrap_or_else(|error| panic!("{method:?} rejected the catalog password: {error}"));
         let results = accepted.execute("SELECT name FROM secret WHERE id = 1").unwrap();
         assert_eq!(results[0].cell(0, 0), Some(Some("guarded")));
         accepted.close();
 
-        let rejected = PostgreSQLClient::open(
-            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "app", "smoke").with_password("wrong"),
-        );
+        let rejected =
+            PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "app", "smoke").with_password("wrong"));
         let error = match rejected {
             Ok(mut client) => {
                 let error = client.execute("SELECT 1").unwrap_err();
@@ -281,9 +278,8 @@ fn listeners_verify_the_password_a_role_stores() {
         );
 
         // A role the catalog knows without a stored password cannot log in.
-        let unknown = PostgreSQLClient::open(
-            &ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password(""),
-        );
+        let unknown =
+            PostgreSQLClient::open(&ClientConfig::new("127.0.0.1", listener.endpoint().port(), "postgres", "smoke").with_password(""));
         let error = match unknown {
             Ok(mut client) => {
                 let error = client.execute("SELECT 1").unwrap_err();
@@ -341,4 +337,3 @@ fn listeners_share_one_engine_and_close_independently() {
     open.close();
     engine.close().unwrap();
 }
-

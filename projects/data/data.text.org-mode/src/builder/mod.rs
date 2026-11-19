@@ -14,7 +14,12 @@ impl OrgModeBuilder {
 }
 
 impl Builder<OrgModeLanguage> for OrgModeBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, _source: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<OrgModeLanguage>) -> TextDiagnostics<()> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        _source: &S,
+        _edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<OrgModeLanguage>,
+    ) -> TextDiagnostics<()> {
         TextDiagnostics { result: Ok(()), diagnostics: Vec::new() }
     }
 }

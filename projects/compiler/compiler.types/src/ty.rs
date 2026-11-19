@@ -144,7 +144,9 @@ impl SemanticType {
                 SemanticType::Apply(Box::new(base.contract_key()), arguments.iter().map(SemanticType::contract_key).collect())
             }
             SemanticType::Array(element) => SemanticType::Array(Box::new(element.contract_key())),
-            SemanticType::FixedArray { element, length } => SemanticType::FixedArray { element: Box::new(element.contract_key()), length: *length },
+            SemanticType::FixedArray { element, length } => {
+                SemanticType::FixedArray { element: Box::new(element.contract_key()), length: *length }
+            }
             SemanticType::Tuple(items) => SemanticType::Tuple(items.iter().map(SemanticType::contract_key).collect()),
             SemanticType::Nullable(element) => SemanticType::Nullable(Box::new(element.contract_key())),
             SemanticType::Union(items) => SemanticType::Union(items.iter().map(SemanticType::contract_key).collect()),

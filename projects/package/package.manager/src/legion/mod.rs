@@ -18,8 +18,10 @@ pub use api::{
     LegionStageStatus, PlanRequest, compile, compile_project, plan,
 };
 pub use artifact_formats::{artifact_format_from_extension, artifact_format_slug, artifact_formats_for_publish_format};
-pub use cmds::doc::generate_for_project;
-pub use cmds::spy::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run as run_spy};
+pub use cmds::{
+    doc::generate_for_project,
+    spy::{SpyMode, SpyOptions, SpyTargetOptions, SpyTargetPlatform, run as run_spy},
+};
 pub use error::{LegionError, LegionResult};
 pub use workspace::{
     BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest, PublishTargetSpec,
@@ -50,8 +52,8 @@ pub use compiler_target::{
     CanonicalVendor, EntryPolicy, PublishFormat, ResolvedTarget, RunnerFamily, RunnerSelector, TargetHostKind, TargetMode, TargetProfile,
     TargetRequest, TargetResolver, WrapStrategy,
 };
-pub use targets::{resolve_authoring_target, resolve_platform_only_target, resolve_platform_target};
 pub use language_format::printer::{to_string as write_von, to_string_indented as write_von_indented};
+pub use targets::{resolve_authoring_target, resolve_platform_only_target, resolve_platform_target};
 pub use von::{VonError, VonParser, VonValue, from_str as parse_von, from_value as parse_von_value};
 pub use workspace::{
     planner::{

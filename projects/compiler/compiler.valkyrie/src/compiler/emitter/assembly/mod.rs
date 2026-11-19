@@ -4,9 +4,12 @@
 //! 编排层只核对分区身份，不要求任何公共 MIR 作为成功载荷。
 use std::sync::Arc;
 
-use compiler_target::{ArtifactPartition, ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError, projection_policy_for_target_profile};
 use compiler_emitter::{
     AdaptedFragmentInput, AssembledFragment, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, TargetInputRequest,
+};
+use compiler_target::{
+    ArtifactPartition, ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError,
+    projection_policy_for_target_profile,
 };
 
 use super::pipeline::target_plan::{self, TargetPlanError};
@@ -154,8 +157,10 @@ pub fn assemble_fragment(
         .find(|view| view.fragment_id == partition.fragment)
         .ok_or_else(|| AssemblyError::Identity(format!("分区 `{}` 缺少优化后的语义片段视图", partition.name)))?;
     let linked = &compiled_program.mir_program().linked;
-    let fragment =
-        linked.fragments.get(&partition.fragment).ok_or_else(|| AssemblyError::Identity(format!("分区 `{}` 对应的语义片段不存在", partition.name)))?;
+    let fragment = linked
+        .fragments
+        .get(&partition.fragment)
+        .ok_or_else(|| AssemblyError::Identity(format!("分区 `{}` 对应的语义片段不存在", partition.name)))?;
     if partition.exported_operations != fragment.exported_operations
         || partition.entry_operation != fragment.entry_operation
         || fragment_view.canonical_operations != fragment.exported_operations

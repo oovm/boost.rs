@@ -131,7 +131,13 @@ fn test_theme_serialization() {
 
 #[test]
 fn test_theme_color_formats() {
-    let themes = vec![VisualizationTheme::light(), VisualizationTheme::dark(), VisualizationTheme::one_light(), VisualizationTheme::one_dark_pro(), VisualizationTheme::github()];
+    let themes = vec![
+        VisualizationTheme::light(),
+        VisualizationTheme::dark(),
+        VisualizationTheme::one_light(),
+        VisualizationTheme::one_dark_pro(),
+        VisualizationTheme::github(),
+    ];
 
     for theme in themes {
         // All colors should start with # (hex format)

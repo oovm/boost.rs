@@ -253,7 +253,9 @@ impl data_text_core::TokenType for HaskellElementType {
             Self::Whitespace | Self::Newline => data_text_core::UniversalTokenRole::Whitespace,
             Self::Comment => data_text_core::UniversalTokenRole::Comment,
             Self::Identifier | Self::Constructor => data_text_core::UniversalTokenRole::Name,
-            Self::Number | Self::Integer | Self::Float | Self::String | Self::StringLiteral | Self::Char | Self::CharLiteral => data_text_core::UniversalTokenRole::Literal,
+            Self::Number | Self::Integer | Self::Float | Self::String | Self::StringLiteral | Self::Char | Self::CharLiteral => {
+                data_text_core::UniversalTokenRole::Literal
+            }
             _ if self.is_keyword() => data_text_core::UniversalTokenRole::Keyword,
             Self::Plus
             | Self::Minus

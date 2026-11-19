@@ -20,8 +20,7 @@
 //! - 实参解析失败不静默成 `0`：Node 抛 `TypeError`、CPython 原样传播宿主异常，
 //!   `PyModuleDef_Init` / 装箱失败按宿主错误返回。
 
-use super::host::X64Platform;
-use super::{X64DataTarget, X64TextInstruction, X64ProgramFunction};
+use super::{X64DataTarget, X64ProgramFunction, X64TextInstruction, host::X64Platform};
 
 /// 宿主边界值种类：每个宿主闭合的编组能力在这里显式建模。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,13 +111,7 @@ pub fn append_text_arena(data: &mut Vec<u8>) -> u32 {
 /// `reset_slot` 是包装体可用的临时帧槽；必须在调用任何被包装符号之前执行。
 pub fn reset_text_arena(reset_slot: u16, arena_offset: u32) -> Vec<X64TextInstruction> {
     use X64TextInstruction as Lir;
-    vec![
-        Lir::LoadDataAddress(arena_offset),
-        Lir::StoreSlot(reset_slot),
-        Lir::LoadI64(0),
-        Lir::LoadSlotToRcx(reset_slot),
-        Lir::StoreRaxToRcx,
-    ]
+    vec![Lir::LoadDataAddress(arena_offset), Lir::StoreSlot(reset_slot), Lir::LoadI64(0), Lir::LoadSlotToRcx(reset_slot), Lir::StoreRaxToRcx]
 }
 
 /// 模块名必须是合法 C 标识符：`PyInit_<module>` 要能在 C 中声明。
@@ -236,12 +229,7 @@ pub fn python_module_data(
 ///
 /// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
 /// 包装体原样返回 `NULL`，不伪造结果。
-pub fn python_method_wrapper(
-    method: &HostMethod,
-    format_offset: u32,
-    dll: &str,
-    arena: Option<u32>,
-) -> X64ProgramFunction {
+pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str, arena: Option<u32>) -> X64ProgramFunction {
     use X64TextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
@@ -525,7 +513,13 @@ pub fn node_addon_registration(
 /// `Bool → napi_get_boolean`、`Utf8 → napi_create_string_utf8`。
 ///
 /// 参数个数不符或不是整数时抛 `TypeError` 并返回 `NULL`，不把错误静默成 0。
-pub fn node_method_wrapper(method: &HostMethod, error_message_offset: u32, platform: X64Platform, dll: &str, arena: Option<u32>) -> X64ProgramFunction {
+pub fn node_method_wrapper(
+    method: &HostMethod,
+    error_message_offset: u32,
+    platform: X64Platform,
+    dll: &str,
+    arena: Option<u32>,
+) -> X64ProgramFunction {
     use X64TextInstruction as Lir;
     const ENV_SLOT: u16 = 0;
     const INFO_SLOT: u16 = 1;

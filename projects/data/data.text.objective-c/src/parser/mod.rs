@@ -104,7 +104,12 @@ impl<'config> ObjectiveCParser<'config> {
 }
 
 impl<'config> Parser<ObjectiveCLanguage> for ObjectiveCParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<ObjectiveCLanguage>) -> ParseOutput<'a, ObjectiveCLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<ObjectiveCLanguage>,
+    ) -> ParseOutput<'a, ObjectiveCLanguage> {
         let lexer = ObjectiveCLexer::new(self.language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

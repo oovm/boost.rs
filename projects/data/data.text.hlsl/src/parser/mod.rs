@@ -2,20 +2,37 @@
 pub mod element_type;
 
 use crate::{language::HlslLanguage, lexer::token_type::HlslTokenType};
-use element_type::HlslElementType;
 use data_text_core::{
-    GreenNode, TextError, Parser, ParserState, TokenType, UniversalTokenRole,
+    GreenNode, Parser, ParserState, TextError, TokenType, UniversalTokenRole,
     parser::parse_with_lexer,
     source::{Source, TextEdit},
 };
+use element_type::HlslElementType;
 
 /// A parser state for the HLSL language.
 pub(crate) type State<'a, S> = ParserState<'a, HlslLanguage, S>;
 
 /// Attributes understood by the HLSL frontend. Unknown names are still parsed
 /// structurally, but reported through a diagnostic.
-const KNOWN_ATTRIBUTES: &[&str] =
-    &["allow_uav_condition", "branch", "clipplane", "domain", "earlydepthstencil", "fastopt", "flatten", "instance", "loop", "maxvertexcount", "numthreads", "outputcontrolpoints", "outputtopology", "partitioning", "patchconstantfunc", "shader", "unroll"];
+const KNOWN_ATTRIBUTES: &[&str] = &[
+    "allow_uav_condition",
+    "branch",
+    "clipplane",
+    "domain",
+    "earlydepthstencil",
+    "fastopt",
+    "flatten",
+    "instance",
+    "loop",
+    "maxvertexcount",
+    "numthreads",
+    "outputcontrolpoints",
+    "outputtopology",
+    "partitioning",
+    "patchconstantfunc",
+    "shader",
+    "unroll",
+];
 
 /// A parser for the HLSL language.
 pub struct HlslParser<'config> {
@@ -31,7 +48,12 @@ impl<'config> HlslParser<'config> {
 }
 
 impl<'config> Parser<HlslLanguage> for HlslParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl data_text_core::ParseCache<HlslLanguage>) -> data_text_core::ParseOutput<'a, HlslLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<HlslLanguage>,
+    ) -> data_text_core::ParseOutput<'a, HlslLanguage> {
         let lexer = crate::lexer::HlslLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -722,7 +744,14 @@ impl<'config> HlslParser<'config> {
 
     /// Parses a prefix or postfix expression.
     fn parse_unary_expression<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, HlslLanguage> {
-        if matches!(state.peek_kind(), Some(HlslTokenType::Minus) | Some(HlslTokenType::LogicalNot) | Some(HlslTokenType::BitwiseNot) | Some(HlslTokenType::Increment) | Some(HlslTokenType::Decrement)) {
+        if matches!(
+            state.peek_kind(),
+            Some(HlslTokenType::Minus)
+                | Some(HlslTokenType::LogicalNot)
+                | Some(HlslTokenType::BitwiseNot)
+                | Some(HlslTokenType::Increment)
+                | Some(HlslTokenType::Decrement)
+        ) {
             let cp = state.checkpoint();
             state.bump();
             self.parse_unary_expression(state);
@@ -957,7 +986,17 @@ fn is_type_token(kind: HlslTokenType) -> bool {
 
 /// Returns `true` for tokens that terminate a type position.
 fn is_type_terminator(kind: HlslTokenType) -> bool {
-    matches!(kind, HlslTokenType::Comma | HlslTokenType::RightParen | HlslTokenType::RightBrace | HlslTokenType::RightBracket | HlslTokenType::Greater | HlslTokenType::Semicolon | HlslTokenType::Assign | HlslTokenType::Colon)
+    matches!(
+        kind,
+        HlslTokenType::Comma
+            | HlslTokenType::RightParen
+            | HlslTokenType::RightBrace
+            | HlslTokenType::RightBracket
+            | HlslTokenType::Greater
+            | HlslTokenType::Semicolon
+            | HlslTokenType::Assign
+            | HlslTokenType::Colon
+    )
 }
 
 /// Returns the precedence and token count of the binary operator at the cursor.

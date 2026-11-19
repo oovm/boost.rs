@@ -1,4 +1,6 @@
-use crate::ast::{ClassMember, Decorator, EnumMember, Expression, Modifier, ModifierKind, OptionalMarker, TypeAnnotation, TypeParameter, has_modifier};
+use crate::ast::{
+    ClassMember, Decorator, EnumMember, Expression, Modifier, ModifierKind, OptionalMarker, TypeAnnotation, TypeParameter, has_modifier,
+};
 use core::range::Range;
 
 /// Represents a TypeScript statement.

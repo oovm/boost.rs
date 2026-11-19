@@ -19,7 +19,8 @@ fn walk_sources(root: &Path, sink: &mut Vec<PathBuf>) {
     let projects = root.join("projects");
     let mut stack = vec![projects];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+        let Ok(entries) = std::fs::read_dir(&dir)
+        else {
             continue;
         };
         for entry in entries.flatten() {
@@ -29,7 +30,8 @@ fn walk_sources(root: &Path, sink: &mut Vec<PathBuf>) {
             }
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            }
+            else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
                 // 只扫 src/ 目录：tests/、fixtures/ 与 build.rs 里的示例代码不算内核。
                 if path.components().any(|component| component.as_os_str() == "src") {
                     sink.push(path);
@@ -62,7 +64,8 @@ fn no_parallel_topological_kernel_outside_owners() {
         if is_owner(rel) {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else {
+        let Ok(content) = std::fs::read_to_string(&path)
+        else {
             continue;
         };
         for (line_no, line) in content.lines().enumerate() {

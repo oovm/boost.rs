@@ -4,7 +4,10 @@ use crate::{
     lexer::{VonLexer, VonTokenType},
     parser::{VonElementType, VonParser},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Lexer, Parser, SourceText, TextDiagnostics, TextEdit, TextError, parser::session::ParseSession,
+    source::Source,
+};
 
 /// A builder for VON AST and diagnostic results.
 #[derive(Clone)]
@@ -20,7 +23,12 @@ impl<'config> VonBuilder<'config> {
 }
 
 impl<'config> Builder<VonLanguage> for VonBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<VonLanguage>) -> TextDiagnostics<VonRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<VonLanguage>,
+    ) -> TextDiagnostics<VonRoot> {
         let parser = VonParser::new(self.config);
         let lexer = VonLexer::new(self.config);
 
@@ -169,7 +177,9 @@ impl<'config> VonBuilder<'config> {
                                     text,
                                     e,
                                     n_span,
-                                    source.get_text_in(data_text_core::Range::from(n_span.start.saturating_sub(10)..n_span.end.saturating_add(10)))
+                                    source.get_text_in(data_text_core::Range::from(
+                                        n_span.start.saturating_sub(10)..n_span.end.saturating_add(10)
+                                    ))
                                 ))
                             })?;
                             return Ok(VonValue::Number(VonNumber { value, span: n_span }));
@@ -203,7 +213,11 @@ impl<'config> VonBuilder<'config> {
         for child in node.children {
             match child {
                 data_text_core::GreenTree::Node(n) => {
-                    if n.kind == VonElementType::Value || n.kind == VonElementType::Object || n.kind == VonElementType::Array || n.kind == VonElementType::Enum {
+                    if n.kind == VonElementType::Value
+                        || n.kind == VonElementType::Object
+                        || n.kind == VonElementType::Array
+                        || n.kind == VonElementType::Enum
+                    {
                         value = Some(self.build_value(n, current_offset, source)?);
                     }
                     current_offset += n.byte_length as usize

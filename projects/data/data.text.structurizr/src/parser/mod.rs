@@ -17,7 +17,12 @@ impl<'config> StructurizrParser<'config> {
 }
 
 impl<'config> Parser<StructurizrLanguage> for StructurizrParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[data_text_core::TextEdit], cache: &'a mut impl data_text_core::ParseCache<StructurizrLanguage>) -> data_text_core::ParseOutput<'a, StructurizrLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl data_text_core::ParseCache<StructurizrLanguage>,
+    ) -> data_text_core::ParseOutput<'a, StructurizrLanguage> {
         let lexer = crate::lexer::StructurizrLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -106,7 +111,9 @@ impl<'config> StructurizrParser<'config> {
                                     }
                                     else if let Some(inner_kind) = state.peek_kind() {
                                         match inner_kind {
-                                            StructurizrTokenType::Comment | StructurizrTokenType::Whitespace | StructurizrTokenType::Newline => {
+                                            StructurizrTokenType::Comment
+                                            | StructurizrTokenType::Whitespace
+                                            | StructurizrTokenType::Newline => {
                                                 state.bump();
                                             }
                                             StructurizrTokenType::Person => {

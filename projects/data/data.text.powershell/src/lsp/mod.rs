@@ -21,7 +21,9 @@ impl HoverProvider<PowerShellLanguage> for PowerShellHoverProvider {
         let contents = match kind {
             PowerShellElementType::FunctionDef => "### PowerShell Function\nA named block of code that performs a specific task.",
             PowerShellElementType::ClassDef => "### PowerShell Class\nA blueprint for creating objects in PowerShell.",
-            PowerShellElementType::IfStatement => "### PowerShell If Statement\nA conditional statement that executes a block of code if a condition is true.",
+            PowerShellElementType::IfStatement => {
+                "### PowerShell If Statement\nA conditional statement that executes a block of code if a condition is true."
+            }
             _ => return None,
         };
         Some(ProviderHover { contents: contents.to_string(), range: Some(node.span()) })
@@ -73,6 +75,10 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
     }
     fn hover(&self, uri: &str, range: Range<usize>) -> impl futures::Future<Output = Option<LspHover>> + Send + '_ {
         let uri = uri.to_string();
-        async move { self.with_root(&uri, |root| self.hover_provider.hover(&root, range).map(|h| LspHover { contents: h.contents, range: h.range })).await.flatten() }
+        async move {
+            self.with_root(&uri, |root| self.hover_provider.hover(&root, range).map(|h| LspHover { contents: h.contents, range: h.range }))
+                .await
+                .flatten()
+        }
     }
 }

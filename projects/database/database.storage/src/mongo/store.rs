@@ -19,22 +19,22 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 use database_cluster::catalog;
 use database_protocol_mongo::bson::{BsonValue, encode_bson, parse_bson, value_to_key};
-use crate::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue};
 use database_types::cluster::{CATALOG_SUFFIX, CatalogSchema, Namespace, ShardId};
 
 use database_formats::mongo::oplog::OplogEntry;
 
 use super::{NamespaceWrite, TransactionPage};
 
-use database_formats::mongo::{
-    CATALOG_DOCUMENT_VERSION, CollectionOptions, INDEX_NAMESPACE_MARKER, IndexSpec, StoreError, collection_options_json, collection_record,
-    index_namespace, is_index_namespace, parse_collection_record, parse_collections, parse_indexes,
-};
 use super::{
     DEFAULT_TTL_MONITOR_SLEEP_SECONDS, InsertReport, SessionState, SessionWriteState, TransactionAbort, TransactionBegin, TransactionCommit,
     TransactionState, TransactionWrite, TtlMonitorState,
+};
+use database_formats::mongo::{
+    CATALOG_DOCUMENT_VERSION, CollectionOptions, INDEX_NAMESPACE_MARKER, IndexSpec, StoreError, collection_options_json, collection_record,
+    index_namespace, is_index_namespace, parse_collection_record, parse_collections, parse_indexes,
 };
 
 /// Namespace label used to remember which Mongo namespaces exist.

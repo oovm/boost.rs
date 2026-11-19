@@ -55,12 +55,7 @@ impl ArchiveReport {
 pub fn check_archive(root: &Path, production: &Production) -> Result<ArchiveReport, Error> {
     production.validate()?;
 
-    let mut report = ArchiveReport {
-        root: root.to_string_lossy().into_owned(),
-        ok: Vec::new(),
-        missing: Vec::new(),
-        mismatched: Vec::new(),
-    };
+    let mut report = ArchiveReport { root: root.to_string_lossy().into_owned(), ok: Vec::new(), missing: Vec::new(), mismatched: Vec::new() };
 
     for asset in &production.assets {
         let check = AssetCheck { id: asset.id.to_string(), path: asset.path.clone(), digest: asset.digest.clone(), found: None };
@@ -73,14 +68,16 @@ pub fn check_archive(root: &Path, production: &Production) -> Result<ArchiveRepo
             continue;
         }
         let file = root.join(asset.path.replace('\\', "/"));
-        let Ok(bytes) = std::fs::read(&file) else {
+        let Ok(bytes) = std::fs::read(&file)
+        else {
             report.missing.push(check);
             continue;
         };
         let digest = media_types::digest(&bytes);
         if digest == asset.digest {
             report.ok.push(AssetCheck { found: Some(digest), ..check });
-        } else {
+        }
+        else {
             report.mismatched.push(AssetCheck { found: Some(digest), ..check });
         }
     }

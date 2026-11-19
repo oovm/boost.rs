@@ -482,12 +482,8 @@ pub fn apply_host_provider_bindings(
     bindings: &[ResolvedHostProviderBinding],
     gated_out: &[CompilerGatedOutHostProvider],
 ) -> Result<BTreeMap<ItemInstanceId, ItemInstanceId>, ParseError> {
-    let (remaps, retired_contracts) = if bindings.is_empty() {
-        (BTreeMap::new(), BTreeSet::new())
-    }
-    else {
-        remap_bound_host_contracts(module, dependency_mirs, bindings)?
-    };
+    let (remaps, retired_contracts) =
+        if bindings.is_empty() { (BTreeMap::new(), BTreeSet::new()) } else { remap_bound_host_contracts(module, dependency_mirs, bindings)? };
     // 门禁必须在合同族退役之前执行：先退役会删掉未配对合同的 `external_calls`，
     // 门禁就失去合同身份，可达调用会变成后端悬空调用而不是结构化失败。
     enforce_resolved_host_contract_bindings(module, gated_out, bindings)?;
@@ -531,17 +527,13 @@ pub fn enforce_resolved_host_contract_bindings(
                     for operand in std::iter::once(callee).chain(arguments.iter()) {
                         if let MirOperand::Callable(instance) = operand {
                             if let Some(fact) = unpaired.get(instance) {
-                                return Err(ParseError::Invalid {
-                                    message: unpaired_contract_message(fact, *instance), span: None
-                                });
+                                return Err(ParseError::Invalid { message: unpaired_contract_message(fact, *instance), span: None });
                             }
-                            let Some(contract) = unbound.get(instance) else {
+                            let Some(contract) = unbound.get(instance)
+                            else {
                                 continue;
                             };
-                            return Err(ParseError::Invalid {
-                                message: unbound_contract_message(contract, *instance, gated_out),
-                                span: None,
-                            });
+                            return Err(ParseError::Invalid { message: unbound_contract_message(contract, *instance, gated_out), span: None });
                         }
                     }
                 }
@@ -608,11 +600,7 @@ fn declaration_full_name(key: &DeclarationKey) -> String {
 }
 
 fn render_host_signature(signature: &(Vec<ValkyrieType>, ValkyrieType)) -> String {
-    format!(
-        "micro({}) -> {}",
-        signature.0.iter().map(display_type).collect::<Vec<_>>().join(", "),
-        display_type(&signature.1)
-    )
+    format!("micro({}) -> {}", signature.0.iter().map(display_type).collect::<Vec<_>>().join(", "), display_type(&signature.1))
 }
 
 /// 按 Resolver 绑定把合同调用逐对重映射到 provider，并安装 provider 定义/导入。
@@ -833,10 +821,7 @@ pub fn host_provider_instantiation_seeds(
 /// 与 [`resolve_host_provider_bindings`] 共用同一族查找事实源（精确匹配 +
 /// 忽略 `source_path` 的 fallback）。provider 体必须物化：合同重映射在链接
 /// 边界要求 provider 实例存在于 MIR，否则报「host provider 未在源码闭包中定义」。
-pub fn host_provider_root_declarations(
-    hirs: &[&HirModule],
-    bindings: &[CompilerHostProviderBinding],
-) -> Result<BTreeSet<ItemId>, ParseError> {
+pub fn host_provider_root_declarations(hirs: &[&HirModule], bindings: &[CompilerHostProviderBinding]) -> Result<BTreeSet<ItemId>, ParseError> {
     if bindings.is_empty() {
         return Ok(BTreeSet::new());
     }

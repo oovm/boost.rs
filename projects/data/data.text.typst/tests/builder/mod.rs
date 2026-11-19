@@ -1,10 +1,10 @@
-use data_text_core::{Builder, Lexer, TextError, Source, parser::ParseSession, source::SourceText};
-use language_testing::{building::BuilderTester, source_from_path};
+use data_text_core::{Builder, Lexer, Source, TextError, parser::ParseSession, source::SourceText};
 use data_text_typst::{
     TypstBuilder, TypstLanguage,
     ast::{TypstItem, TypstRoot},
     lexer::{TypstLexer, token_type::TypstTokenType},
 };
+use language_testing::{building::BuilderTester, source_from_path};
 use std::{path::Path, time::Duration};
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -19,7 +19,13 @@ fn collect_text(items: &[TypstItem]) -> String {
             TypstItem::Text(content) | TypstItem::Raw(content) => text.push_str(content),
             TypstItem::Space | TypstItem::Parbreak => {}
             TypstItem::Heading(heading) => text.push_str(&collect_text(&heading.content.items)),
-            TypstItem::Strong(root) | TypstItem::Emphasis(root) | TypstItem::Math(root) | TypstItem::Quote(root) | TypstItem::ListItem(root) | TypstItem::EnumItem(root) | TypstItem::Block(root) => text.push_str(&collect_text(&root.items)),
+            TypstItem::Strong(root)
+            | TypstItem::Emphasis(root)
+            | TypstItem::Math(root)
+            | TypstItem::Quote(root)
+            | TypstItem::ListItem(root)
+            | TypstItem::EnumItem(root)
+            | TypstItem::Block(root) => text.push_str(&collect_text(&root.items)),
             TypstItem::Link(link) => {
                 if let Some(content) = &link.content {
                     text.push_str(&collect_text(&content.items))
@@ -162,5 +168,9 @@ fn test_typst_escape_then_cjk() {
 #[test]
 fn test_typst_escape_consecutive() {
     // 连续转义逐个产出字面字符，其后的 ASCII 仍落在正确的字节区间。
-    assert_escape_case("\\*\\*\\*x", &[(TypstTokenType::Escape, 0, 2), (TypstTokenType::Escape, 2, 4), (TypstTokenType::Escape, 4, 6), (TypstTokenType::Identifier, 6, 7)], &["*", "*", "*", "x"]);
+    assert_escape_case(
+        "\\*\\*\\*x",
+        &[(TypstTokenType::Escape, 0, 2), (TypstTokenType::Escape, 2, 4), (TypstTokenType::Escape, 4, 6), (TypstTokenType::Identifier, 6, 7)],
+        &["*", "*", "*", "x"],
+    );
 }

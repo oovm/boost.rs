@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::TailwindRoot, language::TailwindLanguage, lexer::TailwindLexer, parser::TailwindParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, RedNode, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, RedNode, SourceText, TextDiagnostics, TextEdit, TextError, source::Source};
 
 /// Tailwind AST builder.
 #[derive(Clone)]
@@ -18,7 +18,12 @@ impl<'config> TailwindBuilder<'config> {
 }
 
 impl<'config> Builder<TailwindLanguage> for TailwindBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<TailwindLanguage>) -> data_text_core::builder::BuildOutput<TailwindLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<TailwindLanguage>,
+    ) -> data_text_core::builder::BuildOutput<TailwindLanguage> {
         let parser = TailwindParser::new(*self.config);
         let lexer = TailwindLexer::new(*self.config);
 

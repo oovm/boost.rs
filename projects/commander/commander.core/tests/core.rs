@@ -1,14 +1,14 @@
 //! Behavior conformance for the machine path: parsing, routing, envelopes,
 //! exit codes, eligibility, diagnostics, and spec validation.
 
-use std::collections::BTreeMap;
-use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex, atomic::AtomicU64},
+};
 
 use commander_core::{
-    ActionRequiredDescriptor, Cli, Command, CommanderError, ConfirmRequest, Environment, ExitCode,
-    Handler, HandlerOutcome, InteractiveSpec, Localizer, NextAction, OptionSpec, Ports,
-    PromptApi, PromptFactory, PromptHooks, Severity, ValueDecl, Writer, error_id,
+    ActionRequiredDescriptor, Cli, Command, CommanderError, ConfirmRequest, Environment, ExitCode, Handler, HandlerOutcome, InteractiveSpec,
+    Localizer, NextAction, OptionSpec, Ports, PromptApi, PromptFactory, PromptHooks, Severity, ValueDecl, Writer, error_id,
 };
 use serde_json::{Value, json};
 
@@ -78,12 +78,7 @@ fn default_catalog() -> TestLocalizer {
 
 fn ports_with(localizer: TestLocalizer) -> (Ports, Log) {
     let log: Log = Arc::new(Mutex::new(Vec::new()));
-    let ports = Ports::new(
-        Arc::new(FixedClock(AtomicU64::new(1_000))),
-        Arc::new(LogWriter(Arc::clone(&log))),
-        Arc::new(localizer),
-        "en-US",
-    );
+    let ports = Ports::new(Arc::new(FixedClock(AtomicU64::new(1_000))), Arc::new(LogWriter(Arc::clone(&log))), Arc::new(localizer), "en-US");
     (ports, log)
 }
 
@@ -114,13 +109,11 @@ fn ok_handler(data: Value) -> Handler {
 
 #[test]
 fn success_envelope_is_exactly_one_json_line() {
-    let cli = Cli::new("demo").command(
-        Command::new("run").handler(Arc::new(|ctx| {
-            ctx.emit_result(json!({"a": 1}), None);
-            ctx.emit_result(json!({"a": 2}), None);
-            HandlerOutcome::Ok(json!({"ignored": true}))
-        })),
-    );
+    let cli = Cli::new("demo").command(Command::new("run").handler(Arc::new(|ctx| {
+        ctx.emit_result(json!({"a": 1}), None);
+        ctx.emit_result(json!({"a": 2}), None);
+        HandlerOutcome::Ok(json!({"ignored": true}))
+    })));
     let (ports, _log) = ports();
     let env = Environment::bare(false);
     let outcome = cli.run(&argv(&["run", "--json"]), &env, &ports, None);
@@ -134,30 +127,23 @@ fn success_envelope_is_exactly_one_json_line() {
 
 #[test]
 fn handler_error_maps_to_frozen_exit_and_envelope() {
-    let cli = Cli::new("demo").command(Command::new("boom").handler(Arc::new(|_ctx| {
-        HandlerOutcome::Err(CommanderError::from_id(error_id::ACTION_FAILED))
-    })));
+    let cli = Cli::new("demo")
+        .command(Command::new("boom").handler(Arc::new(|_ctx| HandlerOutcome::Err(CommanderError::from_id(error_id::ACTION_FAILED)))));
     let (ports, _log) = ports();
-    let outcome =
-        cli.run(&argv(&["boom", "--json"]), &Environment::bare(false), &ports, None);
+    let outcome = cli.run(&argv(&["boom", "--json"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Failure);
     let value = envelope(outcome.stdout.as_ref());
     assert_eq!(value["ok"], false);
     assert_eq!(value["error"]["code"], "commander::action_failed");
-    assert_eq!(
-        value["error"]["message"], "commander::action_failed",
-        "action_failed reports the stable code only"
-    );
+    assert_eq!(value["error"]["message"], "commander::action_failed", "action_failed reports the stable code only");
 }
 
 #[test]
 fn failure_message_localizes_or_falls_back_to_code() {
-    let cli = Cli::new("demo").command(Command::new("bad").handler(Arc::new(|_ctx| {
-        HandlerOutcome::Err(
-            CommanderError::from_id("demo::broken")
-                .with_arg("path", "/tmp/x".to_string()),
-        )
-    })));
+    let cli = Cli::new("demo").command(
+        Command::new("bad")
+            .handler(Arc::new(|_ctx| HandlerOutcome::Err(CommanderError::from_id("demo::broken").with_arg("path", "/tmp/x".to_string())))),
+    );
     let (ports, _log) = ports();
     let outcome = cli.run(&argv(&["bad", "--json"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Failure);
@@ -173,10 +159,7 @@ fn action_required_outcome_yields_exit_five_with_descriptor() {
             action_id: "dns-txt".to_string(),
             status_ref: Some("order-7".to_string()),
             expires_at: None,
-            next_action: Some(NextAction {
-                command: "demo".to_string(),
-                argv: argv(&["issue", "--resume"]),
-            }),
+            next_action: Some(NextAction { command: "demo".to_string(), argv: argv(&["issue", "--resume"]) }),
         })
     })));
     let (ports, _log) = ports();
@@ -186,10 +169,7 @@ fn action_required_outcome_yields_exit_five_with_descriptor() {
     assert_eq!(value["error"]["code"], "commander::action_required");
     assert_eq!(value["actionRequired"]["actionId"], "dns-txt");
     assert_eq!(value["actionRequired"]["statusRef"], "order-7");
-    assert!(
-        value["actionRequired"].get("expiresAt").is_none(),
-        "unset descriptor fields are omitted"
-    );
+    assert!(value["actionRequired"].get("expiresAt").is_none(), "unset descriptor fields are omitted");
     assert_eq!(value["actionRequired"]["nextAction"]["argv"][0], "issue");
 }
 
@@ -258,20 +238,9 @@ fn eligibility_is_tty_and_not_json_and_not_ci_and_not_no_interactive() {
     assert_eq!(run_interactive(&["probe"], true, None)["interactive"], json!(true));
     assert_eq!(run_interactive(&["probe", "--json"], true, None)["interactive"], json!(false));
     assert_eq!(run_interactive(&["probe"], false, None)["interactive"], json!(false));
-    assert_eq!(
-        run_interactive(&["probe"], true, Some("1"))["interactive"],
-        json!(false),
-        "CI truthy disables interactivity"
-    );
-    assert_eq!(
-        run_interactive(&["probe"], true, Some("false"))["interactive"],
-        json!(true),
-        "CI=false keeps the tty snapshot eligible"
-    );
-    assert_eq!(
-        run_interactive(&["probe", "--no-interactive"], true, None)["interactive"],
-        json!(false)
-    );
+    assert_eq!(run_interactive(&["probe"], true, Some("1"))["interactive"], json!(false), "CI truthy disables interactivity");
+    assert_eq!(run_interactive(&["probe"], true, Some("false"))["interactive"], json!(true), "CI=false keeps the tty snapshot eligible");
+    assert_eq!(run_interactive(&["probe", "--no-interactive"], true, None)["interactive"], json!(false));
 }
 
 #[test]
@@ -326,18 +295,7 @@ fn parse_json(args: &[&str]) -> (Value, ExitCode) {
 
 #[test]
 fn parses_flags_attached_values_and_repeatables() {
-    let (value, exit) = parse_json(&[
-        "-v",
-        "--out=a.txt",
-        "--color",
-        "--tag",
-        "x",
-        "--tag",
-        "y",
-        "--",
-        "pos1",
-        "-not-an-option",
-    ]);
+    let (value, exit) = parse_json(&["-v", "--out=a.txt", "--color", "--tag", "x", "--tag", "y", "--", "pos1", "-not-an-option"]);
     assert_eq!(exit, ExitCode::Ok);
     let data = &value["data"];
     assert_eq!(data["verbose"], json!(true));
@@ -374,11 +332,8 @@ fn unknown_option_fails_with_usage_exit() {
 
 #[test]
 fn missing_required_option_fails() {
-    let cli = Cli::new("demo").command(
-        Command::new("need")
-            .option(OptionSpec::required_value("file").required())
-            .handler(ok_handler(json!({}))),
-    );
+    let cli =
+        Cli::new("demo").command(Command::new("need").option(OptionSpec::required_value("file").required()).handler(ok_handler(json!({}))));
     let (ports, _log) = ports();
     let outcome = cli.run(&argv(&["need", "--json"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Usage);
@@ -397,8 +352,7 @@ fn enum_rejects_only_provided_values() {
     let (ports, _log) = ports();
     let outcome = cli.run(&argv(&["lvl", "--json"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Ok, "default is not re-validated at run time");
-    let outcome =
-        cli.run(&argv(&["lvl", "--level", "trace", "--json"]), &Environment::bare(false), &ports, None);
+    let outcome = cli.run(&argv(&["lvl", "--level", "trace", "--json"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Usage);
     let value = envelope(outcome.stdout.as_ref());
     assert_eq!(value["error"]["code"], "commander::option_not_in_enum");
@@ -417,32 +371,22 @@ fn global_options_merge_without_overriding_command_values() {
     let cli = Cli::new("demo")
         .global_option(OptionSpec::required_value("profile").default_value("dev"))
         .global_option(OptionSpec::required_value("tag"))
-        .command(
-            Command::new("g")
-                .option(OptionSpec::required_value("tag"))
-                .handler(Arc::new(|ctx: &mut commander_core::CommandContext<'_>| {
-                    HandlerOutcome::Ok(json!({
-                        "profile": ctx.options().str_value("profile"),
-                        "tag": ctx.options().str_value("tag"),
-                    }))
-                })),
-        );
+        .command(Command::new("g").option(OptionSpec::required_value("tag")).handler(Arc::new(
+            |ctx: &mut commander_core::CommandContext<'_>| {
+                HandlerOutcome::Ok(json!({
+                    "profile": ctx.options().str_value("profile"),
+                    "tag": ctx.options().str_value("tag"),
+                }))
+            },
+        )));
     let (ports, _log) = ports();
-    let outcome = cli.run(
-        &argv(&["--profile", "prod", "g", "--tag", "cmd", "--json"]),
-        &Environment::bare(false),
-        &ports,
-        None,
-    );
+    let outcome = cli.run(&argv(&["--profile", "prod", "g", "--tag", "cmd", "--json"]), &Environment::bare(false), &ports, None);
     let value = envelope(outcome.stdout.as_ref());
     assert_eq!(value["data"]["profile"], "prod");
     assert_eq!(value["data"]["tag"], "cmd");
     let outcome = cli.run(&argv(&["g", "--json"]), &Environment::bare(false), &ports, None);
     let value = envelope(outcome.stdout.as_ref());
-    assert!(
-        value["data"]["profile"].is_null(),
-        "peel never applies global defaults, matching the TypeScript engine"
-    );
+    assert!(value["data"]["profile"].is_null(), "peel never applies global defaults, matching the TypeScript engine");
     assert!(value["data"]["tag"].is_null());
 }
 
@@ -476,10 +420,8 @@ fn json_mode_help_goes_to_stderr_and_leaves_stdout_empty() {
 
 #[test]
 fn help_subcommand_routes_to_command_help() {
-    let cli = Cli::new("demo").command(
-        Command::new("document")
-            .subcommand(Command::new("check").help("cli.cmd.check").handler(ok_handler(json!({})))),
-    );
+    let cli = Cli::new("demo")
+        .command(Command::new("document").subcommand(Command::new("check").help("cli.cmd.check").handler(ok_handler(json!({})))));
     let (ports, _log) = ports();
     let outcome = cli.run(&argv(&["help", "document", "check"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Ok);
@@ -490,10 +432,8 @@ fn help_subcommand_routes_to_command_help() {
 
 #[test]
 fn deepest_command_binds_before_help_marker() {
-    let cli = Cli::new("demo").command(
-        Command::new("document")
-            .subcommand(Command::new("check").help("cli.cmd.check").handler(ok_handler(json!({})))),
-    );
+    let cli = Cli::new("demo")
+        .command(Command::new("document").subcommand(Command::new("check").help("cli.cmd.check").handler(ok_handler(json!({})))));
     let (ports, _log) = ports();
     let outcome = cli.run(&argv(&["document", "check", "--help"]), &Environment::bare(false), &ports, None);
     let text = outcome.stdout.expect("help payload");
@@ -513,17 +453,12 @@ fn unknown_root_command_suggests_closest_name() {
     let captured = lines(&log);
     assert!(captured.iter().any(|l| l == "unknown command: che"), "{captured:?}");
     assert!(captured.iter().any(|l| l == "did you mean check?"), "{captured:?}");
-    assert!(
-        captured.iter().any(|l| l.starts_with("Run `demo --help`")),
-        "hint line names the CLI root: {captured:?}"
-    );
+    assert!(captured.iter().any(|l| l.starts_with("Run `demo --help`")), "hint line names the CLI root: {captured:?}");
 }
 
 #[test]
 fn group_without_handler_prints_help() {
-    let cli = Cli::new("demo").command(
-        Command::new("document").subcommand(Command::new("check").handler(ok_handler(json!({})))),
-    );
+    let cli = Cli::new("demo").command(Command::new("document").subcommand(Command::new("check").handler(ok_handler(json!({})))));
     let (ports, _log) = ports();
     let outcome = cli.run(&argv(&["document"]), &Environment::bare(false), &ports, None);
     assert_eq!(outcome.exit, ExitCode::Ok);
@@ -585,11 +520,7 @@ fn required_policy_needs_prompt_keys_and_machine_inputs() {
     let cli = Cli::new("demo").command(
         Command::new("x")
             .option(OptionSpec::required_value("file"))
-            .interactive(spec(
-                commander_core::PromptPolicy::Required,
-                &[("file", "cli.prompt.file")],
-                &["file"],
-            ))
+            .interactive(spec(commander_core::PromptPolicy::Required, &[("file", "cli.prompt.file")], &["file"]))
             .handler(ok_handler(json!({}))),
     );
     let (exit, _log) = run_validate(&cli);
@@ -617,9 +548,7 @@ fn input_refs_must_resolve() {
     assert_eq!(exit, ExitCode::Ok, "flag: and config: prefixes resolve");
 
     let cli = Cli::new("demo").command(
-        Command::new("x")
-            .interactive(spec(commander_core::PromptPolicy::Optional, &[], &["flag:missing"]))
-            .handler(ok_handler(json!({}))),
+        Command::new("x").interactive(spec(commander_core::PromptPolicy::Optional, &[], &["flag:missing"])).handler(ok_handler(json!({}))),
     );
     let (exit, _log) = run_validate(&cli);
     assert_eq!(exit, ExitCode::Failure);
@@ -645,12 +574,8 @@ fn duplicate_names_are_rejected() {
     let (exit, _log) = run_validate(&cli);
     assert_eq!(exit, ExitCode::Usage, "parse_failed exits 2");
 
-    let cli = Cli::new("demo").command(
-        Command::new("run")
-            .option(OptionSpec::flag("x"))
-            .option(OptionSpec::flag("x"))
-            .handler(ok_handler(json!({}))),
-    );
+    let cli = Cli::new("demo")
+        .command(Command::new("run").option(OptionSpec::flag("x")).option(OptionSpec::flag("x")).handler(ok_handler(json!({}))));
     let (exit, _log) = run_validate(&cli);
     assert_eq!(exit, ExitCode::Usage);
 }
@@ -738,25 +663,20 @@ impl PromptFactory for FixedFactory {
 
 #[test]
 fn factory_wires_the_prompt_api_into_the_context() {
-    let cli = Cli::new("demo").command(Command::new("p").handler(Arc::new(|ctx| match ctx
-        .confirm(&ConfirmRequest::new("cli.prompt.go"))
-    {
+    let cli = Cli::new("demo").command(Command::new("p").handler(Arc::new(|ctx| match ctx.confirm(&ConfirmRequest::new("cli.prompt.go")) {
         Ok(value) => HandlerOutcome::Ok(json!({"confirmed": value})),
         Err(err) => HandlerOutcome::Err(err),
     })));
     let (ports, _log) = ports();
     let factory: Arc<dyn PromptFactory> = Arc::new(FixedFactory);
-    let outcome =
-        cli.run(&argv(&["p", "--json"]), &Environment::bare(true), &ports, Some(&factory));
+    let outcome = cli.run(&argv(&["p", "--json"]), &Environment::bare(true), &ports, Some(&factory));
     assert_eq!(outcome.exit, ExitCode::Capability);
     assert_eq!(envelope(outcome.stdout.as_ref())["error"]["code"], "commander::interaction_busy");
 }
 
 #[test]
 fn without_factory_interactive_calls_fail_as_unavailable() {
-    let cli = Cli::new("demo").command(Command::new("p").handler(Arc::new(|ctx| match ctx
-        .confirm(&ConfirmRequest::new("cli.prompt.go"))
-    {
+    let cli = Cli::new("demo").command(Command::new("p").handler(Arc::new(|ctx| match ctx.confirm(&ConfirmRequest::new("cli.prompt.go")) {
         Ok(value) => HandlerOutcome::Ok(json!({"confirmed": value})),
         Err(err) => HandlerOutcome::Err(err),
     })));

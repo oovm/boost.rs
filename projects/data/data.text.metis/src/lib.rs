@@ -16,7 +16,9 @@ pub mod parser;
 pub mod syntax;
 
 pub use crate::{
-    ast::{Action, Axiom, BinOp, Connection, Formula, Island, Item, MetisRoot, Module, Param, Relation, Rewrites, Stmt, Theorem, TypeExpr, UnaryOp},
+    ast::{
+        Action, Axiom, BinOp, Connection, Formula, Island, Item, MetisRoot, Module, Param, Relation, Rewrites, Stmt, Theorem, TypeExpr, UnaryOp,
+    },
     builder::MetisBuilder,
     language::MetisLanguage,
     lexer::MetisLexer,

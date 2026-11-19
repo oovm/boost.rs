@@ -1,15 +1,19 @@
 //! 分包计划实现：链接保留集合 → 确定性 chunk 集合。
 //! 语义模型（根集合、可达签名、收缩单元、执行序与诊断口径）见 [`super`] 模块注释。
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use boost_collection::GraphView;
 use boost_math::graph_theory::{strongly_connected_components, topological_partition_by};
 
-use crate::diag::PackDiagnostic;
-use crate::graph::{ModuleGraph, NodeKind};
-use crate::link::{LinkPlan, UsedReexport};
+use crate::{
+    diag::PackDiagnostic,
+    graph::{ModuleGraph, NodeKind},
+    link::{LinkPlan, UsedReexport},
+};
 
 /// 保留节点缺少完整模块事实时的显式诊断码。
 const INCOMPLETE_FACTS: &str = "vmz::pack::chunk::incomplete_facts";
@@ -119,8 +123,14 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
             continue;
         }
         for edge in &node.static_edges {
-            let Ok(target_id) = edge.target.as_ref() else { continue };
-            let Some(target) = graph.index_of(target_id) else { continue };
+            let Ok(target_id) = edge.target.as_ref()
+            else {
+                continue;
+            };
+            let Some(target) = graph.index_of(target_id)
+            else {
+                continue;
+            };
             if !retained[target] {
                 continue;
             }
@@ -196,11 +206,18 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
             continue;
         }
         for &edge_index in &module.dynamic_edges {
-            let Some(edge) = graph.nodes[module.node].dynamic_edges.get(edge_index) else {
+            let Some(edge) = graph.nodes[module.node].dynamic_edges.get(edge_index)
+            else {
                 continue;
             };
-            let Ok(target_id) = edge.target.as_ref() else { continue };
-            let Some(target) = graph.index_of(target_id) else { continue };
+            let Ok(target_id) = edge.target.as_ref()
+            else {
+                continue;
+            };
+            let Some(target) = graph.index_of(target_id)
+            else {
+                continue;
+            };
             if retained[target] && !entry_nodes.contains(&target) {
                 roots.insert(RootId::Async(target));
             }
@@ -210,7 +227,10 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
     // 每根沿单元前向邻接 DFS，累积可达签名。
     let mut signatures: Vec<BTreeSet<RootId>> = vec![BTreeSet::new(); units.len()];
     for &root in &roots {
-        let Some(root_unit) = root_unit_of(root, &entry_node, &unit_of) else { continue };
+        let Some(root_unit) = root_unit_of(root, &entry_node, &unit_of)
+        else {
+            continue;
+        };
         let mut seen = vec![false; units.len()];
         let mut stack = vec![root_unit];
         seen[root_unit] = true;
@@ -317,9 +337,11 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
     for (unit, signature) in signatures.iter().enumerate() {
         if unit_isolated[unit] {
             solos.push((unit, signature.clone()));
-        } else if split[unit] {
+        }
+        else if split[unit] {
             split_solos.push((unit, signature.clone()));
-        } else {
+        }
+        else {
             groups.entry(signature.clone()).or_default().push(unit);
         }
     }
@@ -419,11 +441,18 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
             continue;
         }
         for &edge_index in &module.dynamic_edges {
-            let Some(edge) = graph.nodes[module.node].dynamic_edges.get(edge_index) else {
+            let Some(edge) = graph.nodes[module.node].dynamic_edges.get(edge_index)
+            else {
                 continue;
             };
-            let Ok(target_id) = edge.target.as_ref() else { continue };
-            let Some(target) = graph.index_of(target_id) else { continue };
+            let Ok(target_id) = edge.target.as_ref()
+            else {
+                continue;
+            };
+            let Some(target) = graph.index_of(target_id)
+            else {
+                continue;
+            };
             if retained[target] {
                 boundaries.insert((module.node, chunk_of_unit[unit_of[target]]));
             }

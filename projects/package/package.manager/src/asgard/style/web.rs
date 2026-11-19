@@ -89,7 +89,9 @@ fn state_pseudo_class(state: State) -> &'static str {
 
 fn lower_declarations(declarations: &[Declaration]) -> String {
     let mut out = String::new();
-    let has_layout = declarations.iter().any(|declaration| matches!(declaration.property, Property::Direction | Property::MainAlign | Property::CrossAlign | Property::Spacing));
+    let has_layout = declarations.iter().any(|declaration| {
+        matches!(declaration.property, Property::Direction | Property::MainAlign | Property::CrossAlign | Property::Spacing)
+    });
     if has_layout {
         out.push_str("display: flex; ");
     }
@@ -128,8 +130,12 @@ fn lower_declaration(declaration: &Declaration) -> String {
         (Property::Height, value) => format!("height: {}; ", extent_css(value)),
         (Property::MaxWidth, Value::Points(points)) => format!("max-width: {points}px; "),
         (Property::Radius, Value::Points(points)) => format!("border-radius: {points}px; "),
-        (Property::Background, Value::Token(name)) => format!("background: {}; ", tokens::color_token(name).map(|token| token.hex.to_string()).unwrap_or_default()),
-        (Property::Color, Value::Token(name)) => format!("color: {}; ", tokens::color_token(name).map(|token| token.hex.to_string()).unwrap_or_default()),
+        (Property::Background, Value::Token(name)) => {
+            format!("background: {}; ", tokens::color_token(name).map(|token| token.hex.to_string()).unwrap_or_default())
+        }
+        (Property::Color, Value::Token(name)) => {
+            format!("color: {}; ", tokens::color_token(name).map(|token| token.hex.to_string()).unwrap_or_default())
+        }
         (Property::Text, Value::Token(name)) => tokens::text_token(name)
             .map(|token| format!("font-size: {}px; font-weight: {}; line-height: {}; ", token.size, token.weight, token.line_height))
             .unwrap_or_default(),
@@ -154,7 +160,13 @@ pub fn layout_spec_of(rule_declarations: &[Declaration]) -> Option<LayoutSpec> {
         .filter(|declaration| {
             matches!(
                 declaration.property,
-                Property::Direction | Property::MainAlign | Property::CrossAlign | Property::Spacing | Property::Inset | Property::Width | Property::Height
+                Property::Direction
+                    | Property::MainAlign
+                    | Property::CrossAlign
+                    | Property::Spacing
+                    | Property::Inset
+                    | Property::Width
+                    | Property::Height
             )
         })
         .map(|declaration| {

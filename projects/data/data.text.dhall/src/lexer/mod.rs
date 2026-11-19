@@ -11,7 +11,8 @@ use data_text_core::{
 use std::sync::LazyLock;
 
 static DHALL_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static DHALL_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "--", block_start: "{-", block_end: "-}", nested_blocks: true });
+static DHALL_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "--", block_start: "{-", block_end: "-}", nested_blocks: true });
 static DHALL_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer implementation for DHall.
@@ -21,7 +22,12 @@ pub struct DHallLexer<'config> {
 }
 
 impl<'config> Lexer<DHallLanguage> for DHallLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<DHallLanguage>) -> LexOutput<DHallLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<DHallLanguage>,
+    ) -> LexOutput<DHallLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

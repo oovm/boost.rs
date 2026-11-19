@@ -1,6 +1,6 @@
 use crate::{DejavuLanguage, DejavuLexer};
-pub use element_type::DejavuElementType;
 use data_text_core::{Parser, TextEdit, parser::ParseCache};
+pub use element_type::DejavuElementType;
 // Import extension trait to bring parse methods into scope
 use parse_raw::DejavuParserExt;
 
@@ -74,12 +74,20 @@ impl<'config> DejavuParser<'config> {
         Self { config }
     }
 
-    pub(crate) fn skip_trivia<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut data_text_core::parser::ParserState<'a, DejavuLanguage, S>) {
+    pub(crate) fn skip_trivia<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut data_text_core::parser::ParserState<'a, DejavuLanguage, S>,
+    ) {
         state.skip_trivia();
     }
 
     /// Parse control flow start statement (for, if, while, loop).
-    fn parse_control_start<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_control_start<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         if let Some(token) = state.current() {
             match token.kind {
                 crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::For) => {
@@ -95,10 +103,15 @@ impl<'config> DejavuParser<'config> {
                     self.parse_loop_statement(state, stack, cp)?;
                 }
                 _ => {
-                    while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                    while state.not_at_end()
+                        && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                        && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                    {
                         state.bump();
                     }
-                    if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                    if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                        || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                    {
                         state.bump();
                     }
                     state.finish_at(cp, DejavuElementType::TemplateControl);
@@ -109,7 +122,12 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse control flow end statement (end for, end if, end while, else).
-    fn parse_control_end<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_control_end<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         if let Some(token) = state.current() {
             match token.kind {
                 crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::End) => {
@@ -119,10 +137,15 @@ impl<'config> DejavuParser<'config> {
                     self.parse_else_statement(state, stack, cp)?;
                 }
                 _ => {
-                    while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                    while state.not_at_end()
+                        && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                        && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                    {
                         state.bump();
                     }
-                    if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                    if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                        || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                    {
                         state.bump();
                     }
                     state.finish_at(cp, DejavuElementType::TemplateControl);
@@ -133,7 +156,12 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse for loop statement.
-    fn parse_for_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_for_statement<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::For))?;
         self.skip_trivia(state);
 
@@ -161,7 +189,10 @@ impl<'config> DejavuParser<'config> {
         let expr_cp = state.checkpoint();
         let inner_cp = state.checkpoint();
         let mut has_tokens = false;
-        while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        while state.not_at_end()
+            && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             if let Some(token) = state.current() {
                 if token.kind == crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::If) {
                     break;
@@ -181,7 +212,10 @@ impl<'config> DejavuParser<'config> {
             let filter_cp = state.checkpoint();
             let filter_inner_cp = state.checkpoint();
             let mut has_filter_tokens = false;
-            while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+            while state.not_at_end()
+                && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+            {
                 has_filter_tokens = true;
                 state.bump();
             }
@@ -191,25 +225,39 @@ impl<'config> DejavuParser<'config> {
             state.finish_at(filter_cp, DejavuElementType::Expression);
         }
 
-        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             state.bump();
         }
 
-        let frame = ControlFlowFrame { flow_type: ControlFlowType::For { pattern: String::new(), iterable: String::new(), filter: None }, start_checkpoint: cp, in_else: false };
+        let frame = ControlFlowFrame {
+            flow_type: ControlFlowType::For { pattern: String::new(), iterable: String::new(), filter: None },
+            start_checkpoint: cp,
+            in_else: false,
+        };
         stack.push(frame);
 
         Ok(())
     }
 
     /// Parse if statement.
-    fn parse_if_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_if_statement<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::If))?;
         self.skip_trivia(state);
 
         let expr_cp = state.checkpoint();
         let inner_cp = state.checkpoint();
         let mut has_tokens = false;
-        while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        while state.not_at_end()
+            && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             has_tokens = true;
             state.bump();
         }
@@ -218,7 +266,9 @@ impl<'config> DejavuParser<'config> {
         }
         state.finish_at(expr_cp, DejavuElementType::Expression);
 
-        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             state.bump();
         }
 
@@ -229,14 +279,22 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse while loop statement.
-    fn parse_while_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_while_statement<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::While))?;
         self.skip_trivia(state);
 
         let expr_cp = state.checkpoint();
         let inner_cp = state.checkpoint();
         let mut has_tokens = false;
-        while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        while state.not_at_end()
+            && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             has_tokens = true;
             state.bump();
         }
@@ -245,7 +303,9 @@ impl<'config> DejavuParser<'config> {
         }
         state.finish_at(expr_cp, DejavuElementType::Expression);
 
-        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             state.bump();
         }
 
@@ -256,7 +316,12 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse loop statement.
-    fn parse_loop_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_loop_statement<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::Loop))?;
         self.skip_trivia(state);
 
@@ -284,7 +349,10 @@ impl<'config> DejavuParser<'config> {
         let expr_cp = state.checkpoint();
         let inner_cp = state.checkpoint();
         let mut has_tokens = false;
-        while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        while state.not_at_end()
+            && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             has_tokens = true;
             state.bump();
         }
@@ -293,18 +361,29 @@ impl<'config> DejavuParser<'config> {
         }
         state.finish_at(expr_cp, DejavuElementType::Expression);
 
-        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             state.bump();
         }
 
-        let frame = ControlFlowFrame { flow_type: ControlFlowType::Loop { pattern: String::new(), iterable: String::new() }, start_checkpoint: cp, in_else: false };
+        let frame = ControlFlowFrame {
+            flow_type: ControlFlowType::Loop { pattern: String::new(), iterable: String::new() },
+            start_checkpoint: cp,
+            in_else: false,
+        };
         stack.push(frame);
 
         Ok(())
     }
 
     /// Parse end statement.
-    fn parse_end_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, _cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_end_statement<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        _cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         // 当前 token 是 End 关键字，消耗它让它成为节点的一部分
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::End))?;
         self.skip_trivia(state);
@@ -334,12 +413,18 @@ impl<'config> DejavuParser<'config> {
                 };
 
                 if keyword != actual_keyword {
-                    return Err(data_text_core::TextError::custom_error(format!("Mismatched end marker: expected 'end {}' but found 'end {}'", actual_keyword, keyword)));
+                    return Err(data_text_core::TextError::custom_error(format!(
+                        "Mismatched end marker: expected 'end {}' but found 'end {}'",
+                        actual_keyword, keyword
+                    )));
                 }
                 Some(frame)
             }
             else {
-                return Err(data_text_core::TextError::custom_error(format!("Unexpected 'end {}' without matching '{}' block", keyword, keyword)));
+                return Err(data_text_core::TextError::custom_error(format!(
+                    "Unexpected 'end {}' without matching '{}' block",
+                    keyword, keyword
+                )));
             }
         }
         else {
@@ -358,11 +443,16 @@ impl<'config> DejavuParser<'config> {
         };
 
         // 消耗 for/if/while/loop 关键字和剩余 token，让它们成为节点的一部分
-        while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        while state.not_at_end()
+            && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             state.bump();
         }
 
-        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+        if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+            || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+        {
             state.bump();
         }
 
@@ -381,7 +471,12 @@ impl<'config> DejavuParser<'config> {
     }
 
     /// Parse else statement.
-    fn parse_else_statement<'a, S: data_text_core::Source + ?Sized>(&self, state: &mut State<'a, S>, stack: &mut Vec<ControlFlowFrame>, cp: Checkpoint) -> Result<(), data_text_core::TextError> {
+    fn parse_else_statement<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        stack: &mut Vec<ControlFlowFrame>,
+        cp: Checkpoint,
+    ) -> Result<(), data_text_core::TextError> {
         state.expect(crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::Else))?;
         self.skip_trivia(state);
 
@@ -415,18 +510,28 @@ impl<'config> DejavuParser<'config> {
         }
 
         if is_else_if {
-            while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+            while state.not_at_end()
+                && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+            {
                 state.bump();
             }
-            if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+            if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+            {
                 state.bump();
             }
         }
         else {
-            while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+            while state.not_at_end()
+                && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+            {
                 state.bump();
             }
-            if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+            if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+            {
                 state.bump();
             }
         }
@@ -436,7 +541,12 @@ impl<'config> DejavuParser<'config> {
 }
 
 impl<'config> Parser<DejavuLanguage> for DejavuParser<'config> {
-    fn parse<'a, S: data_text_core::Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<DejavuLanguage>) -> data_text_core::parser::ParseOutput<'a, DejavuLanguage> {
+    fn parse<'a, S: data_text_core::Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<DejavuLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, DejavuLanguage> {
         data_text_core::parser::parse_with_lexer(&DejavuLexer::new(&self.config), text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
             let mut control_flow_stack: Vec<ControlFlowFrame> = Vec::new();
@@ -445,13 +555,18 @@ impl<'config> Parser<DejavuLanguage> for DejavuParser<'config> {
                 self.skip_trivia(state);
                 if let Some(token) = state.current() {
                     match token.kind {
-                        crate::lexer::token_type::DejavuTokenType::CodeStart | crate::lexer::token_type::DejavuTokenType::TemplateControlStart => {
+                        crate::lexer::token_type::DejavuTokenType::CodeStart
+                        | crate::lexer::token_type::DejavuTokenType::TemplateControlStart => {
                             let cp = state.checkpoint();
                             state.bump();
                             self.skip_trivia(state);
 
                             let is_control_end = if let Some(next_token) = state.current() {
-                                matches!(next_token.kind, crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::End) | crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::Else))
+                                matches!(
+                                    next_token.kind,
+                                    crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::End)
+                                        | crate::lexer::token_type::DejavuTokenType::Keyword(crate::lexer::DejavuKeywords::Else)
+                                )
                             }
                             else {
                                 false
@@ -493,19 +608,29 @@ impl<'config> Parser<DejavuLanguage> for DejavuParser<'config> {
                             else if is_interpolation {
                                 let _expr_cp = state.checkpoint();
                                 self.parse_expression_internal(state, 0).ok();
-                                while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                                while state.not_at_end()
+                                    && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                                    && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                                {
                                     state.bump();
                                 }
-                                if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                                if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                                    || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                                {
                                     state.bump();
                                 }
                                 state.finish_at(cp, DejavuElementType::Interpolation);
                             }
                             else {
-                                while state.not_at_end() && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                                while state.not_at_end()
+                                    && !state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                                    && !state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                                {
                                     state.bump();
                                 }
-                                if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd) || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd) {
+                                if state.at(crate::lexer::token_type::DejavuTokenType::TemplateControlEnd)
+                                    || state.at(crate::lexer::token_type::DejavuTokenType::CodeEnd)
+                                {
                                     state.bump();
                                 }
                                 state.finish_at(cp, DejavuElementType::TemplateControl);
@@ -534,7 +659,10 @@ impl<'config> Parser<DejavuLanguage> for DejavuParser<'config> {
                         ControlFlowType::While { .. } => "while",
                         ControlFlowType::Loop { .. } => "loop",
                     };
-                    return Err(data_text_core::TextError::custom_error(format!("Unclosed control flow: '{}' block not closed with 'end {}'", flow_type_name, flow_type_name)));
+                    return Err(data_text_core::TextError::custom_error(format!(
+                        "Unclosed control flow: '{}' block not closed with 'end {}'",
+                        flow_type_name, flow_type_name
+                    )));
                 }
             }
 

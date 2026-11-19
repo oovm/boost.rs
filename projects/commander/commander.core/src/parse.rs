@@ -124,7 +124,8 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
             // interpret tail tokens as options or help markers.
             if strict_mode {
                 parsed.rest.extend(argv[i + 1..].iter().cloned());
-            } else {
+            }
+            else {
                 parsed.rest.push(a.clone());
                 parsed.rest.extend(argv[i + 1..].iter().cloned());
             }
@@ -135,7 +136,8 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
                 Some(eq) => (&body[..eq], Some(body[eq + 1..].to_string())),
                 None => (body, None),
             };
-            let Some(def) = longs.get(long).copied() else {
+            let Some(def) = longs.get(long).copied()
+            else {
                 if strict_mode {
                     return Err(CommanderError::from_id(error_id::UNKNOWN_OPTION).with_arg("option", a.clone()));
                 }
@@ -150,7 +152,8 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
                 ValueDecl::Required | ValueDecl::OptionalValue => {
                     if let Some(value) = attached {
                         assign(&mut parsed, def, Value::String(value));
-                    } else {
+                    }
+                    else {
                         let next = argv.get(i + 1);
                         if let Some(n) = next.filter(|n| !is_option_token(n)) {
                             assign(&mut parsed, def, Value::String(n.clone()));
@@ -159,10 +162,11 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
                         }
                         if def.value == ValueDecl::OptionalValue {
                             assign(&mut parsed, def, Value::Bool(true));
-                        } else if strict_mode {
-                            return Err(CommanderError::from_id(error_id::MISSING_OPTION_VALUE)
-                                .with_arg("option", format!("--{long}")));
-                        } else {
+                        }
+                        else if strict_mode {
+                            return Err(CommanderError::from_id(error_id::MISSING_OPTION_VALUE).with_arg("option", format!("--{long}")));
+                        }
+                        else {
                             parsed.rest.push(a.clone());
                         }
                     }
@@ -179,7 +183,8 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
                 1 => body.chars().next().and_then(|c| shorts.get(&c).copied()),
                 _ => None,
             };
-            let Some(def) = def else {
+            let Some(def) = def
+            else {
                 if strict_mode {
                     return Err(CommanderError::from_id(error_id::UNKNOWN_OPTION).with_arg("option", a.clone()));
                 }
@@ -200,10 +205,11 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
                     }
                     if def.value == ValueDecl::OptionalValue {
                         assign(&mut parsed, def, Value::Bool(true));
-                    } else if strict_mode {
-                        return Err(CommanderError::from_id(error_id::MISSING_OPTION_VALUE)
-                            .with_arg("option", a.clone()));
-                    } else {
+                    }
+                    else if strict_mode {
+                        return Err(CommanderError::from_id(error_id::MISSING_OPTION_VALUE).with_arg("option", a.clone()));
+                    }
+                    else {
                         parsed.rest.push(a.clone());
                     }
                 }
@@ -235,20 +241,16 @@ fn assign(parsed: &mut Parsed, def: &OptionSpec, value: Value) {
 /// Applies declared constraints (default / required / enum / coerce) after a
 /// strict parse, before any handler runs. Only explicitly supplied values are
 /// re-validated, matching the TypeScript twin.
-pub(crate) fn apply_config(
-    defs: &[OptionSpec],
-    options: &mut ParsedOptions,
-    used: &BTreeSet<String>,
-) -> Result<(), CommanderError> {
+pub(crate) fn apply_config(defs: &[OptionSpec], options: &mut ParsedOptions, used: &BTreeSet<String>) -> Result<(), CommanderError> {
     for def in defs {
         let provided = used.contains(&def.long);
         if !provided && let Some(default) = &def.default {
             options.insert(def.long.clone(), Value::String(default.clone()));
         }
-        let Some(value) = options.get(&def.long).cloned() else {
+        let Some(value) = options.get(&def.long).cloned()
+        else {
             if def.required {
-                return Err(CommanderError::from_id(error_id::MISSING_REQUIRED_OPTION)
-                    .with_arg("option", def.long.clone()));
+                return Err(CommanderError::from_id(error_id::MISSING_REQUIRED_OPTION).with_arg("option", def.long.clone()));
             }
             continue;
         };

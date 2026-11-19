@@ -164,7 +164,13 @@ impl VendorManager {
     }
 
     /// 登录注册表。`token` 为空时先从凭据存储发现。
-    pub fn login(&mut self, registry: &dyn Registry, token: Option<&str>, project_dir: Option<&Path>, sync_official: bool) -> Result<LoginResult> {
+    pub fn login(
+        &mut self,
+        registry: &dyn Registry,
+        token: Option<&str>,
+        project_dir: Option<&Path>,
+        sync_official: bool,
+    ) -> Result<LoginResult> {
         let manual = token.filter(|value| !value.trim().is_empty());
         let (token, source) = if let Some(token) = manual {
             (token.to_string(), "手动输入".to_string())
@@ -173,10 +179,7 @@ impl VendorManager {
             (credential.token, credential.source)
         }
         else {
-            return Err(ManagerError::message(format!(
-                "未提供认证令牌，且无法发现 {} 凭据；请使用 `login --token <token>`",
-                registry.name()
-            )));
+            return Err(ManagerError::message(format!("未提供认证令牌，且无法发现 {} 凭据；请使用 `login --token <token>`", registry.name())));
         };
 
         let result = registry.verify_token(&token)?;
@@ -194,9 +197,7 @@ impl VendorManager {
         }
 
         let synced_to = if manual.is_some() && sync_official {
-            self.credentials
-                .sync_to_official(registry.name(), Some(registry.endpoint()), &token)?
-                .map(|path| path.display().to_string())
+            self.credentials.sync_to_official(registry.name(), Some(registry.endpoint()), &token)?.map(|path| path.display().to_string())
         }
         else {
             None
@@ -221,7 +222,9 @@ impl VendorManager {
             )));
         };
         let mut result = registry.verify_token(&credential.token)?;
-        if result.valid && let Some(username) = result.username.as_mut() {
+        if result.valid
+            && let Some(username) = result.username.as_mut()
+        {
             *username = format!("{username} ← {}", credential.source);
         }
         Ok(result)

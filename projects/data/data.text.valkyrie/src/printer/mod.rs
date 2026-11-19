@@ -15,8 +15,8 @@ pub use data_text_pretty::Document;
 
 use crate::{ValkyrieBuilder, ValkyrieLanguage, ast::ValkyrieRoot};
 
-use document::root_document;
 use data_text_core::{Builder, ParseSession, SourceText};
+use document::root_document;
 
 /// 解析 Valkyrie 源码为 AST 根节点。
 pub fn parse_source(source: &str) -> Result<ValkyrieRoot, PrintError> {

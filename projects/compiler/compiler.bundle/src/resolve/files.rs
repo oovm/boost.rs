@@ -21,8 +21,7 @@ pub(crate) fn resolve_file(base: &Path) -> Option<PathBuf> {
         return Some(path);
     }
     // 1.5) `.js`/`.mjs`/`.cjs` 说明符替换为同源 TS 扩展（TS 源码包形态）。
-    let ts_substitutes: &[(&str, &[&str])] =
-        &[(".js", &[".ts", ".tsx"]), (".mjs", &[".mts"]), (".cjs", &[".cts"])];
+    let ts_substitutes: &[(&str, &[&str])] = &[(".js", &[".ts", ".tsx"]), (".mjs", &[".mts"]), (".cjs", &[".cts"])];
     for (js_ext, ts_exts) in ts_substitutes {
         if let Some(stem) = base.as_os_str().to_str().and_then(|s| s.strip_suffix(js_ext)) {
             for ts_ext in *ts_exts {

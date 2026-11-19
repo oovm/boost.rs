@@ -4,7 +4,7 @@ pub mod element_type;
 
 use crate::{language::JavaScriptLanguage, parser::element_type::JavaScriptElementType};
 use data_text_core::{
-    GreenNode, TextError, ParseCache, TextEdit,
+    GreenNode, ParseCache, TextEdit, TextError,
     parser::{Associativity, Parser, ParserState, Pratt, PrattParser, binary},
     source::Source,
 };
@@ -162,7 +162,12 @@ impl<'config> Pratt<JavaScriptLanguage> for JavaScriptParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, JavaScriptLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, JavaScriptLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, JavaScriptLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, JavaScriptLanguage>> {
         use crate::lexer::token_type::JavaScriptTokenType::*;
         let kind = state.peek_kind()?;
 
@@ -242,7 +247,12 @@ impl<'config> Pratt<JavaScriptLanguage> for JavaScriptParser<'config> {
 }
 
 impl<'config> Parser<JavaScriptLanguage> for JavaScriptParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JavaScriptLanguage>) -> data_text_core::parser::ParseOutput<'a, JavaScriptLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JavaScriptLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, JavaScriptLanguage> {
         let lexer = crate::lexer::JavaScriptLexer::new(&self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

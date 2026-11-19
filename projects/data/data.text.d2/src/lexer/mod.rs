@@ -21,7 +21,12 @@ impl<'config> D2Lexer<'config> {
 }
 
 impl<'config> Lexer<D2Language> for D2Lexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<D2Language>) -> LexOutput<D2Language> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<D2Language>,
+    ) -> LexOutput<D2Language> {
         let mut state = LexerState::new(source);
 
         while state.not_at_end() {

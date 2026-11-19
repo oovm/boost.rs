@@ -189,10 +189,13 @@ fn strongly_connected_components_split_directed_cycles() {
     graph.add_edge("d", "c", ()).expect("known endpoints");
 
     assert_eq!(strongly_connected_components(&graph), Ok(vec![vec!["a", "b"], vec!["c"], vec!["d"]]));
-    assert_eq!(strongly_connected_components(&CsrGraph::from_graph(&graph)).map(|mut components| {
-        components.sort();
-        components
-    }), Ok(vec![vec![0, 1], vec![2], vec![3]]));
+    assert_eq!(
+        strongly_connected_components(&CsrGraph::from_graph(&graph)).map(|mut components| {
+            components.sort();
+            components
+        }),
+        Ok(vec![vec![0, 1], vec![2], vec![3]])
+    );
 
     let undirected = MemoryGraph::<&'static str>::new(false);
     assert_eq!(strongly_connected_components(&undirected), Err(GraphError::UndirectedTraversal));
@@ -243,8 +246,8 @@ fn shortest_path_prefers_the_cheaper_route_not_the_shorter_one() {
 fn shortest_path_reports_unreachable_and_unknown_endpoints() {
     let mut graph = weighted();
     graph.add_vertex("island").expect("unique vertex");
-    let unreachable =
-        shortest_path_non_negative(&graph, &"a", &"island", |edge| *graph.edge_payload(edge).expect("edge payload")).expect("weights are representable");
+    let unreachable = shortest_path_non_negative(&graph, &"a", &"island", |edge| *graph.edge_payload(edge).expect("edge payload"))
+        .expect("weights are representable");
     assert_eq!(unreachable.distance, None);
     assert!(unreachable.path.is_empty());
     assert_eq!(

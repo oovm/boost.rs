@@ -20,9 +20,9 @@ pub mod types;
 /// Workspace and file management for LSP.
 pub mod workspace;
 
+pub use data_text_core::vfs::{DocumentSession, FileMetadata, FileType, MemoryVfs, Vfs};
 pub use handlers::*;
 pub use lsp::Lsp;
-pub use data_text_core::vfs::{DocumentSession, FileMetadata, FileType, MemoryVfs, Vfs};
 pub use protocol::*;
 pub use service::LanguageService;
 pub use transport::{Driver, DriverError, Inbound, MessageTransport, Outbound, RequestId};

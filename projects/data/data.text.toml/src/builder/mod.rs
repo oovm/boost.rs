@@ -1,6 +1,8 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::TomlRoot, language::TomlLanguage, lexer::TomlLexer, parser::TomlParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput, source::Source,
+};
 use std::{collections::BTreeMap, sync::Arc};
 
 /// TOML AST builder
@@ -14,7 +16,12 @@ impl<'config> TomlBuilder<'config> {
         Self { config }
     }
 
-    fn build_root<'a>(&self, green_tree: &GreenNode<'a, TomlLanguage>, _source: &SourceText, cache: &mut impl BuilderCache<TomlLanguage>) -> Result<TomlRoot, TextError> {
+    fn build_root<'a>(
+        &self,
+        green_tree: &GreenNode<'a, TomlLanguage>,
+        _source: &SourceText,
+        cache: &mut impl BuilderCache<TomlLanguage>,
+    ) -> Result<TomlRoot, TextError> {
         if let Some(cached) = cache.get_typed_node::<TomlRoot>(green_tree) {
             return Ok(cached.clone());
         }
@@ -31,7 +38,12 @@ impl<'config> TomlBuilder<'config> {
 }
 
 impl<'config> Builder<TomlLanguage> for TomlBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<TomlLanguage>) -> BuildOutput<TomlLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<TomlLanguage>,
+    ) -> BuildOutput<TomlLanguage> {
         let parser = TomlParser::new(self.config);
         let lexer = TomlLexer::new(self.config);
 

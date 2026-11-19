@@ -368,11 +368,7 @@ pub(crate) fn build_tables_stream(metadata: &ClrMetadataBuilder, info: &TableBui
 ///
 /// `has_this` 为 `true` 时添加 `HASTHIS` 标志（0x20），用于实例方法（含构造函数）。
 /// `type_token_map` 用于将 `Named` 类型解析为 `VALUETYPE`/`CLASS` + TypeDef token。
-pub(crate) fn build_method_signature(
-    signature: &MsilMethodSignature,
-    has_this: bool,
-    type_token_map: &TypeTokenMap,
-) -> Vec<u8> {
+pub(crate) fn build_method_signature(signature: &MsilMethodSignature, has_this: bool, type_token_map: &TypeTokenMap) -> Vec<u8> {
     let mut bytes = Vec::new();
     let flags = if has_this || signature.has_this { 0x20 } else { 0x00 };
     bytes.push(flags);
@@ -458,13 +454,12 @@ pub(crate) fn encode_element_type(ty: &MsilType, type_token_map: &TypeTokenMap) 
                 let tag = if (token & 0xFF00_0000) == 0x0100_0000 { 1 } else { 0 };
                 // Prefer token membership: name-set lookup can miss alternate qualifications
                 // (`TextSpan` vs `std.text.TextSpan`) and emit CLASS for a ValueType TypeDef.
-                let element =
-                    if type_token_map.value_type_tokens.contains(token) || type_token_map.value_type_names.contains(name) {
-                        0x11
-                    }
-                    else {
-                        0x12
-                    };
+                let element = if type_token_map.value_type_tokens.contains(token) || type_token_map.value_type_names.contains(name) {
+                    0x11
+                }
+                else {
+                    0x12
+                };
                 let mut bytes = vec![element];
                 bytes.extend_from_slice(&compress_type_def_or_ref(row, tag));
                 bytes
@@ -498,11 +493,6 @@ fn compress_unsigned(value: u32) -> Vec<u8> {
         vec![0x80 | ((value >> 8) as u8 & 0x3F), (value & 0xFF) as u8]
     }
     else {
-        vec![
-            0xC0 | ((value >> 24) as u8 & 0x1F),
-            ((value >> 16) & 0xFF) as u8,
-            ((value >> 8) & 0xFF) as u8,
-            (value & 0xFF) as u8,
-        ]
+        vec![0xC0 | ((value >> 24) as u8 & 0x1F), ((value >> 16) & 0xFF) as u8, ((value >> 8) & 0xFF) as u8, (value & 0xFF) as u8]
     }
 }

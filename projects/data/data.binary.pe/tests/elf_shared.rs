@@ -1,6 +1,6 @@
 use data_binary_pe::elf::{
-    SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec,
-    SharedElfWriter, SharedObjectExport, parse_elf64,
+    SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec, SharedElfWriter,
+    SharedObjectExport, parse_elf64,
 };
 
 fn image(text: Vec<u8>) -> SharedElfImage {
@@ -33,10 +33,7 @@ fn x86_64_exports() -> (SharedElfImage, Vec<SharedObjectExport>) {
     text.extend_from_slice(&[0xB8, 0x07, 0x00, 0x00, 0x00, 0xC3]);
     (
         image(text),
-        vec![
-            SharedObjectExport { name: "answer".into(), text_offset: 0 },
-            SharedObjectExport { name: "seven".into(), text_offset: 8 },
-        ],
+        vec![SharedObjectExport { name: "answer".into(), text_offset: 0 }, SharedObjectExport { name: "seven".into(), text_offset: 8 }],
     )
 }
 
@@ -105,14 +102,8 @@ fn consumer_with_imports() -> (SharedElfImage, Vec<SharedObjectExport>, Vec<Stri
     )
 }
 
-fn write_imports(
-    image: &SharedElfImage,
-    exports: &[SharedObjectExport],
-    imports: &[String],
-    calls: &[SharedElfImportCall],
-) -> Vec<u8> {
-    SharedElfWriter::write_x86_64_shared(&SharedElfSpec { image, exports, imports, calls, ..Default::default() })
-        .expect("write")
+fn write_imports(image: &SharedElfImage, exports: &[SharedObjectExport], imports: &[String], calls: &[SharedElfImportCall]) -> Vec<u8> {
+    SharedElfWriter::write_x86_64_shared(&SharedElfSpec { image, exports, imports, calls, ..Default::default() }).expect("write")
 }
 
 #[test]
@@ -225,13 +216,9 @@ fn linux_dlopen_fails_for_a_missing_needed_library() {
 
     let (image, exports) = x86_64_exports();
     let needed = vec!["libnyar_missing_dependency.so.1".to_string()];
-    let bytes = SharedElfWriter::write_x86_64_shared(&SharedElfSpec {
-        image: &image,
-        exports: &exports,
-        needed: &needed,
-        ..Default::default()
-    })
-    .expect("write with missing dependency");
+    let bytes =
+        SharedElfWriter::write_x86_64_shared(&SharedElfSpec { image: &image, exports: &exports, needed: &needed, ..Default::default() })
+            .expect("write with missing dependency");
     let path = std::env::temp_dir().join(format!("libdata_binary_missing_needed_{}.so", std::process::id()));
     std::fs::write(&path, &bytes).expect("write .so");
     let path_c = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
@@ -262,13 +249,9 @@ fn linux_dlopen_resolves_a_present_needed_library() {
 
     let (image, exports) = x86_64_exports();
     let needed = vec!["libc.so.6".to_string()];
-    let bytes = SharedElfWriter::write_x86_64_shared(&SharedElfSpec {
-        image: &image,
-        exports: &exports,
-        needed: &needed,
-        ..Default::default()
-    })
-    .expect("write with libc dependency");
+    let bytes =
+        SharedElfWriter::write_x86_64_shared(&SharedElfSpec { image: &image, exports: &exports, needed: &needed, ..Default::default() })
+            .expect("write with libc dependency");
     let path = std::env::temp_dir().join(format!("libdata_binary_needed_libc_{}.so", std::process::id()));
     std::fs::write(&path, &bytes).expect("write .so");
     let path_c = CString::new(path.to_string_lossy().as_bytes()).expect("utf8 path");
@@ -337,8 +320,7 @@ fn linux_dlopen_resolves_a_host_import_through_the_got() {
 ///
 /// `.data` 中的指针由 `R_X86_64_RELATIVE` 在装载时写入（镜像基址 + 加数 = 导出
 /// 函数虚拟地址），`call [rip+disp32]` 经 `shared_elf_data_reference` 指向数据槽。
-fn image_with_pointer_data()
--> (SharedElfImage, Vec<SharedObjectExport>, Vec<SharedElfDataRelocation>, Vec<SharedElfDataReference>) {
+fn image_with_pointer_data() -> (SharedElfImage, Vec<SharedObjectExport>, Vec<SharedElfDataRelocation>, Vec<SharedElfDataReference>) {
     // 0: `call qword ptr [rip+disp32]`；2: disp32；6: ret。16: `mov eax, 42; ret`。
     let mut text = vec![0xFF, 0x15, 0, 0, 0, 0, 0xC3];
     while text.len() < 16 {
@@ -346,10 +328,8 @@ fn image_with_pointer_data()
     }
     text.extend_from_slice(&[0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3]);
     let image = SharedElfImage { text, rodata: Vec::new(), data: vec![0; 8], bss: Vec::new() };
-    let exports = vec![
-        SharedObjectExport { name: "main".into(), text_offset: 0 },
-        SharedObjectExport { name: "answer".into(), text_offset: 16 },
-    ];
+    let exports =
+        vec![SharedObjectExport { name: "main".into(), text_offset: 0 }, SharedObjectExport { name: "answer".into(), text_offset: 16 }];
     // 加数 16 是本镜像内 `answer` 的虚拟地址（`p_vaddr == 文件偏移`）。
     let relocations = vec![SharedElfDataRelocation { offset: 0, target: SharedElfDataTarget::Text(16) }];
     let references = vec![SharedElfDataReference { rel32_field: 2, data_offset: 0 }];

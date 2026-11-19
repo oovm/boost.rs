@@ -200,7 +200,13 @@ impl C4Diagram {
     }
 
     /// Adds a relationship with technology to the diagram.
-    pub fn rel_with_tech(self, source: impl Into<String>, target: impl Into<String>, label: impl Into<String>, technology: impl Into<String>) -> Self {
+    pub fn rel_with_tech(
+        self,
+        source: impl Into<String>,
+        target: impl Into<String>,
+        label: impl Into<String>,
+        technology: impl Into<String>,
+    ) -> Self {
         self.with_element(Relationship::new(source, target, label).with_technology(technology))
     }
 }

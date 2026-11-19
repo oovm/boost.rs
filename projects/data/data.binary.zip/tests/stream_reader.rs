@@ -1,7 +1,6 @@
 use boost_source::binary::{ByteSource, MemorySource};
 use data_binary_zip::{
-    ZipCompression, ZipMember, ZipMemberStream, ZipStreamEntry, ZipStreamWriter, ZipViewError, index_zip_bytes,
-    read_member_payload,
+    ZipCompression, ZipMember, ZipMemberStream, ZipStreamEntry, ZipStreamWriter, ZipViewError, index_zip_bytes, read_member_payload,
 };
 use data_compression::{CodecError, CodecLimits, StreamChunk};
 
@@ -40,8 +39,7 @@ fn streams_stored_payload_in_caller_chunks() {
     let payload = "stored streaming body ".repeat(500).into_bytes();
     let (bytes, member) = build_archive(ZipCompression::Store, &payload);
     let stream =
-        ZipMemberStream::with_chunk_size(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new(), 17)
-            .expect("open");
+        ZipMemberStream::with_chunk_size(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new(), 17).expect("open");
     let (collected, decoded) = drain(stream, 23);
     assert_eq!(collected, payload);
     assert_eq!(decoded, payload.len() as u64);
@@ -52,8 +50,7 @@ fn streams_deflated_payload_in_caller_chunks() {
     let payload = "deflated streaming body ".repeat(900).into_bytes();
     let (bytes, member) = build_archive(ZipCompression::Deflate, &payload);
     let stream =
-        ZipMemberStream::with_chunk_size(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new(), 71)
-            .expect("open");
+        ZipMemberStream::with_chunk_size(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new(), 71).expect("open");
     let (collected, decoded) = drain(stream, 13);
     assert_eq!(collected, payload);
     assert_eq!(decoded, payload.len() as u64);
@@ -63,8 +60,7 @@ fn streams_deflated_payload_in_caller_chunks() {
 fn decoded_byte_count_tracks_partial_reads() {
     let payload = b"partial reading keeps limits answerable".repeat(64);
     let (bytes, member) = build_archive(ZipCompression::Deflate, &payload);
-    let mut stream =
-        ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
+    let mut stream = ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
 
     let mut buffer = vec![0u8; 100];
     let first = stream.read(&mut buffer).expect("first read");
@@ -84,8 +80,7 @@ fn decoded_byte_count_tracks_partial_reads() {
 fn rejects_a_member_whose_crc_does_not_match() {
     let (bytes, mut member) = build_archive(ZipCompression::Store, b"crc mismatch");
     member.crc32 ^= 0xFFFF_FFFF;
-    let mut stream =
-        ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
+    let mut stream = ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
     let mut collected = Vec::new();
     let mut buffer = vec![0u8; 8];
     let error = loop {
@@ -105,8 +100,7 @@ fn truncated_deflate_payload_reports_input_exhaustion() {
     let (bytes, mut member) = build_archive(ZipCompression::Deflate, &payload);
     member.compressed_size = 1;
     member.payload_range.len = 1;
-    let mut stream =
-        ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
+    let mut stream = ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
     let mut buffer = vec![0u8; 8];
     let error = loop {
         match stream.read(&mut buffer) {
@@ -141,8 +135,7 @@ fn output_limit_stops_decoding_immediately() {
 #[test]
 fn empty_member_finishes_without_output() {
     let (bytes, member) = build_archive(ZipCompression::Deflate, b"");
-    let mut stream =
-        ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
+    let mut stream = ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
     let mut buffer = [0u8; 16];
     assert_eq!(stream.read(&mut buffer), Ok(StreamChunk::Finished));
     assert_eq!(stream.decoded_bytes(), 0);
@@ -155,14 +148,12 @@ fn dropping_a_partial_reader_cancels_without_state() {
     let (bytes, member) = build_archive(ZipCompression::Deflate, &payload);
     {
         let mut stream =
-            ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes.clone()), &member, CodecLimits::new())
-                .expect("open");
+            ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes.clone()), &member, CodecLimits::new()).expect("open");
         let mut buffer = vec![0u8; 64];
         assert!(matches!(stream.read(&mut buffer), Ok(StreamChunk::Produced(_))));
     }
 
-    let stream =
-        ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("reopen");
+    let stream = ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("reopen");
     let (collected, decoded) = drain(stream, 64);
     assert_eq!(collected, payload);
     assert_eq!(decoded, payload.len() as u64);
@@ -178,8 +169,7 @@ fn streaming_matches_the_one_shot_decoder() {
         &mut data_binary_core::BudgetTracker::new(data_binary_core::Budget::default()),
     )
     .expect("one-shot");
-    let stream =
-        ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
+    let stream = ZipMemberStream::open(MemorySource::from_bytes("stream.zip", bytes), &member, CodecLimits::new()).expect("open");
     let (collected, _) = drain(stream, 19);
     assert_eq!(collected, one_shot);
 }

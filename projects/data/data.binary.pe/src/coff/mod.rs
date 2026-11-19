@@ -213,9 +213,7 @@ impl CoffObjectWriter {
             encode_name(&section.name, &mut bytes, &mut string_table)?;
             bytes.extend_from_slice(&0u32.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
-            bytes.extend_from_slice(
-                &(u32::try_from(section.data.len()).map_err(|_| CoffWriteError::SectionDataTooLarge)?).to_le_bytes(),
-            );
+            bytes.extend_from_slice(&(u32::try_from(section.data.len()).map_err(|_| CoffWriteError::SectionDataTooLarge)?).to_le_bytes());
             bytes.extend_from_slice(&section_raw_offsets[index].to_le_bytes());
             bytes.extend_from_slice(&section_reloc_offsets[index].to_le_bytes());
             bytes.extend_from_slice(

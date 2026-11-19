@@ -41,7 +41,12 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
         ExpressionKind::TemplateString(s) => Some(format!("`{s}`")),
         ExpressionKind::UnaryExpression { operator, argument } => {
             let inner = print_expr(argument, Prec::Unary)?;
-            let text = if operator == "typeof" || operator == "void" || operator == "delete" { format!("{operator} {inner}") } else { format!("{operator}{inner}") };
+            let text = if operator == "typeof" || operator == "void" || operator == "delete" {
+                format!("{operator} {inner}")
+            }
+            else {
+                format!("{operator}{inner}")
+            };
             wrap_prec(text, Prec::Unary, min_prec)
         }
         ExpressionKind::UpdateExpression { operator, argument, prefix } => {
@@ -137,14 +142,17 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
             };
             wrap_prec(text, Prec::Unary, min_prec)
         }
-        ExpressionKind::ImportExpression { module_specifier } => wrap_prec(format!("import({})", print_expr(module_specifier, Prec::Lowest)?), Prec::Call, min_prec),
+        ExpressionKind::ImportExpression { module_specifier } => {
+            wrap_prec(format!("import({})", print_expr(module_specifier, Prec::Lowest)?), Prec::Call, min_prec)
+        }
         ExpressionKind::ArrowFunction { params, body, async_, .. } => {
             let prefix = if *async_ { "async " } else { "" };
             let params_s = print_params(params)?;
             let body_s = print_arrow_body(body)?;
             wrap_prec(format!("{prefix}{params_s} => {body_s}"), Prec::Assign, min_prec)
         }
-        ExpressionKind::AsExpression { expression, type_annotation } | ExpressionKind::TypeAssertionExpression { expression, type_annotation } => {
+        ExpressionKind::AsExpression { expression, type_annotation }
+        | ExpressionKind::TypeAssertionExpression { expression, type_annotation } => {
             let expr_s = print_expr(expression, Prec::Unary)?;
             let ty = print_type_annotation(type_annotation)?;
             wrap_prec(format!("{expr_s} as {ty}"), Prec::Unary, min_prec)

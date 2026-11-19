@@ -163,8 +163,9 @@ pub(super) fn register_gc_array_types(
     }
     // 字段与 sum 载荷是已冻结的类型事实；它们的数组类型不一定出现在指令中。
     pending.extend(ctx.layouts.layouts.iter().flat_map(|layout| layout.fields.iter().map(|field| field.ty.clone())));
-    pending
-        .extend(exec.sum_layout_by_semantic_type().values().flat_map(|sum| sum.variants.iter().filter_map(|variant| variant.payload_type.clone())));
+    pending.extend(
+        exec.sum_layout_by_semantic_type().values().flat_map(|sum| sum.variants.iter().filter_map(|variant| variant.payload_type.clone())),
+    );
     let mut visited = BTreeSet::new();
     let mut elements = BTreeSet::new();
     while let Some(ty) = pending.pop() {

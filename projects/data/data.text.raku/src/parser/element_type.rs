@@ -50,7 +50,12 @@ impl ElementType for RakuElementType {
         match self {
             Self::Token(_) => UniversalElementRole::None,
             Self::Root => UniversalElementRole::Root,
-            Self::Expression | Self::CallExpression | Self::BinaryExpression | Self::UnaryExpression | Self::LiteralExpression | Self::IdentifierExpression => UniversalElementRole::Expression,
+            Self::Expression
+            | Self::CallExpression
+            | Self::BinaryExpression
+            | Self::UnaryExpression
+            | Self::LiteralExpression
+            | Self::IdentifierExpression => UniversalElementRole::Expression,
             Self::Statement | Self::VariableDeclaration => UniversalElementRole::Statement,
             Self::Block => UniversalElementRole::Statement,
             Self::FunctionDefinition | Self::ClassDefinition | Self::ModuleDefinition => UniversalElementRole::Definition,

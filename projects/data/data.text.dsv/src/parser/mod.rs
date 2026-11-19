@@ -5,12 +5,12 @@ use crate::{
     language::{Dsv, DsvLanguage},
     lexer::DsvLexer,
 };
-pub use element_type::DsvElementType;
 use data_text_core::{
     ParseOutput,
     parser::{ParseCache, Parser, ParserState},
     source::{Source, TextEdit},
 };
+pub use element_type::DsvElementType;
 
 /// DSV parser state.
 pub(crate) type State<'a, const LANG: DsvLanguage, S> = ParserState<'a, Dsv<LANG>, S>;
@@ -21,7 +21,12 @@ pub struct DsvParser<const LANG: DsvLanguage> {
 }
 
 impl<const LANG: DsvLanguage> Parser<Dsv<LANG>> for DsvParser<LANG> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<Dsv<LANG>>) -> ParseOutput<'a, Dsv<LANG>> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<Dsv<LANG>>,
+    ) -> ParseOutput<'a, Dsv<LANG>> {
         let lexer = DsvLexer::<LANG>::new();
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             use crate::{lexer::DsvTokenType::*, parser::DsvElementType::*};

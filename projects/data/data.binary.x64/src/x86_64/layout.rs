@@ -1,6 +1,4 @@
-use data_binary_pe::coff::{
-    CoffMachine, CoffObject, CoffRelocation, CoffRelocationKind, CoffSection, CoffSymbol, coff_object_from_sections,
-};
+use data_binary_pe::coff::{CoffMachine, CoffObject, CoffRelocation, CoffRelocationKind, CoffSection, CoffSymbol, coff_object_from_sections};
 
 use super::{EncodedModule, X64FixupKind};
 
@@ -29,11 +27,7 @@ impl ObjectLayout {
                     }
                 }
                 X64FixupKind::RipRelativeRData { label } => {
-                    relocations.push(CoffRelocation {
-                        offset: fixup.offset,
-                        symbol_name: label.clone(),
-                        kind: CoffRelocationKind::Rel32,
-                    });
+                    relocations.push(CoffRelocation { offset: fixup.offset, symbol_name: label.clone(), kind: CoffRelocationKind::Rel32 });
                 }
                 X64FixupKind::TextRelative { .. } => {}
             }
@@ -41,18 +35,8 @@ impl ObjectLayout {
 
         let entry_value = encoded.labels.get(entry_symbol).copied().unwrap_or(0);
         Self {
-            text: CoffSection {
-                name: ".text".to_string(),
-                data: encoded.text.clone(),
-                relocations,
-                characteristics: 0x6000_0020,
-            },
-            symbols: vec![CoffSymbol {
-                name: entry_symbol.to_string(),
-                section_index: 1,
-                value: entry_value,
-                storage_class: 2,
-            }],
+            text: CoffSection { name: ".text".to_string(), data: encoded.text.clone(), relocations, characteristics: 0x6000_0020 },
+            symbols: vec![CoffSymbol { name: entry_symbol.to_string(), section_index: 1, value: entry_value, storage_class: 2 }],
         }
     }
 

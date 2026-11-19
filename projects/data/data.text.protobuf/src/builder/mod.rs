@@ -4,7 +4,7 @@ use crate::{
     parser::{ProtobufParser, element_type::ProtobufElementType},
 };
 use data_text_core::{
-    GreenNode, GreenTree, TextDiagnostics, TextError, SourceText,
+    GreenNode, GreenTree, SourceText, TextDiagnostics, TextError,
     builder::{BuildOutput, Builder, BuilderCache},
     parser::Parser,
     source::{Source, TextEdit},
@@ -24,7 +24,12 @@ impl<'config> ProtobufBuilder<'config> {
 }
 
 impl<'config> Builder<ProtobufLanguage> for ProtobufBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ProtobufLanguage>) -> BuildOutput<ProtobufLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ProtobufLanguage>,
+    ) -> BuildOutput<ProtobufLanguage> {
         let parser = ProtobufParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<ProtobufLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -69,7 +74,12 @@ impl<'config> ProtobufBuilder<'config> {
         Ok(ProtobufRoot { definitions })
     }
 
-    fn build_definition(&self, node: &GreenNode<ProtobufLanguage>, offset: usize, source: &SourceText) -> Result<Option<Definition>, TextError> {
+    fn build_definition(
+        &self,
+        node: &GreenNode<ProtobufLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<Definition>, TextError> {
         let span = data_text_core::Range { start: offset, end: offset + node.byte_length as usize };
 
         match node.kind {

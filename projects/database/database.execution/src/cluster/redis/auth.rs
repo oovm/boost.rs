@@ -79,7 +79,8 @@ fn credential_matches(requirepass: Option<&str>, username: &str, password: &str,
 fn credential_error(requirepass: Option<&str>, username: &str, legacy: bool) -> CommandError {
     if requirepass.is_none() && legacy {
         return CommandError::Failed(
-            "AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?".to_owned(),
+            "AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?"
+                .to_owned(),
         );
     }
     let _ = username;
@@ -127,7 +128,10 @@ mod tests {
     fn authenticate_rejects_wrong_credentials() {
         let mut state = AuthState::new(Some("secret"));
         let arguments: Vec<&[u8]> = vec![b"AUTH", b"nope"];
-        assert_eq!(state.authenticate(&arguments, Some("secret")), CommandError::Coded("WRONGPASS invalid username-password pair or user is disabled.".to_owned()).to_reply());
+        assert_eq!(
+            state.authenticate(&arguments, Some("secret")),
+            CommandError::Coded("WRONGPASS invalid username-password pair or user is disabled.".to_owned()).to_reply()
+        );
         assert!(!state.is_authenticated());
     }
 
@@ -137,7 +141,11 @@ mod tests {
         let arguments: Vec<&[u8]> = vec![b"AUTH", b"whatever"];
         assert_eq!(
             state.authenticate(&arguments, None),
-            CommandError::Failed("AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?".to_owned()).to_reply()
+            CommandError::Failed(
+                "AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?"
+                    .to_owned()
+            )
+            .to_reply()
         );
         // 没有口令时连接本来就没有认证门槛，失败提示不改变可用性。
         assert!(state.gate(b"GET", None).is_none());
@@ -147,7 +155,10 @@ mod tests {
     fn named_user_without_a_configured_password_is_wrongpass() {
         let mut state = AuthState::new(None);
         let arguments: Vec<&[u8]> = vec![b"AUTH", b"alice", b"pw"];
-        assert_eq!(state.authenticate(&arguments, None), CommandError::Coded("WRONGPASS invalid username-password pair or user is disabled.".to_owned()).to_reply());
+        assert_eq!(
+            state.authenticate(&arguments, None),
+            CommandError::Coded("WRONGPASS invalid username-password pair or user is disabled.".to_owned()).to_reply()
+        );
         let arguments: Vec<&[u8]> = vec![b"AUTH", b"default", b"pw"];
         assert_eq!(state.authenticate(&arguments, None), Reply::ok());
     }
@@ -156,6 +167,9 @@ mod tests {
     fn arity_is_checked_before_credentials() {
         let mut state = AuthState::new(Some("secret"));
         let arguments: Vec<&[u8]> = vec![b"AUTH"];
-        assert_eq!(state.authenticate(&arguments, Some("secret")), CommandError::Failed("wrong number of arguments for 'auth' command".to_owned()).to_reply());
+        assert_eq!(
+            state.authenticate(&arguments, Some("secret")),
+            CommandError::Failed("wrong number of arguments for 'auth' command".to_owned()).to_reply()
+        );
     }
 }

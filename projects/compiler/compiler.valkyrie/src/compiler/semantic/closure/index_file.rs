@@ -36,12 +36,7 @@ pub fn index_source_file(dependency_key: &str, path: &str, source: &str, arch: &
 ///
 /// 与 [`index_source_file`] 的区别只在入口：模板展开由调用方决定。装配层的 provider
 /// 库存本就按未展开 AST 收集，调用边闭包与它保持同一棵树，避免「库存看到 A、索引看到 B」。
-pub fn index_parsed_root(
-    dependency_key: &str,
-    path: &str,
-    source: &str,
-    root: &crate::compiler::syntax::surface::ValkyrieRoot,
-) -> IndexedFile {
+pub fn index_parsed_root(dependency_key: &str, path: &str, source: &str, root: &crate::compiler::syntax::surface::ValkyrieRoot) -> IndexedFile {
     let mut builder = FileBuilder::new(dependency_key, path);
     collect_items(&mut builder, &[], &root.items);
     IndexedFile {

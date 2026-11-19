@@ -166,10 +166,6 @@ impl GraphRead for TaskGraph {
 
 impl OutgoingEdges for TaskGraph {
     fn outgoing(&self, vertex: &Self::Vertex) -> impl Iterator<Item = Self::Edge> {
-        self.edges
-            .iter()
-            .enumerate()
-            .filter(move |(_, edge)| edge.from_task.as_ref() == Some(vertex))
-            .map(|(position, _)| position)
+        self.edges.iter().enumerate().filter(move |(_, edge)| edge.from_task.as_ref() == Some(vertex)).map(|(position, _)| position)
     }
 }

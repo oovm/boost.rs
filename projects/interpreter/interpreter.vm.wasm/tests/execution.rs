@@ -12,7 +12,14 @@ fn new_vm() -> WasmVm {
 #[test]
 fn i32_arithmetic_returns_value() {
     let mut vm = new_vm();
-    let code = [Instruction::I32Const(2), Instruction::I32Const(3), Instruction::I32Mul, Instruction::I32Const(4), Instruction::I32Add, Instruction::Return];
+    let code = [
+        Instruction::I32Const(2),
+        Instruction::I32Const(3),
+        Instruction::I32Mul,
+        Instruction::I32Const(4),
+        Instruction::I32Add,
+        Instruction::Return,
+    ];
     assert_eq!(vm.execute(&code, 100).map(|(value, _)| value), Ok(WasmValue::I32(10)));
 }
 

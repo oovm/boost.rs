@@ -170,14 +170,7 @@ pub struct BinaryTarget {
 impl BinaryTarget {
     /// 创建一个新的目标描述。
     pub fn new(family: TargetFamily, arch: BinaryArch, flavor: BinaryFlavor) -> Self {
-        Self {
-            family,
-            arch,
-            byte_order: ByteOrder::LittleEndian,
-            flavor,
-            specification: None,
-            abi: None,
-        }
+        Self { family, arch, byte_order: ByteOrder::LittleEndian, flavor, specification: None, abi: None }
     }
 
     /// 该后端声明是否覆盖请求目标。
@@ -583,7 +576,9 @@ impl CanonicalTarget {
             "deno" => Self::new(CanonicalArch::Wasm32, CanonicalVendor::Deno, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)),
             "bun" => Self::new(CanonicalArch::Wasm32, CanonicalVendor::Bun, CanonicalSpecification::Unknown, Some(CanonicalAbi::WebAssembly)),
             "wechat" => Self::wechat(),
-            "ovm" | "odin-vm" => Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed)),
+            "ovm" | "odin-vm" => {
+                Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed))
+            }
             "native" => Self::host_native()?,
             // `node` / `python` 是宿主合同占位符，不是平台身份。
             "node" | "python" => {

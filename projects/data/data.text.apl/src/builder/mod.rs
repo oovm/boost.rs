@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::*, language::AplLanguage, parser::AplParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the APL language.
 #[derive(Clone)]
@@ -24,7 +24,12 @@ impl<'config> AplBuilder<'config> {
 }
 
 impl<'config> Builder<AplLanguage> for AplBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<AplLanguage>) -> data_text_core::builder::BuildOutput<AplLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<AplLanguage>,
+    ) -> data_text_core::builder::BuildOutput<AplLanguage> {
         let parser = AplParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<AplLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

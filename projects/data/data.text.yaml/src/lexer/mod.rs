@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::YamlLanguage, lexer::token_type::YamlTokenType};
 use data_text_core::{
-    Lexer, LexerState, TextError, Source,
+    Lexer, LexerState, Source, TextError,
     lexer::{CommentConfig, LexOutput, LexerCache, StringConfig, WhitespaceConfig},
 };
 static YAML_WHITESPACE: WhitespaceConfig = WhitespaceConfig { unicode_whitespace: false };
@@ -102,7 +102,12 @@ impl<'config> YamlLexer<'config> {
 }
 
 impl<'config> Lexer<YamlLanguage> for YamlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<YamlLanguage>) -> LexOutput<YamlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<YamlLanguage>,
+    ) -> LexOutput<YamlLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

@@ -40,4 +40,3 @@ pub use params::{
 #[doc(hidden)]
 pub use params::{Dialect, prepare_sql};
 pub use window::{ReadWindow, read_window, write_windows};
-

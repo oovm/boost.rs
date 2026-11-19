@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{AdaParser, ast::*, language::AdaLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Ada language.
 #[derive(Clone)]
@@ -23,7 +23,12 @@ impl<'config> AdaBuilder<'config> {
 }
 
 impl<'config> Builder<AdaLanguage> for AdaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<AdaLanguage>) -> data_text_core::builder::BuildOutput<AdaLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<AdaLanguage>,
+    ) -> data_text_core::builder::BuildOutput<AdaLanguage> {
         let parser = AdaParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<AdaLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

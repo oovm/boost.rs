@@ -725,7 +725,11 @@ pub struct TypeName {
 
 impl TypeName {
     /// Create a new type name
-    pub fn new(specifier_qualifiers: Vec<SpecifierQualifier>, abstract_declarator: Option<Box<AbstractDeclarator>>, span: Range<usize>) -> Self {
+    pub fn new(
+        specifier_qualifiers: Vec<SpecifierQualifier>,
+        abstract_declarator: Option<Box<AbstractDeclarator>>,
+        span: Range<usize>,
+    ) -> Self {
         Self { specifier_qualifiers, abstract_declarator, span }
     }
 }

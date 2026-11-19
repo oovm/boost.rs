@@ -19,7 +19,12 @@ impl<'config> MapleLexer<'config> {
 }
 
 impl<'config> Lexer<MapleLanguage> for MapleLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<MapleLanguage>) -> LexOutput<MapleLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<MapleLanguage>,
+    ) -> LexOutput<MapleLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

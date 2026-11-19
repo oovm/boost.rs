@@ -11,7 +11,18 @@ impl NimTokenType {
 
     /// Returns true if the token type is a non-terminal element.
     pub fn is_element(&self) -> bool {
-        matches!(self, Self::Root | Self::ProcDecl | Self::TypeDecl | Self::VarDecl | Self::ConstDecl | Self::LetDecl | Self::ImportDecl | Self::Comment | Self::ErrorNode)
+        matches!(
+            self,
+            Self::Root
+                | Self::ProcDecl
+                | Self::TypeDecl
+                | Self::VarDecl
+                | Self::ConstDecl
+                | Self::LetDecl
+                | Self::ImportDecl
+                | Self::Comment
+                | Self::ErrorNode
+        )
     }
 
     /// Returns true if the token type is a keyword.
@@ -118,7 +129,20 @@ impl NimTokenType {
     pub fn is_punctuation(&self) -> bool {
         matches!(
             self,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Comma | Self::Semicolon | Self::Colon | Self::Dot | Self::Question | Self::Exclamation | Self::Dollar | Self::Backtick
+            Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::LeftBrace
+                | Self::RightBrace
+                | Self::Comma
+                | Self::Semicolon
+                | Self::Colon
+                | Self::Dot
+                | Self::Question
+                | Self::Exclamation
+                | Self::Dollar
+                | Self::Backtick
         )
     }
 }

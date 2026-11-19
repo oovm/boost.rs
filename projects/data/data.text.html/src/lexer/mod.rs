@@ -41,7 +41,12 @@ pub struct HtmlLexer<'config> {
 
 impl<'config> Lexer<HtmlLanguage> for HtmlLexer<'config> {
     /// Tokenizes the input source text using the provided cache.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<HtmlLanguage>) -> LexOutput<HtmlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<HtmlLanguage>,
+    ) -> LexOutput<HtmlLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -166,7 +171,14 @@ impl<'config> HtmlLexer<'config> {
         Ok(())
     }
 
-    fn apply_tag_operator<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, in_markup: &mut bool, raw_text_tag: &mut Option<String>, tag_name_seen: &mut bool, closing_tag: &mut bool) {
+    fn apply_tag_operator<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        in_markup: &mut bool,
+        raw_text_tag: &mut Option<String>,
+        tag_name_seen: &mut bool,
+        closing_tag: &mut bool,
+    ) {
         let Some(kind) = self.lex_tag_operators(state)
         else {
             return;

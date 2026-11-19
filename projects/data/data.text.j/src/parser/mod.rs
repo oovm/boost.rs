@@ -6,7 +6,7 @@ pub use element_type::JElementType;
 
 use crate::{language::JLanguage, lexer::JTokenType};
 use data_text_core::{
-    TextError, TextEdit,
+    TextEdit, TextError,
     parser::{ParseCache, ParseOutput, Parser, ParserState},
     source::Source,
 };
@@ -30,7 +30,9 @@ impl<'config> JParser<'config> {
 
         // Simple assignment or expression parsing
         let mut matched;
-        if state.at(JTokenType::Identifier) && (state.peek_kind_at(1) == Some(JTokenType::IsGlobal) || state.peek_kind_at(1) == Some(JTokenType::IsLocal)) {
+        if state.at(JTokenType::Identifier)
+            && (state.peek_kind_at(1) == Some(JTokenType::IsGlobal) || state.peek_kind_at(1) == Some(JTokenType::IsLocal))
+        {
             matched = self.parse_assignment(state);
         }
         else {
@@ -99,7 +101,12 @@ impl<'config> JParser<'config> {
 }
 
 impl<'config> Parser<JLanguage> for JParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<JLanguage>) -> ParseOutput<'a, JLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<JLanguage>,
+    ) -> ParseOutput<'a, JLanguage> {
         let lexer = crate::lexer::JLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let root_cp = state.checkpoint();

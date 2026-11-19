@@ -1,8 +1,8 @@
 //! MSIL 文本写出用例：独立期望文本，不复用实现内部结构。
 
 use data_binary_pe::msil::{
-    MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule,
-    MsilOpcode, MsilTextWriter, MsilType, MsilTypeDef,
+    MsilAssembly, MsilInstruction, MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode,
+    MsilTextWriter, MsilType, MsilTypeDef,
 };
 
 const INT32: MsilType = MsilType::Int32 { signed: true };
@@ -13,11 +13,7 @@ fn instruction(opcode: MsilOpcode) -> MsilInstruction {
 
 fn add_method() -> MsilMethodBody {
     MsilMethodBody {
-        method: MsilMethodRef {
-            owner: None,
-            name: "add".to_string(),
-            signature: MsilMethodSignature::new(INT32, vec![INT32, INT32]),
-        },
+        method: MsilMethodRef { owner: None, name: "add".to_string(), signature: MsilMethodSignature::new(INT32, vec![INT32, INT32]) },
         locals: vec![INT32],
         instructions: vec![instruction(MsilOpcode::LdcI4_1), instruction(MsilOpcode::LdcI4_2), instruction(MsilOpcode::Ret)],
         max_stack: 2,
@@ -85,16 +81,8 @@ fn module_file_name_is_written_before_types() {
 fn operands_are_rendered_from_their_variant() {
     let mut method = add_method();
     method.instructions = vec![
-        MsilInstruction {
-            label: Some("L0".to_string()),
-            opcode: MsilOpcode::LdcI4S,
-            operand: Some(MsilInstructionOperand::Integer(7)),
-        },
-        MsilInstruction {
-            label: None,
-            opcode: MsilOpcode::Ldstr,
-            operand: Some(MsilInstructionOperand::StringLiteral("a\"b".to_string())),
-        },
+        MsilInstruction { label: Some("L0".to_string()), opcode: MsilOpcode::LdcI4S, operand: Some(MsilInstructionOperand::Integer(7)) },
+        MsilInstruction { label: None, opcode: MsilOpcode::Ldstr, operand: Some(MsilInstructionOperand::StringLiteral("a\"b".to_string())) },
     ];
     let module = MsilModule {
         assembly: MsilAssembly { name: "Demo".to_string(), externs: Vec::new() },

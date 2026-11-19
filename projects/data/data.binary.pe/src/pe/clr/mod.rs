@@ -19,8 +19,7 @@ mod tokens;
 use self::{
     imports::build_import_table,
     metadata::{
-        FieldRow, ParamRow, TableBuildInfo, UserTypeDefRow, build_local_var_sig, build_method_signature, build_mvid,
-        build_tables_stream,
+        FieldRow, ParamRow, TableBuildInfo, UserTypeDefRow, build_local_var_sig, build_method_signature, build_mvid, build_tables_stream,
     },
     relocations::build_relocation_section,
     tokens::resolve_module_tokens,
@@ -33,8 +32,8 @@ pub use self::{
     method_body::{FatFormat, IlInstruction, LocalVarFlags, LocalVarType, MethodBody, MethodBodyFlags, parse_method_body_il},
     table_sizes::{CodedIndex, coded_index_size, heap_index_size, table_data_offset, table_index_size, table_row_size},
     tables::{
-        ElementType, MemberRefParent, MethodSignature, decode_element_type, decode_member_ref_parent, decode_method_signature,
-        read_idx, read_u32_table,
+        ElementType, MemberRefParent, MethodSignature, decode_element_type, decode_member_ref_parent, decode_method_signature, read_idx,
+        read_u32_table,
     },
 };
 
@@ -199,11 +198,7 @@ impl PeWriter {
             };
             method_bodies.push(MethodBodyEncoder::encode(method, local_var_sig_token).map_err(PeWriterError::MethodBody)?);
             method_name_offsets.push(metadata.strings.add(&method.method.name));
-            method_sig_offsets.push(metadata.blob.add(&build_method_signature(
-                &method.method.signature,
-                false,
-                &type_token_map,
-            )));
+            method_sig_offsets.push(metadata.blob.add(&build_method_signature(&method.method.signature, false, &type_token_map)));
         }
         for type_def in &resolved_module.types {
             for method in &type_def.methods {
@@ -223,13 +218,8 @@ impl PeWriter {
                 // Instance `.ctor` must always carry HASTHIS — even if owner was dropped —
                 // otherwise MethodAttributes (0x1886, no Static) disagree with the blob and
                 // CoreCLR raises TypeLoadException: "Incorrect signature".
-                let has_this =
-                    method.method.name == ".ctor" || (method.method.owner.is_some() && !is_static_type_method(method));
-                method_sig_offsets.push(metadata.blob.add(&build_method_signature(
-                    &method.method.signature,
-                    has_this,
-                    &type_token_map,
-                )));
+                let has_this = method.method.name == ".ctor" || (method.method.owner.is_some() && !is_static_type_method(method));
+                method_sig_offsets.push(metadata.blob.add(&build_method_signature(&method.method.signature, has_this, &type_token_map)));
             }
         }
         if method_bodies.is_empty() {
@@ -336,13 +326,7 @@ impl PeWriter {
 
         // 5. 节头。
         self.write_text_section_header(&mut writer, text_section_rva, text_section_virtual_size, text_section_raw_size);
-        self.write_reloc_section_header(
-            &mut writer,
-            reloc_section_rva,
-            reloc_virtual_size,
-            reloc_section_raw_size,
-            reloc_section_raw_pointer,
-        );
+        self.write_reloc_section_header(&mut writer, reloc_section_rva, reloc_virtual_size, reloc_section_raw_size, reloc_section_raw_pointer);
 
         // 5.1 头部填充：将文件偏移对齐到 file_alignment (0x200)，
         // 使得 .text 节内容起始偏移与节头中声明的 pointer_to_raw_data 一致。
@@ -681,13 +665,8 @@ impl PeWriter {
         let tables_data = build_tables_stream(metadata, &table_info);
 
         // 流定义：名称 + 数据。
-        let streams: Vec<(&str, &[u8])> = vec![
-            ("#Strings", &strings_data),
-            ("#US", &us_data),
-            ("#GUID", &guid_data),
-            ("#Blob", &blob_data),
-            ("#~", &tables_data),
-        ];
+        let streams: Vec<(&str, &[u8])> =
+            vec![("#Strings", &strings_data), ("#US", &us_data), ("#GUID", &guid_data), ("#Blob", &blob_data), ("#~", &tables_data)];
 
         // 计算元数据根头大小（BSJB 签名到流头之前）。
         let metadata_root_header_size = 4 + 2 + 2 + 4 + 4 + version_padded + 2 + 2;
@@ -776,12 +755,7 @@ fn build_local_method_token_map(module: &MsilModule) -> BTreeMap<String, u32> {
 fn find_entry_method_lookup_key(module: &MsilModule, _module_name: &str) -> Option<String> {
     if let Some(method) = module.global_methods.iter().find(|m| m.is_entry_point) {
         return Some(
-            method
-                .method
-                .owner
-                .as_ref()
-                .map(|owner| format!("{}.{}", owner, method.method.name))
-                .unwrap_or_else(|| method.method.name.clone()),
+            method.method.owner.as_ref().map(|owner| format!("{}.{}", owner, method.method.name)).unwrap_or_else(|| method.method.name.clone()),
         );
     }
 

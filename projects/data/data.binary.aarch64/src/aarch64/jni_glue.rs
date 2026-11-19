@@ -159,8 +159,8 @@ pub fn merge_jni_and_logic(
     while jni.module.text.len() < logic_start {
         jni.module.text.push(0);
     }
-    let invoke_target = logic_start as u32
-        + logic_exports.iter().find(|e| e.name == "asgard_invoke_export").map(|e| e.text_offset).unwrap_or(0);
+    let invoke_target =
+        logic_start as u32 + logic_exports.iter().find(|e| e.name == "asgard_invoke_export").map(|e| e.text_offset).unwrap_or(0);
     patch_bl(&mut jni.module.text, jni.invoke_bl_off, invoke_target)?;
     jni.module.labels.insert("asgard_invoke_export".into(), invoke_target);
     jni.module.text.extend_from_slice(&logic_text);
@@ -181,10 +181,7 @@ pub fn merge_jni_and_logic(
     let mut exports = vec![
         SharedObjectExport { name: "JNI_OnLoad".into(), text_offset: *jni.module.labels.get("JNI_OnLoad").unwrap_or(&0) },
         SharedObjectExport { name: "Java_com_asgard_runtime_AsgardHostBridge_invokeExport".into(), text_offset: invoke_fn },
-        SharedObjectExport {
-            name: "asgard_patch_native".into(),
-            text_offset: *jni.module.labels.get("asgard_patch_native").unwrap_or(&0),
-        },
+        SharedObjectExport { name: "asgard_patch_native".into(), text_offset: *jni.module.labels.get("asgard_patch_native").unwrap_or(&0) },
     ];
     for export in logic_exports {
         exports.push(SharedObjectExport { name: export.name, text_offset: logic_start as u32 + export.text_offset });

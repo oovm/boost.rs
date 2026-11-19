@@ -16,7 +16,12 @@ pub struct PhpLexer<'config> {
 }
 
 impl<'config> Lexer<PhpLanguage> for PhpLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<PhpLanguage>) -> LexOutput<PhpLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<PhpLanguage>,
+    ) -> LexOutput<PhpLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

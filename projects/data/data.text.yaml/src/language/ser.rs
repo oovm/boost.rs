@@ -127,7 +127,13 @@ impl serde::ser::Serializer for YamlValueSerializer {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T>(self, _name: &'static str, _variant_index: u32, _variant: &'static str, value: &T) -> Result<Self::Ok, Self::Error>
+    fn serialize_newtype_variant<T>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error>
     where
         T: ?Sized + Serialize,
     {
@@ -146,7 +152,13 @@ impl serde::ser::Serializer for YamlValueSerializer {
         Ok(YamlSeqSerializer { items: Vec::with_capacity(len) })
     }
 
-    fn serialize_tuple_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant, Self::Error> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleVariant, Self::Error> {
         Ok(YamlSeqSerializer { items: Vec::with_capacity(len) })
     }
 
@@ -158,7 +170,13 @@ impl serde::ser::Serializer for YamlValueSerializer {
         Ok(YamlMapSerializer { entries: Vec::with_capacity(len), current_key: None })
     }
 
-    fn serialize_struct_variant(self, _name: &'static str, _variant_index: u32, _variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant, Self::Error> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Ok(YamlMapSerializer { entries: Vec::with_capacity(len), current_key: None })
     }
 }

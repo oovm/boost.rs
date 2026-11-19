@@ -156,7 +156,14 @@ impl ValkyrieTokenType {
     /// 访问器前的 `get` / `set` 不是软关键字：它们是修饰符位置上的普通标识符，
     /// 词法不为其保留关键字身份。
     pub fn is_soft_identifier(&self) -> bool {
-        matches!(self, Self::Identifier | Self::Keyword(ValkyrieKeywords::Union) | Self::Keyword(ValkyrieKeywords::Flags) | Self::Keyword(ValkyrieKeywords::By) | Self::Keyword(ValkyrieKeywords::When))
+        matches!(
+            self,
+            Self::Identifier
+                | Self::Keyword(ValkyrieKeywords::Union)
+                | Self::Keyword(ValkyrieKeywords::Flags)
+                | Self::Keyword(ValkyrieKeywords::By)
+                | Self::Keyword(ValkyrieKeywords::When)
+        )
     }
 }
 

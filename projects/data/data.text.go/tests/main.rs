@@ -23,9 +23,28 @@ fn test_syntax_kinds() {
     use data_text_go::GoTokenType;
 
     // 测试各种语法种类
-    let _keywords = [GoTokenType::Package, GoTokenType::Import, GoTokenType::Func, GoTokenType::Var, GoTokenType::Const, GoTokenType::If, GoTokenType::Else, GoTokenType::For, GoTokenType::Range, GoTokenType::Return];
+    let _keywords = [
+        GoTokenType::Package,
+        GoTokenType::Import,
+        GoTokenType::Func,
+        GoTokenType::Var,
+        GoTokenType::Const,
+        GoTokenType::If,
+        GoTokenType::Else,
+        GoTokenType::For,
+        GoTokenType::Range,
+        GoTokenType::Return,
+    ];
 
-    let _literals = [GoTokenType::BoolLiteral, GoTokenType::NilLiteral, GoTokenType::IntLiteral, GoTokenType::FloatLiteral, GoTokenType::StringLiteral, GoTokenType::RuneLiteral, GoTokenType::NumberLiteral];
+    let _literals = [
+        GoTokenType::BoolLiteral,
+        GoTokenType::NilLiteral,
+        GoTokenType::IntLiteral,
+        GoTokenType::FloatLiteral,
+        GoTokenType::StringLiteral,
+        GoTokenType::RuneLiteral,
+        GoTokenType::NumberLiteral,
+    ];
 
     println!("Syntax kinds test passed")
 }

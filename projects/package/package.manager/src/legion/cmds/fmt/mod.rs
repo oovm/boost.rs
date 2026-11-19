@@ -1,6 +1,8 @@
 //! `legion fmt`：格式化 `.v` / `.vx` / `.von` / `.awsl`。
 use crate::legion::cmds::error::{LegionError, LegionResult};
-use language_format::formatter::{FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with};
+use language_format::formatter::{
+    FormatCliOptions, format_options_from_cli, normalize_extensions, report_format_cli_with, run_format_cli_with,
+};
 use std::process::ExitCode;
 
 /// `legion fmt` 参数。

@@ -200,7 +200,13 @@ pub fn check_license(package: &Package) -> LicenseInfo {
     let license = if package.license.trim().is_empty() { "unknown".to_string() } else { package.license.clone() };
     let restricted = is_license_restricted(&license);
     let compatible = is_license_compatible(&license) && !restricted;
-    LicenseInfo { package_name: package.name.clone(), version: package.version.clone(), license, is_compatible: compatible, is_restricted: restricted }
+    LicenseInfo {
+        package_name: package.name.clone(),
+        version: package.version.clone(),
+        license,
+        is_compatible: compatible,
+        is_restricted: restricted,
+    }
 }
 
 /// 许可证是否在允许列表内。

@@ -16,23 +16,11 @@ use super::JvmOperatorCode;
 use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
-    TargetOperatorPlan {
-        arity: 2,
-        operand_type,
-        result_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: code,
-    }
+    TargetOperatorPlan { arity: 2, operand_type, result_type, recipe: TargetOperatorRecipe::Operands, encoding: code }
 }
 
 const fn unary(operand_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
-    TargetOperatorPlan {
-        arity: 1,
-        operand_type,
-        result_type: operand_type,
-        recipe: TargetOperatorRecipe::Operands,
-        encoding: code,
-    }
+    TargetOperatorPlan { arity: 1, operand_type, result_type: operand_type, recipe: TargetOperatorRecipe::Operands, encoding: code }
 }
 
 /// `long` 移位：JVM `lshl`/`lshr` 的位移量操作数必须是 `int`；声明签名携带 `i64`

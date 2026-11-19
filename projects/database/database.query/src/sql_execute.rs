@@ -1,9 +1,6 @@
 //! SQL values, row TLV encoding and expression evaluation shared by planning and execution.
 
-use std::{
-    cell::RefCell,
-    sync::Arc,
-};
+use std::{cell::RefCell, sync::Arc};
 
 use crate::{
     catalog_bind::{SqlCatalogBoundExpression, collect_column_ids},

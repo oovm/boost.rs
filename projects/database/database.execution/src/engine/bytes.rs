@@ -14,8 +14,7 @@
 
 use std::sync::Arc;
 
-use database_formats::yy::row::ObjectResolver;
-use database_formats::yy::yydx::blob_chunk_hash;
+use database_formats::yy::{row::ObjectResolver, yydx::blob_chunk_hash};
 use database_types::{HashAlgo, INLINE_BYTES_MAX, ObjectKind, ObjectRef, Result, Value, Vector};
 use schema_types::{BytesPlacement, BytesPlacementPolicy};
 

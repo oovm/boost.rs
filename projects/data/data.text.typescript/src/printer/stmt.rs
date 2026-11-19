@@ -1,7 +1,8 @@
 //! TypeScript statement → canonical text.
 
 use crate::ast::{
-    BlockStatement, ClassDeclaration, ClassMember, DoWhileStatement, ExportDeclaration, ExportSpecifier, FunctionDeclaration, ImportDeclaration, ImportSpecifier, ModifierKind, Statement, TryStatement, TypeAliasDeclaration, VariableDeclaration,
+    BlockStatement, ClassDeclaration, ClassMember, DoWhileStatement, ExportDeclaration, ExportSpecifier, FunctionDeclaration,
+    ImportDeclaration, ImportSpecifier, ModifierKind, Statement, TryStatement, TypeAliasDeclaration, VariableDeclaration,
 };
 
 use super::expr::{print_expression, print_string};
@@ -52,7 +53,13 @@ pub fn print_statement(stmt: &Statement) -> Option<String> {
             None => "continue".into(),
         }),
         Statement::ClassDeclaration(d) => print_class(d),
-        Statement::Interface(_) | Statement::Enum(_) | Statement::ForStatement(_) | Statement::ForInStatement(_) | Statement::ForOfStatement(_) | Statement::SwitchStatement(_) | Statement::Namespace(_) => None,
+        Statement::Interface(_)
+        | Statement::Enum(_)
+        | Statement::ForStatement(_)
+        | Statement::ForInStatement(_)
+        | Statement::ForOfStatement(_)
+        | Statement::SwitchStatement(_)
+        | Statement::Namespace(_) => None,
     }
 }
 
@@ -193,7 +200,11 @@ fn print_class(d: &ClassDeclaration) -> Option<String> {
 pub(super) fn print_class_member(member: &ClassMember) -> Option<String> {
     match member {
         ClassMember::Property { decorators, name, initializer, optional_marker, .. } => {
-            if !decorators.is_empty() || member.has_modifier(ModifierKind::Readonly) || member.has_modifier(ModifierKind::Abstract) || optional_marker.is_some() {
+            if !decorators.is_empty()
+                || member.has_modifier(ModifierKind::Readonly)
+                || member.has_modifier(ModifierKind::Abstract)
+                || optional_marker.is_some()
+            {
                 return None;
             }
             let static_kw = if member.has_modifier(ModifierKind::Static) { "static " } else { "" };

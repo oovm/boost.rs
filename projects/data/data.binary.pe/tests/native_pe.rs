@@ -227,8 +227,7 @@ fn resolves_imported_function_through_iat() {
     let provider_bytes = NativePeWriter::write_executable(&provider).expect("write provider");
 
     // consumer：`call [rip+disp32]`（FF 15 disp32）+ `ret`，汇入导入表的 IAT 槽。
-    let table =
-        build_native_import_table(&[("nyar_import_provider".to_string(), "nyar_probe".to_string())]).expect("import table");
+    let table = build_native_import_table(&[("nyar_import_provider".to_string(), "nyar_probe".to_string())]).expect("import table");
     let slot = *table.slot_offsets.get(&("nyar_import_provider".to_string(), "nyar_probe".to_string())).expect("slot");
     let consumer = NativePeImage {
         text: vec![0xFF, 0x15, 0, 0, 0, 0, 0xC3],

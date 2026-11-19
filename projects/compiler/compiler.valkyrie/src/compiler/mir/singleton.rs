@@ -175,20 +175,14 @@ mod tuple_field_resolution_tests {
     use crate::compiler::types::hir::HirTupleField;
 
     fn labeled(fields: &[(&str, ValkyrieType)]) -> ValkyrieType {
-        ValkyrieType::LabeledTuple(
-            fields.iter().map(|(name, ty)| HirTupleField { name: Identifier::new(*name), ty: ty.clone() }).collect(),
-        )
+        ValkyrieType::LabeledTuple(fields.iter().map(|(name, ty)| HirTupleField { name: Identifier::new(*name), ty: ty.clone() }).collect())
     }
 
     #[test]
     fn labeled_tuple_member_resolves_to_its_position() {
         let pair = labeled(&[("ordinal", ValkyrieType::Integer32 { signed: false }), ("value", ValkyrieType::Utf8)]);
         let resolution = AggregateFieldIndex::resolve_tuple_field(&pair, &Identifier::new("value"));
-        assert_eq!(
-            resolution,
-            TupleFieldResolution::Labeled { index: 1, ty: &ValkyrieType::Utf8 },
-            "带标签元组必须按标签解析到源码顺序位置"
-        );
+        assert_eq!(resolution, TupleFieldResolution::Labeled { index: 1, ty: &ValkyrieType::Utf8 }, "带标签元组必须按标签解析到源码顺序位置");
     }
 
     #[test]

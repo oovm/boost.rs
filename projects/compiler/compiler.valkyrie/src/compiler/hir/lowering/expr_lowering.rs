@@ -166,11 +166,7 @@ fn lower_pattern(pattern: &Pattern, source_id: SourceID, span: SourceSpan) -> Re
         // 备选模式 `A | B`：HIR 的 `Or` 是既有模式形态，MIR 与类型检查均已消费；
         // 这里只按源码顺序降低每个分支，不复制 arm body、不另设匹配语义。
         Pattern::Alternative(alternative) => HirPattern::Or(
-            alternative
-                .patterns
-                .iter()
-                .map(|nested| lower_pattern(nested, source_id, span.clone()))
-                .collect::<Result<Vec<_>, _>>()?,
+            alternative.patterns.iter().map(|nested| lower_pattern(nested, source_id, span.clone())).collect::<Result<Vec<_>, _>>()?,
         ),
         Pattern::Array(array_pattern) => lower_array_pattern(array_pattern, source_id, span)?,
     })
@@ -393,7 +389,13 @@ fn lower_term_expression_body(
         TermExpression::Match { scrutinee, arms, span: match_span, .. } => lower_deferred(|| {
             Ok(HirExprKind::Match {
                 scrutinee: Box::new(lower_term_expression_with_context(scrutinee, source_id, span_range.clone(), false)?),
-                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::surface::std_range(match_span))?,
+                arms: lower_match_arms(
+                    arms,
+                    source_id,
+                    span_range.clone(),
+                    span.clone(),
+                    crate::compiler::syntax::surface::std_range(match_span),
+                )?,
             })
         })?,
         TermExpression::Loop { label, pattern, condition, body, .. } => lower_deferred(|| {
@@ -457,7 +459,13 @@ fn lower_term_expression_body(
         TermExpression::Catch { expr, arms, span: catch_span, .. } => lower_deferred(|| {
             Ok(HirExprKind::Catch {
                 expr: Box::new(lower_term_expression_with_context(expr, source_id, span_range.clone(), false)?),
-                arms: lower_match_arms(arms, source_id, span_range.clone(), span.clone(), crate::compiler::syntax::surface::std_range(catch_span))?,
+                arms: lower_match_arms(
+                    arms,
+                    source_id,
+                    span_range.clone(),
+                    span.clone(),
+                    crate::compiler::syntax::surface::std_range(catch_span),
+                )?,
             })
         })?,
         TermExpression::With { base, updates, .. } => lower_deferred(|| {

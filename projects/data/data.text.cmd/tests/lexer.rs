@@ -4,7 +4,8 @@ use std::time::Duration;
 
 #[test]
 fn test_lexer() {
-    let tester = LexerTester::new(r"e:\普遍优化\oaks\examples\oak-cmd\tests\fixtures").with_extension(".cmd").with_timeout(Duration::from_millis(1000));
+    let tester =
+        LexerTester::new(r"e:\普遍优化\oaks\examples\oak-cmd\tests\fixtures").with_extension(".cmd").with_timeout(Duration::from_millis(1000));
 
     let language = CmdLanguage::default();
     let lexer = CmdLexer::new(&language);

@@ -4,14 +4,18 @@ use crate::{
     builder::{ValkyrieBuilder, utils},
     lexer::token_type::ValkyrieTokenType,
 };
-use data_text_core::{TextError, RedNode, Source};
+use data_text_core::{RedNode, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     pub(crate) fn build_binary<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
         let span = node.span();
-        let (left, op, right) = utils::build_binary_expr(&node, source, |n, s| self.build_expr(*n, s), crate::lexer::token_type::ValkyrieTokenType::Plus)?;
+        let (left, op, right) =
+            utils::build_binary_expr(&node, source, |n, s| self.build_expr(*n, s), crate::lexer::token_type::ValkyrieTokenType::Plus)?;
 
-        if op == ValkyrieTokenType::Eq && !matches!(left.as_ref(), TermExpression::NamePath(path) if path.parts.len() == 1) && !matches!(left.as_ref(), TermExpression::DotCall { .. } | TermExpression::Index { .. } | TermExpression::Offset { .. }) {
+        if op == ValkyrieTokenType::Eq
+            && !matches!(left.as_ref(), TermExpression::NamePath(path) if path.parts.len() == 1)
+            && !matches!(left.as_ref(), TermExpression::DotCall { .. } | TermExpression::Index { .. } | TermExpression::Offset { .. })
+        {
             return Err(source.syntax_error("赋值左侧必须为可写位置".into(), span.start));
         }
 

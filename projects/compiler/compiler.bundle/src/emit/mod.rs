@@ -66,14 +66,18 @@ mod manifest;
 mod style;
 mod write;
 
-use std::collections::{BTreeMap, HashMap};
-use std::path::{Component, Path, PathBuf};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Component, Path, PathBuf},
+};
 
-use crate::chunk::ChunkPlan;
-use crate::diag::PackDiagnostic;
-use crate::graph::ModuleGraph;
-use crate::link::{LinkPlan, LinkedModule, effectful_modules};
-use crate::source::SourceReader;
+use crate::{
+    chunk::ChunkPlan,
+    diag::PackDiagnostic,
+    graph::ModuleGraph,
+    link::{LinkPlan, LinkedModule, effectful_modules},
+    source::SourceReader,
+};
 
 pub use cache::EmitCache;
 pub use write::{OutputSink, write_emit_incremental_with, write_emit_with};
@@ -265,20 +269,15 @@ pub fn plan_emit_with_cache(
                 continue;
             }
             if node_chunk[node].is_some() {
-                errors.push(
-                    inconsistent(format!("节点 {node} 同时属于多个 chunk"))
-                        .with_path(normalize_path(&graph.nodes[node].resolved.path)),
-                );
+                errors
+                    .push(inconsistent(format!("节点 {node} 同时属于多个 chunk")).with_path(normalize_path(&graph.nodes[node].resolved.path)));
                 continue;
             }
             node_chunk[node] = Some(chunk_index);
         }
         for &dep in &chunk.depends_on {
             if dep >= chunks.chunks.len() {
-                errors.push(inconsistent(format!(
-                    "chunk `{}` 引用越界依赖 chunk 索引 {dep}",
-                    chunk.id
-                )));
+                errors.push(inconsistent(format!("chunk `{}` 引用越界依赖 chunk 索引 {dep}", chunk.id)));
             }
         }
     }
@@ -301,7 +300,10 @@ pub fn plan_emit_with_cache(
             continue;
         }
         for edge in &node.static_edges {
-            let Err(diagnostic) = edge.target.as_ref() else { continue };
+            let Err(diagnostic) = edge.target.as_ref()
+            else {
+                continue;
+            };
             if diagnostic.code == crate::resolve::CODE_NODE_BUILTIN {
                 continue;
             }
@@ -329,20 +331,18 @@ pub fn plan_emit_with_cache(
     let mut sources: HashMap<usize, String> = HashMap::new();
     for chunk in &chunks.chunks {
         for &node in &chunk.modules {
-            let Some(module_node) = graph.nodes.get(node) else { continue };
+            let Some(module_node) = graph.nodes.get(node)
+            else {
+                continue;
+            };
             let path_display = normalize_path(&module_node.resolved.path);
             if linked[node].is_none() {
-                errors.push(
-                    inconsistent(format!("chunk 成员未被链接层保留")).with_path(path_display),
-                );
+                errors.push(inconsistent(format!("chunk 成员未被链接层保留")).with_path(path_display));
                 continue;
             }
             // 事实不完整时名字唯一性检查不可信，宁拒绝不产出错误 JS。
-            let mut reasons: Vec<String> = module_node
-                .diagnostics
-                .iter()
-                .map(|diagnostic| format!("{} ({})", diagnostic.code, diagnostic.message))
-                .collect();
+            let mut reasons: Vec<String> =
+                module_node.diagnostics.iter().map(|diagnostic| format!("{} ({})", diagnostic.code, diagnostic.message)).collect();
             if module_node.record.path.is_none() {
                 reasons.push("record-path-missing".to_string());
             }
@@ -350,13 +350,9 @@ pub fn plan_emit_with_cache(
             // 无剪枝无改名，缺口不构成拒绝理由（require 事实仍完整收集）。
             let statement_gaps = if module_node.kind == crate::graph::NodeKind::Cjs {
                 0
-            } else {
-                module_node
-                    .record
-                    .diagnostics
-                    .iter()
-                    .filter(|diagnostic| diagnostic.code == STATEMENT_FACT_INCOMPLETE)
-                    .count()
+            }
+            else {
+                module_node.record.diagnostics.iter().filter(|diagnostic| diagnostic.code == STATEMENT_FACT_INCOMPLETE).count()
             };
             if statement_gaps > 0 {
                 reasons.push(format!("statement-fact-incomplete x{statement_gaps}"));
@@ -382,33 +378,20 @@ pub fn plan_emit_with_cache(
                 }
                 Err(err) => {
                     errors.push(
-                        PackDiagnostic::new(
-                            "vmz::pack::emit::read_failed",
-                            format!("cannot re-read module file: {err}"),
-                        )
-                        .with_path(path_display),
+                        PackDiagnostic::new("vmz::pack::emit::read_failed", format!("cannot re-read module file: {err}"))
+                            .with_path(path_display),
                     );
                 }
             }
         }
     }
 
-    let (mut asset_index, mut by_disk, asset_errors) =
-        collect_assets(graph, chunks, &node_chunk, &linked, options, reader);
+    let (mut asset_index, mut by_disk, asset_errors) = collect_assets(graph, chunks, &node_chunk, &linked, options, reader);
     errors.extend(asset_errors);
 
     // Style 聚合：CSS 文本读取、`@import` 拒绝与 `url()` 搬迁复用同一
     // 资产缓存（`by_disk` / `asset_index`），不建平行写盘路径。
-    let styles = style::collect_styles(
-        graph,
-        chunks,
-        &retained,
-        &mut asset_index,
-        &mut by_disk,
-        options,
-        reader,
-        &mut errors,
-    );
+    let styles = style::collect_styles(graph, chunks, &retained, &mut asset_index, &mut by_disk, options, reader, &mut errors);
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -480,11 +463,7 @@ fn collect_assets(
     linked: &[Option<&LinkedModule>],
     options: &EmitOptions,
     reader: &dyn SourceReader,
-) -> (
-    BTreeMap<(String, String), AssetArtifact>,
-    HashMap<PathBuf, (String, String)>,
-    Vec<PackDiagnostic>,
-) {
+) -> (BTreeMap<(String, String), AssetArtifact>, HashMap<PathBuf, (String, String)>, Vec<PackDiagnostic>) {
     let mut index: BTreeMap<(String, String), AssetArtifact> = BTreeMap::new();
     let mut by_disk: HashMap<PathBuf, (String, String)> = HashMap::new();
     let mut errors: Vec<PackDiagnostic> = Vec::new();
@@ -493,11 +472,17 @@ fn collect_assets(
             if node_chunk[node].is_none() {
                 continue;
             }
-            let Some(module_node) = graph.nodes.get(node) else { continue };
+            let Some(module_node) = graph.nodes.get(node)
+            else {
+                continue;
+            };
             if module_node.record.path.is_none() {
                 continue;
             }
-            let Some(Some(module_link)) = linked.get(node) else { continue };
+            let Some(Some(module_link)) = linked.get(node)
+            else {
+                continue;
+            };
             let module_path = normalize_path(&module_node.resolved.path);
             // 独立发射的 opaque 模块按整文件存活：文件内不删语句，
             // 资产判定同样按全部语句而非链接切片。
@@ -505,14 +490,15 @@ fn collect_assets(
             for asset in &module_node.record.assets {
                 // 资产只随活跃语句存活：span 被某条活跃顶层语句包含。
                 let live = if whole_file {
-                    module_node.record.statements.iter().any(|statement| {
-                        statement.span.0 <= asset.span.0 && asset.span.1 <= statement.span.1
-                    })
-                } else {
+                    module_node.record.statements.iter().any(|statement| statement.span.0 <= asset.span.0 && asset.span.1 <= statement.span.1)
+                }
+                else {
                     module_link.active_statements.iter().any(|&index| {
-                        module_node.record.statements.get(index).is_some_and(|statement| {
-                            statement.span.0 <= asset.span.0 && asset.span.1 <= statement.span.1
-                        })
+                        module_node
+                            .record
+                            .statements
+                            .get(index)
+                            .is_some_and(|statement| statement.span.0 <= asset.span.0 && asset.span.1 <= statement.span.1)
                     })
                 };
                 if !live {
@@ -525,11 +511,7 @@ fn collect_assets(
                 let disk = match module_node.resolved.path.parent() {
                     Some(dir) => lexical_join(dir, &asset.specifier),
                     None => {
-                        errors.push(asset_unresolved(
-                            &module_path,
-                            &asset.specifier,
-                            "no parent dir",
-                        ));
+                        errors.push(asset_unresolved(&module_path, &asset.specifier, "no parent dir"));
                         continue;
                     }
                 };
@@ -539,24 +521,13 @@ fn collect_assets(
                         let bytes = match reader.read(&disk) {
                             Ok(bytes) => bytes,
                             Err(err) => {
-                                errors.push(asset_unresolved(
-                                    &module_path,
-                                    &asset.specifier,
-                                    &format!("{}: {err}", disk.display()),
-                                ));
+                                errors.push(asset_unresolved(&module_path, &asset.specifier, &format!("{}: {err}", disk.display())));
                                 continue;
                             }
                         };
-                        let stem = disk
-                            .file_stem()
-                            .map(|value| value.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "asset".to_string());
-                        let extension = disk
-                            .extension()
-                            .map(|value| format!(".{}", value.to_string_lossy()))
-                            .unwrap_or_default();
-                        let file_name =
-                            format!("assets/{stem}-{}{extension}", manifest::hex(&bytes, 16));
+                        let stem = disk.file_stem().map(|value| value.to_string_lossy().to_string()).unwrap_or_else(|| "asset".to_string());
+                        let extension = disk.extension().map(|value| format!(".{}", value.to_string_lossy())).unwrap_or_default();
+                        let file_name = format!("assets/{stem}-{}{extension}", manifest::hex(&bytes, 16));
                         let url = format!("{}{file_name}", options.public_base);
                         by_disk.insert(disk.clone(), (file_name.clone(), url.clone()));
                         (file_name, url)
@@ -603,24 +574,13 @@ fn inconsistent(message: String) -> PackDiagnostic {
 }
 
 fn asset_unresolved(module_path: &str, specifier: &str, reason: &str) -> PackDiagnostic {
-    PackDiagnostic::new(
-        "vmz::pack::emit::asset_unresolved",
-        format!("资源 `{specifier}` 无法解析为可读文件: {reason}"),
-    )
-    .with_path(module_path.to_string())
+    PackDiagnostic::new("vmz::pack::emit::asset_unresolved", format!("资源 `{specifier}` 无法解析为可读文件: {reason}"))
+        .with_path(module_path.to_string())
 }
 
 /// 边上保留的解析诊断是失败原因的唯一载体——链进 `edge_unresolved` 消息，
 /// 否则调用方只能看到「未解析」而看不到为什么（包未找到 / 封装拒绝 / 条件不适用）。
-pub(crate) fn edge_unresolved(
-    subject: &str,
-    specifier: &str,
-    action: &str,
-    underlying: Option<&PackDiagnostic>,
-) -> PackDiagnostic {
+pub(crate) fn edge_unresolved(subject: &str, specifier: &str, action: &str, underlying: Option<&PackDiagnostic>) -> PackDiagnostic {
     let reason = underlying.map(|d| format!("（{}: {}）", d.code, d.message)).unwrap_or_default();
-    PackDiagnostic::new(
-        "vmz::pack::emit::edge_unresolved",
-        format!("{subject} `{specifier}` 目标未解析{reason}，{action}"),
-    )
+    PackDiagnostic::new("vmz::pack::emit::edge_unresolved", format!("{subject} `{specifier}` 目标未解析{reason}，{action}"))
 }

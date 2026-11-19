@@ -83,12 +83,7 @@ impl Registry for CondaRegistry {
             success: response.is_success(),
             package_name: options.package_name.clone(),
             version: options.version.clone(),
-            message: if response.is_success() {
-                "发布成功".to_string()
-            }
-            else {
-                format!("发布失败，HTTP {}", response.status)
-            },
+            message: if response.is_success() { "发布成功".to_string() } else { format!("发布失败，HTTP {}", response.status) },
             published_url: Some(url),
             ..PublishResult::default()
         })

@@ -76,9 +76,8 @@ fn foreign_keys_reject_unknown_parents_and_columns() {
     apply(&registry, "CREATE TABLE tenants (id BIGINT PRIMARY KEY)");
     let error = registry.apply_ddl(&parse("CREATE TABLE users (tenant_id BIGINT REFERENCES ghosts)")).expect_err("missing parent");
     assert_eq!(error.kind, SqlErrorKind::UnknownTable);
-    let error = registry
-        .apply_ddl(&parse("CREATE TABLE users (tenant_id BIGINT REFERENCES tenants (ghost_col))"))
-        .expect_err("missing parent column");
+    let error =
+        registry.apply_ddl(&parse("CREATE TABLE users (tenant_id BIGINT REFERENCES tenants (ghost_col))")).expect_err("missing parent column");
     assert_eq!(error.kind, SqlErrorKind::UnknownColumn);
     let error = registry
         .apply_ddl(&parse("CREATE TABLE users (id BIGINT PRIMARY KEY, a BIGINT, b BIGINT, FOREIGN KEY (a, b) REFERENCES tenants)"))
@@ -187,7 +186,8 @@ fn apply_auto_increment_fills_omitted_serial_columns() {
     )
     .expect("bind");
     let filled: SqlCatalogBoundStatement = apply_auto_increment(&registry, bound).expect("fill");
-    let SqlCatalogBoundStatement::Insert(insert) = filled else {
+    let SqlCatalogBoundStatement::Insert(insert) = filled
+    else {
         panic!("INSERT stays INSERT")
     };
     assert_eq!(insert.fields.len(), 2, "the serial column is appended");

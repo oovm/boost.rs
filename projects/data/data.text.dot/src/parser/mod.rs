@@ -32,7 +32,20 @@ impl<'config> DotParser<'config> {
     /// DOT keywords are not reserved in every position: an identifier slot accepts a
     /// keyword token as well, which keeps `A -> node` and `shape=box` parseable.
     fn at_id<S: Source + ?Sized>(state: &State<'_, S>) -> bool {
-        matches!(state.peek_kind(), Some(DotTokenType::Identifier | DotTokenType::String | DotTokenType::Number | DotTokenType::Graph | DotTokenType::Digraph | DotTokenType::Subgraph | DotTokenType::Node | DotTokenType::Edge | DotTokenType::Strict))
+        matches!(
+            state.peek_kind(),
+            Some(
+                DotTokenType::Identifier
+                    | DotTokenType::String
+                    | DotTokenType::Number
+                    | DotTokenType::Graph
+                    | DotTokenType::Digraph
+                    | DotTokenType::Subgraph
+                    | DotTokenType::Node
+                    | DotTokenType::Edge
+                    | DotTokenType::Strict
+            )
+        )
     }
 
     /// Returns `true` if the current token can start a plain (unquoted) identifier.
@@ -47,7 +60,20 @@ impl<'config> DotParser<'config> {
 
     /// Returns `true` if the current token can start a statement.
     fn at_statement_start<S: Source + ?Sized>(state: &State<'_, S>) -> bool {
-        matches!(state.peek_kind(), Some(DotTokenType::Subgraph | DotTokenType::LeftBrace | DotTokenType::Identifier | DotTokenType::String | DotTokenType::Number | DotTokenType::Graph | DotTokenType::Digraph | DotTokenType::Node | DotTokenType::Edge))
+        matches!(
+            state.peek_kind(),
+            Some(
+                DotTokenType::Subgraph
+                    | DotTokenType::LeftBrace
+                    | DotTokenType::Identifier
+                    | DotTokenType::String
+                    | DotTokenType::Number
+                    | DotTokenType::Graph
+                    | DotTokenType::Digraph
+                    | DotTokenType::Node
+                    | DotTokenType::Edge
+            )
+        )
     }
 
     /// Parses the whole file: a sequence of graph definitions plus any stray content.
@@ -167,7 +193,9 @@ impl<'config> DotParser<'config> {
                     state.finish_at(checkpoint, DotElementType::GraphEdge);
                 }
             }
-            Some(DotTokenType::Graph) | Some(DotTokenType::Digraph) | Some(DotTokenType::Node) | Some(DotTokenType::Edge) if state.peek_non_trivia_kind_at(1) == Some(DotTokenType::LeftBracket) => {
+            Some(DotTokenType::Graph) | Some(DotTokenType::Digraph) | Some(DotTokenType::Node) | Some(DotTokenType::Edge)
+                if state.peek_non_trivia_kind_at(1) == Some(DotTokenType::LeftBracket) =>
+            {
                 self.parse_attribute_statement(state);
             }
             Some(_) => self.parse_node_or_edge(state),
@@ -220,7 +248,11 @@ impl<'config> DotParser<'config> {
 
             if !Self::at_operand_start(state) {
                 state.restore(operator_checkpoint);
-                state.errors.push(TextError::syntax_error("expected a node or a subgraph after the edge operator", operator_offset, state.source_ref()));
+                state.errors.push(TextError::syntax_error(
+                    "expected a node or a subgraph after the edge operator",
+                    operator_offset,
+                    state.source_ref(),
+                ));
                 break;
             }
 
@@ -282,7 +314,11 @@ impl<'config> DotParser<'config> {
             }
 
             while state.at(DotTokenType::Colon) {
-                state.errors.push(TextError::syntax_error("a port accepts at most two `:` separated segments", state.current_offset(), state.source_ref()));
+                state.errors.push(TextError::syntax_error(
+                    "a port accepts at most two `:` separated segments",
+                    state.current_offset(),
+                    state.source_ref(),
+                ));
                 state.bump();
                 if Self::at_id(state) {
                     state.bump();
@@ -317,7 +353,8 @@ impl<'config> DotParser<'config> {
         }
 
         loop {
-            if !state.not_at_end() || state.at(DotTokenType::Eof) || state.at(DotTokenType::RightBrace) || state.at(DotTokenType::RightBracket) {
+            if !state.not_at_end() || state.at(DotTokenType::Eof) || state.at(DotTokenType::RightBrace) || state.at(DotTokenType::RightBracket)
+            {
                 break;
             }
 
@@ -401,7 +438,12 @@ impl<'config> DotParser<'config> {
 }
 
 impl<'config> Parser<DotLanguage> for DotParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<DotLanguage>) -> ParseOutput<'a, DotLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<DotLanguage>,
+    ) -> ParseOutput<'a, DotLanguage> {
         let lexer = DotLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

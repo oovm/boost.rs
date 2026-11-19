@@ -345,15 +345,13 @@ fn parse_format_12(r: &mut Reader<'_>) -> Result<HashMap<u32, u16>, ParseCmapErr
         let end_cp = r.read_u32()?;
         let start_glyph = r.read_u32()?;
         if start_cp > end_cp {
-            return Err(ParseCmapError::Malformed(format!(
-                "format 12 group {group} starts at {start_cp:#X} above its end {end_cp:#X}"
-            )));
+            return Err(ParseCmapError::Malformed(format!("format 12 group {group} starts at {start_cp:#X} above its end {end_cp:#X}")));
         }
         let end = end_cp.min(MAX_UNICODE);
         for cp in start_cp..=end {
             let gid = start_glyph + (cp - start_cp);
-            let gid = u16::try_from(gid)
-                .map_err(|_| ParseCmapError::Malformed(format!("format 12 group {group} glyph id {gid} exceeds u16")))?;
+            let gid =
+                u16::try_from(gid).map_err(|_| ParseCmapError::Malformed(format!("format 12 group {group} glyph id {gid} exceeds u16")))?;
             if gid != 0 {
                 map.insert(cp, gid);
             }
@@ -373,12 +371,10 @@ fn parse_format_13(r: &mut Reader<'_>) -> Result<HashMap<u32, u16>, ParseCmapErr
         let end_cp = r.read_u32()?;
         let raw_gid = r.read_u32()?;
         if start_cp > end_cp {
-            return Err(ParseCmapError::Malformed(format!(
-                "format 13 group {group} starts at {start_cp:#X} above its end {end_cp:#X}"
-            )));
+            return Err(ParseCmapError::Malformed(format!("format 13 group {group} starts at {start_cp:#X} above its end {end_cp:#X}")));
         }
-        let gid = u16::try_from(raw_gid)
-            .map_err(|_| ParseCmapError::Malformed(format!("format 13 group {group} glyph id {raw_gid} exceeds u16")))?;
+        let gid =
+            u16::try_from(raw_gid).map_err(|_| ParseCmapError::Malformed(format!("format 13 group {group} glyph id {raw_gid} exceeds u16")))?;
         if gid == 0 {
             continue;
         }

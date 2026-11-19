@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use crate::lsp::TwigLanguageService;
-use language_server::MemoryVfs;
 use language_mcp::McpServer;
+use language_server::MemoryVfs;
 
 /// Starts the Twig MCP service
 pub async fn serve_twig_mcp(vfs: MemoryVfs) {

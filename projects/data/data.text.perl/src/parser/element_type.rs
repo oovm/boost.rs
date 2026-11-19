@@ -85,9 +85,17 @@ impl ElementType for PerlElementType {
         use UniversalElementRole::*;
         match self {
             Self::Root | Self::Program => Root,
-            Self::Statement | Self::UseStatement | Self::LoopStatement | Self::IfStatement | Self::UnlessStatement | Self::WhileStatement | Self::UntilStatement | Self::ForStatement | Self::ForeachStatement | Self::DoStatement | Self::EvalStatement => {
-                Statement
-            }
+            Self::Statement
+            | Self::UseStatement
+            | Self::LoopStatement
+            | Self::IfStatement
+            | Self::UnlessStatement
+            | Self::WhileStatement
+            | Self::UntilStatement
+            | Self::ForStatement
+            | Self::ForeachStatement
+            | Self::DoStatement
+            | Self::EvalStatement => Statement,
             Self::Expression
             | Self::Assignment
             | Self::FunctionCall

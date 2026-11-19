@@ -113,7 +113,9 @@ impl TokenType for TailwindTokenType {
             Self::Identifier => UniversalTokenRole::Name,
             Self::Value => UniversalTokenRole::Literal,
             Self::LeftBracket | Self::RightBracket | Self::LeftParen | Self::RightParen => UniversalTokenRole::Punctuation,
-            Self::Colon | Self::Semicolon | Self::At | Self::Bang | Self::Dash | Self::Slash | Self::Dot | Self::Hash | Self::Comma => UniversalTokenRole::Punctuation,
+            Self::Colon | Self::Semicolon | Self::At | Self::Bang | Self::Dash | Self::Slash | Self::Dot | Self::Hash | Self::Comma => {
+                UniversalTokenRole::Punctuation
+            }
             Self::Whitespace => UniversalTokenRole::Whitespace,
             Self::Comment => UniversalTokenRole::Comment,
             Self::Eof => UniversalTokenRole::Eof,

@@ -24,7 +24,12 @@ impl CobolParser {
 }
 
 impl Parser<CobolLanguage> for CobolParser {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CobolLanguage>) -> ParseOutput<'a, CobolLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CobolLanguage>,
+    ) -> ParseOutput<'a, CobolLanguage> {
         let lexer = CobolLexer::new();
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

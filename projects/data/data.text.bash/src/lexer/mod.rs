@@ -17,7 +17,12 @@ pub struct BashLexer<'config> {
 }
 
 impl<'config> Lexer<BashLanguage> for BashLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<BashLanguage>) -> LexOutput<BashLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<BashLanguage>,
+    ) -> LexOutput<BashLanguage> {
         let mut state = LexerState::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -392,15 +397,23 @@ impl<'config> BashLexer<'config> {
 
 static BASH_KEYWORDS: LazyLock<&[&str]> = LazyLock::new(|| {
     &[
-        "if", "then", "else", "elif", "fi", "case", "esac", "for", "while", "until", "do", "done", "function", "return", "break", "continue", "local", "export", "readonly", "declare", "typeset", "unset", "shift", "exit", "source", ".", "eval", "exec",
-        "trap", "wait", "jobs", "bg", "fg", "disown", "suspend", "alias", "unalias", "history", "fc", "let", "test", "[", "[[", "]]", "time", "coproc", "select", "in",
+        "if", "then", "else", "elif", "fi", "case", "esac", "for", "while", "until", "do", "done", "function", "return", "break", "continue",
+        "local", "export", "readonly", "declare", "typeset", "unset", "shift", "exit", "source", ".", "eval", "exec", "trap", "wait", "jobs",
+        "bg", "fg", "disown", "suspend", "alias", "unalias", "history", "fc", "let", "test", "[", "[[", "]]", "time", "coproc", "select", "in",
     ]
 });
 
 static BASH_OPERATORS: LazyLock<&[&str]> = LazyLock::new(|| &["+", "-", "*", "/", "%", "=", "!", "<", ">", "&", "|", "^", "~"]);
 
-static BASH_TWO_CHAR_OPERATORS: LazyLock<&[&str]> = LazyLock::new(|| &["==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "**"]);
+static BASH_TWO_CHAR_OPERATORS: LazyLock<&[&str]> = LazyLock::new(|| {
+    &["==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "**"]
+});
 
 static BASH_DELIMITERS: LazyLock<&[&str]> = LazyLock::new(|| &["(", ")", "{", "}", "[", "]", ";", ",", ":", "."]);
 
-static BASH_SPECIAL_CHARS: LazyLock<&[char]> = LazyLock::new(|| &['\\', '`', '~', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=', '{', '}', '[', ']', '|', '\\', ':', ';', '"', '\'', '<', '>', ',', '.', '?', '/', '!', '`']);
+static BASH_SPECIAL_CHARS: LazyLock<&[char]> = LazyLock::new(|| {
+    &[
+        '\\', '`', '~', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '=', '{', '}', '[', ']', '|', '\\', ':', ';', '"', '\'', '<',
+        '>', ',', '.', '?', '/', '!', '`',
+    ]
+});

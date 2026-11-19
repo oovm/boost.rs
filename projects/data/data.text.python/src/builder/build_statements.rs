@@ -4,11 +4,16 @@ use crate::{
     lexer::token_type::PythonTokenType,
     parser::PythonElementType,
 };
-use data_text_core::{GreenNode, GreenTree, TextError, Source, SourceText};
+use data_text_core::{GreenNode, GreenTree, Source, SourceText, TextError};
 
 impl<'config> super::PythonBuilder<'config> {
     /// Builds a statement from a green node.
-    pub(crate) fn build_statement(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Option<Statement>, TextError> {
+    pub(crate) fn build_statement(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Option<Statement>, TextError> {
         match node.kind {
             PythonElementType::FunctionDef | PythonElementType::AsyncFunctionDef => {
                 let is_async = node.kind == PythonElementType::AsyncFunctionDef;
@@ -20,14 +25,23 @@ impl<'config> super::PythonBuilder<'config> {
                 for child in node.children() {
                     let child_len = child.len() as usize;
                     match child {
-                        GreenTree::Leaf(leaf) if leaf.kind == PythonTokenType::Identifier => name = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string(),
-                        GreenTree::Node(n) if n.kind == PythonElementType::Arguments => parameters = self.build_parameters(n, current_offset, source)?,
+                        GreenTree::Leaf(leaf) if leaf.kind == PythonTokenType::Identifier => {
+                            name = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string()
+                        }
+                        GreenTree::Node(n) if n.kind == PythonElementType::Arguments => {
+                            parameters = self.build_parameters(n, current_offset, source)?
+                        }
                         GreenTree::Node(n) if n.kind == PythonElementType::Suite => body = self.build_suite(n, current_offset, source)?,
                         _ => {}
                     }
                     current_offset += child_len
                 }
-                if is_async { Ok(Some(Statement::AsyncFunctionDef { decorators: Vec::new(), name, parameters, return_type: None, body })) } else { Ok(Some(Statement::FunctionDef { decorators: Vec::new(), name, parameters, return_type: None, body })) }
+                if is_async {
+                    Ok(Some(Statement::AsyncFunctionDef { decorators: Vec::new(), name, parameters, return_type: None, body }))
+                }
+                else {
+                    Ok(Some(Statement::FunctionDef { decorators: Vec::new(), name, parameters, return_type: None, body }))
+                }
             }
             PythonElementType::ClassDef => {
                 let mut name = String::new();
@@ -38,7 +52,9 @@ impl<'config> super::PythonBuilder<'config> {
                 for child in node.children() {
                     let child_len = child.len() as usize;
                     match child {
-                        GreenTree::Leaf(leaf) if leaf.kind == PythonTokenType::Identifier => name = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string(),
+                        GreenTree::Leaf(leaf) if leaf.kind == PythonTokenType::Identifier => {
+                            name = source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string()
+                        }
                         GreenTree::Node(n) if n.kind == PythonElementType::Tuple || n.kind == PythonElementType::List => {
                             // Simple bases handling: if it's a tuple or list in class def, treat as bases
                             let expr = self.build_expression(n, current_offset, source)?;
@@ -117,7 +133,17 @@ impl<'config> super::PythonBuilder<'config> {
                     current_offset += child_len
                 }
 
-                if let (Some(target), Some(value)) = (left, right) { if let Some(op) = operator { Ok(Some(Statement::AugmentedAssignment { target, operator: op, value })) } else { Ok(Some(Statement::Assignment { target, value })) } } else { Ok(None) }
+                if let (Some(target), Some(value)) = (left, right) {
+                    if let Some(op) = operator {
+                        Ok(Some(Statement::AugmentedAssignment { target, operator: op, value }))
+                    }
+                    else {
+                        Ok(Some(Statement::Assignment { target, value }))
+                    }
+                }
+                else {
+                    Ok(None)
+                }
             }
 
             PythonElementType::ExprStmt | PythonElementType::Expr => {
@@ -206,7 +232,12 @@ impl<'config> super::PythonBuilder<'config> {
                                 iter = Some(self.build_expression(n, current_offset, source)?)
                             }
                             else if n.kind == PythonElementType::Suite {
-                                if body.is_empty() { body = self.build_suite(n, current_offset, source)? } else { orelse = self.build_suite(n, current_offset, source)? }
+                                if body.is_empty() {
+                                    body = self.build_suite(n, current_offset, source)?
+                                }
+                                else {
+                                    orelse = self.build_suite(n, current_offset, source)?
+                                }
                             }
                         }
                     }
@@ -215,7 +246,12 @@ impl<'config> super::PythonBuilder<'config> {
 
                 let target = target.unwrap_or(Expression::Name("invalid_target".to_string()));
                 let iter = iter.unwrap_or(Expression::Name("invalid_iter".to_string()));
-                if is_async { Ok(Some(Statement::AsyncFor { target, iter, body, orelse })) } else { Ok(Some(Statement::For { target, iter, body, orelse })) }
+                if is_async {
+                    Ok(Some(Statement::AsyncFor { target, iter, body, orelse }))
+                }
+                else {
+                    Ok(Some(Statement::For { target, iter, body, orelse }))
+                }
             }
             PythonElementType::PassStmt | PythonElementType::Pass => Ok(Some(Statement::Pass)),
             PythonElementType::BreakStmt | PythonElementType::Break => Ok(Some(Statement::Break)),
@@ -275,10 +311,13 @@ impl<'config> super::PythonBuilder<'config> {
                     match child {
                         GreenTree::Leaf(leaf) if leaf.kind == PythonTokenType::Identifier => {
                             if module.is_none() {
-                                module = Some(source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string())
+                                module =
+                                    Some(source.get_text_in((current_offset..current_offset + leaf.length as usize).into()).trim().to_string())
                             }
                         }
-                        GreenTree::Node(n) if n.kind == PythonElementType::Alias => names.push(self.build_import_name(n, current_offset, source)?),
+                        GreenTree::Node(n) if n.kind == PythonElementType::Alias => {
+                            names.push(self.build_import_name(n, current_offset, source)?)
+                        }
                         _ => {}
                     }
                     current_offset += child_len
@@ -325,9 +364,13 @@ impl<'config> super::PythonBuilder<'config> {
                     if let GreenTree::Node(n) = child {
                         if !n.kind.is_trivia() {
                             match n.kind {
-                                PythonElementType::Suite if body.is_empty() && handlers.is_empty() => body = self.build_suite(n, current_offset, source)?,
+                                PythonElementType::Suite if body.is_empty() && handlers.is_empty() => {
+                                    body = self.build_suite(n, current_offset, source)?
+                                }
                                 PythonElementType::ExceptHandler => handlers.push(self.build_except_handler(n, current_offset, source)?),
-                                PythonElementType::Suite if !handlers.is_empty() && orelse.is_empty() => orelse = self.build_suite(n, current_offset, source)?,
+                                PythonElementType::Suite if !handlers.is_empty() && orelse.is_empty() => {
+                                    orelse = self.build_suite(n, current_offset, source)?
+                                }
                                 PythonElementType::Suite if finalbody.is_empty() => finalbody = self.build_suite(n, current_offset, source)?,
                                 _ => {}
                             }
@@ -381,7 +424,12 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a list of statements from a list of green nodes, handling decorators.
-    pub(crate) fn build_statement_list<'a>(&self, children: &'a [GreenTree<'a, PythonLanguage>], mut current_offset: usize, source: &SourceText) -> Result<Vec<Statement>, TextError> {
+    pub(crate) fn build_statement_list<'a>(
+        &self,
+        children: &'a [GreenTree<'a, PythonLanguage>],
+        mut current_offset: usize,
+        source: &SourceText,
+    ) -> Result<Vec<Statement>, TextError> {
         let mut statements = Vec::new();
         let mut pending_decorators = Vec::new();
 
@@ -409,7 +457,9 @@ impl<'config> super::PythonBuilder<'config> {
                         else if let Some(mut stmt) = self.build_statement(node, current_offset, source)? {
                             // Attach decorators to function or class def
                             match &mut stmt {
-                                Statement::FunctionDef { decorators, .. } | Statement::AsyncFunctionDef { decorators, .. } | Statement::ClassDef { decorators, .. } => {
+                                Statement::FunctionDef { decorators, .. }
+                                | Statement::AsyncFunctionDef { decorators, .. }
+                                | Statement::ClassDef { decorators, .. } => {
                                     *decorators = std::mem::take(&mut pending_decorators);
                                 }
                                 _ => {
@@ -429,12 +479,22 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds a suite (list of statements) from a green node.
-    pub(crate) fn build_suite(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<Vec<Statement>, TextError> {
+    pub(crate) fn build_suite(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<Vec<Statement>, TextError> {
         self.build_statement_list(node.children(), offset, source)
     }
 
     /// Builds an import name (alias) from a green node.
-    pub(crate) fn build_import_name(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<ImportName, TextError> {
+    pub(crate) fn build_import_name(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<ImportName, TextError> {
         let mut name = String::new();
         let mut asname = None;
         let mut current_offset = offset;
@@ -460,7 +520,12 @@ impl<'config> super::PythonBuilder<'config> {
     }
 
     /// Builds an exception handler from a green node.
-    pub(crate) fn build_except_handler(&self, node: &GreenNode<PythonLanguage>, offset: usize, source: &SourceText) -> Result<ExceptHandler, TextError> {
+    pub(crate) fn build_except_handler(
+        &self,
+        node: &GreenNode<PythonLanguage>,
+        offset: usize,
+        source: &SourceText,
+    ) -> Result<ExceptHandler, TextError> {
         let mut type_ = None;
         let mut name = None;
         let mut body = Vec::new();

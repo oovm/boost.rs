@@ -119,9 +119,9 @@ pub fn concretize_type(ty: &ValkyrieType) -> Result<SemanticType, ConcretizeErro
         }))),
         ValkyrieType::Tuple(elems) => Ok(SemanticType::Tuple(elems.iter().map(concretize_type).collect::<Result<Vec<_>, _>>()?)),
         // 标签只在类型身份层存在：平台载体按位置擦除，带标签元组与等价无标签元组共用 `SemanticType::Tuple`。
-        ValkyrieType::LabeledTuple(fields) => Ok(SemanticType::Tuple(
-            fields.iter().map(|field| concretize_type(&field.ty)).collect::<Result<Vec<_>, _>>()?,
-        )),
+        ValkyrieType::LabeledTuple(fields) => {
+            Ok(SemanticType::Tuple(fields.iter().map(|field| concretize_type(&field.ty)).collect::<Result<Vec<_>, _>>()?))
+        }
         ValkyrieType::Array(elem) => Ok(SemanticType::Array(Box::new(concretize_type(elem)?))),
         ValkyrieType::FixedArray { element, length } => {
             Ok(SemanticType::FixedArray { element: Box::new(concretize_type(element)?), length: *length })

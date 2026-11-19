@@ -107,7 +107,8 @@ impl MirBuilder {
                 if let (Some(hint), MirOperand::Value(source)) = (&inferred_type, &operand) {
                     if let Some(concrete) = self.value_types.get(source).cloned() {
                         let hint = crate::compiler::mir::ssa::expr_helpers::normalize_primitive_nominal(hint, &self.field_declarations);
-                        let concrete = crate::compiler::mir::ssa::expr_helpers::normalize_primitive_nominal(&concrete, &self.field_declarations);
+                        let concrete =
+                            crate::compiler::mir::ssa::expr_helpers::normalize_primitive_nominal(&concrete, &self.field_declarations);
                         if hint != concrete
                             && crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&hint, &self.field_declarations)
                             && crate::compiler::mir::ssa::expr_helpers::is_integer_literal_formal_type(&concrete, &self.field_declarations)

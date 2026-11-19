@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use compiler_valkyrie::compiler::semantic::closure::{DeclarationKey, SemanticClosureError};
 use compiler_target::{CanonicalSpecification, CanonicalTarget};
+use compiler_valkyrie::compiler::semantic::closure::{DeclarationKey, SemanticClosureError};
 
 use super::types::{PlannedSemanticSourceGroup, PlannerError, PlannerResult};
 use crate::legion::workspace::source_snapshot::compile_source_snapshot;

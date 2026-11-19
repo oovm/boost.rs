@@ -104,7 +104,12 @@ impl<'config> CmdParser<'config> {
 }
 
 impl<'config> Parser<CmdLanguage> for CmdParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<CmdLanguage>) -> data_text_core::ParseOutput<'a, CmdLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<CmdLanguage>,
+    ) -> data_text_core::ParseOutput<'a, CmdLanguage> {
         let lexer = CmdLexer::new(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

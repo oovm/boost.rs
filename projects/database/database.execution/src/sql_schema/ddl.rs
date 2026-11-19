@@ -121,29 +121,15 @@ fn resolve_foreign_key(
 /// The expression must be non-empty, the column cannot own a value sequence,
 /// cannot carry a `DEFAULT` and cannot be part of the primary key, which are
 /// exactly the combinations PostgreSQL itself refuses.
-fn validate_generated_column(
-    table: &str,
-    column: &DdlColumn,
-    expression: &str,
-    primary_key: &[String],
-) -> Result<(), SqlFrontendError> {
+fn validate_generated_column(table: &str, column: &DdlColumn, expression: &str, primary_key: &[String]) -> Result<(), SqlFrontendError> {
     if expression.trim().is_empty() {
-        return Err(SqlFrontendError::syntax(format!(
-            "generated column `{}` of table `{table}` declares an empty expression",
-            column.name
-        )));
+        return Err(SqlFrontendError::syntax(format!("generated column `{}` of table `{table}` declares an empty expression", column.name)));
     }
     if column.auto_increment {
-        return Err(SqlFrontendError::syntax(format!(
-            "generated column `{}` of table `{table}` cannot own a value sequence",
-            column.name
-        )));
+        return Err(SqlFrontendError::syntax(format!("generated column `{}` of table `{table}` cannot own a value sequence", column.name)));
     }
     if column.default.is_some() {
-        return Err(SqlFrontendError::syntax(format!(
-            "generated column `{}` of table `{table}` cannot declare a DEFAULT",
-            column.name
-        )));
+        return Err(SqlFrontendError::syntax(format!("generated column `{}` of table `{table}` cannot declare a DEFAULT", column.name)));
     }
     if column.inline_primary_key || primary_key.iter().any(|candidate| candidate == &column.name) {
         return Err(SqlFrontendError::syntax(format!(
@@ -157,7 +143,9 @@ fn validate_generated_column(
 /// Applies one DDL statement to the state, reporting whether it changed.
 pub(crate) fn apply_ddl(state: &mut RegistryState, statement: &SqlDdlStatement) -> Result<(SqlDdlOutcome, bool), SqlFrontendError> {
     match statement {
-        SqlDdlStatement::CreateTable { name, if_not_exists, columns, primary_key, unique_constraints, check_constraints, foreign_keys, .. } => {
+        SqlDdlStatement::CreateTable {
+            name, if_not_exists, columns, primary_key, unique_constraints, check_constraints, foreign_keys, ..
+        } => {
             if state.table(name).is_some() {
                 if *if_not_exists {
                     return Ok((SqlDdlOutcome::CreateTable { created: false }, false));

@@ -1,5 +1,5 @@
 use crate::{ast::ScssRoot, language::ScssLanguage};
-use data_text_core::{Builder, BuilderCache, Lexer, TextDiagnostics, Parser, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, Lexer, Parser, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source};
 
 /// AST builder for SCSS language
 #[derive(Clone)]
@@ -15,7 +15,12 @@ impl<'config> ScssBuilder<'config> {
 }
 
 impl<'config> Builder<ScssLanguage> for ScssBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ScssLanguage>) -> BuildOutput<ScssLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ScssLanguage>,
+    ) -> BuildOutput<ScssLanguage> {
         let parser = crate::parser::ScssParser::new(self.config);
         let lexer = crate::lexer::ScssLexer::new(&self.config);
 

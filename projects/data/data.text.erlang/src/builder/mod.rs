@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::ErlangLanguage, parser::ErlangParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Erlang language
 #[derive(Clone)]
@@ -23,7 +23,12 @@ impl<'config> ErlangBuilder<'config> {
 }
 
 impl<'config> Builder<ErlangLanguage> for ErlangBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<ErlangLanguage>) -> data_text_core::builder::BuildOutput<ErlangLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<ErlangLanguage>,
+    ) -> data_text_core::builder::BuildOutput<ErlangLanguage> {
         let parser = ErlangParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<ErlangLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

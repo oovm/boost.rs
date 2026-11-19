@@ -23,7 +23,12 @@ impl TailwindLexer {
 
 impl Lexer<TailwindLanguage> for TailwindLexer {
     /// Tokenizes the source text into a sequence of Tailwind tokens.
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<TailwindLanguage>) -> LexOutput<TailwindLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<TailwindLanguage>,
+    ) -> LexOutput<TailwindLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

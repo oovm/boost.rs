@@ -1,8 +1,10 @@
 #![doc = include_str!("readme.md")]
-use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
-use language_highlight::themes::Theme;
 use crate::language::StylusLanguage;
 use data_text_core::{Language, errors::ParseResult};
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource, TreeHighlighter},
+    themes::Theme,
+};
 
 pub struct StylusHighlighter {
     use_parser: bool,
@@ -22,7 +24,9 @@ impl HighlightSource for StylusHighlighter {
             let config = StylusLanguage::new();
             let parser = crate::parser::StylusParser::new(&config);
             let lexer = crate::lexer::StylusLexer::new(&config);
-            highlighter.highlight_with_language::<StylusLanguage, crate::parser::StylusParser<'_>, crate::lexer::StylusLexer>(source, theme, &parser, &lexer)
+            highlighter.highlight_with_language::<StylusLanguage, crate::parser::StylusParser<'_>, crate::lexer::StylusLexer>(
+                source, theme, &parser, &lexer,
+            )
         }
         else {
             highlighter.highlight(source, StylusLanguage::NAME, theme)

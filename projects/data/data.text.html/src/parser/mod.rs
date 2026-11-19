@@ -124,7 +124,10 @@ impl<'config> HtmlParser<'config> {
 
 /// HTML void elements never take children, with or without a trailing slash.
 fn is_void_element(tag_name: &str) -> bool {
-    matches!(tag_name, "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr")
+    matches!(
+        tag_name,
+        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta" | "param" | "source" | "track" | "wbr"
+    )
 }
 
 /// Foreign roots whose descendants live outside the HTML namespace.
@@ -133,7 +136,12 @@ fn is_foreign_element(tag_name: &str) -> bool {
 }
 
 impl<'config> Parser<HtmlLanguage> for HtmlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<HtmlLanguage>) -> ParseOutput<'a, HtmlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<HtmlLanguage>,
+    ) -> ParseOutput<'a, HtmlLanguage> {
         let lexer = HtmlLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

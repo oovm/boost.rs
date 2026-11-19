@@ -7,8 +7,8 @@
 
 use std::borrow::Cow;
 
-use document_ir::{MathDisplay, MathFormula};
 use data_text_html::ast::{Element, HtmlNode};
+use document_ir::{MathDisplay, MathFormula};
 
 use super::math_latex::{delimiter_spelling, escape_text, formula_from_latex, latex_operator};
 

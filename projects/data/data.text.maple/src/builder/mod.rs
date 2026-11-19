@@ -2,7 +2,9 @@ use crate::{
     MapleElementType, MapleLanguage, MapleParser, MapleTokenType,
     ast::{MapleExpression, MapleExpressionKind, MapleOperator, MapleRoot, MapleSpan},
 };
-use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextError, Parser, RedNode, RedTree, Source, TextEdit, TokenType, builder::BuildOutput};
+use data_text_core::{
+    Builder, BuilderCache, Parser, RedNode, RedTree, Source, TextDiagnostics, TextEdit, TextError, TokenType, builder::BuildOutput,
+};
 
 /// Builds owned Maple syntax from the lossless syntax tree.
 #[derive(Debug, Clone)]
@@ -17,7 +19,12 @@ impl<'config> MapleBuilder<'config> {
 }
 
 impl Builder<MapleLanguage> for MapleBuilder<'_> {
-    fn build<'a, SourceType: Source + ?Sized>(&self, source: &SourceType, edits: &[TextEdit], cache: &'a mut impl BuilderCache<MapleLanguage>) -> BuildOutput<MapleLanguage> {
+    fn build<'a, SourceType: Source + ?Sized>(
+        &self,
+        source: &SourceType,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<MapleLanguage>,
+    ) -> BuildOutput<MapleLanguage> {
         let output = MapleParser::new(self.config).parse(source, edits, cache);
         let diagnostics = output.diagnostics;
         if let Some(error) = diagnostics.first() {
@@ -74,7 +81,9 @@ fn build_expression<SourceType: Source + ?Sized>(node: RedNode<'_, MapleLanguage
                 let range = token.span();
                 extend_span(&mut expression_span, range.start, range.end);
                 match token.kind() {
-                    MapleTokenType::Identifier | MapleTokenType::Integer | MapleTokenType::Float => spelling = Some((token.kind(), source.get_text_in(token.span()).to_string())),
+                    MapleTokenType::Identifier | MapleTokenType::Integer | MapleTokenType::Float => {
+                        spelling = Some((token.kind(), source.get_text_in(token.span()).to_string()))
+                    }
                     MapleTokenType::Plus => operator = Some(MapleOperator::Add),
                     MapleTokenType::Minus => operator = Some(MapleOperator::Subtract),
                     MapleTokenType::Times => operator = Some(MapleOperator::Multiply),
@@ -96,7 +105,9 @@ fn build_expression<SourceType: Source + ?Sized>(node: RedNode<'_, MapleLanguage
         MapleElementType::Call => MapleExpressionKind::Call { name: spelling.ok_or_else(invalid)?.1, arguments },
         MapleElementType::List => MapleExpressionKind::List(expressions),
         MapleElementType::Expression if expressions.len() == 1 => MapleExpressionKind::Grouped(Box::new(expressions.remove(0))),
-        MapleElementType::PrefixExpr if expressions.len() == 1 => MapleExpressionKind::Unary { operator: operator.ok_or_else(invalid)?, operand: Box::new(expressions.remove(0)) },
+        MapleElementType::PrefixExpr if expressions.len() == 1 => {
+            MapleExpressionKind::Unary { operator: operator.ok_or_else(invalid)?, operand: Box::new(expressions.remove(0)) }
+        }
         MapleElementType::BinaryExpr if expressions.len() == 2 => {
             let right = expressions.pop().ok_or_else(invalid)?;
             let left = expressions.pop().ok_or_else(invalid)?;

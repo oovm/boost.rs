@@ -5,8 +5,10 @@
 //! [`compiler_target::target_resolution::ResolvedTarget`] 与导出身份，不各自再猜一次平台或
 //! 宿主边界。本模块据此把「普通共享库」与「宿主扩展」分流到对应的承载合同。
 
-use compiler_target::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
-use compiler_target::target_resolution::{ArtifactContract, CpythonHostConfig, ResolvedTarget};
+use compiler_target::{
+    abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget},
+    target_resolution::{ArtifactContract, CpythonHostConfig, ResolvedTarget},
+};
 
 use super::X64CallConv;
 
@@ -59,12 +61,14 @@ impl X64Platform {
 
     /// x86-64 Windows 平台（`x86_64-pc-windows-msvc`）。
     pub fn windows_x64() -> Self {
-        Self::from_canonical(CanonicalTarget::parse("x86_64-pc-windows-msvc").expect("canonical windows x64 target")).expect("windows x64 is supported")
+        Self::from_canonical(CanonicalTarget::parse("x86_64-pc-windows-msvc").expect("canonical windows x64 target"))
+            .expect("windows x64 is supported")
     }
 
     /// x86-64 Linux 平台（`x86_64-unknown-linux-gnu`）。
     pub fn linux_x64() -> Self {
-        Self::from_canonical(CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("canonical linux x64 target")).expect("linux x64 is supported")
+        Self::from_canonical(CanonicalTarget::parse("x86_64-unknown-linux-gnu").expect("canonical linux x64 target"))
+            .expect("linux x64 is supported")
     }
 
     /// 完整平台身份（含冻结 ABI），用于缓存与产物记录。
@@ -139,9 +143,7 @@ impl X64ProductTarget {
         match contract {
             ArtifactContract::Native => Ok(Self::Library(platform)),
             ArtifactContract::NodeApi => Ok(Self::Extension { platform, module: HostModule::Node, cpython: None }),
-            ArtifactContract::Cpython(config) => {
-                Ok(Self::Extension { platform, module: HostModule::Python, cpython: Some(config.clone()) })
-            }
+            ArtifactContract::Cpython(config) => Ok(Self::Extension { platform, module: HostModule::Python, cpython: Some(config.clone()) }),
             ArtifactContract::Platform => Err("平台 lane 合同不是原生宿主产物".to_string()),
         }
     }
@@ -216,9 +218,7 @@ impl X64ProductTarget {
             Self::Library(platform) => platform.abi().integer_argument_limit(),
             Self::Extension { platform, module: HostModule::Node, .. } => platform.abi().integer_argument_limit(),
             // `PyArg_ParseTuple(args, fmt, &a…)` 占两个固定实参。
-            Self::Extension { platform, module: HostModule::Python, .. } => {
-                platform.abi().integer_argument_limit().saturating_sub(2)
-            }
+            Self::Extension { platform, module: HostModule::Python, .. } => platform.abi().integer_argument_limit().saturating_sub(2),
         }
     }
 }

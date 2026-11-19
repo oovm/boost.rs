@@ -118,8 +118,8 @@ pub fn execute_sql(
             let outcome = execute_write_prepared(&stmt, &bound, contract, declared, records, &Placement::Inline)?;
             Ok(SqlOutcome { rows: outcome.rows, affected: outcome.affected })
         }
-        QueryKind::Session => Err(Error::Schema {
-            message: "session / transaction boundary statements must be executed through the connection surface".into(),
-        }),
+        QueryKind::Session => {
+            Err(Error::Schema { message: "session / transaction boundary statements must be executed through the connection surface".into() })
+        }
     }
 }

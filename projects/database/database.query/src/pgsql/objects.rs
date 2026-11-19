@@ -165,9 +165,9 @@ fn parse_create(tail: &str) -> Result<Option<PgObjectStatement>, SqlFrontendErro
         // Table, index and temporary-table DDL belong to the schema registry.
         "TABLE" | "TEMP" | "TEMPORARY" | "INDEX" | "UNIQUE" => Ok(None),
         "SEQUENCE" => parse_create_sequence(rest).map(Some),
-        _ => Err(unsupported(format!(
-            "`CREATE {keyword}` is not supported by the cluster SQL gateway, only `DATABASE`, `ROLE` and `USER` are"
-        ))),
+        _ => {
+            Err(unsupported(format!("`CREATE {keyword}` is not supported by the cluster SQL gateway, only `DATABASE`, `ROLE` and `USER` are")))
+        }
     }
 }
 
@@ -216,8 +216,7 @@ fn parse_create_database(tail: &str) -> Result<(PgDatabase, bool), SqlFrontendEr
                     return Err(syntax("`CONNECTION` requires `LIMIT` in `CREATE DATABASE`"));
                 };
                 let (value, remaining) = take_sequence_number(after, "")?;
-                database.connection_limit = i32::try_from(value)
-                    .map_err(|_| syntax("`CONNECTION LIMIT` is out of range"))?;
+                database.connection_limit = i32::try_from(value).map_err(|_| syntax("`CONNECTION LIMIT` is out of range"))?;
                 rest = remaining;
                 continue;
             }
@@ -235,7 +234,8 @@ fn parse_create_database(tail: &str) -> Result<(PgDatabase, bool), SqlFrontendEr
 fn take_identifier_or_literal(source: &str) -> Result<(String, &str), SqlFrontendError> {
     let trimmed = source.trim_start();
     if let Some(inner) = trimmed.strip_prefix('\'') {
-        let Some(end) = inner.find('\'') else {
+        let Some(end) = inner.find('\'')
+        else {
             return Err(syntax("unterminated string literal"));
         };
         return Ok((inner[..end].to_owned(), &inner[end + 1..]));
@@ -276,9 +276,7 @@ fn parse_create_role(tail: &str, login_default: bool) -> Result<PgObjectStatemen
                 continue;
             }
             other => {
-                return Err(unsupported(format!(
-                    "`CREATE ROLE ... {other}` is not supported by the cluster SQL gateway"
-                )));
+                return Err(unsupported(format!("`CREATE ROLE ... {other}` is not supported by the cluster SQL gateway")));
             }
         }
         rest = after;
@@ -323,16 +321,12 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
     }
     let upper = rest.to_ascii_uppercase();
     if upper.contains("SEQUENCES IN SCHEMA") {
-        return Err(unsupported(
-            "`GRANT ... ON ALL SEQUENCES IN SCHEMA` is not supported by the cluster SQL gateway, only `ALL TABLES` is",
-        ));
+        return Err(unsupported("`GRANT ... ON ALL SEQUENCES IN SCHEMA` is not supported by the cluster SQL gateway, only `ALL TABLES` is"));
     }
     if !granting {
         if let Some(after) = strip_keyword(rest, "GRANT") {
             // `REVOKE GRANT OPTION FOR ...`
-            rest = strip_keyword(after.trim_start(), "OPTION")
-                .ok_or_else(|| syntax("`REVOKE GRANT` requires `OPTION FOR`"))?
-                .trim_start();
+            rest = strip_keyword(after.trim_start(), "OPTION").ok_or_else(|| syntax("`REVOKE GRANT` requires `OPTION FOR`"))?.trim_start();
             rest = strip_keyword(rest, "FOR").ok_or_else(|| syntax("`REVOKE GRANT OPTION` requires `FOR`"))?.trim_start();
         }
     }
@@ -349,9 +343,7 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
         rest = after.trim_start();
     }
     if rest.to_ascii_uppercase().starts_with("ALL TABLES") || rest.to_ascii_uppercase().starts_with("ALL SEQUENCES") {
-        return Err(unsupported(
-            "`GRANT ... ON ALL TABLES` is not supported by the cluster SQL gateway, name each table",
-        ));
+        return Err(unsupported("`GRANT ... ON ALL TABLES` is not supported by the cluster SQL gateway, name each table"));
     }
     let (table, after_table) = take_identifier(rest)?;
     let mut rest = after_table.trim_start();
@@ -371,23 +363,14 @@ fn parse_grant(tail: &str, granting: bool) -> Result<PgObjectStatement, SqlFront
     if roles.is_empty() {
         return Err(syntax("the statement names no role"));
     }
-    Ok(if granting {
-        PgObjectStatement::Grant { privileges, table, roles }
-    }
-    else {
-        PgObjectStatement::Revoke { privileges, table, roles }
-    })
+    Ok(if granting { PgObjectStatement::Grant { privileges, table, roles } } else { PgObjectStatement::Revoke { privileges, table, roles } })
 }
 
 /// Parses `ALL TABLES IN SCHEMA <name> TO|FROM <roles>`.
 ///
 /// `ALL SEQUENCES IN SCHEMA` has no privilege model in this gateway, so it stays
 /// an explicit rejection instead of granting something it never checks.
-fn parse_bulk_grant(
-    object: &str,
-    privileges: Vec<PgPrivilege>,
-    granting: bool,
-) -> Result<PgObjectStatement, SqlFrontendError> {
+fn parse_bulk_grant(object: &str, privileges: Vec<PgPrivilege>, granting: bool) -> Result<PgObjectStatement, SqlFrontendError> {
     let (kind, rest) = if let Some(rest) = strip_keyword(object, "ALL") {
         let rest = rest.trim_start();
         let kind = first_word(rest).ok_or_else(|| syntax("`ON ALL` requires `TABLES IN SCHEMA`"))?;
@@ -499,9 +482,7 @@ fn parse_create_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendErr
                 ));
             }
             other => {
-                return Err(unsupported(format!(
-                    "`CREATE SEQUENCE ... {other}` is not supported by the cluster SQL gateway"
-                )));
+                return Err(unsupported(format!("`CREATE SEQUENCE ... {other}` is not supported by the cluster SQL gateway")));
             }
         }
         rest = after;
@@ -509,10 +490,7 @@ fn parse_create_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendErr
     let min_value = min_value.unwrap_or(if increment > 0 { 1 } else { type_bounds.0 });
     let max_value = max_value.unwrap_or(if increment > 0 { type_bounds.1 } else { -1 });
     let start = start.unwrap_or(if increment > 0 { min_value } else { max_value });
-    Ok(PgObjectStatement::CreateSequence {
-        sequence: PgSequence::new(name, start, increment, min_value, max_value, cycle),
-        if_not_exists,
-    })
+    Ok(PgObjectStatement::CreateSequence { sequence: PgSequence::new(name, start, increment, min_value, max_value, cycle), if_not_exists })
 }
 
 /// Integer bounds one `CREATE SEQUENCE ... AS type` selects.
@@ -521,9 +499,7 @@ fn sequence_type_bounds(name: &str) -> Result<(i64, i64), SqlFrontendError> {
         "SMALLINT" | "INT2" => Ok((i16::MIN as i64, i16::MAX as i64)),
         "INTEGER" | "INT" | "INT4" => Ok((i32::MIN as i64, i32::MAX as i64)),
         "BIGINT" | "INT8" => Ok((i64::MIN, i64::MAX)),
-        other => Err(unsupported(format!(
-            "`CREATE SEQUENCE ... AS {other}` is not supported, use SMALLINT, INTEGER or BIGINT"
-        ))),
+        other => Err(unsupported(format!("`CREATE SEQUENCE ... AS {other}` is not supported, use SMALLINT, INTEGER or BIGINT"))),
     }
 }
 
@@ -535,9 +511,7 @@ fn take_sequence_number<'a>(source: &'a str, keyword: &str) -> Result<(i64, &'a 
     {
         rest = after.trim_start();
     }
-    let end = rest
-        .find(|character: char| !(character.is_ascii_digit() || character == '-' || character == '+'))
-        .unwrap_or(rest.len());
+    let end = rest.find(|character: char| !(character.is_ascii_digit() || character == '-' || character == '+')).unwrap_or(rest.len());
     let value = rest[..end].parse::<i64>().map_err(|_| syntax("expected an integer sequence option"))?;
     Ok((value, &rest[end..]))
 }
@@ -620,9 +594,7 @@ fn parse_alter_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendErro
                 )));
             }
             other => {
-                return Err(unsupported(format!(
-                    "`ALTER SEQUENCE ... {other}` is not supported by the cluster SQL gateway"
-                )));
+                return Err(unsupported(format!("`ALTER SEQUENCE ... {other}` is not supported by the cluster SQL gateway")));
             }
         }
         rest = after;
@@ -649,14 +621,10 @@ fn parse_drop_sequence(tail: &str) -> Result<PgObjectStatement, SqlFrontendError
 fn parse_membership(rest: &str, granting: bool) -> Result<PgObjectStatement, SqlFrontendError> {
     let rest = rest.trim_start();
     let separator = if granting { "TO" } else { "FROM" };
-    if !granting
-        && let Some(after) = strip_keyword(rest, "ADMIN")
-    {
+    if !granting && let Some(after) = strip_keyword(rest, "ADMIN") {
         let after = strip_keyword(after, "OPTION").ok_or_else(|| syntax("`REVOKE ADMIN` requires `OPTION FOR`"))?;
         strip_keyword(after.trim_start(), "FOR").ok_or_else(|| syntax("`REVOKE ADMIN OPTION` requires `FOR`"))?;
-        return Err(unsupported(
-            "`REVOKE ADMIN OPTION FOR` is not supported by the cluster SQL gateway, revoke the membership instead",
-        ));
+        return Err(unsupported("`REVOKE ADMIN OPTION FOR` is not supported by the cluster SQL gateway, revoke the membership instead"));
     }
     let (roles_text, after_roles) = split_keyword(rest, separator)
         .ok_or_else(|| syntax(format!("`{}` requires `{separator} <role>`", if granting { "GRANT" } else { "REVOKE" })))?;
@@ -672,12 +640,7 @@ fn parse_membership(rest: &str, granting: bool) -> Result<PgObjectStatement, Sql
     if members.is_empty() {
         return Err(syntax("the statement names no member role"));
     }
-    Ok(if granting {
-        PgObjectStatement::GrantMembership { roles, members }
-    }
-    else {
-        PgObjectStatement::RevokeMembership { roles, members }
-    })
+    Ok(if granting { PgObjectStatement::GrantMembership { roles, members } } else { PgObjectStatement::RevokeMembership { roles, members } })
 }
 
 fn parse_privileges(text: &str) -> Result<Vec<PgPrivilege>, SqlFrontendError> {
@@ -729,7 +692,8 @@ fn split_identifiers(source: &str) -> Result<Vec<String>, SqlFrontendError> {
 }
 
 fn if_not_exists(source: &str) -> (&str, bool) {
-    let Some(rest) = strip_keyword(source, "IF") else {
+    let Some(rest) = strip_keyword(source, "IF")
+    else {
         return (source, false);
     };
     let rest = strip_keyword(rest.trim_start(), "NOT").unwrap_or(rest).trim_start();
@@ -749,12 +713,14 @@ fn split_keyword<'a>(source: &'a str, keyword: &str) -> Option<(String, &'a str)
 fn take_identifier(source: &str) -> Result<(String, &str), SqlFrontendError> {
     let trimmed = source.trim_start();
     if let Some(inner) = trimmed.strip_prefix('"') {
-        let Some(end) = inner.find('"') else {
+        let Some(end) = inner.find('"')
+        else {
             return Err(syntax("unterminated quoted name"));
         };
         return Ok((inner[..end].to_owned(), &inner[end + 1..]));
     }
-    let end = trimmed.find(|character: char| character.is_whitespace() || character == ',' || character == ';' || character == '.')
+    let end = trimmed
+        .find(|character: char| character.is_whitespace() || character == ',' || character == ';' || character == '.')
         .unwrap_or(trimmed.len());
     if end == 0 {
         return Err(syntax("expected an identifier"));
@@ -887,10 +853,7 @@ mod tests {
             Some(PgObjectStatement::RevokeMembership { roles: vec!["reader".to_owned()], members: vec!["app".to_owned()] })
         );
         // `WITH ADMIN OPTION` and `REVOKE ADMIN OPTION FOR` stay explicit rejections.
-        assert_eq!(
-            parse_pg_object_statement("REVOKE ADMIN OPTION FOR reader FROM app").unwrap_err().kind,
-            SqlErrorKind::Unsupported
-        );
+        assert_eq!(parse_pg_object_statement("REVOKE ADMIN OPTION FOR reader FROM app").unwrap_err().kind, SqlErrorKind::Unsupported);
         assert_eq!(parse_pg_object_statement("GRANT reader TO").unwrap_err().kind, SqlErrorKind::Syntax);
     }
 
@@ -924,10 +887,7 @@ mod tests {
     fn sequences_parse_their_options_and_reject_owned_by() {
         assert_eq!(
             parse_pg_object_statement("CREATE SEQUENCE IF NOT EXISTS s START WITH 10 INCREMENT BY 5 MAXVALUE 100 CYCLE").unwrap(),
-            Some(PgObjectStatement::CreateSequence {
-                sequence: PgSequence::new("s", 10, 5, 1, 100, true),
-                if_not_exists: true,
-            })
+            Some(PgObjectStatement::CreateSequence { sequence: PgSequence::new("s", 10, 5, 1, 100, true), if_not_exists: true })
         );
         assert_eq!(
             parse_pg_object_statement("CREATE SEQUENCE small AS SMALLINT").unwrap(),

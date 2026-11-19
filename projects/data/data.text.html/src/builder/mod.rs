@@ -1,7 +1,7 @@
 mod from_red;
 
 use crate::{HtmlParser, ast::HtmlDocument, language::HtmlLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, builder::BuildOutput, source::Source};
 
 /// A builder for HTML documents that coordinates parsing and AST construction.
 #[derive(Clone)]
@@ -17,7 +17,12 @@ impl HtmlBuilder {
 }
 
 impl Builder<HtmlLanguage> for HtmlBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<HtmlLanguage>) -> BuildOutput<HtmlLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<HtmlLanguage>,
+    ) -> BuildOutput<HtmlLanguage> {
         let parser = HtmlParser::new(&self.config);
 
         let mut parse_cache = data_text_core::parser::session::ParseSession::<HtmlLanguage>::default();

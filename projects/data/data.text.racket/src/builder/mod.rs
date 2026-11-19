@@ -9,7 +9,12 @@ use crate::language::RacketLanguage;
 pub struct Builder;
 
 impl CoreBuilder<RacketLanguage> for Builder {
-    fn build<'a, S: Source + ?Sized>(&self, _text: &S, _edits: &[TextEdit], _cache: &'a mut impl BuilderCache<RacketLanguage>) -> BuildOutput<RacketLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        _text: &S,
+        _edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<RacketLanguage>,
+    ) -> BuildOutput<RacketLanguage> {
         BuildOutput::<RacketLanguage>::new(Ok(()))
     }
 }

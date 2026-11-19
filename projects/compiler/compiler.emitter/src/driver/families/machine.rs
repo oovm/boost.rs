@@ -19,7 +19,8 @@ pub(super) struct MachineFamilyCompiler;
 
 /// 判断给定的后端需求是否可由 `machine-code` 家族满足。
 pub(super) fn supports_requirement(requirement: &PartitionBackendRequirement) -> bool {
-    bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode).is_some_and(|descriptor| descriptor.supports_requirement(requirement))
+    bundled_backend_capability_descriptor(TargetBackendFamily::MachineCode)
+        .is_some_and(|descriptor| descriptor.supports_requirement(requirement))
 }
 
 impl BundledBackendCompiler for MachineFamilyCompiler {
@@ -108,6 +109,13 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
             })
             .into_iter()
             .collect();
-        Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: Vec::new(), ovm_abi: Vec::new(), library_exports: Vec::new() })
+        Ok(DriverCompileReport {
+            artifacts,
+            entry_symbol: None,
+            run_contracts,
+            managed_abi: Vec::new(),
+            ovm_abi: Vec::new(),
+            library_exports: Vec::new(),
+        })
     }
 }

@@ -2,7 +2,10 @@
 ///
 /// This module defines the builder for Liquid templates, used to construct
 /// the typed AST from the parsed green tree.
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    parser::session::ParseSession, source::Source,
+};
 
 use crate::{
     ast::*,
@@ -224,7 +227,12 @@ impl<'a> LiquidBuilder<'a> {
 }
 
 impl<'a> Builder<LiquidLanguage> for LiquidBuilder<'a> {
-    fn build<'b, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'b mut impl BuilderCache<LiquidLanguage>) -> BuildOutput<LiquidLanguage> {
+    fn build<'b, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'b mut impl BuilderCache<LiquidLanguage>,
+    ) -> BuildOutput<LiquidLanguage> {
         let parser = LiquidParser::new(self.language);
         let mut parse_cache = ParseSession::<LiquidLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut parse_cache);

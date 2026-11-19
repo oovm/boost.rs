@@ -14,7 +14,12 @@ pub struct DartLexer<'config> {
 }
 
 impl<'config> Lexer<DartLanguage> for DartLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<DartLanguage>) -> LexOutput<DartLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<DartLanguage>,
+    ) -> LexOutput<DartLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

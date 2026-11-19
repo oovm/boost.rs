@@ -6,9 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use compiler_target::ArtifactSet;
-use compiler_emitter::{DriverCompileReport, DriverRunContract};
 use crate::legion::cache::store::{combined_hash, files_hash};
+use compiler_emitter::{DriverCompileReport, DriverRunContract};
+use compiler_target::ArtifactSet;
 use serde::{Deserialize, Serialize};
 
 use super::{CompilationCache, IrCacheEntry};

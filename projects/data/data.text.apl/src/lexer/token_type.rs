@@ -228,7 +228,18 @@ impl data_text_core::TokenType for AplTokenType {
             | Self::UpArrow
             | Self::DownArrow => Operator,
 
-            Self::Diamond | Self::Quad | Self::QuoteQuad | Self::Del | Self::Delta | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Semicolon => Punctuation,
+            Self::Diamond
+            | Self::Quad
+            | Self::QuoteQuad
+            | Self::Del
+            | Self::Delta
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Semicolon => Punctuation,
         }
     }
 }

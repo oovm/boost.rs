@@ -1,5 +1,10 @@
-use crate::{DockerfileParser, ast::*, language::DockerfileLanguage, lexer::token_type::DockerfileTokenType, parser::element_type::DockerfileElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use crate::{
+    DockerfileParser, ast::*, language::DockerfileLanguage, lexer::token_type::DockerfileTokenType, parser::element_type::DockerfileElementType,
+};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    source::Source,
+};
 
 /// AST builder for the Dockerfile language.
 #[derive(Clone, Copy)]
@@ -17,7 +22,12 @@ impl<'config> DockerfileBuilder<'config> {
 
 impl<'config> Builder<DockerfileLanguage> for DockerfileBuilder<'config> {
     /// Builds the Dockerfile AST from the green tree.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<DockerfileLanguage>) -> BuildOutput<DockerfileLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<DockerfileLanguage>,
+    ) -> BuildOutput<DockerfileLanguage> {
         let parser = DockerfileParser::new(self.config);
 
         let parse_result = parser.parse(source, edits, cache);
@@ -41,7 +51,11 @@ impl<'config> Builder<DockerfileLanguage> for DockerfileBuilder<'config> {
 
 impl<'config> DockerfileBuilder<'config> {
     /// Builds the AST root from the green tree.
-    pub(crate) fn build_root<'a>(&self, green_tree: &'a GreenNode<'a, DockerfileLanguage>, source: &SourceText) -> Result<DockerfileRoot, TextError> {
+    pub(crate) fn build_root<'a>(
+        &self,
+        green_tree: &'a GreenNode<'a, DockerfileLanguage>,
+        source: &SourceText,
+    ) -> Result<DockerfileRoot, TextError> {
         let root_node = RedNode::new(green_tree, 0);
         let mut instructions = Vec::new();
 
@@ -124,7 +138,11 @@ impl<'config> DockerfileBuilder<'config> {
             }
         }
 
-        Ok(Instruction::Copy { src: args.get(0).cloned().unwrap_or_default(), dest: args.get(1).cloned().unwrap_or_default(), span: node.span() })
+        Ok(Instruction::Copy {
+            src: args.get(0).cloned().unwrap_or_default(),
+            dest: args.get(1).cloned().unwrap_or_default(),
+            span: node.span(),
+        })
     }
 
     fn build_add(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
@@ -142,7 +160,11 @@ impl<'config> DockerfileBuilder<'config> {
             }
         }
 
-        Ok(Instruction::Add { src: args.get(0).cloned().unwrap_or_default(), dest: args.get(1).cloned().unwrap_or_default(), span: node.span() })
+        Ok(Instruction::Add {
+            src: args.get(0).cloned().unwrap_or_default(),
+            dest: args.get(1).cloned().unwrap_or_default(),
+            span: node.span(),
+        })
     }
 
     fn build_workdir(&self, node: RedNode<DockerfileLanguage>, source: &SourceText) -> Result<Instruction, TextError> {
@@ -350,7 +372,10 @@ impl<'config> DockerfileBuilder<'config> {
 
     fn build_onbuild(&self, node: RedNode<DockerfileLanguage>, _source: &SourceText) -> Result<Instruction, TextError> {
         // Simple implementation for now
-        Ok(Instruction::Onbuild { instruction: Box::new(Instruction::Run { command: "ONBUILD placeholder".to_string(), span: node.span() }), span: node.span() })
+        Ok(Instruction::Onbuild {
+            instruction: Box::new(Instruction::Run { command: "ONBUILD placeholder".to_string(), span: node.span() }),
+            span: node.span(),
+        })
     }
 }
 

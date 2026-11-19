@@ -1,7 +1,9 @@
 #![doc = include_str!("readme.md")]
 
 use crate::{ast::*, language::DotLanguage, lexer::token_type::DotTokenType, parser::element_type::DotElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, source::Source,
+};
 
 /// Builder for converting a DOT syntax tree into the typed AST.
 pub struct DotBuilder<'config> {
@@ -17,7 +19,12 @@ impl<'config> DotBuilder<'config> {
 }
 
 impl<'config> Builder<DotLanguage> for DotBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<DotLanguage>) -> TextDiagnostics<DotRoot> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<DotLanguage>,
+    ) -> TextDiagnostics<DotRoot> {
         let parser = crate::parser::DotParser::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<DotLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);
@@ -41,7 +48,12 @@ impl<'config> Builder<DotLanguage> for DotBuilder<'config> {
 
 impl DotBuilder<'_> {
     /// Builds the AST root from a green tree.
-    pub(crate) fn build_root(&self, green_tree: &GreenNode<DotLanguage>, source: &SourceText, diagnostics: &mut Vec<TextError>) -> Result<DotRoot, TextError> {
+    pub(crate) fn build_root(
+        &self,
+        green_tree: &GreenNode<DotLanguage>,
+        source: &SourceText,
+        diagnostics: &mut Vec<TextError>,
+    ) -> Result<DotRoot, TextError> {
         if green_tree.kind != DotElementType::Root {
             return Err(TextError::internal_error("the DOT syntax tree is missing its root element"));
         }
@@ -102,7 +114,11 @@ impl DotBuilder<'_> {
             DotElementType::GraphAssignment => self.build_assignment(node, source).map(Statement::Assignment),
             DotElementType::GraphSubgraph => Some(Statement::Subgraph(self.build_subgraph(node, source, diagnostics))),
             kind => {
-                diagnostics.push(TextError::syntax_error(format!("unsupported statement element: {kind:?}"), node.span().start, source.source_ref()));
+                diagnostics.push(TextError::syntax_error(
+                    format!("unsupported statement element: {kind:?}"),
+                    node.span().start,
+                    source.source_ref(),
+                ));
                 None
             }
         }
@@ -234,7 +250,11 @@ impl DotBuilder<'_> {
                     compass = Some(point);
                 }
                 else {
-                    diagnostics.push(TextError::syntax_error(format!("`{}` is not a compass point", second.trim()), *offset, source.source_ref()));
+                    diagnostics.push(TextError::syntax_error(
+                        format!("`{}` is not a compass point", second.trim()),
+                        *offset,
+                        source.source_ref(),
+                    ));
                 }
             }
         }
@@ -286,7 +306,12 @@ impl DotBuilder<'_> {
     }
 
     /// Appends an edge operand, using the pending operator when one exists.
-    fn push_operand(left: &mut Option<EdgeOperand>, edges: &mut Vec<(EdgeOp, EdgeOperand)>, pending: &mut Option<EdgeOp>, operand: EdgeOperand) {
+    fn push_operand(
+        left: &mut Option<EdgeOperand>,
+        edges: &mut Vec<(EdgeOp, EdgeOperand)>,
+        pending: &mut Option<EdgeOp>,
+        operand: EdgeOperand,
+    ) {
         match pending.take() {
             Some(op) => edges.push((op, operand)),
             None => {
@@ -427,7 +452,18 @@ impl DotBuilder<'_> {
 
 /// Returns `true` if the token can act as a DOT identifier.
 fn is_identifier_token(kind: DotTokenType) -> bool {
-    matches!(kind, DotTokenType::Identifier | DotTokenType::String | DotTokenType::Number | DotTokenType::Graph | DotTokenType::Digraph | DotTokenType::Subgraph | DotTokenType::Node | DotTokenType::Edge | DotTokenType::Strict)
+    matches!(
+        kind,
+        DotTokenType::Identifier
+            | DotTokenType::String
+            | DotTokenType::Number
+            | DotTokenType::Graph
+            | DotTokenType::Digraph
+            | DotTokenType::Subgraph
+            | DotTokenType::Node
+            | DotTokenType::Edge
+            | DotTokenType::Strict
+    )
 }
 
 /// Returns `true` if the token is an identifier that cannot be a keyword.

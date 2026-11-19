@@ -237,7 +237,12 @@ impl<'config> PurescriptParser<'config> {
 
     fn parse_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         let cp = state.checkpoint();
-        while state.not_at_end() && !state.at(PurescriptTokenType::Newline) && !state.at(PurescriptTokenType::Equal) && !state.at(PurescriptTokenType::Pipe) && !state.at(PurescriptTokenType::Where) {
+        while state.not_at_end()
+            && !state.at(PurescriptTokenType::Newline)
+            && !state.at(PurescriptTokenType::Equal)
+            && !state.at(PurescriptTokenType::Pipe)
+            && !state.at(PurescriptTokenType::Where)
+        {
             state.bump();
         }
         state.finish_at(cp, PurescriptElementType::TypeNode);
@@ -246,7 +251,12 @@ impl<'config> PurescriptParser<'config> {
 }
 
 impl<'config> Parser<PurescriptLanguage> for PurescriptParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<PurescriptLanguage>) -> ParseOutput<'a, PurescriptLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<PurescriptLanguage>,
+    ) -> ParseOutput<'a, PurescriptLanguage> {
         let lexer = PurescriptLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -272,7 +282,12 @@ impl<'config> Pratt<PurescriptLanguage> for PurescriptParser<'config> {
                 state.bump();
                 state.finish_at(cp, PurescriptElementType::IdentifierExpression)
             }
-            Some(PurescriptTokenType::IntLiteral) | Some(PurescriptTokenType::NumberLiteral) | Some(PurescriptTokenType::StringLiteral) | Some(PurescriptTokenType::CharLiteral) | Some(PurescriptTokenType::True) | Some(PurescriptTokenType::False) => {
+            Some(PurescriptTokenType::IntLiteral)
+            | Some(PurescriptTokenType::NumberLiteral)
+            | Some(PurescriptTokenType::StringLiteral)
+            | Some(PurescriptTokenType::CharLiteral)
+            | Some(PurescriptTokenType::True)
+            | Some(PurescriptTokenType::False) => {
                 state.bump();
                 state.finish_at(cp, PurescriptElementType::LiteralExpression)
             }
@@ -305,12 +320,19 @@ impl<'config> Pratt<PurescriptLanguage> for PurescriptParser<'config> {
         };
 
         match kind {
-            PurescriptTokenType::Minus => unary(state, kind, 12, PurescriptElementType::PrefixExpression.into(), |s, p| PrattParser::parse(s, p, self)),
+            PurescriptTokenType::Minus => {
+                unary(state, kind, 12, PurescriptElementType::PrefixExpression.into(), |s, p| PrattParser::parse(s, p, self))
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, PurescriptLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, PurescriptLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, PurescriptLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, PurescriptLanguage>> {
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
@@ -318,7 +340,12 @@ impl<'config> Pratt<PurescriptLanguage> for PurescriptParser<'config> {
             PurescriptTokenType::Star | PurescriptTokenType::Slash | PurescriptTokenType::Percent => (11, Associativity::Left),
             PurescriptTokenType::Plus | PurescriptTokenType::Minus => (10, Associativity::Left),
             PurescriptTokenType::Append => (9, Associativity::Right),
-            PurescriptTokenType::EqualEqual | PurescriptTokenType::NotEqual | PurescriptTokenType::Less | PurescriptTokenType::Greater | PurescriptTokenType::LessEqual | PurescriptTokenType::GreaterEqual => (8, Associativity::Left),
+            PurescriptTokenType::EqualEqual
+            | PurescriptTokenType::NotEqual
+            | PurescriptTokenType::Less
+            | PurescriptTokenType::Greater
+            | PurescriptTokenType::LessEqual
+            | PurescriptTokenType::GreaterEqual => (8, Associativity::Left),
             PurescriptTokenType::And => (7, Associativity::Right),
             PurescriptTokenType::Or => (6, Associativity::Right),
             PurescriptTokenType::Apply => (0, Associativity::Right),

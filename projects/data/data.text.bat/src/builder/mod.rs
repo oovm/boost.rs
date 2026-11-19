@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::BatLanguage, parser::BatParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// Windows Batch (BAT) AST builder.
 #[derive(Clone)]
@@ -35,7 +35,12 @@ impl<'config> BatBuilder<'config> {
 }
 
 impl<'config> Builder<BatLanguage> for BatBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<BatLanguage>) -> data_text_core::builder::BuildOutput<BatLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<BatLanguage>,
+    ) -> data_text_core::builder::BuildOutput<BatLanguage> {
         let parser = BatParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<BatLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

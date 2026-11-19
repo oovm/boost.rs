@@ -16,7 +16,12 @@ pub(crate) type State<'a, const LANG: DsvLanguage, S> = LexerState<'a, S, Dsv<LA
 pub struct DsvLexer<const LANG: DsvLanguage>;
 
 impl<const LANG: DsvLanguage> Lexer<Dsv<LANG>> for DsvLexer<LANG> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl data_text_core::LexerCache<Dsv<LANG>>) -> LexOutput<Dsv<LANG>> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl data_text_core::LexerCache<Dsv<LANG>>,
+    ) -> LexOutput<Dsv<LANG>> {
         let mut state = State::<LANG, S>::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -240,10 +240,8 @@ pub fn write_comparison(
     let after = parse_project(after_json)?;
     let mut fonts = fonts_for(&after)?;
     let blocks = plan_blocks(&after, production)?;
-    let selected: Vec<&PanelBlock> = blocks
-        .iter()
-        .filter(|block| only_panels.is_empty() || only_panels.iter().any(|panel| panel == &block.panel))
-        .collect();
+    let selected: Vec<&PanelBlock> =
+        blocks.iter().filter(|block| only_panels.is_empty() || only_panels.iter().any(|panel| panel == &block.panel)).collect();
     if selected.is_empty() {
         return Err(Error::invalid("the production declares no panel to compare"));
     }
@@ -269,7 +267,16 @@ pub fn write_comparison(
         let right = render_frame_at(after_json, block.frames[1])?;
         page.draw_bitmap(&bitmap(left), options.margin, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
         page.draw_bitmap(&bitmap(right), options.margin + thumb_width + options.gap, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
-        draw_text(&mut fonts, &mut page, options, "before", options.margin, y + image_height + options.label_size, options.label_size * 0.85, thumb_width);
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            "before",
+            options.margin,
+            y + image_height + options.label_size,
+            options.label_size * 0.85,
+            thumb_width,
+        );
         draw_text(
             &mut fonts,
             &mut page,
@@ -281,7 +288,16 @@ pub fn write_comparison(
             thumb_width,
         );
         let header = format!("{} · {} · f{}", block.shot, block.panel, block.frames[1]);
-        draw_text(&mut fonts, &mut page, options, &header, options.margin, y + image_height + options.label_size * 1.9, options.label_size, content_width);
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            &header,
+            options.margin,
+            y + image_height + options.label_size * 1.9,
+            options.label_size,
+            content_width,
+        );
     }
 
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -295,12 +311,7 @@ pub fn write_comparison(
 ///
 /// The pair at the top of each row is also the seam check: the previous row's
 /// last frame and this row's first frame are the two frames a cut hinges on.
-pub fn write_chapters(
-    json: &str,
-    production: &Production,
-    out: &Path,
-    options: &StoryboardOptions,
-) -> Result<StoryboardPage, Error> {
+pub fn write_chapters(json: &str, production: &Production, out: &Path, options: &StoryboardOptions) -> Result<StoryboardPage, Error> {
     production.validate()?;
     let project = parse_project(json)?;
     let mut fonts = fonts_for(&project)?;
@@ -318,7 +329,8 @@ pub fn write_chapters(
     let mut cells = Vec::new();
 
     for (row, shot) in production.shots.iter().enumerate() {
-        let Some(scene) = scene_of(&project, &shot.scene) else {
+        let Some(scene) = scene_of(&project, &shot.scene)
+        else {
             return Err(Error::invalid(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
         };
         let y = top + row_height * row as f32;
@@ -328,11 +340,29 @@ pub fn write_chapters(
         let left = render_frame_at(json, first)?;
         let right = render_frame_at(json, last)?;
         page.draw_bitmap(&bitmap(left), options.margin + label_width, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
-        page.draw_bitmap(&bitmap(right), options.margin + label_width + thumb_width + options.gap, y, thumb_width, image_height, Fit::Contain, 1.0, 4.0);
+        page.draw_bitmap(
+            &bitmap(right),
+            options.margin + label_width + thumb_width + options.gap,
+            y,
+            thumb_width,
+            image_height,
+            Fit::Contain,
+            1.0,
+            4.0,
+        );
         let label = format!("{}", shot.id);
         draw_text(&mut fonts, &mut page, options, &label, options.margin, y + options.label_size, options.label_size, label_width);
         let timing = format!("{}–{} · {:.1}s", first, last, scene.duration as f32 / project.fps.max(1) as f32);
-        draw_text(&mut fonts, &mut page, options, &timing, options.margin, y + options.label_size * 2.0, options.label_size * 0.85, label_width);
+        draw_text(
+            &mut fonts,
+            &mut page,
+            options,
+            &timing,
+            options.margin,
+            y + options.label_size * 2.0,
+            options.label_size * 0.85,
+            label_width,
+        );
         draw_text(
             &mut fonts,
             &mut page,
@@ -353,12 +383,7 @@ pub fn write_chapters(
             options.label_size * 0.8,
             thumb_width,
         );
-        cells.push(StoryboardCell {
-            shot: shot.id.to_string(),
-            panel: String::new(),
-            frames: vec![first, last],
-            dialogue: None,
-        });
+        cells.push(StoryboardCell { shot: shot.id.to_string(), panel: String::new(), frames: vec![first, last], dialogue: None });
     }
 
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -385,12 +410,7 @@ pub struct CoverCandidate {
 /// aesthetic judgement: it exists to shortlist, and a human still picks. Frames
 /// come from every panel's middle frame plus an even spread across the film, so
 /// a candidate is always a frame the film actually shows.
-pub fn write_cover_candidates(
-    json: &str,
-    production: &Production,
-    out_dir: &Path,
-    count: u32,
-) -> Result<Vec<CoverCandidate>, Error> {
+pub fn write_cover_candidates(json: &str, production: &Production, out_dir: &Path, count: u32) -> Result<Vec<CoverCandidate>, Error> {
     production.validate()?;
     let project = parse_project(json)?;
     let blocks = plan_blocks(&project, production)?;
@@ -439,12 +459,7 @@ fn cover_score(frame: &Frame) -> f32 {
 }
 
 /// Writes one contact sheet: the middle frame of every panel in a grid.
-pub fn write_contact_sheet(
-    json: &str,
-    production: &Production,
-    out: &Path,
-    options: &StoryboardOptions,
-) -> Result<StoryboardPage, Error> {
+pub fn write_contact_sheet(json: &str, production: &Production, out: &Path, options: &StoryboardOptions) -> Result<StoryboardPage, Error> {
     production.validate()?;
     let project = parse_project(json)?;
     let mut fonts = fonts_for(&project)?;
@@ -502,7 +517,8 @@ fn fonts_for(project: &Project) -> Result<Fonts, Error> {
 fn plan_blocks(project: &Project, production: &Production) -> Result<Vec<PanelBlock>, Error> {
     let mut blocks = Vec::new();
     for shot in &production.shots {
-        let Some(scene) = scene_of(project, &shot.scene) else {
+        let Some(scene) = scene_of(project, &shot.scene)
+        else {
             return Err(Error::invalid(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
         };
         for panel in &shot.panels {
@@ -573,12 +589,7 @@ fn draw_panel_row(
                 let scale = (thumb_width / source_width).min(thumb_height / source_height);
                 let image_width = source_width * scale;
                 let image_height = source_height * scale;
-                let box_rect = [
-                    x + (thumb_width - image_width) / 2.0,
-                    top + (thumb_height - image_height) / 2.0,
-                    image_width,
-                    image_height,
-                ];
+                let box_rect = [x + (thumb_width - image_width) / 2.0, top + (thumb_height - image_height) / 2.0, image_width, image_height];
                 draw_safe_area(page, area, box_rect);
             }
         }
@@ -627,12 +638,7 @@ fn draw_panel_row(
 ///
 /// The page is a projection of the same book the storyboard uses, so a row maps
 /// back to `Shot.id` and every tick to a `Panel.id` or `Cue.id`.
-pub fn write_timeline(
-    json: &str,
-    production: &Production,
-    out: &Path,
-    options: &StoryboardOptions,
-) -> Result<StoryboardPage, Error> {
+pub fn write_timeline(json: &str, production: &Production, out: &Path, options: &StoryboardOptions) -> Result<StoryboardPage, Error> {
     production.validate()?;
     let project = parse_project(json)?;
     let mut fonts = fonts_for(&project)?;
@@ -655,7 +661,8 @@ pub fn write_timeline(
     let mut cells = Vec::new();
 
     for (row, shot) in production.shots.iter().enumerate() {
-        let Some(scene) = scene_of(&project, &shot.scene) else {
+        let Some(scene) = scene_of(&project, &shot.scene)
+        else {
             return Err(Error::invalid(format!("shot `{}` references unknown scene `{}`", shot.id, shot.scene)));
         };
         let y = top + row as f32 * (row_height + row_gap);
@@ -668,16 +675,7 @@ pub fn write_timeline(
             let px = left + ((scene.start + panel.range[0]) as f32 / total) * (right - left);
             page.rect(px, y, 1.5, row_height, tick);
             let label = format!("{}", panel.id);
-            draw_text(
-                &mut fonts,
-                &mut page,
-                options,
-                &label,
-                px + 3.0,
-                y + options.label_size,
-                options.label_size * 0.72,
-                (x1 - px).max(20.0),
-            );
+            draw_text(&mut fonts, &mut page, options, &label, px + 3.0, y + options.label_size, options.label_size * 0.72, (x1 - px).max(20.0));
         }
         cells.push(StoryboardCell {
             shot: shot.id.to_string(),
@@ -692,25 +690,18 @@ pub fn write_timeline(
     let cue_height = 28.0;
     page.round_rect(left, cue_top, right - left, cue_height, 4.0, rgba([226, 232, 244], 255));
     for cue in &production.cues {
-        let Some(shot) = production.shots.iter().find(|shot| shot.id == cue.shot) else {
+        let Some(shot) = production.shots.iter().find(|shot| shot.id == cue.shot)
+        else {
             continue;
         };
-        let Some(scene) = scene_of(&project, &shot.scene) else {
+        let Some(scene) = scene_of(&project, &shot.scene)
+        else {
             continue;
         };
         let x = left + ((scene.start + cue.range[0]) as f32 / total) * (right - left);
         page.rect(x, cue_top, 2.0, cue_height, rgba([232, 184, 109], 255));
     }
-    draw_text(
-        &mut fonts,
-        &mut page,
-        options,
-        "cues",
-        options.margin,
-        cue_top + cue_height * 0.72,
-        options.label_size * 0.85,
-        label_width,
-    );
+    draw_text(&mut fonts, &mut page, options, "cues", options.margin, cue_top + cue_height * 0.72, options.label_size * 0.85, label_width);
     let frames_note = format!("{} frames · {:.1}s", project.duration_frames, project.duration_frames as f32 / project.fps.max(1) as f32);
     draw_text(
         &mut fonts,
@@ -999,9 +990,7 @@ mod tests {
         assert_eq!(pages[0].cells[1].frames, vec![60, 75, 89]);
 
         let mut library = media_codec::MediaLibrary::new();
-        let bitmap = library
-            .image(&pages[0].path, media_codec::DecodeLimits::unbounded())
-            .expect("decode page");
+        let bitmap = library.image(&pages[0].path, media_codec::DecodeLimits::unbounded()).expect("decode page");
         assert_eq!((bitmap.width, bitmap.height), (1600, 1200));
     }
 
@@ -1043,7 +1032,8 @@ mod tests {
     fn a_seam_page_refuses_a_single_shot_film() {
         let (json, mut production) = fixture();
         production.shots.truncate(1);
-        let error = write_seams(&json, &production, &out_dir().join("no-seam.png"), &StoryboardOptions::default()).expect_err("one shot has no seam");
+        let error =
+            write_seams(&json, &production, &out_dir().join("no-seam.png"), &StoryboardOptions::default()).expect_err("one shot has no seam");
         assert!(error.to_string().contains("at least two shots"), "{error}");
     }
 

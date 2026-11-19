@@ -131,15 +131,14 @@ fn number_value(number: f64) -> BsonValue {
 /// 被拒绝；单机上数值 `w > 1` 与非 `majority` 的名字模式被拒绝；单成员副本集
 /// 上数值 `w > 1` 判为不可满足（`100`），未知名字模式答 `79` 但写入仍执行。
 pub fn evaluate_write_concern(command: &BsonDocument, replica_set_name: Option<&str>) -> WriteConcernDecision {
-    let Some(raw) = command.get("writeConcern") else {
+    let Some(raw) = command.get("writeConcern")
+    else {
         return WriteConcernDecision::default();
     };
-    let BsonValue::Document(raw) = raw else {
+    let BsonValue::Document(raw) = raw
+    else {
         return WriteConcernDecision {
-            error: Some(CommandError::new(
-                14,
-                format!("\"writeConcern\" had the wrong type. Expected object, found {}", bson_type_name(raw)),
-            )),
+            error: Some(CommandError::new(14, format!("\"writeConcern\" had the wrong type. Expected object, found {}", bson_type_name(raw)))),
             ..WriteConcernDecision::default()
         };
     };
@@ -148,7 +147,8 @@ pub fn evaluate_write_concern(command: &BsonDocument, replica_set_name: Option<&
     let raw_w = raw.get("w");
     let w = raw_w.map_or(Some(1.0), unwrap_number);
 
-    let Some(w) = w else {
+    let Some(w) = w
+    else {
         let raw_w = raw_w.expect("a missing `w` defaults to one");
         if let BsonValue::String(name) = raw_w {
             // 名字模式只在副本集上有意义。
@@ -182,10 +182,7 @@ pub fn evaluate_write_concern(command: &BsonDocument, replica_set_name: Option<&
             return WriteConcernDecision::default();
         }
         return WriteConcernDecision {
-            error: Some(CommandError::new(
-                9,
-                format!("w has to be a number, string, or object; found: {}", bson_type_name(raw_w)),
-            )),
+            error: Some(CommandError::new(9, format!("w has to be a number, string, or object; found: {}", bson_type_name(raw_w)))),
             ..WriteConcernDecision::default()
         };
     };
@@ -227,34 +224,28 @@ pub fn evaluate_write_concern(command: &BsonDocument, replica_set_name: Option<&
 
 /// 数字回显：整数值不带小数点，与 JavaScript 的 `String(number)` 一致。
 fn scalar_text_number(number: f64) -> String {
-    if number.fract() == 0.0 && number.abs() < 1e21 {
-        format!("{}", number as i64)
-    }
-    else {
-        format!("{number}")
-    }
+    if number.fract() == 0.0 && number.abs() < 1e21 { format!("{}", number as i64) } else { format!("{number}") }
 }
 
 /// `$readPreference` 只做校验，路由仍是客户端的事；非法值返回错误。
 pub fn read_preference_error(command: &BsonDocument) -> Option<CommandError> {
-    let Some(raw) = command.get("$readPreference") else {
+    let Some(raw) = command.get("$readPreference")
+    else {
         return None;
     };
-    let BsonValue::Document(raw) = raw else {
-        return Some(CommandError::new(
-            14,
-            format!("$readPreference has incorrect type: expected object but got {}", bson_type_name(raw)),
-        ));
+    let BsonValue::Document(raw) = raw
+    else {
+        return Some(CommandError::new(14, format!("$readPreference has incorrect type: expected object but got {}", bson_type_name(raw))));
     };
-    let Some(mode) = raw.get("mode") else {
+    let Some(mode) = raw.get("mode")
+    else {
         return Some(CommandError::new(40414, "BSON field 'readPreference.mode' is missing but a required field"));
     };
     match mode {
         BsonValue::String(name) if READ_PREFERENCE_MODES.contains(&name.as_str()) => None,
-        BsonValue::String(name) => Some(CommandError::new(
-            2,
-            format!("Enumeration value '{name}' for field 'readPreference.mode' is not a valid value."),
-        )),
+        BsonValue::String(name) => {
+            Some(CommandError::new(2, format!("Enumeration value '{name}' for field 'readPreference.mode' is not a valid value.")))
+        }
         other => Some(CommandError::new(
             2,
             format!("Enumeration value '{}' for field 'readPreference.mode' is not a valid value.", scalar_text(other)),

@@ -1,10 +1,11 @@
-use std::string::String;
-use std::vec::Vec;
+use std::{string::String, vec::Vec};
 
-use super::capabilities::SourceCapabilities;
-use super::identity::{ContentIdentity, content_digest_of};
-use super::read::{ReadOutcome, ReadResult};
-use super::source::ByteSource;
+use super::{
+    capabilities::SourceCapabilities,
+    identity::{ContentIdentity, content_digest_of},
+    read::{ReadOutcome, ReadResult},
+    source::ByteSource,
+};
 
 /// In-memory [`ByteSource`] backed by a byte vector.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,12 +43,7 @@ impl ByteSource for MemorySource {
         let available = self.bytes.len() - offset;
         let to_copy = destination.len().min(available);
         destination[..to_copy].copy_from_slice(&self.bytes[offset..offset + to_copy]);
-        if to_copy == destination.len() {
-            Ok(ReadOutcome::Complete)
-        }
-        else {
-            Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 })
-        }
+        if to_copy == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 }) }
     }
 
     fn capabilities(&self) -> SourceCapabilities {

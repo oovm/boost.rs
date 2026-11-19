@@ -8,7 +8,10 @@ impl data_text_core::TokenType for SqlTokenType {
     const END_OF_STREAM: Self = Self::Eof;
 
     fn is_ignored(&self) -> bool {
-        matches!(self, SqlTokenType::Whitespace | SqlTokenType::Newline | SqlTokenType::Comment | SqlTokenType::LineComment | SqlTokenType::BlockComment)
+        matches!(
+            self,
+            SqlTokenType::Whitespace | SqlTokenType::Newline | SqlTokenType::Comment | SqlTokenType::LineComment | SqlTokenType::BlockComment
+        )
     }
 
     fn is_comment(&self) -> bool {
@@ -129,9 +132,43 @@ impl data_text_core::TokenType for SqlTokenType {
             | Self::With
             | Self::Rowid
             | Self::Cast => Keyword,
-            Self::Int | Self::Integer | Self::Varchar | Self::Char | Self::Text | Self::Date | Self::Time | Self::Timestamp | Self::Decimal | Self::Float | Self::Double | Self::Boolean | Self::Serial | Self::BigSerial => Keyword, /* Types are often keywords */
-            Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Equal | Self::NotEqual | Self::Less | Self::Greater | Self::LessEqual | Self::GreaterEqual | Self::Concat => Operator,
-            Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Comma | Self::Semicolon | Self::Dot | Self::Colon | Self::Question => Punctuation,
+            Self::Int
+            | Self::Integer
+            | Self::Varchar
+            | Self::Char
+            | Self::Text
+            | Self::Date
+            | Self::Time
+            | Self::Timestamp
+            | Self::Decimal
+            | Self::Float
+            | Self::Double
+            | Self::Boolean
+            | Self::Serial
+            | Self::BigSerial => Keyword, /* Types are often keywords */
+            Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Percent
+            | Self::Equal
+            | Self::NotEqual
+            | Self::Less
+            | Self::Greater
+            | Self::LessEqual
+            | Self::GreaterEqual
+            | Self::Concat => Operator,
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Comma
+            | Self::Semicolon
+            | Self::Dot
+            | Self::Colon
+            | Self::Question => Punctuation,
             Self::Error => Error,
             _ => UniversalTokenRole::None,
         }

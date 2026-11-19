@@ -261,7 +261,23 @@ impl ErlangElementType {
 
     /// Returns `true` if the element type is a punctuation.
     pub fn is_punctuation(&self) -> bool {
-        matches!(self, Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Comma | Self::Semicolon | Self::Dot | Self::Colon | Self::Arrow | Self::Pipe | Self::PipePipe | Self::Hash)
+        matches!(
+            self,
+            Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBrace
+                | Self::RightBrace
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::Comma
+                | Self::Semicolon
+                | Self::Dot
+                | Self::Colon
+                | Self::Arrow
+                | Self::Pipe
+                | Self::PipePipe
+                | Self::Hash
+        )
     }
 }
 

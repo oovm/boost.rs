@@ -1,7 +1,10 @@
-use data_text_core::{Builder, TextError, SourceText, parser::session::ParseSession};
+use data_text_core::{Builder, SourceText, TextError, parser::session::ParseSession};
 use data_text_wgsl::{
     WgslBuilder, WgslLanguage,
-    ast::{WgslAccessMode, WgslAddressSpace, WgslAssignOp, WgslBinaryOp, WgslExpression, WgslFunction, WgslItem, WgslRoot, WgslStatement, WgslType, WgslUnaryOp},
+    ast::{
+        WgslAccessMode, WgslAddressSpace, WgslAssignOp, WgslBinaryOp, WgslExpression, WgslFunction, WgslItem, WgslRoot, WgslStatement,
+        WgslType, WgslUnaryOp,
+    },
 };
 
 /// Builds the AST and the diagnostics for `source`.
@@ -57,7 +60,10 @@ fn parses_compute_fill() {
     assert_eq!(fill.attributes.len(), 2);
     assert_eq!(fill.attributes[0].name, "compute");
     assert_eq!(fill.attributes[1].name, "workgroup_size");
-    assert!(matches!(fill.attributes[1].args.as_slice(), [WgslExpression::IntegerLiteral(64), WgslExpression::IntegerLiteral(1), WgslExpression::IntegerLiteral(1)]));
+    assert!(matches!(
+        fill.attributes[1].args.as_slice(),
+        [WgslExpression::IntegerLiteral(64), WgslExpression::IntegerLiteral(1), WgslExpression::IntegerLiteral(1)]
+    ));
     assert_eq!(fill.params.len(), 1);
     assert_eq!(fill.params[0].name, "gid");
     assert_eq!(fill.params[0].attributes[0].name, "builtin");
@@ -108,7 +114,10 @@ fn parses_matmul_control_flow_and_precedence() {
             _ => None,
         })
         .collect();
-    assert_eq!(global_names, vec![("a", Some(WgslAccessMode::Read)), ("b", Some(WgslAccessMode::Read)), ("result", Some(WgslAccessMode::ReadWrite))]);
+    assert_eq!(
+        global_names,
+        vec![("a", Some(WgslAccessMode::Read)), ("b", Some(WgslAccessMode::Read)), ("result", Some(WgslAccessMode::ReadWrite))]
+    );
 
     let index_function = function(&root, "index");
     assert_eq!(index_function.return_type.as_ref().map(|ty| ty.name.as_str()), Some("u32"));
@@ -155,7 +164,11 @@ fn parses_matmul_control_flow_and_precedence() {
     }
 
     match update.as_deref() {
-        Some(WgslStatement::Assign { target: WgslExpression::Ident(target), op: WgslAssignOp::Assign, value: WgslExpression::Binary { op: WgslBinaryOp::Add, lhs, rhs } }) => {
+        Some(WgslStatement::Assign {
+            target: WgslExpression::Ident(target),
+            op: WgslAssignOp::Assign,
+            value: WgslExpression::Binary { op: WgslBinaryOp::Add, lhs, rhs },
+        }) => {
             assert_eq!(target, "k");
             assert!(matches!(lhs.as_ref(), WgslExpression::Ident(name) if name == "k"));
             assert!(matches!(rhs.as_ref(), WgslExpression::IntegerLiteral(1)));
@@ -212,7 +225,11 @@ fn parses_matmul_control_flow_and_precedence() {
     }
 
     match &matmul.body[6] {
-        WgslStatement::Assign { target: WgslExpression::Index { base, index }, op: WgslAssignOp::Assign, value: WgslExpression::Ident(value) } => {
+        WgslStatement::Assign {
+            target: WgslExpression::Index { base, index },
+            op: WgslAssignOp::Assign,
+            value: WgslExpression::Ident(value),
+        } => {
             assert!(matches!(base.as_ref(), WgslExpression::Ident(name) if name == "result"));
             assert!(matches!(index.as_ref(), WgslExpression::Call { callee, .. } if callee == "index"));
             assert_eq!(value, "sum");
@@ -403,7 +420,9 @@ fn control(x: u32) -> u32 {
         other => panic!("expected a `for` loop, got {other:?}"),
     }
 
-    assert!(matches!(&control.body[8], WgslStatement::Block(statements) if matches!(statements.as_slice(), [WgslStatement::Var { name, .. }] if name == "nested")));
+    assert!(
+        matches!(&control.body[8], WgslStatement::Block(statements) if matches!(statements.as_slice(), [WgslStatement::Var { name, .. }] if name == "nested"))
+    );
     assert!(matches!(&control.body[9], WgslStatement::Expr(WgslExpression::Ident(name)) if name == "x"));
     assert!(matches!(&control.body[10], WgslStatement::Return(Some(WgslExpression::Ident(name))) if name == "total"));
 }
@@ -418,7 +437,17 @@ fn parses_type_forms() {
     let types: Vec<_> = typed.params.iter().map(|param| (param.name.as_str(), param.ty.name.as_str(), type_args(&param.ty))).collect();
     assert_eq!(
         types,
-        vec![("a", "f32", vec![]), ("b", "i32", vec![]), ("c", "u32", vec![]), ("d", "bool", vec![]), ("e", "vec3", vec!["f32"]), ("f", "mat4x4", vec!["f32"]), ("g", "array", vec!["f32"]), ("h", "Custom", vec![]), ("i", "array", vec!["f32", "64"]),]
+        vec![
+            ("a", "f32", vec![]),
+            ("b", "i32", vec![]),
+            ("c", "u32", vec![]),
+            ("d", "bool", vec![]),
+            ("e", "vec3", vec!["f32"]),
+            ("f", "mat4x4", vec!["f32"]),
+            ("g", "array", vec!["f32"]),
+            ("h", "Custom", vec![]),
+            ("i", "array", vec!["f32", "64"]),
+        ]
     );
 }
 
@@ -433,7 +462,10 @@ fn reports_truncated_function() {
 #[test]
 fn reports_unknown_attribute() {
     let (root, diagnostics) = build("@mystery(1) fn f() {}");
-    assert!(diagnostics.iter().any(|error| format!("{error:?}").contains("unknown WGSL attribute")), "expected an unknown attribute diagnostic, got {diagnostics:?}");
+    assert!(
+        diagnostics.iter().any(|error| format!("{error:?}").contains("unknown WGSL attribute")),
+        "expected an unknown attribute diagnostic, got {diagnostics:?}"
+    );
     let f = function(&root, "f");
     assert_eq!(f.attributes.len(), 1);
     assert_eq!(f.attributes[0].name, "mystery");

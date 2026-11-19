@@ -429,7 +429,9 @@ impl TokenType for DartTokenType {
             Self::Error => UniversalTokenRole::Error,
             _ if self.is_keyword() => UniversalTokenRole::Keyword,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::IntegerLiteral | Self::DoubleLiteral | Self::StringLiteral | Self::BooleanLiteral | Self::NullLiteral => UniversalTokenRole::Literal,
+            Self::IntegerLiteral | Self::DoubleLiteral | Self::StringLiteral | Self::BooleanLiteral | Self::NullLiteral => {
+                UniversalTokenRole::Literal
+            }
             _ => UniversalTokenRole::None,
         }
     }

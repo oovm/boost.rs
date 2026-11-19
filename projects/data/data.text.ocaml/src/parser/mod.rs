@@ -109,7 +109,12 @@ impl<'config> OCamlParser<'config> {
 }
 
 impl<'config> Parser<OCamlLanguage> for OCamlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<OCamlLanguage>) -> ParseOutput<'a, OCamlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<OCamlLanguage>,
+    ) -> ParseOutput<'a, OCamlLanguage> {
         let lexer = OCamlLexer::new(self.language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();
@@ -131,7 +136,12 @@ impl<'config> Pratt<OCamlLanguage> for OCamlParser<'config> {
                 state.bump();
                 state.finish_at(cp, OCamlElementType::IdentifierExpr)
             }
-            Some(OCamlTokenType::IntegerLiteral) | Some(OCamlTokenType::FloatLiteral) | Some(OCamlTokenType::StringLiteral) | Some(OCamlTokenType::CharLiteral) | Some(OCamlTokenType::True) | Some(OCamlTokenType::False) => {
+            Some(OCamlTokenType::IntegerLiteral)
+            | Some(OCamlTokenType::FloatLiteral)
+            | Some(OCamlTokenType::StringLiteral)
+            | Some(OCamlTokenType::CharLiteral)
+            | Some(OCamlTokenType::True)
+            | Some(OCamlTokenType::False) => {
                 state.bump();
                 state.finish_at(cp, OCamlElementType::LiteralExpr)
             }
@@ -155,12 +165,19 @@ impl<'config> Pratt<OCamlLanguage> for OCamlParser<'config> {
         };
 
         match kind {
-            OCamlTokenType::Minus | OCamlTokenType::MinusDot | OCamlTokenType::Tilde => unary(state, kind, 12, OCamlElementType::UnaryExpr.into(), |s, p| PrattParser::parse(s, p, self)),
+            OCamlTokenType::Minus | OCamlTokenType::MinusDot | OCamlTokenType::Tilde => {
+                unary(state, kind, 12, OCamlElementType::UnaryExpr.into(), |s, p| PrattParser::parse(s, p, self))
+            }
             _ => self.primary(state),
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, OCamlLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, OCamlLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, OCamlLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, OCamlLanguage>> {
         let kind = state.peek_kind()?;
 
         let (prec, assoc) = match kind {
@@ -168,7 +185,12 @@ impl<'config> Pratt<OCamlLanguage> for OCamlParser<'config> {
             OCamlTokenType::Star | OCamlTokenType::Slash | OCamlTokenType::Percent => (11, Associativity::Left),
             OCamlTokenType::Plus | OCamlTokenType::Minus => (10, Associativity::Left),
             OCamlTokenType::At => (9, Associativity::Right),
-            OCamlTokenType::Equal | OCamlTokenType::NotEqual | OCamlTokenType::Less | OCamlTokenType::Greater | OCamlTokenType::LessEqual | OCamlTokenType::GreaterEqual => (8, Associativity::Left),
+            OCamlTokenType::Equal
+            | OCamlTokenType::NotEqual
+            | OCamlTokenType::Less
+            | OCamlTokenType::Greater
+            | OCamlTokenType::LessEqual
+            | OCamlTokenType::GreaterEqual => (8, Associativity::Left),
             OCamlTokenType::And => (7, Associativity::Right),
             OCamlTokenType::Or => (6, Associativity::Right),
             OCamlTokenType::Semicolon => (5, Associativity::Right),

@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::language::SwiftLanguage;
 pub use crate::lexer::token_type::SwiftTokenType;
-use data_text_core::{Lexer, LexerCache, LexerState, TextError, TextEdit, lexer::LexOutput, source::Source};
+use data_text_core::{Lexer, LexerCache, LexerState, TextEdit, TextError, lexer::LexOutput, source::Source};
 
 pub(crate) type State<'a, S> = LexerState<'a, S, SwiftLanguage>;
 
@@ -15,7 +15,12 @@ pub struct SwiftLexer<'config> {
 }
 
 impl<'config> Lexer<SwiftLanguage> for SwiftLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<SwiftLanguage>) -> LexOutput<SwiftLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<SwiftLanguage>,
+    ) -> LexOutput<SwiftLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

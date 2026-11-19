@@ -53,11 +53,8 @@ impl ServeBackend for KvBackend {
     }
 
     fn kv_get(&self, key: &str) -> DatabaseResult<Option<Vec<u8>>> {
-        let command = KeyValueCommand {
-            namespace: Namespace(DEFAULT_NAMESPACE.to_string()),
-            key: key.as_bytes().to_vec(),
-            action: KeyValueAction::Get,
-        };
+        let command =
+            KeyValueCommand { namespace: Namespace(DEFAULT_NAMESPACE.to_string()), key: key.as_bytes().to_vec(), action: KeyValueAction::Get };
         match self.executor.execute(None, command) {
             Ok(KeyValueResult::Get(value)) => Ok(value),
             Ok(_) => Err(DatabaseError::Protocol { message: "executor returned unexpected result for Get".to_owned() }),
@@ -66,11 +63,8 @@ impl ServeBackend for KvBackend {
     }
 
     fn kv_put(&self, key: String, value: Vec<u8>) -> DatabaseResult<()> {
-        let command = KeyValueCommand {
-            namespace: Namespace(DEFAULT_NAMESPACE.to_string()),
-            key: key.into_bytes(),
-            action: KeyValueAction::Put(value),
-        };
+        let command =
+            KeyValueCommand { namespace: Namespace(DEFAULT_NAMESPACE.to_string()), key: key.into_bytes(), action: KeyValueAction::Put(value) };
         match self.executor.execute(None, command) {
             Ok(KeyValueResult::Put { .. }) => Ok(()),
             Ok(_) => Err(DatabaseError::Protocol { message: "executor returned unexpected result for Put".to_owned() }),
@@ -159,7 +153,10 @@ mod tests {
                 tokens: tokens
                     .iter()
                     .map(|token| {
-                        ((*token).to_owned(), Principal { name: "wire".to_owned(), kind: PrincipalKind::Service, roles: vec![Role::SchemaAdmin] })
+                        (
+                            (*token).to_owned(),
+                            Principal { name: "wire".to_owned(), kind: PrincipalKind::Service, roles: vec![Role::SchemaAdmin] },
+                        )
                     })
                     .collect(),
             },

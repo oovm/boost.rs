@@ -51,7 +51,9 @@ impl<'config> VbNetParser<'config> {
                     state.bump();
                     if state.at(VbNetTokenType::Of) {
                         state.bump();
-                        while state.not_at_end() && (state.at(VbNetTokenType::Identifier) || state.at(VbNetTokenType::Dot) || state.at(VbNetTokenType::Comma)) {
+                        while state.not_at_end()
+                            && (state.at(VbNetTokenType::Identifier) || state.at(VbNetTokenType::Dot) || state.at(VbNetTokenType::Comma))
+                        {
                             if state.at(VbNetTokenType::Identifier) {
                                 state.bump();
                             }
@@ -111,7 +113,9 @@ impl<'config> VbNetParser<'config> {
                     state.bump();
                     if state.at(VbNetTokenType::Of) {
                         state.bump();
-                        while state.not_at_end() && (state.at(VbNetTokenType::Identifier) || state.at(VbNetTokenType::Dot) || state.at(VbNetTokenType::Comma)) {
+                        while state.not_at_end()
+                            && (state.at(VbNetTokenType::Identifier) || state.at(VbNetTokenType::Dot) || state.at(VbNetTokenType::Comma))
+                        {
                             if state.at(VbNetTokenType::Identifier) {
                                 state.bump();
                             }
@@ -201,11 +205,13 @@ impl<'config> VbNetParser<'config> {
 
         while state.not_at_end() && state.at(VbNetTokenType::Case) {
             state.bump();
-            while state.not_at_end() && !state.at(VbNetTokenType::Case) && !state.at(VbNetTokenType::Default) && !state.at(VbNetTokenType::End) {
+            while state.not_at_end() && !state.at(VbNetTokenType::Case) && !state.at(VbNetTokenType::Default) && !state.at(VbNetTokenType::End)
+            {
                 self.parse_expression(state)?;
                 if state.at(VbNetTokenType::Comma) { state.bump() } else { break }
             }
-            while state.not_at_end() && !state.at(VbNetTokenType::Case) && !state.at(VbNetTokenType::Default) && !state.at(VbNetTokenType::End) {
+            while state.not_at_end() && !state.at(VbNetTokenType::Case) && !state.at(VbNetTokenType::Default) && !state.at(VbNetTokenType::End)
+            {
                 self.parse_statement(state)?;
             }
         }
@@ -246,7 +252,8 @@ impl<'config> VbNetParser<'config> {
                     }
                 }
             }
-            while state.not_at_end() && !state.at(VbNetTokenType::Catch) && !state.at(VbNetTokenType::Finally) && !state.at(VbNetTokenType::End) {
+            while state.not_at_end() && !state.at(VbNetTokenType::Catch) && !state.at(VbNetTokenType::Finally) && !state.at(VbNetTokenType::End)
+            {
                 self.parse_statement(state)?;
             }
         }
@@ -304,7 +311,12 @@ impl<'config> VbNetParser<'config> {
 
         if let Some(kind) = state.peek_kind() {
             match kind {
-                VbNetTokenType::Sub | VbNetTokenType::Function | VbNetTokenType::For | VbNetTokenType::While | VbNetTokenType::Do | VbNetTokenType::Try => {
+                VbNetTokenType::Sub
+                | VbNetTokenType::Function
+                | VbNetTokenType::For
+                | VbNetTokenType::While
+                | VbNetTokenType::Do
+                | VbNetTokenType::Try => {
                     state.bump();
                 }
                 _ => {}

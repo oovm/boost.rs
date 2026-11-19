@@ -1,5 +1,5 @@
 use crate::{ValkyrieLanguage, ast::*, builder::ValkyrieBuilder, lexer::token_type::ValkyrieTokenType};
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
     pub(crate) fn build_object<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
@@ -10,7 +10,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -40,7 +43,9 @@ impl<'config> ValkyrieBuilder<'config> {
                                                         }
                                                     }
                                                     crate::parser::element_type::ValkyrieElementType::IdentifierExpression => {
-                                                        if let Some(expr) = self.recover_member(self.build_identifier_expr(expr_n.clone(), source)) {
+                                                        if let Some(expr) =
+                                                            self.recover_member(self.build_identifier_expr(expr_n.clone(), source))
+                                                        {
                                                             if let TermExpression::NamePath(path) = expr {
                                                                 if let Some(ident) = path.parts.first().cloned() {
                                                                     fields.push((ident, None));
@@ -76,7 +81,11 @@ impl<'config> ValkyrieBuilder<'config> {
     ///
     /// Supports both new syntax (`:` separator) and deprecated syntax (`=` separator).
     /// When the deprecated `=` syntax is detected, a warning is logged.
-    fn extract_object_field<S: Source + ?Sized>(&self, node: &RedNode<ValkyrieLanguage>, source: &S) -> Result<Option<(Identifier, TermExpression)>, TextError> {
+    fn extract_object_field<S: Source + ?Sized>(
+        &self,
+        node: &RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<Option<(Identifier, TermExpression)>, TextError> {
         let mut field_name = None;
         let mut value = None;
         let mut separator_found = false;
@@ -85,7 +94,10 @@ impl<'config> ValkyrieBuilder<'config> {
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    ValkyrieTokenType::Whitespace | ValkyrieTokenType::Newline | ValkyrieTokenType::LineComment | ValkyrieTokenType::BlockComment => continue,
+                    ValkyrieTokenType::Whitespace
+                    | ValkyrieTokenType::Newline
+                    | ValkyrieTokenType::LineComment
+                    | ValkyrieTokenType::BlockComment => continue,
                     ValkyrieTokenType::Eq => {
                         if !separator_found {
                             separator_found = true;
@@ -129,7 +141,10 @@ impl<'config> ValkyrieBuilder<'config> {
 
         if uses_deprecated_syntax {
             if let Some(ref name) = field_name {
-                eprintln!("Warning: Use of deprecated '=' syntax in object field at offset {}. Use ':' instead. Field: '{}'", name.span.start, name.name);
+                eprintln!(
+                    "Warning: Use of deprecated '=' syntax in object field at offset {}. Use ':' instead. Field: '{}'",
+                    name.span.start, name.name
+                );
             }
         }
 

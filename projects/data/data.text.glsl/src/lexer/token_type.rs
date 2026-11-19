@@ -139,9 +139,19 @@ impl TokenType for GlslTokenType {
             | Self::Decrement
             | Self::Arrow => UniversalTokenRole::Operator,
 
-            Self::Conditional | Self::LeftParen | Self::RightParen | Self::LeftBracket | Self::RightBracket | Self::LeftBrace | Self::RightBrace | Self::Semicolon | Self::Comma | Self::Dot | Self::Colon | Self::Question | Self::Hash => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::Conditional
+            | Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::Semicolon
+            | Self::Comma
+            | Self::Dot
+            | Self::Colon
+            | Self::Question
+            | Self::Hash => UniversalTokenRole::Punctuation,
 
             _ => UniversalTokenRole::None,
         }

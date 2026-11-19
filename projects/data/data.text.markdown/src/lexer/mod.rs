@@ -405,11 +405,16 @@ impl<'config> MarkdownLexer<'config> {
             state.advance(1);
 
             if let Some('!') = state.peek() {
-                if state.source().get_char_at(state.get_position() + 1) == Some('-') && state.source().get_char_at(state.get_position() + 2) == Some('-') {
+                if state.source().get_char_at(state.get_position() + 1) == Some('-')
+                    && state.source().get_char_at(state.get_position() + 2) == Some('-')
+                {
                     state.advance(3);
                     let mut found_end = false;
                     while let Some(ch) = state.peek() {
-                        if ch == '-' && state.source().get_char_at(state.get_position() + 1) == Some('-') && state.source().get_char_at(state.get_position() + 2) == Some('>') {
+                        if ch == '-'
+                            && state.source().get_char_at(state.get_position() + 1) == Some('-')
+                            && state.source().get_char_at(state.get_position() + 2) == Some('>')
+                        {
                             state.advance(3);
                             found_end = true;
                             break;
@@ -558,18 +563,35 @@ impl<'config> MarkdownLexer<'config> {
 
         let start_pos = state.get_position();
 
-        if state.source().get_char_at(start_pos) == Some('h') && state.source().get_char_at(start_pos + 1) == Some('t') && state.source().get_char_at(start_pos + 2) == Some('t') && state.source().get_char_at(start_pos + 3) == Some('p') {
+        if state.source().get_char_at(start_pos) == Some('h')
+            && state.source().get_char_at(start_pos + 1) == Some('t')
+            && state.source().get_char_at(start_pos + 2) == Some('t')
+            && state.source().get_char_at(start_pos + 3) == Some('p')
+        {
             let mut pos = start_pos + 4;
             if state.source().get_char_at(pos) == Some('s') {
                 pos += 1;
             }
 
-            if state.source().get_char_at(pos) == Some(':') && state.source().get_char_at(pos + 1) == Some('/') && state.source().get_char_at(pos + 2) == Some('/') {
+            if state.source().get_char_at(pos) == Some(':')
+                && state.source().get_char_at(pos + 1) == Some('/')
+                && state.source().get_char_at(pos + 2) == Some('/')
+            {
                 pos += 3;
 
                 while pos < state.source().length() {
                     if let Some(ch) = state.source().get_char_at(pos) {
-                        if ch.is_alphanumeric() || ch == '-' || ch == '_' || ch == '.' || ch == '/' || ch == '?' || ch == '=' || ch == '&' || ch == '#' || ch == '%' {
+                        if ch.is_alphanumeric()
+                            || ch == '-'
+                            || ch == '_'
+                            || ch == '.'
+                            || ch == '/'
+                            || ch == '?'
+                            || ch == '='
+                            || ch == '&'
+                            || ch == '#'
+                            || ch == '%'
+                        {
                             pos += 1;
                         }
                         else {
@@ -602,7 +624,8 @@ impl<'config> MarkdownLexer<'config> {
 
         while let Some(ch) = state.peek() {
             match ch {
-                ' ' | '\t' | '\n' | '\r' | '#' | '*' | '_' | '`' | '~' | '[' | ']' | '(' | ')' | '<' | '>' | '|' | '-' | '+' | '.' | ':' | '!' | '\\' | '$' | '^' => break,
+                ' ' | '\t' | '\n' | '\r' | '#' | '*' | '_' | '`' | '~' | '[' | ']' | '(' | ')' | '<' | '>' | '|' | '-' | '+' | '.' | ':'
+                | '!' | '\\' | '$' | '^' => break,
                 '{' if self.config.allow_mdx => break,
                 _ => {
                     state.advance(ch.len_utf8());
@@ -621,7 +644,12 @@ impl<'config> MarkdownLexer<'config> {
 }
 
 impl<'config> Lexer<MarkdownLanguage> for MarkdownLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<MarkdownLanguage>) -> LexOutput<MarkdownLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<MarkdownLanguage>,
+    ) -> LexOutput<MarkdownLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

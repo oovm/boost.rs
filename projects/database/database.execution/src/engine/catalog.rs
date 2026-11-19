@@ -367,7 +367,8 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_input_vos::Res
                             let (columns, declared) = unique_groups.entry(group.clone()).or_default();
                             if columns.is_empty() {
                                 *declared = predicate.clone();
-                            } else if *declared != predicate {
+                            }
+                            else if *declared != predicate {
                                 return Err(Error::Schema {
                                     message: format!("unique group `{group}` spells conflicting predicates on table `{name}`"),
                                 });

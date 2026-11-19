@@ -18,7 +18,10 @@ pub(crate) fn parse_expression_statement<'a, S: Source + ?Sized, P: Pratt<JavaLa
 }
 
 /// Parse an anonymous class expression
-pub(crate) fn parse_anonymous_class<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_anonymous_class<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     let cp = state.checkpoint();
     parser.parse_type(state)?;
@@ -64,7 +67,10 @@ pub(crate) fn skip_trivia<'a, S: Source + ?Sized>(state: &mut State<'a, S>) {
 }
 
 /// Pratt parser primary expression handler
-pub(crate) fn primary<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> &'a GreenNode<'a, JavaLanguage> {
+pub(crate) fn primary<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> &'a GreenNode<'a, JavaLanguage> {
     use JavaTokenType::*;
     skip_trivia(state);
     let cp = state.checkpoint();
@@ -73,7 +79,12 @@ pub(crate) fn primary<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::pa
             state.bump();
             state.finish_at(cp, JavaElementType::Identifier)
         }
-        Some(IntegerLiteral) | Some(FloatingPointLiteral) | Some(BooleanLiteral) | Some(CharacterLiteral) | Some(StringLiteral) | Some(NullLiteral) => {
+        Some(IntegerLiteral)
+        | Some(FloatingPointLiteral)
+        | Some(BooleanLiteral)
+        | Some(CharacterLiteral)
+        | Some(StringLiteral)
+        | Some(NullLiteral) => {
             state.bump();
             state.finish_at(cp, JavaElementType::LiteralExpression)
         }
@@ -138,7 +149,10 @@ pub(crate) fn primary<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::pa
 }
 
 /// Pratt parser prefix expression handler
-pub(crate) fn prefix<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> &'a GreenNode<'a, JavaLanguage> {
+pub(crate) fn prefix<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> &'a GreenNode<'a, JavaLanguage> {
     use JavaTokenType::*;
     skip_trivia(state);
     let cp = state.checkpoint();
@@ -174,13 +188,29 @@ pub(crate) fn prefix<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::par
 }
 
 /// Pratt parser infix expression handler
-pub(crate) fn infix<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(parser: &P, state: &mut State<'a, S>, left: &'a GreenNode<'a, JavaLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, JavaLanguage>> {
+pub(crate) fn infix<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::parse_declaration::DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+    left: &'a GreenNode<'a, JavaLanguage>,
+    min_precedence: u8,
+) -> Option<&'a GreenNode<'a, JavaLanguage>> {
     use JavaTokenType::*;
     skip_trivia(state);
     let kind = state.peek_kind()?;
 
     let (prec, assoc) = match kind {
-        Assign | PlusEquals | MinusEquals | AsteriskEquals | SlashEquals | PercentEquals | LeftShiftEquals | RightShiftEquals | UnsignedRightShiftEquals | AmpersandEquals | PipeEquals | CaretEquals => (1, Associativity::Right),
+        Assign
+        | PlusEquals
+        | MinusEquals
+        | AsteriskEquals
+        | SlashEquals
+        | PercentEquals
+        | LeftShiftEquals
+        | RightShiftEquals
+        | UnsignedRightShiftEquals
+        | AmpersandEquals
+        | PipeEquals
+        | CaretEquals => (1, Associativity::Right),
         Question => (2, Associativity::Right),
         PipePipe => (3, Associativity::Left),
         AmpersandAmpersand => (4, Associativity::Left),
@@ -208,7 +238,18 @@ pub(crate) fn infix<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + super::pars
             state.bump();
             Some(state.finish_at(cp, JavaElementType::PostfixExpression))
         }
-        Assign | PlusEquals | MinusEquals | AsteriskEquals | SlashEquals | PercentEquals | LeftShiftEquals | RightShiftEquals | UnsignedRightShiftEquals | AmpersandEquals | PipeEquals | CaretEquals => {
+        Assign
+        | PlusEquals
+        | MinusEquals
+        | AsteriskEquals
+        | SlashEquals
+        | PercentEquals
+        | LeftShiftEquals
+        | RightShiftEquals
+        | UnsignedRightShiftEquals
+        | AmpersandEquals
+        | PipeEquals
+        | CaretEquals => {
             Some(binary(state, left, kind, prec, assoc, JavaElementType::AssignmentExpression.into(), |s, p| PrattParser::parse(s, p, parser)))
         }
         Question => {

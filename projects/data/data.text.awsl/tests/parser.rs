@@ -1,4 +1,6 @@
-use data_text_awsl::{AwslAttributeValue, AwslDirectiveKind, AwslElement, AwslParser, AwslTemplateNode, AwslTextPart, validate_component_contract};
+use data_text_awsl::{
+    AwslAttributeValue, AwslDirectiveKind, AwslElement, AwslParser, AwslTemplateNode, AwslTextPart, validate_component_contract,
+};
 
 fn expect_element<'a>(node: &'a AwslTemplateNode) -> &'a AwslElement {
     match node {
@@ -231,7 +233,11 @@ fn accepts_quoted_static_attribute_values() {
 #[test]
 fn rejects_braced_attribute_values() {
     let error = AwslParser::parse_root("<widget><Text title={title} /></widget>").expect_err("braced attr");
-    assert!(error.message.contains("quoted") || error.message.contains("static") || error.message.contains("braced"), "unexpected error: {}", error.message);
+    assert!(
+        error.message.contains("quoted") || error.message.contains("static") || error.message.contains("braced"),
+        "unexpected error: {}",
+        error.message
+    );
 }
 
 #[test]
@@ -295,7 +301,8 @@ fn text_region_interpolation_splits_into_nodes() {
     let source = "<widget><div>hello {count + 1}!</div></widget>";
     let root = AwslParser::parse_root(source).expect("parse text interpolation");
     let div = expect_element(&root.template[0]);
-    let nodes: Vec<&AwslTemplateNode> = div.children.iter().filter(|node| !matches!(node, AwslTemplateNode::Text { content, .. } if content.trim().is_empty())).collect();
+    let nodes: Vec<&AwslTemplateNode> =
+        div.children.iter().filter(|node| !matches!(node, AwslTemplateNode::Text { content, .. } if content.trim().is_empty())).collect();
     assert_eq!(nodes.len(), 3, "期望 Text/Interpolation/Text，实际 {:?}", div.children);
     assert!(matches!(&nodes[0], AwslTemplateNode::Text { content, .. } if content == "hello "));
     assert!(matches!(&nodes[1], AwslTemplateNode::Interpolation { expr, .. } if expr == "count + 1"));

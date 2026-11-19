@@ -121,10 +121,7 @@ impl<'a> Eraser<'a> {
             if let Some(depth) = var_decl_depth {
                 if depth >= frames.len() && i > 0 {
                     let previous = self.tokens[i - 1];
-                    if self.has_newline(previous.end, token.start)
-                        && ends_statement(previous.kind)
-                        && !continues_expression(token.kind)
-                    {
+                    if self.has_newline(previous.end, token.start) && ends_statement(previous.kind) && !continues_expression(token.kind) {
                         var_decl_depth = None;
                     }
                 }
@@ -154,9 +151,7 @@ impl<'a> Eraser<'a> {
                     }
                     if let Some(open) = self.import_specifier_brace(i) {
                         let list = self.erase_specifier_list(open)?;
-                        let clause_binding = self.tokens[i + 1..open]
-                            .iter()
-                            .any(|token| matches!(token.kind, T::IdentifierName | T::Star));
+                        let clause_binding = self.tokens[i + 1..open].iter().any(|token| matches!(token.kind, T::IdentifierName | T::Star));
                         if list.removed && list.remaining == 0 && !clause_binding {
                             let end = self.statement_end(i);
                             self.delete_to(i, end);
@@ -183,25 +178,18 @@ impl<'a> Eraser<'a> {
                     i += 1;
                 }
                 T::Interface => {
-                    let statement_start = matches!(
-                        prev,
-                        None | Some(
-                            T::Semicolon | T::LeftBrace | T::RightBrace | T::Export | T::Default
-                        )
-                    );
+                    let statement_start = matches!(prev, None | Some(T::Semicolon | T::LeftBrace | T::RightBrace | T::Export | T::Default));
                     if !statement_start {
                         i += 1;
                         continue;
                     }
-                    let start = if prev == Some(T::Export) {
-                        self.tokens[i - 1].start
-                    } else {
-                        token.start
-                    };
-                    let Some(body) = self.find_body_brace(i + 1) else {
+                    let start = if prev == Some(T::Export) { self.tokens[i - 1].start } else { token.start };
+                    let Some(body) = self.find_body_brace(i + 1)
+                    else {
                         return Err("type erasure cannot find an `interface` body to remove".into());
                     };
-                    let Some(close) = self.matching(body) else {
+                    let Some(close) = self.matching(body)
+                    else {
                         return Err("type erasure found an unterminated `interface` body".into());
                     };
                     self.delete(start, self.tokens[close].end);
@@ -214,20 +202,14 @@ impl<'a> Eraser<'a> {
                         i += 1;
                         continue;
                     }
-                    let start = if prev == Some(T::Export) {
-                        self.tokens[i - 1].start
-                    } else {
-                        token.start
-                    };
+                    let start = if prev == Some(T::Export) { self.tokens[i - 1].start } else { token.start };
                     let end = if reexport {
                         self.statement_end(i)
-                    } else {
-                        let Some(equal) = (i + 1..self.tokens.len()).find(|&index| {
-                            matches!(
-                                self.tokens[index].kind,
-                                T::Equal | T::Semicolon | T::LeftBrace
-                            )
-                        }) else {
+                    }
+                    else {
+                        let Some(equal) =
+                            (i + 1..self.tokens.len()).find(|&index| matches!(self.tokens[index].kind, T::Equal | T::Semicolon | T::LeftBrace))
+                        else {
                             i += 1;
                             continue;
                         };
@@ -236,9 +218,7 @@ impl<'a> Eraser<'a> {
                             continue;
                         }
                         match self.type_end(equal + 1, false) {
-                            Some(span) if self.kind(span.next) == Some(T::Semicolon) => {
-                                span.next + 1
-                            }
+                            Some(span) if self.kind(span.next) == Some(T::Semicolon) => span.next + 1,
                             Some(span) => span.next,
                             None => equal + 1,
                         }
@@ -248,10 +228,7 @@ impl<'a> Eraser<'a> {
                     i = end;
                 }
                 T::Declare => {
-                    let statement_start = matches!(
-                        prev,
-                        None | Some(T::Semicolon | T::LeftBrace | T::RightBrace | T::Export)
-                    );
+                    let statement_start = matches!(prev, None | Some(T::Semicolon | T::LeftBrace | T::RightBrace | T::Export));
                     let declares = matches!(
                         self.kind(i + 1),
                         Some(
@@ -278,19 +255,11 @@ impl<'a> Eraser<'a> {
                     i += 1;
                 }
                 T::Enum | T::Namespace => {
-                    let statement_start = matches!(
-                        prev,
-                        None | Some(
-                            T::Semicolon | T::LeftBrace | T::RightBrace | T::Export | T::Declare
-                        )
-                    );
-                    let declares =
-                        matches!(self.kind(i + 1), Some(T::IdentifierName | T::StringLiteral));
+                    let statement_start = matches!(prev, None | Some(T::Semicolon | T::LeftBrace | T::RightBrace | T::Export | T::Declare));
+                    let declares = matches!(self.kind(i + 1), Some(T::IdentifierName | T::StringLiteral));
                     if statement_start && declares {
                         let keyword = if token.kind == T::Enum { "enum" } else { "namespace" };
-                        return Err(format!(
-                            "type erasure does not support `{keyword}` declarations"
-                        ));
+                        return Err(format!("type erasure does not support `{keyword}` declarations"));
                     }
                     i += 1;
                 }
@@ -302,21 +271,14 @@ impl<'a> Eraser<'a> {
                     i += 1;
                 }
                 T::Implements => {
-                    let header = pending_class
-                        || matches!(
-                            prev,
-                            Some(T::IdentifierName | T::RightParen | T::RightBrace | T::Greater)
-                        );
+                    let header = pending_class || matches!(prev, Some(T::IdentifierName | T::RightParen | T::RightBrace | T::Greater));
                     if !header {
                         i += 1;
                         continue;
                     }
-                    let brace = (i + 1..self.tokens.len())
-                        .find(|&index| self.tokens[index].kind == T::LeftBrace);
+                    let brace = (i + 1..self.tokens.len()).find(|&index| self.tokens[index].kind == T::LeftBrace);
                     if let Some(brace) = brace {
-                        let interrupted = self.tokens[i + 1..brace]
-                            .iter()
-                            .any(|token| matches!(token.kind, T::Semicolon | T::RightBrace));
+                        let interrupted = self.tokens[i + 1..brace].iter().any(|token| matches!(token.kind, T::Semicolon | T::RightBrace));
                         if !interrupted {
                             self.delete(token.start, self.tokens[brace].start);
                             i = brace;
@@ -329,9 +291,11 @@ impl<'a> Eraser<'a> {
                     let kind = if pending_class {
                         pending_class = false;
                         FrameKind::ClassBody
-                    } else if is_object_literal_brace(prev) {
+                    }
+                    else if is_object_literal_brace(prev) {
                         FrameKind::ObjectLiteral
-                    } else {
+                    }
+                    else {
                         FrameKind::Block
                     };
                     frames.push(Frame { kind, ternary: 0 });
@@ -347,11 +311,7 @@ impl<'a> Eraser<'a> {
                     i += 1;
                 }
                 T::LeftParen => {
-                    let kind = if self.is_params_paren(i, prev) {
-                        FrameKind::Params
-                    } else {
-                        FrameKind::Paren
-                    };
+                    let kind = if self.is_params_paren(i, prev) { FrameKind::Params } else { FrameKind::Paren };
                     frames.push(Frame { kind, ternary: 0 });
                     i += 1;
                 }
@@ -372,17 +332,13 @@ impl<'a> Eraser<'a> {
                     i += 1;
                 }
                 T::Less => {
-                    let adjacent = i > 0
-                        && self.tokens[i - 1].kind == T::IdentifierName
-                        && self.tokens[i - 1].end == token.start;
-                    let Some(close) = self.matching_angle(i) else {
+                    let adjacent = i > 0 && self.tokens[i - 1].kind == T::IdentifierName && self.tokens[i - 1].end == token.start;
+                    let Some(close) = self.matching_angle(i)
+                    else {
                         i += 1;
                         continue;
                     };
-                    let continues = matches!(
-                        self.kind(close + 1),
-                        Some(T::LeftParen | T::LeftBrace | T::Extends | T::Implements)
-                    );
+                    let continues = matches!(self.kind(close + 1), Some(T::LeftParen | T::LeftBrace | T::Extends | T::Implements));
                     if adjacent && continues {
                         self.delete(token.start, self.tokens[close].end);
                         i = close + 1;
@@ -398,10 +354,7 @@ impl<'a> Eraser<'a> {
                                 continue;
                             }
                             _ => {
-                                return Err(format!(
-                                    "type erasure cannot find an expression after a `<…>` assertion at byte {}",
-                                    token.start
-                                ));
+                                return Err(format!("type erasure cannot find an expression after a `<…>` assertion at byte {}", token.start));
                             }
                         }
                     }
@@ -419,7 +372,8 @@ impl<'a> Eraser<'a> {
                             i += 1;
                             continue;
                         }
-                    } else if root_ternary > 0 {
+                    }
+                    else if root_ternary > 0 {
                         root_ternary -= 1;
                         i += 1;
                         continue;
@@ -438,26 +392,17 @@ impl<'a> Eraser<'a> {
                     let next = self.kind(i + 1);
                     let member = matches!(frame, Some(FrameKind::ClassBody));
                     let params = matches!(frame, Some(FrameKind::Params));
-                    let optional = if can_end_binding(prev.unwrap_or(T::Eof)) && (member || params)
-                    {
+                    let optional = if can_end_binding(prev.unwrap_or(T::Eof)) && (member || params) {
                         match next {
-                            Some(
-                                T::Colon
-                                | T::Comma
-                                | T::RightParen
-                                | T::Equal
-                                | T::Semicolon
-                                | T::LeftBrace,
-                            ) => true,
+                            Some(T::Colon | T::Comma | T::RightParen | T::Equal | T::Semicolon | T::LeftBrace) => true,
                             Some(T::LeftParen) if member => self
                                 .matching(i + 1)
                                 .and_then(|close| self.kind(close + 1))
-                                .is_some_and(|kind| {
-                                    matches!(kind, T::Colon | T::LeftBrace | T::Semicolon)
-                                }),
+                                .is_some_and(|kind| matches!(kind, T::Colon | T::LeftBrace | T::Semicolon)),
                             _ => false,
                         }
-                    } else {
+                    }
+                    else {
                         false
                     };
                     if optional {
@@ -467,15 +412,15 @@ impl<'a> Eraser<'a> {
                     }
                     if let Some(frame) = frames.last_mut() {
                         frame.ternary += 1;
-                    } else {
+                    }
+                    else {
                         root_ternary += 1;
                     }
                     i += 1;
                 }
                 T::Exclamation => {
                     let next = self.kind(i + 1);
-                    let postfix =
-                        self.ends_expression_at(i) && next.map_or(true, is_after_non_null);
+                    let postfix = self.ends_expression_at(i) && next.map_or(true, is_after_non_null);
                     if postfix {
                         self.delete_token(i);
                     }
@@ -486,10 +431,7 @@ impl<'a> Eraser<'a> {
                     if cast {
                         let start = i + 1;
                         if start >= self.tokens.len() || !can_start_type(self.tokens[start].kind) {
-                            return Err(format!(
-                                "type erasure cannot find a type after `as` at byte {}",
-                                token.start
-                            ));
+                            return Err(format!("type erasure cannot find a type after `as` at byte {}", token.start));
                         }
                         if let Some(span) = self.type_end(start, true) {
                             self.delete(self.space_trimmed_start(i), span.end);
@@ -501,14 +443,8 @@ impl<'a> Eraser<'a> {
                 }
                 T::Public | T::Private | T::Protected | T::Readonly | T::Abstract | T::Override => {
                     let name_like = self.kind(i + 1).is_some_and(|kind| {
-                        matches!(
-                            kind,
-                            T::IdentifierName
-                                | T::StringLiteral
-                                | T::NumericLiteral
-                                | T::LeftBracket
-                                | T::Star
-                        ) || is_member_name_keyword(kind)
+                        matches!(kind, T::IdentifierName | T::StringLiteral | T::NumericLiteral | T::LeftBracket | T::Star)
+                            || is_member_name_keyword(kind)
                     });
                     let property_access = matches!(prev, Some(T::Dot | T::QuestionDot));
                     if name_like && !property_access {
@@ -527,10 +463,7 @@ impl<'a> Eraser<'a> {
                     if is_satisfies && self.ends_expression_at(i) && !self.in_import_clause(i) {
                         let start = i + 1;
                         if start >= self.tokens.len() || !can_start_type(self.tokens[start].kind) {
-                            return Err(format!(
-                                "type erasure cannot find a type after `satisfies` at byte {}",
-                                token.start
-                            ));
+                            return Err(format!("type erasure cannot find a type after `satisfies` at byte {}", token.start));
                         }
                         if let Some(span) = self.type_end(start, true) {
                             self.delete(self.space_trimmed_start(i), span.end);
@@ -562,7 +495,8 @@ impl<'a> Eraser<'a> {
                     && last.1 >= start
                 {
                     last.1 = last.1.max(end);
-                } else {
+                }
+                else {
                     merged.push((start, end));
                 }
             }
@@ -597,7 +531,8 @@ impl<'a> Eraser<'a> {
     /// Whether the token before `index` ends an expression, treating keyword
     /// member names (`mod.default`) as the identifiers they act as.
     fn ends_expression_at(&self, index: usize) -> bool {
-        let Some(prev) = index.checked_sub(1).map(|slot| self.tokens[slot].kind) else {
+        let Some(prev) = index.checked_sub(1).map(|slot| self.tokens[slot].kind)
+        else {
             return false;
         };
         ends_expression(prev) || self.is_member_name(index - 1)
@@ -653,7 +588,8 @@ impl<'a> Eraser<'a> {
             let kind = self.tokens[index].kind;
             if kind == left {
                 depth += 1;
-            } else if kind == right {
+            }
+            else if kind == right {
                 depth -= 1;
                 if depth == 0 {
                     return Some(index);
@@ -696,10 +632,12 @@ impl<'a> Eraser<'a> {
     }
 
     fn is_params_paren(&self, open: usize, prev: Option<T>) -> bool {
-        let Some(close) = self.matching(open) else {
+        let Some(close) = self.matching(open)
+        else {
             return false;
         };
-        let Some(after) = self.kind(close + 1) else {
+        let Some(after) = self.kind(close + 1)
+        else {
             return false;
         };
         let head = matches!(after, T::LeftBrace | T::Arrow | T::Colon);
@@ -735,17 +673,12 @@ impl<'a> Eraser<'a> {
         caller || after == T::Arrow
     }
 
-    fn is_annotation_position(
-        &self,
-        prev: Option<T>,
-        frame: Option<FrameKind>,
-        in_var_decl: bool,
-    ) -> bool {
-        let Some(prev) = prev else {
+    fn is_annotation_position(&self, prev: Option<T>, frame: Option<FrameKind>, in_var_decl: bool) -> bool {
+        let Some(prev) = prev
+        else {
             return false;
         };
-        let keyword_member = matches!(frame, Some(FrameKind::ClassBody | FrameKind::Params))
-            && is_member_name_keyword(prev);
+        let keyword_member = matches!(frame, Some(FrameKind::ClassBody | FrameKind::Params)) && is_member_name_keyword(prev);
         if !can_end_binding(prev) && !keyword_member {
             return false;
         }
@@ -781,11 +714,9 @@ impl<'a> Eraser<'a> {
     /// comma after it, falling back to the comma before it for the last entry,
     /// so the remaining list keeps valid comma syntax at every position.
     fn erase_specifier_list(&mut self, open: usize) -> Result<SpecifierList, String> {
-        let Some(close) = self.matching(open) else {
-            return Err(format!(
-                "type erasure found an unterminated import/export specifier list at byte {}",
-                self.tokens[open].start
-            ));
+        let Some(close) = self.matching(open)
+        else {
+            return Err(format!("type erasure found an unterminated import/export specifier list at byte {}", self.tokens[open].start));
         };
         let mut items: Vec<SpecItem> = Vec::new();
         let mut leading: Option<usize> = None;
@@ -794,12 +725,7 @@ impl<'a> Eraser<'a> {
         while index < close {
             if self.tokens[index].kind == T::Comma {
                 if index > first {
-                    items.push(SpecItem {
-                        first,
-                        last: index - 1,
-                        leading_comma: leading,
-                        trailing_comma: Some(index),
-                    });
+                    items.push(SpecItem { first, last: index - 1, leading_comma: leading, trailing_comma: Some(index) });
                 }
                 leading = Some(index);
                 first = index + 1;
@@ -807,12 +733,7 @@ impl<'a> Eraser<'a> {
             index += 1;
         }
         if close > first {
-            items.push(SpecItem {
-                first,
-                last: close - 1,
-                leading_comma: leading,
-                trailing_comma: None,
-            });
+            items.push(SpecItem { first, last: close - 1, leading_comma: leading, trailing_comma: None });
         }
         let mut removed = false;
         let mut remaining = 0usize;
@@ -843,20 +764,14 @@ impl<'a> Eraser<'a> {
             Some(T::IdentifierName | T::StringLiteral) if first + 1 == last => Ok(true),
             Some(T::IdentifierName | T::StringLiteral)
                 if self.kind(first + 2) == Some(T::As)
-                    && matches!(
-                        self.kind(first + 3),
-                        Some(T::IdentifierName | T::StringLiteral)
-                    )
+                    && matches!(self.kind(first + 3), Some(T::IdentifierName | T::StringLiteral))
                     && first + 3 == last =>
             {
                 Ok(true)
             }
             // `import { type as local }` imports the value named `type`.
             Some(T::As) => Ok(false),
-            _ => Err(format!(
-                "type erasure cannot parse the import/export specifier at byte {}",
-                self.tokens[first].start
-            )),
+            _ => Err(format!("type erasure cannot parse the import/export specifier at byte {}", self.tokens[first].start)),
         }
     }
 
@@ -865,18 +780,12 @@ impl<'a> Eraser<'a> {
         let bytes = self.source.as_bytes();
         let before = start.checked_sub(1).and_then(|index| bytes.get(index)).copied();
         let after = bytes.get(end).copied();
-        let ident = |byte: Option<u8>| {
-            byte.is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'))
-        };
+        let ident = |byte: Option<u8>| byte.is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$'));
         if ident(before) && ident(after) {
-            return Err(format!(
-                "type erasure cannot remove the inline type specifier at byte {start} without gluing identifiers"
-            ));
+            return Err(format!("type erasure cannot remove the inline type specifier at byte {start} without gluing identifiers"));
         }
         if before == Some(b'/') && matches!(after, Some(b'/' | b'*')) {
-            return Err(format!(
-                "type erasure cannot remove the inline type specifier at byte {start} without gluing a comment"
-            ));
+            return Err(format!("type erasure cannot remove the inline type specifier at byte {start} without gluing a comment"));
         }
         Ok(())
     }
@@ -891,18 +800,12 @@ impl<'a> Eraser<'a> {
                     if matches!(before, Some(T::Import | T::Export)) {
                         return true;
                     }
-                    let type_clause = before == Some(T::Type)
-                        && index >= 2
-                        && matches!(self.tokens[index - 2].kind, T::Import | T::Export);
+                    let type_clause = before == Some(T::Type) && index >= 2 && matches!(self.tokens[index - 2].kind, T::Import | T::Export);
                     return type_clause;
                 }
                 T::Semicolon | T::RightBrace => return false,
                 T::Import => {
-                    let statement_start = index == 0
-                        || matches!(
-                            self.tokens[index - 1].kind,
-                            T::Semicolon | T::LeftBrace | T::RightBrace
-                        );
+                    let statement_start = index == 0 || matches!(self.tokens[index - 1].kind, T::Semicolon | T::LeftBrace | T::RightBrace);
                     return statement_start;
                 }
                 T::Export => {
@@ -930,10 +833,7 @@ impl<'a> Eraser<'a> {
             }
             if paren == 0 && bracket == 0 && brace == 0 && index > start {
                 let previous = self.tokens[index - 1];
-                if self.has_newline(previous.end, token.start)
-                    && ends_statement(previous.kind)
-                    && !continues_expression(token.kind)
-                {
+                if self.has_newline(previous.end, token.start) && ends_statement(previous.kind) && !continues_expression(token.kind) {
                     return index;
                 }
             }
@@ -969,10 +869,7 @@ impl<'a> Eraser<'a> {
             let depth_zero = paren == 0 && bracket == 0 && brace == 0 && angle == 0;
             if depth_zero && consumed {
                 let previous = self.tokens[index - 1];
-                if self.has_newline(previous.end, token.start)
-                    && !continues_type(token.kind)
-                    && !continues_expression(token.kind)
-                {
+                if self.has_newline(previous.end, token.start) && !continues_type(token.kind) && !continues_expression(token.kind) {
                     break;
                 }
                 if is_type_terminator(token.kind, expr, type_start) {
@@ -998,13 +895,7 @@ impl<'a> Eraser<'a> {
                     let continues = index == start
                         || matches!(
                             self.tokens[index - 1].kind,
-                            T::Pipe
-                                | T::Ampersand
-                                | T::Less
-                                | T::Colon
-                                | T::Comma
-                                | T::LeftParen
-                                | T::Question
+                            T::Pipe | T::Ampersand | T::Less | T::Colon | T::Comma | T::LeftParen | T::Question
                         );
                     if !continues && depth_zero {
                         break;
@@ -1027,9 +918,11 @@ impl<'a> Eraser<'a> {
                 T::RightShift => {
                     if angle >= 2 {
                         angle -= 2;
-                    } else if angle == 1 {
+                    }
+                    else if angle == 1 {
                         angle = 0;
-                    } else {
+                    }
+                    else {
                         break;
                     }
                 }
@@ -1412,9 +1305,7 @@ mod tests {
 
     #[test]
     fn erases_multiline_inline_type_specifiers() {
-        let js =
-            erase_types("import {\n  a,\n  type B,\n  c,\n} from \"./x\";\nconst value = a + c;\n")
-                .unwrap();
+        let js = erase_types("import {\n  a,\n  type B,\n  c,\n} from \"./x\";\nconst value = a + c;\n").unwrap();
         assert!(!js.contains("type B"), "{js}");
         assert!(js.contains("  a,"), "{js}");
         assert!(js.contains("  c,"), "{js}");
@@ -1432,57 +1323,44 @@ mod tests {
 
     #[test]
     fn erases_all_type_only_import_lists() {
-        let js =
-            erase_types("import { type B, type C as D } from \"./x\";\nconst a = 1;\n").unwrap();
+        let js = erase_types("import { type B, type C as D } from \"./x\";\nconst a = 1;\n").unwrap();
         assert!(!js.contains("import"), "{js}");
         assert!(js.contains("const a = 1;"), "{js}");
     }
 
     #[test]
     fn erases_ambient_global_and_module_declarations() {
-        let js = erase_types(
-            "declare global {\n  interface Window { bridge?: string }\n}\nconst ok = 1;\n",
-        )
-        .unwrap();
+        let js = erase_types("declare global {\n  interface Window { bridge?: string }\n}\nconst ok = 1;\n").unwrap();
         assert!(!js.contains("declare"), "{js}");
         assert!(!js.contains("interface Window"), "{js}");
         assert!(js.contains("const ok = 1;"), "{js}");
 
-        let module = erase_types(
-            "declare module \"./x\" {\n  const value: number;\n}\nexport const keep = 2;\n",
-        )
-        .unwrap();
+        let module = erase_types("declare module \"./x\" {\n  const value: number;\n}\nexport const keep = 2;\n").unwrap();
         assert!(!module.contains("declare"), "{module}");
         assert!(module.contains("export const keep = 2;"), "{module}");
 
-        let namespace =
-            erase_types("declare namespace A {\n  const b: number;\n}\nconst c = 3;\n").unwrap();
+        let namespace = erase_types("declare namespace A {\n  const b: number;\n}\nconst c = 3;\n").unwrap();
         assert!(!namespace.contains("declare"), "{namespace}");
         assert!(namespace.contains("const c = 3;"), "{namespace}");
     }
 
     #[test]
     fn keeps_value_bindings_named_type() {
-        let js = erase_types("import { type } from \"./x\";\nimport { type as t } from \"./y\";\n")
-            .unwrap();
+        let js = erase_types("import { type } from \"./x\";\nimport { type as t } from \"./y\";\n").unwrap();
         assert!(js.contains("import { type } from \"./x\";"), "{js}");
         assert!(js.contains("import { type as t } from \"./y\";"), "{js}");
     }
 
     #[test]
     fn keeps_whole_statement_type_only_imports_erased() {
-        let js = erase_types(
-            "import type { X } from \"./x\";\nimport type Y from \"./y\";\nconst value = 1;\n",
-        )
-        .unwrap();
+        let js = erase_types("import type { X } from \"./x\";\nimport type Y from \"./y\";\nconst value = 1;\n").unwrap();
         assert!(!js.contains("import"), "{js}");
         assert!(js.contains("const value = 1;"), "{js}");
     }
 
     #[test]
     fn reports_specifier_deletions_with_the_comma() {
-        let (js, deletions) =
-            erase_types_with_deletions("import { a, type B } from \"./x\";\n").unwrap();
+        let (js, deletions) = erase_types_with_deletions("import { a, type B } from \"./x\";\n").unwrap();
         assert_eq!(js, "import { a } from \"./x\";\n");
         assert_eq!(deletions, vec![(10, 18)]);
         let source = "import { a, type B } from \"./x\";\n";

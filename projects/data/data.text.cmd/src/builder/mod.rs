@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::CmdLanguage, parser::CmdParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// Windows Command (CMD) language AST builder
 #[derive(Clone)]
@@ -24,7 +24,12 @@ impl<'config> CmdBuilder<'config> {
 }
 
 impl<'config> Builder<CmdLanguage> for CmdBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CmdLanguage>) -> data_text_core::builder::BuildOutput<CmdLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CmdLanguage>,
+    ) -> data_text_core::builder::BuildOutput<CmdLanguage> {
         let parser = CmdParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<CmdLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

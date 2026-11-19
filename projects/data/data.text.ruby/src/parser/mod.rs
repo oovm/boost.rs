@@ -7,7 +7,7 @@ use crate::{
     lexer::{RubyLexer, token_type::RubyTokenType},
 };
 use data_text_core::{
-    GreenNode, TextError, TextEdit,
+    GreenNode, TextEdit, TextError,
     parser::{
         ParseCache, ParseOutput, Parser, ParserState, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser},
@@ -65,7 +65,10 @@ impl<'config> RubyParser<'config> {
             return Ok(());
         }
         if matches!(state.peek_kind(), Some(Identifier | Constant | GlobalVariable | InstanceVariable | ClassVariable))
-            && matches!(state.peek_non_trivia_kind_at(1), Some(Assign | PlusAssign | MinusAssign | MultiplyAssign | DivideAssign | OrOrAssign | AndAndAssign))
+            && matches!(
+                state.peek_non_trivia_kind_at(1),
+                Some(Assign | PlusAssign | MinusAssign | MultiplyAssign | DivideAssign | OrOrAssign | AndAndAssign)
+            )
         {
             let checkpoint = state.checkpoint();
             state.bump();
@@ -79,7 +82,15 @@ impl<'config> RubyParser<'config> {
                 PrattParser::parse(state, 0, self);
                 state.eat(Semicolon);
                 state.eat(Newline);
-                state.finish_at(checkpoint, if is_unless { crate::parser::element_type::RubyElementType::UnlessStatement } else { crate::parser::element_type::RubyElementType::IfStatement });
+                state.finish_at(
+                    checkpoint,
+                    if is_unless {
+                        crate::parser::element_type::RubyElementType::UnlessStatement
+                    }
+                    else {
+                        crate::parser::element_type::RubyElementType::IfStatement
+                    },
+                );
             }
             else {
                 state.eat(Semicolon);
@@ -110,7 +121,15 @@ impl<'config> RubyParser<'config> {
                     PrattParser::parse(state, 0, self);
                     state.eat(Semicolon);
                     state.eat(Newline);
-                    state.finish_at(cp, if is_unless { crate::parser::element_type::RubyElementType::UnlessStatement } else { crate::parser::element_type::RubyElementType::IfStatement });
+                    state.finish_at(
+                        cp,
+                        if is_unless {
+                            crate::parser::element_type::RubyElementType::UnlessStatement
+                        }
+                        else {
+                            crate::parser::element_type::RubyElementType::IfStatement
+                        },
+                    );
                 }
                 else {
                     state.eat(Semicolon);
@@ -128,7 +147,15 @@ impl<'config> RubyParser<'config> {
                     PrattParser::parse(state, 0, self);
                     state.eat(Semicolon);
                     state.eat(Newline);
-                    state.finish_at(cp, if is_unless { crate::parser::element_type::RubyElementType::UnlessStatement } else { crate::parser::element_type::RubyElementType::IfStatement });
+                    state.finish_at(
+                        cp,
+                        if is_unless {
+                            crate::parser::element_type::RubyElementType::UnlessStatement
+                        }
+                        else {
+                            crate::parser::element_type::RubyElementType::IfStatement
+                        },
+                    );
                 }
                 else {
                     state.eat(Semicolon);
@@ -146,7 +173,15 @@ impl<'config> RubyParser<'config> {
                     PrattParser::parse(state, 0, self);
                     state.eat(Semicolon);
                     state.eat(Newline);
-                    state.finish_at(cp, if is_unless { crate::parser::element_type::RubyElementType::UnlessStatement } else { crate::parser::element_type::RubyElementType::IfStatement });
+                    state.finish_at(
+                        cp,
+                        if is_unless {
+                            crate::parser::element_type::RubyElementType::UnlessStatement
+                        }
+                        else {
+                            crate::parser::element_type::RubyElementType::IfStatement
+                        },
+                    );
                 }
                 else {
                     state.eat(Semicolon);
@@ -356,7 +391,14 @@ impl<'config> RubyParser<'config> {
         use crate::lexer::token_type::RubyTokenType::*;
         loop {
             self.skip_stmt_gap(state);
-            if !state.not_at_end() || state.at(End) || state.at(Else) || state.at(Elsif) || state.at(Rescue) || state.at(Ensure) || state.at(When) {
+            if !state.not_at_end()
+                || state.at(End)
+                || state.at(Else)
+                || state.at(Elsif)
+                || state.at(Rescue)
+                || state.at(Ensure)
+                || state.at(When)
+            {
                 break;
             }
             self.parse_statement(state)?
@@ -440,7 +482,15 @@ impl<'config> RubyParser<'config> {
             PrattParser::parse(state, 0, self);
             state.eat(Semicolon);
             state.eat(Newline);
-            state.finish_at(cp, if is_unless { crate::parser::element_type::RubyElementType::UnlessStatement } else { crate::parser::element_type::RubyElementType::IfStatement });
+            state.finish_at(
+                cp,
+                if is_unless {
+                    crate::parser::element_type::RubyElementType::UnlessStatement
+                }
+                else {
+                    crate::parser::element_type::RubyElementType::IfStatement
+                },
+            );
             return Ok(());
         }
         if !matches!(state.peek_kind(), Some(End | Else | Elsif | Newline | Semicolon) | None) {
@@ -456,10 +506,52 @@ impl<'config> RubyParser<'config> {
 fn looks_like_parenless_arg<S: Source + ?Sized>(state: &State<'_, S>) -> bool {
     use crate::lexer::token_type::RubyTokenType::*;
     // 语句边界 / 修饰符关键字不能当无括号实参。
-    if matches!(state.peek_kind(), Some(If | Unless | While | Until | For | Do | End | Else | Elsif | When | Then | Rescue | Ensure | Newline | Semicolon | RightParen | RightBracket | RightBrace | Comma) | None) {
+    if matches!(
+        state.peek_kind(),
+        Some(
+            If | Unless
+                | While
+                | Until
+                | For
+                | Do
+                | End
+                | Else
+                | Elsif
+                | When
+                | Then
+                | Rescue
+                | Ensure
+                | Newline
+                | Semicolon
+                | RightParen
+                | RightBracket
+                | RightBrace
+                | Comma
+        ) | None
+    ) {
         return false;
     }
-    matches!(state.peek_kind(), Some(IntegerLiteral | FloatLiteral | StringLiteral | Symbol | True | False | Nil | Identifier | Constant | GlobalVariable | InstanceVariable | ClassVariable | Self_ | LeftBracket | LeftParen | LeftBrace))
+    matches!(
+        state.peek_kind(),
+        Some(
+            IntegerLiteral
+                | FloatLiteral
+                | StringLiteral
+                | Symbol
+                | True
+                | False
+                | Nil
+                | Identifier
+                | Constant
+                | GlobalVariable
+                | InstanceVariable
+                | ClassVariable
+                | Self_
+                | LeftBracket
+                | LeftParen
+                | LeftBrace
+        )
+    )
 }
 
 impl<'config> Pratt<RubyLanguage> for RubyParser<'config> {
@@ -497,7 +589,29 @@ impl<'config> Pratt<RubyLanguage> for RubyParser<'config> {
                         state.bump();
                     }
                     // 换行 / 语句边界：绝不当无括号调用。
-                    if matches!(state.peek_kind(), Some(Newline | Semicolon | End | Else | Elsif | When | Rescue | Ensure | If | Unless | While | Until | Do | RightParen | RightBracket | RightBrace | Comma) | None) || !looks_like_parenless_arg(state) {
+                    if matches!(
+                        state.peek_kind(),
+                        Some(
+                            Newline
+                                | Semicolon
+                                | End
+                                | Else
+                                | Elsif
+                                | When
+                                | Rescue
+                                | Ensure
+                                | If
+                                | Unless
+                                | While
+                                | Until
+                                | Do
+                                | RightParen
+                                | RightBracket
+                                | RightBrace
+                                | Comma
+                        ) | None
+                    ) || !looks_like_parenless_arg(state)
+                    {
                         state.skip_trivia();
                         state.finish_at(cp, crate::parser::element_type::RubyElementType::Identifier)
                     }
@@ -526,7 +640,8 @@ impl<'config> Pratt<RubyLanguage> for RubyParser<'config> {
                     }
                 }
             }
-            Some(IntegerLiteral) | Some(FloatLiteral) | Some(StringLiteral) | Some(True) | Some(False) | Some(Nil) | Some(Self_) | Some(Symbol) => {
+            Some(IntegerLiteral) | Some(FloatLiteral) | Some(StringLiteral) | Some(True) | Some(False) | Some(Nil) | Some(Self_)
+            | Some(Symbol) => {
                 state.bump();
                 state.finish_at(cp, crate::parser::element_type::RubyElementType::LiteralExpression)
             }
@@ -612,7 +727,12 @@ impl<'config> Pratt<RubyLanguage> for RubyParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, RubyLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, RubyLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, RubyLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, RubyLanguage>> {
         use crate::lexer::token_type::RubyTokenType::*;
         let kind = state.peek_kind()?;
 
@@ -753,7 +873,12 @@ impl<'config> Pratt<RubyLanguage> for RubyParser<'config> {
 }
 
 impl<'config> Parser<RubyLanguage> for RubyParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<RubyLanguage>) -> ParseOutput<'a, RubyLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<RubyLanguage>,
+    ) -> ParseOutput<'a, RubyLanguage> {
         let lexer = RubyLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

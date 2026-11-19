@@ -21,7 +21,9 @@ pub mod mcp;
 /// Parser module.
 pub mod parser;
 
-pub use crate::{ast::ObjectiveCRoot, builder::ObjectiveCBuilder, language::ObjectiveCLanguage, lexer::ObjectiveCLexer, parser::ObjectiveCParser};
+pub use crate::{
+    ast::ObjectiveCRoot, builder::ObjectiveCBuilder, language::ObjectiveCLanguage, lexer::ObjectiveCLexer, parser::ObjectiveCParser,
+};
 
 #[cfg(feature = "lsp")]
 pub use crate::lsp::highlighter::{HighlightKind, Highlighter, ObjectiveCHighlighter};

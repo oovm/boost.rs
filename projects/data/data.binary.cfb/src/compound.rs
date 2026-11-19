@@ -39,8 +39,7 @@ impl CompoundFile {
         let fat = load_fat(&bytes, &header)?;
         let mini_fat = load_mini_fat(&bytes, &header, &fat)?;
         let directory = load_directory(&bytes, sector_size, header.first_dir_sector, header.num_dir_sectors, &fat)?;
-        let root =
-            directory.first().ok_or_else(|| CfbError::UnexpectedEndOfChain { context: "root directory entry".to_string() })?;
+        let root = directory.first().ok_or_else(|| CfbError::UnexpectedEndOfChain { context: "root directory entry".to_string() })?;
         if root.entry_type != EntryType::Root {
             return Err(CfbError::UnexpectedEndOfChain { context: "root directory entry".to_string() });
         }
@@ -77,11 +76,7 @@ impl CompoundFile {
     pub fn read_stream(&self, path: &str) -> Result<Vec<u8>> {
         let entry = find_stream_entry(&self.directory, path)?;
         if entry.stream_size > self.max_stream_bytes {
-            return Err(CfbError::StreamTooLarge {
-                path: path.to_string(),
-                size: entry.stream_size,
-                limit: self.max_stream_bytes,
-            });
+            return Err(CfbError::StreamTooLarge { path: path.to_string(), size: entry.stream_size, limit: self.max_stream_bytes });
         }
         read_stream(
             &self.bytes,

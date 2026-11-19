@@ -18,7 +18,12 @@ pub struct RLexer<'config> {
 }
 
 impl<'config> Lexer<RLanguage> for RLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &mut impl LexerCache<RLanguage>) -> LexOutput<RLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &mut impl LexerCache<RLanguage>,
+    ) -> LexOutput<RLanguage> {
         let mut state = State::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

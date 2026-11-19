@@ -1,5 +1,8 @@
-use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
+use crate::{
+    ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType,
+    parser::element_type::TypeScriptElementType,
+};
+use data_text_core::{RedNode, RedTree, Source, SourceText, TextError};
 
 impl<'config> TypeScriptBuilder<'config> {
     pub(crate) fn build_parameter(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<FunctionParam>, TextError> {
@@ -33,7 +36,9 @@ impl<'config> TypeScriptBuilder<'config> {
                         }
                         TypeScriptElementType::BindingPattern => {
                             pattern_text = Some(source.get_text_in(child_span.into()).trim().to_string());
-                            binding_names.extend(crate::builder::build_binding::binding_pattern_names(&child_node, source).into_iter().map(|(name, _, _)| name));
+                            binding_names.extend(
+                                crate::builder::build_binding::binding_pattern_names(&child_node, source).into_iter().map(|(name, _, _)| name),
+                            );
                         }
                         TypeScriptElementType::TypeAnnotation => {
                             if !self.erase_types {

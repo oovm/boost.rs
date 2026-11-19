@@ -22,7 +22,12 @@ impl<'config> DelphiParser<'config> {
 }
 
 impl<'config> Parser<DelphiLanguage> for DelphiParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<DelphiLanguage>) -> ParseOutput<'a, DelphiLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<DelphiLanguage>,
+    ) -> ParseOutput<'a, DelphiLanguage> {
         let lexer = crate::lexer::DelphiLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

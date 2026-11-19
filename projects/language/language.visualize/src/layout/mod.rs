@@ -395,7 +395,9 @@ impl LayoutEngine for ForceDirectedLayout {
 
             // Update positions
             for node in nodes {
-                if let (Some(force), Some(velocity), Some(position)) = (forces.get(&node.id), velocities.get_mut(&node.id), positions.get_mut(&node.id)) {
+                if let (Some(force), Some(velocity), Some(position)) =
+                    (forces.get(&node.id), velocities.get_mut(&node.id), positions.get_mut(&node.id))
+                {
                     *velocity = Point::new(velocity.x * self.damping + force.x, velocity.y * self.damping + force.y);
                     *position = *position + *velocity
                 }
@@ -466,7 +468,10 @@ fn build_hierarchy(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> crate::Result<
 
 fn build_hierarchy_node(id: &str, nodes: &[LayoutNode], children_map: &HashMap<String, Vec<String>>) -> HierarchyNode {
     let node = nodes.iter().find(|n| n.id == id).unwrap();
-    let children = children_map.get(id).map(|child_ids| child_ids.iter().map(|child_id| build_hierarchy_node(child_id, nodes, children_map)).collect()).unwrap_or_default();
+    let children = children_map
+        .get(id)
+        .map(|child_ids| child_ids.iter().map(|child_id| build_hierarchy_node(child_id, nodes, children_map)).collect())
+        .unwrap_or_default();
 
     HierarchyNode { id: id.to_string(), children, size: node.size }
 }

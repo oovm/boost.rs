@@ -5,8 +5,8 @@ use std::{
     io,
 };
 
-use data_binary_core::{Budget, BudgetTracker};
 use boost_source::binary::{ByteSource, MemorySource, ReadOutcome};
+use data_binary_core::{Budget, BudgetTracker};
 use data_binary_zip::{ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, decode_member, index_zip};
 use serde::{Deserialize, Serialize};
 
@@ -120,9 +120,7 @@ impl JvmJarPackage {
 
     /// 遍历归档中所有 `.class` 入口，返回 `(路径, 字节切片)` 迭代器。
     pub fn iter_classes(&self) -> impl Iterator<Item = (&str, &[u8])> {
-        self.entries
-            .iter()
-            .filter_map(|entry| entry.path.ends_with(".class").then(|| (entry.path.as_str(), entry.bytes.as_slice())))
+        self.entries.iter().filter_map(|entry| entry.path.ends_with(".class").then(|| (entry.path.as_str(), entry.bytes.as_slice())))
     }
 
     /// 将 `JAR` 模型编码为 ZIP32 stored 归档。
@@ -170,9 +168,9 @@ impl JvmJarPackage {
 /// so a lossy fallback is enough here and the shared ZIP layer stays byte-level.
 fn member_name(member: &ZipMember) -> String {
     match member.name_encoding() {
-        ZipNameEncoding::Utf8 => std::str::from_utf8(&member.raw_name)
-            .map(str::to_owned)
-            .unwrap_or_else(|_| String::from_utf8_lossy(&member.raw_name).into_owned()),
+        ZipNameEncoding::Utf8 => {
+            std::str::from_utf8(&member.raw_name).map(str::to_owned).unwrap_or_else(|_| String::from_utf8_lossy(&member.raw_name).into_owned())
+        }
         ZipNameEncoding::Unspecified => String::from_utf8_lossy(&member.raw_name).into_owned(),
     }
 }

@@ -25,7 +25,12 @@ impl<'config> LuaBuilder<'config> {
 }
 
 impl<'config> Builder<LuaLanguage> for LuaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<LuaLanguage>) -> BuildOutput<LuaLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<LuaLanguage>,
+    ) -> BuildOutput<LuaLanguage> {
         let parser = LuaParser::new(self.config);
         let lexer = LuaLexer::new(self.config);
 
@@ -65,7 +70,12 @@ impl<'config> LuaBuilder<'config> {
         Ok(LuaRoot { statements, span: (0..offset).into() })
     }
 
-    fn build_statement<S: Source + ?Sized>(&self, node: &GreenNode<LuaLanguage>, source: &S, offset: usize) -> Result<Option<LuaStatement>, data_text_core::TextError> {
+    fn build_statement<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<LuaLanguage>,
+        source: &S,
+        offset: usize,
+    ) -> Result<Option<LuaStatement>, data_text_core::TextError> {
         match node.kind {
             LuaElementType::LocalStatement => {
                 let mut names = Vec::new();
@@ -73,7 +83,12 @@ impl<'config> LuaBuilder<'config> {
                 let mut child_offset = offset;
                 for child in node.children() {
                     match child {
-                        GreenTree::Leaf(leaf) if leaf.kind == LuaTokenType::Identifier => names.push(source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).trim().to_string()),
+                        GreenTree::Leaf(leaf) if leaf.kind == LuaTokenType::Identifier => names.push(
+                            source
+                                .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                .trim()
+                                .to_string(),
+                        ),
                         GreenTree::Node(child_node) => {
                             if let Some(expr) = self.build_expression(child_node, source, child_offset)? {
                                 values.push(expr)
@@ -135,7 +150,8 @@ impl<'config> LuaBuilder<'config> {
                 for child in node.children() {
                     if let GreenTree::Leaf(leaf) = child {
                         if leaf.kind == LuaTokenType::Identifier {
-                            let text = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize });
+                            let text =
+                                source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize });
                             return Ok(Some(LuaStatement::Goto(text.trim().to_string())));
                         }
                     }
@@ -148,7 +164,8 @@ impl<'config> LuaBuilder<'config> {
                 for child in node.children() {
                     if let GreenTree::Leaf(leaf) = child {
                         if leaf.kind == LuaTokenType::Identifier {
-                            let text = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize });
+                            let text =
+                                source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize });
                             return Ok(Some(LuaStatement::Label(text.trim().to_string())));
                         }
                     }
@@ -220,7 +237,12 @@ impl<'config> LuaBuilder<'config> {
                     child_offset += child.len() as usize
                 }
 
-                if let Some(cond) = condition { Ok(Some(LuaStatement::If(LuaIfStatement { condition: cond, then_block, else_ifs, else_block }))) } else { Ok(None) }
+                if let Some(cond) = condition {
+                    Ok(Some(LuaStatement::If(LuaIfStatement { condition: cond, then_block, else_ifs, else_block })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             LuaElementType::WhileStatement => {
                 let mut condition = None;
@@ -261,7 +283,12 @@ impl<'config> LuaBuilder<'config> {
                 for child in node.children() {
                     match child {
                         GreenTree::Leaf(leaf) => match leaf.kind {
-                            LuaTokenType::Identifier => variables.push(source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).trim().to_string()),
+                            LuaTokenType::Identifier => variables.push(
+                                source
+                                    .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                    .trim()
+                                    .to_string(),
+                            ),
                             LuaTokenType::Eq => after_eq = true,
                             LuaTokenType::In => after_in = true,
                             LuaTokenType::Do => in_block = true,
@@ -287,7 +314,13 @@ impl<'config> LuaBuilder<'config> {
                     Ok(Some(LuaStatement::For(LuaForStatement::Generic { variables, iterators: expressions, block })))
                 }
                 else if after_eq && !variables.is_empty() && expressions.len() >= 2 {
-                    Ok(Some(LuaStatement::For(LuaForStatement::Numeric { variable: variables[0].clone(), start: expressions[0].clone(), end: expressions[1].clone(), step: expressions.get(2).cloned(), block })))
+                    Ok(Some(LuaStatement::For(LuaForStatement::Numeric {
+                        variable: variables[0].clone(),
+                        start: expressions[0].clone(),
+                        end: expressions[1].clone(),
+                        step: expressions.get(2).cloned(),
+                        block,
+                    })))
                 }
                 else {
                     Ok(None)
@@ -318,7 +351,12 @@ impl<'config> LuaBuilder<'config> {
                     }
                     child_offset += child.len() as usize
                 }
-                if let Some(cond) = condition { Ok(Some(LuaStatement::Repeat(LuaRepeatStatement { block, condition: cond }))) } else { Ok(None) }
+                if let Some(cond) = condition {
+                    Ok(Some(LuaStatement::Repeat(LuaRepeatStatement { block, condition: cond })))
+                }
+                else {
+                    Ok(None)
+                }
             }
             LuaElementType::DoStatement => {
                 let mut block = Vec::new();
@@ -348,7 +386,9 @@ impl<'config> LuaBuilder<'config> {
                         GreenTree::Leaf(leaf) => {
                             match leaf.kind {
                                 LuaTokenType::Identifier => {
-                                    let text = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).to_string();
+                                    let text = source
+                                        .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                        .to_string();
                                     if state == 0 {
                                         name.push(text)
                                     }
@@ -389,7 +429,14 @@ impl<'config> LuaBuilder<'config> {
                                     match name_child {
                                         GreenTree::Leaf(leaf) => {
                                             if leaf.kind == LuaTokenType::Identifier {
-                                                name.push(source.get_text_in(data_text_core::Range { start: name_offset, end: name_offset + leaf.length as usize }).to_string())
+                                                name.push(
+                                                    source
+                                                        .get_text_in(data_text_core::Range {
+                                                            start: name_offset,
+                                                            end: name_offset + leaf.length as usize,
+                                                        })
+                                                        .to_string(),
+                                                )
                                             }
                                             else if leaf.kind == LuaTokenType::Colon {
                                                 if !name.is_empty() {
@@ -413,7 +460,12 @@ impl<'config> LuaBuilder<'config> {
         }
     }
 
-    fn build_expression<S: Source + ?Sized>(&self, node: &GreenNode<LuaLanguage>, source: &S, offset: usize) -> Result<Option<LuaExpression>, data_text_core::TextError> {
+    fn build_expression<S: Source + ?Sized>(
+        &self,
+        node: &GreenNode<LuaLanguage>,
+        source: &S,
+        offset: usize,
+    ) -> Result<Option<LuaExpression>, data_text_core::TextError> {
         match node.kind {
             LuaElementType::LiteralExpression => {
                 for child in node.children() {
@@ -444,7 +496,10 @@ impl<'config> LuaBuilder<'config> {
                 for child in node.children() {
                     if let GreenTree::Leaf(leaf) = child {
                         if leaf.kind == LuaTokenType::Identifier {
-                            let name = source.get_text_in(data_text_core::Range { start: offset, end: offset + leaf.length as usize }).trim().to_string();
+                            let name = source
+                                .get_text_in(data_text_core::Range { start: offset, end: offset + leaf.length as usize })
+                                .trim()
+                                .to_string();
                             return Ok(Some(LuaExpression::Identifier(name)));
                         }
                     }
@@ -487,7 +542,11 @@ impl<'config> LuaBuilder<'config> {
                                 | LuaTokenType::SlashSlash
                                 | LuaTokenType::And
                                 | LuaTokenType::Or
-                                | LuaTokenType::DotDot => op = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).to_string(),
+                                | LuaTokenType::DotDot => {
+                                    op = source
+                                        .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                        .to_string()
+                                }
                                 _ => {}
                             }
                         }
@@ -495,7 +554,12 @@ impl<'config> LuaBuilder<'config> {
                     child_offset += child.len() as usize
                 }
 
-                if let (Some(l), Some(r)) = (left, right) { Ok(Some(LuaExpression::Binary(Box::new(LuaBinaryExpression { left: l, op, right: r })))) } else { Ok(None) }
+                if let (Some(l), Some(r)) = (left, right) {
+                    Ok(Some(LuaExpression::Binary(Box::new(LuaBinaryExpression { left: l, op, right: r }))))
+                }
+                else {
+                    Ok(None)
+                }
             }
             LuaElementType::UnaryExpression => {
                 let mut op = String::new();
@@ -506,7 +570,11 @@ impl<'config> LuaBuilder<'config> {
                     match child {
                         GreenTree::Node(child_node) => operand = self.build_expression(child_node, source, child_offset)?,
                         GreenTree::Leaf(leaf) => match leaf.kind {
-                            LuaTokenType::Minus | LuaTokenType::Not | LuaTokenType::Hash | LuaTokenType::Tilde => op = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).to_string(),
+                            LuaTokenType::Minus | LuaTokenType::Not | LuaTokenType::Hash | LuaTokenType::Tilde => {
+                                op = source
+                                    .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                    .to_string()
+                            }
                             _ => {}
                         },
                     }
@@ -528,7 +596,8 @@ impl<'config> LuaBuilder<'config> {
                     }
                     else if let GreenTree::Leaf(leaf) = child {
                         if leaf.kind == LuaTokenType::String {
-                            let text = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize });
+                            let text =
+                                source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize });
                             let s = if text.len() >= 2 { &text[1..text.len() - 1] } else { &text };
                             arguments.push(LuaExpression::String(s.to_string()))
                         }
@@ -536,7 +605,12 @@ impl<'config> LuaBuilder<'config> {
                     child_offset += child.len() as usize
                 }
 
-                if let Some(f) = function { Ok(Some(LuaExpression::Call(Box::new(LuaCallExpression { function: f, arguments })))) } else { Ok(None) }
+                if let Some(f) = function {
+                    Ok(Some(LuaExpression::Call(Box::new(LuaCallExpression { function: f, arguments }))))
+                }
+                else {
+                    Ok(None)
+                }
             }
             LuaElementType::TableConstructorExpression => {
                 let mut fields = Vec::new();
@@ -554,7 +628,14 @@ impl<'config> LuaBuilder<'config> {
                                 match field_child {
                                     GreenTree::Leaf(leaf) => {
                                         if leaf.kind == LuaTokenType::Identifier && !after_eq {
-                                            name = Some(source.get_text_in(data_text_core::Range { start: field_offset, end: field_offset + leaf.length as usize }).to_string())
+                                            name = Some(
+                                                source
+                                                    .get_text_in(data_text_core::Range {
+                                                        start: field_offset,
+                                                        end: field_offset + leaf.length as usize,
+                                                    })
+                                                    .to_string(),
+                                            )
                                         }
                                         else if leaf.kind == LuaTokenType::Eq {
                                             after_eq = true
@@ -599,7 +680,12 @@ impl<'config> LuaBuilder<'config> {
                 for child in node.children() {
                     match child {
                         GreenTree::Leaf(leaf) => match leaf.kind {
-                            LuaTokenType::Identifier if state == 0 => parameters.push(source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).trim().to_string()),
+                            LuaTokenType::Identifier if state == 0 => parameters.push(
+                                source
+                                    .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                    .trim()
+                                    .to_string(),
+                            ),
                             LuaTokenType::DotDotDot => is_vararg = true,
                             LuaTokenType::RightParen => state = 1,
                             _ => {}
@@ -631,7 +717,9 @@ impl<'config> LuaBuilder<'config> {
                         }
                         GreenTree::Leaf(leaf) => {
                             if leaf.kind == LuaTokenType::Identifier {
-                                member = source.get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize }).to_string()
+                                member = source
+                                    .get_text_in(data_text_core::Range { start: child_offset, end: child_offset + leaf.length as usize })
+                                    .to_string()
                             }
                             else if leaf.kind == LuaTokenType::Colon {
                                 is_method = true
@@ -641,7 +729,12 @@ impl<'config> LuaBuilder<'config> {
                     child_offset += child.len() as usize
                 }
 
-                if let Some(t) = table { Ok(Some(LuaExpression::Member(Box::new(LuaMemberExpression { table: t, member, is_method })))) } else { Ok(None) }
+                if let Some(t) = table {
+                    Ok(Some(LuaExpression::Member(Box::new(LuaMemberExpression { table: t, member, is_method }))))
+                }
+                else {
+                    Ok(None)
+                }
             }
             LuaElementType::IndexExpression => {
                 let mut table = None;
@@ -650,12 +743,22 @@ impl<'config> LuaBuilder<'config> {
 
                 for child in node.children() {
                     if let GreenTree::Node(child_node) = child {
-                        if table.is_none() { table = self.build_expression(child_node, source, child_offset)? } else { index = self.build_expression(child_node, source, child_offset)? }
+                        if table.is_none() {
+                            table = self.build_expression(child_node, source, child_offset)?
+                        }
+                        else {
+                            index = self.build_expression(child_node, source, child_offset)?
+                        }
                     }
                     child_offset += child.len() as usize
                 }
 
-                if let (Some(t), Some(i)) = (table, index) { Ok(Some(LuaExpression::Index(Box::new(LuaIndexExpression { table: t, index: i })))) } else { Ok(None) }
+                if let (Some(t), Some(i)) = (table, index) {
+                    Ok(Some(LuaExpression::Index(Box::new(LuaIndexExpression { table: t, index: i }))))
+                }
+                else {
+                    Ok(None)
+                }
             }
             LuaElementType::VarargExpression => Ok(Some(LuaExpression::Vararg)),
             LuaElementType::ParenthesizedExpression => {

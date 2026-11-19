@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::numeric::kernel::error::Result;
 
-use crate::numeric::{algorithm::AlgorithmPlanner, capability::CapabilityBundle, kernel::LimbBuffer, budget::ExecutionBudget};
+use crate::numeric::{algorithm::AlgorithmPlanner, budget::ExecutionBudget, capability::CapabilityBundle, kernel::LimbBuffer};
 
 use super::{
     glue::{LimbKernel, PortableLimbKernel},

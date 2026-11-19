@@ -189,9 +189,5 @@ fn reads_each_image_part_without_merging_basenames() {
     let mut ledger = BudgetTracker::new(Budget::default());
     assert_eq!(package.read_part("word/media/image1.png", &mut ledger).expect("word image"), word_image);
     assert_eq!(package.read_part("media/image1.png", &mut ledger).expect("root image"), root_image);
-    assert_eq!(
-        ledger.usage().read_bytes,
-        (word_image.len() + root_image.len()) as u64,
-        "one ledger covers every part of the document"
-    );
+    assert_eq!(ledger.usage().read_bytes, (word_image.len() + root_image.len()) as u64, "one ledger covers every part of the document");
 }

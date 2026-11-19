@@ -17,18 +17,15 @@
 
 use std::collections::BTreeMap;
 
-use crate::{
-    FragmentSubmission, Result, backend_plan_views::SemanticType, lowering::sanitize_symbol,
-    emitter_backend_machine::HostProperty,
-};
+use crate::{FragmentSubmission, Result, backend_plan_views::SemanticType, emitter_backend_machine::HostProperty, lowering::sanitize_symbol};
 use compiler_types::ItemInstanceId;
 
 use super::{
-    HostMethod, HostValueKind, HostModule, X64Platform, X64ProductTarget,
-    any_returns_bool, append_text_arena, compile_shared_container, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data,
-    python_method_wrapper, python_module_data, python_module_exec, python_module_registration,
-    x86_64::{collect_reachable_functions, lower_function_to_text_program},
+    HostMethod, HostModule, HostValueKind, X64Platform, X64ProductTarget, any_returns_bool, append_text_arena, compile_shared_container,
+    is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data,
+    python_module_exec, python_module_registration,
     x64_program::encode_x64_program_with_dependencies,
+    x86_64::{collect_reachable_functions, lower_function_to_text_program},
 };
 
 /// 宿主扩展降低结果：完整共享库镜像与宿主装载事实。
@@ -72,20 +69,14 @@ pub(crate) fn lower_fragment_to_machine_extension(
     // 冻结导出面 → 类型化宿主边界事实。
     let methods = frozen_host_methods(submission, target, &reachable)?;
     if methods.is_empty() {
-        return Err(format!(
-            "宿主扩展 `{}` 的导出面为空：宿主扩展必须至少公开一个已冻结的导出函数",
-            target.name()
-        ));
+        return Err(format!("宿主扩展 `{}` 的导出面为空：宿主扩展必须至少公开一个已冻结的导出函数", target.name()));
     }
 
     // 符号名：导出函数取冻结导出名的合法符号，内部闭包函数取实例身份名。
     let names = extension_symbol_names(submission, &reachable, &methods)?;
     let mut functions = Vec::with_capacity(reachable.len() + methods.len() + 2);
     for instance in &reachable {
-        let view = submission
-            .backend_plan
-            .get_function(instance)
-            .ok_or_else(|| format!("宿主扩展降低：可达操作 `{instance:?}` 缺少函数体"))?;
+        let view = submission.backend_plan.get_function(instance).ok_or_else(|| format!("宿主扩展降低：可达操作 `{instance:?}` 缺少函数体"))?;
         functions.push(lower_function_to_text_program(instance, submission, &view.function, &reachable, &names, abi)?);
     }
 
@@ -106,16 +97,22 @@ pub(crate) fn lower_fragment_to_machine_extension(
             for method in &methods {
                 functions.push(node_method_wrapper(method, error_message_offset, platform, &host_library, arena_offset));
             }
-            functions.push(node_addon_registration(properties, &property_name_offsets, methods.as_slice(), &method_name_offsets, platform, &host_library, arena_offset));
+            functions.push(node_addon_registration(
+                properties,
+                &property_name_offsets,
+                methods.as_slice(),
+                &method_name_offsets,
+                platform,
+                &host_library,
+                arena_offset,
+            ));
             let imports = node_imports(&methods, bool_exports, &host_library);
             let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &[], &host_dependencies)?;
             (image, "napi_register_module_v1".to_string(), ".node".to_string())
         }
         HostModule::Python => {
             if !is_c_identifier(module_name) {
-                return Err(format!(
-                    "CPython 扩展模块名 `{module_name}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"
-                ));
+                return Err(format!("CPython 扩展模块名 `{module_name}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"));
             }
             let (definition, relocations, property_name_offsets, format_offsets) = python_module_data(module_name, properties, &methods);
             let mut data = definition;
@@ -172,9 +169,7 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
         }
         for parameter in &function.param_types {
             if !matches!(parameter, SemanticType::Integer64 { signed: true }) {
-                return Err(format!(
-                    "宿主边界只闭合完整 `i64` 整数实参：`{export_name}` 的形参类型 `{parameter}` 没有无损宿主载体，拒绝写出"
-                ));
+                return Err(format!("宿主边界只闭合完整 `i64` 整数实参：`{export_name}` 的形参类型 `{parameter}` 没有无损宿主载体，拒绝写出"));
             }
         }
         // 返回与实参共用同一符号合同：`u64` 的 `2^63..2^64-1` 段没有有符号
@@ -209,10 +204,7 @@ fn extension_symbol_names(
     let mut used: BTreeMap<&str, &str> = BTreeMap::new();
     for method in methods {
         if let Some(previous) = used.insert(method.symbol.as_str(), method.name.as_str()) {
-            return Err(format!(
-                "宿主扩展导出名 `{}` 与 `{previous}` 规约成同一镜像符号：拒绝产出互相覆盖的导出面",
-                method.name
-            ));
+            return Err(format!("宿主扩展导出名 `{}` 与 `{previous}` 规约成同一镜像符号：拒绝产出互相覆盖的导出面", method.name));
         }
     }
     for instance in reachable {
@@ -232,7 +224,8 @@ fn extension_symbol_names(
 
 /// Windows 宿主导入模块名；Linux 的 `CallImport` 模块名必须为空。
 fn host_import_library(target: &X64ProductTarget, platform: X64Platform) -> Result<String> {
-    let Some(module) = target.host_module() else {
+    let Some(module) = target.host_module()
+    else {
         return Err("目标不是宿主扩展合同".to_string());
     };
     if !platform.is_windows() {
@@ -240,18 +233,16 @@ fn host_import_library(target: &X64ProductTarget, platform: X64Platform) -> Resu
     }
     match module {
         HostModule::Node => Ok("node.exe".to_string()),
-        HostModule::Python => target.cpython_import_library().map(str::to_string).ok_or_else(|| {
-            "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()
-        }),
+        HostModule::Python => target
+            .cpython_import_library()
+            .map(str::to_string)
+            .ok_or_else(|| "Windows CPython 扩展必须提供宿主导入 DLL 名（例如 `python312.dll`）：版本相关名不能由编译器猜".to_string()),
     }
 }
 
 /// Node-API 导入面：注册与方法回调实际引用的符号。
 fn node_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<(String, String)> {
-    let mut imports = vec![
-        (dll.to_string(), "napi_set_named_property".to_string()),
-        (dll.to_string(), "napi_create_int64".to_string()),
-    ];
+    let mut imports = vec![(dll.to_string(), "napi_set_named_property".to_string()), (dll.to_string(), "napi_create_int64".to_string())];
     if !methods.is_empty() {
         for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
             imports.push((dll.to_string(), symbol.to_string()));

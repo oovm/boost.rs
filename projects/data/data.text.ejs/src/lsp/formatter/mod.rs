@@ -8,7 +8,13 @@ pub struct EjsFormatter;
 
 impl EjsFormatter {
     /// Formats an EJS root (stub).
-    pub fn format(&self, _root: &EjsRoot, _text: impl Source, _config: &PrinterConfig, _cache: impl BuilderCache<EjsLanguage>) -> TextDiagnostics<String> {
+    pub fn format(
+        &self,
+        _root: &EjsRoot,
+        _text: impl Source,
+        _config: &PrinterConfig,
+        _cache: impl BuilderCache<EjsLanguage>,
+    ) -> TextDiagnostics<String> {
         TextDiagnostics { result: Ok(String::new()), diagnostics: vec![] }
     }
 }

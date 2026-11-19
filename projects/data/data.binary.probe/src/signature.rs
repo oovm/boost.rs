@@ -44,10 +44,7 @@ impl BytePattern {
         if candidate.len() < self.bytes.len() {
             return false;
         }
-        candidate
-            .iter()
-            .zip(self.bytes.iter().zip(self.mask.iter()))
-            .all(|(actual, (expected, mask))| (*actual & *mask) == (*expected & *mask))
+        candidate.iter().zip(self.bytes.iter().zip(self.mask.iter())).all(|(actual, (expected, mask))| (*actual & *mask) == (*expected & *mask))
     }
 }
 

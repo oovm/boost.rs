@@ -41,7 +41,28 @@ impl MatlabHighlighter {
     /// Highlights MATLAB keywords
     fn highlight_keywords(&self, text: &str) -> Vec<(usize, usize, HighlightKind)> {
         let mut highlights = Vec::new();
-        let keywords = ["break", "case", "catch", "classdef", "continue", "else", "elseif", "end", "for", "function", "global", "if", "otherwise", "parfor", "persistent", "return", "spmd", "switch", "try", "while"];
+        let keywords = [
+            "break",
+            "case",
+            "catch",
+            "classdef",
+            "continue",
+            "else",
+            "elseif",
+            "end",
+            "for",
+            "function",
+            "global",
+            "if",
+            "otherwise",
+            "parfor",
+            "persistent",
+            "return",
+            "spmd",
+            "switch",
+            "try",
+            "while",
+        ];
 
         for keyword in &keywords {
             let mut start = 0;

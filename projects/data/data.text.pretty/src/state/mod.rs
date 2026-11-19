@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, collections::HashMap};
+use std::{collections::HashMap, marker::PhantomData};
 
 use data_text_core::language::Language;
 use serde_json::Value;

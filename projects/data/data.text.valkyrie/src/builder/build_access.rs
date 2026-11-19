@@ -5,10 +5,14 @@ use crate::{
     lexer::token_type::ValkyrieTokenType,
     parser::element_type::ValkyrieElementType,
 };
-use data_text_core::{TextError, RedNode, RedTree, Source};
+use data_text_core::{RedNode, RedTree, Source, TextError};
 
 impl<'config> ValkyrieBuilder<'config> {
-    pub(crate) fn build_field_expr<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_field_expr<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         let span = node.span();
         let (receiver, field) = utils::build_field_expr(&node, source, |n, s| self.build_expr(*n, s))?;
 
@@ -102,7 +106,11 @@ impl<'config> ValkyrieBuilder<'config> {
     }
 
     /// `expr?`：后缀传播节点的子表达式是唯一操作数，`?` 本身不产生子节点。
-    pub(crate) fn build_try_propagate<S: Source + ?Sized>(&self, node: RedNode<ValkyrieLanguage>, source: &S) -> Result<TermExpression, TextError> {
+    pub(crate) fn build_try_propagate<S: Source + ?Sized>(
+        &self,
+        node: RedNode<ValkyrieLanguage>,
+        source: &S,
+    ) -> Result<TermExpression, TextError> {
         let span = node.span();
         let mut operand = None;
         for child in node.children() {

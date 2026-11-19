@@ -287,17 +287,48 @@ impl TokenType for VueTokenType {
 
     fn role(&self) -> Self::Role {
         match self {
-            Self::Import | Self::Export | Self::Default | Self::Const | Self::Let | Self::Var | Self::Function | Self::If | Self::Else | Self::While | Self::For | Self::Return | Self::True | Self::False | Self::Null => UniversalTokenRole::Keyword,
+            Self::Import
+            | Self::Export
+            | Self::Default
+            | Self::Const
+            | Self::Let
+            | Self::Var
+            | Self::Function
+            | Self::If
+            | Self::Else
+            | Self::While
+            | Self::For
+            | Self::Return
+            | Self::True
+            | Self::False
+            | Self::Null => UniversalTokenRole::Keyword,
             Self::Identifier => UniversalTokenRole::Name,
             Self::StringLiteral => UniversalTokenRole::Literal,
             Self::NumberLiteral => UniversalTokenRole::Literal,
             Self::Text => UniversalTokenRole::Literal,
 
-            Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Eq | Self::Dot | Self::Colon | Self::Comma | Self::Semicolon | Self::Hash | Self::At | Self::Question | Self::Bang | Self::Amp | Self::Pipe | Self::Percent | Self::Lt | Self::Gt => {
-                UniversalTokenRole::Operator
-            }
+            Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Eq
+            | Self::Dot
+            | Self::Colon
+            | Self::Comma
+            | Self::Semicolon
+            | Self::Hash
+            | Self::At
+            | Self::Question
+            | Self::Bang
+            | Self::Amp
+            | Self::Pipe
+            | Self::Percent
+            | Self::Lt
+            | Self::Gt => UniversalTokenRole::Operator,
 
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => UniversalTokenRole::Punctuation,
+            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket => {
+                UniversalTokenRole::Punctuation
+            }
 
             Self::InterpolationStart | Self::InterpolationEnd | Self::SlashGt | Self::LtSlash => UniversalTokenRole::Punctuation,
 

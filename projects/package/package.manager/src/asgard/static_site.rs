@@ -180,11 +180,7 @@ pub fn build_static_site(options: &StaticSiteOptions) -> AsgardResult<StaticSite
         css_mode: "per-component".into(),
         mode: "static".into(),
         tailwind_css: None,
-        porting_cost: component
-            .style_contract
-            .as_ref()
-            .map(crate::asgard::style::web::porting_cost_entries)
-            .unwrap_or_default(),
+        porting_cost: component.style_contract.as_ref().map(crate::asgard::style::web::porting_cost_entries).unwrap_or_default(),
     };
     let package_report = package_browser_islands(std::slice::from_ref(&component), &output_dir, &package_options)?;
     let critical_css = crate::asgard::package::component_css_filename(&component.name);

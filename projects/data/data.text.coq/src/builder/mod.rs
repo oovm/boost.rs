@@ -1,5 +1,5 @@
 use crate::{CoqParser, ast::*, language::CoqLanguage};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the Coq language.
 #[derive(Clone)]
@@ -22,7 +22,12 @@ impl<'config> CoqBuilder<'config> {
 }
 
 impl<'config> Builder<CoqLanguage> for CoqBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CoqLanguage>) -> data_text_core::builder::BuildOutput<CoqLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CoqLanguage>,
+    ) -> data_text_core::builder::BuildOutput<CoqLanguage> {
         let parser = CoqParser::new(self.config);
         let lexer = crate::lexer::CoqLexer::new(&self.config);
 

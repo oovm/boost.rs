@@ -269,7 +269,12 @@ impl<'config> PlantUmlLexer<'config> {
 }
 
 impl<'config> Lexer<PlantUmlLanguage> for PlantUmlLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<PlantUmlLanguage>) -> LexOutput<PlantUmlLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<PlantUmlLanguage>,
+    ) -> LexOutput<PlantUmlLanguage> {
         let mut state = LexerState::new(text);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -1,11 +1,11 @@
-use document_ir::{
-    AttributePair, Attributes, Block, BreakKind, DocumentGraph, DocumentId, Inline, LossMarker, MathDisplay, NodeId, RelationEndpoint,
-    SemanticStatus, SourceKind, SourceRef, SourceSpan,
-};
 use data_text_core::{Builder, SourceText, parser::session::ParseSession};
 use data_text_html::{
     HtmlBuilder, HtmlLanguage,
     ast::{Element, HtmlDocument, HtmlNode},
+};
+use document_ir::{
+    AttributePair, Attributes, Block, BreakKind, DocumentGraph, DocumentId, Inline, LossMarker, MathDisplay, NodeId, RelationEndpoint,
+    SemanticStatus, SourceKind, SourceRef, SourceSpan,
 };
 
 use super::{

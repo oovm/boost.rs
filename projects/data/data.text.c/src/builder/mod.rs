@@ -1,6 +1,9 @@
 #![doc = include_str!("readme.md")]
 use crate::{CParser, ast::*, language::CLanguage, lexer::CTokenType, parser::CElementType};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, builder::BuildOutput, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Parser, RedNode, RedTree, SourceText, TextDiagnostics, TextEdit, TextError, builder::BuildOutput,
+    source::Source,
+};
 
 mod build_type_system;
 
@@ -20,7 +23,12 @@ impl<'config> CBuilder<'config> {
 
 impl<'config> Builder<CLanguage> for CBuilder<'config> {
     /// Builds the C AST from the green tree.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<CLanguage>) -> BuildOutput<CLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<CLanguage>,
+    ) -> BuildOutput<CLanguage> {
         // Parse source code to get green tree.
         let parser = CParser::new(self.config);
 
@@ -55,8 +63,12 @@ impl<'config> CBuilder<'config> {
         for child in root_node.children() {
             if let RedTree::Node(n) = child {
                 match n.green.kind {
-                    CElementType::FunctionDefinition => external_declarations.push(ExternalDeclaration::FunctionDefinition(self.build_function_definition(n, source)?)),
-                    CElementType::DeclarationStatement => external_declarations.push(ExternalDeclaration::Declaration(self.build_declaration(n, source)?)),
+                    CElementType::FunctionDefinition => {
+                        external_declarations.push(ExternalDeclaration::FunctionDefinition(self.build_function_definition(n, source)?))
+                    }
+                    CElementType::DeclarationStatement => {
+                        external_declarations.push(ExternalDeclaration::Declaration(self.build_declaration(n, source)?))
+                    }
                     _ => {}
                 }
             }
@@ -82,12 +94,20 @@ impl<'config> CBuilder<'config> {
                     _ => {}
                 },
                 RedTree::Leaf(t) => match t.kind {
-                    CTokenType::Int => declaration_specifiers.push(DeclarationSpecifier::TypeSpecifier(TypeSpecifier::Int { span: t.span.clone() })),
-                    CTokenType::Void => declaration_specifiers.push(DeclarationSpecifier::TypeSpecifier(TypeSpecifier::Void { span: t.span.clone() })),
+                    CTokenType::Int => {
+                        declaration_specifiers.push(DeclarationSpecifier::TypeSpecifier(TypeSpecifier::Int { span: t.span.clone() }))
+                    }
+                    CTokenType::Void => {
+                        declaration_specifiers.push(DeclarationSpecifier::TypeSpecifier(TypeSpecifier::Void { span: t.span.clone() }))
+                    }
                     CTokenType::Identifier => {
                         let name = text(source, t.span.clone());
                         if declarator.is_none() {
-                            declarator = Some(Declarator { pointer: None, direct_declarator: DirectDeclarator::Identifier(name, t.span.clone()), span: t.span.clone() })
+                            declarator = Some(Declarator {
+                                pointer: None,
+                                direct_declarator: DirectDeclarator::Identifier(name, t.span.clone()),
+                                span: t.span.clone(),
+                            })
                         }
                     }
                     _ => {}
@@ -95,12 +115,21 @@ impl<'config> CBuilder<'config> {
             }
         }
 
-        let final_declarator = declarator.unwrap_or_else(|| Declarator { pointer: None, direct_declarator: DirectDeclarator::Identifier("main".to_string(), (0..0).into()), span: (0..0).into() });
+        let final_declarator = declarator.unwrap_or_else(|| Declarator {
+            pointer: None,
+            direct_declarator: DirectDeclarator::Identifier("main".to_string(), (0..0).into()),
+            span: (0..0).into(),
+        });
 
         // Build canonical type
         let _canonical_type = self.build_type(&declaration_specifiers, &final_declarator, source);
 
-        Ok(FunctionDefinition { declaration_specifiers, declarator: final_declarator, compound_statement: compound_statement.unwrap_or_else(|| CompoundStatement { block_items: vec![], span: (0..0).into() }), span: node.span() })
+        Ok(FunctionDefinition {
+            declaration_specifiers,
+            declarator: final_declarator,
+            compound_statement: compound_statement.unwrap_or_else(|| CompoundStatement { block_items: vec![], span: (0..0).into() }),
+            span: node.span(),
+        })
     }
 
     /// Builds a declaration from a red node.
@@ -122,10 +151,15 @@ impl<'config> CBuilder<'config> {
                 match n.green.kind {
                     CElementType::ReturnStatement => out.push(BlockItem::Statement(Statement::Jump(self.build_return_statement(n, source)?))),
                     CElementType::IfStatement => out.push(BlockItem::Statement(Statement::Selection(self.build_if_statement(n, source)?))),
-                    CElementType::CompoundStatement => out.push(BlockItem::Statement(Statement::Compound(self.build_compound_statement(n, source)?))),
+                    CElementType::CompoundStatement => {
+                        out.push(BlockItem::Statement(Statement::Compound(self.build_compound_statement(n, source)?)))
+                    }
                     CElementType::ExpressionStatement => {
                         if let Some(expr) = self.build_expression(n, source)? {
-                            out.push(BlockItem::Statement(Statement::Expression(ExpressionStatement { expression: Some(expr), span: n.span() })))
+                            out.push(BlockItem::Statement(Statement::Expression(ExpressionStatement {
+                                expression: Some(expr),
+                                span: n.span(),
+                            })))
                         }
                     }
                     _ => self.collect_block_items(n, source, out)?,
@@ -140,7 +174,14 @@ impl<'config> CBuilder<'config> {
         let mut then_statement = None;
         let mut else_statement = None;
 
-        fn scan<'config>(builder: &CBuilder<'config>, node: &RedNode<CLanguage>, source: &SourceText, condition: &mut Option<Expression>, then_statement: &mut Option<Statement>, else_statement: &mut Option<Statement>) -> Result<(), TextError> {
+        fn scan<'config>(
+            builder: &CBuilder<'config>,
+            node: &RedNode<CLanguage>,
+            source: &SourceText,
+            condition: &mut Option<Expression>,
+            then_statement: &mut Option<Statement>,
+            else_statement: &mut Option<Statement>,
+        ) -> Result<(), TextError> {
             for child in node.children() {
                 if let RedTree::Node(n) = child {
                     match n.green.kind {
@@ -181,8 +222,13 @@ impl<'config> CBuilder<'config> {
         scan(self, &node, source, &mut condition, &mut then_statement, &mut else_statement)?;
 
         Ok(SelectionStatement::If {
-            condition: condition.unwrap_or(Expression { kind: Box::new(ExpressionKind::Constant(Constant::Integer(0, node.span()), node.span())), span: node.span() }),
-            then_statement: Box::new(then_statement.unwrap_or_else(|| Statement::Compound(CompoundStatement { block_items: vec![], span: node.span() }))),
+            condition: condition.unwrap_or(Expression {
+                kind: Box::new(ExpressionKind::Constant(Constant::Integer(0, node.span()), node.span())),
+                span: node.span(),
+            }),
+            then_statement: Box::new(
+                then_statement.unwrap_or_else(|| Statement::Compound(CompoundStatement { block_items: vec![], span: node.span() })),
+            ),
             else_statement: else_statement.map(Box::new),
             span: node.span(),
         })
@@ -201,7 +247,10 @@ impl<'config> CBuilder<'config> {
                     if t.kind == CTokenType::IntConstant {
                         let val = text(source, t.span.clone());
                         let int_val = val.parse::<i64>().unwrap_or(0);
-                        expression = Some(Expression { kind: Box::new(ExpressionKind::Constant(Constant::Integer(int_val, t.span.clone()), t.span.clone())), span: t.span.clone() })
+                        expression = Some(Expression {
+                            kind: Box::new(ExpressionKind::Constant(Constant::Integer(int_val, t.span.clone()), t.span.clone())),
+                            span: t.span.clone(),
+                        })
                     }
                 }
             }
@@ -216,7 +265,10 @@ impl<'config> CBuilder<'config> {
                     CTokenType::IntConstant => {
                         let val = text(source, t.span.clone());
                         let int_val = val.parse::<i64>().unwrap_or(0);
-                        return Ok(Some(Expression { kind: Box::new(ExpressionKind::Constant(Constant::Integer(int_val, t.span.clone()), t.span.clone())), span: t.span.clone() }));
+                        return Ok(Some(Expression {
+                            kind: Box::new(ExpressionKind::Constant(Constant::Integer(int_val, t.span.clone()), t.span.clone())),
+                            span: t.span.clone(),
+                        }));
                     }
                     CTokenType::Identifier => {
                         let name = text(source, t.span.clone());

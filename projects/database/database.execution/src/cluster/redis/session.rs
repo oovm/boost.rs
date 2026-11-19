@@ -4,8 +4,10 @@
 //! 排队、`EXEC` 如何判定 watch 失效、`DISCARD` 清掉什么，都由这里决定。连接层只负责
 //! 套接字、协议版本与 `CLIENT LIST` 投影。
 
-use database_protocol_redis::bind::{BindError, bind};
-use database_protocol_redis::codec::CommandError;
+use database_protocol_redis::{
+    bind::{BindError, bind},
+    codec::CommandError,
+};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_types::cluster::Namespace;
 
@@ -526,7 +528,9 @@ pub fn validate_command_for_queue(
     // Fall back to bind()'s own syntax checks.
     match bind(arguments, namespace.0.as_str()) {
         Ok(_) => Ok(()),
-        Err(BindError::WrongArity) => Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command)))),
+        Err(BindError::WrongArity) => {
+            Err(CommandError::Failed(format!("wrong number of arguments for '{}' command", lowercase_command(command))))
+        }
         Err(BindError::Syntax) => Err(CommandError::Failed("syntax error".to_owned())),
         Err(BindError::UnsupportedOptions) => Err(CommandError::Failed("syntax error".to_owned())),
         Err(BindError::InvalidInteger) => Err(CommandError::Failed("value is not an integer or out of range".to_owned())),

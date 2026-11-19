@@ -4,8 +4,10 @@ use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, OvmAbiSidecar, Result,
     bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module,
 };
+use compiler_target::{
+    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane,
+};
 use data_binary_odin::{OdinExportKind, OdinModuleData, decode_module};
-use compiler_target::{ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane};
 
 use super::BundledBackendCompiler;
 

@@ -4,11 +4,7 @@
 //! 运行状态文件与停止协调归 `database.server`。本模块只做公开选项映射、资源
 //! 组装与字段投影。
 
-use std::{
-    fmt,
-    path::Path,
-    sync::Arc,
-};
+use std::{fmt, path::Path, sync::Arc};
 
 use database::{
     cluster::{
@@ -20,18 +16,18 @@ use database::{
     types::cluster::Error as ClusterError,
 };
 
-/// 节点运行状态文件名。
-pub use database::server::node::STATUS_FILE;
+/// 无 catalog 时使用的本地分片 id。
+pub use database::cluster::catalog::node::LOCAL_SHARD_ID;
 /// 运行状态文件版本。
 pub use database::server::node::CONTROL_VERSION;
 /// 运行中节点发布的运行状态元数据。
 pub use database::server::node::RuntimeStatus;
-/// 无 catalog 时使用的本地分片 id。
-pub use database::cluster::catalog::node::LOCAL_SHARD_ID;
-/// 运行状态文件读写。
-pub use database::server::node::{new_runtime_status, read_runtime_status, write_runtime_status};
+/// 节点运行状态文件名。
+pub use database::server::node::STATUS_FILE;
 /// 停止标记与停止等待。
 pub use database::server::node::{clear_runtime_artifacts, request_stop, stop_requested, wait_until_stopped};
+/// 运行状态文件读写。
+pub use database::server::node::{new_runtime_status, read_runtime_status, write_runtime_status};
 
 /// 节点目录操作失败。
 #[derive(Debug)]
@@ -199,7 +195,9 @@ fn health(catalog_path: Option<&Path>, facts: &NodeCatalogFacts) -> String {
     let epoch = facts.routing.map().epoch().0;
     let shards = facts.routing.map().shards().len();
     match facts.schema_revision {
-        Some(revision) => format!("catalog-driven (path={}, schema_revision={revision}, routing_epoch={epoch}, shards={shards})", path.display()),
+        Some(revision) => {
+            format!("catalog-driven (path={}, schema_revision={revision}, routing_epoch={epoch}, shards={shards})", path.display())
+        }
         None => format!("catalog-driven-schema-pending (path={}, routing_epoch={epoch}, shards={shards})", path.display()),
     }
 }
@@ -208,11 +206,11 @@ fn health(catalog_path: Option<&Path>, facts: &NodeCatalogFacts) -> String {
 mod tests {
     use std::{fs, path::PathBuf, time::SystemTime};
 
+    use super::*;
     use database::{
         cluster::catalog::{Catalog, catalog_path, node::CatalogLoadError},
         types::cluster::{ShardEpoch, ShardId},
     };
-    use super::*;
 
     use database::cluster::control::NodeIdentity;
 

@@ -1,5 +1,5 @@
 use crate::{WolframLanguage, ast::WolframRoot, builder::WolframBuilder, lexer::token_type::WolframTokenType};
-use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{GreenNode, RedNode, RedTree, Source, TextError, TokenType};
 
 impl<'config> WolframBuilder<'config> {
     /// Build owned [`WolframRoot`] from a green root.

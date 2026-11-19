@@ -270,14 +270,8 @@ fn resolve_overload_inner(
 }
 
 /// 并列候选中恰有一个返回调用点期望类型时选中它；否则返回 `None`，不得猜测。
-fn select_by_return_context<'a>(
-    ambiguous: &[&'a OverloadCandidate],
-    contextual_type: &ValkyrieType,
-) -> Option<&'a OverloadCandidate> {
-    let matching = ambiguous
-        .iter()
-        .filter(|candidate| candidate.signature.return_type == *contextual_type)
-        .collect::<Vec<_>>();
+fn select_by_return_context<'a>(ambiguous: &[&'a OverloadCandidate], contextual_type: &ValkyrieType) -> Option<&'a OverloadCandidate> {
+    let matching = ambiguous.iter().filter(|candidate| candidate.signature.return_type == *contextual_type).collect::<Vec<_>>();
     match matching.as_slice() {
         [selected] => Some(**selected),
         _ => None,
@@ -290,11 +284,7 @@ fn select_by_numeric_literal_binding<'a>(
     ambiguous: &[&'a OverloadCandidate],
     bindings: &[Option<NumericLiteralBinding>],
 ) -> Option<&'a OverloadCandidate> {
-    let fitting = ambiguous
-        .iter()
-        .zip(bindings)
-        .filter(|(_, binding)| matches!(binding, Some(binding) if binding.fits))
-        .collect::<Vec<_>>();
+    let fitting = ambiguous.iter().zip(bindings).filter(|(_, binding)| matches!(binding, Some(binding) if binding.fits)).collect::<Vec<_>>();
     let min_coercions = fitting.iter().filter_map(|(_, binding)| binding.as_ref().map(|binding| binding.coercions)).min()?;
     let narrowed = fitting
         .into_iter()
@@ -330,14 +320,7 @@ mod tests {
     }
 
     fn selected_owner(resolved: Result<OverloadCandidate, OverloadResolutionError>) -> String {
-        resolved
-            .expect("数字字面量并列候选应能唯一裁决")
-            .symbol
-            .parts()
-            .last()
-            .expect("候选符号非空")
-            .as_str()
-            .to_owned()
+        resolved.expect("数字字面量并列候选应能唯一裁决").symbol.parts().last().expect("候选符号非空").as_str().to_owned()
     }
 
     #[test]
@@ -368,10 +351,7 @@ mod tests {
             Some(NumericLiteralBinding { fits: true, coercions: 2 }),
         ];
         let contextual = ValkyrieType::Integer64 { signed: true };
-        assert_eq!(
-            selected_owner(resolve_overload_with_numeric_literals(&candidates, &bindings, Some(&contextual))),
-            "i64"
-        );
+        assert_eq!(selected_owner(resolve_overload_with_numeric_literals(&candidates, &bindings, Some(&contextual))), "i64");
     }
 
     #[test]
@@ -380,10 +360,8 @@ mod tests {
             operator_candidate("i32", ValkyrieType::Integer32 { signed: true }),
             operator_candidate("i64", ValkyrieType::Integer64 { signed: true }),
         ];
-        let bindings = vec![
-            Some(NumericLiteralBinding { fits: false, coercions: 1 }),
-            Some(NumericLiteralBinding { fits: true, coercions: 1 }),
-        ];
+        let bindings =
+            vec![Some(NumericLiteralBinding { fits: false, coercions: 1 }), Some(NumericLiteralBinding { fits: true, coercions: 1 })];
         assert_eq!(selected_owner(resolve_overload_with_numeric_literals(&candidates, &bindings, None)), "i64");
     }
 
@@ -393,11 +371,7 @@ mod tests {
             operator_candidate("i32", ValkyrieType::Integer32 { signed: true }),
             operator_candidate("i64", ValkyrieType::Integer64 { signed: true }),
         ];
-        let bindings =
-            vec![Some(NumericLiteralBinding { fits: true, coercions: 1 }), Some(NumericLiteralBinding { fits: true, coercions: 1 })];
-        assert!(matches!(
-            resolve_overload_with_numeric_literals(&candidates, &bindings, None),
-            Err(OverloadResolutionError::Ambiguous { .. })
-        ));
+        let bindings = vec![Some(NumericLiteralBinding { fits: true, coercions: 1 }), Some(NumericLiteralBinding { fits: true, coercions: 1 })];
+        assert!(matches!(resolve_overload_with_numeric_literals(&candidates, &bindings, None), Err(OverloadResolutionError::Ambiguous { .. })));
     }
 }

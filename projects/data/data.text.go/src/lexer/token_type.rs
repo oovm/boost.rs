@@ -410,7 +410,14 @@ impl TokenType for GoTokenType {
         match self {
             Self::Eof => UniversalTokenRole::Eof,
             Self::Identifier => UniversalTokenRole::Name,
-            Self::StringLiteral | Self::IntLiteral | Self::FloatLiteral | Self::RuneLiteral | Self::BoolLiteral | Self::NilLiteral | Self::NumberLiteral | Self::CharLiteral => UniversalTokenRole::Literal,
+            Self::StringLiteral
+            | Self::IntLiteral
+            | Self::FloatLiteral
+            | Self::RuneLiteral
+            | Self::BoolLiteral
+            | Self::NilLiteral
+            | Self::NumberLiteral
+            | Self::CharLiteral => UniversalTokenRole::Literal,
             Self::Break
             | Self::Case
             | Self::Chan

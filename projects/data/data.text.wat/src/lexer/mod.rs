@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 pub(crate) type State<'a, S> = LexerState<'a, S, WatLanguage>;
 
 static WAT_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static WAT_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: ";;", block_start: "(;", block_end: ")", nested_blocks: true });
+static WAT_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: ";;", block_start: "(;", block_end: ")", nested_blocks: true });
 static WAT_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 
 /// Lexer for the WebAssembly Text (WAT) language.
@@ -23,7 +24,12 @@ pub struct WatLexer<'config> {
 }
 
 impl<'config> Lexer<WatLanguage> for WatLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, text: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<WatLanguage>) -> LexOutput<WatLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<WatLanguage>,
+    ) -> LexOutput<WatLanguage> {
         let mut state = State::new(text);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)
@@ -103,7 +109,15 @@ impl<'config> WatLexer<'config> {
                         is_float = true;
                         state.bump();
                     }
-                    else if ch == 'e' || ch == 'E' || ch == 'p' || ch == 'P' || ch == 'x' || ch == 'X' || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
+                    else if ch == 'e'
+                        || ch == 'E'
+                        || ch == 'p'
+                        || ch == 'P'
+                        || ch == 'x'
+                        || ch == 'X'
+                        || (ch >= 'a' && ch <= 'f')
+                        || (ch >= 'A' && ch <= 'F')
+                    {
                         state.bump();
                     }
                     else {

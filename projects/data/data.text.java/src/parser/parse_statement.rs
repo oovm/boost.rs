@@ -11,13 +11,17 @@ use data_text_core::{
 };
 
 /// Parse a statement
-pub(crate) fn parse_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     super::parse_expression::skip_trivia(state);
     let cp = state.checkpoint();
     let pk = state.peek_kind();
     match pk {
-        Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Final) | Some(Abstract) | Some(Class) | Some(Interface) | Some(Enum) | Some(Struct) | Some(Record) => {
+        Some(Public) | Some(Private) | Some(Protected) | Some(Static) | Some(Final) | Some(Abstract) | Some(Class) | Some(Interface)
+        | Some(Enum) | Some(Struct) | Some(Record) => {
             if let Err(_e) = parser.parse_declaration(state) {
                 recover_from_error(state);
             }
@@ -163,7 +167,10 @@ pub(crate) fn parse_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + D
 }
 
 /// Parse an if statement
-pub(crate) fn parse_if_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_if_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     state.bump();
     super::parse_expression::skip_trivia(state);
@@ -183,7 +190,10 @@ pub(crate) fn parse_if_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> 
 }
 
 /// Parse a while statement
-pub(crate) fn parse_while_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_while_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     state.bump();
     super::parse_expression::skip_trivia(state);
@@ -198,7 +208,10 @@ pub(crate) fn parse_while_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguag
 }
 
 /// Parse a do-while statement
-pub(crate) fn parse_do_while_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_do_while_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     state.bump();
     super::parse_expression::skip_trivia(state);
@@ -217,7 +230,10 @@ pub(crate) fn parse_do_while_statement<'a, S: Source + ?Sized, P: Pratt<JavaLang
 }
 
 /// Parse a for statement
-pub(crate) fn parse_for_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_for_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     state.bump();
     state.expect(LeftParen).ok();
@@ -268,7 +284,10 @@ pub(crate) fn parse_for_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage>
 }
 
 /// Parse a switch statement
-pub(crate) fn parse_switch_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_switch_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     use JavaTokenType::*;
     state.bump();
     super::parse_expression::skip_trivia(state);
@@ -315,7 +334,10 @@ pub(crate) fn parse_switch_statement<'a, S: Source + ?Sized, P: Pratt<JavaLangua
 }
 
 /// Parse a block statement
-pub(crate) fn parse_block_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_block_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     let cp = state.checkpoint();
     state.expect(JavaTokenType::LeftBrace).ok();
     while state.not_at_end() && !state.at(JavaTokenType::RightBrace) {
@@ -332,7 +354,10 @@ pub(crate) fn parse_block_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguag
 }
 
 /// Parse a return statement
-pub(crate) fn parse_return_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(parser: &P, state: &mut State<'a, S>) -> Result<(), TextError> {
+pub(crate) fn parse_return_statement<'a, S: Source + ?Sized, P: Pratt<JavaLanguage> + DeclarationParser>(
+    parser: &P,
+    state: &mut State<'a, S>,
+) -> Result<(), TextError> {
     state.bump();
     if !state.at(JavaTokenType::Semicolon) && !state.at(JavaTokenType::RightBrace) {
         PrattParser::parse(state, 0, parser);
@@ -381,8 +406,10 @@ pub(crate) fn recover_from_error<'a, S: Source + ?Sized>(state: &mut State<'a, S
     use JavaTokenType::*;
     while state.not_at_end() {
         match state.peek_kind() {
-            Some(Semicolon) | Some(LeftBrace) | Some(RightBrace) | Some(If) | Some(While) | Some(Do) | Some(For) | Some(Switch) | Some(Return) | Some(Break) | Some(Continue) | Some(Try) | Some(Throw) | Some(Package) | Some(Import) | Some(Public)
-            | Some(Private) | Some(Protected) | Some(Static) | Some(Final) | Some(Abstract) | Some(Class) | Some(Interface) | Some(Enum) | Some(Struct) | Some(Record) => {
+            Some(Semicolon) | Some(LeftBrace) | Some(RightBrace) | Some(If) | Some(While) | Some(Do) | Some(For) | Some(Switch)
+            | Some(Return) | Some(Break) | Some(Continue) | Some(Try) | Some(Throw) | Some(Package) | Some(Import) | Some(Public)
+            | Some(Private) | Some(Protected) | Some(Static) | Some(Final) | Some(Abstract) | Some(Class) | Some(Interface) | Some(Enum)
+            | Some(Struct) | Some(Record) => {
                 break;
             }
             _ => {

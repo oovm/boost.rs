@@ -33,7 +33,16 @@ impl DjangoLanguage {
 
 impl Default for DjangoLanguage {
     fn default() -> Self {
-        Self { strict_mode: false, allow_custom_tags: true, variable_start: "{{".to_string(), variable_end: "}}".to_string(), tag_start: "{%".to_string(), tag_end: "%}".to_string(), comment_start: "{#".to_string(), comment_end: "#}".to_string() }
+        Self {
+            strict_mode: false,
+            allow_custom_tags: true,
+            variable_start: "{{".to_string(),
+            variable_end: "}}".to_string(),
+            tag_start: "{%".to_string(),
+            tag_end: "%}".to_string(),
+            comment_start: "{#".to_string(),
+            comment_end: "#}".to_string(),
+        }
     }
 }
 

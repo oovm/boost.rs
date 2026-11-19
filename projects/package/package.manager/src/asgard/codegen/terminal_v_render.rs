@@ -21,18 +21,24 @@
 use std::fmt::Write as _;
 
 use data_text_core::Range;
-use data_text_valkyrie::ast::{MicroDeclaration, Statement, TermExpression, TermBinaryNode, TypeExpression};
-use data_text_valkyrie::lexer::token_type::ValkyrieTokenType;
-
-use crate::asgard::awsl::{
-    LoweredComponent, RenderAttr, RenderAttrValue, RenderIfNode, RenderLoopNode, RenderModule, RenderNode, RenderNodeId, RenderRegionId,
-    RenderTextSegment, ScriptBinding, SignalValueType,
-    render_ir::{attr_value_source, region_nodes},
+use data_text_valkyrie::{
+    ast::{MicroDeclaration, Statement, TermBinaryNode, TermExpression, TypeExpression},
+    lexer::token_type::ValkyrieTokenType,
 };
-use crate::asgard::error::{AsgardError, AsgardResult};
 
-use super::terminal_script::{ScriptFacts, parse_expression_fragment};
-use super::v_render::util::{encode_v_text_literal, is_simple_identifier, strip_expr_braces};
+use crate::asgard::{
+    awsl::{
+        LoweredComponent, RenderAttr, RenderAttrValue, RenderIfNode, RenderLoopNode, RenderModule, RenderNode, RenderNodeId, RenderRegionId,
+        RenderTextSegment, ScriptBinding, SignalValueType,
+        render_ir::{attr_value_source, region_nodes},
+    },
+    error::{AsgardError, AsgardResult},
+};
+
+use super::{
+    terminal_script::{ScriptFacts, parse_expression_fragment},
+    v_render::util::{encode_v_text_literal, is_simple_identifier, strip_expr_braces},
+};
 
 /// 将组件 RenderIR 生成为终端 V 源码（session 控件树构造 + 事件处理函数 + main）。
 ///
@@ -105,12 +111,9 @@ impl<'a> TerminalVCodegen<'a> {
     /// 经运行帧句柄的类型化槽补丁，随后重挂载刷新展示文本。语句与表达式事实全部
     /// 来自 AST；局部绑定、模板节点与非赋值语句在语句边界显式拒绝。
     fn translate_handler(&self, name: &str) -> AsgardResult<String> {
-        let script = self
-            .script
-            .ok_or_else(|| self.reject_handler(name, "组件没有 `<script>` 段，处理器体没有正式脚本事实可翻译"))?;
-        let micro: &MicroDeclaration = script
-            .handler(name)
-            .ok_or_else(|| self.reject_handler(name, "`<script>` 中不存在同名 `micro` 定义，处理器没有可翻译的函数体"))?;
+        let script = self.script.ok_or_else(|| self.reject_handler(name, "组件没有 `<script>` 段，处理器体没有正式脚本事实可翻译"))?;
+        let micro: &MicroDeclaration =
+            script.handler(name).ok_or_else(|| self.reject_handler(name, "`<script>` 中不存在同名 `micro` 定义，处理器没有可翻译的函数体"))?;
         if !micro.params.is_empty() {
             return Err(self.reject_handler(name, "处理函数声明了形参，事件回调签名固定为 `micro(mut TuiSession) -> unit`，无法接线"));
         }
@@ -118,7 +121,8 @@ impl<'a> TerminalVCodegen<'a> {
         for statement in &micro.body.statements {
             match statement {
                 Statement::Expression(expr_stmt) => {
-                    let TermExpression::Binary(node) = &expr_stmt.expr else {
+                    let TermExpression::Binary(node) = &expr_stmt.expr
+                    else {
                         return Err(self.reject_handler(
                             name,
                             &format!("语句 `{}` 不是对绑定的赋值，终端语义无法翻译", script.slice(expr_stmt.expr.span())),
@@ -133,7 +137,8 @@ impl<'a> TerminalVCodegen<'a> {
                     let target = simple_name(&node.lhs).ok_or_else(|| {
                         self.reject_handler(name, &format!("赋值目标 `{}` 不是简单绑定名，终端语义无法翻译", script.slice(node.lhs.span())))
                     })?;
-                    let Some(binding) = self.bindings.iter().find(|binding| binding.name == target) else {
+                    let Some(binding) = self.bindings.iter().find(|binding| binding.name == target)
+                    else {
                         return Err(self.reject_handler(name, &format!("赋值目标 `{target}` 不是脚本绑定，没有类型化槽通道")));
                     };
                     if !binding.reactive {
@@ -166,7 +171,13 @@ impl<'a> TerminalVCodegen<'a> {
         writeln!(out, "micro awsl_call_{name}(session: mut TuiSession) -> unit {{").unwrap();
         for binding in &slots {
             let (method, handle_type, initial) = slot_registration(binding);
-            writeln!(out, "    let {}: {handle_type} = AsgardTuiBindings.{method}(session, {}, {initial})", slot_var(binding), encode_v_text_literal(&binding.name)).unwrap();
+            writeln!(
+                out,
+                "    let {}: {handle_type} = AsgardTuiBindings.{method}(session, {}, {initial})",
+                slot_var(binding),
+                encode_v_text_literal(&binding.name)
+            )
+            .unwrap();
         }
         for (binding, rhs) in &patches {
             let mut renderer = ExprRenderer {
@@ -225,13 +236,17 @@ impl ExprRenderer<'_> {
     fn render(&mut self, expr: &TermExpression) -> AsgardResult<Rendered> {
         match expr {
             TermExpression::NamePath(path) => {
-                if path.parts.len() == 1 && let Some(rendered) = self.resolve_binding(&path.parts[0].name)? {
+                if path.parts.len() == 1
+                    && let Some(rendered) = self.resolve_binding(&path.parts[0].name)?
+                {
                     return Ok(rendered);
                 }
                 let text = path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>().join("::");
                 Ok(Rendered { text, is_text: false })
             }
-            TermExpression::QuoteLiteral(literal) => Ok(Rendered { text: self.source.get(literal.span.start..literal.span.end).unwrap_or_default().to_string(), is_text: true }),
+            TermExpression::QuoteLiteral(literal) => {
+                Ok(Rendered { text: self.source.get(literal.span.start..literal.span.end).unwrap_or_default().to_string(), is_text: true })
+            }
             TermExpression::IntegerLiteral { value, .. } | TermExpression::FloatLiteral { value, .. } => {
                 Ok(Rendered { text: value.clone(), is_text: false })
             }
@@ -253,8 +268,8 @@ impl ExprRenderer<'_> {
             TermExpression::UnitLiteral { .. } => Ok(Rendered { text: "()".to_string(), is_text: false }),
             TermExpression::Binary(node) => self.render_binary(node),
             TermExpression::Unary(node) => {
-                let prefix = unary_prefix(node.operator)
-                    .ok_or_else(|| self.reject(node.span.clone(), "不支持的一元操作符，终端语义没有该事实"))?;
+                let prefix =
+                    unary_prefix(node.operator).ok_or_else(|| self.reject(node.span.clone(), "不支持的一元操作符，终端语义没有该事实"))?;
                 let base = self.render(&node.base)?;
                 Ok(Rendered { text: format!("{prefix}{}", base.text), is_text: base.is_text })
             }
@@ -293,8 +308,8 @@ impl ExprRenderer<'_> {
         if matches!(node.operator, ValkyrieTokenType::Eq | ValkyrieTokenType::ColonEq) {
             return Err(self.reject(node.span.clone(), "赋值不允许出现在表达式位置"));
         }
-        let operator = binary_operator_text(node.operator)
-            .ok_or_else(|| self.reject(node.span.clone(), "不支持的二元操作符，终端语义没有该事实"))?;
+        let operator =
+            binary_operator_text(node.operator).ok_or_else(|| self.reject(node.span.clone(), "不支持的二元操作符，终端语义没有该事实"))?;
         let lhs = self.render(&node.lhs)?;
         let rhs = self.render(&node.rhs)?;
         Ok(Rendered { text: format!("{} {operator} {}", lhs.text, rhs.text), is_text: false })
@@ -307,7 +322,8 @@ impl ExprRenderer<'_> {
     /// 单段名字路径的绑定解析：响应式绑定读类型化槽，非响应式绑定展开其初始
     /// 表达式（同一解析事实，带环守卫）；未知名保持原样，由 V 编译面失败闭合。
     fn resolve_binding(&mut self, name: &str) -> AsgardResult<Option<Rendered>> {
-        let Some(binding) = self.bindings.iter().find(|binding| binding.name == name) else {
+        let Some(binding) = self.bindings.iter().find(|binding| binding.name == name)
+        else {
             return Ok(None);
         };
         if binding.reactive {
@@ -417,10 +433,14 @@ fn type_text(ty: &TypeExpression) -> Option<String> {
 fn expr_mentions(expr: &TermExpression, name: &str) -> bool {
     match expr {
         TermExpression::NamePath(path) => path.parts.len() == 1 && path.parts[0].name == name,
-        TermExpression::ArrayLiteral { items, .. } | TermExpression::TupleLiteral { items, .. } => items.iter().any(|item| expr_mentions(item, name)),
+        TermExpression::ArrayLiteral { items, .. } | TermExpression::TupleLiteral { items, .. } => {
+            items.iter().any(|item| expr_mentions(item, name))
+        }
         TermExpression::Binary(node) => expr_mentions(&node.lhs, name) || expr_mentions(&node.rhs, name),
         TermExpression::Unary(node) => expr_mentions(&node.base, name),
-        TermExpression::Group { expr, .. } | TermExpression::TryPropagate { expr, .. } | TermExpression::Cast { expr, .. } => expr_mentions(expr, name),
+        TermExpression::Group { expr, .. } | TermExpression::TryPropagate { expr, .. } | TermExpression::Cast { expr, .. } => {
+            expr_mentions(expr, name)
+        }
         TermExpression::ApplyCall { callee, args, .. } => expr_mentions(callee, name) || args.iter().any(|arg| expr_mentions(arg, name)),
         TermExpression::DotCall { receiver, .. } => expr_mentions(receiver, name),
         TermExpression::Index { receiver, index, .. } | TermExpression::Offset { receiver, offset: index, .. } => {
@@ -578,7 +598,13 @@ fn emit_tag(
 }
 
 /// 生成容器 widget（column/row/box/list）：先构建子节点列表，再包装。
-fn emit_container(ctx: &mut TerminalVCodegen<'_>, out: &mut String, ctor: &str, children: RenderRegionId, indent: &str) -> AsgardResult<String> {
+fn emit_container(
+    ctx: &mut TerminalVCodegen<'_>,
+    out: &mut String,
+    ctor: &str,
+    children: RenderRegionId,
+    indent: &str,
+) -> AsgardResult<String> {
     let list_var = format!("children_{}", ctx.var_counter);
     ctx.var_counter += 1;
     writeln!(out, "{indent}let {list_var}: ArrayList<Widget> = ArrayList::new(8)").unwrap();

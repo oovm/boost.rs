@@ -83,7 +83,6 @@ impl X64Reg {
             Self::Rsi => [0x48, 0xBE],
         }
     }
-
 }
 
 /// 局部槽到 `rbp` 的负位移：`[rbp - 8 * (slot + 1)]`。

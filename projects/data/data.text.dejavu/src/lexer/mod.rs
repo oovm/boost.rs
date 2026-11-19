@@ -20,7 +20,12 @@ impl<'config> DejavuLexer<'config> {
 }
 
 impl<'config> Lexer<DejavuLanguage> for DejavuLexer<'config> {
-    fn lex<'b, S: Source + ?Sized>(&self, text: &'b S, edits: &[TextEdit], cache: &'b mut impl LexerCache<DejavuLanguage>) -> LexOutput<DejavuLanguage> {
+    fn lex<'b, S: Source + ?Sized>(
+        &self,
+        text: &'b S,
+        edits: &[TextEdit],
+        cache: &'b mut impl LexerCache<DejavuLanguage>,
+    ) -> LexOutput<DejavuLanguage> {
         let relex_from = if edits.is_empty() { text.length() } else { edits.iter().map(|e| e.span.start).min().unwrap_or(0) };
 
         let mut state = LexerState::new_with_cache(text, relex_from, cache);

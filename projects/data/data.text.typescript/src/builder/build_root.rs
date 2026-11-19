@@ -1,9 +1,13 @@
 use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, parser::element_type::TypeScriptElementType};
 use core::range::Range;
-use data_text_core::{TextError, RedNode, RedTree, SourceText};
+use data_text_core::{RedNode, RedTree, SourceText, TextError};
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_root(&self, green_tree: &data_text_core::GreenNode<TypeScriptLanguage>, source: &SourceText) -> Result<TypeScriptRoot, TextError> {
+    pub(crate) fn build_root(
+        &self,
+        green_tree: &data_text_core::GreenNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<TypeScriptRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
         let span = red_root.span();
         let mut statements = Vec::new();
@@ -18,7 +22,12 @@ impl<'config> TypeScriptBuilder<'config> {
         Ok(TypeScriptRoot { statements, top_level_await_spans, span: span.into() })
     }
 
-    pub(crate) fn collect_statements(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText, statements: &mut Vec<Statement>) -> Result<(), TextError> {
+    pub(crate) fn collect_statements(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+        statements: &mut Vec<Statement>,
+    ) -> Result<(), TextError> {
         let kind = node.green.kind;
 
         if kind == TypeScriptElementType::SourceFile || kind == TypeScriptElementType::Root {
@@ -159,7 +168,10 @@ fn collect_top_level_await_expression(expr: &Expression, spans: &mut Vec<Range<u
             spans.push(expr.span.clone());
             collect_top_level_await_expression(argument, spans);
         }
-        ExpressionKind::UnaryExpression { argument, .. } | ExpressionKind::UpdateExpression { argument, .. } | ExpressionKind::NonNullExpression(argument) | ExpressionKind::SpreadElement(argument) => {
+        ExpressionKind::UnaryExpression { argument, .. }
+        | ExpressionKind::UpdateExpression { argument, .. }
+        | ExpressionKind::NonNullExpression(argument)
+        | ExpressionKind::SpreadElement(argument) => {
             collect_top_level_await_expression(argument, spans);
         }
         ExpressionKind::BinaryExpression { left, right, .. } | ExpressionKind::AssignmentExpression { left, right, .. } => {
@@ -181,7 +193,9 @@ fn collect_top_level_await_expression(expr: &Expression, spans: &mut Vec<Range<u
                 collect_top_level_await_expression(arg, spans);
             }
         }
-        ExpressionKind::AsExpression { expression, .. } | ExpressionKind::SatisfiesExpression { expression, .. } | ExpressionKind::TypeAssertionExpression { expression, .. } => {
+        ExpressionKind::AsExpression { expression, .. }
+        | ExpressionKind::SatisfiesExpression { expression, .. }
+        | ExpressionKind::TypeAssertionExpression { expression, .. } => {
             collect_top_level_await_expression(expression, spans);
         }
         ExpressionKind::ObjectLiteral { properties } => {

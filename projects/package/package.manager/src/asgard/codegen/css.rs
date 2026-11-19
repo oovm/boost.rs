@@ -23,7 +23,10 @@ pub fn extract_and_merge_styles(
         "per-component" => {
             let mut outputs = components
                 .iter()
-                .map(|component| CssOutput { content: crate::asgard::style::web::component_web_css(component), filename: component_css_filename(&component.name) })
+                .map(|component| CssOutput {
+                    content: crate::asgard::style::web::component_web_css(component),
+                    filename: component_css_filename(&component.name),
+                })
                 .filter(|output| !output.content.trim().is_empty())
                 .collect::<Vec<_>>();
             if let Some(extra) = tailwind_css {

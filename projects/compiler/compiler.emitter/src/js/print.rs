@@ -41,10 +41,7 @@ pub fn minify_source(source: &str) -> Result<(String, Vec<SourceMapSegment>), St
 /// `++`/`--`, and a following line that starts with a continuation token).
 /// This does not do identifier renaming, dead-code elimination or statement
 /// folding.
-fn minify_tokens(
-    source: &str,
-    deletions: &[(usize, usize)],
-) -> Result<(String, Vec<SourceMapSegment>), String> {
+fn minify_tokens(source: &str, deletions: &[(usize, usize)]) -> Result<(String, Vec<SourceMapSegment>), String> {
     // 测试期探针按「一次压缩」武装：只判定单次调用是否重复扫描。
     #[cfg(test)]
     scan_probe::arm(source.len());
@@ -52,10 +49,7 @@ fn minify_tokens(
     let language = TypeScriptLanguage::default();
     let lexer = TypeScriptLexer::new(&language);
     let mut cache = NoLexerCache;
-    let tokens = lexer
-        .lex(&text, &[], &mut cache)
-        .result
-        .map_err(|error| format!("TypeScript lexer failed: {error:?}"))?;
+    let tokens = lexer.lex(&text, &[], &mut cache).result.map_err(|error| format!("TypeScript lexer failed: {error:?}"))?;
 
     let mut out = String::with_capacity(source.len());
     let mut line = 0u32;
@@ -82,13 +76,7 @@ fn minify_tokens(
                 push_text(&mut out, &mut line, &mut col, separator);
             }
             let (src_line, src_col) = cursor.advance_to(start);
-            segments.push(SourceMapSegment {
-                gen_line: line,
-                gen_col: col,
-                src_index: 0,
-                src_line,
-                src_col,
-            });
+            segments.push(SourceMapSegment { gen_line: line, gen_col: col, src_index: 0, src_line, src_col });
             push_text(&mut out, &mut line, &mut col, fragment);
             prev = Some((token.kind, start, end));
         }
@@ -127,10 +115,7 @@ mod scan_probe {
         SCANNED.with(|scanned| scanned.set(scanned.get() + visited));
         if let Some(limit) = LIMIT.with(Cell::get) {
             let total = SCANNED.with(Cell::get);
-            assert!(
-                total <= limit,
-                "source map positions rescanned the source: {total} chars for a {limit}-char source"
-            );
+            assert!(total <= limit, "source map positions rescanned the source: {total} chars for a {limit}-char source");
         }
     }
 }
@@ -164,7 +149,8 @@ impl<'a> PositionCursor<'a> {
             if ch == '\n' {
                 self.line += 1;
                 self.col = 0;
-            } else {
+            }
+            else {
                 self.col += ch.len_utf16() as u32;
             }
         }
@@ -267,7 +253,8 @@ fn is_statement_end(kind: T) -> bool {
 
 /// Whether two adjacent token texts must stay separated to keep lexing stable.
 fn needs_space(prev_kind: T, prev_text: &str, next_text: &str) -> bool {
-    let (Some(prev), Some(next)) = (prev_text.chars().last(), next_text.chars().next()) else {
+    let (Some(prev), Some(next)) = (prev_text.chars().last(), next_text.chars().next())
+    else {
         return false;
     };
     if prev_kind == T::RegexLiteral && (is_identifier_char(next) || next.is_ascii_digit()) {
@@ -296,7 +283,8 @@ fn push_text(out: &mut String, line: &mut u32, col: &mut u32, text: &str) {
         if ch == '\n' {
             *line += 1;
             *col = 0;
-        } else {
+        }
+        else {
             *col += ch.len_utf16() as u32;
         }
     }
@@ -304,24 +292,14 @@ fn push_text(out: &mut String, line: &mut u32, col: &mut u32, text: &str) {
 }
 
 /// Map generated offsets of the erased output back to original line starts.
-fn erased_line_segments(
-    source: &str,
-    deletions: &[(usize, usize)],
-    erased: &str,
-) -> Vec<SourceMapSegment> {
+fn erased_line_segments(source: &str, deletions: &[(usize, usize)], erased: &str) -> Vec<SourceMapSegment> {
     let source_lines = SourceLines::new(source);
     let mut segments = Vec::new();
     let mut offset = 0usize;
     for (index, generated) in erased.split('\n').enumerate() {
         let original = map_erased_offset(offset, deletions);
         let (src_line, src_col) = source_lines.line_col(original);
-        segments.push(SourceMapSegment {
-            gen_line: index as u32,
-            gen_col: 0,
-            src_index: 0,
-            src_line,
-            src_col,
-        });
+        segments.push(SourceMapSegment { gen_line: index as u32, gen_col: 0, src_index: 0, src_line, src_col });
         offset += generated.len() + 1;
     }
     segments
@@ -336,9 +314,11 @@ pub fn map_erased_offset(offset: usize, deletions: &[(usize, usize)]) -> usize {
         let length = end - start;
         if offset + removed >= end {
             removed += length;
-        } else if offset + removed >= start {
+        }
+        else if offset + removed >= start {
             return end;
-        } else {
+        }
+        else {
             break;
         }
     }
@@ -390,12 +370,7 @@ impl<'a> SourceLines<'a> {
 /// Segments must be sorted by `(gen_line, gen_col)`; the `src_index` field
 /// selects the entry in `sources` / `sources_content` (adjacent deltas are
 /// encoded into `mappings`).
-pub fn source_map_json(
-    file: &str,
-    sources: &[String],
-    sources_content: &[String],
-    segments: &[SourceMapSegment],
-) -> String {
+pub fn source_map_json(file: &str, sources: &[String], sources_content: &[String], segments: &[SourceMapSegment]) -> String {
     let mut mappings = String::new();
     let last_line = segments.last().map_or(0, |segment| segment.gen_line);
     let mut index = 0usize;
@@ -497,13 +472,7 @@ mod tests {
         assert_eq!(code, source, "压缩结果与预期不一致");
         assert!(segments.len() > 70_000, "合成输入应有可比数量的 token，实际 {}", segments.len());
 
-        assert!(
-            scanned <= source_chars,
-            "位置定位重复扫描：{scanned} 字符 / 源文本 {source_chars} 字符"
-        );
-        assert!(
-            scanned + TAIL_CHARS >= source_chars,
-            "位置游标没有走到文本末尾：{scanned} 字符 / 源文本 {source_chars} 字符"
-        );
+        assert!(scanned <= source_chars, "位置定位重复扫描：{scanned} 字符 / 源文本 {source_chars} 字符");
+        assert!(scanned + TAIL_CHARS >= source_chars, "位置游标没有走到文本末尾：{scanned} 字符 / 源文本 {source_chars} 字符");
     }
 }

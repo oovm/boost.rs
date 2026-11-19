@@ -1,7 +1,5 @@
 use boost_source::binary::{ByteSource, ContentIdentity, MemorySource, ReadOutcome};
-use data_binary_core::{
-    AddressSpaceId, ByteExtent, LayoutGraph, LayoutNodeId, NeedRange, NodeState, ReferenceEdge, evidence_absolute,
-};
+use data_binary_core::{AddressSpaceId, ByteExtent, LayoutGraph, LayoutNodeId, NeedRange, NodeState, ReferenceEdge, evidence_absolute};
 
 use crate::{
     entry::ZipMember,
@@ -133,8 +131,8 @@ pub fn index_zip<S: ByteSource>(source: &S) -> Result<ZipArchiveIndex, ZipIndexE
         }
         // An archive without members has no directory to read. The empty interval is
         // still recorded, because the record points at where it would begin.
-        let empty = ByteExtent::new_allowing_empty(eocd.central_directory_offset, 0)
-            .map_err(|error| ZipIndexError::Layout(error.to_string()))?;
+        let empty =
+            ByteExtent::new_allowing_empty(eocd.central_directory_offset, 0).map_err(|error| ZipIndexError::Layout(error.to_string()))?;
         let node = layout
             .insert_node(NodeState::Indexed, empty, "ZIP empty central directory")
             .map_err(|error| ZipIndexError::Layout(error.to_string()))?;
@@ -163,8 +161,7 @@ pub fn index_zip<S: ByteSource>(source: &S) -> Result<ZipArchiveIndex, ZipIndexE
 
     let _ = layout.insert_node(
         NodeState::Indexed,
-        ByteExtent::new(eocd.offset, eocd_record_len(eocd.comment_length))
-            .map_err(|error| ZipIndexError::Layout(error.to_string()))?,
+        ByteExtent::new(eocd.offset, eocd_record_len(eocd.comment_length)).map_err(|error| ZipIndexError::Layout(error.to_string()))?,
         "ZIP end of central directory",
     );
 
@@ -221,14 +218,12 @@ fn read_source_range<S: ByteSource>(source: &S, start: u64, len: u64) -> Result<
             // supply it instead of reading a shorter tree.
             let missing_start = start.saturating_add(bytes_read);
             let missing_len = len.saturating_sub(bytes_read);
-            let range = ByteExtent::new_allowing_empty(missing_start, missing_len)
-                .map_err(|error| ZipIndexError::Layout(error.to_string()))?;
+            let range = ByteExtent::new_allowing_empty(missing_start, missing_len).map_err(|error| ZipIndexError::Layout(error.to_string()))?;
             Err(ZipIndexError::NeedRange { range })
         }
         Ok(ReadOutcome::Eof) => Err(ZipIndexError::NotZip),
         Ok(ReadOutcome::Unavailable { range, .. }) => {
-            let range = ByteExtent::new_allowing_empty(range.start(), range.len())
-                .map_err(|error| ZipIndexError::Layout(error.to_string()))?;
+            let range = ByteExtent::new_allowing_empty(range.start(), range.len()).map_err(|error| ZipIndexError::Layout(error.to_string()))?;
             Err(ZipIndexError::NeedRange { range })
         }
         Err(error) => Err(ZipIndexError::Layout(error.to_string())),
@@ -260,10 +255,7 @@ fn parse_central_directory<S: ByteSource>(
         let version_needed = read_u16_le(directory, offset + 6).unwrap_or(0);
         let general_purpose_bit_flag = read_u16_le(directory, offset + 8).unwrap_or(0);
         let compression_method = read_u16_le(directory, offset + 10).unwrap_or(0);
-        let modified = ZipDosDateTime::new(
-            read_u16_le(directory, offset + 12).unwrap_or(0),
-            read_u16_le(directory, offset + 14).unwrap_or(0),
-        );
+        let modified = ZipDosDateTime::new(read_u16_le(directory, offset + 12).unwrap_or(0), read_u16_le(directory, offset + 14).unwrap_or(0));
         let crc32 = read_u32_le(directory, offset + 16).unwrap_or(0);
         let compressed32 = read_u32_le(directory, offset + 20).unwrap_or(0);
         let uncompressed32 = read_u32_le(directory, offset + 24).unwrap_or(0);
@@ -288,8 +280,7 @@ fn parse_central_directory<S: ByteSource>(
         let name_label = String::from_utf8_lossy(&raw_name);
 
         let extra_start = name_end;
-        let modified_unix =
-            parse_extended_timestamp(directory, extra_start, extra_length).and_then(|stamp| stamp.modified_unix);
+        let modified_unix = parse_extended_timestamp(directory, extra_start, extra_length).and_then(|stamp| stamp.modified_unix);
         let zip64 = if needs_uncompressed || needs_compressed || needs_local_offset {
             parse_zip64_extra(
                 directory,
@@ -313,21 +304,16 @@ fn parse_central_directory<S: ByteSource>(
         };
 
         let entry_len = CD_ENTRY_PREFIX + name_length + extra_length + comment_length;
-        let entry_range = ByteExtent::new(entry_offset, entry_len as u64)
-            .map_err(|_| ZipIndexError::MalformedEntry { offset: entry_offset })?;
+        let entry_range =
+            ByteExtent::new(entry_offset, entry_len as u64).map_err(|_| ZipIndexError::MalformedEntry { offset: entry_offset })?;
 
         let member_node = layout
             .insert_node(NodeState::Indexed, entry_range, format!("ZIP member {name_label}"))
             .map_err(|error| ZipIndexError::Layout(error.to_string()))?;
 
-        let (data_range, payload_range) =
-            member_payload_range(source, zip64.local_header_offset, zip64.compressed_size, data_end)?;
+        let (data_range, payload_range) = member_payload_range(source, zip64.local_header_offset, zip64.compressed_size, data_end)?;
 
-        layout.add_edge(ReferenceEdge {
-            from: member_node,
-            to: member_node,
-            evidence: evidence_absolute(space, "local header", data_range),
-        });
+        layout.add_edge(ReferenceEdge { from: member_node, to: member_node, evidence: evidence_absolute(space, "local header", data_range) });
 
         members.push(ZipMember {
             raw_name,
@@ -358,9 +344,8 @@ fn member_payload_range<S: ByteSource>(
     compressed_size: u64,
     data_end: u64,
 ) -> Result<(ByteExtent, ByteExtent), ZipIndexError> {
-    let header_end = local_header_offset
-        .checked_add(LOCAL_HEADER_PREFIX)
-        .ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
+    let header_end =
+        local_header_offset.checked_add(LOCAL_HEADER_PREFIX).ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
     if header_end > data_end {
         return Err(ZipIndexError::MalformedEntry { offset: local_header_offset });
     }
@@ -374,10 +359,8 @@ fn member_payload_range<S: ByteSource>(
         .checked_add(name_length)
         .and_then(|len| len.checked_add(extra_length))
         .ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
-    let payload_start =
-        local_header_offset.checked_add(header_len).ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
-    let payload_end =
-        payload_start.checked_add(compressed_size).ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
+    let payload_start = local_header_offset.checked_add(header_len).ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
+    let payload_end = payload_start.checked_add(compressed_size).ok_or(ZipIndexError::MalformedEntry { offset: local_header_offset })?;
     if payload_end > data_end {
         return Err(ZipIndexError::MalformedEntry { offset: local_header_offset });
     }

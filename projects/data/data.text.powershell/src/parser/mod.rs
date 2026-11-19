@@ -221,7 +221,14 @@ impl<'a> PowerShellParser<'a> {
         let checkpoint = state.checkpoint();
 
         // Command name or variable
-        if state.not_at_end() && !matches!(state.peek_kind(), Some(PowerShellTokenType::Newline | PowerShellTokenType::Semicolon | PowerShellTokenType::Pipe | PowerShellTokenType::RightBrace)) {
+        if state.not_at_end()
+            && !matches!(
+                state.peek_kind(),
+                Some(
+                    PowerShellTokenType::Newline | PowerShellTokenType::Semicolon | PowerShellTokenType::Pipe | PowerShellTokenType::RightBrace
+                )
+            )
+        {
             state.bump();
         }
 
@@ -229,7 +236,12 @@ impl<'a> PowerShellParser<'a> {
         while state.not_at_end() {
             self.skip_trivia(state);
             let kind = state.peek_kind();
-            if matches!(kind, Some(PowerShellTokenType::Newline | PowerShellTokenType::Semicolon | PowerShellTokenType::Pipe | PowerShellTokenType::RightBrace)) {
+            if matches!(
+                kind,
+                Some(
+                    PowerShellTokenType::Newline | PowerShellTokenType::Semicolon | PowerShellTokenType::Pipe | PowerShellTokenType::RightBrace
+                )
+            ) {
                 break;
             }
             state.bump();
@@ -246,7 +258,12 @@ impl<'a> PowerShellParser<'a> {
 }
 
 impl<'a> Parser<PowerShellLanguage> for PowerShellParser<'a> {
-    fn parse<'b, S: Source + ?Sized>(&self, text: &'b S, edits: &[TextEdit], cache: &'b mut impl ParseCache<PowerShellLanguage>) -> ParseOutput<'b, PowerShellLanguage> {
+    fn parse<'b, S: Source + ?Sized>(
+        &self,
+        text: &'b S,
+        edits: &[TextEdit],
+        cache: &'b mut impl ParseCache<PowerShellLanguage>,
+    ) -> ParseOutput<'b, PowerShellLanguage> {
         let lexer = crate::lexer::PowerShellLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

@@ -22,7 +22,12 @@ pub struct VerilogLexer<'config> {
 }
 
 impl<'config> Lexer<VerilogLanguage> for VerilogLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<VerilogLanguage>) -> LexOutput<VerilogLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<VerilogLanguage>,
+    ) -> LexOutput<VerilogLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         state.finish_with_cache(result, cache)

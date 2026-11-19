@@ -40,7 +40,9 @@ impl PackagePublisher {
             return Err(PublishError::message("版本号不能为空"));
         }
 
-        if !options.skip_git_check && let Some(message) = git_dirty_message(package_path) {
+        if !options.skip_git_check
+            && let Some(message) = git_dirty_message(package_path)
+        {
             let _ = message;
         }
 

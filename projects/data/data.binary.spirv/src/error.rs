@@ -115,11 +115,7 @@ impl Display for SpirvLayoutError {
         match self {
             Self::UnknownLength => write!(f, "SPIR-V source does not report a total length"),
             Self::TruncatedHeader { available_bytes, evidence } => {
-                write!(
-                    f,
-                    "SPIR-V header is truncated: {available_bytes} of 20 bytes available at word {}",
-                    evidence.word_offset
-                )
+                write!(f, "SPIR-V header is truncated: {available_bytes} of 20 bytes available at word {}", evidence.word_offset)
             }
             Self::BadMagic { magic, evidence } => {
                 write!(f, "SPIR-V magic mismatch at word {}: {magic:#010X}", evidence.word_offset)
@@ -137,11 +133,7 @@ impl Display for SpirvLayoutError {
                 write!(f, "SPIR-V instruction at word {} declares a zero word count", evidence.word_offset)
             }
             Self::InstructionOutOfBounds { word_count, available_words, evidence } => {
-                write!(
-                    f,
-                    "SPIR-V instruction at word {} declares {word_count} words but only {available_words} remain",
-                    evidence.word_offset
-                )
+                write!(f, "SPIR-V instruction at word {} declares {word_count} words but only {available_words} remain", evidence.word_offset)
             }
             Self::ShortRead { expected, actual, evidence } => {
                 write!(f, "short read at word {}: expected {expected} bytes, read {actual}", evidence.word_offset)

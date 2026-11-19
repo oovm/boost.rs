@@ -4,7 +4,7 @@ pub mod token_type;
 
 use crate::{language::ScalaLanguage, lexer::token_type::ScalaTokenType};
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, TextEdit,
+    Lexer, LexerCache, LexerState, TextEdit, TextError,
     lexer::{CommentConfig, LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -13,7 +13,8 @@ use std::sync::LazyLock;
 type State<'s, S> = LexerState<'s, S, ScalaLanguage>;
 
 static SCALA_WHITESPACE: LazyLock<WhitespaceConfig> = LazyLock::new(|| WhitespaceConfig { unicode_whitespace: true });
-static SCALA_COMMENT: LazyLock<CommentConfig> = LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
+static SCALA_COMMENT: LazyLock<CommentConfig> =
+    LazyLock::new(|| CommentConfig { line_marker: "//", block_start: "/*", block_end: "*/", nested_blocks: true });
 static SCALA_STRING: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['"'], escape: Some('\\') });
 static SCALA_CHAR: LazyLock<StringConfig> = LazyLock::new(|| StringConfig { quotes: &['\''], escape: None });
 
@@ -24,7 +25,12 @@ pub struct ScalaLexer<'config> {
 }
 
 impl<'config> Lexer<ScalaLanguage> for ScalaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[TextEdit], cache: &'a mut impl LexerCache<ScalaLanguage>) -> LexOutput<ScalaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[TextEdit],
+        cache: &'a mut impl LexerCache<ScalaLanguage>,
+    ) -> LexOutput<ScalaLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

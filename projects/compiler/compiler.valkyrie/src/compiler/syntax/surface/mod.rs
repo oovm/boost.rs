@@ -116,7 +116,10 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
 /// `code` 由 `data.text` 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
 /// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、data-text-valkyrie 生产。
 /// 文件身份由调用方在解析入口给出：真实文件落逻辑路径，匿名/合成源落 [`ANONYMOUS_SOURCE_ID`]。
-fn compile_diagnostic_from_text_error(error: &data_text_core::TextError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
+fn compile_diagnostic_from_text_error(
+    error: &data_text_core::TextError,
+    source_id: &str,
+) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
     use compiler_types::{DiagnosticOwner, DiagnosticPhase, DiagnosticRow, DiagnosticSeverity, DiagnosticSource, DiagnosticSpan};
     let kind = error.kind();
     let span = match error.source_offset() {

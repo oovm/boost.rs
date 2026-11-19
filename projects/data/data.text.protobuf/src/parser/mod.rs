@@ -138,7 +138,12 @@ impl<'a> ProtobufParser<'a> {
 }
 
 impl<'a> Parser<ProtobufLanguage> for ProtobufParser<'a> {
-    fn parse<'b, S: Source + ?Sized>(&self, text: &'b S, edits: &[TextEdit], cache: &'b mut impl ParseCache<ProtobufLanguage>) -> ParseOutput<'b, ProtobufLanguage> {
+    fn parse<'b, S: Source + ?Sized>(
+        &self,
+        text: &'b S,
+        edits: &[TextEdit],
+        cache: &'b mut impl ParseCache<ProtobufLanguage>,
+    ) -> ParseOutput<'b, ProtobufLanguage> {
         let lexer = ProtobufLexer::new(self.language);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let checkpoint = state.checkpoint();

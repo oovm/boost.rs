@@ -527,8 +527,7 @@ mod tests {
 
     #[test]
     fn comparison_pairs_map_in_either_order() {
-        let inferred =
-            infer_sql_parameter_types("UPDATE users SET name = $1 WHERE id = $2", SqlParameterStyle::DollarNumber, &catalog());
+        let inferred = infer_sql_parameter_types("UPDATE users SET name = $1 WHERE id = $2", SqlParameterStyle::DollarNumber, &catalog());
         assert_eq!(inferred, vec![Some(SqlFieldType::String), Some(SqlFieldType::Int64)]);
         let inferred = infer_sql_parameter_types("SELECT 1 FROM users WHERE $1 = id", SqlParameterStyle::DollarNumber, &catalog());
         assert_eq!(inferred, vec![Some(SqlFieldType::Int64)]);
@@ -543,7 +542,8 @@ mod tests {
 
     #[test]
     fn placeholders_in_comments_and_strings_are_not_inferred() {
-        let inferred = infer_sql_parameter_types("UPDATE users SET id = $1 WHERE name = 'x $2 y' -- $3\n", SqlParameterStyle::DollarNumber, &catalog());
+        let inferred =
+            infer_sql_parameter_types("UPDATE users SET id = $1 WHERE name = 'x $2 y' -- $3\n", SqlParameterStyle::DollarNumber, &catalog());
         assert_eq!(inferred, vec![Some(SqlFieldType::Int64)]);
         let inferred = infer_sql_parameter_types("UPDATE users SET id = $1 /* $2 */", SqlParameterStyle::DollarNumber, &catalog());
         assert_eq!(inferred, vec![Some(SqlFieldType::Int64)]);
@@ -557,7 +557,8 @@ mod tests {
 
     #[test]
     fn unattributed_placeholders_stay_none() {
-        let inferred = infer_sql_parameter_types("SELECT strpos(name, $1) FROM users WHERE id = $2", SqlParameterStyle::DollarNumber, &catalog());
+        let inferred =
+            infer_sql_parameter_types("SELECT strpos(name, $1) FROM users WHERE id = $2", SqlParameterStyle::DollarNumber, &catalog());
         assert_eq!(inferred, vec![None, Some(SqlFieldType::Int64)]);
     }
 }

@@ -5,7 +5,10 @@ use super::State;
 
 impl<'config> super::DejavuParser<'config> {
     /// Parse a raw block: `<% raw %>原始文本<% end raw %>`
-    pub(crate) fn parse_raw<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_raw<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the opening `<%`
@@ -127,7 +130,10 @@ impl<'config> super::DejavuParser<'config> {
     }
 
     /// Parse a block: `<% block "block_name" %>内容<% end block %>`
-    pub(crate) fn parse_block<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_block<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the opening `<%`
@@ -154,12 +160,18 @@ impl<'config> super::DejavuParser<'config> {
     }
 
     /// Parse block content after the `block` keyword
-    pub(crate) fn parse_block_content<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    pub(crate) fn parse_block_content<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the block name (string literal)
         if !state.at(DejavuTokenType::StringLiteral) {
-            return Err(TextError::custom_error(format!("Expected string literal for block name, found {:?}", state.current().map(|t| t.kind))));
+            return Err(TextError::custom_error(format!(
+                "Expected string literal for block name, found {:?}",
+                state.current().map(|t| t.kind)
+            )));
         }
         state.bump();
         self.skip_trivia(state);
@@ -268,11 +280,17 @@ impl<'config> super::DejavuParser<'config> {
 
 /// Extension trait for DejavuParser
 pub(crate) trait DejavuParserExt {
-    fn parse_template_control<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError>;
+    fn parse_template_control<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError>;
 }
 
 impl<'config> DejavuParserExt for super::DejavuParser<'config> {
-    fn parse_template_control<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
+    fn parse_template_control<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+    ) -> Result<&'a GreenNode<'a, crate::DejavuLanguage>, TextError> {
         let cp = state.checkpoint();
 
         // Consume the opening `<%` or CodeStart

@@ -104,8 +104,7 @@ pub(in crate::compiler::mir) fn text_carriers_equivalent(
     actual: &ValkyrieType,
     structs: &[crate::compiler::mir::MirStruct],
 ) -> bool {
-    text_builtin_anchors_nominal_declaration(declared, actual, structs)
-        || text_builtin_anchors_nominal_declaration(actual, declared, structs)
+    text_builtin_anchors_nominal_declaration(declared, actual, structs) || text_builtin_anchors_nominal_declaration(actual, declared, structs)
 }
 
 /// 一侧是内建编码 carrier、另一侧是锚定该编码的名义声明时成立。

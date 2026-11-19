@@ -5,7 +5,10 @@ use crate::{
     lexer::DsvLexer,
     parser::DsvParser,
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextDiagnostics, TextError, Parser, SourceText, TextEdit, parser::session::ParseSession, source::Source};
+use data_text_core::{
+    Builder, BuilderCache, GreenNode, Lexer, Parser, SourceText, TextDiagnostics, TextEdit, TextError, parser::session::ParseSession,
+    source::Source,
+};
 
 /// AST builder for DSV.
 #[derive(Clone, Default)]
@@ -20,7 +23,12 @@ impl<const LANG: DsvLanguage> DsvBuilder<LANG> {
 
 impl<const LANG: DsvLanguage> Builder<Dsv<LANG>> for DsvBuilder<LANG> {
     /// Builds the DSV AST.
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<Dsv<LANG>>) -> TextDiagnostics<DsvRoot<LANG>> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<Dsv<LANG>>,
+    ) -> TextDiagnostics<DsvRoot<LANG>> {
         let parser = DsvParser::<LANG>::new();
         let lexer = DsvLexer::<LANG>::new();
 

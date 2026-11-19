@@ -1,8 +1,7 @@
 use boost_source::binary::MemorySource;
 use data_binary_core::{Budget, BudgetTracker};
 use data_binary_tar::{
-    TarEntryDraft, TarEntryKind, TarGz, TarIndexError, TarWriteError, TarWriter, index_tar_bytes, read_member_payload,
-    write_tar,
+    TarEntryDraft, TarEntryKind, TarGz, TarIndexError, TarWriteError, TarWriter, index_tar_bytes, read_member_payload, write_tar,
 };
 use data_compression::CodecLimits;
 
@@ -106,11 +105,8 @@ fn empty_archive_indexes_without_members() {
 
 #[test]
 fn compose_tar_gzip_round_trip() {
-    let tar = write_tar(vec![
-        TarEntryDraft::file("a.txt", b"alpha".to_vec()),
-        TarEntryDraft::file("b.txt", "bravo ".repeat(50).into_bytes()),
-    ])
-    .expect("tar");
+    let tar = write_tar(vec![TarEntryDraft::file("a.txt", b"alpha".to_vec()), TarEntryDraft::file("b.txt", "bravo ".repeat(50).into_bytes())])
+        .expect("tar");
     let encoded = TarGz::encode(&tar);
     let decoded = TarGz::decode("sample.tar.gz", &encoded, CodecLimits::new()).expect("gunzip");
     assert_eq!(decoded.tar_bytes(), tar.as_slice());

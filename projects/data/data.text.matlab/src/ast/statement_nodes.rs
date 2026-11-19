@@ -192,7 +192,9 @@ impl Statement {
     /// `if` statement parts.
     pub fn as_if(&self) -> Option<IfView<'_>> {
         match self {
-            Self::If { condition, then_body, elseifs, else_body, .. } => Some(IfView { condition, then_body: then_body.as_slice(), elseifs: elseifs.as_slice(), else_body: else_body.as_slice() }),
+            Self::If { condition, then_body, elseifs, else_body, .. } => {
+                Some(IfView { condition, then_body: then_body.as_slice(), elseifs: elseifs.as_slice(), else_body: else_body.as_slice() })
+            }
             _ => None,
         }
     }
@@ -232,7 +234,9 @@ impl Statement {
     /// `switch` statement parts.
     pub fn as_switch(&self) -> Option<SwitchView<'_>> {
         match self {
-            Self::Switch { discriminant, cases, otherwise, .. } => Some(SwitchView { discriminant, cases: cases.as_slice(), otherwise: otherwise.as_slice() }),
+            Self::Switch { discriminant, cases, otherwise, .. } => {
+                Some(SwitchView { discriminant, cases: cases.as_slice(), otherwise: otherwise.as_slice() })
+            }
             _ => None,
         }
     }
@@ -240,7 +244,9 @@ impl Statement {
     /// `try` / `catch` statement parts.
     pub fn as_try(&self) -> Option<TryView<'_>> {
         match self {
-            Self::Try { body, catch_name, catch_body, .. } => Some(TryView { body: body.as_slice(), catch_name: catch_name.as_ref(), catch_body: catch_body.as_slice() }),
+            Self::Try { body, catch_name, catch_body, .. } => {
+                Some(TryView { body: body.as_slice(), catch_name: catch_name.as_ref(), catch_body: catch_body.as_slice() })
+            }
             _ => None,
         }
     }

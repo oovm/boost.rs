@@ -1,7 +1,9 @@
 #![doc = include_str!("readme.md")]
 
-use language_highlight::syntax::{HighlightSource, HighlightResult};
-use language_highlight::themes::Theme;
+use language_highlight::{
+    syntax::{HighlightResult, HighlightSource},
+    themes::Theme,
+};
 pub struct LeanHighlighter;
 
 impl HighlightSource for LeanHighlighter {

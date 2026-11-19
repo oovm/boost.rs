@@ -2,7 +2,7 @@
 use crate::{language::ZigLanguage, lexer::token_type::ZigTokenType};
 pub mod token_type;
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Source,
+    Lexer, LexerCache, LexerState, Source, TextError,
     lexer::{LexOutput, WhitespaceConfig},
 };
 use std::sync::LazyLock;
@@ -18,7 +18,12 @@ pub struct ZigLexer<'config> {
 }
 
 impl<'config> Lexer<ZigLanguage> for ZigLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<ZigLanguage>) -> LexOutput<ZigLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<ZigLanguage>,
+    ) -> LexOutput<ZigLanguage> {
         let mut state = State::new_with_cache(source, 0, cache);
         let result = self.run(&mut state);
         if result.is_ok() {

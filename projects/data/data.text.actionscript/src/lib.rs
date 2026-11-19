@@ -22,6 +22,8 @@ pub mod parser;
 pub mod mcp;
 
 // Re-export main types
+#[cfg(any(feature = "lsp", feature = "language-highlight"))]
+pub use crate::lsp::formatter::ActionScriptFormatter;
 pub use crate::{
     ast::ActionScriptRoot,
     builder::ActionScriptBuilder,
@@ -29,8 +31,6 @@ pub use crate::{
     lexer::{ActionScriptLexer, ActionScriptTokenType},
     parser::{ActionScriptElementType, ActionScriptParser},
 };
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub use crate::lsp::formatter::ActionScriptFormatter;
 
 #[cfg(feature = "language-highlight")]
 pub use crate::lsp::highlighter::ActionScriptHighlighter;

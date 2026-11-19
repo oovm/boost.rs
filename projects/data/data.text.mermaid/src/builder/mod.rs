@@ -5,13 +5,14 @@ use crate::{
     parser::{MermaidParser, element_type::MermaidElementType},
 };
 use data_text_core::{
-    Builder, BuilderCache, GreenNode, TextDiagnostics, Source, SourceText, TextEdit,
+    Builder, BuilderCache, GreenNode, Source, SourceText, TextDiagnostics, TextEdit,
     tree::{GreenLeaf, GreenTree},
 };
 use std::collections::HashMap;
 
 /// sequence diagram 中可识别的消息箭头，较长的箭头排在前面。
-const MESSAGE_ARROWS: &[(&str, MessageArrow)] = &[("-->>", MessageArrow::DottedArrow), ("->>", MessageArrow::SolidArrow), ("-->", MessageArrow::Dotted), ("->", MessageArrow::Solid)];
+const MESSAGE_ARROWS: &[(&str, MessageArrow)] =
+    &[("-->>", MessageArrow::DottedArrow), ("->>", MessageArrow::SolidArrow), ("-->", MessageArrow::Dotted), ("->", MessageArrow::Solid)];
 
 /// class diagram 中可识别的关系箭头，较长的箭头排在前面。
 const RELATION_ARROWS: &[(&str, data_text_uml::model::RelationKind)] = &[
@@ -297,7 +298,11 @@ impl<'config> MermaidBuilder<'config> {
         for endpoint in [&transition.from, &transition.to] {
             if let StateEndpoint::State(id) = endpoint {
                 if !state_index.contains_key(id) {
-                    Self::upsert_state(elements, state_index, StateDefinition { id: id.clone(), text: None, kind: StateKind::Normal, regions: Vec::new() });
+                    Self::upsert_state(
+                        elements,
+                        state_index,
+                        StateDefinition { id: id.clone(), text: None, kind: StateKind::Normal, regions: Vec::new() },
+                    );
                 }
             }
         }
@@ -315,7 +320,13 @@ impl<'config> MermaidBuilder<'config> {
 
         let mut kind = StateKind::Normal;
         let mut rest = rest.to_string();
-        for (glyph, value) in [("<<fork>>", StateKind::Fork), ("<<join>>", StateKind::Join), ("<<choice>>", StateKind::Choice), ("<<entryPoint>>", StateKind::EntryPoint), ("<<exitPoint>>", StateKind::ExitPoint)] {
+        for (glyph, value) in [
+            ("<<fork>>", StateKind::Fork),
+            ("<<join>>", StateKind::Join),
+            ("<<choice>>", StateKind::Choice),
+            ("<<entryPoint>>", StateKind::EntryPoint),
+            ("<<exitPoint>>", StateKind::ExitPoint),
+        ] {
             if let Some(index) = rest.find(glyph) {
                 kind = value;
                 rest.replace_range(index..index + glyph.len(), "");
@@ -401,7 +412,12 @@ impl<'config> MermaidBuilder<'config> {
     }
 
     /// 解析实体块或单独实体名，返回名称与属性行。
-    fn build_er_entity(&self, node: &GreenNode<MermaidLanguage>, source: &SourceText, offset: &mut usize) -> Option<(String, Vec<ErAttribute>)> {
+    fn build_er_entity(
+        &self,
+        node: &GreenNode<MermaidLanguage>,
+        source: &SourceText,
+        offset: &mut usize,
+    ) -> Option<(String, Vec<ErAttribute>)> {
         let end = *offset + node.byte_length as usize;
         let mut header = String::new();
         let mut in_header = true;
@@ -596,7 +612,12 @@ impl<'config> MermaidBuilder<'config> {
     }
 
     /// 把一个 `ClassDeclaration` 段落转换成 [`data_text_uml::model::Class`]。
-    fn build_class_declaration(&self, node: &GreenNode<MermaidLanguage>, source: &SourceText, offset: &mut usize) -> Option<data_text_uml::model::Class> {
+    fn build_class_declaration(
+        &self,
+        node: &GreenNode<MermaidLanguage>,
+        source: &SourceText,
+        offset: &mut usize,
+    ) -> Option<data_text_uml::model::Class> {
         let end = *offset + node.byte_length as usize;
         let mut header = String::new();
         let mut in_header = true;
@@ -647,7 +668,12 @@ impl<'config> MermaidBuilder<'config> {
         if name.is_empty() {
             return None;
         }
-        if name.contains('(') { Some(data_text_uml::model::Member::new_method(name)) } else { Some(data_text_uml::model::Member::new_field(name)) }
+        if name.contains('(') {
+            Some(data_text_uml::model::Member::new_method(name))
+        }
+        else {
+            Some(data_text_uml::model::Member::new_field(name))
+        }
     }
 
     /// 从一行关系中还原源、目标、关系类型与可选标签。
@@ -686,7 +712,14 @@ impl<'config> MermaidBuilder<'config> {
     }
 
     /// 把一个子节点追加到元素列表。
-    fn append_element(&self, node: &GreenNode<MermaidLanguage>, source: &SourceText, offset: &mut usize, elements: &mut Vec<FlowElement>, node_index: &mut HashMap<String, usize>) {
+    fn append_element(
+        &self,
+        node: &GreenNode<MermaidLanguage>,
+        source: &SourceText,
+        offset: &mut usize,
+        elements: &mut Vec<FlowElement>,
+        node_index: &mut HashMap<String, usize>,
+    ) {
         match node.kind {
             MermaidElementType::Node => {
                 let tokens = Self::collect_tokens(node, source, offset);
@@ -752,7 +785,12 @@ impl<'config> MermaidBuilder<'config> {
         Self::collect_tokens(node, source, offset).into_iter().map(|(_, text)| text).collect()
     }
 
-    fn collect_tokens_into(node: &GreenNode<MermaidLanguage>, source: &SourceText, offset: &mut usize, tokens: &mut Vec<(MermaidTokenType, String)>) {
+    fn collect_tokens_into(
+        node: &GreenNode<MermaidLanguage>,
+        source: &SourceText,
+        offset: &mut usize,
+        tokens: &mut Vec<(MermaidTokenType, String)>,
+    ) {
         for child in node.children {
             match child {
                 GreenTree::Leaf(leaf) => tokens.push((leaf.kind, Self::leaf_text(*leaf, source, offset))),
@@ -763,7 +801,8 @@ impl<'config> MermaidBuilder<'config> {
 
     /// 从 `Node` 元素的 token 序列中登记一个节点。
     fn append_node(tokens: &[(MermaidTokenType, String)], elements: &mut Vec<FlowElement>, node_index: &mut HashMap<String, usize>) {
-        let significant: Vec<(MermaidTokenType, &str)> = tokens.iter().filter(|(kind, _)| !Self::is_trivia(*kind)).map(|(kind, text)| (*kind, text.as_str())).collect();
+        let significant: Vec<(MermaidTokenType, &str)> =
+            tokens.iter().filter(|(kind, _)| !Self::is_trivia(*kind)).map(|(kind, text)| (*kind, text.as_str())).collect();
 
         let Some((MermaidTokenType::Id, id)) = significant.first().copied()
         else {
@@ -775,7 +814,8 @@ impl<'config> MermaidBuilder<'config> {
 
     /// 从 `Edge` 元素的 token 序列中还原节点与边（支持链式 `A --> B --> C`）。
     fn append_edges(tokens: &[(MermaidTokenType, String)], elements: &mut Vec<FlowElement>, node_index: &mut HashMap<String, usize>) {
-        let significant: Vec<(MermaidTokenType, &str)> = tokens.iter().filter(|(kind, _)| !Self::is_trivia(*kind)).map(|(kind, text)| (*kind, text.as_str())).collect();
+        let significant: Vec<(MermaidTokenType, &str)> =
+            tokens.iter().filter(|(kind, _)| !Self::is_trivia(*kind)).map(|(kind, text)| (*kind, text.as_str())).collect();
 
         if significant.first().map(|(kind, _)| *kind) != Some(MermaidTokenType::Id) {
             return;
@@ -862,8 +902,15 @@ impl<'config> MermaidBuilder<'config> {
     /// 由标签首尾定界符推导节点形状，并返回去掉定界符后的文本。
     fn derive_shape(label: &str) -> (NodeShape, String) {
         let label = label.trim();
-        let shapes: &[(&str, &str, NodeShape)] =
-            &[("[[", "]]", NodeShape::Subroutine), ("([", "])", NodeShape::Stadium), ("[(", ")]", NodeShape::Cylinder), ("((", "))", NodeShape::Circle), ("[", "]", NodeShape::Box), ("(", ")", NodeShape::Round), ("{", "}", NodeShape::Rhombus)];
+        let shapes: &[(&str, &str, NodeShape)] = &[
+            ("[[", "]]", NodeShape::Subroutine),
+            ("([", "])", NodeShape::Stadium),
+            ("[(", ")]", NodeShape::Cylinder),
+            ("((", "))", NodeShape::Circle),
+            ("[", "]", NodeShape::Box),
+            ("(", ")", NodeShape::Round),
+            ("{", "}", NodeShape::Rhombus),
+        ];
 
         for (open, close, shape) in shapes {
             if let Some(inner) = label.strip_prefix(open).and_then(|rest| rest.strip_suffix(close)) {
@@ -896,7 +943,12 @@ impl<'config> MermaidBuilder<'config> {
 }
 
 impl<'config> Builder<MermaidLanguage> for MermaidBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<MermaidLanguage>) -> data_text_core::builder::BuildOutput<MermaidLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<MermaidLanguage>,
+    ) -> data_text_core::builder::BuildOutput<MermaidLanguage> {
         let parser = MermaidParser::new(self.config);
         let lexer = crate::lexer::MermaidLexer::new(self.config);
         let mut cache = data_text_core::parser::session::ParseSession::<MermaidLanguage>::default();

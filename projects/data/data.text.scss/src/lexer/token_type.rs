@@ -131,15 +131,53 @@ impl TokenType for ScssTokenType {
 
     fn role(&self) -> Self::Role {
         match self {
-            Self::Import | Self::Include | Self::Mixin | Self::Function | Self::Return | Self::If | Self::Else | Self::For | Self::While | Self::Each | Self::In | Self::True | Self::False | Self::Null => UniversalTokenRole::Keyword,
+            Self::Import
+            | Self::Include
+            | Self::Mixin
+            | Self::Function
+            | Self::Return
+            | Self::If
+            | Self::Else
+            | Self::For
+            | Self::While
+            | Self::Each
+            | Self::In
+            | Self::True
+            | Self::False
+            | Self::Null => UniversalTokenRole::Keyword,
 
-            Self::EqEq | Self::Ne | Self::Le | Self::Ge | Self::AndAnd | Self::OrOr | Self::Eq | Self::Lt | Self::Gt | Self::And | Self::Or | Self::Xor | Self::Plus | Self::Minus | Self::Star | Self::Slash | Self::Percent | Self::Bang => {
-                UniversalTokenRole::Operator
-            }
+            Self::EqEq
+            | Self::Ne
+            | Self::Le
+            | Self::Ge
+            | Self::AndAnd
+            | Self::OrOr
+            | Self::Eq
+            | Self::Lt
+            | Self::Gt
+            | Self::And
+            | Self::Or
+            | Self::Xor
+            | Self::Plus
+            | Self::Minus
+            | Self::Star
+            | Self::Slash
+            | Self::Percent
+            | Self::Bang => UniversalTokenRole::Operator,
 
-            Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Semicolon | Self::Colon | Self::Comma | Self::Dot | Self::Hash | Self::At | Self::Dollar => {
-                UniversalTokenRole::Punctuation
-            }
+            Self::LeftParen
+            | Self::RightParen
+            | Self::LeftBrace
+            | Self::RightBrace
+            | Self::LeftBracket
+            | Self::RightBracket
+            | Self::Semicolon
+            | Self::Colon
+            | Self::Comma
+            | Self::Dot
+            | Self::Hash
+            | Self::At
+            | Self::Dollar => UniversalTokenRole::Punctuation,
 
             Self::Identifier => UniversalTokenRole::Name,
             Self::IntegerLiteral | Self::StringLiteral => UniversalTokenRole::Literal,

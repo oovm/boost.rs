@@ -65,8 +65,16 @@ impl ElementType for CElementType {
     fn role(&self) -> Self::Role {
         match self {
             Self::Root => UniversalElementRole::Root,
-            Self::FunctionDefinition | Self::StructDefinition | Self::UnionDefinition | Self::EnumDefinition => UniversalElementRole::Definition,
-            Self::CompoundStatement | Self::ExpressionStatement | Self::DeclarationStatement | Self::IfStatement | Self::WhileStatement | Self::ForStatement | Self::ReturnStatement => UniversalElementRole::Statement,
+            Self::FunctionDefinition | Self::StructDefinition | Self::UnionDefinition | Self::EnumDefinition => {
+                UniversalElementRole::Definition
+            }
+            Self::CompoundStatement
+            | Self::ExpressionStatement
+            | Self::DeclarationStatement
+            | Self::IfStatement
+            | Self::WhileStatement
+            | Self::ForStatement
+            | Self::ReturnStatement => UniversalElementRole::Statement,
             Self::Error => UniversalElementRole::Error,
             _ => UniversalElementRole::None,
         }

@@ -21,7 +21,12 @@ impl<'config> JuliaLexer<'config> {
 }
 
 impl<'config> Lexer<JuliaLanguage> for JuliaLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::source::TextEdit], cache: &'a mut impl LexerCache<JuliaLanguage>) -> LexOutput<JuliaLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::source::TextEdit],
+        cache: &'a mut impl LexerCache<JuliaLanguage>,
+    ) -> LexOutput<JuliaLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

@@ -2,7 +2,9 @@
 
 use std::ops::Range;
 
-use data_text_valkyrie::ast::{Attribute, Block, Let, MicroDeclaration, Pattern, StatementNode, TermExpression, TypeExpression, ValkyrieRoot, WidgetDeclaration};
+use data_text_valkyrie::ast::{
+    Attribute, Block, Let, MicroDeclaration, Pattern, StatementNode, TermExpression, TypeExpression, ValkyrieRoot, WidgetDeclaration,
+};
 
 use crate::frontend::{parse_vx_source, std_range};
 
@@ -83,7 +85,12 @@ pub fn extract_component_abi_from_vx(source: &str, widget_name: &str) -> AbiExtr
     else {
         return AbiExtractResult {
             abi: ComponentAbi { widget_name: widget_name.to_string(), ..Default::default() },
-            issues: vec![AbiIssue { kind: AbiIssueKind::PropertyOnNonLet, message: "failed to parse script as vx".into(), span: None, severity: AbiSeverity::Error }],
+            issues: vec![AbiIssue {
+                kind: AbiIssueKind::PropertyOnNonLet,
+                message: "failed to parse script as vx".into(),
+                span: None,
+                severity: AbiSeverity::Error,
+            }],
         };
     };
 
@@ -91,7 +98,12 @@ pub fn extract_component_abi_from_vx(source: &str, widget_name: &str) -> AbiExtr
     else {
         return AbiExtractResult {
             abi: ComponentAbi { widget_name: widget_name.to_string(), ..Default::default() },
-            issues: vec![AbiIssue { kind: AbiIssueKind::PropertyOnNonLet, message: format!("widget `{widget_name}` not found in vx source"), span: None, severity: AbiSeverity::Error }],
+            issues: vec![AbiIssue {
+                kind: AbiIssueKind::PropertyOnNonLet,
+                message: format!("widget `{widget_name}` not found in vx source"),
+                span: None,
+                severity: AbiSeverity::Error,
+            }],
         };
     };
 
@@ -136,7 +148,11 @@ fn extract_let_binding(source: &str, let_stmt: &Let, abi: &mut ComponentAbi, iss
         issues.push(error(AbiIssueKind::EventOnNonMicro, "`[event]` must annotate a `micro` declaration", Some(std_range(&let_stmt.span))));
     }
     if has_property && has_memoize {
-        issues.push(error(AbiIssueKind::AttributeConflict, "`[property]` and `[memoize]` cannot be used together", Some(std_range(&let_stmt.span))));
+        issues.push(error(
+            AbiIssueKind::AttributeConflict,
+            "`[property]` and `[memoize]` cannot be used together",
+            Some(std_range(&let_stmt.span)),
+        ));
     }
     if has_memoize && is_mut {
         issues.push(error(AbiIssueKind::MemoizeOnMut, "`[memoize]` cannot be used on `let mut`", Some(std_range(&let_stmt.span))));
@@ -154,7 +170,13 @@ fn extract_let_binding(source: &str, let_stmt: &Let, abi: &mut ComponentAbi, iss
     let type_hint = let_stmt.ty.as_ref().map(|ty| slice_span(source, type_expression_span(ty)));
 
     if has_property {
-        abi.properties.push(AbiProperty { name: name.clone(), type_hint, required: false, default_expr: init_expr, span: std_range(&let_stmt.span) });
+        abi.properties.push(AbiProperty {
+            name: name.clone(),
+            type_hint,
+            required: false,
+            default_expr: init_expr,
+            span: std_range(&let_stmt.span),
+        });
         return;
     }
 
@@ -165,7 +187,11 @@ fn extract_let_binding(source: &str, let_stmt: &Let, abi: &mut ComponentAbi, iss
         }
         let expr = init_expr.unwrap_or_default();
         if expr.len() < 12 {
-            issues.push(warn(AbiIssueKind::MemoizeTrivial, format!("`[memoize]` on `{name}` may have little benefit for simple expressions"), Some(std_range(&let_stmt.span))));
+            issues.push(warn(
+                AbiIssueKind::MemoizeTrivial,
+                format!("`[memoize]` on `{name}` may have little benefit for simple expressions"),
+                Some(std_range(&let_stmt.span)),
+            ));
         }
         abi.memoized.push(AbiMemo { name, expr, span: std_range(&let_stmt.span) });
         return;
@@ -183,16 +209,34 @@ fn extract_let_binding(source: &str, let_stmt: &Let, abi: &mut ComponentAbi, iss
 
 fn extract_event_micro(source: &str, micro: &MicroDeclaration, abi: &mut ComponentAbi, issues: &mut Vec<AbiIssue>) {
     if !is_empty_body(&micro.body) {
-        issues.push(error(AbiIssueKind::EventNonEmptyBody, format!("`[event] micro {}` must have an empty body", micro.name.name), Some(std_range(&micro.span))));
+        issues.push(error(
+            AbiIssueKind::EventNonEmptyBody,
+            format!("`[event] micro {}` must have an empty body", micro.name.name),
+            Some(std_range(&micro.span)),
+        ));
     }
     if abi.events.iter().any(|event| event.name == micro.name.name) {
         issues.push(error(AbiIssueKind::AttributeConflict, format!("duplicate event `{}`", micro.name.name), Some(std_range(&micro.span))));
     }
-    let params: Vec<AbiParam> = micro.params.iter().map(|param| AbiParam { name: param.name.name.clone(), type_hint: param.ty.as_ref().map(|ty| slice_span(source, type_expression_span(ty))) }).collect();
+    let params: Vec<AbiParam> = micro
+        .params
+        .iter()
+        .map(|param| AbiParam {
+            name: param.name.name.clone(),
+            type_hint: param.ty.as_ref().map(|ty| slice_span(source, type_expression_span(ty))),
+        })
+        .collect();
     abi.events.push(AbiEvent { name: micro.name.name.clone(), params, span: std_range(&micro.span) });
 }
 
-fn collect_call_site(source: &str, expression: &TermExpression, span: Range<usize>, emit_targets: &mut Vec<(String, Range<usize>, usize)>, abi: &mut ComponentAbi, issues: &mut Vec<AbiIssue>) {
+fn collect_call_site(
+    source: &str,
+    expression: &TermExpression,
+    span: Range<usize>,
+    emit_targets: &mut Vec<(String, Range<usize>, usize)>,
+    abi: &mut ComponentAbi,
+    issues: &mut Vec<AbiIssue>,
+) {
     let TermExpression::ApplyCall { callee, args, .. } = expression
     else {
         return;
@@ -211,7 +255,11 @@ fn collect_call_site(source: &str, expression: &TermExpression, span: Range<usiz
             return;
         }
         if arg_string_literal(&args[0]).is_some() {
-            issues.push(warn(AbiIssueKind::LegacyStringEmit, "string `emit(\"name\", ...)` is deprecated; declare `[event] micro` and use `emit(name, ...)`", Some(span)));
+            issues.push(warn(
+                AbiIssueKind::LegacyStringEmit,
+                "string `emit(\"name\", ...)` is deprecated; declare `[event] micro` and use `emit(name, ...)`",
+                Some(span),
+            ));
             return;
         }
         issues.push(error(AbiIssueKind::EmitInvalidTarget, "`emit` first argument must be an event symbol", Some(span)));
@@ -227,11 +275,19 @@ fn validate_emit_targets(abi: &ComponentAbi, emit_targets: &[(String, Range<usiz
     for (event_name, span, arg_count) in emit_targets {
         let Some(event) = abi.event(event_name)
         else {
-            issues.push(error(AbiIssueKind::EmitInvalidTarget, format!("`emit({event_name}, ...)` target is not a declared `[event] micro`"), Some(span.clone())));
+            issues.push(error(
+                AbiIssueKind::EmitInvalidTarget,
+                format!("`emit({event_name}, ...)` target is not a declared `[event] micro`"),
+                Some(span.clone()),
+            ));
             continue;
         };
         if *arg_count != event.params.len() {
-            issues.push(error(AbiIssueKind::EmitArityMismatch, format!("`emit({event_name}, ...)` expects {} argument(s), got {arg_count}", event.params.len()), Some(span.clone())));
+            issues.push(error(
+                AbiIssueKind::EmitArityMismatch,
+                format!("`emit({event_name}, ...)` expects {} argument(s), got {arg_count}", event.params.len()),
+                Some(span.clone()),
+            ));
         }
     }
 }
@@ -239,7 +295,11 @@ fn validate_emit_targets(abi: &ComponentAbi, emit_targets: &[(String, Range<usiz
 fn warn_unused_events(abi: &ComponentAbi, emit_targets: &[(String, Range<usize>, usize)], issues: &mut Vec<AbiIssue>) {
     for event in &abi.events {
         if !emit_targets.iter().any(|(name, _, _)| name == &event.name) {
-            issues.push(warn(AbiIssueKind::EventNeverEmitted, format!("event `{}` is declared but never emitted", event.name), Some(event.span.clone())));
+            issues.push(warn(
+                AbiIssueKind::EventNeverEmitted,
+                format!("event `{}` is declared but never emitted", event.name),
+                Some(event.span.clone()),
+            ));
         }
     }
 }

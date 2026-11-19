@@ -5,21 +5,27 @@
 //! command suggestions, strict option parsing, configuration passes, and
 //! exactly-once envelope emission.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use commander_types::{ExitCode, envelope_error, error_id};
 use serde_json::Value;
 
-use crate::context::CommandContext;
-use crate::diag::{Diagnostic, DiagContext, HINT_CODES, localized_or_id};
-use crate::env::Environment;
-use crate::help;
-use crate::parse::{self, ParsedOptions};
-use crate::ports::Ports;
-use crate::prompt_api::{NullPromptApi, PromptApi, PromptFactory, PromptHooks};
-use crate::spec::{Command, HandlerOutcome, OptionSpec, parse_failed};
+use crate::{
+    context::CommandContext,
+    diag::{DiagContext, Diagnostic, HINT_CODES, localized_or_id},
+    env::Environment,
+    help,
+    parse::{self, ParsedOptions},
+    ports::Ports,
+    prompt_api::{NullPromptApi, PromptApi, PromptFactory, PromptHooks},
+    spec::{Command, HandlerOutcome, OptionSpec, parse_failed},
+};
 
 /// The result of one complete run, returned to the host binary.
 #[derive(Debug)]
@@ -109,10 +115,7 @@ impl Cli {
         Self {
             name: name.into(),
             intro: None,
-            global_options: vec![
-                OptionSpec::flag("json").hidden(),
-                OptionSpec::flag("no-interactive").hidden(),
-            ],
+            global_options: vec![OptionSpec::flag("json").hidden(), OptionSpec::flag("no-interactive").hidden()],
             commands: Vec::new(),
             on_diagnostic: None,
         }
@@ -176,13 +179,7 @@ impl Cli {
     /// `await_action` outside interactivity still returns the action-required
     /// descriptor. The library never writes real stdout, reads real streams,
     /// or terminates the process.
-    pub fn run(
-        &self,
-        argv: &[String],
-        env: &Environment,
-        ports: &Ports,
-        prompt: Option<&Arc<dyn PromptFactory>>,
-    ) -> RunOutcome {
+    pub fn run(&self, argv: &[String], env: &Environment, ports: &Ports, prompt: Option<&Arc<dyn PromptFactory>>) -> RunOutcome {
         if let Err(err) = self.validate() {
             self.emit_diagnostic(&Diagnostic::error(err.id.clone(), err.args.clone()), ports);
             return RunOutcome { exit: err.exit, stdout: None };
@@ -199,19 +196,22 @@ impl Cli {
 
         let exit = if rest.first().map(String::as_str) == Some("help") {
             self.route_help(&rest[1..], ports, &state)
-        } else if rest.is_empty() || rest.iter().all(|token| is_help_token(token)) {
-            self.print_text(help::root_help(&self.name, self.intro.as_deref(), &self.global_options, &self.commands, ports.localizer.as_ref()), ports, &state);
+        }
+        else if rest.is_empty() || rest.iter().all(|token| is_help_token(token)) {
+            self.print_text(
+                help::root_help(&self.name, self.intro.as_deref(), &self.global_options, &self.commands, ports.localizer.as_ref()),
+                ports,
+                &state,
+            );
             ExitCode::Ok
-        } else {
+        }
+        else {
             let token = rest[0].clone();
             let matched = self.commands.iter().find(|c| c.name == token || c.aliases.contains(&token));
             match matched {
                 None => {
-                    let names: Vec<String> = self
-                        .commands
-                        .iter()
-                        .flat_map(|c| std::iter::once(c.name.clone()).chain(c.aliases.clone()))
-                        .collect();
+                    let names: Vec<String> =
+                        self.commands.iter().flat_map(|c| std::iter::once(c.name.clone()).chain(c.aliases.clone())).collect();
                     let suggest = closest_match(&token, &names);
                     let mut args = BTreeMap::new();
                     args.insert("cmd".to_string(), token);
@@ -239,7 +239,11 @@ impl Cli {
 
     fn route_help(&self, tokens: &[String], ports: &Ports, state: &RunState) -> ExitCode {
         if tokens.is_empty() {
-            self.print_text(help::root_help(&self.name, self.intro.as_deref(), &self.global_options, &self.commands, ports.localizer.as_ref()), ports, state);
+            self.print_text(
+                help::root_help(&self.name, self.intro.as_deref(), &self.global_options, &self.commands, ports.localizer.as_ref()),
+                ports,
+                state,
+            );
             return ExitCode::Ok;
         }
         let mut pool: &[Command] = &self.commands;
@@ -295,7 +299,8 @@ impl Cli {
             if token.starts_with('-') || is_help_token(&token) {
                 break;
             }
-            let Some(child) = target.find_subcommand(&token) else {
+            let Some(child) = target.find_subcommand(&token)
+            else {
                 break;
             };
             target = child;
@@ -310,11 +315,8 @@ impl Cli {
 
         if target.handler.is_none() {
             if !remaining.is_empty() || !tail.is_empty() {
-                let child_names: Vec<String> = target
-                    .subcommands
-                    .iter()
-                    .flat_map(|c| std::iter::once(c.name.clone()).chain(c.aliases.clone()))
-                    .collect();
+                let child_names: Vec<String> =
+                    target.subcommands.iter().flat_map(|c| std::iter::once(c.name.clone()).chain(c.aliases.clone())).collect();
                 let suggest = remaining
                     .first()
                     .filter(|token| !token.starts_with('-'))
@@ -359,28 +361,12 @@ impl Cli {
         let stdin_claimed = Arc::new(AtomicBool::new(false));
         let lease = Arc::new(AtomicBool::new(false));
         let api: Arc<dyn PromptApi> = match prompt {
-            Some(factory) => factory.create(PromptHooks {
-                interactive,
-                lease: lease.clone(),
-                stdin_claimed: stdin_claimed.clone(),
-            }),
-            None => Arc::new(NullPromptApi {
-                hooks: PromptHooks { interactive, lease, stdin_claimed: stdin_claimed.clone() },
-            }),
+            Some(factory) => factory.create(PromptHooks { interactive, lease: lease.clone(), stdin_claimed: stdin_claimed.clone() }),
+            None => Arc::new(NullPromptApi { hooks: PromptHooks { interactive, lease, stdin_claimed: stdin_claimed.clone() } }),
         };
 
         let handler = target.handler.as_ref().expect("handler presence checked above");
-        let mut ctx = CommandContext::new(
-            self,
-            target,
-            path,
-            ports,
-            state,
-            options,
-            interactive,
-            api,
-            stdin_claimed,
-        );
+        let mut ctx = CommandContext::new(self, target, path, ports, state, options, interactive, api, stdin_claimed);
         match handler(&mut ctx) {
             HandlerOutcome::Ok(data) => {
                 if !state.result_emitted() {
@@ -415,7 +401,8 @@ impl Cli {
             for line in text.split('\n') {
                 ports.writer.write_line(line);
             }
-        } else {
+        }
+        else {
             state.write_help_payload(text);
         }
     }
@@ -424,7 +411,8 @@ impl Cli {
         let ctx = DiagContext { locale: ports.locale.as_str(), localizer: ports.localizer.as_ref() };
         if let Some(handler) = &self.on_diagnostic {
             handler(diag, &ctx);
-        } else {
+        }
+        else {
             let from_catalog = localized_or_id(ports.localizer.as_ref(), &diag.code, &diag.args);
             let business = diag.message.clone().filter(|m| *m != diag.code);
             let msg = from_catalog.or(business).unwrap_or_else(|| diag.code.clone());
@@ -432,11 +420,8 @@ impl Cli {
         }
         if HINT_CODES.contains(&diag.code.as_str()) {
             let cmd = diag.args.get("cmd").map(String::as_str).unwrap_or("").trim();
-            let hint_target = if diag.code == error_id::UNKNOWN_COMMAND || cmd.is_empty() {
-                self.name.clone()
-            } else {
-                format!("{} {}", self.name, cmd)
-            };
+            let hint_target =
+                if diag.code == error_id::UNKNOWN_COMMAND || cmd.is_empty() { self.name.clone() } else { format!("{} {}", self.name, cmd) };
             let mut args = BTreeMap::new();
             args.insert("command".to_string(), hint_target);
             if let Some(text) = localized_or_id(ports.localizer.as_ref(), "commander.ui.hint.available_options", &args) {

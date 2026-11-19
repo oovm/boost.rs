@@ -28,7 +28,11 @@ fn stalled<S: data_text_core::Source + ?Sized>(state: &State<'_, S>, before: usi
 fn is_type_name_token(kind: &ValkyrieTokenType) -> bool {
     matches!(
         kind,
-        ValkyrieTokenType::Identifier | ValkyrieTokenType::Keyword(ValkyrieKeywords::SelfType) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Micro) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Mezzo) | ValkyrieTokenType::Keyword(ValkyrieKeywords::Type)
+        ValkyrieTokenType::Identifier
+            | ValkyrieTokenType::Keyword(ValkyrieKeywords::SelfType)
+            | ValkyrieTokenType::Keyword(ValkyrieKeywords::Micro)
+            | ValkyrieTokenType::Keyword(ValkyrieKeywords::Mezzo)
+            | ValkyrieTokenType::Keyword(ValkyrieKeywords::Type)
     )
 }
 
@@ -106,7 +110,10 @@ pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'
             let before = token_index(state);
             // 函数类型参数修饰：`micro(mut T) -> U` 的 `mut` 属于紧随其后的参数类型，
             // 不能单独当成类型名（否则 `mut` 会成为参数类型并触发未知类型诊断）。
-            if state.at(ValkyrieTokenType::Identifier) && state.peek_text().as_deref() == Some("mut") && state.peek_non_trivia_kind_at(1) != Some(ValkyrieTokenType::Colon) {
+            if state.at(ValkyrieTokenType::Identifier)
+                && state.peek_text().as_deref() == Some("mut")
+                && state.peek_non_trivia_kind_at(1) != Some(ValkyrieTokenType::Colon)
+            {
                 state.bump();
                 parse_type(state)?;
                 if state.at(ValkyrieTokenType::Comma) {
@@ -150,7 +157,9 @@ pub(crate) fn parse_type<S: data_text_core::Source + ?Sized>(state: &mut State<'
 /// Parse micro/mezzo parameter generics: prefer `micro wrap<T>(...)`, also accept `micro wrap::<T>(...)`.
 ///
 /// Distinct from type application `Envelope<T>` and call-site turbofish `foo::<T>()`.
-pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     if state.at(ValkyrieTokenType::ColonColon) && state.peek_non_trivia_kind_at(1) == Some(ValkyrieTokenType::LessThan) {
         state.bump();
     }
@@ -161,12 +170,16 @@ pub(crate) fn parse_micro_generic_parameter_clause<S: data_text_core::Source + ?
 }
 
 /// Legacy name alias.
-pub(crate) fn parse_term_generic_parameter_clause<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_term_generic_parameter_clause<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     parse_micro_generic_parameter_clause(state)
 }
 
 /// Parse type-level generic parameter lists for type/unite/trait: `<T, U>`.
-pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     while state.not_at_end() && !state.at(ValkyrieTokenType::GreaterThan) {
@@ -202,7 +215,9 @@ pub(crate) fn parse_generic_parameter_list<S: data_text_core::Source + ?Sized>(s
 }
 
 /// Parse a generic parameter list
-pub(crate) fn parse_generic_argument_list<S: data_text_core::Source + ?Sized>(state: &mut State<'_, S>) -> Result<(), data_text_core::TextError> {
+pub(crate) fn parse_generic_argument_list<S: data_text_core::Source + ?Sized>(
+    state: &mut State<'_, S>,
+) -> Result<(), data_text_core::TextError> {
     let cp = state.sink.checkpoint();
     state.bump();
     // `Foo<>` / `type<>` 不是「无参应用」：空实参列表不产出任何节点却让类型位静默退化，
@@ -287,13 +302,17 @@ pub(crate) fn parse_where_clause<S: data_text_core::Source + ?Sized>(state: &mut
         let before = token_index(state);
         parse_type(state)?;
         if stalled(state, before) || !state.at(ValkyrieTokenType::Colon) {
-            return Err(state.source.syntax_error("where 约束缺少目标类型或冒号".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
+            return Err(state
+                .source
+                .syntax_error("where 约束缺少目标类型或冒号".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
         }
         state.bump();
         loop {
             let bcp = state.sink.checkpoint();
             if !state.at(ValkyrieTokenType::Identifier) {
-                return Err(state.source.syntax_error("where 约束缺少 trait 路径".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
+                return Err(state
+                    .source
+                    .syntax_error("where 约束缺少 trait 路径".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
             }
             parse_type_name_path(state)?;
             if state.at(ValkyrieTokenType::LessThan) {
@@ -307,7 +326,9 @@ pub(crate) fn parse_where_clause<S: data_text_core::Source + ?Sized>(state: &mut
                         let rhs = token_index(state);
                         parse_type(state)?;
                         if stalled(state, rhs) {
-                            return Err(state.source.syntax_error("关联类型等式缺少右侧类型".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
+                            return Err(state
+                                .source
+                                .syntax_error("关联类型等式缺少右侧类型".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
                         }
                         state.sink.finish_node(ecp, ValkyrieElementType::AssociatedTypeEquation);
                     }
@@ -315,7 +336,9 @@ pub(crate) fn parse_where_clause<S: data_text_core::Source + ?Sized>(state: &mut
                         parse_type(state)?;
                     }
                     if stalled(state, before) {
-                        return Err(state.source.syntax_error("trait bound 缺少类型实参".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
+                        return Err(state
+                            .source
+                            .syntax_error("trait bound 缺少类型实参".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
                     }
                     if !state.at(ValkyrieTokenType::Comma) {
                         break;
@@ -323,7 +346,9 @@ pub(crate) fn parse_where_clause<S: data_text_core::Source + ?Sized>(state: &mut
                     state.bump();
                 }
                 if !state.at(ValkyrieTokenType::GreaterThan) {
-                    return Err(state.source.syntax_error("trait bound 缺少闭合尖括号".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
+                    return Err(state
+                        .source
+                        .syntax_error("trait bound 缺少闭合尖括号".to_string(), state.current().map(|t| t.span.start).unwrap_or(0)));
                 }
                 state.bump();
             }

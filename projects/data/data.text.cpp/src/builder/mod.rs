@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::*, language::CppLanguage, parser::CppParser};
-use data_text_core::{Builder, BuilderCache, GreenNode, TextDiagnostics, Parser, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Parser, SourceText, TextDiagnostics, TextEdit, source::Source};
 
 /// AST builder for the C++ language
 #[derive(Clone)]
@@ -23,7 +23,12 @@ impl<'config> CppBuilder<'config> {
 }
 
 impl<'config> Builder<CppLanguage> for CppBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &'a S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CppLanguage>) -> data_text_core::builder::BuildOutput<CppLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CppLanguage>,
+    ) -> data_text_core::builder::BuildOutput<CppLanguage> {
         let parser = CppParser::new(self.config);
         let mut cache = data_text_core::parser::ParseSession::<CppLanguage>::default();
         let parse_result = parser.parse(source, edits, &mut cache);

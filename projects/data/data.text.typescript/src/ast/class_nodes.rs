@@ -1,4 +1,6 @@
-use crate::ast::{Decorator, Expression, FunctionParam, Modifier, ModifierKind, OptionalMarker, Statement, TypeAnnotation, TypeParameter, has_modifier};
+use crate::ast::{
+    Decorator, Expression, FunctionParam, Modifier, ModifierKind, OptionalMarker, Statement, TypeAnnotation, TypeParameter, has_modifier,
+};
 use core::range::Range;
 
 /// Represents the visibility of a class member.

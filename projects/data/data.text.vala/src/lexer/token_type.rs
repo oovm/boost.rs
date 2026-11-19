@@ -475,6 +475,17 @@ impl ValaTokenType {
 
     /// Check if it is a punctuation.
     pub fn is_punctuation(&self) -> bool {
-        matches!(self, Self::LeftParen | Self::RightParen | Self::LeftBrace | Self::RightBrace | Self::LeftBracket | Self::RightBracket | Self::Comma | Self::Semicolon | Self::Backslash)
+        matches!(
+            self,
+            Self::LeftParen
+                | Self::RightParen
+                | Self::LeftBrace
+                | Self::RightBrace
+                | Self::LeftBracket
+                | Self::RightBracket
+                | Self::Comma
+                | Self::Semicolon
+                | Self::Backslash
+        )
     }
 }

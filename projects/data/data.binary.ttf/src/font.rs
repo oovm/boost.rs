@@ -187,11 +187,8 @@ impl FontFace {
 
     pub fn cmap(&mut self) -> Option<&CmapTable> {
         if self.cmap.is_none() {
-            self.cmap = self
-                .face
-                .directory
-                .get(b"cmap")
-                .and_then(|rec| self.face.table_data(rec).ok().and_then(|data| CmapTable::parse(data).ok()));
+            self.cmap =
+                self.face.directory.get(b"cmap").and_then(|rec| self.face.table_data(rec).ok().and_then(|data| CmapTable::parse(data).ok()));
         }
         self.cmap.as_ref()
     }
@@ -214,9 +211,11 @@ impl FontFace {
     pub fn math(&mut self) -> Option<&MathTable> {
         if self.math.is_none() {
             let num_glyphs = self.maxp().map(|maxp| maxp.num_glyphs);
-            self.math = self.face.directory.get(b"MATH").and_then(|rec| {
-                self.face.table_data(rec).ok().and_then(|data| MathTable::parse_with_num_glyphs(data, num_glyphs).ok())
-            });
+            self.math = self
+                .face
+                .directory
+                .get(b"MATH")
+                .and_then(|rec| self.face.table_data(rec).ok().and_then(|data| MathTable::parse_with_num_glyphs(data, num_glyphs).ok()));
         }
         self.math.as_ref()
     }

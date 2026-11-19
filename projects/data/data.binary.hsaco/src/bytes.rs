@@ -2,8 +2,8 @@
 
 use std::fmt::{Display, Formatter};
 
-use data_binary_core::{Budget, BudgetError, BudgetTracker};
 use boost_source::binary::{MemorySource, ReadError};
+use data_binary_core::{Budget, BudgetError, BudgetTracker};
 
 use crate::{HsacoLayoutError, HsacoSummary, validate_hsaco};
 

@@ -6,7 +6,10 @@ use crate::{language::NotedownLanguage, lexer::token_type::NoteTokenType, parser
 use core::range::Range;
 use data_text_core::tree::RedNode;
 #[cfg(feature = "lsp")]
-use {futures::Future, language_hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService, language_server::types::Hover as LspHover};
+use {
+    futures::Future, language_hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService,
+    language_server::types::Hover as LspHover,
+};
 /// Hover provider implementation for Notedown.
 #[cfg(feature = "lsp")]
 pub struct NoteHoverProvider;
@@ -65,6 +68,12 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
     }
     fn hover(&self, uri: &str, range: Range<usize>) -> impl futures::Future<Output = Option<language_server::types::Hover>> + Send + '_ {
         let uri = uri.to_string();
-        async move { self.with_root(&uri, |root| self.hover_provider.hover(&root, range).map(|h| language_server::types::Hover { contents: h.contents, range: h.range })).await.flatten() }
+        async move {
+            self.with_root(&uri, |root| {
+                self.hover_provider.hover(&root, range).map(|h| language_server::types::Hover { contents: h.contents, range: h.range })
+            })
+            .await
+            .flatten()
+        }
     }
 }

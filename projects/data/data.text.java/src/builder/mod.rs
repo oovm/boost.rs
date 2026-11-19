@@ -25,7 +25,12 @@ impl<'config> JavaBuilder<'config> {
 }
 
 impl<'config> Builder<JavaLanguage> for JavaBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, text: &S, edits: &[TextEdit], cache: &'a mut impl BuilderCache<JavaLanguage>) -> BuildOutput<JavaLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        text: &S,
+        edits: &[TextEdit],
+        cache: &'a mut impl BuilderCache<JavaLanguage>,
+    ) -> BuildOutput<JavaLanguage> {
         let parser = JavaParser::new(self.language);
         let output = parser.parse(text, edits, cache);
         let result = output.result.map(|green| self.build_root(green, &text.get_text_in((0..text.length()).into())));

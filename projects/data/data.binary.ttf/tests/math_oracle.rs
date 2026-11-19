@@ -76,33 +76,9 @@ const LMM_METRICS: &[GlyphMetrics] = &[
 ];
 
 const LMM_VERTICAL: &[VerticalConstruction] = &[
-    VerticalConstruction {
-        character: '(',
-        gid: 9,
-        variants: 8,
-        max_variant_gid: 2499,
-        max_advance: 2991.0,
-        height: 1745.0,
-        depth: 1245.0,
-    },
-    VerticalConstruction {
-        character: '{',
-        gid: 92,
-        variants: 8,
-        max_variant_gid: 2515,
-        max_advance: 3001.0,
-        height: 1750.0,
-        depth: 1250.0,
-    },
-    VerticalConstruction {
-        character: '∑',
-        gid: 3060,
-        variants: 2,
-        max_variant_gid: 3074,
-        max_advance: 1401.0,
-        height: 950.0,
-        depth: 450.0,
-    },
+    VerticalConstruction { character: '(', gid: 9, variants: 8, max_variant_gid: 2499, max_advance: 2991.0, height: 1745.0, depth: 1245.0 },
+    VerticalConstruction { character: '{', gid: 92, variants: 8, max_variant_gid: 2515, max_advance: 3001.0, height: 1750.0, depth: 1250.0 },
+    VerticalConstruction { character: '∑', gid: 3060, variants: 2, max_variant_gid: 3074, max_advance: 1401.0, height: 950.0, depth: 450.0 },
 ];
 
 const LMM_ASSEMBLIES: &[AssemblyExpectation] = &[
@@ -137,33 +113,9 @@ const CAMBRIA_METRICS: &[GlyphMetrics] = &[
 ];
 
 const CAMBRIA_VERTICAL: &[VerticalConstruction] = &[
-    VerticalConstruction {
-        character: '(',
-        gid: 4666,
-        variants: 8,
-        max_variant_gid: 3438,
-        max_advance: 8881.0,
-        height: 5025.0,
-        depth: 3855.0,
-    },
-    VerticalConstruction {
-        character: '{',
-        gid: 4668,
-        variants: 8,
-        max_variant_gid: 3422,
-        max_advance: 8801.0,
-        height: 4985.0,
-        depth: 3815.0,
-    },
-    VerticalConstruction {
-        character: '∑',
-        gid: 963,
-        variants: 5,
-        max_variant_gid: 3535,
-        max_advance: 8590.0,
-        height: 4880.0,
-        depth: 3709.0,
-    },
+    VerticalConstruction { character: '(', gid: 4666, variants: 8, max_variant_gid: 3438, max_advance: 8881.0, height: 5025.0, depth: 3855.0 },
+    VerticalConstruction { character: '{', gid: 4668, variants: 8, max_variant_gid: 3422, max_advance: 8801.0, height: 4985.0, depth: 3815.0 },
+    VerticalConstruction { character: '∑', gid: 963, variants: 5, max_variant_gid: 3535, max_advance: 8590.0, height: 4880.0, depth: 3709.0 },
 ];
 
 const CAMBRIA_ASSEMBLIES: &[AssemblyExpectation] = &[
@@ -233,10 +185,11 @@ fn check_metrics(math: &MathTable, expected: &[GlyphMetrics]) {
 
 fn check_vertical(math: &MathTable, expected: &[VerticalConstruction]) {
     for construction in expected {
-        let ours =
-            math.variants.vert_constructions.get(&construction.gid).unwrap_or_else(|| {
-                panic!("no vertical construction for {} (glyph {})", construction.character, construction.gid)
-            });
+        let ours = math
+            .variants
+            .vert_constructions
+            .get(&construction.gid)
+            .unwrap_or_else(|| panic!("no vertical construction for {} (glyph {})", construction.character, construction.gid));
         assert!(
             math.variants.vert_coverages.contains(&construction.gid),
             "{} (glyph {}) is missing from the vertical coverage",
@@ -246,11 +199,7 @@ fn check_vertical(math: &MathTable, expected: &[VerticalConstruction]) {
         assert_eq!(ours.variants.len(), construction.variants, "vertical variant count for {}", construction.character);
         let largest = ours.variants.last().expect("at least one variant");
         assert_eq!(largest.variant_glyph, construction.max_variant_gid, "largest variant glyph for {}", construction.character);
-        assert_eq!(
-            largest.advance_measurement, construction.max_advance,
-            "largest variant advance for {}",
-            construction.character
-        );
+        assert_eq!(largest.advance_measurement, construction.max_advance, "largest variant advance for {}", construction.character);
         // An independent outline measurement of the same glyph: the vertical
         // advance has to cover height plus depth.
         let advance = largest.advance_measurement;
@@ -277,15 +226,8 @@ fn check_assemblies(math: &MathTable, expected: &[AssemblyExpectation]) {
             .vert_constructions
             .get(&assembly.gid)
             .unwrap_or_else(|| panic!("no vertical construction for {} (glyph {})", assembly.character, assembly.gid));
-        let ours = construction
-            .assembly
-            .as_ref()
-            .unwrap_or_else(|| panic!("no assembly for {} (glyph {})", assembly.character, assembly.gid));
-        assert_eq!(
-            ours.italics_correction, assembly.italics_correction,
-            "assembly italics correction for {}",
-            assembly.character
-        );
+        let ours = construction.assembly.as_ref().unwrap_or_else(|| panic!("no assembly for {} (glyph {})", assembly.character, assembly.gid));
+        assert_eq!(ours.italics_correction, assembly.italics_correction, "assembly italics correction for {}", assembly.character);
         assert_eq!(ours.parts.len(), assembly.parts.len(), "assembly part count for {}", assembly.character);
         for (index, (expected_part, ours_part)) in assembly.parts.iter().zip(&ours.parts).enumerate() {
             assert_eq!(

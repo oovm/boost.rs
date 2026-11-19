@@ -10,7 +10,7 @@ use crate::compiler::{
     types::hir::HirModule,
 };
 use compiler_types::{
-    FieldId, ItemInstanceId, NominalInstanceId, FunctionType, SemanticType, WitnessObject,
+    FieldId, FunctionType, ItemInstanceId, NominalInstanceId, SemanticType, WitnessObject,
     layout::{AggregateLayout, AggregateLayoutPlan, LayoutId},
 };
 

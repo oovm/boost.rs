@@ -33,7 +33,12 @@ pub struct VueParser<'config> {
 }
 
 impl<'config> Parser<VueLanguage> for VueParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<VueLanguage>) -> ParseOutput<'a, VueLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<VueLanguage>,
+    ) -> ParseOutput<'a, VueLanguage> {
         let lexer = VueLexer::new(self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();
@@ -75,7 +80,11 @@ impl<'config> VueParser<'config> {
     }
 
     /// Parses only an expression.
-    pub fn parse_expression_only<'a, S: Source + ?Sized>(&self, source: &'a S, session: &'a mut data_text_core::parser::ParseSession<VueLanguage>) -> data_text_core::parser::ParseOutput<'a, VueLanguage> {
+    pub fn parse_expression_only<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        session: &'a mut data_text_core::parser::ParseSession<VueLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, VueLanguage> {
         let lexer = VueLexer::new_expression(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, source, &[], session, |state| {
             let cp = state.checkpoint();
@@ -85,7 +94,11 @@ impl<'config> VueParser<'config> {
     }
 
     /// Parses only a `v-for` expression.
-    pub fn parse_v_for_only<'a, S: Source + ?Sized>(&self, source: &'a S, session: &'a mut data_text_core::parser::ParseSession<VueLanguage>) -> data_text_core::parser::ParseOutput<'a, VueLanguage> {
+    pub fn parse_v_for_only<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        session: &'a mut data_text_core::parser::ParseSession<VueLanguage>,
+    ) -> data_text_core::parser::ParseOutput<'a, VueLanguage> {
         let lexer = VueLexer::new_expression(self.config);
         data_text_core::parser::parse_with_lexer(&lexer, source, &[], session, |state| {
             let cp = state.checkpoint();
@@ -157,7 +170,12 @@ impl<'config> VueParser<'config> {
     }
 
     fn parse_node<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
-        if state.at(VueTokenType::Lt) || state.at(VueTokenType::ScriptStart) || state.at(VueTokenType::StyleStart) || state.at(VueTokenType::TemplateStart) || state.at(VueTokenType::DocTypeStart) {
+        if state.at(VueTokenType::Lt)
+            || state.at(VueTokenType::ScriptStart)
+            || state.at(VueTokenType::StyleStart)
+            || state.at(VueTokenType::TemplateStart)
+            || state.at(VueTokenType::DocTypeStart)
+        {
             self.parse_element(state);
         }
         else if state.at(VueTokenType::InterpolationStart) {
@@ -415,11 +433,22 @@ impl<'config> VueParser<'config> {
             state.finish_at(val_cp, crate::parser::element_type::VueElementType::AttributeValue);
         }
         // `a==b` / `a>=b`: a compound `=` token cannot start an attribute value in Vue.
-        else if state.at(VueTokenType::EqEq) || state.at(VueTokenType::EqEqEq) || state.at(VueTokenType::Arrow) || state.at(VueTokenType::GtEq) || state.at(VueTokenType::LtEq) || state.at(VueTokenType::NotEq) {
+        else if state.at(VueTokenType::EqEq)
+            || state.at(VueTokenType::EqEqEq)
+            || state.at(VueTokenType::Arrow)
+            || state.at(VueTokenType::GtEq)
+            || state.at(VueTokenType::LtEq)
+            || state.at(VueTokenType::NotEq)
+        {
             let _ = state.syntax_error("unexpected `=` in attribute".to_string());
         }
 
-        let kind = if is_directive { crate::parser::element_type::VueElementType::Directive } else { crate::parser::element_type::VueElementType::Attribute };
+        let kind = if is_directive {
+            crate::parser::element_type::VueElementType::Directive
+        }
+        else {
+            crate::parser::element_type::VueElementType::Attribute
+        };
         state.finish_at(cp, kind);
 
         // Last-resort progress: empty attribute nodes must not be emitted forever.
@@ -446,7 +475,34 @@ impl<'config> VueParser<'config> {
             return Some(text);
         }
         // Keywords that appear as HTML / Vue attribute names in the wild.
-        if matches!(state.peek_kind(), Some(For | In | Of | As | If | Else | From | Default | Const | Let | Var | Function | Return | Break | Continue | Switch | Try | Throw | True | False | Null | Import | Export | While)) {
+        if matches!(
+            state.peek_kind(),
+            Some(
+                For | In
+                    | Of
+                    | As
+                    | If
+                    | Else
+                    | From
+                    | Default
+                    | Const
+                    | Let
+                    | Var
+                    | Function
+                    | Return
+                    | Break
+                    | Continue
+                    | Switch
+                    | Try
+                    | Throw
+                    | True
+                    | False
+                    | Null
+                    | Import
+                    | Export
+                    | While
+            )
+        ) {
             let text = state.peek_text().map(|c| c.to_string()).unwrap_or_default();
             state.bump();
             return Some(text);
@@ -477,7 +533,34 @@ impl<'config> VueParser<'config> {
 
     fn bump_attr_name_is_keyword(kind: Option<VueTokenType>) -> bool {
         use VueTokenType::*;
-        matches!(kind, Some(For | In | Of | As | If | Else | From | Default | Const | Let | Var | Function | Return | Break | Continue | Switch | Try | Throw | True | False | Null | Import | Export | While))
+        matches!(
+            kind,
+            Some(
+                For | In
+                    | Of
+                    | As
+                    | If
+                    | Else
+                    | From
+                    | Default
+                    | Const
+                    | Let
+                    | Var
+                    | Function
+                    | Return
+                    | Break
+                    | Continue
+                    | Switch
+                    | Try
+                    | Throw
+                    | True
+                    | False
+                    | Null
+                    | Import
+                    | Export
+                    | While
+            )
+        )
     }
 
     fn parse_directive_value<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, directive_name: &str) {
@@ -490,7 +573,12 @@ impl<'config> VueParser<'config> {
                 let inner_owned = text[1..text.len() - 1].to_string();
                 let inner_source = SourceText::new(inner_owned);
                 let mut sub_session = data_text_core::parser::ParseSession::default();
-                let _parsed = if directive_name == "v-for" { self.parse_v_for_only(&inner_source, &mut sub_session) } else { self.parse_expression_only(&inner_source, &mut sub_session) };
+                let _parsed = if directive_name == "v-for" {
+                    self.parse_v_for_only(&inner_source, &mut sub_session)
+                }
+                else {
+                    self.parse_expression_only(&inner_source, &mut sub_session)
+                };
             }
         }
         state.bump();
@@ -689,7 +777,12 @@ impl<'config> Pratt<VueLanguage> for VueParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, VueLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, VueLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, VueLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, VueLanguage>> {
         use VueTokenType::*;
         let start_cp = state.checkpoint();
         self.skip_whitespace(state);

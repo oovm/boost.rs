@@ -1,10 +1,10 @@
 use data_binary_epub::{ManifestItem, OpfDocument};
-use document_ir::{Block, DocumentGraph, Inline, ListItem, NodeId};
 use data_text_core::query::QueryBudget;
 use data_text_html::{
     ast::Element,
     query::{HtmlDocumentView, select_css_elements},
 };
+use document_ir::{Block, DocumentGraph, Inline, ListItem, NodeId};
 
 use super::html_extensions::{attribute_value, child_elements, element_is, first_anchor, parse_html_bytes};
 use crate::FormatError;

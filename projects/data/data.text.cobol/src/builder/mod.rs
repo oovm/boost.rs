@@ -1,6 +1,6 @@
 use crate::{ast::CobolRoot, language::CobolLanguage};
 use data_text_core::{
-    GreenNode, TextDiagnostics, Range, SourceText,
+    GreenNode, Range, SourceText, TextDiagnostics,
     builder::{BuildOutput, Builder, BuilderCache},
     source::{Source, TextEdit},
 };
@@ -16,7 +16,12 @@ impl CobolBuilder {
 }
 
 impl Builder<CobolLanguage> for CobolBuilder {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<CobolLanguage>) -> BuildOutput<CobolLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<CobolLanguage>,
+    ) -> BuildOutput<CobolLanguage> {
         let parser = crate::parser::CobolParser::new();
         let lexer = crate::lexer::CobolLexer::new();
 
@@ -41,7 +46,11 @@ impl Builder<CobolLanguage> for CobolBuilder {
 }
 
 impl CobolBuilder {
-    pub(crate) fn build_root(&self, green_tree: GreenNode<CobolLanguage>, _source: &SourceText) -> Result<CobolRoot, data_text_core::TextError> {
+    pub(crate) fn build_root(
+        &self,
+        green_tree: GreenNode<CobolLanguage>,
+        _source: &SourceText,
+    ) -> Result<CobolRoot, data_text_core::TextError> {
         let span = Range { start: 0, end: green_tree.byte_length as usize };
         Ok(CobolRoot { span })
     }

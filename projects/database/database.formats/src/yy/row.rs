@@ -8,11 +8,7 @@
 //! 行内的 `bytes` 与 `vector<N>` 可能被宿主改写为对象引用；解码需要
 //! [`ObjectResolver`]，由宿主在一条语句执行期间用 [`with_object_resolver`] 安装。
 
-use std::{
-    cell::RefCell,
-    collections::BTreeMap,
-    sync::Arc,
-};
+use std::{cell::RefCell, collections::BTreeMap, sync::Arc};
 
 use database_types::{
     Date, Decimal, Error, FileDescriptor, FileManifestRef, HashAlgo, ObjectKind, ObjectRef, Result, Time, Timestamp, Value, Vector,
@@ -147,7 +143,8 @@ pub fn decode_row(bytes: &[u8]) -> Result<BTreeMap<String, Value>> {
 pub fn select_encoded(row: &BTreeMap<String, Value>, names: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
     let mut selected = vec![None; names.len()];
     for (slot, name) in names.iter().enumerate() {
-        let Some(value) = row.get(*name) else {
+        let Some(value) = row.get(*name)
+        else {
             continue;
         };
         if matches!(value, Value::Null) {

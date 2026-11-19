@@ -29,7 +29,12 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                if let (Some(left), Some(right)) = (left, right) { Expression::Assignment { left, op, right } } else { Expression::Identifier("unknown_assignment".to_string()) }
+                if let (Some(left), Some(right)) = (left, right) {
+                    Expression::Assignment { left, op, right }
+                }
+                else {
+                    Expression::Identifier("unknown_assignment".to_string())
+                }
             }
             JavaElementType::UnaryExpression => {
                 let mut expr = None;
@@ -44,7 +49,17 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                if let Some(expression) = expr { if op == "++" || op == "--" { Expression::Update { expression, op, is_prefix: true } } else { Expression::Unary { op, expression } } } else { Expression::Identifier("unknown_unary".to_string()) }
+                if let Some(expression) = expr {
+                    if op == "++" || op == "--" {
+                        Expression::Update { expression, op, is_prefix: true }
+                    }
+                    else {
+                        Expression::Unary { op, expression }
+                    }
+                }
+                else {
+                    Expression::Identifier("unknown_unary".to_string())
+                }
             }
             JavaElementType::PostfixExpression => {
                 let mut expr = None;
@@ -59,7 +74,12 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                if let Some(expression) = expr { Expression::Update { expression, op, is_prefix: false } } else { Expression::Identifier("unknown_postfix".to_string()) }
+                if let Some(expression) = expr {
+                    Expression::Update { expression, op, is_prefix: false }
+                }
+                else {
+                    Expression::Identifier("unknown_postfix".to_string())
+                }
             }
             JavaElementType::TernaryExpression => {
                 let mut condition = None;
@@ -78,7 +98,12 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                if let (Some(condition), Some(then_branch), Some(else_branch)) = (condition, then_branch, else_branch) { Expression::Ternary { condition, then_branch, else_branch } } else { Expression::Identifier("unknown_ternary".to_string()) }
+                if let (Some(condition), Some(then_branch), Some(else_branch)) = (condition, then_branch, else_branch) {
+                    Expression::Ternary { condition, then_branch, else_branch }
+                }
+                else {
+                    Expression::Identifier("unknown_ternary".to_string())
+                }
             }
             JavaElementType::CastExpression => {
                 let mut target_type = String::new();
@@ -94,13 +119,20 @@ impl<'config> JavaBuilder<'config> {
                             }
                         }
                         RedTree::Leaf(leaf) => {
-                            if target_type.is_empty() && (leaf.kind == JavaTokenType::Identifier || leaf.kind.role() == data_text_core::UniversalTokenRole::Keyword) {
+                            if target_type.is_empty()
+                                && (leaf.kind == JavaTokenType::Identifier || leaf.kind.role() == data_text_core::UniversalTokenRole::Keyword)
+                            {
                                 target_type = self.get_text(leaf.span, source).trim().to_string();
                             }
                         }
                     }
                 }
-                if let Some(expression) = expr { Expression::Cast { target_type, expression } } else { Expression::Identifier("unknown_cast".to_string()) }
+                if let Some(expression) = expr {
+                    Expression::Cast { target_type, expression }
+                }
+                else {
+                    Expression::Identifier("unknown_cast".to_string())
+                }
             }
             JavaElementType::BinaryExpression => {
                 let mut left = None;
@@ -123,7 +155,12 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                if let (Some(left), Some(right)) = (left, right) { Expression::Binary { left, op, right } } else { Expression::Identifier("unknown_binary".to_string()) }
+                if let (Some(left), Some(right)) = (left, right) {
+                    Expression::Binary { left, op, right }
+                }
+                else {
+                    Expression::Identifier("unknown_binary".to_string())
+                }
             }
             JavaElementType::LiteralExpression => {
                 for child in node.children() {
@@ -224,7 +261,12 @@ impl<'config> JavaBuilder<'config> {
                         }
                     }
                 }
-                if let (Some(target), Some(index)) = (target, index) { Expression::ArrayAccess(ArrayAccess { target, index }) } else { Expression::Identifier("unknown_array_access".to_string()) }
+                if let (Some(target), Some(index)) = (target, index) {
+                    Expression::ArrayAccess(ArrayAccess { target, index })
+                }
+                else {
+                    Expression::Identifier("unknown_array_access".to_string())
+                }
             }
             JavaElementType::ArrayCreation => {
                 let mut element_type = String::new();

@@ -40,7 +40,9 @@ fn test_force_directed_layout() {
     graph.add_edge(GraphEdge::new("a".to_string(), "b".to_string()));
     graph.add_edge(GraphEdge::new("b".to_string(), "c".to_string()));
 
-    let layout_engine = GraphLayout::new().with_algorithm(GraphLayoutAlgorithm::ForceDirected).with_config(GraphLayoutConfig { iterations: 10, ..Default::default() });
+    let layout_engine = GraphLayout::new()
+        .with_algorithm(GraphLayoutAlgorithm::ForceDirected)
+        .with_config(GraphLayoutConfig { iterations: 10, ..Default::default() });
 
     let result = layout_engine.layout_graph(&graph);
     assert!(result.is_ok());
@@ -62,7 +64,11 @@ fn test_graph_node_builder() {
 
 #[test]
 fn test_graph_edge_builder() {
-    let edge = GraphEdge::new("a".to_string(), "b".to_string()).with_label("calls".to_string()).with_type("dependency".to_string()).with_weight(1.5).undirected();
+    let edge = GraphEdge::new("a".to_string(), "b".to_string())
+        .with_label("calls".to_string())
+        .with_type("dependency".to_string())
+        .with_weight(1.5)
+        .undirected();
 
     assert_eq!(edge.from, "a");
     assert_eq!(edge.to, "b");

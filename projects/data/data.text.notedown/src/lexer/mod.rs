@@ -21,7 +21,12 @@ impl<'config> NotedownLexer<'config> {
 }
 
 impl<'config> Lexer<NotedownLanguage> for NotedownLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &'a S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<NotedownLanguage>) -> LexOutput<NotedownLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &'a S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<NotedownLanguage>,
+    ) -> LexOutput<NotedownLanguage> {
         let mut state = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {
@@ -582,7 +587,8 @@ impl<'config> NotedownLexer<'config> {
         while let Some(ch) = state.peek() {
             // Stop when special characters are encountered
             match ch {
-                ' ' | '\t' | '\n' | '\r' | '#' | '*' | '_' | '`' | '~' | '[' | ']' | '(' | ')' | '<' | '>' | '|' | '-' | '+' | '.' | ':' | '!' | '\\' => break,
+                ' ' | '\t' | '\n' | '\r' | '#' | '*' | '_' | '`' | '~' | '[' | ']' | '(' | ')' | '<' | '>' | '|' | '-' | '+' | '.' | ':'
+                | '!' | '\\' => break,
                 _ => state.advance(ch.len_utf8()),
             }
         }

@@ -4,7 +4,7 @@ pub mod token_type;
 pub use token_type::HandlebarsTokenType;
 
 use data_text_core::{
-    Lexer, LexerCache, LexerState, TextError, Range,
+    Lexer, LexerCache, LexerState, Range, TextError,
     lexer::{LexOutput, StringConfig, WhitespaceConfig},
     source::Source,
 };
@@ -24,7 +24,12 @@ pub struct HandlebarsLexer<'config> {
 }
 
 impl<'config> Lexer<HandlebarsLanguage> for HandlebarsLexer<'config> {
-    fn lex<'a, S: Source + ?Sized>(&self, source: &S, _edits: &[data_text_core::TextEdit], cache: &'a mut impl LexerCache<HandlebarsLanguage>) -> LexOutput<HandlebarsLanguage> {
+    fn lex<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        _edits: &[data_text_core::TextEdit],
+        cache: &'a mut impl LexerCache<HandlebarsLanguage>,
+    ) -> LexOutput<HandlebarsLanguage> {
         let mut state: State<'_, S> = LexerState::new(source);
         let result = self.run(&mut state);
         if result.is_ok() {

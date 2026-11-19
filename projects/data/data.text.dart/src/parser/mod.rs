@@ -23,7 +23,12 @@ impl<'a> DartParser<'a> {
 }
 
 impl<'p> Parser<DartLanguage> for DartParser<'p> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<DartLanguage>) -> ParseOutput<'a, DartLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<DartLanguage>,
+    ) -> ParseOutput<'a, DartLanguage> {
         let lexer = DartLexer::new(self._language);
         data_text_core::parser::parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

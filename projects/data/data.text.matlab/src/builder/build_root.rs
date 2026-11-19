@@ -1,5 +1,5 @@
 use crate::{MatlabLanguage, ast::MatlabRoot, builder::MatlabBuilder, lexer::token_type::MatlabTokenType};
-use data_text_core::{GreenNode, TextError, RedNode, RedTree, Source, TokenType};
+use data_text_core::{GreenNode, RedNode, RedTree, Source, TextError, TokenType};
 
 impl<'config> MatlabBuilder<'config> {
     /// Build owned [`MatlabRoot`] from a green root.

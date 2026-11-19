@@ -1,6 +1,7 @@
 //! GLSL input: `data-text-glsl` syntax tree to neutral shader syntax.
 #![warn(missing_docs)]
 
+use data_text_glsl::ast as g;
 use hardware_frontend::{
     FrontendError, LoweredShader,
     ast::{
@@ -9,7 +10,6 @@ use hardware_frontend::{
     },
     lower_module,
 };
-use data_text_glsl::ast as g;
 
 /// Name of the synthetic parameter that carries `gl_GlobalInvocationID`.
 const GLOBAL_INVOCATION: &str = "__global_invocation_id";

@@ -4,8 +4,10 @@
 //! Valkyrie MIR 与同一程序生成的表示计划一起交给后续阶段（语言 × 目标适配器）。
 
 use super::operation::{ValkyrieMir, ValkyrieMirCallee, ValkyrieMirError, ValkyrieMirOperation, ValkyrieMirWitness};
-use compiler_types::LinkedSemanticProgram;
-use compiler_types::semantic_ids::{InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity};
+use compiler_types::{
+    LinkedSemanticProgram,
+    semantic_ids::{InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity},
+};
 
 use super::representation::{RepresentationPlan, TextRepresentation};
 

@@ -3,7 +3,7 @@ pub mod element_type;
 
 use crate::{SqlElementType, SqlLanguage};
 use data_text_core::{
-    GreenNode, TextError, Parser, ParserState, TextEdit, TokenType,
+    GreenNode, Parser, ParserState, TextEdit, TextError, TokenType,
     parser::{
         ParseCache, ParseOutput, parse_with_lexer,
         pratt::{Associativity, Pratt, PrattParser, binary, unary},
@@ -64,7 +64,10 @@ fn eat_word<S: Source + ?Sized>(state: &mut State<'_, S>, word: &str) -> bool {
 /// `PARTITION`, `ORDER`, `)`, `,` and the end of the stream all close the list.
 fn at_window_item_start<S: Source + ?Sized>(state: &State<'_, S>) -> bool {
     use crate::lexer::SqlTokenType::*;
-    matches!(state.peek_kind(), Some(kind) if !matches!(kind, RightParen | Comma | Semicolon | Eof | Order | Asc | Desc | Nulls)) && !at_word(state, "ROWS") && !at_word(state, "RANGE") && !at_word(state, "PARTITION")
+    matches!(state.peek_kind(), Some(kind) if !matches!(kind, RightParen | Comma | Semicolon | Eof | Order | Asc | Desc | Nulls))
+        && !at_word(state, "ROWS")
+        && !at_word(state, "RANGE")
+        && !at_word(state, "PARTITION")
 }
 
 impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
@@ -95,7 +98,8 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
                 state.expect(RightBracket).ok();
                 state.finish_at(cp, SqlElementType::Expression)
             }
-            Some(NumberLiteral) | Some(FloatLiteral) | Some(StringLiteral) | Some(BooleanLiteral) | Some(NullLiteral) | Some(True) | Some(False) | Some(Null) => {
+            Some(NumberLiteral) | Some(FloatLiteral) | Some(StringLiteral) | Some(BooleanLiteral) | Some(NullLiteral) | Some(True)
+            | Some(False) | Some(Null) => {
                 state.bump();
                 state.finish_at(cp, SqlElementType::Expression)
             }
@@ -202,7 +206,12 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
         }
     }
 
-    fn infix<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>, left: &'a GreenNode<'a, SqlLanguage>, min_precedence: u8) -> Option<&'a GreenNode<'a, SqlLanguage>> {
+    fn infix<'a, S: Source + ?Sized>(
+        &self,
+        state: &mut State<'a, S>,
+        left: &'a GreenNode<'a, SqlLanguage>,
+        min_precedence: u8,
+    ) -> Option<&'a GreenNode<'a, SqlLanguage>> {
         use crate::lexer::SqlTokenType::*;
         let kind = state.peek_kind()?;
 
@@ -550,7 +559,9 @@ impl<'config> SqlParser<'config> {
             Some(Drop) => self.parse_drop(state)?,
             Some(Alter) => self.parse_alter(state)?,
             Some(Explain) => self.parse_explain(state)?,
-            Some(Begin) | Some(Commit) | Some(Rollback) | Some(Savepoint) | Some(Release) | Some(Transaction) => self.parse_transaction(state)?,
+            Some(Begin) | Some(Commit) | Some(Rollback) | Some(Savepoint) | Some(Release) | Some(Transaction) => {
+                self.parse_transaction(state)?
+            }
             Some(Pragma) => self.parse_pragma(state)?,
             Some(Show) => self.parse_show(state)?,
             Some(Set) => self.parse_set(state)?,
@@ -590,7 +601,8 @@ impl<'config> SqlParser<'config> {
         }
         // `SET [GLOBAL|SESSION|LOCAL] <name> = <expression>` is how a driver applies
         // character set, time zone, `sql_mode` and similar connection settings.
-        let scoped = state.peek_kind() == Some(Identifier_) && state.peek_text().is_some_and(|text| crate::ast::SessionScope::from_word(&text).is_some());
+        let scoped = state.peek_kind() == Some(Identifier_)
+            && state.peek_text().is_some_and(|text| crate::ast::SessionScope::from_word(&text).is_some());
         if scoped {
             state.bump();
         }
@@ -674,7 +686,8 @@ impl<'config> SqlParser<'config> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Show).ok();
-        let scoped = state.peek_kind() == Some(Identifier_) && state.peek_text().is_some_and(|text| crate::ast::SessionScope::from_word(&text).is_some());
+        let scoped = state.peek_kind() == Some(Identifier_)
+            && state.peek_text().is_some_and(|text| crate::ast::SessionScope::from_word(&text).is_some());
         if scoped {
             state.bump();
         }
@@ -692,7 +705,10 @@ impl<'config> SqlParser<'config> {
     /// instead of silently accepting the truncated expression as the whole filter.
     fn is_where_terminator(kind: Option<crate::lexer::SqlTokenType>) -> bool {
         use crate::lexer::SqlTokenType::*;
-        matches!(kind, None | Some(Group | Having | Order | Limit | Offset | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except))
+        matches!(
+            kind,
+            None | Some(Group | Having | Order | Limit | Offset | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except)
+        )
     }
 
     /// Parses the explicit `ALL` / `DISTINCT` quantifier that may follow `SELECT`.
@@ -751,7 +767,27 @@ impl<'config> SqlParser<'config> {
     /// Tokens that may start another statement.
     fn is_statement_start(kind: Option<crate::lexer::SqlTokenType>) -> bool {
         use crate::lexer::SqlTokenType::*;
-        matches!(kind, Some(Select | With | Insert | Update | Delete | Create | Drop | Alter | Explain | Begin | Commit | Rollback | Transaction | Pragma | Show | Set))
+        matches!(
+            kind,
+            Some(
+                Select
+                    | With
+                    | Insert
+                    | Update
+                    | Delete
+                    | Create
+                    | Drop
+                    | Alter
+                    | Explain
+                    | Begin
+                    | Commit
+                    | Rollback
+                    | Transaction
+                    | Pragma
+                    | Show
+                    | Set
+            )
+        )
     }
 
     /// Reports tokens that no statement or clause accepted and consumes them, so
@@ -818,7 +854,10 @@ impl<'config> SqlParser<'config> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(With).ok();
-        if state.peek_kind() == Some(Identifier_) && state.peek_text().is_some_and(|text| text.eq_ignore_ascii_case("RECURSIVE")) && state.peek_non_trivia_kind_at(1) == Some(Identifier_) {
+        if state.peek_kind() == Some(Identifier_)
+            && state.peek_text().is_some_and(|text| text.eq_ignore_ascii_case("RECURSIVE"))
+            && state.peek_non_trivia_kind_at(1) == Some(Identifier_)
+        {
             return Err(TextError::custom_error("recursive CTEs are not supported"));
         }
         loop {
@@ -928,7 +967,12 @@ impl<'config> SqlParser<'config> {
             let mut first = true;
             while state.not_at_end() {
                 if Self::is_group_by_terminator(state.peek_kind()) {
-                    state.errors.push(TextError::custom_error(if first { "`GROUP BY` requires at least one item" } else { "trailing comma in `GROUP BY`" }));
+                    state.errors.push(TextError::custom_error(if first {
+                        "`GROUP BY` requires at least one item"
+                    }
+                    else {
+                        "trailing comma in `GROUP BY`"
+                    }));
                     break;
                 }
                 first = false;
@@ -1042,7 +1086,12 @@ impl<'config> SqlParser<'config> {
             let mut first = true;
             while state.not_at_end() {
                 if Self::is_order_by_terminator(state.peek_kind()) {
-                    state.errors.push(TextError::custom_error(if first { "`ORDER BY` requires at least one item" } else { "trailing comma in `ORDER BY`" }));
+                    state.errors.push(TextError::custom_error(if first {
+                        "`ORDER BY` requires at least one item"
+                    }
+                    else {
+                        "trailing comma in `ORDER BY`"
+                    }));
                     break;
                 }
                 first = false;
@@ -1414,7 +1463,8 @@ impl<'config> SqlParser<'config> {
         if state.eat(Rollback) {
             return;
         }
-        let known = state.peek_kind() == Some(Identifier_) && state.peek_text().is_some_and(|text| crate::ast::ConflictResolution::from_word(&text).is_some());
+        let known = state.peek_kind() == Some(Identifier_)
+            && state.peek_text().is_some_and(|text| crate::ast::ConflictResolution::from_word(&text).is_some());
         if known {
             state.bump();
         }
@@ -1600,7 +1650,22 @@ impl<'config> SqlParser<'config> {
 
     fn parse_data_type<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
         use crate::lexer::SqlTokenType::*;
-        if state.not_at_end() && !matches!(state.peek_kind(), Some(Comma) | Some(RightParen) | Some(Primary) | Some(Not) | Some(Null) | Some(Unique) | Some(Default) | Some(Check) | Some(Foreign) | Some(References) | Some(Semicolon)) {
+        if state.not_at_end()
+            && !matches!(
+                state.peek_kind(),
+                Some(Comma)
+                    | Some(RightParen)
+                    | Some(Primary)
+                    | Some(Not)
+                    | Some(Null)
+                    | Some(Unique)
+                    | Some(Default)
+                    | Some(Check)
+                    | Some(Foreign)
+                    | Some(References)
+                    | Some(Semicolon)
+            )
+        {
             state.bump(); // Type name
             if state.eat(LeftParen) {
                 state.expect(NumberLiteral).ok();
@@ -1614,7 +1679,12 @@ impl<'config> SqlParser<'config> {
 }
 
 impl<'config> Parser<SqlLanguage> for SqlParser<'config> {
-    fn parse<'a, S: Source + ?Sized>(&self, text: &'a S, edits: &[TextEdit], cache: &'a mut impl ParseCache<SqlLanguage>) -> ParseOutput<'a, SqlLanguage> {
+    fn parse<'a, S: Source + ?Sized>(
+        &self,
+        text: &'a S,
+        edits: &[TextEdit],
+        cache: &'a mut impl ParseCache<SqlLanguage>,
+    ) -> ParseOutput<'a, SqlLanguage> {
         let lexer = crate::lexer::SqlLexer::new(&self.config);
         parse_with_lexer(&lexer, text, edits, cache, |state| {
             let cp = state.checkpoint();

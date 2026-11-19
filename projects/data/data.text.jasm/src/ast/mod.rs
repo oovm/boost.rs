@@ -1,7 +1,6 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::source::{SourceBuffer, ToSource};
-use data_text_pretty::Document;
-use data_text_pretty::to_doc::AsDocument;
+use data_text_pretty::{Document, to_doc::AsDocument};
 use std::{string::String, vec::Vec};
 
 /// JASM root node.
@@ -354,9 +353,21 @@ impl AsDocument for JasmInstruction {
     fn as_document(&self, _config: &Self::Config) -> Document<'_> {
         match self {
             JasmInstruction::Simple(s) => Document::Text(s.clone().into()),
-            JasmInstruction::WithArgument { instruction, argument } => Document::Concat(vec![Document::Text(instruction.clone().into()), Document::Text(" ".into()), Document::Text(argument.clone().into())]),
-            JasmInstruction::MethodCall { instruction, method_ref } => Document::Concat(vec![Document::Text(instruction.clone().into()), Document::Text(" ".into()), Document::Text(method_ref.clone().into())]),
-            JasmInstruction::FieldAccess { instruction, field_ref } => Document::Concat(vec![Document::Text(instruction.clone().into()), Document::Text(" ".into()), Document::Text(field_ref.clone().into())]),
+            JasmInstruction::WithArgument { instruction, argument } => Document::Concat(vec![
+                Document::Text(instruction.clone().into()),
+                Document::Text(" ".into()),
+                Document::Text(argument.clone().into()),
+            ]),
+            JasmInstruction::MethodCall { instruction, method_ref } => Document::Concat(vec![
+                Document::Text(instruction.clone().into()),
+                Document::Text(" ".into()),
+                Document::Text(method_ref.clone().into()),
+            ]),
+            JasmInstruction::FieldAccess { instruction, field_ref } => Document::Concat(vec![
+                Document::Text(instruction.clone().into()),
+                Document::Text(" ".into()),
+                Document::Text(field_ref.clone().into()),
+            ]),
         }
     }
 }

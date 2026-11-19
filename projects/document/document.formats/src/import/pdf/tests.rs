@@ -134,8 +134,7 @@ fn compressed_font_object_stream() -> (Vec<u8>, u32) {
     let header = "5 0 ";
     let body = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
     let decoded = format!("{header}{body}");
-    let compressed =
-        data_compression::zlib::Zlib::encode(decoded.as_bytes(), data_compression::deflate::DeflateLevel::default());
+    let compressed = data_compression::zlib::Zlib::encode(decoded.as_bytes(), data_compression::deflate::DeflateLevel::default());
     (compressed, header.len() as u32)
 }
 

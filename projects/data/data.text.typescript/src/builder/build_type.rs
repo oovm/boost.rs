@@ -1,8 +1,15 @@
-use crate::{ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType, parser::element_type::TypeScriptElementType};
-use data_text_core::{TextError, RedNode, RedTree, Source, SourceText};
+use crate::{
+    ast::*, builder::TypeScriptBuilder, language::TypeScriptLanguage, lexer::token_type::TypeScriptTokenType,
+    parser::element_type::TypeScriptElementType,
+};
+use data_text_core::{RedNode, RedTree, Source, SourceText, TextError};
 
 impl<'config> TypeScriptBuilder<'config> {
-    pub(crate) fn build_type_annotation(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<TypeAnnotation>, TextError> {
+    pub(crate) fn build_type_annotation(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<Option<TypeAnnotation>, TextError> {
         let raw = source.get_text_in(node.span().into()).trim().to_string();
         for child in node.children() {
             if let RedTree::Node(child_node) = child {
@@ -38,8 +45,16 @@ impl<'config> TypeScriptBuilder<'config> {
                         let mut types = Vec::new();
                         let text = source.get_text_in(child_node.span().into()).to_string();
                         for part in text.split('|').map(str::trim).filter(|part| !part.is_empty()) {
-                            let predefined = matches!(part, "any" | "boolean" | "never" | "number" | "object" | "string" | "symbol" | "undefined" | "unknown" | "void");
-                            types.push(if predefined { TypeAnnotation::Predefined(part.to_string()) } else { TypeAnnotation::Reference { name: part.to_string(), args: Vec::new() } });
+                            let predefined = matches!(
+                                part,
+                                "any" | "boolean" | "never" | "number" | "object" | "string" | "symbol" | "undefined" | "unknown" | "void"
+                            );
+                            types.push(if predefined {
+                                TypeAnnotation::Predefined(part.to_string())
+                            }
+                            else {
+                                TypeAnnotation::Reference { name: part.to_string(), args: Vec::new() }
+                            });
                         }
                         return Ok(Some(TypeAnnotation::Union(types)));
                     }
@@ -92,7 +107,11 @@ impl<'config> TypeScriptBuilder<'config> {
                                 }
                             }
                         }
-                        return Ok(Some(TypeAnnotation::Function { type_params: Vec::new(), args, return_type: Box::new(return_type.unwrap_or(TypeAnnotation::Predefined("void".to_string()))) }));
+                        return Ok(Some(TypeAnnotation::Function {
+                            type_params: Vec::new(),
+                            args,
+                            return_type: Box::new(return_type.unwrap_or(TypeAnnotation::Predefined("void".to_string()))),
+                        }));
                     }
                     TypeScriptElementType::TypeLiteral => {
                         let mut members = Vec::new();
@@ -105,16 +124,30 @@ impl<'config> TypeScriptBuilder<'config> {
                                 continue;
                             }
                             let text = source.get_text_in(sub_node.span().into()).to_string();
-                            let name = text.split_once(':').map(|(name, _)| name.trim().trim_end_matches('?').trim().to_string()).unwrap_or_else(|| text.trim().to_string());
+                            let name = text
+                                .split_once(':')
+                                .map(|(name, _)| name.trim().trim_end_matches('?').trim().to_string())
+                                .unwrap_or_else(|| text.trim().to_string());
                             let ty = sub_node.children().find_map(|child| match child {
-                                RedTree::Node(node) if node.green.kind == TypeScriptElementType::TypeAnnotation => self.build_type_annotation(&node, source).ok().flatten(),
+                                RedTree::Node(node) if node.green.kind == TypeScriptElementType::TypeAnnotation => {
+                                    self.build_type_annotation(&node, source).ok().flatten()
+                                }
                                 _ => None,
                             });
                             let optional_marker = sub_node.children().find_map(|child| match child {
                                 RedTree::Leaf(leaf) if leaf.kind == TypeScriptTokenType::Question => Some(OptionalMarker::new(leaf.span)),
                                 _ => None,
                             });
-                            members.push(ClassMember::Property { decorators: Vec::new(), name, ty, initializer: None, visibility: None, modifiers: Vec::new(), optional_marker, span: sub_node.span().into() });
+                            members.push(ClassMember::Property {
+                                decorators: Vec::new(),
+                                name,
+                                ty,
+                                initializer: None,
+                                visibility: None,
+                                modifiers: Vec::new(),
+                                optional_marker,
+                                span: sub_node.span().into(),
+                            });
                         }
                         return Ok(Some(TypeAnnotation::Object(members)));
                     }
@@ -148,7 +181,11 @@ impl<'config> TypeScriptBuilder<'config> {
         if raw.is_empty() { Ok(None) } else { Ok(Some(TypeAnnotation::Identifier(raw))) }
     }
 
-    pub(crate) fn build_type_parameter(&self, node: &RedNode<TypeScriptLanguage>, source: &SourceText) -> Result<Option<TypeParameter>, TextError> {
+    pub(crate) fn build_type_parameter(
+        &self,
+        node: &RedNode<TypeScriptLanguage>,
+        source: &SourceText,
+    ) -> Result<Option<TypeParameter>, TextError> {
         let mut name = String::new();
         let mut constraint = None;
         let mut default = None;

@@ -41,7 +41,10 @@ fn shard_failures_keep_their_own_diagnostic_category() {
     let conflict = Error::from(ClusterError::CasConflict { key: "ns:k".to_owned() });
     assert_eq!(conflict.code(), "database.shard.cas.conflict");
     assert_eq!(conflict.operation(), "cas");
-    assert_eq!(conflict.params().and_then(|pairs| pairs.into_iter().find(|(name, _)| *name == "key")).map(|(_, value)| value), Some("ns:k".to_owned()));
+    assert_eq!(
+        conflict.params().and_then(|pairs| pairs.into_iter().find(|(name, _)| *name == "key")).map(|(_, value)| value),
+        Some("ns:k".to_owned())
+    );
 
     let io = Error::from(ClusterError::Io(std::io::Error::other("disk gone")));
     assert_eq!(io.code(), "database.shard.io");

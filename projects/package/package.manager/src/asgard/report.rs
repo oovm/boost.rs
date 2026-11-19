@@ -83,19 +83,13 @@ mod tests {
     use super::*;
 
     fn item(key: &str, label: &str, height: f64) -> ColSeriesItem {
-        ColSeriesItem {
-            key: key.into(),
-            label: label.into(),
-            value_text: "1 tests".into(),
-            fill: "#22c55e".into(),
-            height_pct: height,
-        }
+        ColSeriesItem { key: key.into(), label: label.into(), value_text: "1 tests".into(), fill: "#22c55e".into(), height_pct: height }
     }
 
     #[test]
     fn emits_named_struct_literals_in_declaration_order() {
-        let literal = series_to_init_literal(&[item("pass", "通过", 100.0), item("fail", "失败", 4.0)], "std::chart::ColSeriesItem")
-            .expect("literal");
+        let literal =
+            series_to_init_literal(&[item("pass", "通过", 100.0), item("fail", "失败", 4.0)], "std::chart::ColSeriesItem").expect("literal");
         assert_eq!(
             literal,
             "[std::chart::ColSeriesItem { key: \"pass\", label: \"通过\", value_text: \"1 tests\", fill: \"#22c55e\", height_pct: 100.0 }, \

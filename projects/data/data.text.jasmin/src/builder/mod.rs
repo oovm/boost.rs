@@ -4,7 +4,7 @@ use crate::{
     lexer::token_type::JasminTokenType,
     parser::{JasminParser, element_type::JasminElementType},
 };
-use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, TextError, Parser, RedNode, RedTree, SourceText, TextEdit, source::Source};
+use data_text_core::{Builder, BuilderCache, GreenNode, Lexer, Parser, RedNode, RedTree, SourceText, TextEdit, TextError, source::Source};
 
 /// Jasmin AST builder.
 pub struct JasminBuilder<'config> {
@@ -19,7 +19,8 @@ impl<'config> JasminBuilder<'config> {
 
     fn build_root(&self, green_tree: &GreenNode<JasminLanguage>, source: &SourceText) -> Result<JasminRoot, TextError> {
         let red_root = RedNode::new(green_tree, 0);
-        let mut class = JasminClass { modifiers: vec![], name: "Unknown".to_string(), version: None, methods: vec![], fields: vec![], source_file: None };
+        let mut class =
+            JasminClass { modifiers: vec![], name: "Unknown".to_string(), version: None, methods: vec![], fields: vec![], source_file: None };
 
         for child in red_root.children() {
             if let RedTree::Node(n) = child {
@@ -173,8 +174,12 @@ impl<'config> JasminBuilder<'config> {
             let arg = tokens[1..].iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join(" ");
 
             match instr.as_str() {
-                "invokevirtual" | "invokespecial" | "invokestatic" | "invokeinterface" | "invokedynamic" => Ok(JasminInstruction::MethodCall { instruction: instr, method_ref: arg }),
-                "getstatic" | "putstatic" | "getfield" | "putfield" => Ok(JasminInstruction::FieldAccess { instruction: instr, field_ref: arg }),
+                "invokevirtual" | "invokespecial" | "invokestatic" | "invokeinterface" | "invokedynamic" => {
+                    Ok(JasminInstruction::MethodCall { instruction: instr, method_ref: arg })
+                }
+                "getstatic" | "putstatic" | "getfield" | "putfield" => {
+                    Ok(JasminInstruction::FieldAccess { instruction: instr, field_ref: arg })
+                }
                 _ => Ok(JasminInstruction::WithArgument { instruction: instr, argument: arg }),
             }
         }
@@ -222,7 +227,12 @@ impl<'config> JasminBuilder<'config> {
 }
 
 impl<'config> Builder<JasminLanguage> for JasminBuilder<'config> {
-    fn build<'a, S: Source + ?Sized>(&self, source: &S, edits: &[TextEdit], _cache: &'a mut impl BuilderCache<JasminLanguage>) -> data_text_core::builder::BuildOutput<JasminLanguage> {
+    fn build<'a, S: Source + ?Sized>(
+        &self,
+        source: &S,
+        edits: &[TextEdit],
+        _cache: &'a mut impl BuilderCache<JasminLanguage>,
+    ) -> data_text_core::builder::BuildOutput<JasminLanguage> {
         let parser = JasminParser::new(self.config);
         let lexer = crate::lexer::JasminLexer::new(&self.config);
         let mut parse_cache = data_text_core::parser::session::ParseSession::<JasminLanguage>::default();
