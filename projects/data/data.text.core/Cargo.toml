@@ -1,0 +1,49 @@
+[package]
+name = "data-text-core"
+version.workspace = true
+authors.workspace = true
+description = "Core text source, lexing, parsing and incremental tree primitives for the data.text family."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing", "text-processing"]
+keywords = ["parser", "text", "source", "incremental"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+boost-source = { workspace = true }
+boost-harness = { workspace = true, optional = true }
+boost-fs = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+serial_test = { workspace = true }
+boost-harness = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+diagnostic = ["dep:boost-harness", "serde"]
+logger = ["diagnostic"]
+vfs = ["dep:boost-fs"]
+vfs-disk = ["vfs"]
+
+[[test]]
+name = "diagnostic_unified"
+required-features = ["diagnostic"]
+
+[[test]]
+name = "diagnostic_logger"
+required-features = ["logger"]
+
+[[test]]
+name = "vfs_session"
+required-features = ["vfs"]
+
+[[test]]
+name = "vfs_watch"
+required-features = ["vfs-disk"]
+
+[package.metadata.docs.rs]
+all-features = true

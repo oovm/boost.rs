@@ -82,6 +82,7 @@ members = [
     "projects/database/facades/yyds",
     "projects/database/facades/yyds-client",
     "projects/data/data.compression",
+    "projects/data/data.text.core",
     "projects/document/document",
     "projects/document/document.compose",
     "projects/document/document.convert",
@@ -434,6 +435,7 @@ unicode-width = { path = "projects/unicode/unicode.width" }
 
 # data 能力树
 data-compression = { path = "projects/data/data.compression" }
+data-text-core = { path = "projects/data/data.text.core" }
 
 # 品牌化库
 mongo = { path = "projects/database/facades/mongo" }
