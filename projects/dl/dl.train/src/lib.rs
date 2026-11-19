@@ -5,7 +5,10 @@
 
 #![warn(missing_docs)]
 
+use std::collections::BTreeMap;
+
 use dl_autograd::{Var, mse_loss};
+use dl_graph::{Bindings, Graph, TrainingGraph};
 use dl_nn::Module;
 use dl_tensor::Tensor;
 use dl_types::{DlError, Result};
@@ -122,6 +125,67 @@ impl Optimizer for Adam {
     }
 }
 
+/// 基于 `dl-graph` 训练图的 SGD。
+///
+/// 参数存放在调用方的 [`Bindings`] 里；每一步执行整张训练图（前向 + 反向节点），再按梯度
+/// 原地更新参数。同一张训练图既能直接 [`Graph::run`]，也能交给 `dl-plan` 的流式执行。
+pub struct GraphSgd {
+    graph: Graph,
+    loss_index: usize,
+    parameter_grads: Vec<(String, Vec<usize>, usize)>,
+    learning_rate: f32,
+    momentum: f32,
+    velocity: BTreeMap<String, Vec<f32>>,
+}
+
+impl GraphSgd {
+    /// 从训练图创建无动量 SGD。
+    pub fn new(training: &TrainingGraph, learning_rate: f32) -> Self {
+        let graph = training.graph.clone();
+        let loss_index = graph.outputs().iter().position(|output| *output == training.loss).unwrap_or(0);
+        let parameter_grads = training
+            .gradients
+            .parameters
+            .iter()
+            .map(|(name, node)| {
+                let shape = graph.shape(*node).unwrap_or_default().to_vec();
+                let index = graph.outputs().iter().position(|output| output == node).unwrap_or(0);
+                (name.clone(), shape, index)
+            })
+            .collect();
+        Self { graph, loss_index, parameter_grads, learning_rate, momentum: 0.0, velocity: BTreeMap::new() }
+    }
+
+    /// 启用动量。
+    pub fn with_momentum(mut self, momentum: f32) -> Self {
+        self.momentum = momentum;
+        self
+    }
+
+    /// 训练图本身。
+    pub fn graph(&self) -> &Graph {
+        &self.graph
+    }
+
+    /// 执行一次前向 + 反向，按梯度更新绑定中的参数，返回损失。
+    pub fn step(&mut self, bindings: &mut Bindings) -> Result<f32> {
+        let values = self.graph.run(bindings)?;
+        let loss = values[self.loss_index].as_slice()?[0];
+        for (name, shape, index) in &self.parameter_grads {
+            let gradient = values[*index].to_vec();
+            let current = bindings.parameter(name).ok_or_else(|| DlError::MissingBinding { kind: "parameter", name: name.clone() })?.to_vec();
+            let velocity = self.velocity.entry(name.clone()).or_insert_with(|| vec![0.0; gradient.len()]);
+            let mut updated = current;
+            for (position, value) in updated.iter_mut().enumerate() {
+                velocity[position] = self.momentum * velocity[position] + gradient[position];
+                *value -= self.learning_rate * velocity[position];
+            }
+            bindings.insert_parameter(name.clone(), Tensor::from_vec(updated, shape.clone())?);
+        }
+        Ok(loss)
+    }
+}
+
 /// 训练配置。
 #[derive(Clone, Copy, Debug)]
 pub struct TrainConfig {
@@ -226,10 +290,50 @@ where
     Ok(reports)
 }
 
+/// 用图训练在外部批次来源上训练。
+///
+/// 每个批次写入 `input` 与 `target` 两个输入绑定，然后执行一次 [`GraphSgd::step`]；
+/// 其余输入/参数绑定由调用方在 [`Bindings`] 中预先放好。
+pub fn fit_graph<F, I>(
+    optimizer: &mut GraphSgd,
+    bindings: &mut Bindings,
+    input: &str,
+    target: &str,
+    epochs: usize,
+    mut batches: F,
+) -> Result<Vec<EpochReport>>
+where
+    F: FnMut() -> I,
+    I: IntoIterator<Item = Result<(Tensor, Tensor)>>,
+{
+    let mut reports = Vec::with_capacity(epochs);
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0f32;
+        let mut count = 0usize;
+        for batch in batches() {
+            let (inputs, targets) = batch?;
+            if inputs.rank() != 2 || targets.rank() != 2 {
+                return Err(DlError::Format { detail: "fit_graph expects rank-2 inputs and targets".to_owned() });
+            }
+            bindings.insert_input(input, inputs);
+            bindings.insert_input(target, targets);
+            total_loss += optimizer.step(bindings)?;
+            count += 1;
+        }
+        if count == 0 {
+            return Err(DlError::Format { detail: "fit_graph received no batches".to_owned() });
+        }
+        reports.push(EpochReport { epoch, mean_loss: total_loss / count as f32 });
+    }
+    Ok(reports)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dl_graph::GraphBuilder;
     use dl_nn::{mlp, seeded_random};
+    use dl_tensor::Tensor;
 
     #[test]
     fn training_reduces_loss_and_updates_parameters() -> Result<()> {
@@ -283,6 +387,53 @@ mod tests {
         let empty_batches: Vec<Result<(Tensor, Tensor)>> = Vec::new();
         let error = fit_iter(&model, &mut empty, 1, move || empty_batches.clone()).expect_err("no batches");
         assert!(matches!(error, DlError::Format { .. }));
+        Ok(())
+    }
+
+    fn mlp_training_graph() -> Result<TrainingGraph> {
+        let mut builder = GraphBuilder::new();
+        let x = builder.input("x", [4, 2])?;
+        let target = builder.input("target", [4, 1])?;
+        let weight0 = builder.parameter("0.weight", [6, 2])?;
+        let bias0 = builder.parameter("0.bias", [6])?;
+        let weight1 = builder.parameter("2.weight", [1, 6])?;
+        let bias1 = builder.parameter("2.bias", [1])?;
+
+        let transposed0 = builder.transpose(weight0, 0, 1)?;
+        let hidden = builder.matmul(x, transposed0)?;
+        let hidden = builder.add(hidden, bias0)?;
+        let hidden = builder.relu(hidden)?;
+        let transposed1 = builder.transpose(weight1, 0, 1)?;
+        let prediction = builder.matmul(hidden, transposed1)?;
+        let prediction = builder.add(prediction, bias1)?;
+        let difference = builder.sub(prediction, target)?;
+        let squared = builder.mul(difference, difference)?;
+        let loss = builder.mean_all(squared)?;
+        let graph = builder.finish(vec![loss])?;
+        graph.training(loss)
+    }
+
+    #[test]
+    fn graph_optimizer_trains_through_the_training_graph() -> Result<()> {
+        let mut random = seeded_random(31);
+        let model = mlp(&[2, 6, 1], &mut random)?;
+        let training = mlp_training_graph()?;
+
+        let mut bindings = Bindings::new();
+        for (name, parameter) in model.named_parameters() {
+            bindings.insert_parameter(name, parameter.value());
+        }
+        let initial_weight = bindings.parameter("0.weight").expect("bound weight").to_vec();
+        let inputs = Tensor::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], [4, 2])?;
+        let targets = Tensor::from_vec(vec![0.0, 1.0, 1.0, 2.0], [4, 1])?;
+
+        let mut optimizer = GraphSgd::new(&training, 0.05).with_momentum(0.9);
+        let reports = fit_graph(&mut optimizer, &mut bindings, "x", "target", 400, || vec![Ok((inputs.clone(), targets.clone()))])?;
+
+        let first = reports.first().expect("epochs").mean_loss;
+        let last = reports.last().expect("epochs").mean_loss;
+        assert!(last.is_finite() && last < first * 0.5, "graph training did not converge: {first} -> {last}");
+        assert_ne!(bindings.parameter("0.weight").expect("updated weight").to_vec(), initial_weight);
         Ok(())
     }
 }

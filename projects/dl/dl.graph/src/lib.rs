@@ -169,6 +169,11 @@ impl GraphBuilder {
         Self::default()
     }
 
+    /// 复制一张已有图，节点下标保持不变；用于在图上继续追加节点。
+    pub fn from_graph(graph: &Graph) -> Self {
+        Self { nodes: graph.nodes.clone() }
+    }
+
     /// 声明一个运行期输入。
     pub fn input(&mut self, name: impl Into<String>, shape: impl Into<Vec<usize>>) -> Result<NodeId> {
         let shape = shape.into();
@@ -605,10 +610,34 @@ pub struct Graph {
     outputs: Vec<NodeId>,
 }
 
+/// 训练图：前向图加上反向节点。
+///
+/// [`Graph::training`] 从任意既有图（包括 `capture` 出来的图）复制出训练图，输出顺序为
+/// 损失在前、随后是各参数与输入的梯度，可直接被 `dl-plan` 放置、被 `dl-runtime` 流式执行。
+#[derive(Clone, Debug)]
+pub struct TrainingGraph {
+    /// 含反向节点的图；输出是损失与梯度。
+    pub graph: Graph,
+    /// 梯度节点索引。
+    pub gradients: Gradients,
+    /// 损失节点。
+    pub loss: NodeId,
+}
+
 impl Graph {
     /// 返回节点总数。
     pub fn node_count(&self) -> usize {
         self.nodes.len()
+    }
+
+    /// 以本图的标量输出为损失，复制出带反向节点的训练图。
+    pub fn training(&self, output: NodeId) -> Result<TrainingGraph> {
+        let mut builder = GraphBuilder::from_graph(self);
+        let gradients = builder.backward(output)?;
+        let mut outputs = vec![output];
+        outputs.extend(gradients.nodes());
+        let graph = builder.finish(outputs)?;
+        Ok(TrainingGraph { graph, gradients, loss: output })
     }
 
     /// 返回是否为空图。
@@ -953,5 +982,26 @@ mod tests {
         for node in gradients.nodes() {
             assert!(graph.shape(node).is_some(), "gradient node {} must carry a shape", node.0);
         }
+    }
+
+    #[test]
+    fn captured_graph_can_be_turned_into_a_training_graph() {
+        let forward = capture(|trace| {
+            let x = trace.input("x", [2])?;
+            let w = trace.parameter("w", [2])?;
+            let product = trace.mul(x, w)?;
+            let loss = trace.sum_all(product)?;
+            Ok(vec![loss])
+        })
+        .expect("capture");
+        let training = forward.training(forward.outputs()[0]).expect("training graph");
+        assert_eq!(training.graph.outputs().len(), 3, "loss plus parameter and input gradients");
+
+        let mut bindings = Bindings::new();
+        bindings.insert_input("x", Tensor::from_vec(vec![2.0, -3.0], [2]).unwrap());
+        bindings.insert_parameter("w", Tensor::from_vec(vec![5.0, 7.0], [2]).unwrap());
+        let values = training.graph.run(&bindings).unwrap();
+        assert_eq!(values[0].to_vec(), vec![-11.0]);
+        assert_eq!(values[1].to_vec(), vec![2.0, -3.0], "d sum(x*w)/dw = x");
     }
 }

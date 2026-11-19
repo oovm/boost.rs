@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dl_graph::{Bindings, Graph, NodeId};
+use dl_graph::{Bindings, Graph, NodeId, TrainingGraph};
 use dl_tensor::Tensor;
 use hardware_runtime::{SegmentId, SegmentStreamer, StreamError, StreamStats};
 
@@ -64,6 +64,21 @@ pub struct ExecutedPlan {
     pub steps: Vec<StreamStep>,
     /// 流式层累计统计。
     pub stats: StreamStats,
+}
+
+impl ExecutedPlan {
+    /// 训练图的损失输出。
+    pub fn loss(&self, training: &TrainingGraph) -> Option<&Tensor> {
+        let index = training.graph.outputs().iter().position(|output| *output == training.loss)?;
+        self.outputs.get(index)
+    }
+
+    /// 按名字取参数或输入的梯度。
+    pub fn gradient(&self, training: &TrainingGraph, name: &str) -> Option<&Tensor> {
+        let node = training.gradients.parameter(name).or_else(|| training.gradients.input(name))?;
+        let index = training.graph.outputs().iter().position(|output| *output == node)?;
+        self.outputs.get(index)
+    }
 }
 
 /// 按 [`GraphPlan`] 执行整张图。
@@ -161,36 +176,37 @@ mod tests {
         assert_eq!(streamer.device_used(), 48);
     }
 
-    fn training_graph() -> Graph {
+    fn training_graph() -> dl_graph::TrainingGraph {
         let mut builder = dl_graph::GraphBuilder::new();
         let x = builder.input("x", [2, 2]).unwrap();
         let w = builder.parameter("w", [2, 2]).unwrap();
         let product = builder.matmul(x, w).unwrap();
         let activated = builder.relu(product).unwrap();
         let loss = builder.mean_all(activated).unwrap();
-        let gradients = builder.backward(loss).unwrap();
-        let mut outputs = vec![loss];
-        outputs.extend(gradients.nodes());
-        builder.finish(outputs).unwrap()
+        let forward = builder.finish(vec![loss]).unwrap();
+        forward.training(loss).unwrap()
     }
 
     #[test]
     fn streaming_execution_covers_the_backward_pass() {
-        let graph = training_graph();
+        let training = training_graph();
+        let graph = &training.graph;
         let bindings = bindings();
         let oracle = StageOracle { footprint: 48 };
-        let plan = plan_graph(&graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
+        let plan = plan_graph(graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
         let placeable = (0..graph.node_count()).filter(|index| !graph.is_binding(NodeId(*index))).count();
         assert_eq!(plan.assignments.len(), placeable, "backward nodes must be placed too");
 
         let mut streamer = SegmentStreamer::new(64, 1 << 20, 1 << 20);
-        let executed = execute_plan(&graph, &plan, &bindings, &mut streamer).expect("execute");
+        let executed = execute_plan(graph, &plan, &bindings, &mut streamer).expect("execute");
         let eager = graph.run(&bindings).expect("eager");
 
         assert_eq!(executed.outputs.len(), eager.len());
         for (streamed, reference) in executed.outputs.iter().zip(&eager) {
             assert_eq!(streamed.to_vec(), reference.to_vec());
         }
+        assert_eq!(executed.loss(&training).map(Tensor::to_vec), Some(eager[0].to_vec()));
+        assert_eq!(executed.gradient(&training, "w").map(Tensor::to_vec), Some(eager[1].to_vec()));
         assert!(executed.stats.evictions > 0, "64-byte budget forces the training graph to stream");
     }
 
@@ -198,19 +214,22 @@ mod tests {
     fn disk_backed_streaming_runs_the_training_graph() {
         let root = std::env::temp_dir().join(format!("boost-dl-plan-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let graph = training_graph();
+        let training = training_graph();
+        let graph = &training.graph;
         let bindings = bindings();
         let oracle = StageOracle { footprint: 48 };
-        let plan = plan_graph(&graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
+        let plan = plan_graph(graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
 
         let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 1 << 20).expect("disk backing");
-        let executed = execute_plan(&graph, &plan, &bindings, &mut streamer).expect("execute");
+        let executed = execute_plan(graph, &plan, &bindings, &mut streamer).expect("execute");
         let eager = graph.run(&bindings).expect("eager");
 
         assert!(executed.stats.disk_read_bytes > 0, "segments must come back through real files");
+        assert_eq!(executed.outputs.len(), eager.len());
         for (streamed, reference) in executed.outputs.iter().zip(&eager) {
             assert_eq!(streamed.to_vec(), reference.to_vec());
         }
+        assert_eq!(executed.gradient(&training, "x").map(Tensor::to_vec), Some(eager[2].to_vec()));
 
         std::fs::remove_dir_all(&root).unwrap();
     }
