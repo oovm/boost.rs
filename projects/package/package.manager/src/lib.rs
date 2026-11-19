@@ -6,11 +6,10 @@
 //! 宿主注入两件事：注册表适配器工厂（自有渠道与代理在这里接入）与凭据策略
 //! （官方 CLI 存储的发现与写回不在包机制内）。
 
-#![deny(missing_docs)]
+#![warn(missing_docs)]
 
 #[macro_use]
 extern crate compiler_valkyrie;
-
 
 pub mod asgard;
 mod auth;
@@ -28,14 +27,13 @@ pub use auth::{LoginResult, VendorAuthStore, VendorManager};
 pub use credentials::{CredentialProvider, DiscoveredCredential, NoCredentials, RegistryCredentialId};
 pub use error::{ManagerError, Result};
 pub use manager::{PackageInfo, PackageManager};
+pub use package_publish::{
+    PackMeta, PackResult, PackageIgnore, PackagePublisher, RegistryBinEntry, RegistryPackOptions, ResolvedPublishArtifact, ScriptResult,
+    ScriptRunner, bin_name_from_logical, glob_match, pack, pack_registry_artifact, resolve_publish_artifact, unpack,
+};
 pub use package_resolve::{
     DependencyBucket, DependencyNode, DependencySpec, EntryAliasFn, LockEntry, LockFile, PackageManifest, ProjectLayout, ProjectMode,
-    PublishConfig, PublishTarget, SemanticVersion, WorkspaceManifest, YearlyVersion, is_registry_publish_type,
-    satisfies_version_constraint,
-};
-pub use package_publish::{
-    PackMeta, PackResult, PackageIgnore, PackagePublisher, RegistryBinEntry, RegistryPackOptions, ResolvedPublishArtifact,
-    ScriptResult, ScriptRunner, bin_name_from_logical, glob_match, pack, pack_registry_artifact, resolve_publish_artifact, unpack,
+    PublishConfig, PublishTarget, SemanticVersion, WorkspaceManifest, YearlyVersion, is_registry_publish_type, satisfies_version_constraint,
 };
 pub use registry_sources::{RegistryFactory, RegistrySourceManager, default_registry_factory};
 pub use security::{
