@@ -151,6 +151,30 @@ impl MessageType {
     }
 }
 
+/// The response type a peer must answer `request` with, if it is a request at all.
+///
+/// This table is the single source of truth for the request/response pairing:
+/// hosts (including wasm-bound TypeScript surfaces) build their request maps
+/// from it instead of keeping parallel tables that can drift. Response types,
+/// `Error`, and `Unknown` are not requests and yield `None`.
+pub fn response_type(request: MessageType) -> Option<MessageType> {
+    match request {
+        MessageType::Hello => Some(MessageType::HelloOk),
+        MessageType::Info => Some(MessageType::InfoOk),
+        MessageType::SchemaGet => Some(MessageType::SchemaGetOk),
+        MessageType::SchemaEnsure => Some(MessageType::SchemaEnsureOk),
+        MessageType::KvGet => Some(MessageType::KvGetOk),
+        MessageType::KvPut => Some(MessageType::KvPutOk),
+        MessageType::MicroRegister => Some(MessageType::MicroRegisterOk),
+        MessageType::MicroHostInvoke => Some(MessageType::MicroHostInvokeOk),
+        MessageType::ScalarCall => Some(MessageType::ScalarCallOk),
+        MessageType::Authenticate => Some(MessageType::AuthenticateOk),
+        MessageType::Prepare => Some(MessageType::PrepareOk),
+        MessageType::ExecutePrepared => Some(MessageType::ExecutePreparedOk),
+        _ => None,
+    }
+}
+
 /// 一条带长度前缀的二进制帧。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
@@ -823,4 +847,40 @@ pub fn split_bind(bind: &str) -> Result<(String, u16)> {
     let (host, port) = bind.rsplit_once(':').ok_or(Error::Unsupported("bind must look like host:port"))?;
     let port: u16 = port.parse().map_err(|_| Error::Unsupported("bind port is not a u16"))?;
     Ok((host.to_owned(), port))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_request_maps_to_its_ok_response_and_back() {
+        let requests = [
+            MessageType::Hello,
+            MessageType::Info,
+            MessageType::SchemaGet,
+            MessageType::SchemaEnsure,
+            MessageType::KvGet,
+            MessageType::KvPut,
+            MessageType::MicroRegister,
+            MessageType::MicroHostInvoke,
+            MessageType::ScalarCall,
+            MessageType::Authenticate,
+            MessageType::Prepare,
+            MessageType::ExecutePrepared,
+        ];
+        for request in requests {
+            let response = response_type(request).unwrap_or_else(|| panic!("{request:?} must have a response type"));
+            assert_eq!(response.as_u16(), request.as_u16() + 1, "v0 pairs each request with the next code");
+            assert!(response_type(response).is_none(), "a response type is not itself a request");
+            assert_eq!(MessageType::from_u16(response.as_u16()), response);
+        }
+    }
+
+    #[test]
+    fn error_and_unknown_are_not_requests() {
+        assert!(response_type(MessageType::Error).is_none());
+        assert!(response_type(MessageType::Unknown(99)).is_none());
+        assert!(response_type(MessageType::Unknown(2)).is_none());
+    }
 }
