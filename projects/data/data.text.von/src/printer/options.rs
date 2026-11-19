@@ -1,6 +1,6 @@
 //! Printer 选项（`Document` 渲染配置）。
 
-use oak_pretty_print::document::printer::{IndentStyle, LineEnding, PrinterConfig};
+use data_text_pretty::document::printer::{IndentStyle, LineEnding, PrinterConfig};
 
 /// 输出风格（`PrintOptions` 字段）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -40,7 +40,7 @@ impl PrintOptions {
         Self { style: PrintStyle::Indented, indent_width: 4, max_width: 80 }
     }
 
-    /// 将 printer 选项映射为 `oak_pretty_print` 渲染配置。
+    /// 将 printer 选项映射为 `data_text_pretty` 渲染配置。
     pub fn printer_config(&self) -> PrinterConfig {
         let indent_width = self.indent_width.clamp(1, 8);
         let mut config = PrinterConfig::default();

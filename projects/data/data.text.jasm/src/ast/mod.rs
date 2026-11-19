@@ -1,9 +1,9 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::source::{SourceBuffer, ToSource};
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::Document;
+use data_text_pretty::Document;
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::to_doc::AsDocument;
+use data_text_pretty::to_doc::AsDocument;
 use std::{string::String, vec::Vec};
 
 /// JASM root node.

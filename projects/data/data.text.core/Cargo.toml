@@ -23,7 +23,7 @@ boost-harness = { workspace = true }
 
 [features]
 default = []
-serde = ["dep:serde", "boost-source/serde"]
+serde = ["dep:serde", "serde/rc", "boost-source/serde"]
 diagnostic = ["dep:boost-harness", "serde"]
 logger = ["diagnostic"]
 vfs = ["dep:boost-fs"]

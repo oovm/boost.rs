@@ -3,7 +3,7 @@
 use core::range::Range;
 
 use data_text_core::{Lexer, ParseSession, SourceText};
-use oak_formatter::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
+use data_text_formatter::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
 
 use super::FormatOptions;
 use crate::{

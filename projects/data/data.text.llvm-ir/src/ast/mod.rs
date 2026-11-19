@@ -4,9 +4,9 @@ use data_text_core::{
     source::{SourceBuffer, ToSource},
 };
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::document::Document;
+use data_text_pretty::document::Document;
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::to_doc::AsDocument;
+use data_text_pretty::to_doc::AsDocument;
 
 /// Root node of an LLVM IR module.
 #[derive(Debug, Clone, Default)]

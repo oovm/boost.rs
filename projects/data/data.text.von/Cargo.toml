@@ -13,7 +13,8 @@ keywords = ["parser", "valkyrie", "language"]
 
 [dependencies]
 data-text-core = { workspace = true }
-language-format = { workspace = true }
+data-text-pretty = { workspace = true }
+data-text-formatter = { workspace = true }
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]

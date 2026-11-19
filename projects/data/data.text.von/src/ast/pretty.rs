@@ -1,7 +1,7 @@
-//! VON AST → `oak_pretty_print::Document`。
+//! VON AST → `data_text_pretty::Document`。
 
 use data_text_core::source::{SourceBuffer, ToSource};
-use oak_pretty_print::{AsDocument, Document, SOFT_LINE as soft_line, doc, indent};
+use data_text_pretty::{AsDocument, Document, SOFT_LINE as soft_line, doc, indent};
 
 use super::{VonArray, VonEnum, VonField, VonObject, VonTuple, VonValue};
 

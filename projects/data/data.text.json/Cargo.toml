@@ -13,6 +13,7 @@ keywords = ["parser", "json", "streaming", "validation"]
 
 [dependencies]
 data-text-core = { workspace = true }
+data-text-pretty = { workspace = true }
 language-macro = { workspace = true }
 triomphe = { workspace = true }
 language-highlight = { workspace = true, optional = true }

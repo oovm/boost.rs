@@ -1,6 +1,6 @@
 use data_text_core::{Builder, Lexer, ParseSession, SourceText, TokenType, source::ToSource};
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::AsDocument;
+use data_text_pretty::AsDocument;
 use data_text_sql::{
     SqlBuilder, SqlLanguage, SqlLexer, SqlTokenType,
     ast::{BinaryOperator, Expression, Identifier, Literal, SelectItem, SqlStatement},

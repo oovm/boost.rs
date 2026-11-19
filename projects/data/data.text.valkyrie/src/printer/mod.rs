@@ -11,7 +11,7 @@ mod options;
 pub use error::PrintError;
 pub use options::{PrintOptions, PrintStyle};
 
-pub use oak_pretty_print::Document;
+pub use data_text_pretty::Document;
 
 use crate::{ValkyrieBuilder, ValkyrieLanguage, ast::ValkyrieRoot};
 

@@ -13,8 +13,9 @@ keywords = ["parser", "valkyrie", "experimental"]
 
 [dependencies]
 data-text-core = { workspace = true }
+data-text-pretty = { workspace = true }
 data-text-dejavu = { workspace = true }
-language-format = { workspace = true }
+data-text-formatter = { workspace = true }
 serde = { workspace = true, optional = true, features = ["unstable"]}
 unicode-ident = { workspace = true }
 

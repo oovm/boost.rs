@@ -1,6 +1,6 @@
 //! AWSL markup token-gap adapter (lossless scan until Oak parser lands).
 
-use oak_formatter::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
+use data_text_formatter::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
 
 use super::FormatOptions;
 

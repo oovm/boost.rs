@@ -1,6 +1,6 @@
-//! Valkyrie AST → `oak_pretty_print::Document`（printer 路径，不属于 `ast` 模块）。
+//! Valkyrie AST → `data_text_pretty::Document`（printer 路径，不属于 `ast` 模块）。
 
-use oak_pretty_print::{Document, SOFT_LINE as soft_line, doc, indent};
+use data_text_pretty::{Document, SOFT_LINE as soft_line, doc, indent};
 
 use crate::{
     ast::{Attribute, Block, Identifier, Let, MicroDeclaration, NamePath, NamespaceDeclaration, Param, Pattern, QuoteLiteral, Return, Statement, StatementNode, TermBinaryNode, TermExpression, TypeExpression, ValkyrieRoot},

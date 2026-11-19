@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::JavaScriptRoot, language::JavaScriptLanguage};
 use data_text_core::{BuilderCache, TextDiagnostics, source::Source};
-use oak_pretty_print::PrinterConfig;
+use data_text_pretty::PrinterConfig;
 
 pub struct JavaScriptFormatter;
 

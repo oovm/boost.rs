@@ -1441,8 +1441,8 @@ name = "data-text-awsl"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-formatter",
  "data-text-valkyrie",
- "language-format",
  "language-testing",
 ]
 
@@ -1716,7 +1716,6 @@ dependencies = [
  "futures",
  "im-rc",
  "indexmap",
- "language-format",
  "language-highlight",
  "language-hover",
  "language-macro",
@@ -1824,6 +1823,7 @@ name = "data-text-ejs"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "data-text-typescript",
  "futures",
  "language-format",
@@ -1939,6 +1939,7 @@ name = "data-text-go"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -2113,6 +2114,7 @@ name = "data-text-jasm"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -2177,6 +2179,7 @@ name = "data-text-javascript"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "data-text-typescript",
  "futures",
  "language-format",
@@ -2208,6 +2211,7 @@ name = "data-text-json"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -2315,6 +2319,7 @@ name = "data-text-llvm-ir"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -2331,6 +2336,7 @@ name = "data-text-lua"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -2436,6 +2442,7 @@ name = "data-text-msil"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -2632,6 +2639,16 @@ dependencies = [
  "language-testing",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "data-text-pretty"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-macro",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2968,6 +2985,7 @@ name = "data-text-sql"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
+ "data-text-pretty",
  "futures",
  "language-format",
  "language-highlight",
@@ -3155,7 +3173,7 @@ name = "data-text-typescript"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "language-format",
+ "data-text-formatter",
  "serde",
 ]
 
@@ -3205,7 +3223,8 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-dejavu",
- "language-format",
+ "data-text-formatter",
+ "data-text-pretty",
  "language-testing",
  "serde",
  "unicode-ident",
@@ -3306,7 +3325,8 @@ name = "data-text-von"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "language-format",
+ "data-text-formatter",
+ "data-text-pretty",
  "language-testing",
  "serde",
 ]
@@ -4944,9 +4964,9 @@ dependencies = [
 name = "language-format"
 version = "0.1.0"
 dependencies = [
- "oak-awsl",
- "oak-core 0.0.12 (git+https://github.com/yggdrasil-language/oak.rs?rev=a0416cb1cba9a348df175d3ca230f794ec562484)",
- "oak-von",
+ "data-text-awsl",
+ "data-text-core",
+ "data-text-von",
  "serde",
 ]
 

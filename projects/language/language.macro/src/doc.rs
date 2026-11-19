@@ -120,33 +120,33 @@ impl DocExpr {
 impl ToTokens for DocExpr {
     fn to_tokens(&self, tokens: &mut quote::__private::TokenStream) {
         match self {
-            DocExpr::Nil => tokens.extend(quote! { ::oak_pretty_print::Doc::Nil }),
-            DocExpr::Line => tokens.extend(quote! { ::oak_pretty_print::Doc::Line }),
-            DocExpr::SoftLine => tokens.extend(quote! { ::oak_pretty_print::Doc::SoftLine }),
-            DocExpr::SoftLineSpace => tokens.extend(quote! { ::oak_pretty_print::Doc::SoftLineSpace }),
-            DocExpr::HardLine => tokens.extend(quote! { ::oak_pretty_print::Doc::HardLine }),
-            DocExpr::Indent(content) => tokens.extend(quote! { ::oak_pretty_print::Doc::Indent(Box::new(#content)) }),
-            DocExpr::Group(content) => tokens.extend(quote! { ::oak_pretty_print::Doc::Group(Box::new(#content)) }),
-            DocExpr::Concat(items) => tokens.extend(quote! { ::oak_pretty_print::Doc::Concat(vec![#(#items),*]) }),
+            DocExpr::Nil => tokens.extend(quote! { ::data_text_pretty::Doc::Nil }),
+            DocExpr::Line => tokens.extend(quote! { ::data_text_pretty::Doc::Line }),
+            DocExpr::SoftLine => tokens.extend(quote! { ::data_text_pretty::Doc::SoftLine }),
+            DocExpr::SoftLineSpace => tokens.extend(quote! { ::data_text_pretty::Doc::SoftLineSpace }),
+            DocExpr::HardLine => tokens.extend(quote! { ::data_text_pretty::Doc::HardLine }),
+            DocExpr::Indent(content) => tokens.extend(quote! { ::data_text_pretty::Doc::Indent(Box::new(#content)) }),
+            DocExpr::Group(content) => tokens.extend(quote! { ::data_text_pretty::Doc::Group(Box::new(#content)) }),
+            DocExpr::Concat(items) => tokens.extend(quote! { ::data_text_pretty::Doc::Concat(vec![#(#items),*]) }),
             DocExpr::Join { items, sep } => tokens.extend(quote! {
                 {
                     #[allow(unused_imports)]
-                    use ::oak_pretty_print::document::JoinDoc;
+                    use ::data_text_pretty::document::JoinDoc;
                     #items.into_iter()
                         .map(|i| {
                             #[allow(unused_imports)]
-                            use ::oak_pretty_print::ToDocument;
+                            use ::data_text_pretty::ToDocument;
                             i.to_document()
                         })
                         .collect::<Vec<_>>()
                         .join_doc(#sep.into())
                 }
             }),
-            DocExpr::Text(lit) => tokens.extend(quote! { ::oak_pretty_print::Doc::Text(#lit.into()) }),
+            DocExpr::Text(lit) => tokens.extend(quote! { ::data_text_pretty::Doc::Text(#lit.into()) }),
             DocExpr::Expr(expr) => tokens.extend(quote! {
                 {
                     #[allow(unused_imports)]
-                    use ::oak_pretty_print::ToDocument;
+                    use ::data_text_pretty::ToDocument;
                     #expr.to_document()
                 }
             }),

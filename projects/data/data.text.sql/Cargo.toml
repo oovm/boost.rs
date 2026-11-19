@@ -13,6 +13,7 @@ keywords = ["parser", "sql", "database", "query"]
 
 [dependencies]
 data-text-core = { workspace = true }
+data-text-pretty = { workspace = true }
 language-highlight = { workspace = true, optional = true }
 language-format = { workspace = true, optional = true }
 language-server = { workspace = true, optional = true }

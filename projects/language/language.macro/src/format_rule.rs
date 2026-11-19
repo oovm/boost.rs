@@ -24,7 +24,7 @@ pub fn derive_format_rule(input: TokenStream) -> TokenStream {
     let name_str = name.to_string();
 
     let expanded = quote! {
-        impl #impl_generics ::oak_pretty_print::FormatRule<L> for #name #ty_generics #where_clause {
+        impl #impl_generics ::data_text_pretty::FormatRule<L> for #name #ty_generics #where_clause {
             fn name(&self) -> &str { #name_str }
             fn priority(&self) -> u8 { #priority }
         }

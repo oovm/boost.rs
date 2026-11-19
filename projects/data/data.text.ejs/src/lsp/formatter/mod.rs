@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use crate::{ast::EjsRoot, language::EjsLanguage};
 use data_text_core::{BuilderCache, TextDiagnostics, source::Source};
-use oak_pretty_print::PrinterConfig;
+use data_text_pretty::PrinterConfig;
 
 /// Stub formatter for EJS templates.
 pub struct EjsFormatter;

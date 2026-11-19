@@ -9,10 +9,10 @@ publish = false
 
 [features]
 default = []
-serde = ["dep:serde", "oak-von/serde"]
+serde = ["dep:serde", "data-text-von/serde"]
 
 [dependencies]
-oak-awsl = { workspace = true }
-oak-core = { workspace = true }
-oak-von = { workspace = true }
+data-text-awsl = { workspace = true }
+data-text-core = { workspace = true }
+data-text-von = { workspace = true }
 serde = { workspace = true, optional = true, features = ["derive"] }

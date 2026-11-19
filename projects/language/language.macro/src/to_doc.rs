@@ -41,13 +41,13 @@ pub fn derive_as_document(input: TokenStream) -> TokenStream {
                 quote! {
                     {
                         #[allow(unused_imports)]
-                        use ::oak_pretty_print::AsDocument;
+                        use ::data_text_pretty::AsDocument;
                         #field_name.as_document(&())
                     }
                 }
             }
             else {
-                quote! { ::oak_pretty_print::Doc::Nil }
+                quote! { ::data_text_pretty::Doc::Nil }
             }
         }
         Data::Enum(data) => {
@@ -103,19 +103,19 @@ pub fn derive_as_document(input: TokenStream) -> TokenStream {
                     quote! {
                         #name::#variant_name(v) => {
                             #[allow(unused_imports)]
-                            use ::oak_pretty_print::AsDocument;
+                            use ::data_text_pretty::AsDocument;
                             v.as_document(&())
                         },
                     }
                 }
                 else if variant.fields.is_empty() {
                     quote! {
-                        #name::#variant_name => ::oak_pretty_print::Doc::Nil,
+                        #name::#variant_name => ::data_text_pretty::Doc::Nil,
                     }
                 }
                 else {
                     quote! {
-                        #name::#variant_name(..) => ::oak_pretty_print::Doc::Nil,
+                        #name::#variant_name(..) => ::data_text_pretty::Doc::Nil,
                     }
                 }
             });
@@ -129,8 +129,8 @@ pub fn derive_as_document(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics ::oak_pretty_print::AsDocument for #name #ty_generics {
-            fn as_document(&self, config: &Self::Config) -> ::oak_pretty_print::Doc<'_> {
+        impl #impl_generics ::data_text_pretty::AsDocument for #name #ty_generics {
+            fn as_document(&self, config: &Self::Config) -> ::data_text_pretty::Doc<'_> {
                 #body
             }
         }

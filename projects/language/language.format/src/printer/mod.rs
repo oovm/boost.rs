@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::contract::{FormatError, FormatOptions, PrintStyle, Printer, PrinterProvider, PrinterRegistry};
-use oak_von::{
+use data_text_von::{
     VonValue,
     printer::{PrintOptions as VonPrintOptions, PrintStyle as VonPrintStyle, print_value},
 };
@@ -86,18 +86,18 @@ pub fn print_von(value: &VonValue, style: PrintStyle, options: &FormatOptions) -
 
 /// 通过 serde 将 `value` 序列化为紧凑 VON 文本（AST print 路径）。
 #[cfg(feature = "serde")]
-pub fn to_string<T>(value: &T) -> Result<String, oak_core::TextError>
+pub fn to_string<T>(value: &T) -> Result<String, data_text_core::TextError>
 where
     T: serde::Serialize,
 {
-    oak_von::to_string(value)
+    data_text_von::to_string(value)
 }
 
 /// 经 `oak-von::printer` 将 `value` 写出为缩进 VON 文本。
 #[cfg(feature = "serde")]
-pub fn to_string_indented<T>(value: &T) -> Result<String, oak_core::TextError>
+pub fn to_string_indented<T>(value: &T) -> Result<String, data_text_core::TextError>
 where
     T: serde::Serialize,
 {
-    oak_von::to_string_indented(value, FormatOptions::default().indent_width)
+    data_text_von::to_string_indented(value, FormatOptions::default().indent_width)
 }

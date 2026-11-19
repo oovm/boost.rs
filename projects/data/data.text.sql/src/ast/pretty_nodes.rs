@@ -1,7 +1,7 @@
 #[cfg(feature = "oak-pretty-print")]
 use crate::ast::*;
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::{AsDocument, Document, LINE as line, NIL as nil, SOFT_LINE_SPACE as soft_space, doc, indent};
+use data_text_pretty::{AsDocument, Document, LINE as line, NIL as nil, SOFT_LINE_SPACE as soft_space, doc, indent};
 
 #[cfg(feature = "oak-pretty-print")]
 impl AsDocument for SqlRoot {

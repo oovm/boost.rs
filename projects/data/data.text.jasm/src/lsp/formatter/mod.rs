@@ -2,9 +2,9 @@
 
 use data_text_core::source::{SourceBuffer, ToSource};
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::to_doc::AsDocument;
+use data_text_pretty::to_doc::AsDocument;
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::{Document, PrinterConfig};
+use data_text_pretty::{Document, PrinterConfig};
 
 use crate::ast::JasmRoot;
 

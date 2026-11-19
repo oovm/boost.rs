@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 
-use oak_pretty_print::Document;
+use data_text_pretty::Document;
 
 /// Formatter trait.
 #[allow(dead_code)]

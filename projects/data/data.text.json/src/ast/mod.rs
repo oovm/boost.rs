@@ -3,7 +3,7 @@ use core::range::Range;
 use data_text_core::source::{SourceBuffer, ToSource};
 
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::{AsDocument, doc as pp_doc};
+use data_text_pretty::{AsDocument, doc as pp_doc};
 
 /// The root node of a JSON AST.
 #[derive(Clone, Debug, PartialEq)]

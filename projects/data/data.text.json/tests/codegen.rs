@@ -22,7 +22,7 @@ fn test_json_to_source() {
 #[cfg(feature = "oak-pretty-print")]
 #[test]
 fn test_json_to_doc() {
-    use oak_pretty_print::{AsDocument, PrinterConfig};
+    use data_text_pretty::{AsDocument, PrinterConfig};
 
     let root = JsonRoot {
         value: JsonValueNode::Object(JsonObject {

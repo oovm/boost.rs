@@ -2,7 +2,7 @@
 use core::range::Range;
 use data_text_core::source::{SourceBuffer, ToSource};
 #[cfg(feature = "oak-pretty-print")]
-use oak_pretty_print::{AsDocument, Document};
+use data_text_pretty::{AsDocument, Document};
 
 /// MSIL Typed AST Root.
 #[derive(Debug, Clone, PartialEq, Eq)]
