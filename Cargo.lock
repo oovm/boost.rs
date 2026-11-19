@@ -895,6 +895,7 @@ dependencies = [
  "database-storage",
  "database-types",
  "database-udf",
+ "serde_json",
 ]
 
 [[package]]

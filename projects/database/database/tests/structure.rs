@@ -7,12 +7,74 @@
 //!    直接吃到某一产品的领域实现。
 //! 2. `database-query` 不得依赖 `database-execution`。查询层只产模型、绑定
 //!    结果与计划，算子和写约束执行归执行层。
+//!
+//! 判定全部来自 `cargo metadata` 的真实 package id 与依赖边（含 dev / build /
+//! target 依赖与 `rename` 别名），不再手工解析 manifest 文本。
 
 use std::{
     collections::BTreeSet,
-    fs,
     path::{Path, PathBuf},
+    process::Command,
 };
+
+/// 仓库根 manifest（本 crate 位于 `projects/database/database`）。
+fn root_manifest() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .expect("`database` crate lives under `projects/database`")
+        .join("Cargo.toml")
+}
+
+/// `cargo metadata --no-deps` 的一个 workspace package。
+struct Package {
+    id: String,
+    name: String,
+    manifest_path: PathBuf,
+    dependencies: Vec<Dependency>,
+}
+
+struct Dependency {
+    name: String,
+    kind: Option<String>,
+}
+
+fn metadata() -> Vec<Package> {
+    let output = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned()))
+        .args(["metadata", "--no-deps", "--format-version", "1", "--manifest-path"])
+        .arg(root_manifest())
+        .output()
+        .expect("`cargo metadata` must run for the structure gate");
+    assert!(output.status.success(), "`cargo metadata` failed: {}", String::from_utf8_lossy(&output.stderr));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("`cargo metadata` JSON");
+    let mut packages = Vec::new();
+    for entry in value["packages"].as_array().expect("packages array") {
+        let mut dependencies = Vec::new();
+        for dep in entry["dependencies"].as_array().expect("dependencies array") {
+            dependencies.push(Dependency {
+                name: dep["name"].as_str().expect("dependency name").to_owned(),
+                kind: dep["kind"].as_str().map(str::to_owned),
+            });
+        }
+        packages.push(Package {
+            id: entry["id"].as_str().expect("package id").to_owned(),
+            name: entry["name"].as_str().expect("package name").to_owned(),
+            manifest_path: PathBuf::from(entry["manifest_path"].as_str().expect("manifest path")),
+            dependencies,
+        });
+    }
+    packages
+}
+
+/// 包目录位于 `projects/database/<prefix>` 之下的 workspace package。
+fn under<'a>(packages: &'a [Package], prefix: &Path) -> Vec<&'a Package> {
+    let boundary = database_root().join(prefix);
+    packages
+        .iter()
+        .filter(|package| package.manifest_path.parent().is_some_and(|dir| dir.starts_with(&boundary)))
+        .collect()
+}
 
 /// `projects/database` 目录（本 crate 的祖父目录）。
 fn database_root() -> PathBuf {
@@ -22,101 +84,23 @@ fn database_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// 一个 manifest 的全部依赖键（含 dev / build / target 条件表）。
-fn dependency_keys(manifest: &str) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
-    let mut in_dependencies = false;
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            let section = &trimmed[1..trimmed.len() - 1];
-            in_dependencies =
-                section.ends_with("dependencies") && !section.starts_with("workspace");
-            continue;
-        }
-        if !in_dependencies || trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let Some((key, _)) = trimmed.split_once('=') else {
-            continue;
-        };
-        let key = key.trim().trim_end_matches(".workspace").trim();
-        if !key.is_empty() && !key.contains(char::is_whitespace) {
-            keys.insert(key.to_owned());
-        }
-    }
-    keys
-}
-
-/// `[package] name` 声明的包名。
-fn package_name(manifest: &str) -> Option<String> {
-    let mut in_package = false;
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            in_package = trimmed == "[package]";
-            continue;
-        }
-        if in_package && let Some((key, value)) = trimmed.split_once('=') {
-            if key.trim() == "name" {
-                return Some(value.trim().trim_matches('"').to_owned());
-            }
-        }
-    }
-    None
-}
-
-/// `facades/*` 下所有包名。
-fn facade_names(root: &Path) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    let Ok(entries) = fs::read_dir(root.join("facades")) else {
-        return names;
-    };
-    for entry in entries.flatten() {
-        let Ok(manifest) = fs::read_to_string(entry.path().join("Cargo.toml")) else {
-            continue;
-        };
-        if let Some(name) = package_name(&manifest) {
-            names.insert(name);
-        }
-    }
-    names
-}
-
-/// `projects/database/<crate>/Cargo.toml`（不含 `facades`）。
-fn database_manifests(root: &Path) -> Vec<(PathBuf, String)> {
-    let mut manifests = Vec::new();
-    let Ok(entries) = fs::read_dir(root) else {
-        return manifests;
-    };
-    for entry in entries.flatten() {
-        let manifest = entry.path().join("Cargo.toml");
-        if !manifest.is_file() {
-            continue;
-        }
-        if let Ok(text) = fs::read_to_string(&manifest) {
-            manifests.push((manifest, text));
-        }
-    }
-    manifests
-}
-
 #[test]
 fn database_crates_never_depend_on_product_facades() {
-    let root = database_root();
-    let facades = facade_names(&root);
-    assert!(
-        !facades.is_empty(),
-        "expected product facades under `{}`",
-        root.join("facades").display()
-    );
+    let packages = metadata();
+    let facades: BTreeSet<String> = under(&packages, Path::new("facades")).into_iter().map(|package| package.name.clone()).collect();
+    assert!(!facades.is_empty(), "expected product facades under `{}`", database_root().join("facades").display());
 
     let mut violations = Vec::new();
-    for (manifest, text) in database_manifests(&root) {
-        let dependencies = dependency_keys(&text);
-        for facade in &facades {
-            if dependencies.contains(facade) {
-                violations.push(format!("{} depends on facade `{facade}`", manifest.display()));
+    for package in under(&packages, Path::new("")) {
+        if facades.contains(&package.name) {
+            continue;
+        }
+        for dependency in &package.dependencies {
+            if facades.contains(&dependency.name) {
+                violations.push(format!(
+                    "{} (dev/build={:?}) depends on facade `{}`",
+                    package.id, dependency.kind, dependency.name
+                ));
             }
         }
     }
@@ -130,13 +114,21 @@ fn database_crates_never_depend_on_product_facades() {
 
 #[test]
 fn query_never_depends_on_execution() {
-    let root = database_root();
-    let manifest = root.join("database.query").join("Cargo.toml");
-    let text = fs::read_to_string(&manifest).expect("database.query manifest");
-    let dependencies = dependency_keys(&text);
-
+    let packages = metadata();
+    let query = packages
+        .iter()
+        .find(|package| package.name == "database-query")
+        .expect("`database-query` is a workspace package");
     assert!(
-        !dependencies.contains("database-execution"),
-        "`database-query` must plan only: execution depends on query, not the reverse"
+        query.manifest_path.starts_with(database_root().join("database.query")),
+        "`database-query` must live at its owned path, found {}",
+        query.manifest_path.display()
+    );
+    let edge = query.dependencies.iter().find(|dependency| dependency.name == "database-execution");
+    assert!(
+        edge.is_none(),
+        "`database-query` ({}) must plan only: execution depends on query, not the reverse (edge kind {:?})",
+        query.id,
+        edge.map(|dependency| &dependency.kind)
     );
 }

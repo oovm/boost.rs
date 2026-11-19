@@ -70,3 +70,6 @@ database-client = { workspace = true, optional = true }
 database-server = { workspace = true, optional = true }
 database-migration = { workspace = true, optional = true }
 database-harness = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
