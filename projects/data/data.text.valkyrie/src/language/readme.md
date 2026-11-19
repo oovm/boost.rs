@@ -1,6 +1,6 @@
 # Valkyrie Language Definition
 
-This module contains the metadata and configuration options for the Valkyrie language within the Oak framework.
+This module contains the metadata and configuration options for the Valkyrie language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -24,5 +24,5 @@ pub struct ValkyrieLanguage {
 
 By implementing the `Language` trait, this module enables:
 1. **Generic Infrastructure**: Allows `data-text-core` to handle file management and incremental logic without needing to know Valkyrie-specific details.
-2. **Type-Safe Analysis**: Ensures that any tool working with `oak-valkyrie` has access to the correct token and element types at compile time.
+2. **Type-Safe Analysis**: Ensures that any tool working with `data-text-valkyrie` has access to the correct token and element types at compile time.
 3. **Multi-Version Support**: Future-proofed to handle different Valkyrie versions through configuration updates within this module.

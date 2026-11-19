@@ -1,3 +1,3 @@
 # Jasmin Language
 
-This module provides jasmin language functionality for the Oaks project.
+This module provides jasmin language functionality for the Boost `data.text` project.

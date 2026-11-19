@@ -1,13 +1,13 @@
-# 🚀 oak-dockerfile
+# 🚀 data-text-dockerfile
 
-[![Crates.io](https://img.shields.io/crates/v/oak-dockerfile.svg)](https://crates.io/crates/oak-dockerfile)
-[![Documentation](https://docs.rs/oak-dockerfile/badge.svg)](https://docs.rs/oak-dockerfile)
+[![Crates.io](https://img.shields.io/crates/v/data-text-dockerfile.svg)](https://crates.io/crates/data-text-dockerfile)
+[![Documentation](https://docs.rs/data-text-dockerfile/badge.svg)](https://docs.rs/data-text-dockerfile)
 
-**Making DOCKERFILE processing simple** — A high-performance, incremental DOCKERFILE parser built on the Oak framework.
+**Making DOCKERFILE processing simple** — A high-performance, incremental DOCKERFILE parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-dockerfile` is dedicated to providing industrial-grade parsing support for the DOCKERFILE language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-dockerfile` is dedicated to providing industrial-grade parsing support for the DOCKERFILE language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

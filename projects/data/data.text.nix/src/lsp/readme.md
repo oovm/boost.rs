@@ -1,3 +1,3 @@
 # Nix Lsp
 
-This module provides nix lsp functionality for the Oaks project.
+This module provides nix lsp functionality for the Boost `data.text` project.

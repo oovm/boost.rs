@@ -1,8 +1,8 @@
 # 🛠️ DOT Parser Developer Guide
 
-Dot support for the Oak language framework.
+Dot support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-dot`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-dot`.
 
 ## 🚦 Quick Start
 
@@ -12,7 +12,7 @@ The following is a standard workflow for parsing a simple DOT graph:
 
 ```rust
 use data_text_core::{Builder, Parser, SourceText, parser::session::ParseSession};
-use oak_dot::{DotBuilder, DotLanguage, DotParser};
+use data_text_dot::{DotBuilder, DotLanguage, DotParser};
 
 // 1. Prepare source code
 let code = r#"
@@ -52,7 +52,7 @@ After a successful parse, you can traverse the red tree to extract DOT construct
 A node shaped `record` or `mrecord` keeps its raw `label` attribute and also exposes a structured `RecordLabel`:
 ```rust
 use data_text_core::{Builder, SourceText, parser::session::ParseSession};
-use oak_dot::{DotBuilder, DotLanguage, ast::{RecordItem, Statement}};
+use data_text_dot::{DotBuilder, DotLanguage, ast::{RecordItem, Statement}};
 
 let config = DotLanguage::new();
 let builder = DotBuilder::new(&config);
@@ -74,7 +74,7 @@ Fields are split on unescaped `|`, `<name>` before the text becomes `RecordField
 The parser reuses the cache it is given, so parsing an edited source again only reuses unchanged structure:
 ```rust
 use data_text_core::{Parser, SourceText};
-use oak_dot::{DotLanguage, DotParser};
+use data_text_dot::{DotLanguage, DotParser};
 
 let config = DotLanguage::new();
 let parser = DotParser::new(&config);
@@ -88,10 +88,10 @@ let _ = parser.parse(&edited, &[], &mut cache);
 ```
 
 ### 4. Diagnostics
-`oak-dot` recovers from malformed input and reports every skipped piece with its byte offset:
+`data-text-dot` recovers from malformed input and reports every skipped piece with its byte offset:
 ```rust
 use data_text_core::{Builder, TextErrorKind, SourceText, parser::session::ParseSession};
-use oak_dot::{DotBuilder, DotLanguage};
+use data_text_dot::{DotBuilder, DotLanguage};
 
 let config = DotLanguage::new();
 let builder = DotBuilder::new(&config);

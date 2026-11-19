@@ -1,6 +1,6 @@
 # 🧪 Rust Parser Test Suite & Quality Assurance
 
-`oak-rust` features a comprehensive test suite to ensure stability across Rust's powerful and evolving syntax, from low-level systems code to high-level async applications.
+`data-text-rust` features a comprehensive test suite to ensure stability across Rust's powerful and evolving syntax, from low-level systems code to high-level async applications.
 
 ## 📊 Test Coverage
 
@@ -32,7 +32,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-rust
+cargo test -p data-text-rust
 
 # Or use the project-wide task runner
 wee test

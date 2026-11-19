@@ -1,6 +1,6 @@
 //! TeX math AST lowering into [`document_ir::MathFormula`].
 //!
-//! This module consumes Oak's TeX syntax tree. It never rescans the source for
+//! This module consumes the TeX syntax tree. It never rescans the source for
 //! alignment tabs, row breaks, labels or command arguments: every structural
 //! fact comes from `TexItem`, `TexRow`, `TexCell`, `TexCommand` and
 //! `TexLeftRightPair` nodes with their spans.
@@ -18,7 +18,7 @@ use super::math_common::{
     unsupported,
 };
 
-/// Lower one Oak math node into the document math semantics.
+/// Lower one math node into the document math semantics.
 pub(crate) fn lower_tex_math(math: &TexMath, source: &str) -> MathFormula {
     let display = if math.is_display { MathDisplay::Display } else { MathDisplay::Inline };
     let base = trimmed_base(math.content.span.start, math.content.span.end, source);
@@ -49,16 +49,16 @@ fn math_body_source(math: &TexMath, source: &str) -> String {
 ///
 /// This is the public entry for hosts that own a formula string without a
 /// surrounding document, such as WaTeX's `measure` and `render` APIs. Syntax
-/// stays in Oak: the import layer parses the body and lowers its AST, and the
+/// stays in `data.text`: the import layer parses the body and lowers its AST, and the
 /// host consumes only [`MathFormula::expression`].
 pub fn lower_tex_formula_source(source: &str, display: MathDisplay) -> MathFormula {
     lower_formula_source(source, display, "latex")
 }
 
-/// Lower a raw TeX formula source that did not arrive as an Oak math node.
+/// Lower a raw TeX formula source that did not arrive as a math node.
 ///
 /// Markdown's `tex_math` profile and standalone formula inputs carry only the
-/// authored body, so the import layer composes the Oak TeX frontend here. The
+/// authored body, so the import layer composes the TeX frontend here. The
 /// parse stays a syntax step, and its AST is lowered like any other TeX math.
 pub(crate) fn lower_formula_source(source: &str, display: MathDisplay, language: &str) -> MathFormula {
     use data_text_core::{Builder, SourceText, parser::session::ParseSession};

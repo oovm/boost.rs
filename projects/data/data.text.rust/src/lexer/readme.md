@@ -50,7 +50,7 @@ The main lexer implementation, providing the following features:
 The lexer is typically used through `RustLexer` during Rust source code parsing:
 
 ```rust
-use oak_rust::{RustLexer, RustLanguage};
+use data_text_rust::{RustLexer, RustLanguage};
 use data_text_core::source::StringSource;
 
 let language = RustLanguage::default();

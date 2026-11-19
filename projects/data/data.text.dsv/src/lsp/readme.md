@@ -1,3 +1,3 @@
 # DSV LSP
 
-This module provides DSV LSP functionality for the Oaks project.
+This module provides DSV LSP functionality for the Boost `data.text` project.

@@ -1,8 +1,8 @@
 # 🛠️ R Parser Developer Guide
 
-R support for the Oak language framework.
+R support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-r`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-r`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing an R script:
 
 ```rust
-use oak_r::{RParser, SourceText, RLanguage};
+use data_text_r::{RParser, SourceText, RLanguage};
 
 fn main() {
     // 1. Prepare R source code
@@ -58,7 +58,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-r` provides rich error contexts specifically tailored for R developers, handling complex scenarios like unmatched brackets or malformed formula syntax:
+`data-text-r` provides rich error contexts specifically tailored for R developers, handling complex scenarios like unmatched brackets or malformed formula syntax:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

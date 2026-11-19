@@ -1,8 +1,8 @@
 # 🛠️ PHP Parser Developer Guide
 
-Php support for the Oak language framework.
+Php support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-php`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-php`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-php = { path = "..." }
+data-text-php = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-php = { path = "..." }
 The following is a standard workflow for parsing modern PHP with attributes, enums, and promoted properties:
 
 ```rust
-use oak_php::{PhpParser, SourceText, PhpLanguage};
+use data_text_php::{PhpParser, SourceText, PhpLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -71,7 +71,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract PHP specific constructs like class definitions, attributes, enums, promoted properties, and arrow functions.
 
 ### 2. Incremental Parsing
-PHP projects (especially those using frameworks like Laravel or Symfony) can contain thousands of files. `oak-php` supports sub-millisecond incremental updates:
+PHP projects (especially those using frameworks like Laravel or Symfony) can contain thousands of files. `data-text-php` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

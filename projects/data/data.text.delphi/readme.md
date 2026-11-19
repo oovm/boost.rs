@@ -1,13 +1,13 @@
-# 🚀 Oak Delphi Parser
+# 🚀 Delphi Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-delphi.svg)](https://crates.io/crates/oak-delphi)
-[![Documentation](https://docs.rs/oak-delphi/badge.svg)](https://docs.rs/oak-delphi)
+[![Crates.io](https://img.shields.io/crates/v/data-text-delphi.svg)](https://crates.io/crates/data-text-delphi)
+[![Documentation](https://docs.rs/data-text-delphi/badge.svg)](https://docs.rs/data-text-delphi)
 
-**Legacy Power, Modern Performance** — A high-performance, incremental Delphi/Object Pascal parser built on the Oak framework. Optimized for large-scale enterprise applications, legacy codebase modernization, and real-time developer tooling.
+**Legacy Power, Modern Performance** — A high-performance, incremental Delphi/Object Pascal parser built on the `data.text` framework. Optimized for large-scale enterprise applications, legacy codebase modernization, and real-time developer tooling.
 
 ## 🎯 Project Vision
 
-Delphi (Object Pascal) has been a mainstay of enterprise application development for decades, with millions of lines of code still in active use. `oak-delphi` aims to provide a robust, modern, Rust-powered infrastructure for parsing Delphi that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated migration utilities that can handle massive Delphi projects in real-time. Whether you are building custom linters, refactoring tools, or sophisticated IDE extensions, `oak-delphi` provides the high-fidelity AST and efficiency needed to tame the complexity of Delphi codebases.
+Delphi (Object Pascal) has been a mainstay of enterprise application development for decades, with millions of lines of code still in active use. `data-text-delphi` aims to provide a robust, modern, Rust-powered infrastructure for parsing Delphi that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated migration utilities that can handle massive Delphi projects in real-time. Whether you are building custom linters, refactoring tools, or sophisticated IDE extensions, `data-text-delphi` provides the high-fidelity AST and efficiency needed to tame the complexity of Delphi codebases.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Delphi (Object Pascal) has been a mainstay of enterprise application development
     - **Generics & Attributes**: Robust handling of modern Delphi features like generics and custom attributes.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code structure discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code structure discovery.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

@@ -8,10 +8,10 @@ pub use data_text_core::TextDiagnostics;
 use data_text_core::{Builder, ParseSession, SourceText};
 use data_text_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 
-/// Oak 前端返回的解析结果（含 diagnostics）。
+/// `data.text` 前端返回的解析结果（含 diagnostics）。
 pub type ParseOutput = TextDiagnostics<oak::ast::ValkyrieRoot>;
 
-/// 使用 Oak 解析并构造 Valkyrie AST 根节点。
+/// 使用 `data.text` 解析并构造 Valkyrie AST 根节点。
 pub fn parse(source: &str) -> ParseOutput {
     let language = ValkyrieLanguage::default();
     let builder = ValkyrieBuilder::new(&language);

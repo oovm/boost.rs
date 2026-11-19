@@ -40,7 +40,7 @@ This module is designed to provide a high-performance tokenizer for Vala, suppor
 ## Usage Example
 
 ```rust
-use oak_vala::lexer::ValaLexer;
+use data_text_vala::lexer::ValaLexer;
 
 fn main() {
     let vala_source = r#"

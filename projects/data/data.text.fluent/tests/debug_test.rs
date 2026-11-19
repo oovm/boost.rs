@@ -1,4 +1,4 @@
-/// Debug tests for Oak Fluent parsing and translation.
+/// Debug tests for Fluent parsing and translation.
 use data_text_fluent::parser::parse;
 use data_text_fluent::translator::Translator;
 use std::collections::HashMap;

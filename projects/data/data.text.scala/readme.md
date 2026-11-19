@@ -1,13 +1,13 @@
-# 🚀 oak-scala
+# 🚀 data-text-scala
 
-[![Crates.io](https://img.shields.io/crates/v/oak-scala.svg)](https://crates.io/crates/oak-scala)
-[![Documentation](https://docs.rs/oak-scala/badge.svg)](https://docs.rs/oak-scala)
+[![Crates.io](https://img.shields.io/crates/v/data-text-scala.svg)](https://crates.io/crates/data-text-scala)
+[![Documentation](https://docs.rs/data-text-scala/badge.svg)](https://docs.rs/data-text-scala)
 
-**Scalable Parsing for a Scalable Language** — A high-performance, incremental Scala parser built on the Oak framework. Optimized for Scala 3 features, complex type systems, and responsive developer tools.
+**Scalable Parsing for a Scalable Language** — A high-performance, incremental Scala parser built on the `data.text` framework. Optimized for Scala 3 features, complex type systems, and responsive developer tools.
 
 ## 🎯 Project Vision
 
-Scala is known for its sophisticated type system and fusion of object-oriented and functional programming. `oak-scala` aims to provide a robust, modern, Rust-powered infrastructure for parsing Scala that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive Scala projects in real-time. Whether you are building custom linters, automated migration tools for Scala 2 to 3, or sophisticated IDE extensions, `oak-scala` provides the high-fidelity AST and efficiency needed to keep pace with the evolving Scala ecosystem.
+Scala is known for its sophisticated type system and fusion of object-oriented and functional programming. `data-text-scala` aims to provide a robust, modern, Rust-powered infrastructure for parsing Scala that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive Scala projects in real-time. Whether you are building custom linters, automated migration tools for Scala 2 to 3, or sophisticated IDE extensions, `data-text-scala` provides the high-fidelity AST and efficiency needed to keep pace with the evolving Scala ecosystem.
 
 ## ✨ Core Features
 
@@ -19,11 +19,11 @@ Scala is known for its sophisticated type system and fusion of object-oriented a
     - **Indentation Syntax**: Precise handling of Scala 3's significant indentation rules.
     - **Macros & Meta**: Robust parsing of inline methods and macro-related constructs.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
-`oak-scala` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-scala` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

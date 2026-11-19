@@ -11,7 +11,7 @@
 | `pipeline` | 分析/处理流编排：`compile_source_groups_to_*`、阶段证据、host binding |
 | `assembly` | 片段装配与产出面计数 |
 | `backend_contract` | 目标互操作与导入面合同 |
-| `frontend_contract` | MIR 类型具体化等 **Valkyrie→目标** 适配（非 Oak AST） |
+| `frontend_contract` | MIR 类型具体化等 **Valkyrie→目标** 适配（非 syntax tree） |
 
 ## 阶段划分（概念）
 

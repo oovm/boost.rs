@@ -1,3 +1,3 @@
 # Html Lexer
 
-This module provides html lexer functionality for the Oaks project.
+This module provides html lexer functionality for the Boost `data.text` project.

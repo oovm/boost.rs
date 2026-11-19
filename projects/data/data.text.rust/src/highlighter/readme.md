@@ -21,8 +21,8 @@ The main syntax highlighter struct, providing the following features:
 ### Basic Usage
 
 ```rust
-use oak_rust::highlighter::RustHighlighter;
-use oak_highlight::highlighter::Highlighter;
+use data_text_rust::highlighter::RustHighlighter;
+use language_highlight::highlighter::Highlighter;
 
 // Create a highlighter instance
 let highlighter = RustHighlighter::new();

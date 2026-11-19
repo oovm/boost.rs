@@ -44,7 +44,7 @@ impl Diagnostic {
         Self { code: "IRIS-PLAN-REJECTED".into(), message: message.into(), span, stage: StageKind::Plan, backend: None, hint }
     }
 
-    /// Build a parse diagnostic from an Oak/VOS parse message.
+    /// Build a parse diagnostic from an VOS parse message.
     pub fn from_vos_parse(message: impl Into<String>) -> Self {
         Self { code: "IRIS-PARSE".into(), message: message.into(), span: (0..0).into(), stage: StageKind::Parse, backend: None, hint: None }
     }

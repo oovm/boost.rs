@@ -1,3 +1,3 @@
 # Kotlin Ast
 
-This module provides kotlin ast functionality for the Oaks project.
+This module provides kotlin ast functionality for the Boost `data.text` project.

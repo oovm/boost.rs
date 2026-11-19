@@ -1,13 +1,13 @@
 //! AST **pretty printer** 注册表（平台契约见 [`crate::contract`]）。
 //!
-//! 与 [`crate::formatter`]（CST 源码正规格式化）是两套完全不同的概念，对齐 Oak 各语言 crate 的
+//! 与 [`crate::formatter`]（CST 源码正规格式化）是两套完全不同的概念，对齐 `data.text` 各语言 crate 的
 //! `printer/` 与 `formatter/` 并列目录。
 //!
 //! - **Printer**：已解析 AST / 值模型 → 文本；不保留注释与空白。
 //! - **Formatter**：源码 → CST token-gap → 文本；保留 trivia。
 //!
 //! 具体语言的 printer 由拥有该格式的 crate 通过 [`register_printer_provider`] 或 [`register_printer`] 注册；
-//! 本 crate 只直接注册 VON 这类由 Oak 自己拥有的文本模型，不反向依赖任何格式域 crate。
+//! 本 crate 只直接注册 VON 这类由 `data.text` 自己拥有的文本模型，不反向依赖任何格式域 crate。
 
 use std::{
     any::Any,

@@ -16,7 +16,7 @@ pub struct CatalogSchema {
 
 /// Validate a schema document before it becomes catalog truth.
 ///
-/// Uses Oak parsing and VOS semantic projection before catalog publication.
+/// Uses `data.text` parsing and VOS semantic projection before catalog publication.
 pub fn validate_document(document: &str) -> Result<()> {
     if document.contains('\0') {
         return Err(Error::Schema { message: "VOS schema document must not contain NUL bytes".into() });

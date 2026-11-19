@@ -24,7 +24,7 @@ This module defines the abstract syntax tree structure for the VHDL language, us
 ## Usage Example
 
 ```rust
-use oak_vhdl::ast::*;
+use data_text_vhdl::ast::*;
 
 fn main() {
     // Create a simple VHDL entity AST

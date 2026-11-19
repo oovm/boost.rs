@@ -1,6 +1,6 @@
 # SQL Language Definition
 
-This module contains the metadata and configuration options for the SQL language within the Oak framework.
+This module contains the metadata and configuration options for the SQL language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -35,4 +35,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing SQL-specific syntax structures like `SELECT` statements, `JOIN` clauses, and DDL commands.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the SQL source file.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of SQL's unique syntax and diverse dialect ecosystem.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of SQL's unique syntax and diverse dialect ecosystem.

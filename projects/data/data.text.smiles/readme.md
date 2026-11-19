@@ -1,8 +1,8 @@
-# oak-smiles
+# data-text-smiles
 
 SMILES and reaction-SMILES parser for the `data.text` family.
 
-The crate follows the same three-stage contract as the other oak frontends:
+The crate follows the same three-stage contract as the other `data.text` frontends:
 
 1. `SmilesLexer` emits atoms, bond symbols, branches, ring labels, dots, and
    arrows. Whitespace is skipped because it carries no meaning.
@@ -29,7 +29,7 @@ out of the suite rather than mis-parsed, and the message names it.
 ## Example
 
 ```rust
-use oak_smiles::parse_smiles;
+use data_text_smiles::parse_smiles;
 
 let root = parse_smiles("CCO").expect("parse");
 assert_eq!(root.items[0].atoms.len(), 3);

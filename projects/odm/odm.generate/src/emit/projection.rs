@@ -189,7 +189,7 @@ pub(crate) fn ensure_single_primary(table: &TypeContract) -> Result<()> {
 
 /// Project only schema declarations through the VOS schema contract.
 ///
-/// Operation declarations (for example durable macros) stay in the Oak input
+/// Operation declarations (for example durable macros) stay in the parser input
 /// and are projected separately, so they never block table/class projection.
 pub(crate) fn project_schema(input: &schema_input_vos::ContractInput) -> Result<SchemaProjection> {
     input.project_schema_only().map_err(|diagnostics| Error::Vos(format_diagnostics(&diagnostics)))

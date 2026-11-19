@@ -1,6 +1,6 @@
 # ActionScript Language Definition
 
-This module contains the metadata and configuration options for the ActionScript 3.0 language within the Oak framework.
+This module contains the metadata and configuration options for the ActionScript 3.0 language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -18,4 +18,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing AS3-specific syntax structures like classes, packages, and E4X expressions.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the ActionScript source file.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of ActionScript's unique syntax and legacy requirements.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of ActionScript's unique syntax and legacy requirements.

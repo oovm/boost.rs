@@ -1,8 +1,8 @@
 # 🛠️ Python Parser Developer Guide
 
-Python support for the Oak language framework.
+Python support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-python`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-python`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a Python function with type hints and decorators:
 
 ```rust
-use oak_python::{PythonParser, SourceText, PythonLanguage};
+use data_text_python::{PythonParser, SourceText, PythonLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -55,7 +55,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-python` provides rich error contexts specifically tailored for Python developers, handling indentation errors and modern syntax requirements:
+`data-text-python` provides rich error contexts specifically tailored for Python developers, handling indentation errors and modern syntax requirements:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

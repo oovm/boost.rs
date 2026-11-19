@@ -1,4 +1,4 @@
-//! Oak AST `snake_case` naming lint for LSP surfaces.
+//! syntax tree `snake_case` naming lint for LSP surfaces.
 
 use std::ops::Range;
 
@@ -44,7 +44,7 @@ fn is_snake_case(name: &str) -> bool {
     !name.starts_with('_') && !name.ends_with('_')
 }
 
-/// Validate `let` bindings, `micro`/`method` declarations, and parameters on Oak AST.
+/// Validate `let` bindings, `micro`/`method` declarations, and parameters on syntax tree.
 pub fn validate_snake_case(root: &ValkyrieRoot) -> Vec<NamingViolation> {
     let mut violations = Vec::new();
     for item in &root.items {

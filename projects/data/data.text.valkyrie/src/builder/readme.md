@@ -50,7 +50,7 @@ The builder provides comprehensive error handling with detailed source location 
 The builder is typically used through the `ValkyrieBuilder` when parsing Valkyrie source code:
 
 ```rust
-use oak_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
+use data_text_valkyrie::{ValkyrieBuilder, ValkyrieLanguage};
 use data_text_core::{Builder, parser::ParseSession, source::SourceText};
 
 let language = ValkyrieLanguage::default();

@@ -15,7 +15,7 @@ use crate::log::{event::LogEvent, level::Level};
 /// Event filter with a global level and optional per-target directives.
 ///
 /// A target directive matches an event when the event target is the directive target or starts
-/// with it followed by `::`, so a directive for `oak` never matches `oak_vfs`. When several
+/// with it followed by `::`, so a directive for `valkyrie` never matches `boost_source`. When several
 /// directives match, the longest target wins. A target with no matching directive uses the global
 /// level, or is dropped when no global level is configured.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -1,6 +1,6 @@
-//! TypeScript type erasure over the Oak TypeScript lexer token stream.
+//! TypeScript type erasure over the TypeScript lexer token stream.
 //!
-//! Oak's TypeScript parser does not materialize class member annotations,
+//! The TypeScript parser does not materialize class member annotations,
 //! parameter annotations or return types as CST/AST nodes, so those ranges
 //! cannot be removed through syntax-node spans. Erasure therefore runs on
 //! lexer tokens: it deletes type-only ranges and keeps every other source byte,

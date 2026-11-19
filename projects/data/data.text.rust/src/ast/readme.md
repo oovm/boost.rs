@@ -44,7 +44,7 @@ AST nodes correspond to various constructs in the Rust language, such as functio
 ## Usage Example
 
 ```rust,ignore
-use oak_rust::ast::*;
+use data_text_rust::ast::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a simple Rust program AST

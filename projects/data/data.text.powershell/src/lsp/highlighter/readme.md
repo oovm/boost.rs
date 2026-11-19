@@ -2,4 +2,4 @@
 
 PowerShell highlighter
 
-This module provides powershell lsp highlighter functionality for the Oaks project.
+This module provides powershell lsp highlighter functionality for the Boost `data.text` project.

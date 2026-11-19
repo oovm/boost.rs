@@ -1,13 +1,13 @@
-# 🚀 Oak D2 Parser
+# 🚀 D2 Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-d2.svg)](https://crates.io/crates/oak-d2)
-[![Documentation](https://docs.rs/oak-d2/badge.svg)](https://docs.rs/oak-d2)
+[![Crates.io](https://img.shields.io/crates/v/data-text-d2.svg)](https://crates.io/crates/data-text-d2)
+[![Documentation](https://docs.rs/data-text-d2/badge.svg)](https://docs.rs/data-text-d2)
 
-**Visualizing Code, Incremental by Nature** — A high-performance, incremental D2 diagramming language parser built on the Oak framework. Optimized for modern architecture documentation, developer workflows, and real-time visualization tools.
+**Visualizing Code, Incremental by Nature** — A high-performance, incremental D2 diagramming language parser built on the `data.text` framework. Optimized for modern architecture documentation, developer workflows, and real-time visualization tools.
 
 ## 🎯 Project Vision
 
-D2 (Declarative Diagramming) is designed to make diagrams as easy to write as code. `oak-d2` brings the power of the Oak framework to the D2 ecosystem, providing a robust, high-performance infrastructure for parsing and analyzing D2 files. By utilizing Oak's incremental parsing capabilities, it enables developers to build highly responsive visualization tools and IDE extensions that update diagrams in real-time as you type. Whether you are building live documentation portals, automated architecture generators, or sophisticated diagram editors, `oak-d2` provides the efficient foundation you need.
+D2 (Declarative Diagramming) is designed to make diagrams as easy to write as code. `data-text-d2` brings the power of the `data.text` framework to the D2 ecosystem, providing a robust, high-performance infrastructure for parsing and analyzing D2 files. By utilizing incremental parsing capabilities, it enables developers to build highly responsive visualization tools and IDE extensions that update diagrams in real-time as you type. Whether you are building live documentation portals, automated architecture generators, or sophisticated diagram editors, `data-text-d2` provides the efficient foundation you need.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ D2 (Declarative Diagramming) is designed to make diagrams as easy to write as co
     - **Attributes & Styling**: Detailed tracking of styling properties, labels, and metadata.
     - **Nested Containers**: Comprehensive management of nested structures and groupings.
 - **🛡️ Robust Error Recovery**: Engineered to handle incomplete or malformed code gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active diagramming.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent diagram structure discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent diagram structure discovery.
 
 ## 🏗️ Architecture
 
@@ -29,4 +29,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

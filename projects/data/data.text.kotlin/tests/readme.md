@@ -1,6 +1,6 @@
 # 🧪 Kotlin Parser Test Suite
 
-`oak-kotlin` employs a rigorous testing methodology to ensure accurate parsing across the diverse and evolving Kotlin ecosystem (JVM, Android, Native, and JS).
+`data-text-kotlin` employs a rigorous testing methodology to ensure accurate parsing across the diverse and evolving Kotlin ecosystem (JVM, Android, Native, and JS).
 
 ## 📊 Test Coverage
 
@@ -31,10 +31,10 @@ Ensures the parser remains stable when facing:
 
 ```bash
 # Run all Kotlin parser tests
-cargo test -p oak-kotlin
+cargo test -p data-text-kotlin
 
 # Run specific integration tests
-cargo test -p oak-kotlin --test parser_tests
+cargo test -p data-text-kotlin --test parser_tests
 ```
 
 ## 📈 Quality Assurance

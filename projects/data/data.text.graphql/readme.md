@@ -1,13 +1,13 @@
-# 🚀 oak-graphql
+# 🚀 data-text-graphql
 
-[![Crates.io](https://img.shields.io/crates/v/oak-graphql.svg)](https://crates.io/crates/oak-graphql)
-[![Documentation](https://docs.rs/oak-graphql/badge.svg)](https://docs.rs/oak-graphql)
+[![Crates.io](https://img.shields.io/crates/v/data-text-graphql.svg)](https://crates.io/crates/data-text-graphql)
+[![Documentation](https://docs.rs/data-text-graphql/badge.svg)](https://docs.rs/data-text-graphql)
 
-**Making GRAPHQL processing simple** — A high-performance, incremental GRAPHQL parser built on the Oak framework.
+**Making GRAPHQL processing simple** — A high-performance, incremental GRAPHQL parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-graphql` is dedicated to providing industrial-grade parsing support for the GRAPHQL language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-graphql` is dedicated to providing industrial-grade parsing support for the GRAPHQL language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

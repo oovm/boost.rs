@@ -1,4 +1,4 @@
-//! Valkyrie (`.v` / `.vx`) source formatter（Oak token-gap）。
+//! Valkyrie (`.v` / `.vx`) source formatter（token-gap）。
 //!
 //! 实现位于 [`crate::format_provider`]（平台 provider 的直接路径），本入口只保留给 LSP 等
 //! 前端内部调用，确保仓库内只有一套 V formatter 实现。

@@ -1,6 +1,6 @@
 # 🌐 Erlang Language Integration
 
-This module defines the `ErlangLanguage` struct, which serves as the central configuration point for the Erlang parser within the Oak framework.
+This module defines the `ErlangLanguage` struct, which serves as the central configuration point for the Erlang parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
@@ -23,7 +23,7 @@ pub struct ErlangLanguage {
 ## 🚀 Usage
 
 ```rust
-use oak_erlang::ErlangLanguage;
+use data_text_erlang::ErlangLanguage;
 
 let config = ErlangLanguage::new();
 // Pass this config to ErlangParser::new(&config)

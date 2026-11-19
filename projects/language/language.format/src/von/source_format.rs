@@ -1,6 +1,6 @@
 //! VON **源码**格式化（CST 路径；与 [`crate::printer::print_von`] AST printer 分离）。
 //!
-//! `.von` 正规格式化委托 `data_text_von::formatter`（Oak token-gap）。
+//! `.von` 正规格式化委托 `data_text_von::formatter`（token-gap）。
 
 use crate::formatter::{FormatError, FormatOptions, FormattedOutput};
 

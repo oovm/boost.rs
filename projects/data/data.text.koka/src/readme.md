@@ -1,8 +1,8 @@
 # 🛠️ Koka Parser Developer Guide
 
-Koka support for the Oak language framework.
+Koka support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-koka`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-koka`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-koka = { path = "..." }
+data-text-koka = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,12 +18,12 @@ oak-koka = { path = "..." }
 The following is a standard workflow for parsing modern Koka with data classes, coroutines, and lambdas:
 
 ```rust
-use oak_koka::{KokaParser, SourceText, KokaLanguage};
+use data_text_koka::{KokaParser, SourceText, KokaLanguage};
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
-        package com.example.oak
+        package com.example.app
 
         import kokax.coroutines.*
 
@@ -65,7 +65,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Koka specific constructs like data classes, sealed classes, suspend functions, lambdas, and property delegates.
 
 ### 2. Incremental Parsing
-Koka projects (especially Android or KMP projects) can be massive. `oak-koka` supports sub-millisecond incremental updates:
+Koka projects (especially Android or KMP projects) can be massive. `data-text-koka` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

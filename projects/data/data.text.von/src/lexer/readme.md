@@ -41,13 +41,13 @@ VON is a lightweight data-interchange format designed for the V ecosystem. This 
 ## Usage Example
 
 ```rust
-use oak_von::{VonLexer, VonLanguage};
+use data_text_von::{VonLexer, VonLanguage};
 use data_text_core::{Lexer, parser::session::ParseSession};
 
 fn main() {
     let von_data = r#"
         {
-            "project": "Oak",
+            "project": "Boost",
             "version": 1.0,
             "features": ["parsing", "lexing", "ast"],
             "active": true

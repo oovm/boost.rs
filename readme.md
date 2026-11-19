@@ -12,7 +12,7 @@ terminal output, filesystem helpers, deterministic randomness, and test harnesse
 through a single feature-gated entry crate named `boost`.
 
 boost is **not** a logging framework, a test runner distribution, or a protocol stack. It owns stable data models and
-host-facing behavior contracts. Downstream products (Oak, Acorn, language servers, CLIs) compose these facts into their
+host-facing behavior contracts. Downstream products (`data.text`, `data.binary`, language servers, CLIs) compose these facts into their
 own protocols and UIs.
 
 Design constraints:

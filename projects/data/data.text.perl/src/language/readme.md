@@ -1,6 +1,6 @@
 # 🌐 Perl Language Integration
 
-This module defines the `PerlLanguage` struct, which serves as the central configuration point for the Perl parser within the Oak framework.
+This module defines the `PerlLanguage` struct, which serves as the central configuration point for the Perl parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
@@ -23,7 +23,7 @@ pub struct PerlLanguage {
 ## 🚀 Usage
 
 ```rust
-use oak_perl::PerlLanguage;
+use data_text_perl::PerlLanguage;
 
 let config = PerlLanguage::new();
 // Pass this config to PerlParser::new(&config)

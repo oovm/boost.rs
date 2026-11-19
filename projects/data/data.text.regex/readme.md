@@ -1,13 +1,13 @@
-# 🚀 oak-regex
+# 🚀 data-text-regex
 
-[![Crates.io](https://img.shields.io/crates/v/oak-regex.svg)](https://crates.io/crates/oak-regex)
-[![Documentation](https://docs.rs/oak-regex/badge.svg)](https://docs.rs/oak-regex)
+[![Crates.io](https://img.shields.io/crates/v/data-text-regex.svg)](https://crates.io/crates/data-text-regex)
+[![Documentation](https://docs.rs/data-text-regex/badge.svg)](https://docs.rs/data-text-regex)
 
-**Making REGEX processing simple** — A high-performance, incremental REGEX parser built on the Oak framework.
+**Making REGEX processing simple** — A high-performance, incremental REGEX parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-regex` is dedicated to providing industrial-grade parsing support for the REGEX language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-regex` is dedicated to providing industrial-grade parsing support for the REGEX language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

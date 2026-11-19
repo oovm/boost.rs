@@ -1,13 +1,13 @@
-# 🚀 oak-lua
+# 🚀 data-text-lua
 
-[![Crates.io](https://img.shields.io/crates/v/oak-lua.svg)](https://crates.io/crates/oak-lua)
-[![Documentation](https://docs.rs/oak-lua/badge.svg)](https://docs.rs/oak-lua)
+[![Crates.io](https://img.shields.io/crates/v/data-text-lua.svg)](https://crates.io/crates/data-text-lua)
+[![Documentation](https://docs.rs/data-text-lua/badge.svg)](https://docs.rs/data-text-lua)
 
-**Lightweight Power for Scripting** — A high-performance, incremental Lua parser built on the Oak framework. Specially optimized for game development, embedded scripting, and modern IDE integration for the Lua programming language.
+**Lightweight Power for Scripting** — A high-performance, incremental Lua parser built on the `data.text` framework. Specially optimized for game development, embedded scripting, and modern IDE integration for the Lua programming language.
 
 ## 🎯 Project Vision
 
-Lua is the language of choice for extensibility in games and embedded systems. `oak-lua` aims to provide a modern, Rust-based parsing solution that matches Lua's own philosophy of being lightweight and fast. By utilizing Oak's incremental parsing capabilities, it enables developers to build highly responsive tools for large Lua scripts, ensuring that game developers and scripters have the best possible tooling support.
+Lua is the language of choice for extensibility in games and embedded systems. `data-text-lua` aims to provide a modern, Rust-based parsing solution that matches Lua's own philosophy of being lightweight and fast. By utilizing incremental parsing capabilities, it enables developers to build highly responsive tools for large Lua scripts, ensuring that game developers and scripters have the best possible tooling support.
 
 ## ✨ Core Features
 
@@ -20,11 +20,11 @@ Lua is the language of choice for extensibility in games and embedded systems. `
     - Control flow structures (If, While, Repeat, For)
     - Full support for Lua 5.x syntax
 - **🛡️ Robust Error Recovery**: Engineered to handle incomplete or malformed scripts gracefully, providing precise diagnostics while maintaining parser state.
-- **🧩 Ecosystem Integration**: Part of the Oak family—easily integrate with `oak-lsp` for full LSP support or other Oak-based code analysis tools.
+- **🧩 Ecosystem Integration**: Part of the `data.text` family—easily integrate with `language-server` for full LSP support or other `data.text`-based code analysis tools.
 
 ## 🏗️ Architecture
 
-`oak-lua` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-lua` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

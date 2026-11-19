@@ -1,7 +1,7 @@
 //! Rewrites of PostgreSQL's temporary-schema qualifier.
 //!
 //! `pg_temp` (and its real spelling `pg_temp_<n>`) names the session's
-//! temporary schema. The shared Oak binder resolves a bare table name, so a
+//! temporary schema. The shared binder resolves a bare table name, so a
 //! reference the session's temporary registry owns is lowered onto that bare
 //! name here. A qualifier naming a table the session does not own is left
 //! untouched, which keeps the binder's `42P01` answer for an unknown relation

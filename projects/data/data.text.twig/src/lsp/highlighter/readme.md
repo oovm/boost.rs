@@ -1,3 +1,3 @@
 # Twig LSP Highlighter
 
-This module provides twig lsp highlighter functionality for the Oaks project.
+This module provides twig lsp highlighter functionality for the Boost `data.text` project.

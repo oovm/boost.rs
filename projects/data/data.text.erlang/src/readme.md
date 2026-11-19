@@ -1,6 +1,6 @@
-# 🛠️ oak-erlang Developer Guide
+# 🛠️ data-text-erlang Developer Guide
 
-Erlang support for the Oak language framework.
+Erlang support for the `data.text` language framework.
 
 Welcome to the internal implementation of the Erlang parser. This module provides the core logic for tokenizing and parsing Erlang source code into a high-fidelity syntax tree.
 
@@ -9,14 +9,14 @@ Welcome to the internal implementation of the Erlang parser. This module provide
 - **Lexer**: Tokenizes Erlang source code, handling atoms, variables, and macros with full fidelity.
 - **Parser**: Implements the Erlang grammar, producing a Green Tree that represents the concrete syntax.
 - **AST**: Provides a type-safe Red Tree facade for easy traversal and analysis.
-- **Language**: Defines the `ErlangLanguage` configuration and integration with the Oak framework.
+- **Language**: Defines the `ErlangLanguage` configuration and integration with the `data.text` framework.
 
 ## 🚀 Usage Example
 
 ### Basic Parsing
 
 ```rust
-use oak_erlang::{ErlangParser, SourceText, ErlangLanguage};
+use data_text_erlang::{ErlangParser, SourceText, ErlangLanguage};
 
 fn parse_erlang_code(code: &str) {
     let source = SourceText::new(code);
@@ -34,7 +34,7 @@ fn parse_erlang_code(code: &str) {
 ### Incremental Parsing
 
 ```rust
-use oak_erlang::{ErlangParser, SourceText, ErlangLanguage};
+use data_text_erlang::{ErlangParser, SourceText, ErlangLanguage};
 
 fn incremental_update(old_code: &str, new_code: &str) {
     let config = ErlangLanguage::new();

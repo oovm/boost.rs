@@ -1,13 +1,13 @@
-# 🚀 Oak Ada Parser
+# 🚀 Ada Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-ada.svg)](https://crates.io/crates/oak-ada)
-[![Documentation](https://docs.rs/oak-ada/badge.svg)](https://docs.rs/oak-ada)
+[![Crates.io](https://img.shields.io/crates/v/data-text-ada.svg)](https://crates.io/crates/data-text-ada)
+[![Documentation](https://docs.rs/data-text-ada/badge.svg)](https://docs.rs/data-text-ada)
 
-**Safety and Precision for Mission-Critical Systems** — A high-performance, incremental Ada parser built on the Oak framework. Optimized for safety-critical systems, large-scale engineering, and modern IDE support for the Ada programming language.
+**Safety and Precision for Mission-Critical Systems** — A high-performance, incremental Ada parser built on the `data.text` framework. Optimized for safety-critical systems, large-scale engineering, and modern IDE support for the Ada programming language.
 
 ## 🎯 Project Vision
 
-Ada was designed for safety-critical and large-scale software engineering, emphasizing reliability, readability, and maintainability. `oak-ada` brings these same principles to parsing, providing a modern, Rust-powered infrastructure for analyzing Ada code. By utilizing Oak's incremental parsing capabilities, it enables developers to build highly responsive tools for complex Ada projects, ensuring that safety and productivity go hand-in-hand. Whether you are building static analyzers, automated refactoring tools, or sophisticated IDE extensions, `oak-ada` provides the robust, efficient foundation you need.
+Ada was designed for safety-critical and large-scale software engineering, emphasizing reliability, readability, and maintainability. `data-text-ada` brings these same principles to parsing, providing a modern, Rust-powered infrastructure for analyzing Ada code. By utilizing incremental parsing capabilities, it enables developers to build highly responsive tools for complex Ada projects, ensuring that safety and productivity go hand-in-hand. Whether you are building static analyzers, automated refactoring tools, or sophisticated IDE extensions, `data-text-ada` provides the robust, efficient foundation you need.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ Ada was designed for safety-critical and large-scale software engineering, empha
     - **Strong Typing**: Detailed tracking of Ada's unique type system, including range constraints and private types.
     - **Generics**: Robust handling of Ada generic units and formal parameters.
 - **🛡️ Robust Error Recovery**: Engineered to handle incomplete or malformed code gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for Model Context Protocol capabilities.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for Model Context Protocol capabilities.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

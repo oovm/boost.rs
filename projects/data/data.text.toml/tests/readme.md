@@ -1,6 +1,6 @@
 # 🧪 TOML Parser Test Suite & Quality Assurance
 
-`oak-toml` features a comprehensive test suite to ensure stability across various TOML features and edge cases.
+`data-text-toml` features a comprehensive test suite to ensure stability across various TOML features and edge cases.
 
 ## 📊 Test Coverage
 
@@ -29,7 +29,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-toml
+cargo test -p data-text-toml
 
 # Or use the project-wide task runner
 wee test

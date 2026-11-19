@@ -14,7 +14,7 @@ use serde::{
     de::{self, MapAccess, Visitor},
 };
 
-/// Oak VON 标量可直接写字符串；serde 的 `Option<T>` 默认需要显式 option 包装。
+/// `data.text` VON 标量可直接写字符串；serde 的 `Option<T>` 默认需要显式 option 包装。
 fn deserialize_option_string<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -51,7 +51,7 @@ where
     deserializer.deserialize_any(OptionStringVisitor)
 }
 
-/// Oak VON 嵌套对象直接写 map；serde 的 `Option<T>` 默认需要显式 option 包装。
+/// `data.text` VON 嵌套对象直接写 map；serde 的 `Option<T>` 默认需要显式 option 包装。
 fn deserialize_option_nested<'de, D, T>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -412,12 +412,12 @@ pub struct ProjectManifest {
     pub engines: BTreeMap<String, String>,
 }
 
-/// 清单解析失败错误：保留原始 Oak 错误与可选的源码字节区间。
+/// 清单解析失败错误：保留原始 `data.text` 错误与可选的源码字节区间。
 #[derive(Debug)]
 pub enum ManifestError {
     /// VON 语法或结构解析失败。
     Parse {
-        /// 原始 Oak 解析错误。
+        /// 原始 `data.text` 解析错误。
         error: VonError,
         /// 出错位置对应的源码字节区间（无法定位时为 `None`）。
         span: Option<Range<usize>>,

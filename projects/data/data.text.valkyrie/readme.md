@@ -1,4 +1,4 @@
-# oak-valkyrie
+# data-text-valkyrie
 
 High-performance incremental Valkyrie parser for the `data.text` family.
 

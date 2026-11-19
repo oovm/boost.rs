@@ -3,7 +3,7 @@
 #![warn(missing_docs)]
 #![allow(missing_copy_implementations)]
 
-/// The reStructuredText language implementation for Oaks.
+/// The reStructuredText language implementation for `data.text`.
 pub mod language;
 
 /// Abstract Syntax Tree for reStructuredText.

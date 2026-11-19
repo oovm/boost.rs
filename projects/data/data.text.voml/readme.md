@@ -1,13 +1,13 @@
-# 🚀 oak-voml
+# 🚀 data-text-voml
 
-[![Crates.io](https://img.shields.io/crates/v/oak-voml.svg)](https://crates.io/crates/oak-voml)
-[![Documentation](https://docs.rs/oak-voml/badge.svg)](https://docs.rs/oak-voml)
+[![Crates.io](https://img.shields.io/crates/v/data-text-voml.svg)](https://crates.io/crates/data-text-voml)
+[![Documentation](https://docs.rs/data-text-voml/badge.svg)](https://docs.rs/data-text-voml)
 
-**Making VOML processing simple** — A high-performance, incremental VOML parser built on the Oak framework.
+**Making VOML processing simple** — A high-performance, incremental VOML parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-voml` is dedicated to providing industrial-grade parsing support for the VOML language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-voml` is dedicated to providing industrial-grade parsing support for the VOML language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

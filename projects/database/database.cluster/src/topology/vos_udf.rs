@@ -8,7 +8,7 @@ use database_types::cluster::Error;
 
 use crate::topology::distributed_execution::{Node, Program, Type, Udf, UdfEffect, UdfPlacement, ValidatedUdf, Value};
 
-/// Lowers the Oak-validated VOS scalar subset into 集群's shard execution model.
+/// Lowers the parser-validated VOS scalar subset into 集群's shard execution model.
 pub fn lower_vos_udf(source: &str, version: u32) -> Result<ValidatedUdf, Error> {
     let parsed = schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Udf { name: "<vos>".into(), message: diagnostics })?;
     if !parsed.statements.is_empty() || parsed.result.is_some() || parsed.micros.len() != 1 {

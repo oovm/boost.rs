@@ -1,3 +1,3 @@
 # Dejavu Lsp
 
-This module provides dejavu lsp functionality for the Oaks project.
+This module provides dejavu lsp functionality for the Boost `data.text` project.

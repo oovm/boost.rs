@@ -40,7 +40,7 @@ The primary goal of this module is to provide a fast, accurate, and feature-rich
 ## Usage Example
 
 ```rust
-use oak_dejavu::lexer::DejavuLexer;
+use data_text_dejavu::lexer::DejavuLexer;
 
 fn main() {
     let dejavu_source = r#"

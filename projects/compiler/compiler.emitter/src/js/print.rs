@@ -30,7 +30,7 @@ pub fn minify_source(source: &str) -> Result<(String, Vec<SourceMapSegment>), St
     minify_tokens(source, &[])
 }
 
-/// Minify from Oak lexer tokens, keeping string, template, regex and comment
+/// Minify from lexer tokens, keeping string, template, regex and comment
 /// semantics intact.
 ///
 /// Boundaries: tokens are emitted as their original source slices (strings,

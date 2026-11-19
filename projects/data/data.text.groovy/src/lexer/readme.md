@@ -43,11 +43,11 @@ The primary objective of this module is to provide a fast and accurate tokenizer
 ## Usage Example
 
 ```rust
-use oak_groovy::lexer::GroovyLexer;
+use data_text_groovy::lexer::GroovyLexer;
 
 fn main() {
     let groovy_source = r#"
-        def name = "Oak"
+        def name = "Boost"
         println "Hello, ${name}!"
         
         def list = [1, 2, 3]

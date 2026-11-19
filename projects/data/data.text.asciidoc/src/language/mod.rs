@@ -1,6 +1,6 @@
 use data_text_core::{Language, LanguageCategory, UniversalTokenRole};
 
-/// The AsciiDoc language definition for Oaks.
+/// The AsciiDoc language definition for `data.text`.
 #[derive(Debug, Clone, Default)]
 pub struct AsciidocLanguage {
     /// Whether to allow macros.

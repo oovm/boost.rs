@@ -1,4 +1,4 @@
-# oak-smalltalk
+# data-text-smalltalk
 
 High-performance incremental Smalltalk parser for the `data.text` family.
 

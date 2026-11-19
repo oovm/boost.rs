@@ -1,3 +1,3 @@
 # Ruby Builder
 
-This module provides ruby builder functionality for the Oaks project.
+This module provides ruby builder functionality for the Boost `data.text` project.

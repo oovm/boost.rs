@@ -1,8 +1,8 @@
 # 🛠️ Scheme Parser Developer Guide
 
-Racket support for the Oak language framework.
+Racket support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-scheme`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-scheme`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-scheme = { path = "..." }
+data-text-scheme = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-scheme = { path = "..." }
 The following is a standard workflow for parsing Scheme scripts, supporting various R7RS and traditional Lisp constructs:
 
 ```rust
-use oak_scheme::{SchemeParser, SourceText, SchemeLanguage};
+use data_text_scheme::{SchemeParser, SourceText, SchemeLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -56,7 +56,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Scheme specific constructs like lists, vectors, symbols, and procedure definitions.
 
 ### 2. Incremental Parsing
-Scheme scripts can be part of larger systems. `oak-scheme` supports sub-millisecond incremental updates:
+Scheme scripts can be part of larger systems. `data-text-scheme` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

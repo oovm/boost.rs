@@ -1,3 +1,3 @@
 # Wat Language
 
-This module provides wat language functionality for the Oaks project.
+This module provides wat language functionality for the Boost `data.text` project.

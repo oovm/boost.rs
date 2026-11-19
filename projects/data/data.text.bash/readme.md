@@ -1,13 +1,13 @@
-# 🚀 Oak Bash Parser
+# 🚀 Bash Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-bash.svg)](https://crates.io/crates/oak-bash)
-[![Documentation](https://docs.rs/oak-bash/badge.svg)](https://docs.rs/oak-bash)
+[![Crates.io](https://img.shields.io/crates/v/data-text-bash.svg)](https://crates.io/crates/data-text-bash)
+[![Documentation](https://docs.rs/data-text-bash/badge.svg)](https://docs.rs/data-text-bash)
 
-**Industrial-Grade Shell Script Analysis** — A high-performance, incremental Bash parser built on the Oak framework. Optimized for complex shell scripts, command-line tools, and modern IDE integration.
+**Industrial-Grade Shell Script Analysis** — A high-performance, incremental Bash parser built on the `data.text` framework. Optimized for complex shell scripts, command-line tools, and modern IDE integration.
 
 ## 🎯 Project Vision
 
-Shell scripts are the glue of the modern computing world, yet they are notoriously difficult to parse and analyze due to their flexible and often ambiguous syntax. `oak-bash` aims to provide a robust, modern, Rust-powered infrastructure for parsing Bash that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers (like a modern ShellCheck), and automated refactoring tools that can handle massive script libraries in real-time. Whether you are building custom linters, DevOps automation tools, or sophisticated IDE extensions, `oak-bash` provides the high-fidelity AST and efficiency needed to tame the complexity of Bash.
+Shell scripts are the glue of the modern computing world, yet they are notoriously difficult to parse and analyze due to their flexible and often ambiguous syntax. `data-text-bash` aims to provide a robust, modern, Rust-powered infrastructure for parsing Bash that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers (like a modern ShellCheck), and automated refactoring tools that can handle massive script libraries in real-time. Whether you are building custom linters, DevOps automation tools, or sophisticated IDE extensions, `data-text-bash` provides the high-fidelity AST and efficiency needed to tame the complexity of Bash.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Shell scripts are the glue of the modern computing world, yet they are notorious
     - **Functions**: Robust parsing of function definitions and call sites.
     - **Shell Options**: Awareness of common shell behaviors and extensions.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active script editing.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

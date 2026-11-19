@@ -1,10 +1,10 @@
-# 🧩 Oak PlantUML Parser
+# 🧩 PlantUML Parser
 
-PlantUML support for the Oak language framework, limited to the class and sequence diagram subsets used by diagram front ends.
+PlantUML support for the `data.text` language framework, limited to the class and sequence diagram subsets used by diagram front ends.
 
 ## 🎯 Scope
 
-`oak-plantuml` parses one `@startuml ... @enduml` block and produces a typed AST covering:
+`data-text-plantuml` parses one `@startuml ... @enduml` block and produces a typed AST covering:
 
 - **Class diagrams** — `class`, `interface`, `abstract class`, `enum`, optional `{ ... }` member blocks, and relations with multiplicities, labels and normalized arrow markers.
 - **Sequence diagrams** — `participant` and `actor` declarations, four message arrows, and `activate` / `deactivate` spans.
@@ -25,7 +25,7 @@ Lines outside the `@startuml` / `@enduml` wrapper and lines the grammar cannot a
 
 ```rust,ignore
 use data_text_core::{Builder, Parser, SourceText, parser::session::ParseSession};
-use oak_plantuml::{PlantUmlBuilder, PlantUmlLanguage, PlantUmlParser};
+use data_text_plantuml::{PlantUmlBuilder, PlantUmlLanguage, PlantUmlParser};
 
 let source = SourceText::new(
     "@startuml\nclass Foo {\n+ int x\n}\nFoo --> Bar\n@enduml\n",
@@ -45,7 +45,7 @@ assert_eq!(root.diagrams.len(), 1);
 
 ## 🏗️ Architecture
 
-The crate follows the Oak layering used by the other example languages:
+The crate follows the `data.text` layering used by the other example languages:
 
 1. `lexer` — line-aware tokens for keywords, arrows, strings, comments and punctuation.
 2. `parser` — groups each statement into a composite green-tree element such as `ClassDeclaration`, `ClassMemberBlock`, `ClassRelation` or `SequenceMessage`.
@@ -53,4 +53,4 @@ The crate follows the Oak layering used by the other example languages:
 
 ## 🤝 Contributing
 
-Issues and pull requests are welcome at [ygg-lang/oaks](https://github.com/ygg-lang/oaks).
+Issues and pull requests are welcome at [oovm/boost.rs](https://github.com/oovm/boost.rs).

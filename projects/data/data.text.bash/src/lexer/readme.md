@@ -1,3 +1,3 @@
 # Bash Lexer
 
-This module provides bash lexer functionality for the Oaks project.
+This module provides bash lexer functionality for the Boost `data.text` project.

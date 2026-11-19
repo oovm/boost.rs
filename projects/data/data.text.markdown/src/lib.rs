@@ -2,7 +2,7 @@
 #![deny(missing_docs)]
 #![allow(missing_copy_implementations)]
 
-/// The Markdown language implementation for Oaks.
+/// The Markdown language implementation for `data.text`.
 pub mod language;
 
 /// Abstract Syntax Tree for Markdown.

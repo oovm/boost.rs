@@ -1,8 +1,8 @@
 # 📖 Rust Parser User Guide
 
-Rust support for the Oak language framework.
+Rust support for the `data.text` language framework.
 
-This guide helps you integrate `oak-rust` into your project and perform common parsing tasks efficiently.
+This guide helps you integrate `data-text-rust` into your project and perform common parsing tasks efficiently.
 
 ## 🚀 Quick Start
 
@@ -11,7 +11,7 @@ This guide helps you integrate `oak-rust` into your project and perform common p
 The following is a standard workflow for parsing a Rust function with traits and generics:
 
 ```rust
-use oak_rust::{RustParser, SourceText, RustLanguage};
+use data_text_rust::{RustParser, SourceText, RustLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -62,7 +62,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics & Error Recovery
-`oak-rust` provides detailed error contexts tailored for Rust developers:
+`data-text-rust` provides detailed error contexts tailored for Rust developers:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

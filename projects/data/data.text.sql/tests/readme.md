@@ -1,6 +1,6 @@
 # 🧪 SQL Parser Test Suite & Quality Assurance
 
-`oak-sql` features a comprehensive test suite to ensure stability across multiple SQL dialects and complex query structures.
+`data-text-sql` features a comprehensive test suite to ensure stability across multiple SQL dialects and complex query structures.
 
 ## 📊 Test Coverage
 
@@ -31,7 +31,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-sql
+cargo test -p data-text-sql
 
 # Or use the project-wide task runner
 wee test

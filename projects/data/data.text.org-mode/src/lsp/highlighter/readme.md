@@ -2,4 +2,4 @@
 
 Org-mode syntax highlighter.
 
-This module provides org mode lsp highlighter functionality for the Oaks project.
+This module provides org mode lsp highlighter functionality for the Boost `data.text` project.

@@ -1,3 +1,3 @@
 # Nix Ast
 
-This module provides nix ast functionality for the Oaks project.
+This module provides nix ast functionality for the Boost `data.text` project.

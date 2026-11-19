@@ -1,3 +1,3 @@
 # Scheme Lsp
 
-This module provides scheme lsp functionality for the Oaks project.
+This module provides scheme lsp functionality for the Boost `data.text` project.

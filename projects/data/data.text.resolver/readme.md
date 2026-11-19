@@ -1,13 +1,13 @@
-# 🚀 oak-resolver
+# 🚀 data-text-resolver
 
-[![Crates.io](https://img.shields.io/crates/v/oak-resolver.svg)](https://crates.io/crates/oak-resolver)
-[![Documentation](https://docs.rs/oak-resolver/badge.svg)](https://docs.rs/oak-resolver)
+[![Crates.io](https://img.shields.io/crates/v/data-text-resolver.svg)](https://crates.io/crates/data-text-resolver)
+[![Documentation](https://docs.rs/data-text-resolver/badge.svg)](https://docs.rs/data-text-resolver)
 
-**Symbol Resolution for Oak Languages** — Cross-file symbol resolution and import handling for language analysis.
+**Symbol Resolution for Languages** — Cross-file symbol resolution and import handling for language analysis.
 
-## 🎯 Why oak-resolver?
+## 🎯 Why data-text-resolver?
 
-Modern codebases span multiple files and modules. `oak-resolver` provides the infrastructure for resolving symbol references across file boundaries, handling imports, and building symbol indexes.
+Modern codebases span multiple files and modules. `data-text-resolver` provides the infrastructure for resolving symbol references across file boundaries, handling imports, and building symbol indexes.
 
 ## ✨ Key Features
 
@@ -23,11 +23,11 @@ Resolution process: Parse → Collect → Index → Resolve
 
 ## 🔗 Ecosystem Integration
 
-Integrates with `oak-vfs` for file access, `oak-navigation` for definition/reference providers, and `oak-lsp` for workspace symbol support.
+Integrates with `boost-source` for file access, `language-navigation` for definition/reference providers, and `language-server` for workspace symbol support.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-resolver).
+For usage examples and API details, see the [API documentation](https://docs.rs/data-text-resolver).
 
 ## 🤝 Contributing
 

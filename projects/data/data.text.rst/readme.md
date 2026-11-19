@@ -1,4 +1,4 @@
-# oak-rst
+# data-text-rst
 
 High-performance incremental reStructuredText parser for the `data.text` family.
 
@@ -12,7 +12,7 @@ High-performance incremental reStructuredText parser for the `data.text` family.
 ## Usage
 
 ```rust
-use oak_rst::{RstLanguage, RstParser};
+use data_text_rst::{RstLanguage, RstParser};
 
 let language = RstLanguage::default();
 let parser = RstParser::new(&language);

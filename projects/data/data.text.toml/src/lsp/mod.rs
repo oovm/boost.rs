@@ -31,7 +31,7 @@ impl HoverProvider<TomlLanguage> for TomlHoverProvider {
 /// Language service implementation for TOML.
 ///
 /// Provides IDE features such as hover and workspace management
-/// by integrating with the `oak-lsp` framework and `Vfs`.
+/// by integrating with the `language-server` framework and `Vfs`.
 #[cfg(feature = "lsp")]
 pub struct TomlLanguageService<V: Vfs> {
     vfs: V,

@@ -1,6 +1,6 @@
 # 🧪 JavaScript Parser Test Suite & Quality Assurance
 
-`oak-javascript` features a comprehensive test suite to ensure stability across JavaScript's dynamic and rapidly evolving syntax, from simple scripts to complex React applications.
+`data-text-javascript` features a comprehensive test suite to ensure stability across JavaScript's dynamic and rapidly evolving syntax, from simple scripts to complex React applications.
 
 ## 📊 Test Coverage
 
@@ -32,7 +32,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-javascript
+cargo test -p data-text-javascript
 
 # Or use the project-wide task runner
 wee test

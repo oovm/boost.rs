@@ -1,9 +1,9 @@
-# 🚀 Oak C Parser
+# 🚀 C Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-c.svg)](https://crates.io/crates/oak-c)
-[![Documentation](https://docs.rs/oak-c/badge.svg)](https://docs.rs/oak-c)
+[![Crates.io](https://img.shields.io/crates/v/data-text-c.svg)](https://crates.io/crates/data-text-c)
+[![Documentation](https://docs.rs/data-text-c/badge.svg)](https://docs.rs/data-text-c)
 
-**Legacy Performance, Modern Tooling.** `oak-c` is a high-performance, incremental C parser built on the Oak framework. Optimized for systems programming, legacy codebase analysis, and real-time developer tooling, it brings modern infrastructure to the C ecosystem.
+**Legacy Performance, Modern Tooling.** `data-text-c` is a high-performance, incremental C parser built on the `data.text` framework. Optimized for systems programming, legacy codebase analysis, and real-time developer tooling, it brings modern infrastructure to the C ecosystem.
 
 ## ✨ Core Features
 
@@ -25,4 +25,4 @@ Leveraging the **Green/Red Tree** pattern (similar to Roslyn and rust-analyzer):
 
 ## 🤝 Contributing
 
-We welcome contributions! Whether it's bug reports, feature requests, or code, help us build the best C parsing infrastructure. Check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a PR.
+We welcome contributions! Whether it's bug reports, feature requests, or code, help us build the best C parsing infrastructure. Check our [issues](https://github.com/oovm/boost.rs/issues) or submit a PR.

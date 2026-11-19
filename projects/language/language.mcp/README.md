@@ -1,21 +1,21 @@
-# 馃殌 oak-mcp
+# 馃殌 language-mcp
 
-[![Crates.io](https://img.shields.io/crates/v/oak-mcp.svg)](https://crates.io/crates/oak-mcp)
-[![Documentation](https://docs.rs/oak-mcp/badge.svg)](https://docs.rs/oak-mcp)
+[![Crates.io](https://img.shields.io/crates/v/language-mcp.svg)](https://crates.io/crates/language-mcp)
+[![Documentation](https://docs.rs/language-mcp/badge.svg)](https://docs.rs/language-mcp)
 
-**Model Context Protocol Integration for Oak** 鈥?Enable AI assistants to understand and analyze code through the MCP standard.
+**Model Context Protocol Integration for `data.text`** 鈥?Enable AI assistants to understand and analyze code through the MCP standard.
 
-## 馃幆 Why oak-mcp?
+## 馃幆 Why language-mcp?
 
-The Model Context Protocol (MCP) is an open standard that enables AI assistants to interact with development tools and codebases. `oak-mcp` bridges Oak's parsing capabilities with MCP, allowing AI agents to perform code analysis and understanding tasks.
+The Model Context Protocol (MCP) is an open standard that enables AI assistants to interact with development tools and codebases. `language-mcp` bridges the parsing capabilities with MCP, allowing AI agents to perform code analysis and understanding tasks.
 
 ## 鉁?Key Features
 
-- **馃 MCP Server Implementation** 鈥?Standard MCP server exposing Oak's language analysis
+- **馃 MCP Server Implementation** 鈥?Standard MCP server exposing `data.text` language analysis
 - **馃搳 Code Analysis Tools** 鈥?Parsing, symbol extraction, and navigation as MCP tools
 - **馃攳 Semantic Understanding** 鈥?Query symbol definitions, references, and documentation
-- **馃搧 Project-Wide Analysis** 鈥?Multi-file project understanding via `oak-vfs`
-- **馃寪 Language Agnostic** 鈥?Works with any Oak language parser
+- **馃搧 Project-Wide Analysis** 鈥?Multi-file project understanding via `boost-source`
+- **馃寪 Language Agnostic** 鈥?Works with any `data.text` language parser
 
 ## 馃彈锔?Architecture
 
@@ -31,11 +31,11 @@ The Model Context Protocol (MCP) is an open standard that enables AI assistants 
 
 ## 馃敆 Ecosystem Integration
 
-Integrates with `data-text-core` for parsing, `oak-vfs` for file access, `oak-navigation` for code navigation, and any MCP-compatible AI assistant.
+Integrates with `data-text-core` for parsing, `boost-source` for file access, `language-navigation` for code navigation, and any MCP-compatible AI assistant.
 
 ## 馃摉 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-mcp).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-mcp).
 
 ## 馃 Contributing
 

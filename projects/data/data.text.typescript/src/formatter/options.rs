@@ -1,6 +1,6 @@
 /// Product-facing options for [`super::format_source`].
 ///
-/// The Oak formatter edits whitespace between CST tokens and keeps every token
+/// The formatter edits whitespace between CST tokens and keeps every token
 /// text intact, so `quote_style` is accepted without rewriting string literals.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -1,6 +1,6 @@
 # 🧪 Zig Parser Test Suite
 
-`oak-zig` utilizes a multi-layered testing strategy to ensure high fidelity parsing across various Zig versions and language features.
+`data-text-zig` utilizes a multi-layered testing strategy to ensure high fidelity parsing across various Zig versions and language features.
 
 ## 📊 Test Coverage
 
@@ -27,10 +27,10 @@ Verifies that the parser remains stable when encountering:
 
 ```bash
 # Run all Zig parser tests
-cargo test -p oak-zig
+cargo test -p data-text-zig
 
 # Run specific lexer tests
-cargo test -p oak-zig --test lexer_tests
+cargo test -p data-text-zig --test lexer_tests
 ```
 
 ## 📈 Quality Standards

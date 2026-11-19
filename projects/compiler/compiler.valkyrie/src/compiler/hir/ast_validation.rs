@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use compiler_types::{DiagnosticSource, DiagnosticSpan};
 
-/// 校验 Oak `AST` 根节点是否满足进入 `HIR` lowering 的前提。
+/// 校验 syntax tree 根节点是否满足进入 `HIR` lowering 的前提。
 pub fn validate_ast_root(root: &ValkyrieRoot) -> Result<(), HirError> {
     validate_auto_constructor_attributes(&root.items)?;
     validate_duplicate_type_names(&root.items, &[])

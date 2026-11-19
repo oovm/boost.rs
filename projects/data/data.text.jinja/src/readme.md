@@ -1,4 +1,4 @@
-# oak-jinja
+# data-text-jinja
 
 High-performance incremental Jinja2 parser for the `data.text` family with flexible configuration, supporting template rendering and syntax analysis.
 
@@ -13,7 +13,7 @@ High-performance incremental Jinja2 parser for the `data.text` family with flexi
 ## Usage
 
 ```rust
-use oak_jinja::{JinjaLexer, JinjaParser, JinjaBuilder};
+use data_text_jinja::{JinjaLexer, JinjaParser, JinjaBuilder};
 
 let source = "Hello, {{ name }}!";
 let lexer = JinjaLexer::new();
@@ -36,4 +36,4 @@ let root = builder.build(ast);
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/ygg-lang/oaks/blob/master/License.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/oovm/boost.rs/blob/master/License.md) file for details.

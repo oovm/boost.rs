@@ -22,7 +22,7 @@ pub fn import_markdown(path: impl AsRef<Path>) -> Result<DocumentGraph, FormatEr
     import_markdown_bytes(&path.display().to_string(), &text)
 }
 
-/// Oak profile for semantic Markdown import: enable the constructs required by
+/// syntax profile for semantic Markdown import: enable the constructs required by
 /// `notedown-formats` round-trip and markdown-project reopen probes.
 ///
 /// Math and footnotes are part of the import contract, so the profile has to

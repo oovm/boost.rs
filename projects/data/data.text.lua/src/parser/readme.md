@@ -6,7 +6,7 @@ The core syntax analyzer for Lua, responsible for transforming a token stream in
 
 - **Recursive Descent**: Used for high-level structures like statements, blocks, and function definitions.
 - **Pratt Parsing**: Employed for expression parsing to handle Lua's operator precedence and associativity (especially for `^` and `..`).
-- **Incremental Engine**: Fully integrates with the Oak framework's incremental re-parsing logic.
+- **Incremental Engine**: Fully integrates with the `data.text` framework's incremental re-parsing logic.
 
 ## ✨ Capabilities
 

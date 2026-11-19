@@ -4,7 +4,7 @@
 描绘链，与 `plotter.diagram` / `plotter.chart` / `plotter.engraving` 平行，只共享
 `plotter.types` + `plotter.scene`。
 
-- 本 crate 不含语言前端：SMILES / MDL molfile 的解析在 `plotter.input.*`（语法归 Oak）。
+- 本 crate 不含语言前端：SMILES / MDL molfile 的解析在 `plotter.input.*`（语法归 `data.text`）。
 - 配色由 [`DepictionOptions::palette`](src/plan.rs) 选择：`Palette::Element`（默认）是
   行业通行的 2D 元素配色——键保持黑色细线，杂原子标签按元素着色（氧红、氮蓝、硫黄、
   卤素绿紫）；`Palette::Ink` 是全黑单色，适合印刷。

@@ -48,7 +48,7 @@ impl Language for KotlinLanguage {
     type TypedRoot = crate::ast::KotlinRoot;
 }
 
-/// Kotlin language marker for Oak framework.
+/// Kotlin language marker for `data.text` framework.
 pub struct Kotlin;
 
 impl Language for Kotlin {

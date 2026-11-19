@@ -1,13 +1,13 @@
-# 🚀 Oak YAML Parser
+# 🚀 YAML Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-yaml.svg)](https://crates.io/crates/oak-yaml)
-[![Documentation](https://docs.rs/oak-yaml/badge.svg)](https://docs.rs/oak-yaml)
+[![Crates.io](https://img.shields.io/crates/v/data-text-yaml.svg)](https://crates.io/crates/data-text-yaml)
+[![Documentation](https://docs.rs/data-text-yaml/badge.svg)](https://docs.rs/data-text-yaml)
 
-**The Power of Clarity and Flexibility** — A high-performance, incremental YAML parser built on the Oak framework. Optimized for configuration management, CI/CD pipeline analysis, and high-fidelity document processing.
+**The Power of Clarity and Flexibility** — A high-performance, incremental YAML parser built on the `data.text` framework. Optimized for configuration management, CI/CD pipeline analysis, and high-fidelity document processing.
 
 ## 🎯 Project Vision
 
-YAML is the backbone of modern configuration and orchestration, but its whitespace-sensitive nature and complex features (like anchors and aliases) make it difficult to parse reliably. `oak-yaml` provides a robust, modern, Rust-powered infrastructure for parsing YAML that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, configuration validators, and automated deployment tools that can handle massive YAML files and complex document streams in real-time.
+YAML is the backbone of modern configuration and orchestration, but its whitespace-sensitive nature and complex features (like anchors and aliases) make it difficult to parse reliably. `data-text-yaml` provides a robust, modern, Rust-powered infrastructure for parsing YAML that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, configuration validators, and automated deployment tools that can handle massive YAML files and complex document streams in real-time.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ YAML is the backbone of modern configuration and orchestration, but its whitespa
     - **Anchors & Aliases**: Full support for references and data reuse within documents.
     - **Comments & Formatting**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience when editing complex configurations.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent configuration discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent configuration discovery.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

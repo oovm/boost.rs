@@ -15,7 +15,7 @@ use crate::compiler::types::{Identifier, SourceSpan};
 pub struct HirTrait {
     /// Compiler 为 trait 本体分配的声明身份。
     pub declaration: Option<compiler_types::ItemId>,
-    /// Oak 语法所声明的 namespace；只用于 Resolver 输入及诊断。
+    /// `data.text` 语法所声明的 namespace；只用于 Resolver 输入及诊断。
     pub declaring_namespace: crate::compiler::types::NamePath,
     /// The name of the trait.
     pub name: Identifier,

@@ -1,6 +1,6 @@
 # 🧪 Lua Parser Test Suite
 
-`oak-lua` utilizes a multi-layered testing strategy to ensure high fidelity parsing across various Lua environments (Lua 5.1 to 5.4).
+`data-text-lua` utilizes a multi-layered testing strategy to ensure high fidelity parsing across various Lua environments (Lua 5.1 to 5.4).
 
 ## 📊 Test Coverage
 
@@ -27,10 +27,10 @@ Verifies that the parser remains stable when encountering:
 
 ```bash
 # Run all Lua parser tests
-cargo test -p oak-lua
+cargo test -p data-text-lua
 
 # Run specific lexer tests
-cargo test -p oak-lua --test lexer_tests
+cargo test -p data-text-lua --test lexer_tests
 ```
 
 ## 📈 Quality Standards

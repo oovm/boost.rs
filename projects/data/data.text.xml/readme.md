@@ -1,13 +1,13 @@
-# 🚀 Oak XML Parser
+# 🚀 XML Parser
 
 [![Crates.io](https://img.shields.io/crates/v/data-text-xml.svg)](https://crates.io/crates/data-text-xml)
 [![Documentation](https://docs.rs/data-text-xml/badge.svg)](https://docs.rs/data-text-xml)
 
-**Structured Markup with Unmatched Speed** — A high-performance, incremental XML parser built on the Oak framework. Optimized for large-scale data interchange, document processing, and real-time validation.
+**Structured Markup with Unmatched Speed** — A high-performance, incremental XML parser built on the `data.text` framework. Optimized for large-scale data interchange, document processing, and real-time validation.
 
 ## 🎯 Project Vision
 
-XML remains a foundational technology for data representation and document structure, but its complex rules for tags, attributes, and namespaces require a robust and efficient parser. `data-text-xml` provides a high-performance, Rust-powered infrastructure for parsing XML that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, document editors, and data processing pipelines that can handle massive XML files and complex document trees in real-time.
+XML remains a foundational technology for data representation and document structure, but its complex rules for tags, attributes, and namespaces require a robust and efficient parser. `data-text-xml` provides a high-performance, Rust-powered infrastructure for parsing XML that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, document editors, and data processing pipelines that can handle massive XML files and complex document trees in real-time.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ XML remains a foundational technology for data representation and document struc
     - **CDATAs & Entities**: Full support for character data sections and entity references.
     - **Comments & Processing Instructions**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience when editing complex markup.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent document structure discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent document structure discovery.
 
 ## 🏗️ Architecture
 
@@ -31,4 +31,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

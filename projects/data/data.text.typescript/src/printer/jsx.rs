@@ -1,4 +1,4 @@
-//! Oak TypeScript JSX → canonical text.
+//! TypeScript JSX → canonical text.
 
 use crate::ast::{Expression, JsxAttribute, JsxAttributeOrSpread, JsxAttributeValue, JsxChild, JsxClosingElement, JsxElement, JsxFragment, JsxOpeningElement, JsxSelfClosingElement, JsxTagName};
 

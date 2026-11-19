@@ -1,8 +1,8 @@
 # 🛠️ Ruby Parser Developer Guide
 
-Ruby support for the Oak language framework.
+Ruby support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-ruby`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-ruby`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-ruby = { path = "..." }
+data-text-ruby = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-ruby = { path = "..." }
 The following is a standard workflow for parsing Ruby code, including support for classes, methods, and blocks:
 
 ```rust
-use oak_ruby::{RubyParser, SourceText, RubyLanguage};
+use data_text_ruby::{RubyParser, SourceText, RubyLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -33,7 +33,7 @@ fn main() {
           end
         end
 
-        greeter = Greeter.new("Oak")
+        greeter = Greeter.new("Boost")
         greeter.greet
     "#;
     let source = SourceText::new(code);
@@ -63,7 +63,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Ruby specific constructs like class definitions, method bodies, block expressions, and complex literals.
 
 ### 2. Incremental Parsing
-Ruby codebases (especially Rails apps) can be massive. `oak-ruby` supports sub-millisecond incremental updates:
+Ruby codebases (especially Rails apps) can be massive. `data-text-ruby` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

@@ -1,6 +1,6 @@
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-//! D2 support for the Oak language framework.
+//! D2 support for the `data.text` language framework.
 
 /// Abstract Syntax Tree (AST) definitions for D2.
 pub mod ast;

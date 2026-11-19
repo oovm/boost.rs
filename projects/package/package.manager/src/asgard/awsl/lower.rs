@@ -808,7 +808,7 @@ fn split_if_else_children(children: &[AwslTemplateNode]) -> (Vec<AwslTemplateNod
 
 fn lower_attr_value(value: &AwslAttributeValue) -> SurfaceAttrValue {
     match value {
-        // Oak 已按共享模板规则完成分段（§4.10 F）：Literal 不再含结构花括号，
+        // `data.text` 已按共享模板规则完成分段（§4.10 F）：Literal 不再含结构花括号，
         // 插值只可能来自 Expression/Mixed，本层不得再扫描花括号。
         AwslAttributeValue::Literal(text) => SurfaceAttrValue::Static(text.clone()),
         AwslAttributeValue::Expression(expr) => SurfaceAttrValue::Dynamic(expr.clone()),

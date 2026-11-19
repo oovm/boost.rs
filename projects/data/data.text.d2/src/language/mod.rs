@@ -1,6 +1,6 @@
 use data_text_core::{Language, LanguageCategory};
 
-/// Implementation of the D2 language for the Oak framework.
+/// Implementation of the D2 language for the `data.text` framework.
 #[derive(Debug, Clone, Copy, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct D2Language {}

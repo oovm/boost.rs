@@ -1,13 +1,13 @@
-# 🚀 Oak TOML Parser
+# 🚀 TOML Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-toml.svg)](https://crates.io/crates/oak-toml)
-[![Documentation](https://docs.rs/oak-toml/badge.svg)](https://docs.rs/oak-toml)
+[![Crates.io](https://img.shields.io/crates/v/data-text-toml.svg)](https://crates.io/crates/data-text-toml)
+[![Documentation](https://docs.rs/data-text-toml/badge.svg)](https://docs.rs/data-text-toml)
 
-**Precision and Performance for Configuration** — A high-performance, incremental TOML parser built on the Oak framework. Optimized for Rust project management, configuration files, and high-fidelity document processing.
+**Precision and Performance for Configuration** — A high-performance, incremental TOML parser built on the `data.text` framework. Optimized for Rust project management, configuration files, and high-fidelity document processing.
 
 ## 🎯 Project Vision
 
-TOML is the preferred configuration language for the Rust ecosystem, but its precise rules for strings, dates, and nested tables require a robust and accurate parser. `oak-toml` provides a high-performance, Rust-powered infrastructure for parsing TOML that is both standard-compliant and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, configuration editors, and build tools that can handle large `Cargo.toml` files and complex configuration graphs in real-time.
+TOML is the preferred configuration language for the Rust ecosystem, but its precise rules for strings, dates, and nested tables require a robust and accurate parser. `data-text-toml` provides a high-performance, Rust-powered infrastructure for parsing TOML that is both standard-compliant and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, configuration editors, and build tools that can handle large `Cargo.toml` files and complex configuration graphs in real-time.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ TOML is the preferred configuration language for the Rust ecosystem, but its pre
     - **Dates & Times**: Native support for parsing RFC3339 date-time formats.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience when editing project configurations.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent project metadata discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent project metadata discovery.
 
 ## 🏗️ Architecture
 
@@ -31,4 +31,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

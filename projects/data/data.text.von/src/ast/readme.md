@@ -28,7 +28,7 @@ This module defines the abstract syntax tree structure for the VON language, use
 ## Usage Example
 
 ```rust,ignore
-use oak_von::ast::*;
+use data_text_von::ast::*;
 
 fn main() {
     let root = VonRoot {

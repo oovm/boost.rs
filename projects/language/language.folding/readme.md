@@ -1,13 +1,13 @@
-# 🚀 oak-folding
+# 🚀 language-folding
 
-[![Crates.io](https://img.shields.io/crates/v/oak-folding.svg)](https://crates.io/crates/oak-folding)
-[![Documentation](https://docs.rs/oak-folding/badge.svg)](https://docs.rs/oak-folding)
+[![Crates.io](https://img.shields.io/crates/v/language-folding.svg)](https://crates.io/crates/language-folding)
+[![Documentation](https://docs.rs/language-folding/badge.svg)](https://docs.rs/language-folding)
 
-**Code Folding Support for Oak Languages** — Identify collapsible regions in source code for IDE outline views and editor folding.
+**Code Folding Support for Languages** — Identify collapsible regions in source code for IDE outline views and editor folding.
 
-## 🎯 Why oak-folding?
+## 🎯 Why language-folding?
 
-Code folding helps developers manage large files by collapsing sections of code. `oak-folding` provides a trait-based interface for identifying foldable regions in any Oak-supported language.
+Code folding helps developers manage large files by collapsing sections of code. `language-folding` provides a trait-based interface for identifying foldable regions in any `data.text`-supported language.
 
 ## ✨ Key Features
 
@@ -24,11 +24,11 @@ Code folding helps developers manage large files by collapsing sections of code.
 
 ## 🔗 Ecosystem Integration
 
-Used by `oak-lsp` for `textDocument/foldingRange` support, IDE extensions for code outline views, and code formatters.
+Used by `language-server` for `textDocument/foldingRange` support, IDE extensions for code outline views, and code formatters.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-folding).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-folding).
 
 ## 🤝 Contributing
 

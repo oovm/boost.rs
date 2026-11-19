@@ -1,6 +1,6 @@
 # 🧪 Testing & Verification
 
-Quality is the core of `oak-ascii-doc`. We ensure the stability of the code through multi-dimensional testing.
+Quality is the core of `data-text-ascii-doc`. We ensure the stability of the code through multi-dimensional testing.
 
 ## 📊 Testing Strategy
 

@@ -1,8 +1,8 @@
 # 🛠️ Vue Parser Developer Guide
 
-Vue support for the Oak language framework.
+Vue support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-vue`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-vue`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-vue = { path = "..." }
+data-text-vue = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-vue = { path = "..." }
 The following is a standard workflow for parsing Vue Single File Components (SFCs), supporting template, script, and style blocks:
 
 ```rust
-use oak_vue::{VueParser, SourceText, VueLanguage};
+use data_text_vue::{VueParser, SourceText, VueLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -28,7 +28,7 @@ fn main() {
         </template>
 
         <script setup>
-        const greeting = 'Hello from Oak!'
+        const greeting = 'Hello from Boost!'
         </script>
     "#;
     let source = SourceText::new(code);
@@ -58,7 +58,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Vue specific constructs like top-level blocks, template directives, script setup variables, and scoped styles.
 
 ### 2. Incremental Parsing
-Vue SFCs are often edited in IDEs. `oak-vue` supports sub-millisecond incremental updates for a fluid editing experience:
+Vue SFCs are often edited in IDEs. `data-text-vue` supports sub-millisecond incremental updates for a fluid editing experience:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

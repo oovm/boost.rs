@@ -1,4 +1,4 @@
-//! Type system helpers (Oak-free). Full AST typecheck removed with Oak.
+//! Type system helpers (`data.text`-free). Full AST typecheck removed with the external parser.
 
 pub mod rust_integration;
 pub mod type_annotation;

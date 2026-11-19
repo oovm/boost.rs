@@ -1,4 +1,4 @@
-# `schema-input-vos`：VOS 的 schema 输入链（Oak 语法消费、四阶段语义、identity provider）。
+# `schema-input-vos`：VOS 的 schema 输入链（VOS 语法消费、四阶段语义、identity provider）。
 [package]
 name = "schema-input-vos"
 version.workspace = true

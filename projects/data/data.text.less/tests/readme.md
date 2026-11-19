@@ -1,6 +1,6 @@
 # 🧪 CSS Parser Test Suite & Quality Assurance
 
-`oak-css` features a comprehensive test suite to ensure stability across modern CSS modules and diverse browser-specific syntax.
+`data-text-css` features a comprehensive test suite to ensure stability across modern CSS modules and diverse browser-specific syntax.
 
 ## 📊 Test Coverage
 
@@ -32,7 +32,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-css
+cargo test -p data-text-css
 
 # Or use the project-wide task runner
 wee test

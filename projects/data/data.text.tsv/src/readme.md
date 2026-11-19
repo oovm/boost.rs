@@ -1,8 +1,8 @@
 # 🛠️ TSV Parser Developer Guide
 
-Tsv support for the Oak language framework.
+Tsv support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-tsv`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-tsv`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a simple TSV string:
 
 ```rust
-use oak_tsv::{TsvParser, TsvLanguage};
+use data_text_tsv::{TsvParser, TsvLanguage};
 use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 
 fn main() {
@@ -29,7 +29,7 @@ fn main() {
 For more advanced scenarios, such as customized parsing or handling larger files, you can use the `TsvBuilder` to construct TSV AST manually.
 
 ```rust
-use oak_tsv::TsvBuilder;
+use data_text_tsv::TsvBuilder;
 // your code here
 ```
 
@@ -41,7 +41,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse massive TSV files when small changes occur:
 ```rust
-# use oak_tsv::{TsvParser, TsvLanguage};
+# use data_text_tsv::{TsvParser, TsvLanguage};
 # use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = TsvParser::new();
 # let mut session = ParseSession::<TsvLanguage>::default();
@@ -53,9 +53,9 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 ```
 
 ### 3. Diagnostics
-`oak-tsv` provides rich error contexts specifically tailored for TSV data:
+`data-text-tsv` provides rich error contexts specifically tailored for TSV data:
 ```rust
-# use oak_tsv::{TsvParser, TsvLanguage};
+# use data_text_tsv::{TsvParser, TsvLanguage};
 # use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = TsvParser::new();
 # let mut session = ParseSession::<TsvLanguage>::default();

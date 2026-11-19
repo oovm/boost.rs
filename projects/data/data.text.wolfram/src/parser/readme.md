@@ -13,7 +13,7 @@ The parser is responsible for understanding the hierarchical and operator-heavy 
 - **Flexible Function Call Parsing**: Supports standard `f[x]`, prefix `f@x`, and postfix `x//f` function call syntaxes.
 - **Pattern and Rule Recognition**: Specialized parsing logic for Wolfram's powerful pattern matching and rule-based programming constructs.
 - **Error Recovery**: Implements sophisticated error recovery mechanisms to continue parsing and provide multiple diagnostics even in the presence of syntax errors.
-- **Incremental Support**: Designed to work with the Oak incremental parsing framework, re-parsing only changed sections of the source.
+- **Incremental Support**: Designed to work with the incremental parsing framework, re-parsing only changed sections of the source.
 
 ## Parsing Process
 
@@ -26,8 +26,8 @@ The parser is responsible for understanding the hierarchical and operator-heavy 
 ## Usage Example
 
 ```rust
-use oak_wolfram::parser::WolframParser;
-use oak_wolfram::lexer::WolframLexer;
+use data_text_wolfram::parser::WolframParser;
+use data_text_wolfram::lexer::WolframLexer;
 
 fn main() {
     let source = "f[x] + g[y] * z";

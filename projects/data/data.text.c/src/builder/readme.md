@@ -1,3 +1,3 @@
 # C Builder
 
-This module provides c builder functionality for the Oaks project.
+This module provides c builder functionality for the Boost `data.text` project.

@@ -1,13 +1,13 @@
-# 🚀 oak-org-mode
+# 🚀 data-text-org-mode
 
-[![Crates.io](https://img.shields.io/crates/v/oak-org-mode.svg)](https://crates.io/crates/oak-org-mode)
-[![Documentation](https://docs.rs/oak-org-mode/badge.svg)](https://docs.rs/oak-org-mode)
+[![Crates.io](https://img.shields.io/crates/v/data-text-org-mode.svg)](https://crates.io/crates/data-text-org-mode)
+[![Documentation](https://docs.rs/data-text-org-mode/badge.svg)](https://docs.rs/data-text-org-mode)
 
-**Making ORG-MODE processing simple** — A high-performance, incremental ORG-MODE parser built on the Oak framework.
+**Making ORG-MODE processing simple** — A high-performance, incremental ORG-MODE parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-org-mode` is dedicated to providing industrial-grade parsing support for the ORG-MODE language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-org-mode` is dedicated to providing industrial-grade parsing support for the ORG-MODE language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

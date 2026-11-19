@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
 
-//! CSS selector subset DSL for Oak document queries.
+//! CSS selector subset DSL for document queries.
 //!
 //! Parsing and AST ownership live here. Execution against HTML trees is provided
 //! by `data-text-html` using DOM-compatible `ElementView` adapters.

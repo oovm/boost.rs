@@ -1,6 +1,6 @@
 # plotter-input-smiles
 
-SMILES 前端：Oak AST → [`MoleculeSpec` / `ReactionSpec`](../plotter.depiction/readme.md) / scene。
+SMILES 前端：syntax tree → [`MoleculeSpec` / `ReactionSpec`](../plotter.depiction/readme.md) / scene。
 
 纯分子与反应式都支持：`.` 分隔的片段合并成一个分子图（断开组分由描绘链横向排开），
 `>` / `>>` 分隔的反应式降成 `ReactionSpec`，试剂片段按箭头条件文本保留。

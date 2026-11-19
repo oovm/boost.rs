@@ -1,13 +1,13 @@
-# 🚀 oak-navigation
+# 🚀 language-navigation
 
-[![Crates.io](https://img.shields.io/crates/v/oak-navigation.svg)](https://crates.io/crates/oak-navigation)
-[![Documentation](https://docs.rs/oak-navigation/badge.svg)](https://docs.rs/oak-navigation)
+[![Crates.io](https://img.shields.io/crates/v/language-navigation.svg)](https://crates.io/crates/language-navigation)
+[![Documentation](https://docs.rs/language-navigation/badge.svg)](https://docs.rs/language-navigation)
 
-**Code Navigation Support for Oak Languages** — Traits and utilities for implementing "Go to Definition" and "Find All References" features.
+**Code Navigation Support for Languages** — Traits and utilities for implementing "Go to Definition" and "Find All References" features.
 
-## 🎯 Why oak-navigation?
+## 🎯 Why language-navigation?
 
-Code navigation is fundamental to developer productivity. `oak-navigation` provides the building blocks for implementing navigation features in any Oak-based language tool.
+Code navigation is fundamental to developer productivity. `language-navigation` provides the building blocks for implementing navigation features in any `data.text`-based language tool.
 
 ## ✨ Key Features
 
@@ -26,11 +26,11 @@ Code navigation is fundamental to developer productivity. `oak-navigation` provi
 
 ## 🔗 Ecosystem Integration
 
-Used by `oak-lsp` for LSP navigation features, `oak-mcp` for AI-assisted navigation, and custom IDE extensions.
+Used by `language-server` for LSP navigation features, `language-mcp` for AI-assisted navigation, and custom IDE extensions.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-navigation).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-navigation).
 
 ## 🤝 Contributing
 

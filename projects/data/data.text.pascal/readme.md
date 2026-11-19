@@ -1,13 +1,13 @@
-# 🚀 Oak Pascal Parser
+# 🚀 Pascal Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-pascal.svg)](https://crates.io/crates/oak-pascal)
-[![Documentation](https://docs.rs/oak-pascal/badge.svg)](https://docs.rs/oak-pascal)
+[![Crates.io](https://img.shields.io/crates/v/data-text-pascal.svg)](https://crates.io/crates/data-text-pascal)
+[![Documentation](https://docs.rs/data-text-pascal/badge.svg)](https://docs.rs/data-text-pascal)
 
-**Structured Programming with Modern Speed** — A high-performance, incremental Pascal parser built on the Oak framework. Optimized for legacy codebase maintenance, educational tools, and modern IDE integration for the Pascal language.
+**Structured Programming with Modern Speed** — A high-performance, incremental Pascal parser built on the `data.text` framework. Optimized for legacy codebase maintenance, educational tools, and modern IDE integration for the Pascal language.
 
 ## 🎯 Project Vision
 
-Pascal is a cornerstone of structured programming, still widely used in education and specialized industrial applications. `oak-pascal` aims to provide a robust, modern, Rust-powered infrastructure for parsing Pascal that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex Pascal projects in real-time. Whether you are building custom linters, automated code migration tools, or sophisticated IDE extensions for Delphi or Free Pascal, `oak-pascal` provides the high-fidelity AST and efficiency needed to support the Pascal ecosystem.
+Pascal is a cornerstone of structured programming, still widely used in education and specialized industrial applications. `data-text-pascal` aims to provide a robust, modern, Rust-powered infrastructure for parsing Pascal that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex Pascal projects in real-time. Whether you are building custom linters, automated code migration tools, or sophisticated IDE extensions for Delphi or Free Pascal, `data-text-pascal` provides the high-fidelity AST and efficiency needed to support the Pascal ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Pascal is a cornerstone of structured programming, still widely used in educatio
     - **Units & Modules**: Support for modular programming constructs and unit interfaces.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 

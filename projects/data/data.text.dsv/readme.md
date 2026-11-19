@@ -1,13 +1,13 @@
-# 🚀 Oak CSV Parser
+# 🚀 CSV Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-csv.svg)](https://crates.io/crates/oak-csv)
-[![Documentation](https://docs.rs/oak-csv/badge.svg)](https://docs.rs/oak-csv)
+[![Crates.io](https://img.shields.io/crates/v/data-text-csv.svg)](https://crates.io/crates/data-text-csv)
+[![Documentation](https://docs.rs/data-text-csv/badge.svg)](https://docs.rs/data-text-csv)
 
-**High-Performance Tabular Data Processing** — A high-performance, incremental CSV parser built on the Oak framework. Optimized for large-scale data analysis, real-time streaming, and robust handling of tabular data formats.
+**High-Performance Tabular Data Processing** — A high-performance, incremental CSV parser built on the `data.text` framework. Optimized for large-scale data analysis, real-time streaming, and robust handling of tabular data formats.
 
 ## 🎯 Project Vision
 
-Comma-Separated Values (CSV) are the universal language of data exchange, used across every industry from finance to scientific research. `oak-csv` provides a modern, Rust-powered infrastructure for analyzing and processing tabular data with extreme efficiency. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive data tools that can handle gigabyte-scale files with sub-millisecond updates. Whether you are building data validation engines, automated ETL pipelines, or sophisticated spreadsheet-like editors, `oak-csv` provides the robust, efficient foundation you need for high-fidelity data extraction.
+Comma-Separated Values (CSV) are the universal language of data exchange, used across every industry from finance to scientific research. `data-text-csv` provides a modern, Rust-powered infrastructure for analyzing and processing tabular data with extreme efficiency. By utilizing incremental parsing capabilities, it enables the creation of highly responsive data tools that can handle gigabyte-scale files with sub-millisecond updates. Whether you are building data validation engines, automated ETL pipelines, or sophisticated spreadsheet-like editors, `data-text-csv` provides the robust, efficient foundation you need for high-fidelity data extraction.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ Comma-Separated Values (CSV) are the universal language of data exchange, used a
     - **Headers & Fields**: Automatic identification of header rows and field-level metadata.
     - **Delimiters**: Robust handling of various delimiters (comma, tab, semicolon) and line endings.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to handle malformed data gracefully, providing precise diagnostics for unclosed quotes, mismatched column counts, or invalid encoding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent data discovery and structured analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent data discovery and structured analysis.
 
 ## 🏗️ Architecture
 
@@ -29,4 +29,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

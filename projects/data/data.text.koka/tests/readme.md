@@ -1,6 +1,6 @@
 # 🧪 Koka Parser Test Suite
 
-`oak-koka` employs a rigorous testing methodology to ensure accurate parsing across the diverse and evolving Koka ecosystem (JVM, Android, Native, and JS).
+`data-text-koka` employs a rigorous testing methodology to ensure accurate parsing across the diverse and evolving Koka ecosystem (JVM, Android, Native, and JS).
 
 ## 📊 Test Coverage
 
@@ -31,10 +31,10 @@ Ensures the parser remains stable when facing:
 
 ```bash
 # Run all Koka parser tests
-cargo test -p oak-koka
+cargo test -p data-text-koka
 
 # Run specific integration tests
-cargo test -p oak-koka --test parser_tests
+cargo test -p data-text-koka --test parser_tests
 ```
 
 ## 📈 Quality Assurance

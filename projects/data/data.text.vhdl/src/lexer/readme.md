@@ -35,7 +35,7 @@ The primary goal of this module is to provide a robust and efficient way to toke
 ## Usage Example
 
 ```rust
-use oak_vhdl::lexer::VhdlLexer;
+use data_text_vhdl::lexer::VhdlLexer;
 
 fn main() {
     let vhdl_source = r#"

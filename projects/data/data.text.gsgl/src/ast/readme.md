@@ -1,3 +1,3 @@
 # Gsgl Ast
 
-This module provides gsgl ast functionality for the Oaks project.
+This module provides gsgl ast functionality for the Boost `data.text` project.

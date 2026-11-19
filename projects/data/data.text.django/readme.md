@@ -1,13 +1,13 @@
-# 🚀 Oak Django Template Parser
+# 🚀 Django Template Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-django.svg)](https://crates.io/crates/oak-django)
-[![Documentation](https://docs.rs/oak-django/badge.svg)](https://docs.rs/oak-django)
+[![Crates.io](https://img.shields.io/crates/v/data-text-django.svg)](https://crates.io/crates/data-text-django)
+[![Documentation](https://docs.rs/data-text-django/badge.svg)](https://docs.rs/data-text-django)
 
-**Dynamic Web Templating with Speed and Safety** — A high-performance, incremental Django template parser built on the Oak framework. Optimized for web development, server-side rendering, and modern developer tooling.
+**Dynamic Web Templating with Speed and Safety** — A high-performance, incremental Django template parser built on the `data.text` framework. Optimized for web development, server-side rendering, and modern developer tooling.
 
 ## 🎯 Project Vision
 
-Django templates are a cornerstone of the Python web ecosystem, providing a powerful and extensible way to generate dynamic HTML. `oak-django` aims to provide a robust, modern, Rust-powered infrastructure for parsing Django templates that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, linting tools, and automated refactoring utilities that can handle complex template hierarchies in real-time. Whether you are building custom template validators, automated theme generators, or sophisticated IDE extensions, `oak-django` provides the high-fidelity AST and efficiency needed to enhance the Django developer experience.
+Django templates are a cornerstone of the Python web ecosystem, providing a powerful and extensible way to generate dynamic HTML. `data-text-django` aims to provide a robust, modern, Rust-powered infrastructure for parsing Django templates that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, linting tools, and automated refactoring utilities that can handle complex template hierarchies in real-time. Whether you are building custom template validators, automated theme generators, or sophisticated IDE extensions, `data-text-django` provides the high-fidelity AST and efficiency needed to enhance the Django developer experience.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Django templates are a cornerstone of the Python web ecosystem, providing a powe
     - **Control Flow**: Detailed tracking of `{% if %}`, `{% for %}`, and other control flow tags.
     - **Comments & Whitespace**: Retains all trivia, including `{# comment #}`, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active template development.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent template discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent template discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

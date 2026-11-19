@@ -1,6 +1,6 @@
 use data_text_core::{Language, LanguageCategory};
 
-/// Oak language configuration for VOS.
+/// language configuration for VOS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct VosLanguage;
 

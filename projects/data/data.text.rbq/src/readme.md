@@ -1,6 +1,6 @@
 # 🛠️ Developer Guide
 
-Rbq support for the Oak language framework.
+Rbq support for the `data.text` language framework.
 
 This crate provides lexing, parsing, AST generation, and LSP support for the RBQ language.
 

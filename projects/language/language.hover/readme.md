@@ -1,13 +1,13 @@
-# 🚀 oak-hover
+# 🚀 language-hover
 
-[![Crates.io](https://img.shields.io/crates/v/oak-hover.svg)](https://crates.io/crates/oak-hover)
-[![Documentation](https://docs.rs/oak-hover/badge.svg)](https://docs.rs/oak-hover)
+[![Crates.io](https://img.shields.io/crates/v/language-hover.svg)](https://crates.io/crates/language-hover)
+[![Documentation](https://docs.rs/language-hover/badge.svg)](https://docs.rs/language-hover)
 
 **Hover Information Provider for the `data.text` family** — A lightweight, trait-based library for providing hover information in editors and IDEs.
 
-## 🎯 Why oak-hover?
+## 🎯 Why language-hover?
 
-Hover information is essential for modern developer experience — it provides instant feedback about symbols, types, and documentation without leaving the editor. `oak-hover` provides a simple, unified interface for implementing hover support in any Oak-based language parser.
+Hover information is essential for modern developer experience — it provides instant feedback about symbols, types, and documentation without leaving the editor. `language-hover` provides a simple, unified interface for implementing hover support in any `data.text`-based language parser.
 
 ## ✨ Key Features
 
@@ -25,11 +25,11 @@ The crate provides two main types:
 
 ## 🔗 Ecosystem Integration
 
-Works seamlessly with `oak-lsp` for full Language Server Protocol support and any editor that displays hover information.
+Works seamlessly with `language-server` for full Language Server Protocol support and any editor that displays hover information.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-hover).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-hover).
 
 ## 🤝 Contributing
 

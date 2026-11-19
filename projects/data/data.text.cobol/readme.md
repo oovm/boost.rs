@@ -1,4 +1,4 @@
-# oak-cobol
+# data-text-cobol
 
 High-performance incremental COBOL parser for the `data.text` family.
 

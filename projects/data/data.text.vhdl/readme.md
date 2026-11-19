@@ -1,13 +1,13 @@
-# 🚀 oak-vhdl
+# 🚀 data-text-vhdl
 
-[![Crates.io](https://img.shields.io/crates/v/oak-vhdl.svg)](https://crates.io/crates/oak-vhdl)
-[![Documentation](https://docs.rs/oak-vhdl/badge.svg)](https://docs.rs/oak-vhdl)
+[![Crates.io](https://img.shields.io/crates/v/data-text-vhdl.svg)](https://crates.io/crates/data-text-vhdl)
+[![Documentation](https://docs.rs/data-text-vhdl/badge.svg)](https://docs.rs/data-text-vhdl)
 
-**High-Fidelity Hardware Description Parsing** — A high-performance, incremental VHDL parser built on the Oak framework. Optimized for industrial-grade FPGA/ASIC design tools, formal verification, and real-time hardware development environments.
+**High-Fidelity Hardware Description Parsing** — A high-performance, incremental VHDL parser built on the `data.text` framework. Optimized for industrial-grade FPGA/ASIC design tools, formal verification, and real-time hardware development environments.
 
 ## 🎯 Project Vision
 
-VHDL is a foundational language for hardware description, but its verbose syntax and complex scoping rules make it challenging for traditional parsers. `oak-vhdl` aims to provide a robust, modern, Rust-powered infrastructure for parsing VHDL that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, linting tools, and synthesis front-ends that can handle massive hardware designs in real-time. Our goal is to empower hardware engineers with the same level of sophisticated tooling available in the software world.
+VHDL is a foundational language for hardware description, but its verbose syntax and complex scoping rules make it challenging for traditional parsers. `data-text-vhdl` aims to provide a robust, modern, Rust-powered infrastructure for parsing VHDL that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, linting tools, and synthesis front-ends that can handle massive hardware designs in real-time. Our goal is to empower hardware engineers with the same level of sophisticated tooling available in the software world.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ VHDL is a foundational language for hardware description, but its verbose syntax
     - **Packages & Libraries**: Robust support for VHDL's modularity and reusable component ecosystem.
     - **Types & Subtypes**: Detailed tracking of complex data types, records, and arrays.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience when writing complex hardware logic.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent hardware design discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent hardware design discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -31,4 +31,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

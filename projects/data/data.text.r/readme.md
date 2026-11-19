@@ -1,13 +1,13 @@
-# 🚀 Oak R Parser
+# 🚀 R Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-r.svg)](https://crates.io/crates/oak-r)
-[![Documentation](https://docs.rs/oak-r/badge.svg)](https://docs.rs/oak-r)
+[![Crates.io](https://img.shields.io/crates/v/data-text-r.svg)](https://crates.io/crates/data-text-r)
+[![Documentation](https://docs.rs/data-text-r/badge.svg)](https://docs.rs/data-text-r)
 
-**Statistical Power, Modern Engineering** — A high-performance, incremental R parser built on the Oak framework. Optimized for data science workflows, large-scale statistical analysis, and real-time developer tools.
+**Statistical Power, Modern Engineering** — A high-performance, incremental R parser built on the `data.text` framework. Optimized for data science workflows, large-scale statistical analysis, and real-time developer tools.
 
 ## 🎯 Project Vision
 
-R is the language of choice for statistical computing and graphics, but its flexible and sometimes idiosyncratic syntax can be challenging for robust tool development. `oak-r` provides a modern, Rust-powered infrastructure for parsing R that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, code analyzers, and automated reporting tools that can handle massive R scripts and complex data processing pipelines in real-time.
+R is the language of choice for statistical computing and graphics, but its flexible and sometimes idiosyncratic syntax can be challenging for robust tool development. `data-text-r` provides a modern, Rust-powered infrastructure for parsing R that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, code analyzers, and automated reporting tools that can handle massive R scripts and complex data processing pipelines in real-time.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ R is the language of choice for statistical computing and graphics, but its flex
     - **Statistical Formulas**: Robust handling of R's formula notation (`~`).
     - **Comments & Formatting**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during iterative analysis.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent data structure discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent data structure discovery.
 
 ## 🏗️ Architecture
 
@@ -31,4 +31,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

@@ -12,7 +12,7 @@ This module defines the abstract syntax tree structure for the Vampire theorem p
 
 ```rust
 #![feature(new_range_api)]
-use oak_vampire::ast::*;
+use data_text_vampire::ast::*;
 use core::range::Range;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

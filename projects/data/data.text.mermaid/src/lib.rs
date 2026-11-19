@@ -1,6 +1,6 @@
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-//! Mermaid support for the Oak language framework.
+//! Mermaid support for the `data.text` language framework.
 
 /// Abstract Syntax Tree (AST) definitions for Mermaid.
 pub mod ast;

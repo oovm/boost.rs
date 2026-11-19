@@ -1,3 +1,3 @@
 # Html Ast
 
-This module provides html ast functionality for the Oaks project.
+This module provides html ast functionality for the Boost `data.text` project.

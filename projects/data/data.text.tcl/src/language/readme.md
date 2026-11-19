@@ -1,6 +1,6 @@
 # Tcl Language Definition
 
-This module contains the metadata and configuration options for the Tcl language within the Oak framework.
+This module contains the metadata and configuration options for the Tcl language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -22,4 +22,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing commands, scripts, and expressions.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the Tcl source file.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of Tcl's unique command-centric syntax.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of Tcl's unique command-centric syntax.

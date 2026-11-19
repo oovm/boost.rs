@@ -1,13 +1,13 @@
-# 🚀 Oak SCSS Parser
+# 🚀 SCSS Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-scss.svg)](https://crates.io/crates/oak-scss)
-[![Documentation](https://docs.rs/oak-scss/badge.svg)](https://docs.rs/oak-scss)
+[![Crates.io](https://img.shields.io/crates/v/data-text-scss.svg)](https://crates.io/crates/data-text-scss)
+[![Documentation](https://docs.rs/data-text-scss/badge.svg)](https://docs.rs/data-text-scss)
 
-**Modern Styling, Industrial Performance** — A high-performance, incremental SCSS parser built on the Oak framework. Designed for building next-generation CSS tools, IDEs, and static analyzers for the modern web.
+**Modern Styling, Industrial Performance** — A high-performance, incremental SCSS parser built on the `data.text` framework. Designed for building next-generation CSS tools, IDEs, and static analyzers for the modern web.
 
 ## 🎯 Project Vision
 
-SCSS is the cornerstone of modern web styling, enabling complex design systems through its powerful syntax. `oak-scss` aims to provide a robust, Rust-powered infrastructure for parsing SCSS that is both accurate and incredibly fast. By leveraging Oak's incremental parsing architecture, we enable the creation of highly responsive tools that can handle massive stylesheets with ease. Whether you are building a custom linter, a CSS-in-JS generator, or an advanced IDE extension, `oak-scss` provides the high-fidelity AST and sub-millisecond performance required to keep up with the evolving CSS ecosystem.
+SCSS is the cornerstone of modern web styling, enabling complex design systems through its powerful syntax. `data-text-scss` aims to provide a robust, Rust-powered infrastructure for parsing SCSS that is both accurate and incredibly fast. By leveraging incremental parsing architecture, we enable the creation of highly responsive tools that can handle massive stylesheets with ease. Whether you are building a custom linter, a CSS-in-JS generator, or an advanced IDE extension, `data-text-scss` provides the high-fidelity AST and sub-millisecond performance required to keep up with the evolving CSS ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ SCSS is the cornerstone of modern web styling, enabling complex design systems t
     - **Nesting & Parent Selectors**: Robust handling of CSS nesting and the `&` operator.
     - **Comments & Trivia**: Retains all trivia (whitespace and comments), enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Gracefully recovers from syntax errors during active development, providing clear and actionable diagnostics.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent style discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent style discovery.
 
 ## 🏗️ Architecture
 

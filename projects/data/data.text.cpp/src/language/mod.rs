@@ -2,7 +2,7 @@
 use crate::{ast::CppRoot, lexer::CppLexer};
 use data_text_core::{Language, LanguageCategory};
 
-/// C++ language implementation for the Oaks framework.
+/// C++ language implementation for the `data.text` framework.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CppLanguage {}

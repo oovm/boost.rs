@@ -38,7 +38,7 @@ pub struct CompoundSelector {
     pub simple: Vec<SimpleSelector>,
 }
 
-/// Supported simple selector variants in the Oak subset.
+/// Supported simple selector variants in the supported subset.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SimpleSelector {

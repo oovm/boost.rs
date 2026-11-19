@@ -180,7 +180,7 @@ pub fn elements_by_local_name<'a>(element: &'a XmlElement, expected: &str) -> Re
     elements_by_xpath(element, &xpath)
 }
 
-/// Collects elements matched by an Oak XPath subset rooted at `element`.
+/// Collects elements matched by an XPath subset rooted at `element`.
 pub fn elements_by_xpath<'a>(element: &'a XmlElement, xpath: &str) -> Result<Vec<&'a XmlElement>, FormatError> {
     elements_by_xpath_with_limits(element, xpath, QueryLimits::package_member())
 }

@@ -1,13 +1,13 @@
-# 🚀 oak-idl
+# 🚀 data-text-idl
 
-[![Crates.io](https://img.shields.io/crates/v/oak-idl.svg)](https://crates.io/crates/oak-idl)
-[![Documentation](https://docs.rs/oak-idl/badge.svg)](https://docs.rs/oak-idl)
+[![Crates.io](https://img.shields.io/crates/v/data-text-idl.svg)](https://crates.io/crates/data-text-idl)
+[![Documentation](https://docs.rs/data-text-idl/badge.svg)](https://docs.rs/data-text-idl)
 
-**Making IDL processing simple** — A high-performance, incremental IDL parser built on the Oak framework.
+**Making IDL processing simple** — A high-performance, incremental IDL parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-idl` is dedicated to providing industrial-grade parsing support for the IDL language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-idl` is dedicated to providing industrial-grade parsing support for the IDL language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

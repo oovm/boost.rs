@@ -40,7 +40,7 @@ The primary goal of this module is to provide a fast, accurate, and feature-rich
 ## Usage Example
 
 ```rust
-use oak_valkyrie::lexer::ValkyrieLexer;
+use data_text_valkyrie::lexer::ValkyrieLexer;
 
 fn main() {
     let valkyrie_source = r#"

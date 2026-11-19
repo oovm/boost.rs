@@ -118,7 +118,7 @@ pub fn dispatch_statement(
             _ => super::prepared::execute_utility(&utility, runtime, session),
         };
     }
-    // DDL resolves against the local schema registry before the Oak session
+    // DDL resolves against the local schema registry before the `data.text` session
     // parser, so a `CREATE` / `ALTER` / `DROP` outside the supported subset is
     // reported as such instead of being misclassified as an unknown table.
     if let Some(object) = parse_pg_object_statement(trimmed).map_err(|error| {

@@ -1,13 +1,13 @@
-# 🚀 oak-purescript
+# 🚀 data-text-purescript
 
-[![Crates.io](https://img.shields.io/crates/v/oak-purescript.svg)](https://crates.io/crates/oak-purescript)
-[![Documentation](https://docs.rs/oak-purescript/badge.svg)](https://docs.rs/oak-purescript)
+[![Crates.io](https://img.shields.io/crates/v/data-text-purescript.svg)](https://crates.io/crates/data-text-purescript)
+[![Documentation](https://docs.rs/data-text-purescript/badge.svg)](https://docs.rs/data-text-purescript)
 
-**Making PURESCRIPT processing simple** — A high-performance, incremental PURESCRIPT parser built on the Oak framework.
+**Making PURESCRIPT processing simple** — A high-performance, incremental PURESCRIPT parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-purescript` is dedicated to providing industrial-grade parsing support for the PURESCRIPT language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-purescript` is dedicated to providing industrial-grade parsing support for the PURESCRIPT language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

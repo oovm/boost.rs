@@ -1,6 +1,6 @@
 //! 模块事实层：模块记录类型与事实来源合同。
 //!
-//! 具体语言适配层（例如 JS/TS 的 Oak 前端）实现 [`ModuleFactSource`]，把源码解析成
+//! 具体语言适配层（例如 JS/TS 的 `data.text` 前端）实现 [`ModuleFactSource`]，把源码解析成
 //! [`record::ModuleRecord`]；本 crate 不引入任何语法前端，也不做正则识别。
 
 pub mod record;

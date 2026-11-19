@@ -15,7 +15,7 @@ This module defines the Abstract Syntax Tree (AST) structure for CSS code.
 ## Usage
 
 ```rust
-use oak_css::{CssRoot, CssNode, RuleSet, Declaration, Selector, Value};
+use data_text_css::{CssRoot, CssNode, RuleSet, Declaration, Selector, Value};
 
 // Create a simple CSS AST
 let ast = CssRoot {

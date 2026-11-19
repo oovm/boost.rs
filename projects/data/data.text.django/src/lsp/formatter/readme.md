@@ -1,3 +1,3 @@
 # Django LSP Formatter
 
-This module provides django lsp formatter functionality for the Oaks project.
+This module provides django lsp formatter functionality for the Boost `data.text` project.

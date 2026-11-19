@@ -1,8 +1,8 @@
 # 🛠️ CSV Parser Developer Guide
 
-Csv support for the Oak language framework.
+Csv support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-csv`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-csv`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a simple CSV string:
 
 ```rust
-use oak_csv::{CsvParser, CsvLanguage};
+use data_text_csv::{CsvParser, CsvLanguage};
 use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 
 fn main() {
@@ -43,7 +43,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse massive CSV files when small changes occur:
 ```rust
-# use oak_csv::{CsvParser, CsvLanguage};
+# use data_text_csv::{CsvParser, CsvLanguage};
 # use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = CsvParser::new();
 # let mut session = ParseSession::<CsvLanguage>::default();
@@ -55,9 +55,9 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 ```
 
 ### 3. Diagnostics
-`oak-csv` provides rich error contexts specifically tailored for CSV data:
+`data-text-csv` provides rich error contexts specifically tailored for CSV data:
 ```rust
-# use oak_csv::{CsvParser, CsvLanguage};
+# use data_text_csv::{CsvParser, CsvLanguage};
 # use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 # let parser = CsvParser::new();
 # let mut session = ParseSession::<CsvLanguage>::default();

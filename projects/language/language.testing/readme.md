@@ -1,13 +1,13 @@
-# 🚀 oak-testing
+# 🚀 language-testing
 
-[![Crates.io](https://img.shields.io/crates/v/oak-testing.svg)](https://crates.io/crates/oak-testing)
-[![Documentation](https://docs.rs/oak-testing/badge.svg)](https://docs.rs/oak-testing)
+[![Crates.io](https://img.shields.io/crates/v/language-testing.svg)](https://crates.io/crates/language-testing)
+[![Documentation](https://docs.rs/language-testing/badge.svg)](https://docs.rs/language-testing)
 
-**Testing Utilities for Oak Parsers** — Helpers and macros for testing Oak language implementations.
+**Testing Utilities for `data.text` Parsers** — Helpers and macros for testing `data.text` language implementations.
 
-## 🎯 Why oak-testing?
+## 🎯 Why language-testing?
 
-Testing parsers requires specialized utilities for comparing syntax trees, checking error recovery, and validating incremental parsing. `oak-testing` provides these tools for straightforward and maintainable test writing.
+Testing parsers requires specialized utilities for comparing syntax trees, checking error recovery, and validating incremental parsing. `language-testing` provides these tools for straightforward and maintainable test writing.
 
 ## ✨ Key Features
 
@@ -25,11 +25,11 @@ Testing parsers requires specialized utilities for comparing syntax trees, check
 
 ## 🔗 Ecosystem Integration
 
-Used by all Oak language parsers for unit tests, integration tests for LSP features, and CI pipelines.
+Used by all `data.text` language parsers for unit tests, integration tests for LSP features, and CI pipelines.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-testing).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-testing).
 
 ## 🤝 Contributing
 

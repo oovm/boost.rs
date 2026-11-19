@@ -1,6 +1,6 @@
 # 🧪 PHP Parser Test Suite
 
-`oak-php` employs a robust testing methodology to ensure accurate parsing across the vast and evolving PHP ecosystem.
+`data-text-php` employs a robust testing methodology to ensure accurate parsing across the vast and evolving PHP ecosystem.
 
 ## 📊 Test Coverage
 
@@ -29,10 +29,10 @@ Ensures the parser remains functional when facing:
 
 ```bash
 # Run all PHP parser tests
-cargo test -p oak-php
+cargo test -p data-text-php
 
 # Run specific integration tests
-cargo test -p oak-php --test parser_tests
+cargo test -p data-text-php --test parser_tests
 ```
 
 ## 📈 Quality Assurance

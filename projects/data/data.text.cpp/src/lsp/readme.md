@@ -1,3 +1,3 @@
 # Cpp Lsp
 
-This module provides cpp lsp functionality for the Oaks project.
+This module provides cpp lsp functionality for the Boost `data.text` project.

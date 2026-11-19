@@ -1,6 +1,6 @@
 //! Language-neutral math semantics carried by the document IR.
 //!
-//! Syntax stays in Oak. This module only describes the mathematical
+//! Syntax stays in `data.text`. This module only describes the mathematical
 //! structure a document contains: sequences, atoms with their mathematical
 //! class, scripts, fractions, radicals, delimited bodies and environments.
 //! It deliberately carries no tokens, brackets, escapes or parser nodes.

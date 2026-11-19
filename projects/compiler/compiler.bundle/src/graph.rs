@@ -1,4 +1,4 @@
-//! 模块图组装：入口 → [`ModuleGraph`]，把 `module`（Oak 事实）与 `resolve`
+//! 模块图组装：入口 → [`ModuleGraph`]，把 `module`（`data.text` 事实）与 `resolve`
 //! （解析身份）粘成可达模块集合。本层不做活跃判定、不做链接与分包。
 //!
 //! 身份口径：节点以 canonical 文件路径为身份（`resolve` 已保证包实例区分）；
@@ -90,7 +90,7 @@ pub enum EdgeKind {
 /// 节点类别：JS 模块、CJS 模块、不透明样式节点或不透明 JSON 值节点。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
-    /// JS/TS 模块（ESM）：经 Oak 事实收集参与链接与分包。
+    /// JS/TS 模块（ESM）：经 `data.text` 事实收集参与链接与分包。
     Js,
     /// CommonJS 模块：图边由 `require` 事实给出，发射时装填互操作壳
     /// （`module`/`exports`/`require` 材料 + default/具名导出合成），
@@ -109,7 +109,7 @@ pub struct ModuleNode {
     pub kind: NodeKind,
     /// 解析身份（含包实例）。
     pub resolved: Resolved,
-    /// Oak 模块事实。
+    /// `data.text` 模块事实。
     pub record: ModuleRecord,
     /// 参与活跃图的静态边（import/re-export），按源码顺序。
     pub static_edges: Vec<ModuleEdge>,
@@ -288,7 +288,7 @@ pub fn build_graph_with_roots(
     graph
 }
 
-/// 展开单个文件为节点：经注入端口读源码 → Oak 事实 → 逐说明符解析身份。
+/// 展开单个文件为节点：经注入端口读源码 → `data.text` 事实 → 逐说明符解析身份。
 /// `edge_resolved` 逐边登记完整解析结果（stub 等身份不能只按路径重建）。
 fn expand(
     facts: &dyn ModuleFactSource,

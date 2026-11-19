@@ -1,6 +1,6 @@
 //! 文件级 `[gate(...)]` / `[when(...)]`：各自独立解析；合并规则不在本模块定义。
 //!
-//! Oak 将文件前导 attribute 挂在紧随其后的 `namespace …;` 的 `annotations` 上。
+//! `data.text` 将文件前导 attribute 挂在紧随其后的 `namespace …;` 的 `annotations` 上。
 //! 仅当首个根项为分号式 namespace，且 annotations **仅含** `gate` / `when` 时视为文件级条件附着点。
 
 use std::{collections::BTreeSet, fs, path::PathBuf};
@@ -19,7 +19,7 @@ use super::{
 ///
 /// gate 轴：有 gate 声明时必须全部 Enabled（空 gate 恒通过）。
 /// when 轴：0 条恒通过；恰好 1 条按 target 求值；2+ 条视为未规定语义 → 不通过。
-/// Oak parser assumes LF line endings. Normalize CRLF→LF before parsing so
+/// parser assumes LF line endings. Normalize CRLF→LF before parsing so
 /// Windows CI checkout (auto CRLF) and local (LF) behave identically.
 fn normalize_line_endings(source: &str) -> String {
     source.replace("\r\n", "\n").replace('\r', "\n")

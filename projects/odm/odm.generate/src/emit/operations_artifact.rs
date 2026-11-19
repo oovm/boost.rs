@@ -30,7 +30,7 @@ pub enum OperationArtifactError {
 }
 
 /// Versioned, strict operation projection artifact that Iris can consume
-/// without re-parsing VOS Oak source.
+/// without re-parsing VOS source.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]

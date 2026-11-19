@@ -1,6 +1,6 @@
 #![warn(missing_docs)]
 
-//! XPath subset DSL for Oak document queries.
+//! XPath subset DSL for document queries.
 //!
 //! Parsing and AST ownership live here. Execution against XML trees is provided
 //! by `data-text-xml` using namespace-aware `ElementView` adapters.

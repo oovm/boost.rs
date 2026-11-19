@@ -1,13 +1,13 @@
-# 🚀 oak-fsharp
+# 🚀 data-text-fsharp
 
-[![Crates.io](https://img.shields.io/crates/v/oak-fsharp.svg)](https://crates.io/crates/oak-fsharp)
-[![Documentation](https://docs.rs/oak-fsharp/badge.svg)](https://docs.rs/oak-fsharp)
+[![Crates.io](https://img.shields.io/crates/v/data-text-fsharp.svg)](https://crates.io/crates/data-text-fsharp)
+[![Documentation](https://docs.rs/data-text-fsharp/badge.svg)](https://docs.rs/data-text-fsharp)
 
-**Making F# processing simple** — A high-performance, incremental F# parser built on the Oak framework.
+**Making F# processing simple** — A high-performance, incremental F# parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-fsharp` is dedicated to providing industrial-grade parsing support for the F# language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-fsharp` is dedicated to providing industrial-grade parsing support for the F# language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@
 
 ## 🏗️ Architecture
 
-`oak-fsharp` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-fsharp` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

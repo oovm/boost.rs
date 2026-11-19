@@ -8,7 +8,7 @@ use {futures::Future, data_text_core::tree::RedNode, language_server::Vfs, langu
 /// Language service implementation for Julia.
 ///
 /// Provides IDE features such as diagnostics and workspace management
-/// by integrating with the `oak-lsp` framework and `Vfs`.
+/// by integrating with the `language-server` framework and `Vfs`.
 #[cfg(feature = "lsp")]
 pub struct JuliaLanguageService<V: Vfs> {
     vfs: V,

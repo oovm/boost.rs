@@ -1,8 +1,8 @@
 # 🛠️ J Parser Developer Guide
 
-J support for the Oak language framework.
+J support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-j`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-j`.
 
 ## 🚀 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing J source code:
 
 ```rust
-use oak_j::{JParser, JLanguage};
+use data_text_j::{JParser, JLanguage};
 use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
@@ -42,7 +42,7 @@ After successful parsing, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 When the source code changes slightly, there's no need to re-parse the entire document:
 ```rust
-use oak_j::{JParser, JLanguage};
+use data_text_j::{JParser, JLanguage};
 use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 // Assume we already have a parser instance
@@ -56,10 +56,10 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 ```
 
 ### 3. Diagnostics
-`oak-j` provides rich error context:
+`data-text-j` provides rich error context:
 
 ```rust
-# use oak_j::{JParser, JLanguage};
+# use data_text_j::{JParser, JLanguage};
 # use data_text_core::{SourceText, Parser, parser::ParseSession};
 # let config = JLanguage::default();
 # let parser = JParser::new(&config);

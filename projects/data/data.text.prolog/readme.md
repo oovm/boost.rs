@@ -1,13 +1,13 @@
-# 🚀 oak-prolog
+# 🚀 data-text-prolog
 
-[![Crates.io](https://img.shields.io/crates/v/oak-prolog.svg)](https://crates.io/crates/oak-prolog)
-[![Documentation](https://docs.rs/oak-prolog/badge.svg)](https://docs.rs/oak-prolog)
+[![Crates.io](https://img.shields.io/crates/v/data-text-prolog.svg)](https://crates.io/crates/data-text-prolog)
+[![Documentation](https://docs.rs/data-text-prolog/badge.svg)](https://docs.rs/data-text-prolog)
 
-**Making PROLOG processing simple** — A high-performance, incremental PROLOG parser built on the Oak framework.
+**Making PROLOG processing simple** — A high-performance, incremental PROLOG parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-prolog` is dedicated to providing industrial-grade parsing support for the PROLOG language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-prolog` is dedicated to providing industrial-grade parsing support for the PROLOG language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

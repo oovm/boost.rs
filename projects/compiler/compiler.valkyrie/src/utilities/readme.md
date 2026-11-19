@@ -29,7 +29,7 @@ flowchart TB
 - Legion/Asgard 库函数返回各自领域错误，在 CLI 或 N-API 层由 `display_failure` 生成展示文本。
 - `report` 只负责展示，不参与领域错误的产生。
 
-格式化、lint、语义着色归属 **`compiler::services`**；Oak 提供语法事实与 edits。`utilities` 至多提供中性文本机制。
+格式化、lint、语义着色归属 **`compiler::services`**；`data.text` 提供语法事实与 edits。`utilities` 至多提供中性文本机制。
 
 ## 宏
 

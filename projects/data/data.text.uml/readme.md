@@ -1,13 +1,13 @@
-# 🚀 Oak UML Model
+# 🚀 UML Model
 
-[![Crates.io](https://img.shields.io/crates/v/oak-uml.svg)](https://crates.io/crates/oak-uml)
-[![Documentation](https://docs.rs/oak-uml/badge.svg)](https://docs.rs/oak-uml)
+[![Crates.io](https://img.shields.io/crates/v/data-text-uml.svg)](https://crates.io/crates/data-text-uml)
+[![Documentation](https://docs.rs/data-text-uml/badge.svg)](https://docs.rs/data-text-uml)
 
-**Standardized Modeling, Reimagined for Performance** — A high-performance, incremental Unified Modeling Language (UML) semantic model built on the Oak framework. Optimized for large-scale system design, automated modeling toolchains, and intelligent architectural analysis.
+**Standardized Modeling, Reimagined for Performance** — A high-performance, incremental Unified Modeling Language (UML) semantic model built on the `data.text` framework. Optimized for large-scale system design, automated modeling toolchains, and intelligent architectural analysis.
 
 ## 🎯 Project Vision
 
-UML remains the industry standard for visualizing, specifying, constructing, and documenting software systems. `oak-uml` provides a modern, Rust-powered semantic infrastructure for working with UML models with extreme efficiency. By leveraging Oak's incremental parsing and modeling capabilities, it enables the creation of highly responsive design tools that can analyze and validate massive system models in real-time. Our goal is to provide the most robust and efficient foundation for the next generation of UML-powered developer and architect tools.
+UML remains the industry standard for visualizing, specifying, constructing, and documenting software systems. `data-text-uml` provides a modern, Rust-powered semantic infrastructure for working with UML models with extreme efficiency. By leveraging incremental parsing and modeling capabilities, it enables the creation of highly responsive design tools that can analyze and validate massive system models in real-time. Our goal is to provide the most robust and efficient foundation for the next generation of UML-powered developer and architect tools.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ UML remains the industry standard for visualizing, specifying, constructing, and
     - **Behavioral Elements**: Detailed tracking of use cases, activities, and state machines.
     - **Relationships**: Comprehensive management of associations, dependencies, and realizations.
 - **🛡️ Robust Validation**: Engineered to handle incomplete models gracefully and provide precise semantic diagnostics.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-mermaid`, `oak-plantuml`, and other Oak visualization projects.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `data-text-mermaid`, `data-text-plantuml`, and other `data.text` visualization projects.
 
 ## 🏗️ Architecture
 
@@ -29,4 +29,4 @@ The model follows the **Green/Red Tree** architecture (inspired by Roslyn), whic
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

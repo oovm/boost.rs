@@ -17,13 +17,13 @@ pub enum LegionError {
     Manifest(ManifestError),
     /// 裸 I/O（无额外上下文时用 `?` 即可）。
     Io(std::io::Error),
-    /// Oak/VON 解析，带操作上下文与展示标签。
+    /// `data.text` VON 解析，带操作上下文与展示标签。
     Oak {
         /// 操作上下文说明。
         context: String,
-        /// VON/Oak 片段标签。
+        /// VON/`data.text` 片段标签。
         label: String,
-        /// 底层 Oak 解析错误。
+        /// 底层 `data.text` 解析错误。
         error: TextError,
     },
     /// 发射器驱动失败（待 emitter 结构化 `E` 后收窄）。

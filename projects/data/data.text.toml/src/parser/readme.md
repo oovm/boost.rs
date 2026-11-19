@@ -1,3 +1,3 @@
 # Toml Parser
 
-This module provides toml parser functionality for the Oaks project.
+This module provides toml parser functionality for the Boost `data.text` project.

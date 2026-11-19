@@ -132,7 +132,7 @@ pub struct BoundStatement<'a> {
 }
 
 /// Prefix injected into source identifiers during prepare so that VOS
-/// parser accepts the token as a plain Name node. Oak-vos lexer currently
+/// parser accepts the token as a plain Name node. `data-text-vos` lexer currently
 /// has no `$` token — `$name` would parse as invalid syntax. Instead we
 /// rewrite each `$name` → `__yydb_param_<index>` (a valid Identifier), then
 /// lower.rs walks the AST and converts `Name("__yydb_param_*")` directly
@@ -148,7 +148,7 @@ pub const PARAM_PREFIX: &str = "__yydb_param_";
 ///      strings / line comments / block comments) and rewrite each to an
 ///      identifier `__yydb_param_<index>`.
 ///   2. Fingerprint the *original* source.
-///   3. `schema_input_vos::parse_program(&rewritten)` — Oak-vos sees only valid VOS.
+///   3. `schema_input_vos::parse_program(&rewritten)` — `data-text-vos` sees only valid VOS.
 ///   4. `lower::lower_program` — Name("__yydb_param_*") nodes are lowered
 ///      directly to `BoundValue::Slot { index, expected_ty }`.
 ///   5. Build the full PreparedStatement envelope (read_set / write_set /

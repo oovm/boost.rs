@@ -1,13 +1,13 @@
-# 🚀 Oak Coq Parser
+# 🚀 Coq Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-coq.svg)](https://crates.io/crates/oak-coq)
-[![Documentation](https://docs.rs/oak-coq/badge.svg)](https://docs.rs/oak-coq)
+[![Crates.io](https://img.shields.io/crates/v/data-text-coq.svg)](https://crates.io/crates/data-text-coq)
+[![Documentation](https://docs.rs/data-text-coq/badge.svg)](https://docs.rs/data-text-coq)
 
-**Formally Verified Development at Scale** — A high-performance, incremental Coq parser built on the Oak framework. Optimized for interactive theorem proving, formal verification workflows, and modern IDE support for the Coq proof assistant.
+**Formally Verified Development at Scale** — A high-performance, incremental Coq parser built on the `data.text` framework. Optimized for interactive theorem proving, formal verification workflows, and modern IDE support for the Coq proof assistant.
 
 ## 🎯 Project Vision
 
-Coq is a powerful formal proof management system used to develop verified software and mathematical proofs. `oak-coq` brings modern parsing infrastructure to the Coq ecosystem, providing a high-performance, Rust-powered alternative for analyzing Coq scripts. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive IDEs and interactive tools that can handle large formal developments with sub-millisecond latency. Whether you are building automated proof search tools, documentation generators, or sophisticated IDE extensions, `oak-coq` provides the robust foundation needed for deep analysis of Gallina and Ltac constructs.
+Coq is a powerful formal proof management system used to develop verified software and mathematical proofs. `data-text-coq` brings modern parsing infrastructure to the Coq ecosystem, providing a high-performance, Rust-powered alternative for analyzing Coq scripts. By utilizing incremental parsing capabilities, it enables the creation of highly responsive IDEs and interactive tools that can handle large formal developments with sub-millisecond latency. Whether you are building automated proof search tools, documentation generators, or sophisticated IDE extensions, `data-text-coq` provides the robust foundation needed for deep analysis of Gallina and Ltac constructs.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ Coq is a powerful formal proof management system used to develop verified softwa
     - **Ltac & Tactics**: Robust support for proof scripts and custom tactic definitions.
     - **Notations**: Handles complex user-defined notations and syntax extensions.
 - **🛡️ Robust Error Recovery**: Engineered to handle incomplete or malformed scripts gracefully, providing precise diagnostics—essential for maintaining a smooth proof engineering experience.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent proof discovery and formal analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent proof discovery and formal analysis.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

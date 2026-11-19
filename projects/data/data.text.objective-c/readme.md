@@ -1,13 +1,13 @@
-# 🚀 Oak Objective-C Parser
+# 🚀 Objective-C Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-objective-c.svg)](https://crates.io/crates/oak-objective-c)
-[![Documentation](https://docs.rs/oak-objective-c/badge.svg)](https://docs.rs/oak-objective-c)
+[![Crates.io](https://img.shields.io/crates/v/data-text-objective-c.svg)](https://crates.io/crates/data-text-objective-c)
+[![Documentation](https://docs.rs/data-text-objective-c/badge.svg)](https://docs.rs/data-text-objective-c)
 
-**Stability and Precision for Legacy Apple Ecosystems** — A high-performance, incremental Objective-C parser built on the Oak framework. Optimized for modern Objective-C 2.0 features, seamless C/C++ integration, and enterprise-grade code analysis tools.
+**Stability and Precision for Legacy Apple Ecosystems** — A high-performance, incremental Objective-C parser built on the `data.text` framework. Optimized for modern Objective-C 2.0 features, seamless C/C++ integration, and enterprise-grade code analysis tools.
 
 ## 🎯 Project Vision
 
-Objective-C remains a critical part of the Apple developer ecosystem, powering billions of lines of code in macOS and iOS. `oak-objective-c` aims to provide a robust, modern, Rust-powered infrastructure for parsing Objective-C that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive Objective-C codebases in real-time. Whether you are building custom linters, automated migration tools to Swift, or sophisticated IDE extensions, `oak-objective-c` provides the high-fidelity AST and efficiency needed to manage the complexities of modern Objective-C development.
+Objective-C remains a critical part of the Apple developer ecosystem, powering billions of lines of code in macOS and iOS. `data-text-objective-c` aims to provide a robust, modern, Rust-powered infrastructure for parsing Objective-C that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive Objective-C codebases in real-time. Whether you are building custom linters, automated migration tools to Swift, or sophisticated IDE extensions, `data-text-objective-c` provides the high-fidelity AST and efficiency needed to manage the complexities of modern Objective-C development.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Objective-C remains a critical part of the Apple developer ecosystem, powering b
     - **Memory Management**: Detailed tracking of ARC (Automatic Reference Counting) and manual retain/release patterns.
     - **Attributes**: Support for `__attribute__`, `nullable`, `nonnull`, and other modern compiler directives.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

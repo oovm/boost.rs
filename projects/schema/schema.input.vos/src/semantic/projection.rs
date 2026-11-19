@@ -2,7 +2,7 @@ use core::range::Range;
 use data_text_vos::{VosDeclarationKind, VosField, VosFieldAttribute, VosRoot, VosServiceMethod, VosTypeArgument, VosTypeSyntax};
 use schema_types::*;
 
-/// Projects Oak operation declarations without parsing their bodies.
+/// Projects operation declarations without parsing their bodies.
 pub fn project_operations(root: &VosRoot) -> Result<Vec<OperationProjection>, Vec<ContractDiagnostic>> {
     let mut namespace = Vec::new();
     let mut operations = Vec::new();
@@ -79,7 +79,7 @@ fn operation_identity(
     OperationIdentityKey::new(namespace, kind, name, parameters, &result)
 }
 
-/// Projects Oak operation declarations into a strict versioned artifact.
+/// Projects operation declarations into a strict versioned artifact.
 pub fn project_operations_artifact(root: &VosRoot) -> Result<OperationProjectionArtifact, Vec<ContractDiagnostic>> {
     Ok(OperationProjectionArtifact {
         envelope: ContractEnvelope {
@@ -94,7 +94,7 @@ pub fn project_operations_artifact(root: &VosRoot) -> Result<OperationProjection
     })
 }
 
-/// Projects Oak service declarations without lowering their bodies.
+/// Projects language service declarations without lowering their bodies.
 pub fn project_services(root: &VosRoot) -> Result<Vec<ServiceProjection>, Vec<ContractDiagnostic>> {
     let mut namespace = Vec::new();
     let mut services = Vec::new();
@@ -151,7 +151,7 @@ pub fn project_services(root: &VosRoot) -> Result<Vec<ServiceProjection>, Vec<Co
     if diagnostics.is_empty() { Ok(services) } else { Err(diagnostics) }
 }
 
-/// Projects Oak service declarations into a strict versioned artifact.
+/// Projects language service declarations into a strict versioned artifact.
 pub fn project_services_artifact(root: &VosRoot) -> Result<ServiceProjectionArtifact, Vec<ContractDiagnostic>> {
     Ok(ServiceProjectionArtifact {
         envelope: ContractEnvelope {
@@ -188,7 +188,7 @@ fn project_service_method(method: &VosServiceMethod) -> Result<ServiceMethodProj
     Ok(ServiceMethodProjection { name: method.name.clone(), parameters, return_type, stream, attributes, span: method.span })
 }
 
-/// Projects the supported Oak syntax without claiming symbol resolution.
+/// Projects the supported syntax without claiming symbol resolution.
 pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDiagnostic>> {
     let mut namespace = Vec::new();
     let mut types = Vec::new();
@@ -294,7 +294,7 @@ fn resolve_attribute(attribute: &VosFieldAttribute) -> Result<AttributeContract,
         else {
             return Err(diagnostic("VOS005", "attribute has no structured name", Some(attribute.span)));
         };
-        // Oak builder exposes the first identifier as `name` for both plain
+        // builder exposes the first identifier as `name` for both plain
         // `[foo]` and argument-bearing `[foo(bar)]` attributes, so we accept
         // either shape — the full source text lives in `syntax` for downstream
         // consumers that need the arguments.

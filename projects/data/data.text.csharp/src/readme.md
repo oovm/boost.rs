@@ -1,12 +1,12 @@
 # 🛠️ C# Parser Developer Guide
 
-C# support for the Oak language framework.
+C# support for the `data.text` language framework.
 
 This crate provides lexing, parsing, and AST building for the C# language,
 integrated into the `data.text` family. It supports modern C# features including
 namespaces, classes, structs, records, and more.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-csharp`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-csharp`.
 
 ## 🚦 Quick Start
 
@@ -14,7 +14,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-csharp = { path = "..." }
+data-text-csharp = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -22,7 +22,7 @@ oak-csharp = { path = "..." }
 The following is a standard workflow for parsing modern C# with records, LINQ, and primary constructors:
 
 ```rust
-use oak_csharp::{CsharpParser, SourceText, CsharpLanguage};
+use data_text_csharp::{CsharpParser, SourceText, CsharpLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -30,7 +30,7 @@ fn main() {
         using System;
         using System.Linq;
 
-        namespace Oak.Core;
+        namespace Boost.Core;
 
         public record User(string Id, string Name);
 
@@ -70,7 +70,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract C# specific constructs like records, primary constructors, async methods, LINQ expressions, and attributes.
 
 ### 2. Incremental Parsing
-C# solutions can contain thousands of files. `oak-csharp` supports sub-millisecond incremental updates:
+C# solutions can contain thousands of files. `data-text-csharp` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

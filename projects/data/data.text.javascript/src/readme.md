@@ -1,8 +1,8 @@
 # 🛠️ JavaScript Parser Developer Guide
 
-Javascript support for the Oak language framework.
+Javascript support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-javascript`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-javascript`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-javascript = { path = "..." }
+data-text-javascript = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-javascript = { path = "..." }
 The following is a standard workflow for parsing modern JavaScript with async functions and JSX:
 
 ```rust
-use oak_javascript::{Parser, SourceText};
+use data_text_javascript::{Parser, SourceText};
 
 fn main() {
     // 1. Prepare source code
@@ -64,7 +64,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-javascript` provides rich error contexts specifically tailored for JS developers, handling complex scenarios like missing semicolons (ASI awareness) or malformed JSX:
+`data-text-javascript` provides rich error contexts specifically tailored for JS developers, handling complex scenarios like missing semicolons (ASI awareness) or malformed JSX:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

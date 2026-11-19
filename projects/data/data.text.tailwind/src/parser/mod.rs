@@ -170,7 +170,7 @@ impl Parser<TailwindLanguage> for TailwindParser {
             let root_range = Range { start: start_pos, end: state.current_offset() };
             let _root_ast = TailwindRoot::new(root_range, ast_nodes);
             // Note: In a real implementation, we might want to store the AST somewhere or return it.
-            // For now, we follow the Oak pattern of focusing on the GreenNode.
+            // For now, we follow the shared pattern of focusing on the GreenNode.
 
             Ok(state.finish_at(checkpoint, TailwindElementType::Root))
         });

@@ -1,3 +1,3 @@
 # Wat Lexer
 
-This module provides wat lexer functionality for the Oaks project.
+This module provides wat lexer functionality for the Boost `data.text` project.

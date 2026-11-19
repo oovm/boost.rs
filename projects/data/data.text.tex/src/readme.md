@@ -1,9 +1,9 @@
 # 🛠️ TeX/LaTeX Parser Developer Guide
 
-TeX support for the Oak language framework.
+TeX support for the `data.text` language framework.
 
 This crate provides lexing, parsing, and AST building for TeX/LaTeX documents,
-enabling integration with the Oak language server and other tools.
+enabling integration with the language server and other tools.
 
 This guide is designed to help you quickly get started with developing and integrating `data-text-tex`.
 

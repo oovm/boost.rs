@@ -1,9 +1,9 @@
-# 🚀 Oak Rust Parser
+# 🚀 Rust Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-rust.svg)](https://crates.io/crates/oak-rust)
-[![Documentation](https://docs.rs/oak-rust/badge.svg)](https://docs.rs/oak-rust)
+[![Crates.io](https://img.shields.io/crates/v/data-text-rust.svg)](https://crates.io/crates/data-text-rust)
+[![Documentation](https://docs.rs/data-text-rust/badge.svg)](https://docs.rs/data-text-rust)
 
-**Safety and Speed for the System.** `oak-rust` is a high-performance, incremental Rust parser built on the Oak framework. Engineered for the next generation of Rust developer tools, IDEs, and static analyzers, it delivers sub-millisecond performance for massive codebases.
+**Safety and Speed for the System.** `data-text-rust` is a high-performance, incremental Rust parser built on the `data.text` framework. Engineered for the next generation of Rust developer tools, IDEs, and static analyzers, it delivers sub-millisecond performance for massive codebases.
 
 ## ✨ Core Features
 
@@ -24,4 +24,4 @@ Leveraging the **Green/Red Tree** pattern (similar to Roslyn and rust-analyzer):
 
 ## 🤝 Contributing
 
-We welcome contributions! Whether it's bug reports, feature requests, or code, help us build the best Rust parsing infrastructure. Check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a PR.
+We welcome contributions! Whether it's bug reports, feature requests, or code, help us build the best Rust parsing infrastructure. Check our [issues](https://github.com/oovm/boost.rs/issues) or submit a PR.

@@ -690,7 +690,7 @@ pub struct SqlCatalogBoundDelete {
 
 /// One operand of a catalog-bound SQL set operation.
 ///
-/// The binder folds Oak's flat chain into a precedence tree, so an operand is
+/// The binder folds the flat chain into a precedence tree, so an operand is
 /// either a plain `SELECT` binding or an `INTERSECT` group of its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlCatalogBoundSetOperand {
@@ -828,7 +828,7 @@ pub fn bind_sql_catalog_with_variables(
             catalog.schema_version
         )));
     }
-    // `::<type>` 在 Oak 里只有词法没有节点，PostgreSQL 方言先降为 `CAST(...)`，
+    // `::<type>` 在 `data.text` 里只有词法没有节点，PostgreSQL 方言先降为 `CAST(...)`，
     // 其它方言直接拒绝，绝不静默丢掉转换和列名。
     let cast_rewritten = crate::pgsql::rewrite_double_colon_casts(source, dialect)?;
     let source = cast_rewritten.as_ref();
@@ -836,7 +836,7 @@ pub fn bind_sql_catalog_with_variables(
     if dialect == SqlDialect::Mysql && find_keyword_outside_literals(source, "||").is_some() {
         return Err(SqlFrontendError::syntax("the || operator is not supported in the MySQL dialect, write CONCAT(...)"));
     }
-    // MySQL 的 `ON DUPLICATE KEY UPDATE` 没有冲突目标，Oak 也不认这段语法。
+    // MySQL 的 `ON DUPLICATE KEY UPDATE` 没有冲突目标，`data.text` 也不认这段语法。
     // 在绑定前把它改写成等价的 `ON CONFLICT (<primary key>) DO UPDATE`，冲突
     // 目标由 catalog 的主键补齐；写入语义仍由 planner/executor 的同一套冲突路径执行。
     let rewritten = if dialect == SqlDialect::Mysql { rewrite_mysql_duplicate_key(source, catalog)? } else { None };
@@ -850,7 +850,7 @@ pub fn bind_sql_catalog_with_variables(
     }
 }
 
-/// Rewrites MySQL `INSERT ... ON DUPLICATE KEY UPDATE` into the Oak-parsed
+/// Rewrites MySQL `INSERT ... ON DUPLICATE KEY UPDATE` into the parsed
 /// `ON CONFLICT (<primary key>) DO UPDATE SET` form.
 ///
 /// MySQL's clause has no conflict target, so the target is filled from the
@@ -1599,7 +1599,7 @@ fn bind_expression(
             match outcome {
                 Ok(expression) => Ok(expression),
                 // SQL 标准把 `CURRENT_DATE` / `CURRENT_TIME` / `CURRENT_TIMESTAMP` 写成
-                // 无括号关键字，Oak 的树里没有对应节点。列解析失败后回退为无参内建函数，
+                // 无括号关键字，`data.text` 的树里没有对应节点。列解析失败后回退为无参内建函数，
                 // 同名列优先，作用域与普通列引用一致。
                 Err(error) if error.kind == SqlErrorKind::UnknownColumn => match SqlScalarFunction::from_keyword(&name) {
                     Some(function) => Ok(SqlCatalogBoundExpression::Function {

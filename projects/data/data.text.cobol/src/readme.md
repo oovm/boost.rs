@@ -1,8 +1,8 @@
 # 🛠️ COBOL Parser Developer Guide
 
-COBOL support for the Oak language framework.
+COBOL support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-cobol`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-cobol`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a simple COBOL program:
 
 ```rust,ignore
-use oak_cobol::{CobolParser, SourceText, CobolLanguage};
+use data_text_cobol::{CobolParser, SourceText, CobolLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -19,7 +19,7 @@ fn main() {
        IDENTIFICATION DIVISION.
        PROGRAM-ID. HELLO-WORLD.
        PROCEDURE DIVISION.
-           DISPLAY 'Hello, Oak COBOL!'.
+           DISPLAY 'Hello, Boost COBOL!'.
            STOP RUN.
     "#;
     let source = SourceText::new(code);
@@ -53,7 +53,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-cobol` provides rich error contexts specifically tailored for COBOL developers:
+`data-text-cobol` provides rich error contexts specifically tailored for COBOL developers:
 ```rust,ignore
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

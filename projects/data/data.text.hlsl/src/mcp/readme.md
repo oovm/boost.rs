@@ -1,3 +1,3 @@
 # Hlsl Mcp
 
-This module provides hlsl mcp functionality for the Oaks project.
+This module provides hlsl mcp functionality for the Boost `data.text` project.

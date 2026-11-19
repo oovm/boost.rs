@@ -1,4 +1,4 @@
-//! Oak `namespace` AST helpers (declaration-only vs braced body).
+//! `data.text` `namespace` AST helpers (declaration-only vs braced body).
 
 use data_text_valkyrie::ast::{NamespaceDeclaration, StatementNode};
 

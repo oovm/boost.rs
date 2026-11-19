@@ -1,3 +1,3 @@
-Windows Command (CMD) support for the Oak language framework.
+Windows Command (CMD) support for the `data.text` language framework.
 
 

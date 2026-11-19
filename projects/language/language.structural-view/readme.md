@@ -1,11 +1,11 @@
-# 🚀 oak-structural-view
+# 🚀 language-structural-view
 
-[![Crates.io](https://img.shields.io/crates/v/oak-structural-view.svg)](https://crates.io/crates/oak-structural-view)
-[![Documentation](https://docs.rs/oak-structural-view/badge.svg)](https://docs.rs/oak-structural-view)
+[![Crates.io](https://img.shields.io/crates/v/language-structural-view.svg)](https://crates.io/crates/language-structural-view)
+[![Documentation](https://docs.rs/language-structural-view/badge.svg)](https://docs.rs/language-structural-view)
 
-**Document Structure View for Oak Languages** — Hierarchical representation of document structure for outline views and breadcrumb navigation.
+**Document Structure View for Languages** — Hierarchical representation of document structure for outline views and breadcrumb navigation.
 
-## 🎯 Why oak-structural-view?
+## 🎯 Why language-structural-view?
 
 Structure views help developers navigate large files by showing a hierarchical outline of classes, functions, and other definitions. Similar to IntelliJ's Structure View and VS Code's Outline panel.
 
@@ -28,11 +28,11 @@ Maps to IntelliJ Structure View, VS Code Outline panel and breadcrumbs, and LSP 
 
 ## 🔗 Ecosystem Integration
 
-Used by `oak-lsp` for `textDocument/documentSymbol`, IDE extensions for outline views, and code navigation tools.
+Used by `language-server` for `textDocument/documentSymbol`, IDE extensions for outline views, and code navigation tools.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-structural-view).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-structural-view).
 
 ## 🤝 Contributing
 

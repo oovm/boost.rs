@@ -120,9 +120,9 @@ impl JsonRpcNotification {
     }
 }
 
-/// A generic MCP server that wraps an Oak language service.
+/// A generic MCP server that wraps a `data.text` language service.
 ///
-/// The `McpServer` provides an interface for LLMs to interact with Oak
+/// The `McpServer` provides an interface for LLMs to interact with `data.text`
 /// language services using the Model Context Protocol. It supports
 /// standard LSP-like features like hover, definitions, and diagnostics,
 /// as well as semantic search.
@@ -292,7 +292,7 @@ where
 
     /// Handles a tool call from the MCP client and dispatches it to the service.
     ///
-    /// This is the primary entry point for LLMs to use Oak's language features.
+    /// This is the primary entry point for LLMs to use the language features.
     /// It supports standard LSP features and semantic search.
     ///
     /// # Arguments

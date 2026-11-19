@@ -1,6 +1,6 @@
 # 🛠️ XML Parser Developer Guide
 
-Xml support for the Oak language framework.
+Xml support for the `data.text` language framework.
 
 This guide is designed to help you quickly get started with developing and integrating `data-text-xml`.
 

@@ -25,7 +25,7 @@ The lexer produces tokens for:
 ## 🔧 Usage
 
 ```rust
-use oak_asciidoc::{language::AsciidocLanguage, lexer::AsciidocLexer};
+use data_text_asciidoc::{language::AsciidocLanguage, lexer::AsciidocLexer};
 use data_text_core::source::StringSource;
 
 let language = AsciidocLanguage::default();

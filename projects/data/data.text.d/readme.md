@@ -1,13 +1,13 @@
-# 🚀 Oak D Parser
+# 🚀 D Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-d.svg)](https://crates.io/crates/oak-d)
-[![Documentation](https://docs.rs/oak-d/badge.svg)](https://docs.rs/oak-d)
+[![Crates.io](https://img.shields.io/crates/v/data-text-d.svg)](https://crates.io/crates/data-text-d)
+[![Documentation](https://docs.rs/data-text-d/badge.svg)](https://docs.rs/data-text-d)
 
-**Systems Programming with Modern Agility** — A high-performance, incremental D parser built on the Oak framework. Optimized for systems programming, performance-critical applications, and modern developer tooling.
+**Systems Programming with Modern Agility** — A high-performance, incremental D parser built on the `data.text` framework. Optimized for systems programming, performance-critical applications, and modern developer tooling.
 
 ## 🎯 Project Vision
 
-D is a language that combines the power and performance of C++ with the programmer productivity of modern languages like Python and Ruby. `oak-d` aims to provide a robust, modern, Rust-powered infrastructure for parsing D that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, refactoring tools, and static analyzers that can handle large D codebases in real-time.
+D is a language that combines the power and performance of C++ with the programmer productivity of modern languages like Python and Ruby. `data-text-d` aims to provide a robust, modern, Rust-powered infrastructure for parsing D that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, refactoring tools, and static analyzers that can handle large D codebases in real-time.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ D is a language that combines the power and performance of C++ with the programm
     - **Memory Management**: Awareness of D's various memory management strategies (GC, manual, reference counting).
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -31,4 +31,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

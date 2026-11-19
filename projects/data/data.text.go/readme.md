@@ -1,9 +1,9 @@
-# 🚀 Oak Go Parser
+# 🚀 Go Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-go.svg)](https://crates.io/crates/oak-go)
-[![Documentation](https://docs.rs/oak-go/badge.svg)](https://docs.rs/oak-go)
+[![Crates.io](https://img.shields.io/crates/v/data-text-go.svg)](https://crates.io/crates/data-text-go)
+[![Documentation](https://docs.rs/data-text-go/badge.svg)](https://docs.rs/data-text-go)
 
-**Simplicity at Scale.** `oak-go` is a high-performance, incremental Go parser built on the Oak framework. Engineered for cloud-native toolchains, microservices, and modern IDE support, it brings Rust's power to the Go ecosystem.
+**Simplicity at Scale.** `data-text-go` is a high-performance, incremental Go parser built on the `data.text` framework. Engineered for cloud-native toolchains, microservices, and modern IDE support, it brings Rust's power to the Go ecosystem.
 
 ## ✨ Core Features
 
@@ -24,4 +24,4 @@ Leveraging the **Green/Red Tree** pattern (similar to Roslyn and rust-analyzer):
 
 ## 🤝 Contributing
 
-We welcome contributions! Whether it's bug reports, feature requests, or code, help us build the best Go parsing infrastructure. Check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a PR.
+We welcome contributions! Whether it's bug reports, feature requests, or code, help us build the best Go parsing infrastructure. Check our [issues](https://github.com/oovm/boost.rs/issues) or submit a PR.

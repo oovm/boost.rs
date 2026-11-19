@@ -17,7 +17,7 @@ type Token = (VosTokenType, Range<usize>);
 const MERGED_OPERATORS: [&str; 9] = ["==", "!=", "<=", ">=", "&&", "||", "::", "=>", "->"];
 
 impl VosBuilder {
-    /// Collects significant leaves of an Oak green tree in source order.
+    /// Collects significant leaves of an green tree in source order.
     fn collect_green_tokens(tree: &GreenTree<'_, VosLanguage>, offset: &mut usize, tokens: &mut Vec<Token>) {
         match tree {
             GreenTree::Node(node) => {
@@ -35,14 +35,14 @@ impl VosBuilder {
         }
     }
 
-    /// Collects significant leaves of an Oak green node in source order.
+    /// Collects significant leaves of an green node in source order.
     fn collect_green_node(node: &GreenNode<'_, VosLanguage>, offset: &mut usize, tokens: &mut Vec<Token>) {
         for child in node.children {
             Self::collect_green_tokens(child, offset, tokens);
         }
     }
 
-    /// Collects significant tokens of an Oak-built syntax element in source order.
+    /// Collects significant tokens of an parser-built syntax element in source order.
     fn collect_syntax_tokens(element: &VosSyntaxElement, tokens: &mut Vec<Token>) {
         match element {
             VosSyntaxElement::Node(node) => {
@@ -93,7 +93,7 @@ impl VosBuilder {
         ProgramParser::new(self, source, inner, span_start, span_end).parse_program(false).ok()
     }
 
-    /// Projects a whole Oak root into an expression program.
+    /// Projects a whole syntax root into an expression program.
     pub fn project_program(&self, root: &VosRoot) -> Result<VosProgram, TextError> {
         let source = SourceText::new(root.source.clone());
         let mut tokens = Vec::new();
@@ -107,7 +107,7 @@ impl VosBuilder {
     }
 }
 
-/// Recursive descent parser over Oak-provided tokens for VOS expression programs.
+/// Recursive descent parser over parser-provided tokens for VOS expression programs.
 struct ProgramParser<'a, 'b> {
     builder: &'b VosBuilder,
     source: &'a SourceText,

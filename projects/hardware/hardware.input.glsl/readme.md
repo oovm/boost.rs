@@ -1,6 +1,6 @@
 # 🧩 hardware-input-glsl
 
-GLSL input for the UCF pipeline. Text is parsed by `oak-glsl`, converted into the language-neutral shader syntax owned by `hardware-frontend`, and lowered into UCF IR.
+GLSL input for the UCF pipeline. Text is parsed by `data-text-glsl`, converted into the language-neutral shader syntax owned by `hardware-frontend`, and lowered into UCF IR.
 
 ## Mapping
 

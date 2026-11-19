@@ -1,6 +1,6 @@
 # 🧪 C Parser Test Suite & Quality Assurance
 
-`oak-c` features a comprehensive test suite to ensure stability across a wide range of complex C syntax scenarios, from legacy system code to modern C23 features.
+`data-text-c` features a comprehensive test suite to ensure stability across a wide range of complex C syntax scenarios, from legacy system code to modern C23 features.
 
 ## 📊 Test Coverage
 
@@ -30,7 +30,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-c
+cargo test -p data-text-c
 
 # Or use the project-wide task runner
 wee test

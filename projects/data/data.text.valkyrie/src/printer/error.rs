@@ -3,7 +3,7 @@
 /// AST print 失败原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrintError {
-    /// Oak 解析失败。
+    /// `data.text` 解析失败。
     Parse(String),
     /// 当前 printer 尚未覆盖的 AST 节点。
     Unsupported {

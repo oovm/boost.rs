@@ -1,8 +1,8 @@
 # 🛠️ HLSL Parser Developer Guide
 
-Hlsl support for the Oak language framework.
+Hlsl support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-hlsl`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-hlsl`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-hlsl = { path = "..." }
+data-text-hlsl = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-hlsl = { path = "..." }
 The following is a standard workflow for parsing an HLSL shader:
 
 ```rust
-use oak_hlsl::{ast::HlslItem, parse_hlsl};
+use data_text_hlsl::{ast::HlslItem, parse_hlsl};
 
 fn main() {
     // 1. Prepare shader source code
@@ -66,10 +66,10 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract HLSL constructs like shader entry points, constant buffer declarations, and resource bindings.
 
 ### 2. Incremental Parsing
-Shader code often undergoes frequent small edits during development. `oak-hlsl` re-parses through the Oak green tree and reuses unchanged nodes:
+Shader code often undergoes frequent small edits during development. `data-text-hlsl` re-parses through the green tree and reuses unchanged nodes:
 ```rust
 use data_text_core::{Builder, SourceText, parser::session::ParseSession};
-use oak_hlsl::{HlslBuilder, HlslLanguage};
+use data_text_hlsl::{HlslBuilder, HlslLanguage};
 
 let language = HlslLanguage::default();
 let builder = HlslBuilder::new(&language);

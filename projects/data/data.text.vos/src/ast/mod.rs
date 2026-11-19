@@ -2,7 +2,7 @@ use core::range::Range;
 
 use crate::{lexer::VosTokenType, parser::VosElementType};
 
-/// One lossless Oak-built VOS syntax element.
+/// One lossless parser-built VOS syntax element.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VosSyntaxElement {
     /// Nested syntax node.
@@ -11,10 +11,10 @@ pub enum VosSyntaxElement {
     Token(VosSyntaxToken),
 }
 
-/// A source-spanned VOS CST node produced by Oak Builder.
+/// A source-spanned VOS CST node produced by builder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosSyntaxNode {
-    /// Oak element kind.
+    /// element kind.
     pub kind: VosElementType,
     /// Byte span in the original source.
     pub span: Range<usize>,
@@ -22,10 +22,10 @@ pub struct VosSyntaxNode {
     pub children: Vec<VosSyntaxElement>,
 }
 
-/// A source token preserved by the Oak VOS CST.
+/// A source token preserved by the VOS CST.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosSyntaxToken {
-    /// Oak token kind.
+    /// token kind.
     pub kind: VosTokenType,
     /// Byte span in the original source.
     pub span: Range<usize>,
@@ -33,7 +33,7 @@ pub struct VosSyntaxToken {
     pub text: String,
 }
 
-/// Top-level VOS declaration kind emitted by the Oak Builder.
+/// Top-level VOS declaration kind emitted by the builder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VosDeclarationKind {
     /// Namespace declaration.
@@ -87,7 +87,7 @@ pub struct VosDeclaration {
     pub body_program: Option<VosProgram>,
     /// Exact return type syntax including the `->` arrow when present.
     pub return_type: Option<VosSyntaxSlice>,
-    /// Structured return type syntax projected by Oak without resolving names.
+    /// Structured return type syntax projected by the parser without resolving names.
     pub return_type_expr: Option<VosTypeSyntax>,
     /// Typed field syntax for table and class declarations.
     pub fields: Vec<VosField>,
@@ -95,7 +95,7 @@ pub struct VosDeclaration {
     pub span: Range<usize>,
 }
 
-/// One Oak-projected operation parameter.
+/// One syntax-projected operation parameter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosParameter {
     /// Parameter name as written.
@@ -110,7 +110,7 @@ pub struct VosParameter {
     pub span: Range<usize>,
 }
 
-/// A field declaration projected by Oak without assigning VOS semantics.
+/// A field declaration projected by the parser without assigning VOS semantics.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosField {
     /// Field name as written in the source.
@@ -121,7 +121,7 @@ pub struct VosField {
     pub attributes: Vec<VosFieldAttribute>,
     /// Exact type syntax and its source span.
     pub type_syntax: VosSyntaxSlice,
-    /// Structured type syntax projected by Oak.
+    /// Structured type syntax projected by the parser.
     pub type_expr: VosTypeSyntax,
     /// Exact default value syntax when present.
     pub default_value: Option<VosSyntaxSlice>,
@@ -148,7 +148,7 @@ pub struct VosServiceMethod {
     pub span: Range<usize>,
 }
 
-/// A service method return type projected by Oak without resolving names.
+/// A service method return type projected by the parser without resolving names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosServiceMethodReturn {
     /// Whether the source used the `stream<T>` server-streaming form.
@@ -203,7 +203,7 @@ pub enum VosTypeSyntax {
     },
 }
 
-/// An Oak-owned generic type argument.
+/// An parser-owned generic type argument.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VosTypeArgument {
     /// Nested type syntax argument.
@@ -226,7 +226,7 @@ pub struct VosFieldAttribute {
     pub span: Range<usize>,
 }
 
-/// A source slice exposed by the Oak Builder.
+/// A source slice exposed by the builder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosSyntaxSlice {
     /// Exact source text.
@@ -235,18 +235,18 @@ pub struct VosSyntaxSlice {
     pub span: Range<usize>,
 }
 
-/// The initial Oak-built VOS AST root.
+/// The initial parser-built VOS AST root.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosRoot {
-    /// The exact source passed to the Oak frontend.
+    /// The exact source passed to the parser.
     pub source: String,
-    /// Lossless CST emitted by Oak Builder.
+    /// Lossless CST emitted by builder.
     pub syntax: VosSyntaxNode,
     /// Top-level declarations in source order.
     pub declarations: Vec<VosDeclaration>,
 }
 
-/// One Oak-projected expression program: `micro` declarations, statements and
+/// One syntax-projected expression program: `micro` declarations, statements and
 /// an optional trailing result expression.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosProgram {
@@ -260,7 +260,7 @@ pub struct VosProgram {
     pub span: Range<usize>,
 }
 
-/// Kind of Oak-projected function declaration inside a program.
+/// Kind of syntax-projected function declaration inside a program.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VosFnKind {
     /// Session-local `micro` function.
@@ -269,7 +269,7 @@ pub enum VosFnKind {
     Macro,
 }
 
-/// An Oak-projected `micro` or `macro` declaration.
+/// An syntax-projected `micro` or `macro` declaration.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosFnDecl {
     /// Function category.
@@ -288,7 +288,7 @@ pub struct VosFnDecl {
     pub span: Range<usize>,
 }
 
-/// One Oak-projected program statement.
+/// One syntax-projected program statement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VosStmt {
     /// An immutable `let` binding.
@@ -297,7 +297,7 @@ pub enum VosStmt {
     Expr(VosExpr),
 }
 
-/// An Oak-projected `let name [: Type] = expression` binding.
+/// An syntax-projected `let name [: Type] = expression` binding.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosLet {
     /// Bound name as written.
@@ -312,7 +312,7 @@ pub struct VosLet {
     pub span: Range<usize>,
 }
 
-/// An Oak-projected expression without name resolution or typing.
+/// An syntax-projected expression without name resolution or typing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VosExpr {
     /// A literal value.
@@ -439,7 +439,7 @@ impl VosExpr {
     }
 }
 
-/// An Oak-projected literal value.
+/// An syntax-projected literal value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VosLiteral {
     /// String literal without the surrounding quotes.
@@ -454,7 +454,7 @@ pub enum VosLiteral {
     Null,
 }
 
-/// An Oak-projected lambda expression.
+/// An syntax-projected lambda expression.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosLambda {
     /// Parameter names in source order.
@@ -467,7 +467,7 @@ pub struct VosLambda {
     pub span: Range<usize>,
 }
 
-/// One Oak-projected field initializer inside an object or projection.
+/// One syntax-projected field initializer inside an object or projection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VosFieldInit {
     /// Output or field name as written.

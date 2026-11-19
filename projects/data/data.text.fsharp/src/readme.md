@@ -1,6 +1,6 @@
-# 🛠️ oak-fsharp Developer Guide
+# 🛠️ data-text-fsharp Developer Guide
 
-Fsharp support for the Oak language framework.
+Fsharp support for the `data.text` language framework.
 
 Welcome to the internal implementation of the F# parser. This module provides the core logic for tokenizing and parsing F# source code into a high-fidelity syntax tree.
 
@@ -9,14 +9,14 @@ Welcome to the internal implementation of the F# parser. This module provides th
 - **Lexer**: Tokenizes F# source code, handling indentation-sensitive syntax, computation expressions, and active patterns with full fidelity.
 - **Parser**: Implements the F# grammar, producing a Green Tree that represents the concrete syntax.
 - **AST**: Provides a type-safe Red Tree facade for easy traversal and analysis.
-- **Language**: Defines the `FSharpLanguage` configuration and integration with the Oak framework.
+- **Language**: Defines the `FSharpLanguage` configuration and integration with the `data.text` framework.
 
 ## 🚀 Usage Example
 
 ### Basic Parsing
 
 ```rust
-use oak_fsharp::{FSharpParser, SourceText, FSharpLanguage};
+use data_text_fsharp::{FSharpParser, SourceText, FSharpLanguage};
 
 fn parse_fsharp_code(code: &str) {
     let source = SourceText::new(code);
@@ -34,7 +34,7 @@ fn parse_fsharp_code(code: &str) {
 ### Incremental Parsing
 
 ```rust
-use oak_fsharp::{FSharpParser, SourceText, FSharpLanguage};
+use data_text_fsharp::{FSharpParser, SourceText, FSharpLanguage};
 
 fn incremental_update(old_code: &str, new_code: &str) {
     let config = FSharpLanguage::new();

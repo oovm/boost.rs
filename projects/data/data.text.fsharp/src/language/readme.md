@@ -1,6 +1,6 @@
 # 🌐 F# Language Integration
 
-This module defines the `FSharpLanguage` struct, which serves as the central configuration point for the F# parser within the Oak framework.
+This module defines the `FSharpLanguage` struct, which serves as the central configuration point for the F# parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
@@ -11,7 +11,7 @@ The `FSharpLanguage` struct implements the `Language` trait and provides granula
 You can configure the parser for specific F# versions:
 
 ```rust
-use oak_fsharp::FSharpLanguage;
+use data_text_fsharp::FSharpLanguage;
 
 let config = FSharpLanguage::new()
     .with_version(6, 0); // Enable F# 6.0 features
@@ -39,7 +39,7 @@ let config = FSharpLanguage::new()
 ## 🚀 Usage
 
 ```rust
-use oak_fsharp::{FSharpParser, FSharpLanguage};
+use data_text_fsharp::{FSharpParser, FSharpLanguage};
 
 let config = FSharpLanguage::new().with_all_features();
 let parser = FSharpParser::new(&config);

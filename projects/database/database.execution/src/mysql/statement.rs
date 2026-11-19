@@ -71,7 +71,7 @@ fn write_mysql_error(sink: &mut impl MysqlStatementSink, error: &MysqlError) -> 
 
 /// Returns the first SQL keyword, skipping leading whitespace and comments.
 ///
-/// Session-command detection parses a full Oak AST, which is wasted on the
+/// Session-command detection parses a full syntax tree, which is wasted on the
 /// DML/SELECT statements that dominate a gateway's traffic. A verb check up
 /// front keeps that parser off the hot path without changing which statements
 /// the session layer accepts.
@@ -125,10 +125,10 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
     haystack.windows(needle.len()).any(|window| window.iter().zip(needle).all(|(left, right)| left.eq_ignore_ascii_case(right)))
 }
 
-/// MySQL drivers spell boolean session values as `ON`/`OFF`, which Oak reads as
+/// MySQL drivers spell boolean session values as `ON`/`OFF`, which the parser reads as
 /// bare identifiers rather than literals. Rewrite only that trailing literal as
 /// `1`/`0` — the numeric form binds to an integer the session layer can read —
-/// and leave the rest of the statement to Oak.
+/// and leave the rest of the statement to the parser.
 fn normalize_session_boolean(sql: &str) -> Cow<'_, str> {
     let trimmed = sql.trim_end();
     let (statement, terminator) = match trimmed.strip_suffix(';') {
@@ -288,7 +288,7 @@ pub fn dispatch_query(
 ) -> io::Result<()> {
     // DDL resolves against the local schema registry instead of the
     // session-command parser, so a `CREATE` / `ALTER` / `DROP` that the
-    // registry cannot apply never falls through to the Oak binder.
+    // registry cannot apply never falls through to the binder.
     // The first keyword decides whether a full DDL parse can pay off;
     // this is the same leading-word test `parse_ddl` performs.
     let verb = leading_statement_verb(sql);

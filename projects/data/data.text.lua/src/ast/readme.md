@@ -13,7 +13,7 @@ This module defines the high-fidelity, strongly-typed AST for Lua. Built on the 
 
 1. **Lossless**: Captures all comments and whitespace, making it ideal for formatters and refactoring tools.
 2. **Type-Safe**: Provides a convenient API to navigate the tree without manual type casting.
-3. **Incremental Ready**: Designed to work with the Oak framework's partial tree updates.
+3. **Incremental Ready**: Designed to work with the `data.text` framework's partial tree updates.
 
 ## 🔍 Usage
 

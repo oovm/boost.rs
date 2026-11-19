@@ -54,7 +54,7 @@ The builder provides comprehensive error handling with detailed source position 
 The builder is typically used through `RustBuilder` during Rust source code parsing:
 
 ```rust,ignore
-use oak_rust::{RustBuilder, RustLanguage};
+use data_text_rust::{RustBuilder, RustLanguage};
 use data_text_core::Builder;
 
 let language = RustLanguage::default();

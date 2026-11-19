@@ -1,6 +1,6 @@
-//! `E'...'` escape-string rewrite applied before the shared Oak parser.
+//! `E'...'` escape-string rewrite applied before the shared parser.
 //!
-//! Oak's SQL surface only models the standard single-quoted literal, whose
+//! The SQL surface only models the standard single-quoted literal, whose
 //! backslash is a plain character under `standard_conforming_strings = on`.
 //! PostgreSQL's `E'...'` spelling interprets backslash escapes, so this module
 //! decodes them and emits a standard literal with quotes doubled. Everything

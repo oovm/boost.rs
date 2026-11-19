@@ -1,8 +1,8 @@
 # 🛠️ Objective-C Parser Developer Guide
 
-Objective-c support for the Oak language framework.
+Objective-c support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-objective-c`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-objective-c`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-objective-c = { path = "..." }
+data-text-objective-c = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-objective-c = { path = "..." }
 The following is a standard workflow for parsing modern Objective-C with properties, categories, and blocks:
 
 ```rust
-use oak_objective_c::{Parser, SourceText};
+use data_text_objective_c::{Parser, SourceText};
 
 fn main() {
     // 1. Prepare source code
@@ -69,7 +69,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-objective-c` provides rich error contexts specifically tailored for Objective-C developers, handling complex scenarios like missing `@end` keywords, malformed message expressions, or invalid block syntax:
+`data-text-objective-c` provides rich error contexts specifically tailored for Objective-C developers, handling complex scenarios like missing `@end` keywords, malformed message expressions, or invalid block syntax:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

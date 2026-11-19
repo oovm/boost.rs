@@ -1,8 +1,8 @@
 # 🛠️ C++ Parser Developer Guide
 
-Cpp support for the Oak language framework.
+Cpp support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-cpp`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-cpp`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a C++ class:
 
 ```rust
-use oak_cpp::{CppParser, language::CppLanguage};
+use data_text_cpp::{CppParser, language::CppLanguage};
 use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
@@ -57,7 +57,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse the entire translation unit when small changes occur:
 ```rust
-use oak_cpp::{CppParser, language::CppLanguage};
+use data_text_cpp::{CppParser, language::CppLanguage};
 use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
@@ -89,9 +89,9 @@ fn main() {
 ```
 
 ### 3. Diagnostics
-`oak-cpp` provides rich error contexts specifically tailored for C++ developers, handling complex error scenarios like template instantiation failures:
+`data-text-cpp` provides rich error contexts specifically tailored for C++ developers, handling complex error scenarios like template instantiation failures:
 ```rust
-use oak_cpp::{CppParser, language::CppLanguage};
+use data_text_cpp::{CppParser, language::CppLanguage};
 use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {

@@ -1,7 +1,7 @@
 //! PostgreSQL utility statements the gateway executes itself.
 //!
 //! `PREPARE` / `EXECUTE` / `DEALLOCATE` (and later the cursor and notification
-//! statements) never reach the Oak binder: they are session commands whose
+//! statements) never reach the binder: they are session commands whose
 //! payload is another SQL statement. Parsing them here keeps the protocol
 //! session free of SQL text handling while `database.execution::pgsql` owns the
 //! state and the execution order.

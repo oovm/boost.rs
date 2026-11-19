@@ -1,8 +1,8 @@
 # 🛠️ Tcl Parser Developer Guide
 
-Tcl support for the Oak language framework.
+Tcl support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-tcl`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-tcl`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-tcl = { path = "..." }
+data-text-tcl = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,12 +18,12 @@ oak-tcl = { path = "..." }
 The following is a standard workflow for parsing Tcl scripts, supporting commands, variables, and complex command substitutions:
 
 ```rust
-use oak_tcl::{TclParser, SourceText, TclLanguage};
+use data_text_tcl::{TclParser, SourceText, TclLanguage};
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
-        set name "Oak"
+        set name "Boost"
         proc greet {msg} {
             puts "$msg, $::name!"
         }
@@ -56,7 +56,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Tcl specific constructs like commands, arguments, variable references, and scripts within braces.
 
 ### 2. Incremental Parsing
-Tcl scripts are often used in embedded systems or as configuration. `oak-tcl` supports sub-millisecond incremental updates:
+Tcl scripts are often used in embedded systems or as configuration. `data-text-tcl` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

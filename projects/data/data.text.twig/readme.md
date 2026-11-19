@@ -1,13 +1,13 @@
-# 🚀 oak-twig
+# 🚀 data-text-twig
 
-[![Crates.io](https://img.shields.io/crates/v/oak-twig.svg)](https://crates.io/crates/oak-twig)
-[![Documentation](https://docs.rs/oak-twig/badge.svg)](https://docs.rs/oak-twig)
+[![Crates.io](https://img.shields.io/crates/v/data-text-twig.svg)](https://crates.io/crates/data-text-twig)
+[![Documentation](https://docs.rs/data-text-twig/badge.svg)](https://docs.rs/data-text-twig)
 
-**Making TWIG processing simple** — A high-performance, incremental TWIG parser built on the Oak framework.
+**Making TWIG processing simple** — A high-performance, incremental TWIG parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-twig` is dedicated to providing industrial-grade parsing support for the TWIG language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-twig` is dedicated to providing industrial-grade parsing support for the TWIG language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

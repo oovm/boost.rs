@@ -1,6 +1,6 @@
 # 🧩 hardware-input-wgsl
 
-WGSL input for the UCF pipeline. Text is parsed by `oak-wgsl`, converted into the language-neutral shader syntax owned by `hardware-frontend`, and lowered into UCF IR.
+WGSL input for the UCF pipeline. Text is parsed by `data-text-wgsl`, converted into the language-neutral shader syntax owned by `hardware-frontend`, and lowered into UCF IR.
 
 ## Boundary
 

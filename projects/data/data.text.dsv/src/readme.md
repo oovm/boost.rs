@@ -1,8 +1,8 @@
 # 🛠️ DSV Parser Developer Guide
 
-DSV (Delimiter-Separated Values) support for the Oak language framework.
+DSV (Delimiter-Separated Values) support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-dsv`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-dsv`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a simple DSV string (like CSV):
 
 ```rust
-use oak_dsv::{DsvParser, DsvLanguage, Dsv};
+use data_text_dsv::{DsvParser, DsvLanguage, Dsv};
 use data_text_core::{Parser, source::SourceText, parser::session::ParseSession};
 
 const MY_CSV: DsvLanguage = DsvLanguage { field_separator: ',', quote_char: '"' };
@@ -51,7 +51,7 @@ let new_result = parser.parse(&new_source, &edits, &mut cache);
 ```
 
 ### 3. Diagnostics
-`oak-dsv` provides rich error contexts specifically tailored for DSV data:
+`data-text-dsv` provides rich error contexts specifically tailored for DSV data:
 ```rust,ignore
 for diag in result.diagnostics {
     println!("{:?}", diag);

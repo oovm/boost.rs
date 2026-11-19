@@ -1,7 +1,7 @@
 //! Host-side chemical structure rendering through the `plotter.depiction` chain.
 //!
 //! `notedown-formats` promotes `smiles`, `mol`, `mdl`, `sdf`, and `rd` fences to
-//! `Block::Depiction`. This module lowers those blocks with the Oak SMILES and
+//! `Block::Depiction`. This module lowers those blocks with the SMILES and
 //! MDL frontends (`plotter.input.smiles` / `plotter.input.mdl`) plus
 //! `plotter.depiction`, and serializes each resolved display scene to SVG,
 //! keyed by the authoring block id, so the HTML writer can embed real vector

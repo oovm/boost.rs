@@ -1,3 +1,3 @@
 # Vala Parser
 
-This module provides vala parser functionality for the Oaks project.
+This module provides vala parser functionality for the Boost `data.text` project.

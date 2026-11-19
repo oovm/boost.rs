@@ -1,13 +1,13 @@
-# 🚀 oak-von
+# 🚀 data-text-von
 
-[![Crates.io](https://img.shields.io/crates/v/oak-von.svg)](https://crates.io/crates/oak-von)
-[![Documentation](https://docs.rs/oak-von/badge.svg)](https://docs.rs/oak-von)
+[![Crates.io](https://img.shields.io/crates/v/data-text-von.svg)](https://crates.io/crates/data-text-von)
+[![Documentation](https://docs.rs/data-text-von/badge.svg)](https://docs.rs/data-text-von)
 
-**Making VON processing simple** — A high-performance, incremental VON parser built on the Oak framework.
+**Making VON processing simple** — A high-performance, incremental VON parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-von` is dedicated to providing industrial-grade parsing support for the VON language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-von` is dedicated to providing industrial-grade parsing support for the VON language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

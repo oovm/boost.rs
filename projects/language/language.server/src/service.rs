@@ -63,7 +63,7 @@ pub trait LanguageService: Send + Sync {
 
     /// 返回本服务的 hover 能力实现；默认没有。
     ///
-    /// 能力语义由 `oak-hover` 拥有，服务只提供接缝，不重复实现内容生成。
+    /// 能力语义由 `language-hover` 拥有，服务只提供接缝，不重复实现内容生成。
     fn hover_provider(&self) -> Option<&(dyn HoverProvider<Self::Lang> + Send + Sync)> {
         None
     }
@@ -136,7 +136,7 @@ pub trait LanguageService: Send + Sync {
 
     /// Provides document symbols (structure) for a file.
     ///
-    /// 优先委托 `oak-symbols` 的 provider；未提供 provider 时回退到工作区符号索引。
+    /// 优先委托 `data-text-symbols` 的 provider；未提供 provider 时回退到工作区符号索引。
     fn document_symbols<'a>(&'a self, uri: &'a str) -> impl Future<Output = Vec<StructureItem>> + Send + 'a {
         let uri = uri.to_string();
         async move {
@@ -188,7 +188,7 @@ pub trait LanguageService: Send + Sync {
 
     /// Finds the definition(s) of a symbol at the specified range.
     ///
-    /// 优先委托 `oak-navigation` 的 provider，其次使用工作区符号索引与模块解析。
+    /// 优先委托 `language-navigation` 的 provider，其次使用工作区符号索引与模块解析。
     fn definition<'a>(&'a self, uri: &'a str, range: Range<usize>) -> impl Future<Output = Vec<LocationRange>> + Send + 'a {
         let uri = uri.to_string();
         async move {
@@ -334,7 +334,7 @@ pub trait LanguageService: Send + Sync {
 
     /// 文档内容变化：把完整文本写入 VFS。
     ///
-    /// Oak 定义层只建模全量同步，因此与 [`Self::did_open`] 共用写入路径。
+    /// `data.text` 定义层只建模全量同步，因此与 [`Self::did_open`] 共用写入路径。
     fn did_change<'a>(&'a self, uri: &'a str, text: &'a str) -> impl Future<Output = ()> + Send + 'a {
         async move {
             self.vfs().change_document(uri, text.into());

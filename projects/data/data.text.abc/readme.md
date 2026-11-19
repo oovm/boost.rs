@@ -1,8 +1,8 @@
-# oak-abc
+# data-text-abc
 
 ABC music notation parser for the `data.text` family.
 
-The crate follows the same three-stage contract as the other oak frontends:
+The crate follows the same three-stage contract as the other `data.text` frontends:
 
 1. `AbcLexer` emits one token per physical line. ABC is line-oriented: header
    fields, music, lyric lines, and directives each own their whole line, so a
@@ -31,7 +31,7 @@ blocks. A refusal names the construct and keeps the authored text.
 ## Example
 
 ```rust
-use oak_abc::parse_abc;
+use data_text_abc::parse_abc;
 
 let root = parse_abc("X:1\nT:Smoke\nM:4/4\nL:1/4\nK:C\nCDEF|").expect("parse");
 assert_eq!(root.tunes.len(), 1);

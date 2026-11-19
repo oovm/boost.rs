@@ -1,13 +1,13 @@
-# 🚀 oak-handlebars
+# 🚀 data-text-handlebars
 
-[![Crates.io](https://img.shields.io/crates/v/oak-handlebars.svg)](https://crates.io/crates/oak-handlebars)
-[![Documentation](https://docs.rs/oak-handlebars/badge.svg)](https://docs.rs/oak-handlebars)
+[![Crates.io](https://img.shields.io/crates/v/data-text-handlebars.svg)](https://crates.io/crates/data-text-handlebars)
+[![Documentation](https://docs.rs/data-text-handlebars/badge.svg)](https://docs.rs/data-text-handlebars)
 
-**Making HANDLEBARS processing simple** — A high-performance, incremental HANDLEBARS parser built on the Oak framework.
+**Making HANDLEBARS processing simple** — A high-performance, incremental HANDLEBARS parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-handlebars` is dedicated to providing industrial-grade parsing support for the HANDLEBARS language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-handlebars` is dedicated to providing industrial-grade parsing support for the HANDLEBARS language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

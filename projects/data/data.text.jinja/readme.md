@@ -1,6 +1,6 @@
-# Oak Jinja
+# Jinja
 
-A parser for Jinja2 templates written in Rust using the Oak framework.
+A parser for Jinja2 templates written in Rust using the `data.text` framework.
 
 ## Features
 
@@ -14,7 +14,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-jinja = "0.0.4"
+data-text-jinja = "0.0.4"
 ```
 
 ## License

@@ -1,13 +1,13 @@
-# 🚀 Oak INI Parser
+# 🚀 INI Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-ini.svg)](https://crates.io/crates/oak-ini)
-[![Documentation](https://docs.rs/oak-ini/badge.svg)](https://docs.rs/oak-ini)
+[![Crates.io](https://img.shields.io/crates/v/data-text-ini.svg)](https://crates.io/crates/data-text-ini)
+[![Documentation](https://docs.rs/data-text-ini/badge.svg)](https://docs.rs/data-text-ini)
 
-**Simplicity in Configuration** — A high-performance, incremental INI parser built on the Oak framework. Optimized for system configuration, legacy settings migration, and modern IDE support for the INI file format.
+**Simplicity in Configuration** — A high-performance, incremental INI parser built on the `data.text` framework. Optimized for system configuration, legacy settings migration, and modern IDE support for the INI file format.
 
 ## 🎯 Project Vision
 
-The INI format is one of the oldest and most widely used configuration formats, known for its simple section-based structure. `oak-ini` provides a modern, Rust-powered infrastructure for analyzing and manipulating configuration files with extreme efficiency. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive configuration tools that can handle massive setting files with sub-millisecond updates. Whether you are building system configuration managers, automated settings migration tools, or sophisticated property editors, `oak-ini` provides the robust, efficient foundation you need for high-fidelity configuration extraction.
+The INI format is one of the oldest and most widely used configuration formats, known for its simple section-based structure. `data-text-ini` provides a modern, Rust-powered infrastructure for analyzing and manipulating configuration files with extreme efficiency. By utilizing incremental parsing capabilities, it enables the creation of highly responsive configuration tools that can handle massive setting files with sub-millisecond updates. Whether you are building system configuration managers, automated settings migration tools, or sophisticated property editors, `data-text-ini` provides the robust, efficient foundation you need for high-fidelity configuration extraction.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ The INI format is one of the oldest and most widely used configuration formats, 
     - **Keys & Values**: Detailed tracking of key-value pairs, including support for various assignment operators.
     - **Comments**: Robust handling of both semicolon (`;`) and hash (`#`) style comments.
 - **🛡️ Industrial-Grade Fault Tolerance**: Gracefully recovers from syntax errors, providing clear and actionable diagnostics—critical for maintaining a smooth user experience during configuration editing.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent configuration discovery and structural analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent configuration discovery and structural analysis.
 
 ## 🏗️ Architecture
 
@@ -29,4 +29,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

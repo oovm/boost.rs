@@ -1,6 +1,6 @@
 //! Valkyrie 语言前端诊断错误（语法与 lowering 边界）。
 //!
-//! 由 Oak 前端与 HIR lowering 产出，不依赖 `vcc-data` parser 类型。
+//! 由 `data.text` 前端与 HIR lowering 产出，不依赖 `vcc-data` parser 类型。
 use std::{
     fmt::{Display, Formatter},
     ops::Range,
@@ -21,7 +21,7 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    /// 将 Oak 解析错误映射为前端 `ParseError`（保留 `source_offset`）。
+    /// 将 `data.text` 解析错误映射为前端 `ParseError`（保留 `source_offset`）。
     pub fn from_oak(error: data_text_core::TextError) -> Self {
         let message = error.to_string();
         if let Some(start) = error.source_offset() {

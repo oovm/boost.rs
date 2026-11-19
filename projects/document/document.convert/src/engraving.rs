@@ -1,7 +1,7 @@
 //! Host-side score rendering through the `plotter.engraving` chain.
 //!
 //! `notedown-formats` promotes `abc` and `musicxml` fences to `Block::Engraving`.
-//! This module lowers those blocks with the Oak ABC frontend
+//! This module lowers those blocks with the ABC frontend
 //! (`plotter.input.abc`) plus `plotter.engraving`, and serializes each resolved
 //! display scene to SVG, keyed by the authoring block id, so the HTML writer can
 //! embed real vector output instead of the source-only fallback.

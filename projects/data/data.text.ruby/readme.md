@@ -1,13 +1,13 @@
-# 🚀 oak-ruby
+# 🚀 data-text-ruby
 
-[![Crates.io](https://img.shields.io/crates/v/oak-ruby.svg)](https://crates.io/crates/oak-ruby)
-[![Documentation](https://docs.rs/oak-ruby/badge.svg)](https://docs.rs/oak-ruby)
+[![Crates.io](https://img.shields.io/crates/v/data-text-ruby.svg)](https://crates.io/crates/data-text-ruby)
+[![Documentation](https://docs.rs/data-text-ruby/badge.svg)](https://docs.rs/data-text-ruby)
 
-**Elegance Meets Performance** — A high-performance, incremental Ruby parser built on the Oak framework. Optimized for static analysis, automated refactoring, and modern IDE integration for the Ruby programming language.
+**Elegance Meets Performance** — A high-performance, incremental Ruby parser built on the `data.text` framework. Optimized for static analysis, automated refactoring, and modern IDE integration for the Ruby programming language.
 
 ## 🎯 Project Vision
 
-Ruby is celebrated for its developer happiness and expressive syntax. `oak-ruby` aims to bring that same level of joy to tool developers by providing a fast, modern, Rust-powered parsing foundation. By leveraging Oak's incremental parsing architecture, it enables the creation of highly responsive tools that can handle large Ruby codebases—from Rails applications to complex DSLs. We provide the high-fidelity AST and efficiency needed to build the next generation of Ruby developer tools, ensuring that developers can focus on writing elegant code while their tools keep up with them in real-time.
+Ruby is celebrated for its developer happiness and expressive syntax. `data-text-ruby` aims to bring that same level of joy to tool developers by providing a fast, modern, Rust-powered parsing foundation. By leveraging incremental parsing architecture, it enables the creation of highly responsive tools that can handle large Ruby codebases—from Rails applications to complex DSLs. We provide the high-fidelity AST and efficiency needed to build the next generation of Ruby developer tools, ensuring that developers can focus on writing elegant code while their tools keep up with them in real-time.
 
 ## ✨ Core Features
 
@@ -19,11 +19,11 @@ Ruby is celebrated for its developer happiness and expressive syntax. `oak-ruby`
     - **Functional Blocks**: Robust parsing of Blocks (`do...end` and `{...}`), Procs, and Lambdas.
     - **DSL Support**: Optimized for parsing domain-specific languages common in the Ruby ecosystem (e.g., Rails routes, RSpec tests).
 - **🛡️ Robust Error Recovery**: Engineered to handle malformed or incomplete Ruby code gracefully, providing precise diagnostics while maintaining a valid syntax tree for continuous analysis.
-- **🧩 Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and other Oak-based code analysis utilities.
+- **🧩 Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and other `data.text`-based code analysis utilities.
 
 ## 🏗️ Architecture
 
-`oak-ruby` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-ruby` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

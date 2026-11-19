@@ -1,6 +1,6 @@
 //! Transitional TypeScript **AST print** (`source` → parse → AST → text).
 //!
-//! This is **not** a CST-faithful formatter and does not use `oak-pretty-print` /
+//! This is **not** a CST-faithful formatter and does not use `language-format` /
 //! Returns [`Err`] when parse fails or the AST contains unprintable nodes.
 //! Product contract tests live in downstream `nifty-formatter` / `vmz-formatter`.
 
@@ -12,14 +12,14 @@ use data_text_core::{Builder, ParseSession, SourceText};
 
 use crate::{TypeScriptBuilder, TypeScriptLanguage};
 
-/// Minimal formatter options for the Oak print path.
+/// Minimal formatter options for the print path.
 #[derive(Debug, Clone, Default)]
 pub struct FormatOptions {
     /// Erase TypeScript-only syntax while printing.
     pub type_erasure: bool,
 }
 
-/// Format TypeScript/JavaScript source via Oak parse + AST print.
+/// Format TypeScript/JavaScript source via parse + AST print.
 pub fn format_source(source: &str, options: &FormatOptions) -> Result<String, String> {
     if source.is_empty() {
         return Ok(String::new());

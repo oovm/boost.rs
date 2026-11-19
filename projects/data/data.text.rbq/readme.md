@@ -1,13 +1,13 @@
-# 🚀 oak-rbq
+# 🚀 data-text-rbq
 
-[![Crates.io](https://img.shields.io/crates/v/oak-rbq.svg)](https://crates.io/crates/oak-rbq)
-[![Documentation](https://docs.rs/oak-rbq/badge.svg)](https://docs.rs/oak-rbq)
+[![Crates.io](https://img.shields.io/crates/v/data-text-rbq.svg)](https://crates.io/crates/data-text-rbq)
+[![Documentation](https://docs.rs/data-text-rbq/badge.svg)](https://docs.rs/data-text-rbq)
 
-**Making RBQ processing simple** — A high-performance, incremental RBQ parser built on the Oak framework.
+**Making RBQ processing simple** — A high-performance, incremental RBQ parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-rbq` is dedicated to providing industrial-grade parsing support for the RBQ language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-rbq` is dedicated to providing industrial-grade parsing support for the RBQ language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

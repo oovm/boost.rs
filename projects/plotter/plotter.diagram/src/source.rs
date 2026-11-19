@@ -13,7 +13,7 @@ const DEFAULT_SOURCE: &str = "diagram";
 /// vectors grow, so index `n` names the token that produced `spec.nodes[n]`
 /// or `spec.edges[n]`.
 ///
-/// The Oak Mermaid AST exposes only the whole-diagram range, so the Mermaid
+/// The Mermaid AST exposes only the whole-diagram range, so the Mermaid
 /// frontend leaves the map empty. The DOT and PlantUML ASTs carry per-item
 /// ranges, so those frontends locate the token a diagnostic should point at.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

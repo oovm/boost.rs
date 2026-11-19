@@ -1,6 +1,6 @@
 # 🧪 Python Parser Test Suite & Quality Assurance
 
-`oak-python` features a comprehensive test suite to ensure stability across Python's clean and indentation-sensitive syntax, from simple scripts to complex async applications.
+`data-text-python` features a comprehensive test suite to ensure stability across Python's clean and indentation-sensitive syntax, from simple scripts to complex async applications.
 
 ## 📊 Test Coverage
 
@@ -31,7 +31,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-python
+cargo test -p data-text-python
 
 # Or use the project-wide task runner
 wee test

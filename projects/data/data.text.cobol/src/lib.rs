@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-//! Cobol support for the Oak language framework.
+//! Cobol support for the `data.text` language framework.
 
 /// AST module.
 pub mod ast;

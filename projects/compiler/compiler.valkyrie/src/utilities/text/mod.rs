@@ -1,4 +1,4 @@
-//! 文本格式化能力（Oak `formatter` / `printer` 负责 lexer/parser，本模块负责 Valkyrie 侧契约）。
+//! 文本格式化能力（`data.text` `formatter` / `printer` 负责 lexer/parser，本模块负责 Valkyrie 侧契约）。
 
 pub mod format_syntax;
 pub mod to_document;

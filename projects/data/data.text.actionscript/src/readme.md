@@ -1,8 +1,8 @@
 # � ActionScript Parser User Guide
 
-ActionScript support for the Oak language framework.
+ActionScript support for the `data.text` language framework.
 
-This guide helps you integrate `oak-actionscript` into your project and perform common parsing tasks efficiently.
+This guide helps you integrate `data-text-actionscript` into your project and perform common parsing tasks efficiently.
 
 ## � Quick Start
 
@@ -11,7 +11,7 @@ This guide helps you integrate `oak-actionscript` into your project and perform 
 The following is a standard workflow for parsing an ActionScript class featuring metadata and E4X:
 
 ```rust
-use oak_actionscript::{Parser, SourceText};
+use data_text_actionscript::{Parser, SourceText};
 
 fn main() {
     // 1. Prepare source code
@@ -57,7 +57,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics & Error Recovery
-`oak-actionscript` provides detailed error contexts tailored for AS3, including support for legacy Flex/Flash syntax quirks:
+`data-text-actionscript` provides detailed error contexts tailored for AS3, including support for legacy Flex/Flash syntax quirks:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

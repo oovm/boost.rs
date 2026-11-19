@@ -2,4 +2,4 @@
 
 Notedown syntax highlighter
 
-This module provides notedown lsp highlighter functionality for the Oaks project.
+This module provides notedown lsp highlighter functionality for the Boost `data.text` project.

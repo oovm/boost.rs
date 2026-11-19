@@ -1,13 +1,13 @@
-# 🚀 oak-haskell
+# 🚀 data-text-haskell
 
-[![Crates.io](https://img.shields.io/crates/v/oak-haskell.svg)](https://crates.io/crates/oak-haskell)
-[![Documentation](https://docs.rs/oak-haskell/badge.svg)](https://docs.rs/oak-haskell)
+[![Crates.io](https://img.shields.io/crates/v/data-text-haskell.svg)](https://crates.io/crates/data-text-haskell)
+[![Documentation](https://docs.rs/data-text-haskell/badge.svg)](https://docs.rs/data-text-haskell)
 
-**Making HASKELL processing simple** — A high-performance, incremental HASKELL parser built on the Oak framework.
+**Making HASKELL processing simple** — A high-performance, incremental HASKELL parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-haskell` is dedicated to providing industrial-grade parsing support for the HASKELL language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-haskell` is dedicated to providing industrial-grade parsing support for the HASKELL language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

@@ -1,9 +1,9 @@
 //! 引号捕获字面量的统一语义判定：前缀解释、转义解码、模板绑定与 char/文本归属。
 //!
-//! 词法只按等量引号串捕获原始文本（Oak `QuoteLiteral` 节点携带未解码内容、
+//! 词法只按等量引号串捕获原始文本（`data.text` `QuoteLiteral` 节点携带未解码内容、
 //! 引号种类、定界长度与紧邻前缀）；本模块是单双引号共用的唯一解释入口：
 //!
-//! - 无前缀：cooked。请求 Oak 对捕获区间做有边界模板解析，文本段按标准转义集
+//! - 无前缀：cooked。请求 `data.text` 对捕获区间做有边界模板解析，文本段按标准转义集
 //!   （`\" \\ \/ \b \f \n \r \t \uXXXX` 与 `\'`、`\{`、`\}`）解码；未知/残缺转义
 //!   与模板语法错误一律结构化报错并带原始源区间。
 //! - `r` 前缀：raw，不解码转义、不解析插值。
@@ -32,7 +32,7 @@ use crate::compiler::{
 
 use super::errors::{HirError, QuoteLiteralFailure};
 
-/// Oak 引号种类映射为 HIR 语法元数据。
+/// `data.text` 引号种类映射为 HIR 语法元数据。
 pub fn hir_quote_kind(quote: QuoteKind) -> HirQuoteKind {
     match quote {
         QuoteKind::Single => HirQuoteKind::Single,
@@ -45,9 +45,9 @@ pub fn hir_quote_kind(quote: QuoteKind) -> HirQuoteKind {
 pub enum QuoteTemplatePart {
     /// 解码后的文本段。
     Text(String),
-    /// 插值段；表达式保持 Oak AST，由 lowering 绑定为 HIR 并保留求值顺序。
+    /// 插值段；表达式保持 syntax tree，由 lowering 绑定为 HIR 并保留求值顺序。
     Interpolation {
-        /// Oak 真实表达式树。
+        /// `data.text` 真实表达式树。
         expr: TermExpression,
         /// 是否为 locale（Fluent）插值。
         is_fluent: bool,
@@ -142,7 +142,7 @@ pub fn capture_code_points(capture: &HirStringLiteral) -> Option<usize> {
     )
 }
 
-/// 解释 Oak 引号捕获；`allow_interpolation` 为 false 时常量位（模式等）拒绝插值段。
+/// 解释 `data.text` 引号捕获；`allow_interpolation` 为 false 时常量位（模式等）拒绝插值段。
 pub fn decode_quote_capture(literal: &QuoteLiteral, allow_interpolation: bool) -> Result<DecodedQuoteCapture, HirError> {
     match literal.prefix.as_ref().map(|prefix| prefix.name.as_str()) {
         Some("r") => Ok(DecodedQuoteCapture::PlainText(literal.content.clone())),

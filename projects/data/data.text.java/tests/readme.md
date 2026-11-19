@@ -1,6 +1,6 @@
 # 🧪 Java Parser Test Suite & Quality Assurance
 
-`oak-java` features a comprehensive test suite to ensure stability across Java's structured and evolving syntax, from legacy enterprise code to modern Java 21+ features.
+`data-text-java` features a comprehensive test suite to ensure stability across Java's structured and evolving syntax, from legacy enterprise code to modern Java 21+ features.
 
 ## 📊 Test Coverage
 
@@ -32,7 +32,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-java
+cargo test -p data-text-java
 
 # Or use the project-wide task runner
 wee test

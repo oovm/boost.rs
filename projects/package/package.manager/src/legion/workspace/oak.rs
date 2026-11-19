@@ -1,21 +1,21 @@
-//! Oak 诊断边界辅助：在展示层之前保留 `source_offset`。
+//! `data.text` 诊断边界辅助：在展示层之前保留 `source_offset`。
 
 use std::ops::Range;
 
 use crate::legion::error::LegionError;
 use data_text_core::TextError;
 
-/// 将 Oak 单点偏移转为字节区间。
+/// 将 `data.text` 单点偏移转为字节区间。
 pub fn source_point_span(error: &TextError) -> Option<Range<usize>> {
     error.source_offset().map(|start| start..start.saturating_add(1))
 }
 
-/// 将 Oak 解析错误转为 Legion 错误（结构化标签见 `utilities::diagnostic` / boost）。
+/// 将 `data.text` 解析错误转为 Legion 错误（结构化标签见 `utilities::diagnostic` / boost）。
 pub fn labeled_report(error: TextError, label: impl Into<String>) -> LegionError {
     LegionError::oak("", label, error)
 }
 
-/// 将 Oak 解析错误包装为带上下文的 Legion 错误。
+/// 将 `data.text` 解析错误包装为带上下文的 Legion 错误。
 pub fn labeled_report_with_context(error: TextError, context: impl std::fmt::Display, label: impl Into<String>) -> LegionError {
     LegionError::oak(context.to_string(), label, error)
 }

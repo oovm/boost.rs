@@ -1,8 +1,8 @@
 # 🛠️ Bash Parser Developer Guide
 
-Bash support for the Oak language framework.
+Bash support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-bash`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-bash`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-bash = { path = "..." }
+data-text-bash = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-bash = { path = "..." }
 The following is a standard workflow for parsing a Bash script with functions, loops, and redirections:
 
 ```rust
-use oak_bash::{BashParser, SourceText, BashLanguage};
+use data_text_bash::{BashParser, SourceText, BashLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -61,7 +61,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Bash specific constructs like function definitions, command pipelines, variable expansions, and redirections.
 
 ### 2. Incremental Parsing
-Bash scripts can sometimes be long and complex. `oak-bash` supports sub-millisecond incremental updates:
+Bash scripts can sometimes be long and complex. `data-text-bash` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

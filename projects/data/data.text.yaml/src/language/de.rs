@@ -196,7 +196,7 @@ pub fn from_str<'de, T>(yaml: &'de str) -> Result<T, TextError>
 where
     T: serde::Deserialize<'de>,
 {
-    // 由于 oak-yaml 的 parser 还在开发中，这里使用一个简单的实现来处理基本类型和简单结构
+    // 由于 data-text-yaml 的 parser 还在开发中，这里使用一个简单的实现来处理基本类型和简单结构
     // 对于复杂类型，我们将在 parser 完成后更新此实现
 
     // 移除首尾空白

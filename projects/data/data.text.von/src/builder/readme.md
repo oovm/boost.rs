@@ -1,3 +1,3 @@
 # Von Builder
 
-This module provides von builder functionality for the Oaks project.
+This module provides von builder functionality for the Boost `data.text` project.

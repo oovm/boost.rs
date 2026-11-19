@@ -8,7 +8,7 @@ pub use token_type::{VosToken, VosTokenType};
 
 type State<'a, S> = LexerState<'a, S, VosLanguage>;
 
-/// Oak lexer for the VOS surface syntax.
+/// lexer for the VOS surface syntax.
 #[derive(Clone, Debug, Default)]
 pub struct VosLexer;
 

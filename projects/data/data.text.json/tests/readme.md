@@ -1,6 +1,6 @@
 # 🧪 JSON Parser Test Suite & Quality Assurance
 
-`oak-json` features a comprehensive test suite to ensure stability across standard JSON and various common extensions like JSON5.
+`data-text-json` features a comprehensive test suite to ensure stability across standard JSON and various common extensions like JSON5.
 
 ## 📊 Test Coverage
 
@@ -29,7 +29,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-json
+cargo test -p data-text-json
 
 # Or use the project-wide task runner
 wee test

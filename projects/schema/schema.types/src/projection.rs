@@ -139,7 +139,7 @@ pub enum CanonicalTypeArgument {
     Literal(String),
 }
 
-/// An attribute resolved by VOS rather than Oak.
+/// An attribute resolved by VOS rather than the parser.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -167,7 +167,7 @@ pub struct ContractDiagnostic {
     pub span: Option<Range<usize>>,
 }
 
-/// Operation-like declaration projected from Oak without expression lowering.
+/// Operation-like declaration projected from the syntax without expression lowering.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -185,7 +185,7 @@ pub struct OperationProjection {
     /// (Iris, Hermes) use this field to locate an operation without re-parsing
     /// its signature string.
     pub operation_id: OperationId,
-    /// Parameters projected from Oak's signature.
+    /// Parameters projected from the parsed signature.
     pub parameters: Vec<OperationParameter>,
     /// Return type when the declaration has an arrow return type.
     pub return_type: Option<CanonicalType>,
@@ -203,7 +203,7 @@ pub struct OperationProjection {
     pub span: Range<usize>,
 }
 
-/// A strict, versioned operation projection artifact emitted from Oak output.
+/// A strict, versioned operation projection artifact emitted from parser output.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -228,7 +228,7 @@ pub enum OperationKind {
     Macro,
 }
 
-/// One operation parameter projected from Oak.
+/// One operation parameter projected from the syntax.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -362,7 +362,7 @@ impl OperationProjectionArtifact {
     }
 }
 
-/// Service declaration projected from Oak without body lowering.
+/// Service declaration projected from the syntax without body lowering.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
@@ -386,7 +386,7 @@ pub struct ServiceProjection {
 
 /// One method projected from a service body without lowering its body.
 ///
-/// The projection carries only what Oak can see: the method name, its named
+/// The projection carries only what the parser can see: the method name, its named
 /// parameters, the exact return type expression, the `stream` marker and the
 /// method attributes. It never decides request/response contract types, stream
 /// mode or operation binding; those belong to the authored contract layer.
@@ -409,7 +409,7 @@ pub struct ServiceMethodProjection {
     pub span: Range<usize>,
 }
 
-/// A strict, versioned service projection artifact emitted from Oak output.
+/// A strict, versioned service projection artifact emitted from parser output.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]

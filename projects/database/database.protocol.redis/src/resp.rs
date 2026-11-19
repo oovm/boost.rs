@@ -1,4 +1,4 @@
-//! 有界 RESP2 请求组帧。SQL / VOS 源语法仍归 Oak。
+//! 有界 RESP2 请求组帧。SQL / VOS 源语法仍归 `data.text`。
 
 /// 单条命令的资源上限，与流水线长度无关。
 #[derive(Clone, Copy, Debug)]

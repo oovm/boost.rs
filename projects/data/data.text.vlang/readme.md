@@ -1,13 +1,13 @@
-# 🚀 oak-vlang
+# 🚀 data-text-vlang
 
-[![Crates.io](https://img.shields.io/crates/v/oak-vlang.svg)](https://crates.io/crates/oak-vlang)
-[![Documentation](https://docs.rs/oak-vlang/badge.svg)](https://docs.rs/oak-vlang)
+[![Crates.io](https://img.shields.io/crates/v/data-text-vlang.svg)](https://crates.io/crates/data-text-vlang)
+[![Documentation](https://docs.rs/data-text-vlang/badge.svg)](https://docs.rs/data-text-vlang)
 
-**Making VLANG processing simple** — A high-performance, incremental VLANG parser built on the Oak framework.
+**Making VLANG processing simple** — A high-performance, incremental VLANG parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-vlang` is dedicated to providing industrial-grade parsing support for the VLANG language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-vlang` is dedicated to providing industrial-grade parsing support for the VLANG language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

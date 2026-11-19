@@ -1,4 +1,4 @@
-//! VON adapter for the Oak token-gap formatter.
+//! VON adapter for the token-gap formatter.
 
 use super::{options::FormatOptions, source::format_source};
 

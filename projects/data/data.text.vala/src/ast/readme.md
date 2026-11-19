@@ -36,7 +36,7 @@ The Vala AST is the central data structure used by the compiler and associated t
 ## Usage Example
 
 ```rust
-use oak_vala::ast::*;
+use data_text_vala::ast::*;
 
 fn main() {
     // Manually constructing a simple AST for a Vala class

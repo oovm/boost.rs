@@ -1,13 +1,13 @@
-# 🚀 oak-fortran
+# 🚀 data-text-fortran
 
-[![Crates.io](https://img.shields.io/crates/v/oak-fortran.svg)](https://crates.io/crates/oak-fortran)
-[![Documentation](https://docs.rs/oak-fortran/badge.svg)](https://docs.rs/oak-fortran)
+[![Crates.io](https://img.shields.io/crates/v/data-text-fortran.svg)](https://crates.io/crates/data-text-fortran)
+[![Documentation](https://docs.rs/data-text-fortran/badge.svg)](https://docs.rs/data-text-fortran)
 
-**Making FORTRAN processing simple** — A high-performance, incremental FORTRAN parser built on the Oak framework.
+**Making FORTRAN processing simple** — A high-performance, incremental FORTRAN parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-fortran` is dedicated to providing industrial-grade parsing support for the FORTRAN language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-fortran` is dedicated to providing industrial-grade parsing support for the FORTRAN language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

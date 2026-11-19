@@ -52,7 +52,7 @@ pub struct RenameRequest {
 
 /// 全量文本同步的文档参数。
 ///
-/// Oak 定义层只建模全量同步：`didOpen` 与 `didChange` 都携带完整文本，
+/// `data.text` 定义层只建模全量同步：`didOpen` 与 `didChange` 都携带完整文本，
 /// 由服务写入自己的 VFS，不在定义层推导增量区间。
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]

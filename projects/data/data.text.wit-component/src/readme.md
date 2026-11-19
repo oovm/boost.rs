@@ -1,6 +1,6 @@
 # 🛠️ Developer Guide
 
-Wit-component support for the Oak language framework.
+Wit-component support for the `data.text` language framework.
 
 This directory contains the core logic implementation of the project. Below are instructions for a quick start.
 

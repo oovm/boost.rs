@@ -1,8 +1,8 @@
 # 🛠️ TOML Parser Developer Guide
 
-Toml support for the Oak language framework.
+Toml support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-toml`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-toml`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-toml = { path = "..." }
+data-text-toml = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,13 +18,13 @@ oak-toml = { path = "..." }
 The following is a standard workflow for parsing a TOML file:
 
 ```rust
-use oak_toml::{TomlParser, SourceText, TomlLanguage};
+use data_text_toml::{TomlParser, SourceText, TomlLanguage};
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
         [package]
-        name = "oak-toml"
+        name = "data-text-toml"
         version = "0.1.0"
         authors = ["Yggdrasil <contact@yggdrasil.com>"]
         edition = "2024"
@@ -64,7 +64,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-toml` provides precise error feedback for malformed TOML, such as invalid date formats, re-defined keys, or unclosed strings:
+`data-text-toml` provides precise error feedback for malformed TOML, such as invalid date formats, re-defined keys, or unclosed strings:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

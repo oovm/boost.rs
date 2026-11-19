@@ -4,7 +4,7 @@ use crate::{
 };
 use data_text_core::{Builder, BuilderCache, TextDiagnostics, TextError, Parser, RedNode, RedTree, Source, TextEdit, TokenType, builder::BuildOutput};
 
-/// Builds owned Maple syntax from Oak's lossless tree.
+/// Builds owned Maple syntax from the lossless syntax tree.
 #[derive(Debug, Clone)]
 pub struct MapleBuilder<'config> {
     config: &'config MapleLanguage,

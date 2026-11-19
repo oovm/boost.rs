@@ -1,6 +1,6 @@
 # 🧪 YAML Parser Test Suite & Quality Assurance
 
-`oak-yaml` features a comprehensive test suite to ensure stability across complex YAML documents and features.
+`data-text-yaml` features a comprehensive test suite to ensure stability across complex YAML documents and features.
 
 ## 📊 Test Coverage
 
@@ -30,7 +30,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-yaml
+cargo test -p data-text-yaml
 
 # Or use the project-wide task runner
 wee test

@@ -1,6 +1,6 @@
 # plotter-input-mdl
 
-MDL molfile / SDF 前端：Oak AST → [`MoleculeSpec`](../plotter.depiction/readme.md) / scene。
+MDL molfile / SDF 前端：syntax tree → [`MoleculeSpec`](../plotter.depiction/readme.md) / scene。
 
 只描绘 v0 平面图：作者写的 2D/3D 坐标被确定性的描绘布局替代，因此每条记录都会记一条
 `davinci.depiction.approximated`；质量差、立体奇偶与 `M  RAD` 等无表示字段同样记命名损失。

@@ -31,7 +31,7 @@ The Valkyrie AST is the central data structure used by the compiler and associat
 ## Usage Example
 
 ```rust
-use oak_valkyrie::ast::*;
+use data_text_valkyrie::ast::*;
 
 fn main() {
     // Constructing a simple AST for a Valkyrie micro function

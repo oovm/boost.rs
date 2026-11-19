@@ -1,6 +1,6 @@
 //! Selector execution gates shared by the XML and HTML importers.
 //!
-//! Oak returns partial matches together with a [`SelectorOutcome`]. A caller
+//! the parser returns partial matches together with a [`SelectorOutcome`]. A caller
 //! that only inspects the matched nodes cannot tell a complete query from one
 //! that stopped at `max_matches` or hit an unsupported selector shape. This
 //! module turns every non-`Matched` outcome into a hard format error, so a
@@ -48,7 +48,7 @@ impl QueryLimits {
         }
     }
 
-    /// Converts these limits into the Oak query budget.
+    /// Converts these limits into the query budget.
     #[must_use]
     pub fn budget(self) -> QueryBudget {
         QueryBudget {

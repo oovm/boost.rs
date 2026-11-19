@@ -1,13 +1,13 @@
-# 🚀 Oak JSON Parser
+# 🚀 JSON Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-json.svg)](https://crates.io/crates/oak-json)
-[![Documentation](https://docs.rs/oak-json/badge.svg)](https://docs.rs/oak-json)
+[![Crates.io](https://img.shields.io/crates/v/data-text-json.svg)](https://crates.io/crates/data-text-json)
+[![Documentation](https://docs.rs/data-text-json/badge.svg)](https://docs.rs/data-text-json)
 
-**The Foundation of Data Exchange** — A high-performance, incremental JSON parser built on the Oak framework. Optimized for large-scale data processing, configuration management, and real-time validation.
+**The Foundation of Data Exchange** — A high-performance, incremental JSON parser built on the `data.text` framework. Optimized for large-scale data processing, configuration management, and real-time validation.
 
 ## 🎯 Project Vision
 
-JSON is the universal language of data exchange in modern computing. `oak-json` provides a high-performance, Rust-powered infrastructure for parsing and analyzing JSON data. By leveraging Oak's incremental parsing architecture, it enables developers to build tools that can handle massive JSON files and streams with sub-millisecond latency, making it ideal for everything from configuration editors to large-scale data analysis pipelines.
+JSON is the universal language of data exchange in modern computing. `data-text-json` provides a high-performance, Rust-powered infrastructure for parsing and analyzing JSON data. By leveraging incremental parsing architecture, it enables developers to build tools that can handle massive JSON files and streams with sub-millisecond latency, making it ideal for everything from configuration editors to large-scale data analysis pipelines.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ JSON is the universal language of data exchange in modern computing. `oak-json` 
     - Precise tracking of keys and values
     - Full support for all JSON data types (Strings, Numbers, Booleans, Null)
 - **🛡️ Industrial-Grade Error Recovery**: Engineered to handle malformed or incomplete JSON gracefully, providing precise diagnostics to help developers and users fix data issues quickly.
-- **🧩 Ecosystem Integration**: Seamlessly works with other Oak tools for validation, formatting, and semantic analysis.
+- **🧩 Ecosystem Integration**: Seamlessly works with other `data.text` tools for validation, formatting, and semantic analysis.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

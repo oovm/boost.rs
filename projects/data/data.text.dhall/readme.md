@@ -1,13 +1,13 @@
-# 🚀 Oak Dhall Parser
+# 🚀 Dhall Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-dhall.svg)](https://crates.io/crates/oak-dhall)
-[![Documentation](https://docs.rs/oak-dhall/badge.svg)](https://docs.rs/oak-dhall)
+[![Crates.io](https://img.shields.io/crates/v/data-text-dhall.svg)](https://crates.io/crates/data-text-dhall)
+[![Documentation](https://docs.rs/data-text-dhall/badge.svg)](https://docs.rs/data-text-dhall)
 
-**Programmable Configuration with Total Safety** — A high-performance, incremental Dhall parser built on the Oak framework. Optimized for programmable configuration, cloud-native infrastructure, and modern developer tooling.
+**Programmable Configuration with Total Safety** — A high-performance, incremental Dhall parser built on the `data.text` framework. Optimized for programmable configuration, cloud-native infrastructure, and modern developer tooling.
 
 ## 🎯 Project Vision
 
-Dhall is a programmable configuration language that is guaranteed to terminate and is completely safe to evaluate. `oak-dhall` aims to provide a robust, modern, Rust-powered infrastructure for parsing Dhall that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive configuration editors, linting tools, and automated deployment pipelines that can handle complex Dhall graphs in real-time. Whether you are building custom configuration validators, cloud infrastructure generators, or sophisticated IDE extensions, `oak-dhall` provides the high-fidelity AST and efficiency needed to harness the power of Dhall.
+Dhall is a programmable configuration language that is guaranteed to terminate and is completely safe to evaluate. `data-text-dhall` aims to provide a robust, modern, Rust-powered infrastructure for parsing Dhall that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive configuration editors, linting tools, and automated deployment pipelines that can handle complex Dhall graphs in real-time. Whether you are building custom configuration validators, cloud infrastructure generators, or sophisticated IDE extensions, `data-text-dhall` provides the high-fidelity AST and efficiency needed to harness the power of Dhall.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Dhall is a programmable configuration language that is guaranteed to terminate a
     - **Built-in Functions**: Comprehensive support for Dhall's standard library and built-in operators.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active configuration editing.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent configuration discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent configuration discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

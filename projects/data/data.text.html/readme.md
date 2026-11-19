@@ -1,13 +1,13 @@
-# 🚀 Oak HTML Parser
+# 🚀 HTML Parser
 
 [![Crates.io](https://img.shields.io/crates/v/data-text-html.svg)](https://crates.io/crates/data-text-html)
 [![Documentation](https://docs.rs/data-text-html/badge.svg)](https://docs.rs/data-text-html)
 
-**Structuring the Web with Precision** — A high-performance, incremental HTML parser built on the Oak framework. Optimized for web scraping, static analysis, and modern IDE support for web development.
+**Structuring the Web with Precision** — A high-performance, incremental HTML parser built on the `data.text` framework. Optimized for web scraping, static analysis, and modern IDE support for web development.
 
 ## 🎯 Project Vision
 
-HTML is the backbone of the web, and its complexity often arises from its flexibility and real-world "tag soup." `data-text-html` aims to provide a robust, high-performance parsing solution that can handle modern HTML5 standards with industrial-grade reliability. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive tools for web development—from real-time preview engines to intelligent code refactoring tools.
+HTML is the backbone of the web, and its complexity often arises from its flexibility and real-world "tag soup." `data-text-html` aims to provide a robust, high-performance parsing solution that can handle modern HTML5 standards with industrial-grade reliability. By utilizing incremental parsing capabilities, it enables the creation of highly responsive tools for web development—from real-time preview engines to intelligent code refactoring tools.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ HTML is the backbone of the web, and its complexity often arises from its flexib
     - Comments, Doctype declarations, and Text nodes
     - Support for modern HTML5 features
 - **🛡️ Industrial-Grade Error Recovery**: Engineered to handle malformed or "tag soup" HTML gracefully, providing precise diagnostics while maintaining a valid tree structure.
-- **🧩 Ecosystem Integration**: Part of the Oak family—easily integrate with `oak-lsp` for full LSP support or other Oak-based web analysis utilities.
+- **🧩 Ecosystem Integration**: Part of the `data.text` family—easily integrate with `language-server` for full LSP support or other `data.text`-based web analysis utilities.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

@@ -1,3 +1,3 @@
 # Lean Ast
 
-This module provides lean ast functionality for the Oaks project.
+This module provides lean ast functionality for the Boost `data.text` project.

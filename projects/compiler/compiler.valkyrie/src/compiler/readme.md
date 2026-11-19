@@ -1,13 +1,13 @@
 # Compiler
 
-`compiler` 是 Valkyrie 的语言编译器。它消费 Oak 产生的语法树和源位置，将声明、类型、调用、控制流与 evidence 组织成可验证的 Semantic MIR，再经 Valkyrie×目标适配器，向各平台代码服务提供目标拥有的编译输入。Nyar 只提供统一工具与中性编排合同，不拥有 Valkyrie 的语义程序。
+`compiler` 是 Valkyrie 的语言编译器。它消费 `data.text` 产生的语法树和源位置，将声明、类型、调用、控制流与 evidence 组织成可验证的 Semantic MIR，再经 Valkyrie×目标适配器，向各平台代码服务提供目标拥有的编译输入。Nyar 只提供统一工具与中性编排合同，不拥有 Valkyrie 的语义程序。
 
 ## 端到端数据流
 
 ```mermaid
 flowchart TB
   input[structured input]
-  syntax[syntax Oak]
+  syntax[syntax 语法桥接]
   expansion[expansion 模板/宏/derive]
   semantic[semantic 固定点]
   hir[hir 已解析模型]
@@ -46,7 +46,7 @@ flowchart TB
 |------|------|
 | `api` | 库调用的请求、结果和窄出口 |
 | `input` | 编译输入和源码快照的边界类型 |
-| `syntax` | Oak 解析会话、源映射和语言配置 |
+| `syntax` | `data.text` 解析会话、源映射和语言配置 |
 | `expansion` | 模板、derive、路由和元数据展开 |
 | `semantic` | 声明、作用域、类型、调用、evidence 和需求闭包 |
 | `types` | 跨阶段共享的源位置、诊断和类型容器 |

@@ -1,8 +1,8 @@
 # 📖 Java Parser User Guide
 
-Java support for the Oak language framework.
+Java support for the `data.text` language framework.
 
-This guide helps you integrate `oak-java` into your project and perform common parsing tasks efficiently.
+This guide helps you integrate `data-text-java` into your project and perform common parsing tasks efficiently.
 
 ## 🚀 Quick Start
 
@@ -11,7 +11,7 @@ This guide helps you integrate `oak-java` into your project and perform common p
 The following is a standard workflow for parsing a Java class with modern features like Records and Annotations:
 
 ```rust
-use oak_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_java::{JavaParser, SourceText, JavaLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -61,7 +61,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics & Error Recovery
-`oak-java` provides detailed error contexts tailored for Java developers:
+`data-text-java` provides detailed error contexts tailored for Java developers:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);
@@ -73,7 +73,7 @@ for diag in result.diagnostics() {
 ### 1. Extracting Class Information
 
 ```rust
-use oak_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_java::{JavaParser, SourceText, JavaLanguage};
 
 fn analyze_class_structure() {
     let code = r#"
@@ -108,7 +108,7 @@ fn analyze_class_structure() {
 ### 2. Analyzing Method Signatures
 
 ```rust
-use oak_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_java::{JavaParser, SourceText, JavaLanguage};
 
 fn analyze_method_signatures() {
     let code = r#"
@@ -136,7 +136,7 @@ fn analyze_method_signatures() {
 ### 3. Detecting Code Smells
 
 ```rust
-use oak_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_java::{JavaParser, SourceText, JavaLanguage};
 
 fn detect_code_smells() {
     let code = r#"
@@ -192,7 +192,7 @@ fn detect_code_smells() {
 ### Customizing Parser Behavior
 
 ```rust
-use oak_java::{JavaParser, JavaLanguage};
+use data_text_java::{JavaParser, JavaLanguage};
 
 fn configure_parser() {
     let mut config = JavaLanguage::new();

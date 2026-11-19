@@ -1,4 +1,4 @@
-//! Valkyrie adapter for the Oak token-gap formatter.
+//! Valkyrie adapter for the token-gap formatter.
 
 use super::{options::FormatOptions, source::format_source};
 

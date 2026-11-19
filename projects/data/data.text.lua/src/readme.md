@@ -1,8 +1,8 @@
 # 🛠️ Lua Parser Developer Guide
 
-Lua support for the Oak language framework.
+Lua support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-lua`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-lua`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-lua = { path = "..." }
+data-text-lua = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-lua = { path = "..." }
 The following is a standard workflow for parsing Lua scripts, including support for tables, functions, and control flow:
 
 ```rust
-use oak_lua::{LuaParser, SourceText, LuaLanguage};
+use data_text_lua::{LuaParser, SourceText, LuaLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -29,7 +29,7 @@ fn main() {
         end
 
         local user = {
-            name = "Oak",
+            name = "Boost",
             age = 1
         }
 
@@ -62,7 +62,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Lua specific constructs like function definitions, table constructors, local variable declarations, and loops.
 
 ### 2. Incremental Parsing
-Lua scripts can grow large in game development. `oak-lua` supports sub-millisecond incremental updates:
+Lua scripts can grow large in game development. `data-text-lua` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

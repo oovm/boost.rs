@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::{Language, LanguageCategory};
 
-/// Less language implementation for the Oaks framework.
+/// Less language implementation for the `data.text` framework.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LessLanguage {}

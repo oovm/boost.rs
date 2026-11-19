@@ -2,4 +2,4 @@
 
 Go formatter.
 
-This module provides go lsp formatter functionality for the Oaks project.
+This module provides go lsp formatter functionality for the Boost `data.text` project.

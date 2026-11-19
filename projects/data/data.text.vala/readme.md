@@ -1,13 +1,13 @@
-# 🚀 oak-vala
+# 🚀 data-text-vala
 
-[![Crates.io](https://img.shields.io/crates/v/oak-vala.svg)](https://crates.io/crates/oak-vala)
-[![Documentation](https://docs.rs/oak-vala/badge.svg)](https://docs.rs/oak-vala)
+[![Crates.io](https://img.shields.io/crates/v/data-text-vala.svg)](https://crates.io/crates/data-text-vala)
+[![Documentation](https://docs.rs/data-text-vala/badge.svg)](https://docs.rs/data-text-vala)
 
-**Making VALA processing simple** — A high-performance, incremental VALA parser built on the Oak framework.
+**Making VALA processing simple** — A high-performance, incremental VALA parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-vala` is dedicated to providing industrial-grade parsing support for the VALA language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-vala` is dedicated to providing industrial-grade parsing support for the VALA language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

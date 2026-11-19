@@ -52,7 +52,7 @@ use super::{
 /// 「无 scrutinee 类型」的次生错误。
 ///
 /// 可达性说明：数组 extractor（`HirExtractorPattern::Array`）属计划内语法
-/// （`case [head, ...tail]`），等待 oak AST/parser 节点与 lowering 构造接入；
+/// （`case [head, ...tail]`），等待 `data.text` AST/parser 节点与 lowering 构造接入；
 /// 上游接入后本收集路径即激活，与调用合同收集同构。
 pub fn validate_extractor_patterns(module: &HirModule) -> Result<(), crate::compiler::syntax::oak::ParseError> {
     let candidates = collect_module_candidates(module);

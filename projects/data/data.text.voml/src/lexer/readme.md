@@ -38,7 +38,7 @@ This module is designed to handle the specific lexical requirements of VOML, a l
 ## Usage Example
 
 ```rust
-use oak_voml::lexer::VomlLexer;
+use data_text_voml::lexer::VomlLexer;
 
 fn main() {
     let voml_source = r#"

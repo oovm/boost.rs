@@ -662,7 +662,7 @@ pub enum HirError {
     },
     /// 根条目类型不属于 HIR lowering 的输入面。
     UnsupportedRootItem {
-        /// Oak 根条目的稳定种类名。
+        /// `data.text` 根条目的稳定种类名。
         item_kind: String,
         /// 诊断引用的源码或 artifact 身份。
         source: DiagnosticSource,
@@ -671,7 +671,7 @@ pub enum HirError {
     },
     /// 导入声明没有可解析的路径：语法未被前端识别（例如已废弃的 `using!`）。
     ///
-    /// Oak 解析器对无法识别的导入语法不做诊断，只产出空路径的 `UsingDeclaration`；
+    /// `data.text` 解析器对无法识别的导入语法不做诊断，只产出空路径的 `UsingDeclaration`；
     /// HIR 不得把它翻译成空 `HirImport` 静默放行，必须在此 fail-closed。
     UnrecognizedImport {
         /// 诊断引用的源码或 artifact 身份。
@@ -920,7 +920,7 @@ pub enum QuoteLiteralFailure {
         /// 源码写出的前缀。
         prefix: String,
     },
-    /// 模板语法错误：Oak 有边界模板解析拒绝（空插值、缺结束括号、残余 token 等）。
+    /// 模板语法错误：`data.text` 有边界模板解析拒绝（空插值、缺结束括号、残余 token 等）。
     TemplateSyntax {
         /// 上游结构化诊断文本。
         message: String,

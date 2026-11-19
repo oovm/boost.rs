@@ -1,3 +1,3 @@
 # Sass Mcp
 
-This module provides sass mcp functionality for the Oaks project.
+This module provides sass mcp functionality for the Boost `data.text` project.

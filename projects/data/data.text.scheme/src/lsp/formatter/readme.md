@@ -1,3 +1,3 @@
 # Scheme LSP Formatter
 
-This module provides scheme lsp formatter functionality for the Oaks project.
+This module provides scheme lsp formatter functionality for the Boost `data.text` project.

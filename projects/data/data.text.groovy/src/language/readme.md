@@ -1,6 +1,6 @@
 # 🌐 Groovy Language Integration
 
-This module defines the `GroovyLanguage` struct, which serves as the central configuration point for the Groovy parser within the Oak framework.
+This module defines the `GroovyLanguage` struct, which serves as the central configuration point for the Groovy parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
@@ -23,7 +23,7 @@ pub struct GroovyLanguage {
 ## 🚀 Usage
 
 ```rust
-use oak_groovy::GroovyLanguage;
+use data_text_groovy::GroovyLanguage;
 
 let config = GroovyLanguage::new();
 // Pass this config to GroovyParser::new(&config)

@@ -1,3 +1,3 @@
 # Prolog Language
 
-This module provides prolog language functionality for the Oaks project.
+This module provides prolog language functionality for the Boost `data.text` project.

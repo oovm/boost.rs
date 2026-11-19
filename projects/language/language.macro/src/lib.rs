@@ -24,7 +24,7 @@ pub fn test_parser(input: TokenStream) -> TokenStream {
     test::test_parser(input)
 }
 
-/// Attribute macro for defining Oak tests.
+/// Attribute macro for defining language tests.
 #[proc_macro_attribute]
 pub fn oak_test(attr: TokenStream, item: TokenStream) -> TokenStream {
     test::oak_test(attr, item)

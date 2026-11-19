@@ -1,6 +1,6 @@
 # 🛠️ HTML Parser Developer Guide
 
-Html support for the Oak language framework.
+Html support for the `data.text` language framework.
 
 This guide is designed to help you quickly get started with developing and integrating `data-text-html`.
 
@@ -27,12 +27,12 @@ fn main() {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <title>Oak HTML Example</title>
+            <title>HTML Example</title>
         </head>
         <body>
             <div id="app" class="container">
-                <h1>Hello, Oak!</h1>
-                <img src="logo.png" alt="Oak Logo" />
+                <h1>Hello, Boost!</h1>
+                <img src="logo.png" alt="Boost Logo" />
             </div>
             <script src="app.js"></script>
         </body>

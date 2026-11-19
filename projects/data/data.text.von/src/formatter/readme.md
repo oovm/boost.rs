@@ -1,6 +1,6 @@
 # VON formatter
 
-Public module: `oak_von::formatter` (CST rules live in private `formatter/` submodules).
+Public module: `data_text_von::formatter` (CST rules live in private `formatter/` submodules).
 
 - [`FormatOptions`](options.rs) — `indent_width`, `line_width`
 - [`FormatError`](error.rs) — formatting failure message

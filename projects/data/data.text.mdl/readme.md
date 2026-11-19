@@ -1,8 +1,8 @@
-# oak-mdl
+# data-text-mdl
 
 MDL connection-table parser for the `data.text` family.
 
-The crate follows the same three-stage contract as the other oak frontends:
+The crate follows the same three-stage contract as the other `data.text` frontends:
 
 1. `MdlLexer` classifies each physical line. It never interprets fixed columns,
    because column meaning depends on the line's position inside the record.
@@ -32,7 +32,7 @@ reaction as if it were one structure.
 ## Example
 
 ```rust
-use oak_mdl::parse_mdl;
+use data_text_mdl::parse_mdl;
 
 let root = parse_mdl("water\n  test\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n").expect("parse");
 assert_eq!(root.records.len(), 1);

@@ -44,7 +44,7 @@ The primary objective of this module is to provide a fast and reliable tokenizer
 ## Usage Example
 
 ```rust
-use oak_jasm::lexer::JasmLexer;
+use data_text_jasm::lexer::JasmLexer;
 
 fn main() {
     let jasm_source = r#"

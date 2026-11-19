@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::types::PlannedHostProvider;
 
-/// Oak attribute 上的一个外部绑定（`js_builtin` / `wasm` / … 的参数表达式）。
+/// `data.text` attribute 上的一个外部绑定（`js_builtin` / `wasm` / … 的参数表达式）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ForeignBinding {
     JsBuiltin { symbol: String },

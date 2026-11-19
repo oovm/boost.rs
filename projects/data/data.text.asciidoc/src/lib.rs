@@ -3,7 +3,7 @@
 #![warn(missing_docs)]
 #![allow(missing_copy_implementations)]
 
-/// The AsciiDoc language implementation for Oaks.
+/// The AsciiDoc language implementation for `data.text`.
 pub mod language;
 
 /// Abstract Syntax Tree for AsciiDoc.

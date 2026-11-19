@@ -3,11 +3,11 @@
 [![Crates.io](https://img.shields.io/crates/v/data-text-notedown.svg)](https://crates.io/crates/data-text-notedown)
 [![Documentation](https://docs.rs/data-text-notedown/badge.svg)](https://docs.rs/data-text-notedown)
 
-**Making NOTEDOWN processing simple** — A high-performance, incremental NOTEDOWN parser built on the Oak framework.
+**Making NOTEDOWN processing simple** — A high-performance, incremental NOTEDOWN parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`data-text-notedown` is dedicated to providing industrial-grade parsing support for the NOTEDOWN language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-notedown` is dedicated to providing industrial-grade parsing support for the NOTEDOWN language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

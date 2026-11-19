@@ -1,8 +1,8 @@
 # 🛠️ APL Parser Developer Guide
 
-APL support for the Oak language framework.
+APL support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-apl`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-apl`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing an APL expression:
 
 ```rust
-use oak_apl::{AplParser, AplLanguage};
+use data_text_apl::{AplParser, AplLanguage};
 use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
@@ -39,10 +39,10 @@ fn main() {
 
 ### Incremental Parsing Example
 
-Oak parsers excel at incremental updates. Here's how to re-parse code after a change:
+parsers excel at incremental updates. Here's how to re-parse code after a change:
 
 ```rust
-use oak_apl::{AplParser, AplLanguage};
+use data_text_apl::{AplParser, AplLanguage};
 use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {

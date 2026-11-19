@@ -1,4 +1,4 @@
-//! Dejavu core types: values, errors, i18n — no Oak.
+//! Dejavu core types: values, errors, i18n — no `data.text` dependency.
 //!
 //! Parsing, IR, rendering and AOT codegen live in `template-input-dejavu`.
 

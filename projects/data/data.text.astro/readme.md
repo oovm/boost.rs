@@ -1,3 +1,3 @@
-# oak-svelte
+# data-text-svelte
 
-Svelte support for the Oak language framework.
+Svelte support for the `data.text` language framework.

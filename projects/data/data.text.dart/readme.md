@@ -1,13 +1,13 @@
-# 🚀 Oak Dart Parser
+# 🚀 Dart Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-dart.svg)](https://crates.io/crates/oak-dart)
-[![Documentation](https://docs.rs/oak-dart/badge.svg)](https://docs.rs/oak-dart)
+[![Crates.io](https://img.shields.io/crates/v/data-text-dart.svg)](https://crates.io/crates/data-text-dart)
+[![Documentation](https://docs.rs/data-text-dart/badge.svg)](https://docs.rs/data-text-dart)
 
-**Building the Future of UI with Precision** — A high-performance, incremental Dart parser built on the Oak framework. Optimized for Flutter development, modern Dart (3.0+) features, and high-responsiveness developer tools.
+**Building the Future of UI with Precision** — A high-performance, incremental Dart parser built on the `data.text` framework. Optimized for Flutter development, modern Dart (3.0+) features, and high-responsiveness developer tools.
 
 ## 🎯 Project Vision
 
-Dart is the language behind Flutter, and its growth has brought powerful features like patterns, records, and sound null safety. `oak-dart` aims to provide a robust, modern, Rust-powered infrastructure for parsing Dart that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle large Flutter projects in real-time. Whether you are building custom linters, automated code generators, or sophisticated IDE extensions, `oak-dart` provides the high-fidelity AST and efficiency needed to keep pace with Dart's continuous evolution.
+Dart is the language behind Flutter, and its growth has brought powerful features like patterns, records, and sound null safety. `data-text-dart` aims to provide a robust, modern, Rust-powered infrastructure for parsing Dart that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle large Flutter projects in real-time. Whether you are building custom linters, automated code generators, or sophisticated IDE extensions, `data-text-dart` provides the high-fidelity AST and efficiency needed to keep pace with Dart's continuous evolution.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Dart is the language behind Flutter, and its growth has brought powerful feature
     - **Generics & Annotations**: Robust handling of complex generic constraints and metadata annotations.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 

@@ -1,3 +1,3 @@
 # Solidity Parser
 
-This module provides solidity parser functionality for the Oaks project.
+This module provides solidity parser functionality for the Boost `data.text` project.

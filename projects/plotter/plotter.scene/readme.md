@@ -5,7 +5,7 @@ A deterministic vector scene model and SVG writer for the DaVinci diagram subsys
 ## Boundaries
 
 - Depends only on `plotter.types`.
-- No dependency on diagram semantics, `document.ir`, Oak, or VuTeX.
+- No dependency on diagram semantics, `document.ir`, `data.text`, or VuTeX.
 - No layout, text wrapping, interaction animation, or data binding.
 - Scene coordinates are explicit. A host layout engine places the canvas.
 

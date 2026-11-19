@@ -1,4 +1,4 @@
-//! SQL frontend: lower an Oak SQL AST into the shared physical operators.
+//! SQL frontend: lower an SQL AST into the shared physical operators.
 //!
 //! Parsing belongs to `data-text-sql`; this module only *lowers*. It resolves no
 //! catalog information and touches no storage, so the same plan can be prepared
@@ -46,7 +46,7 @@ pub struct SqlPlan {
     pub write_set: Vec<String>,
 }
 
-/// Parse SQL source into the Oak SQL root node.
+/// Parse SQL source into the SQL root node.
 pub fn parse(source: &str) -> Result<SqlRoot> {
     data_text_sql::parse(source).map_err(|diagnostics| sql_error(format!("SQL parse error: {diagnostics}")))
 }
@@ -405,13 +405,13 @@ fn rename_cte_columns(cte: &str, ops: &mut [QueryOp], columns: &[Identifier]) ->
 /// they are pushed after the [`QueryOp::SetOperation`] that merges both
 /// branches.
 ///
-/// Oak-sql attaches a written `WITH` clause to the left operand only. The clause
+/// `data-text-sql` attaches a written `WITH` clause to the left operand only. The clause
 /// is lowered once here and handed to both branches, so a CTE stays visible to
 /// the right operand of the same statement.
 fn lower_set_operation(statement: &SetOperationStatement, parameters: &[ParameterDescriptor], ctes: &CteScope) -> Result<Vec<QueryOp>> {
     let mut scope = ctes.clone();
 
-    // Lower the first operand and extend CTE scope from it (Oak attaches WITH
+    // Lower the first operand and extend CTE scope from it (the parser attaches WITH
     // only to the leftmost operand; we surface those CTEs to every operand).
     let mut ops: Vec<QueryOp> = {
         let first = &statement.operands[0];
@@ -890,7 +890,7 @@ fn split_identifier(identifier: &Identifier) -> Vec<String> {
     identifier.name.split('.').map(str::to_string).collect()
 }
 
-/// When an Oak identifier is one of the four SQL-standard clock registers
+/// When an identifier is one of the four SQL-standard clock registers
 /// written without parentheses (`NOW`, `CURRENT_TIMESTAMP`, `CURRENT_DATE`,
 /// `CURRENT_TIME`), lower it to the matching [`ScalarFunction::Now`] variant
 /// with no arguments so the executor reads the frozen query-start instant.
@@ -1297,7 +1297,7 @@ fn column_path(expr: &Expression, scope: &CteScope) -> Result<Vec<String>> {
     else {
         return Err(sql_error("predicates support plain column references only"));
     };
-    // Oak-sql represents qualified names (`table.col`) as a single identifier
+    // `data-text-sql` represents qualified names (`table.col`) as a single identifier
     // whose name contains a dot. Split it so the executor can resolve both
     // the full dotted key (right-table columns with prefix) and the trailing
     // bare column (left-table columns without prefix).
@@ -1396,7 +1396,7 @@ fn negate_number(value: Value) -> Value {
 fn lower_expr(expr: &Expression, parameters: &[ParameterDescriptor], ctes: &CteScope) -> Result<Expr> {
     match expr {
         // Bare identifiers are column references — except for the four SQL
-        // standard clock registers that Oak keeps as plain names rather than
+        // standard clock registers that the parser keeps as plain names rather than
         // function calls: `CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`,
         // and also `NOW` written without parentheses. Lower them to the clock
         // scalar functions so the executor can freeze them at query start.

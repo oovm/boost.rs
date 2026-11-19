@@ -1,6 +1,6 @@
 //! XML document queries via XPath subset DSL.
 //!
-//! Selector parsing lives in `oak-xpath`. Execution uses namespace-aware element views.
+//! Selector parsing lives in `data-text-xpath`. Execution uses namespace-aware element views.
 
 mod view;
 mod xpath;

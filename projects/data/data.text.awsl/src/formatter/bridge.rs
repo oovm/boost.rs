@@ -1,4 +1,4 @@
-//! AWSL adapter for the Oak token-gap formatter.
+//! AWSL adapter for the token-gap formatter.
 
 use super::{options::FormatOptions, source::format_source};
 

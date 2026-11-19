@@ -1,6 +1,6 @@
 # 🧪 Swift Parser Test Suite
 
-`oak-swift` employs a comprehensive testing methodology to ensure accurate parsing of Swift's sophisticated and rapidly evolving syntax.
+`data-text-swift` employs a comprehensive testing methodology to ensure accurate parsing of Swift's sophisticated and rapidly evolving syntax.
 
 ## 📊 Test Coverage
 
@@ -31,10 +31,10 @@ Ensures the parser remains stable when facing:
 
 ```bash
 # Run all Swift parser tests
-cargo test -p oak-swift
+cargo test -p data-text-swift
 
 # Run specific integration tests
-cargo test -p oak-swift --test parser_tests
+cargo test -p data-text-swift --test parser_tests
 ```
 
 ## 📈 Quality Assurance

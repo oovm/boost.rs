@@ -1,13 +1,13 @@
-# 🗺️ oak-source-map
+# 🗺️ data-text-source-map
 
-[![Crates.io](https://img.shields.io/crates/v/oak-source-map.svg)](https://crates.io/crates/oak-source-map)
-[![Documentation](https://docs.rs/oak-source-map/badge.svg)](https://docs.rs/oak-source-map)
+[![Crates.io](https://img.shields.io/crates/v/data-text-source-map.svg)](https://crates.io/crates/data-text-source-map)
+[![Documentation](https://docs.rs/data-text-source-map/badge.svg)](https://docs.rs/data-text-source-map)
 
 **High-Performance Source Map v3 Implementation for Rust** — A complete, zero-copy Source Map v3 implementation with VLQ encoding/decoding, builder patterns, and map composition.
 
-## 🎯 Why oak-source-map?
+## 🎯 Why data-text-source-map?
 
-Source maps are essential for debugging bundled and minified code. `oak-source-map` provides a high-performance, feature-complete implementation of the Source Map v3 specification, designed for both parsing and generating source maps efficiently.
+Source maps are essential for debugging bundled and minified code. `data-text-source-map` provides a high-performance, feature-complete implementation of the Source Map v3 specification, designed for both parsing and generating source maps efficiently.
 
 ## ✨ Key Features
 
@@ -30,11 +30,11 @@ Source maps are essential for debugging bundled and minified code. `oak-source-m
 
 ## 🔗 Ecosystem Integration
 
-Used by Oak language tools for debugging support and by bundlers and minifiers in the Rust ecosystem.
+Used by `data.text` language tools for debugging support and by bundlers and minifiers in the Rust ecosystem.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-source-map).
+For usage examples and API details, see the [API documentation](https://docs.rs/data-text-source-map).
 
 ## 🤝 Contributing
 

@@ -1,13 +1,13 @@
-# 🚀 oak-clojure
+# 🚀 data-text-clojure
 
-[![Crates.io](https://img.shields.io/crates/v/oak-clojure.svg)](https://crates.io/crates/oak-clojure)
-[![Documentation](https://docs.rs/oak-clojure/badge.svg)](https://docs.rs/oak-clojure)
+[![Crates.io](https://img.shields.io/crates/v/data-text-clojure.svg)](https://crates.io/crates/data-text-clojure)
+[![Documentation](https://docs.rs/data-text-clojure/badge.svg)](https://docs.rs/data-text-clojure)
 
-**Making CLOJURE processing simple** — A high-performance, incremental CLOJURE parser built on the Oak framework.
+**Making CLOJURE processing simple** — A high-performance, incremental CLOJURE parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-clojure` is dedicated to providing industrial-grade parsing support for the CLOJURE language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-clojure` is dedicated to providing industrial-grade parsing support for the CLOJURE language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

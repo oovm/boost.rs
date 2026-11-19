@@ -53,7 +53,7 @@ pub fn read_schema(project_dir: &Path, schema_pattern: &str) -> Result<String, S
 
 /// Project one schema source into the VOS schema contract.
 ///
-/// Oak parses the source and the VOS projection owns canonical paths, fields,
+/// the parser parses the source and the VOS projection owns canonical paths, fields,
 /// attributes, and types. Operation-like declarations (for example durable
 /// macros) are valid schema-file content but are not schema types, so the
 /// schema-only projection entry of `schema.input.vos` skips them.

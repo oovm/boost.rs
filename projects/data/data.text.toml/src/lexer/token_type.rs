@@ -68,7 +68,7 @@ pub enum TomlTokenKind {
     Root,
 }
 
-/// Alias for `TomlTokenKind` to conform to Oak's naming conventions.
+/// Alias for `TomlTokenKind` to conform to the shared naming conventions.
 pub type TomlTokenType = TomlTokenKind;
 
 impl TokenType for TomlTokenKind {

@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::language::{Language, LanguageCategory};
 
-/// Represents the LLVM IR language implementation within the Oak framework.
+/// Represents the LLVM IR language implementation within the `data.text` framework.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct LLvmLanguage;
 

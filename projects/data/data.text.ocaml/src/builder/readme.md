@@ -1,3 +1,3 @@
 # Ocaml Builder
 
-This module provides ocaml builder functionality for the Oaks project.
+This module provides ocaml builder functionality for the Boost `data.text` project.

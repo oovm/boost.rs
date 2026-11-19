@@ -1,8 +1,8 @@
 # 📖 Go Parser User Guide
 
-Go support for the Oak language framework.
+Go support for the `data.text` language framework.
 
-This guide helps you integrate `oak-go` into your project and perform common parsing tasks efficiently.
+This guide helps you integrate `data-text-go` into your project and perform common parsing tasks efficiently.
 
 ## 🚀 Quick Start
 
@@ -11,7 +11,7 @@ This guide helps you integrate `oak-go` into your project and perform common par
 The following is a standard workflow for parsing a Go file:
 
 ```rust
-use oak_go::{GoParser, SourceText, GoLanguage};
+use data_text_go::{GoParser, SourceText, GoLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -21,7 +21,7 @@ fn main() {
         import "fmt"
         
         func main() {
-            fmt.Println("Hello from Oak Go!")
+            fmt.Println("Hello from Boost Go!")
         }
     "#;
     let source = SourceText::new(code);
@@ -55,7 +55,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics & Error Recovery
-`oak-go` provides detailed error contexts tailored for Go developers:
+`data-text-go` provides detailed error contexts tailored for Go developers:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

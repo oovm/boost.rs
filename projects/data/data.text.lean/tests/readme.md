@@ -1,6 +1,6 @@
 # 🧪 Testing & Verification
 
-Quality is the core of `oak-lean`. We ensure the stability of the code through multi-dimensional testing.
+Quality is the core of `data-text-lean`. We ensure the stability of the code through multi-dimensional testing.
 
 ## 📊 Testing Strategy
 

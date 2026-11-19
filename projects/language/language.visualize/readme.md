@@ -1,13 +1,13 @@
-# 🚀 oak-visualize
+# 🚀 language-visualize
 
-[![Crates.io](https://img.shields.io/crates/v/oak-visualize.svg)](https://crates.io/crates/oak-visualize)
-[![Documentation](https://docs.rs/oak-visualize/badge.svg)](https://docs.rs/oak-visualize)
+[![Crates.io](https://img.shields.io/crates/v/language-visualize.svg)](https://crates.io/crates/language-visualize)
+[![Documentation](https://docs.rs/language-visualize/badge.svg)](https://docs.rs/language-visualize)
 
-**AST Visualization for Oak Languages** — Render syntax trees as graphs and diagrams for debugging and documentation.
+**AST Visualization for Languages** — Render syntax trees as graphs and diagrams for debugging and documentation.
 
-## 🎯 Why oak-visualize?
+## 🎯 Why language-visualize?
 
-Visualizing syntax trees helps developers understand parser behavior and debug issues. `oak-visualize` provides tools for rendering Oak syntax trees as visual graphs.
+Visualizing syntax trees helps developers understand parser behavior and debug issues. `language-visualize` provides tools for rendering syntax trees as visual graphs.
 
 ## ✨ Key Features
 
@@ -15,7 +15,7 @@ Visualizing syntax trees helps developers understand parser behavior and debug i
 - **🎨 Multiple Output Formats** — SVG, DOT (Graphviz), JSON
 - **🔍 Tree Inspection** — Interactive exploration of tree structure
 - **📝 Documentation Generation** — Generate visual documentation for grammars
-- **🧩 Language Agnostic** — Works with any Oak language parser
+- **🧩 Language Agnostic** — Works with any `data.text` language parser
 
 ## 🏗️ Architecture
 
@@ -35,7 +35,7 @@ Used by parser developers for debugging, documentation generators, and IDE exten
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-visualize).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-visualize).
 
 ## 🤝 Contributing
 

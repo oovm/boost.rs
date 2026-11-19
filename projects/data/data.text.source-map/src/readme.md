@@ -1,4 +1,4 @@
-# Oak Source Map
+# Source Map
 
 High-performance Source Map v3 implementation for Rust.
 
@@ -13,7 +13,7 @@ High-performance Source Map v3 implementation for Rust.
 ## Usage
 
 ```rust
-use oak_source_map::{SourceMap, SourceMapBuilder};
+use data_text_source_map::{SourceMap, SourceMapBuilder};
 
 // Create a source map builder
 let mut builder = SourceMapBuilder::new();

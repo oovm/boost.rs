@@ -1,4 +1,4 @@
-//! 在 HIR lowering 前按 `arch` 展开 Oak 结构化 TGrammar 节点。
+//! 在 HIR lowering 前按 `arch` 展开 `data.text` 结构化 TGrammar 节点。
 
 use crate::compiler::{
     hir::lowering::HirError,
@@ -75,7 +75,7 @@ fn expand_declaration_bodies(items: &mut [StatementNode], source: &str, arch: &s
 fn expand_structure_body(body: &mut StructureBody, source: &str, arch: &str) -> Result<(), HirError> {
     let templates = std::mem::take(&mut body.templates);
 
-    // 模板成员与显式成员分列 AST 两处。模板分支体由 Oak 从片段文本重新解析，
+    // 模板成员与显式成员分列 AST 两处。模板分支体由 `data.text` 从片段文本重新解析，
     // 分支成员的 span 是片段内偏移；能代表源码位置的是模板节点自身的 span。
     // 因此以显式成员 span 与模板节点 span 为锚点分组，再按锚点恢复源码顺序。
     let mut members: Vec<(usize, Vec<MethodDeclaration>)> =

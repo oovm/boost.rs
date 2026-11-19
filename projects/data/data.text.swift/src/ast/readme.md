@@ -1,3 +1,3 @@
 # Swift Ast
 
-This module provides swift ast functionality for the Oaks project.
+This module provides swift ast functionality for the Boost `data.text` project.

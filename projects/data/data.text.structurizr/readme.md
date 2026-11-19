@@ -1,13 +1,13 @@
-# 🚀 Oak Structurizr Parser
+# 🚀 Structurizr Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-structurizr.svg)](https://crates.io/crates/oak-structurizr)
-[![Documentation](https://docs.rs/oak-structurizr/badge.svg)](https://docs.rs/oak-structurizr)
+[![Crates.io](https://img.shields.io/crates/v/data-text-structurizr.svg)](https://crates.io/crates/data-text-structurizr)
+[![Documentation](https://docs.rs/data-text-structurizr/badge.svg)](https://docs.rs/data-text-structurizr)
 
-**Architecture as Code, Optimized** — A high-performance, incremental Structurizr DSL parser built on the Oak framework. Optimized for the C4 model, software architecture documentation, and modern developer toolchains.
+**Architecture as Code, Optimized** — A high-performance, incremental Structurizr DSL parser built on the `data.text` framework. Optimized for the C4 model, software architecture documentation, and modern developer toolchains.
 
 ## 🎯 Project Vision
 
-Structurizr DSL is a powerful way to define software architecture based on the C4 model. `oak-structurizr` provides a modern, Rust-powered infrastructure for parsing and analyzing Structurizr DSL files with extreme efficiency. By leveraging Oak's incremental parsing capabilities, it enables the creation of highly responsive architecture modeling tools that update diagrams and documentation instantly as you type. Our goal is to provide the most robust and efficient foundation for architects and developers to manage their software models as code.
+Structurizr DSL is a powerful way to define software architecture based on the C4 model. `data-text-structurizr` provides a modern, Rust-powered infrastructure for parsing and analyzing Structurizr DSL files with extreme efficiency. By leveraging incremental parsing capabilities, it enables the creation of highly responsive architecture modeling tools that update diagrams and documentation instantly as you type. Our goal is to provide the most robust and efficient foundation for architects and developers to manage their software models as code.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ Structurizr DSL is a powerful way to define software architecture based on the C
     - **Views & Styles**: Comprehensive management of diagram views, filtering, and styling directives.
     - **Includes & Extensions**: Robust handling of workspace inclusion and DSL extensions.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—essential for live modeling environments.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent architecture discovery.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent architecture discovery.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

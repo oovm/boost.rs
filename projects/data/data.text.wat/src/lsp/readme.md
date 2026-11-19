@@ -1,3 +1,3 @@
 # Wat Lsp
 
-This module provides wat lsp functionality for the Oaks project.
+This module provides wat lsp functionality for the Boost `data.text` project.

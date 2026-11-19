@@ -1,6 +1,6 @@
 //! Rewrites the PostgreSQL `expr::type` cast operator into `CAST(expr AS type)`.
 //!
-//! Oak parses `CAST(...)` into a cast expression, so every `::` spelling the
+//! the parser parses `CAST(...)` into a cast expression, so every `::` spelling the
 //! gateway accepts is lowered onto that one node. The rewrite works on a small
 //! PostgreSQL-only token stream: it never becomes a second general SQL parser,
 //! and it refuses operand shapes it cannot attribute instead of dropping the

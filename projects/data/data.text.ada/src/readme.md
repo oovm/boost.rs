@@ -1,8 +1,8 @@
 # 🛠️ Ada Parser Developer Guide
 
-Ada support for the Oak language framework.
+Ada support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-ada`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-ada`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing an Ada package specification:
 
 ```rust
-use oak_ada::{AdaParser, SourceText, AdaLanguage};
+use data_text_ada::{AdaParser, SourceText, AdaLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -51,7 +51,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-ada` provides rich error contexts specifically tailored for Ada developers:
+`data-text-ada` provides rich error contexts specifically tailored for Ada developers:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

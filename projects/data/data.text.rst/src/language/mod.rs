@@ -1,6 +1,6 @@
 use data_text_core::{Language, LanguageCategory};
 
-/// The reStructuredText language definition for Oaks.
+/// The reStructuredText language definition for `data.text`.
 #[derive(Debug, Clone, Default)]
 pub struct RstLanguage {
     /// Whether to allow directives.

@@ -1,3 +1,3 @@
 # Mojo Lsp
 
-This module provides mojo lsp functionality for the Oaks project.
+This module provides mojo lsp functionality for the Boost `data.text` project.

@@ -1,6 +1,6 @@
 # COBOL Language Definition
 
-This module contains the metadata and configuration options for the COBOL language within the Oak framework.
+This module contains the metadata and configuration options for the COBOL language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -22,4 +22,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing divisions, sections, paragraphs, and verbs.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the COBOL source file.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of COBOL's unique syntax and hierarchical structure.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of COBOL's unique syntax and hierarchical structure.

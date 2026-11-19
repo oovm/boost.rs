@@ -1,13 +1,13 @@
 #![feature(new_range_api)]
 #![recursion_limit = "512"]
 #![warn(missing_docs)]
-#![doc = "Language Server Protocol (LSP) implementation for Oak languages."]
+#![doc = "Language Server Protocol (LSP) implementation for `data.text` languages."]
 
 /// Structured diagnostic conversion for LSP clients.
 pub mod diagnostic;
 /// Handlers for LSP requests and notifications.
 pub mod handlers;
-/// `Lsp` contract that dispatches protocol messages to Oak language capabilities.
+/// `Lsp` contract that dispatches protocol messages to `data.text` language capabilities.
 pub mod lsp;
 /// LSP protocol messages, methods and capabilities.
 pub mod protocol;

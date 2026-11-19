@@ -1,4 +1,4 @@
-# oak-solidity
+# data-text-solidity
 
 High-performance incremental Solidity parser for the `data.text` family.
 

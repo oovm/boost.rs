@@ -1,8 +1,8 @@
 # 🛠️ CSS Parser Developer Guide
 
-Css support for the Oak language framework.
+Css support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-css`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-css`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-css = { path = "..." }
+data-text-css = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-css = { path = "..." }
 The following is a standard workflow for parsing a modern CSS file with variables, nesting, and media queries:
 
 ```rust
-use oak_css::{CssParser, SourceText, CssLanguage};
+use data_text_css::{CssParser, SourceText, CssLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -75,7 +75,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-css` provides rich error contexts specifically tailored for designers and developers, handling complex scenarios like malformed selectors or invalid property values:
+`data-text-css` provides rich error contexts specifically tailored for designers and developers, handling complex scenarios like malformed selectors or invalid property values:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

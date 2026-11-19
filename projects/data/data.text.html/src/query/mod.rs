@@ -1,6 +1,6 @@
 //! HTML document queries via CSS selector DSL.
 //!
-//! Selector parsing lives in `oak-css-selector`. Execution uses HTML-compatible element views.
+//! Selector parsing lives in `data-text-css-selector`. Execution uses HTML-compatible element views.
 
 mod css;
 mod view;

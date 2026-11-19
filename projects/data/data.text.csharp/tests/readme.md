@@ -1,6 +1,6 @@
 # 🧪 C# Parser Test Suite
 
-`oak-csharp` employs a rigorous testing methodology to ensure accurate parsing across the diverse and evolving C# ecosystem.
+`data-text-csharp` employs a rigorous testing methodology to ensure accurate parsing across the diverse and evolving C# ecosystem.
 
 ## 📊 Test Coverage
 
@@ -31,10 +31,10 @@ Ensures the parser remains stable when facing:
 
 ```bash
 # Run all C# parser tests
-cargo test -p oak-csharp
+cargo test -p data-text-csharp
 
 # Run specific integration tests
-cargo test -p oak-csharp --test parser_tests
+cargo test -p data-text-csharp --test parser_tests
 ```
 
 ## 📈 Quality Assurance

@@ -1,3 +1,3 @@
 # Tex Ast
 
-This module provides tex ast functionality for the Oaks project.
+This module provides tex ast functionality for the Boost `data.text` project.

@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 use data_text_core::{Language, LanguageCategory};
 
-/// Represents the HTML language configuration for the Oaks framework.
+/// Represents the HTML language configuration for the `data.text` framework.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct HtmlLanguage {}

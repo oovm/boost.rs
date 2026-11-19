@@ -1,8 +1,8 @@
 # 🛠️ Kotlin Parser Developer Guide
 
-Kotlin support for the Oak language framework.
+Kotlin support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-kotlin`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-kotlin`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-kotlin = { path = "..." }
+data-text-kotlin = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,13 +18,13 @@ oak-kotlin = { path = "..." }
 The following is a standard workflow for parsing modern Kotlin with data classes, coroutines, and lambdas:
 
 ```rust
-use oak_kotlin::{KotlinParser, SourceText, Kotlin};
+use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
 use data_text_core::parser::DefaultParseCache;
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
-        package com.example.oak
+        package com.example.app
 
         import kotlinx.coroutines.*
 
@@ -66,7 +66,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Kotlin specific constructs like data classes, sealed classes, suspend functions, lambdas, and property delegates.
 
 ### 2. Incremental Parsing
-Kotlin projects (especially Android or KMP projects) can be massive. `oak-kotlin` supports sub-millisecond incremental updates:
+Kotlin projects (especially Android or KMP projects) can be massive. `data-text-kotlin` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.parse(&new_source, &edits, &mut cache);
@@ -80,7 +80,7 @@ The parser correctly handles Kotlin Multiplatform (KMP) specific syntax like `ex
 ### 1. Analyzing Kotlin Data Classes
 
 ```rust
-use oak_kotlin::{KotlinParser, SourceText, Kotlin};
+use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
 use data_text_core::parser::DefaultParseCache;
 
 fn analyze_data_classes() {
@@ -111,7 +111,7 @@ fn analyze_data_classes() {
 ### 2. Analyzing Coroutine Functions
 
 ```rust
-use oak_kotlin::{KotlinParser, SourceText, Kotlin};
+use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
 use data_text_core::parser::DefaultParseCache;
 
 fn analyze_coroutines() {
@@ -147,7 +147,7 @@ fn analyze_coroutines() {
 ### 3. Analyzing Extension Functions
 
 ```rust
-use oak_kotlin::{KotlinParser, SourceText, Kotlin};
+use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
 use data_text_core::parser::DefaultParseCache;
 
 fn analyze_extension_functions() {
@@ -181,7 +181,7 @@ fn analyze_extension_functions() {
 ### 4. Analyzing Sealed Classes and When Expressions
 
 ```rust
-use oak_kotlin::{KotlinParser, SourceText, Kotlin};
+use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
 use data_text_core::parser::DefaultParseCache;
 
 fn analyze_sealed_classes() {
@@ -249,7 +249,7 @@ fn analyze_sealed_classes() {
 ### Customizing Parser Behavior
 
 ```rust
-use oak_kotlin::{KotlinParser, Kotlin};
+use data_text_kotlin::{KotlinParser, Kotlin};
 
 fn configure_parser() {
     let language = Kotlin;

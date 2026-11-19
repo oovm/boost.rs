@@ -1,8 +1,8 @@
 # 🛠️ YAML Parser Developer Guide
 
-Yaml support for the Oak language framework.
+Yaml support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-yaml`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-yaml`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-yaml = { path = "..." }
+data-text-yaml = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-yaml = { path = "..." }
 The following is a standard workflow for parsing a YAML document:
 
 ```rust
-use oak_yaml::{YamlParser, SourceText, YamlLanguage};
+use data_text_yaml::{YamlParser, SourceText, YamlLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -65,7 +65,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-yaml` provides precise error feedback for malformed YAML, such as indentation errors, unmatched brackets, or invalid tag usage:
+`data-text-yaml` provides precise error feedback for malformed YAML, such as indentation errors, unmatched brackets, or invalid tag usage:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

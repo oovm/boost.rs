@@ -11,7 +11,7 @@ pub use element_type::VosElementType;
 
 type State<'a, S> = data_text_core::ParserState<'a, VosLanguage, S>;
 
-/// Oak parser for the VOS surface syntax.
+/// parser for the VOS surface syntax.
 #[derive(Clone, Debug, Default)]
 pub struct VosParser;
 

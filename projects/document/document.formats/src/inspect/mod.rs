@@ -91,7 +91,7 @@ pub struct DocxVerification {
     pub members: usize,
     /// Layout intervals indexed from the written archive.
     pub spans: usize,
-    /// XML members decoded and parsed by Oak.
+    /// XML members decoded and parsed by the parser.
     pub parsed_xml_members: usize,
     /// Whether `word/document.xml` is present.
     pub main_part_present: bool,
@@ -196,7 +196,7 @@ pub fn inspect_docx_bytes(
 ///
 /// Export calls this before returning bytes, so a package that reopens with
 /// duplicate member paths, a missing main part, an unindexed interval, or XML
-/// that Oak cannot parse fails at the writer instead of at the next reader.
+/// that the parser cannot parse fails at the writer instead of at the next reader.
 #[cfg(feature = "docx")]
 pub fn verify_docx_bytes(label: &str, bytes: &[u8], budget: InspectBudget) -> Result<DocxVerification, FormatError> {
     use data_binary_core::{Budget, BudgetTracker};

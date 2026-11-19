@@ -1,4 +1,4 @@
-//! TypeScript adapter for the Oak token-gap formatter.
+//! TypeScript adapter for the token-gap formatter.
 
 use super::{options::FormatOptions, source::format_source};
 

@@ -4,7 +4,7 @@ Language-neutral shader core. Per-language input crates convert their parser out
 
 ## Boundary
 
-- This crate never lexes or parses shader text. Parsing is owned by the `oak-*` parsers.
+- This crate never lexes or parses shader text. Parsing is owned by the `data.text` parsers.
 - Language spellings are owned by `hardware-input-*`: attributes, address spaces, constructors, and type names are normalized there.
 - It never emits a target ISA. Every PTX / DXBC / SPIR-V / HSACO byte comes from `hardware-emitter`.
 - Lowering is a translation, not an optimizer. Unsupported constructs return a structured error instead of producing a partial program.
@@ -13,7 +13,7 @@ Language-neutral shader core. Per-language input crates convert their parser out
 
 ```text
 WGSL / HLSL / GLSL text
-  → oak-wgsl / oak-hlsl / oak-glsl
+  → data-text-wgsl / data-text-hlsl / data-text-glsl
   → hardware-input-* (language spellings → neutral syntax)
   → hardware-frontend (symbol table, resource slots, bounded control flow)
   → hardware_program::Program

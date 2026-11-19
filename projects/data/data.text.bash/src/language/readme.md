@@ -1,6 +1,6 @@
 # Bash Language Definition
 
-This module contains the metadata and configuration options for the Bash language within the Oak framework.
+This module contains the metadata and configuration options for the Bash language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -22,4 +22,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing commands, pipelines, loops, and function definitions.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the Bash script.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of Bash's flexible and powerful syntax.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of Bash's flexible and powerful syntax.

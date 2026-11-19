@@ -1,13 +1,13 @@
-# 🚀 Oak Kotlin Parser
+# 🚀 Kotlin Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-kotlin.svg)](https://crates.io/crates/oak-kotlin)
-[![Documentation](https://docs.rs/oak-kotlin/badge.svg)](https://docs.rs/oak-kotlin)
+[![Crates.io](https://img.shields.io/crates/v/data-text-kotlin.svg)](https://crates.io/crates/data-text-kotlin)
+[![Documentation](https://docs.rs/data-text-kotlin/badge.svg)](https://docs.rs/data-text-kotlin)
 
-**Modern, Concise, and Incremental Parsing for Kotlin** — A high-performance Kotlin parser built on the Oak framework. Optimized for Kotlin 1.9+ features, multiplatform projects, and highly responsive IDE integration.
+**Modern, Concise, and Incremental Parsing for Kotlin** — A high-performance Kotlin parser built on the `data.text` framework. Optimized for Kotlin 1.9+ features, multiplatform projects, and highly responsive IDE integration.
 
 ## 🎯 Project Vision
 
-Kotlin has redefined modern JVM and multiplatform development with its concise syntax and powerful safety features. `oak-kotlin` aims to provide a premium, Rust-powered parsing infrastructure that matches Kotlin's expressiveness with incredible speed. By leveraging Oak's incremental parsing architecture, we enable the creation of ultra-responsive developer tools—from IDEs and static analyzers to custom refactoring engines—that can handle complex Kotlin codebases in real-time. Whether you are building linting tools for Android, KMP-aware analyzers, or sophisticated code generators, `oak-kotlin` provides the high-fidelity AST and sub-millisecond efficiency required for the next generation of Kotlin tooling.
+Kotlin has redefined modern JVM and multiplatform development with its concise syntax and powerful safety features. `data-text-kotlin` aims to provide a premium, Rust-powered parsing infrastructure that matches Kotlin's expressiveness with incredible speed. By leveraging incremental parsing architecture, we enable the creation of ultra-responsive developer tools—from IDEs and static analyzers to custom refactoring engines—that can handle complex Kotlin codebases in real-time. Whether you are building linting tools for Android, KMP-aware analyzers, or sophisticated code generators, `data-text-kotlin` provides the high-fidelity AST and sub-millisecond efficiency required for the next generation of Kotlin tooling.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Kotlin has redefined modern JVM and multiplatform development with its concise s
     - **Multiplatform (KMP)**: Robust handling of `expect`/`actual` declarations and platform-specific syntax.
     - **Type System**: Detailed mapping of Generics, Reified type parameters, and Type aliases.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a fluid developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

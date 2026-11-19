@@ -1,13 +1,13 @@
-# 🚀 oak-jasm
+# 🚀 data-text-jasm
 
-[![Crates.io](https://img.shields.io/crates/v/oak-jasm.svg)](https://crates.io/crates/oak-jasm)
-[![Documentation](https://docs.rs/oak-jasm/badge.svg)](https://docs.rs/oak-jasm)
+[![Crates.io](https://img.shields.io/crates/v/data-text-jasm.svg)](https://crates.io/crates/data-text-jasm)
+[![Documentation](https://docs.rs/data-text-jasm/badge.svg)](https://docs.rs/data-text-jasm)
 
-**Making JASM processing simple** — A high-performance, incremental JASM parser built on the Oak framework.
+**Making JASM processing simple** — A high-performance, incremental JASM parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-jasm` is dedicated to providing industrial-grade parsing support for the JASM language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-jasm` is dedicated to providing industrial-grade parsing support for the JASM language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

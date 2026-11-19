@@ -1,3 +1,3 @@
 # Xml Lexer
 
-This module provides xml lexer functionality for the Oaks project.
+This module provides xml lexer functionality for the Boost `data.text` project.

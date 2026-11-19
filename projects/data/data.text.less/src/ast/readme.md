@@ -15,7 +15,7 @@ This module defines the Abstract Syntax Tree (AST) structure for Less code.
 ## Usage
 
 ```rust
-use oak_less::{LessRoot, LessNode, RuleSet, Declaration, Selector, Value};
+use data_text_less::{LessRoot, LessNode, RuleSet, Declaration, Selector, Value};
 
 // Create a simple Less AST
 let ast = LessRoot {

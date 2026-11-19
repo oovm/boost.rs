@@ -2,4 +2,4 @@
 
 DHall Code Formatter
 
-This module provides dhall lsp formatter functionality for the Oaks project.
+This module provides dhall lsp formatter functionality for the Boost `data.text` project.

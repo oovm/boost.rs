@@ -1,13 +1,13 @@
-# 🚀 Oak J Parser
+# 🚀 J Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-j.svg)](https://crates.io/crates/oak-j)
-[![Documentation](https://docs.rs/oak-j/badge.svg)](https://docs.rs/oak-j)
+[![Crates.io](https://img.shields.io/crates/v/data-text-j.svg)](https://crates.io/crates/data-text-j)
+[![Documentation](https://docs.rs/data-text-j/badge.svg)](https://docs.rs/data-text-j)
 
-**Safety and Precision for Mission-Critical Systems** — A high-performance, incremental J parser built on the Oak framework. Optimized for safety-critical systems, large-scale engineering, and modern IDE support for the J programming language.
+**Safety and Precision for Mission-Critical Systems** — A high-performance, incremental J parser built on the `data.text` framework. Optimized for safety-critical systems, large-scale engineering, and modern IDE support for the J programming language.
 
 ## 🎨 Project Vision
 
-J was designed for high-level mathematical and data analysis, emphasizing reliability and maintainability. `oak-j` brings these same principles to parsing, providing a modern, Rust-powered infrastructure for analyzing J code. By utilizing Oak's incremental parsing capabilities, it enables developers to build highly responsive tools for complex J projects. Whether you are building static analyzers, automated refactoring tools, or sophisticated IDE extensions, `oak-j` provides the robust, efficient foundation you need.
+J was designed for high-level mathematical and data analysis, emphasizing reliability and maintainability. `data-text-j` brings these same principles to parsing, providing a modern, Rust-powered infrastructure for analyzing J code. By utilizing incremental parsing capabilities, it enables developers to build highly responsive tools for complex J projects. Whether you are building static analyzers, automated refactoring tools, or sophisticated IDE extensions, `data-text-j` provides the robust, efficient foundation you need.
 
 ## ✅ Core Features
 
@@ -15,7 +15,7 @@ J was designed for high-level mathematical and data analysis, emphasizing reliab
 - **🔄 Incremental by Nature**: Built-in support for partial updates—re-parse only what has changed. Ideal for large J codebases where performance is critical.
 - **🌳 High-Fidelity AST**: Generates a clean and easy-to-traverse Abstract Syntax Tree.
 - **🛠️ Robust Error Recovery**: Engineered to handle incomplete or malformed code gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🌐 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for Model Context Protocol capabilities.
+- **🌐 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for Model Context Protocol capabilities.
 
 ## 🏗️ Architecture
 
@@ -26,4 +26,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

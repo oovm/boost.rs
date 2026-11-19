@@ -1,13 +1,13 @@
-# 🚀 oak-php
+# 🚀 data-text-php
 
-[![Crates.io](https://img.shields.io/crates/v/oak-php.svg)](https://crates.io/crates/oak-php)
-[![Documentation](https://docs.rs/oak-php/badge.svg)](https://docs.rs/oak-php)
+[![Crates.io](https://img.shields.io/crates/v/data-text-php.svg)](https://crates.io/crates/data-text-php)
+[![Documentation](https://docs.rs/data-text-php/badge.svg)](https://docs.rs/data-text-php)
 
-**Powering the Modern Web with Precision and Speed** — A high-performance, incremental PHP parser built on the Oak framework. Optimized for PHP 8.x features, complex legacy codebases, and real-time developer tools.
+**Powering the Modern Web with Precision and Speed** — A high-performance, incremental PHP parser built on the `data.text` framework. Optimized for PHP 8.x features, complex legacy codebases, and real-time developer tools.
 
 ## 🎯 Project Vision
 
-PHP continues to power a vast portion of the web, and its evolution from a simple scripting language to a modern, type-safe language brings significant complexity. `oak-php` aims to provide a robust, modern, Rust-powered infrastructure for parsing PHP that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive PHP projects in real-time. Whether you are building custom linters, automated migration tools for PHP 8.3+, or sophisticated IDE extensions, `oak-php` provides the high-fidelity AST and efficiency needed to keep pace with the modern PHP ecosystem.
+PHP continues to power a vast portion of the web, and its evolution from a simple scripting language to a modern, type-safe language brings significant complexity. `data-text-php` aims to provide a robust, modern, Rust-powered infrastructure for parsing PHP that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive PHP projects in real-time. Whether you are building custom linters, automated migration tools for PHP 8.3+, or sophisticated IDE extensions, `data-text-php` provides the high-fidelity AST and efficiency needed to keep pace with the modern PHP ecosystem.
 
 ## ✨ Core Features
 
@@ -20,11 +20,11 @@ PHP continues to power a vast portion of the web, and its evolution from a simpl
     - **Asynchronous Flow**: Support for parsing modern async/fiber-related constructs.
     - **Indentation & Formatting**: Precise capture of indentation and whitespace for faithful code refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a fluid developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
-`oak-php` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-php` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

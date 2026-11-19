@@ -1,6 +1,6 @@
-//! Valkyrie 语法前端：Oak 是唯一文本事实源。
+//! Valkyrie 语法前端：`data.text` 是唯一文本事实源。
 //!
-//! HIR lowering、Semantic MIR 与跨包链接只能消费本模块产出的 Oak AST，
+//! HIR lowering、Semantic MIR 与跨包链接只能消费本模块产出的 syntax tree，
 //! 不得再经 `vcc-data::AstParser` 或任何 legacy AST 桥接层。
 
 mod error;
@@ -17,18 +17,18 @@ pub use error::ParseError;
 pub use naming::{DIAG_ABI_BINDING_NOT_SNAKE_CASE, DIAG_IDENTIFIER_NOT_SNAKE_CASE, NamingViolation, validate_snake_case};
 pub use staging::reject_unsupported_template_source;
 
-/// Oak 前端 AST 类型别名，供 lowering 直接引用。
+/// `data.text` 前端 AST 类型别名，供 lowering 直接引用。
 pub use data_text_valkyrie::ast;
 
 /// 解析后的 Valkyrie 模块根。
 pub type ValkyrieRoot = ast::ValkyrieRoot;
 
-/// 将 Oak span 转为标准区间。
+/// 将 syntax span 转为标准区间。
 pub fn std_range(span: &data_text_core::Range<usize>) -> std::ops::Range<usize> {
     span.start..span.end
 }
 
-/// 生产编译使用的 Oak 语言配置。
+/// 生产编译使用的 `data.text` 语言配置。
 ///
 /// `support_t_grammar` 控制 TGrammar 模板节点是否进入 AST；模板展开由
 /// Compiler 在结构化节点上按 `CompilerBuildContext.arch` 执行，禁止文本重扫。
@@ -39,16 +39,16 @@ pub fn production_language() -> ValkyrieLanguage {
 /// 匿名源码的稳定诊断身份：测试夹具与合成包装没有可归属的文件路径。
 pub const ANONYMOUS_SOURCE_ID: &str = "<frontend>";
 
-/// 请求 Oak 对已捕获引号区间做有边界模板语法解析。
+/// 请求 `data.text` 对已捕获引号区间做有边界模板语法解析。
 ///
-/// 这是 Oak 的语法能力：文本段保留原始字节（转义候选不解码），插值段用普通
+/// 这是 `data.text` 的语法能力：文本段保留原始字节（转义候选不解码），插值段用普通
 /// 表达式解析器生成真实表达式树与绝对区间。前缀解释（`r` 不进入模板）由
 /// 调用方决定，本函数不识别 prefix。
 pub fn parse_quote_template(content: &str, content_start: usize) -> Result<Vec<ast::StringSegment>, data_text_core::TextError> {
     ValkyrieBuilder::new(&production_language()).parse_quote_template(content, content_start)
 }
 
-/// 使用 Oak 解析匿名源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
+/// 使用 `data.text` 解析匿名源码；失败时返回结构化 `ParseError`，禁止回退旧 parser。
 ///
 /// 匿名入口只为单源码测试夹具与无法归属的合成包装服务，诊断落 [`ANONYMOUS_SOURCE_ID`]；
 /// 任何有真实文件身份的调用方必须走 [`parse_source_with_identity`]。
@@ -56,7 +56,7 @@ pub fn parse_source(source: &str) -> Result<ValkyrieRoot, ParseError> {
     parse_source_with_language_and_identity(source, &production_language(), ANONYMOUS_SOURCE_ID)
 }
 
-/// 使用 Oak 解析具名源码；解析期诊断携带调用方给出的真实源码身份。
+/// 使用 `data.text` 解析具名源码；解析期诊断携带调用方给出的真实源码身份。
 pub fn parse_source_with_identity(source: &str, source_id: &str) -> Result<ValkyrieRoot, ParseError> {
     parse_source_with_language_and_identity(source, &production_language(), source_id)
 }
@@ -76,9 +76,9 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
     let mut session = ParseSession::<ValkyrieLanguage>::default();
     let output = builder.build(&text, &[], &mut session);
     // 解析期结构化诊断进同一诊断汇（多诊断报告）。
-    // 已核实的 oak 行为（`oak.rs` a202114d）：Valkyrie 文法以 `Result` 早退，实际产出
-    // fatal 单错且 `diagnostics` 恒为空；恢复记录接入 oak 后，这里自动带出全部
-    // 非致命诊断。此处只转述 oak 已生产的事实，不在外部包装出多错假象。
+    // 已核实的 `data.text` 行为（`oak.rs` a202114d）：Valkyrie 文法以 `Result` 早退，实际产出
+    // fatal 单错且 `diagnostics` 恒为空；恢复记录接入 `data.text` 后，这里自动带出全部
+    // 非致命诊断。此处只转述 `data.text` 已生产的事实，不在外部包装出多错假象。
     for diagnostic in &output.diagnostics {
         crate::compiler::diagnostics::pending::push_compile_diagnostic(compile_diagnostic_from_oak_error(diagnostic, source_id));
     }
@@ -111,9 +111,9 @@ pub fn parse_source_with_language_and_identity(source: &str, language: &Valkyrie
         })
 }
 
-/// 把 oak 生产的单条诊断投影为编译诊断汇条目。
+/// 把 `data.text` 生产的单条诊断投影为编译诊断汇条目。
 ///
-/// `code` 由 oak 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
+/// `code` 由 `data.text` 的稳定 i18n key 派生（`error.syntax` → `valkyrie.frontend.parse.syntax`），
 /// 不自行枚举错误清单；`phase`/`owner` 按诊断合同诚实记录为语法阶段、data-text-valkyrie 生产。
 /// 文件身份由调用方在解析入口给出：真实文件落逻辑路径，匿名/合成源落 [`ANONYMOUS_SOURCE_ID`]。
 fn compile_diagnostic_from_oak_error(error: &data_text_core::TextError, source_id: &str) -> crate::compiler::diagnostics::pending::CompileDiagnostic {
@@ -144,7 +144,7 @@ fn compile_diagnostic_from_oak_error(error: &data_text_core::TextError, source_i
     crate::compiler::diagnostics::pending::CompileDiagnostic::new(row, message)
 }
 
-/// Oak 把 trait 体里的运算符声明（`infix \`==\``）拆成两个成员节点：早先一个名字恰为 fixity
+/// `data.text` 把 trait 体里的运算符声明（`infix \`==\``）拆成两个成员节点：早先一个名字恰为 fixity
 /// 词素、无签名无方法体的占位成员，随后一个以运算符词素命名的签名成员。
 ///
 /// 语言上这是一个成员（`[infix] micro \`==\``），成员名只能由 `declared_member_name` 给出。

@@ -35,7 +35,7 @@ pub mod codes {
     pub const SERIALIZATION_FAILED: &str = "davinci.scene.serialization-failed";
     /// A diagram source could not be parsed.
     pub const PARSE_FAILED: &str = "davinci.diagram.parse-failed";
-    /// The Oak Mermaid frontend produced no usable AST.
+    /// The Mermaid frontend produced no usable AST.
     pub const AST_UNAVAILABLE: &str = "davinci.diagram.ast-unavailable";
     /// A diagram family or construct has no lowering, so the whole source is
     /// refused and no scene is produced.

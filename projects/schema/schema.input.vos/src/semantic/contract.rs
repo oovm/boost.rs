@@ -140,7 +140,7 @@ fn extract_attribute_argument(syntax: &str) -> Option<&str> {
     if arg.is_empty() { None } else { Some(arg) }
 }
 
-/// Builds validated operation contracts from Oak projections.
+/// Builds validated operation contracts from syntax projections.
 ///
 /// Operations are read from every source unit so provenance survives, while
 /// identity, effect and capability requirements come from `semantics`. The
@@ -246,7 +246,7 @@ pub fn build_operation_contracts(
 /// Authored declaration of one service method.
 ///
 /// Request and response types are authored as canonical VOS types and must
-/// agree with the Oak-projected method body, so the declaration can never
+/// agree with the syntax-projected method body, so the declaration can never
 /// invent a signature the source does not have. Types are resolved against the
 /// declared type contracts, so a method can never reference a type that the
 /// contract does not define.
@@ -266,7 +266,7 @@ pub struct ServiceMethodDecl {
 
 /// Authored contract declaration of one service.
 ///
-/// The service identity and the method signatures come from the Oak projection.
+/// The service identity and the method signatures come from the syntax projection.
 /// The declaration adds only the explicit operation binding and is rejected when
 /// it disagrees with the projected method names, request parameters, return
 /// types or stream markers.
@@ -278,7 +278,7 @@ pub struct ServiceContractDecl {
     pub methods: Vec<ServiceMethodDecl>,
 }
 
-/// Builds validated service contracts from Oak projections and declarations.
+/// Builds validated service contracts from syntax projections and declarations.
 ///
 /// The source projection owns the method names, the single named request
 /// parameter, the return type and the `stream` marker, while the declaration

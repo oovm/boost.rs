@@ -1,3 +1,3 @@
 # Idl Lsp
 
-This module provides idl lsp functionality for the Oaks project.
+This module provides idl lsp functionality for the Boost `data.text` project.

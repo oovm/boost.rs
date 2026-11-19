@@ -164,7 +164,7 @@ impl NotificationMethod {
 
 /// 已建模的 LSP 请求，携带该方法对应的参数。
 ///
-/// 参数沿用 Oak 的字节偏移索引：适配层负责把线上的行/列位置换算成字节偏移，
+/// 参数沿用 `data.text` 的字节偏移索引：适配层负责把线上的行/列位置换算成字节偏移，
 /// 定义层不做第二套源映射。
 #[derive(Debug, Clone)]
 pub enum Request {
@@ -331,7 +331,7 @@ pub enum ResponseResult {
 
 /// 文档同步方式。
 ///
-/// Oak 定义层只建模全量同步：`didOpen` / `didChange` 携带完整文本，
+/// `data.text` 定义层只建模全量同步：`didOpen` / `didChange` 携带完整文本，
 /// 服务写入自己的 VFS。增量同步需要第二套源映射，不属于定义层。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -1,8 +1,8 @@
 # 🛠️ SQL Parser Developer Guide
 
-SQL support for the Oak language framework.
+SQL support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-sql`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-sql`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-sql = { path = "..." }
+data-text-sql = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -19,7 +19,7 @@ The following is a standard workflow for parsing a complex SQL query with Joins 
 
 ```rust
 use data_text_core::{SourceText, parser::{Parser, session::ParseSession}};
-use oak_sql::{SqlLanguage, SqlParser};
+use data_text_sql::{SqlLanguage, SqlParser};
 
 fn main() {
     // 1. Prepare source code (PostgreSQL dialect)
@@ -63,7 +63,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 No need to re-parse an entire multi-megabyte SQL dump when small changes occur:
 ```rust
 use data_text_core::{SourceText, TextEdit, parser::{Parser, session::ParseSession}};
-use oak_sql::{SqlLanguage, SqlParser};
+use data_text_sql::{SqlLanguage, SqlParser};
 
 let config = SqlLanguage::postgresql();
 let parser = SqlParser::new(&config);
@@ -80,10 +80,10 @@ let new_result = parser.parse(&new_source, &edits, &mut session);
 ```
 
 ### 3. Diagnostics
-`oak-sql` provides rich error contexts specifically tailored for database developers, handling dialect-specific syntax quirks and providing clear feedback on malformed queries:
+`data-text-sql` provides rich error contexts specifically tailored for database developers, handling dialect-specific syntax quirks and providing clear feedback on malformed queries:
 ```rust
 use data_text_core::{SourceText, parser::{Parser, session::ParseSession}};
-use oak_sql::{SqlLanguage, SqlParser};
+use data_text_sql::{SqlLanguage, SqlParser};
 
 let config = SqlLanguage::postgresql();
 let parser = SqlParser::new(&config);

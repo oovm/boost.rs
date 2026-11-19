@@ -2,4 +2,4 @@
 
 Ada syntax highlighter
 
-This module provides ada lsp highlighter functionality for the Oaks project.
+This module provides ada lsp highlighter functionality for the Boost `data.text` project.

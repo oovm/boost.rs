@@ -41,7 +41,7 @@ This module is designed to be a fast and reliable lexer for V, supporting its mo
 ## Usage Example
 
 ```rust
-use oak_vlang::lexer::VLexer;
+use data_text_vlang::lexer::VLexer;
 
 fn main() {
     let v_source = r#"
@@ -49,7 +49,7 @@ fn main() {
         import os
 
         pub fn main() {
-            name := 'Oak'
+            name := 'Boost'
             println('Hello, $name!')
         }
     "#;

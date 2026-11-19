@@ -1,7 +1,7 @@
 //! Stable local execution model owned by 本地引擎.
 //!
 //! VOS frontends lower into this model through the [`yydb`] facade binder. This
-//! crate deliberately has no dependency on Oak, VOS, 集群, or a remote execution
+//! crate deliberately has no dependency on `data.text`, VOS, 集群, or a remote execution
 //! protocol. Applications should use `yydb::execution` instead of depending here
 //! directly.
 

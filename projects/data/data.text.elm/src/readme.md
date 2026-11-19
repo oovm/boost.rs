@@ -1,6 +1,6 @@
-# 🛠️ oak-elixir Developer Guide
+# 🛠️ data-text-elixir Developer Guide
 
-Elm support for the Oak language framework.
+Elm support for the `data.text` language framework.
 
 Welcome to the internal implementation of the Elixir parser. This module provides the core logic for tokenizing and parsing Elixir source code into a high-fidelity syntax tree.
 
@@ -9,14 +9,14 @@ Welcome to the internal implementation of the Elixir parser. This module provide
 - **Lexer**: Tokenizes Elixir source code, handling sigils, atoms, and strings with full fidelity.
 - **Parser**: Implements the Elixir grammar, producing a Green Tree that represents the concrete syntax.
 - **AST**: Provides a type-safe Red Tree facade for easy traversal and analysis.
-- **Language**: Defines the `ElixirLanguage` configuration and integration with the Oak framework.
+- **Language**: Defines the `ElixirLanguage` configuration and integration with the `data.text` framework.
 
 ## 🚀 Usage Example
 
 ### Basic Parsing
 
 ```rust
-use oak_elixir::{ElixirParser, SourceText, ElixirLanguage};
+use data_text_elixir::{ElixirParser, SourceText, ElixirLanguage};
 
 fn parse_elixir_code(code: &str) {
     let source = SourceText::new(code);
@@ -34,7 +34,7 @@ fn parse_elixir_code(code: &str) {
 ### Incremental Parsing
 
 ```rust
-use oak_elixir::{ElixirParser, SourceText, ElixirLanguage};
+use data_text_elixir::{ElixirParser, SourceText, ElixirLanguage};
 
 fn incremental_update(old_code: &str, new_code: &str) {
     let config = ElixirLanguage::new();

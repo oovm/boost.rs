@@ -18,7 +18,7 @@ The lexer recognizes a wide range of ActionScript tokens, including:
 
 ## 🛠️ Implementation Details
 
-The lexer is built using the Oak `Lexer` framework, leveraging specialized configurations for:
+The lexer is built using the shared `Lexer` framework, leveraging specialized configurations for:
 - **Comments**: Supports both single-line (`//`) and multi-line (`/* */`) comments.
 - **Strings**: Handles double-quoted strings with escape sequences.
 - **Whitespace**: Recognizes Unicode-compliant whitespace characters.

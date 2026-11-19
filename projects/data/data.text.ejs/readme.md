@@ -1,13 +1,13 @@
-# 🚀 Oak EJS Template Parser
+# 🚀 EJS Template Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-ejs.svg)](https://crates.io/crates/oak-ejs)
-[![Documentation](https://docs.rs/oak-ejs/badge.svg)](https://docs.rs/oak-ejs)
+[![Crates.io](https://img.shields.io/crates/v/data-text-ejs.svg)](https://crates.io/crates/data-text-ejs)
+[![Documentation](https://docs.rs/data-text-ejs/badge.svg)](https://docs.rs/data-text-ejs)
 
-**Embedded JavaScript Templates for the `data.text` family** — A high-performance, incremental EJS template parser built on the Oak framework. Optimized for server-side rendering, static site generation, and real-time template processing.
+**Embedded JavaScript Templates for the `data.text` family** — A high-performance, incremental EJS template parser built on the `data.text` framework. Optimized for server-side rendering, static site generation, and real-time template processing.
 
 ## 🎯 Project Vision
 
-EJS (Embedded JavaScript) is one of the most popular templating engines for JavaScript, enabling developers to embed JavaScript code directly within HTML templates. `oak-ejs` provides a robust, Rust-powered infrastructure for parsing EJS templates that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive template engines, static site generators, and server-side rendering tools.
+EJS (Embedded JavaScript) is one of the most popular templating engines for JavaScript, enabling developers to embed JavaScript code directly within HTML templates. `data-text-ejs` provides a robust, Rust-powered infrastructure for parsing EJS templates that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive template engines, static site generators, and server-side rendering tools.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ EJS (Embedded JavaScript) is one of the most popular templating engines for Java
     - **Escaped Tags**: `<%%` renders as literal `<%` in the output.
     - **Trim Mode**: `-%>` trims the following newline.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and template intelligence.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and template intelligence.
 
 ## 📖 EJS Syntax Reference
 
@@ -43,7 +43,7 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 ## 🚦 Quick Start
 
 ```rust
-use oak_ejs::{EjsLanguage, EjsLexer, EjsParser, EjsElementType};
+use data_text_ejs::{EjsLanguage, EjsLexer, EjsParser, EjsElementType};
 use data_text_core::SourceText;
 
 fn main() {
@@ -58,4 +58,4 @@ fn main() {
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

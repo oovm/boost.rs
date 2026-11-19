@@ -1,13 +1,13 @@
-# 🚀 Oak CSS Parser
+# 🚀 CSS Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-css.svg)](https://crates.io/crates/oak-css)
-[![Documentation](https://docs.rs/oak-css/badge.svg)](https://docs.rs/oak-css)
+[![Crates.io](https://img.shields.io/crates/v/data-text-css.svg)](https://crates.io/crates/data-text-css)
+[![Documentation](https://docs.rs/data-text-css/badge.svg)](https://docs.rs/data-text-css)
 
-**Styling the Web with Speed and Precision** — A high-performance, incremental CSS parser built on the Oak framework. Optimized for modern CSS features, large-scale stylesheets, and real-time developer tools.
+**Styling the Web with Speed and Precision** — A high-performance, incremental CSS parser built on the `data.text` framework. Optimized for modern CSS features, large-scale stylesheets, and real-time developer tools.
 
 ## 🎯 Project Vision
 
-CSS is the design language of the web, and its complexity has grown significantly with the introduction of variables, nesting, and complex layout modules. `oak-css` aims to provide a robust, modern, Rust-powered infrastructure for parsing CSS that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive CSS files in real-time. Whether you are building custom linters, automated theme generators, or sophisticated IDE extensions, `oak-css` provides the high-fidelity AST and efficiency needed to keep pace with the modern web design ecosystem.
+CSS is the design language of the web, and its complexity has grown significantly with the introduction of variables, nesting, and complex layout modules. `data-text-css` aims to provide a robust, modern, Rust-powered infrastructure for parsing CSS that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive CSS files in real-time. Whether you are building custom linters, automated theme generators, or sophisticated IDE extensions, `data-text-css` provides the high-fidelity AST and efficiency needed to keep pace with the modern web design ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ CSS is the design language of the web, and its complexity has grown significantl
     - **Functions & Units**: Detailed handling of CSS functions like `calc()`, `clamp()`, and various units (`rem`, `em`, `vh`, `vw`, etc.).
     - **At-Rules**: Comprehensive support for `@import`, `@media`, `@keyframes`, and other standard at-rules.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active styling.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent design token discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent design token discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

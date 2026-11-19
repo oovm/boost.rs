@@ -1,13 +1,13 @@
-# 🚀 Oak Dejavu Parser
+# 🚀 Dejavu Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-dejavu.svg)](https://crates.io/crates/oak-dejavu)
-[![Documentation](https://docs.rs/oak-dejavu/badge.svg)](https://docs.rs/oak-dejavu)
+[![Crates.io](https://img.shields.io/crates/v/data-text-dejavu.svg)](https://crates.io/crates/data-text-dejavu)
+[![Documentation](https://docs.rs/data-text-dejavu/badge.svg)](https://docs.rs/data-text-dejavu)
 
-**Making DEJAVU processing simple** — A high-performance, incremental DEJAVU parser built on the Oak framework. Specially optimized for large-scale codebases and modern IDE integration for the Dejavu programming language.
+**Making DEJAVU processing simple** — A high-performance, incremental DEJAVU parser built on the `data.text` framework. Specially optimized for large-scale codebases and modern IDE integration for the Dejavu programming language.
 
 ## 🎯 Project Vision
 
-`oak-dejavu` is dedicated to providing industrial-grade parsing support for the DEJAVU language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers. Our goal is to empower developers with a robust, efficient, and high-fidelity parsing infrastructure that serves as the foundation for the next generation of Dejavu developer tools.
+`data-text-dejavu` is dedicated to providing industrial-grade parsing support for the DEJAVU language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers. Our goal is to empower developers with a robust, efficient, and high-fidelity parsing infrastructure that serves as the foundation for the next generation of Dejavu developer tools.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@
     - **Strongly Typed Expressions**: Detailed mapping of complex expressions, including field access and indexing.
     - **Fault-Tolerant Statements**: Robust handling of variable bindings and control flow structures.
 - **🛡️ Robust Error Recovery**: Engineered to handle incomplete or malformed code gracefully, providing precise diagnostics while maintaining parser state.
-- **🧩 Easy Integration**: Designed with high cohesion and low coupling, allowing for quick integration into existing Rust projects and Oak-based tools.
+- **🧩 Easy Integration**: Designed with high cohesion and low coupling, allowing for quick integration into existing Rust projects and `data.text`-based tools.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

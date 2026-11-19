@@ -1,8 +1,8 @@
 # 🛠️ Scala Parser Developer Guide
 
-Scala support for the Oak language framework.
+Scala support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-scala`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-scala`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-scala = { path = "..." }
+data-text-scala = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-scala = { path = "..." }
 The following is a standard workflow for parsing Scala source files, supporting Scala 2 and Scala 3 syntax:
 
 ```rust
-use oak_scala::{ScalaParser, SourceText, ScalaLanguage};
+use data_text_scala::{ScalaParser, SourceText, ScalaLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -60,7 +60,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Scala specific constructs like package clauses, imports, object/class/trait definitions, and method declarations.
 
 ### 2. Incremental Parsing
-Scala projects can be large. `oak-scala` supports sub-millisecond incremental updates for efficient IDE feedback:
+Scala projects can be large. `data-text-scala` supports sub-millisecond incremental updates for efficient IDE feedback:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

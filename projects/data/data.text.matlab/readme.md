@@ -1,13 +1,13 @@
-# 🚀 oak-matlab
+# 🚀 data-text-matlab
 
-[![Crates.io](https://img.shields.io/crates/v/oak-matlab.svg)](https://crates.io/crates/oak-matlab)
-[![Documentation](https://docs.rs/oak-matlab/badge.svg)](https://docs.rs/oak-matlab)
+[![Crates.io](https://img.shields.io/crates/v/data-text-matlab.svg)](https://crates.io/crates/data-text-matlab)
+[![Documentation](https://docs.rs/data-text-matlab/badge.svg)](https://docs.rs/data-text-matlab)
 
-**Making MATLAB processing simple** — A high-performance, incremental MATLAB parser built on the Oak framework.
+**Making MATLAB processing simple** — A high-performance, incremental MATLAB parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-matlab` is dedicated to providing industrial-grade parsing support for the MATLAB language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-matlab` is dedicated to providing industrial-grade parsing support for the MATLAB language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

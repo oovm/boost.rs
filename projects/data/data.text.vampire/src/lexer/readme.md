@@ -25,7 +25,7 @@ Vampire Lexer for tokenizing Vampire logic problems.
 ## Usage Example
 
 ```rust
-use oak_vampire::{VampireLexer, VampireLanguage};
+use data_text_vampire::{VampireLexer, VampireLanguage};
 use data_text_core::{Lexer, source::SourceText, parser::session::ParseSession};
 
 let language = VampireLanguage::default();

@@ -1,13 +1,13 @@
-# 🚀 Oak Julia Parser
+# 🚀 Julia Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-julia.svg)](https://crates.io/crates/oak-julia)
-[![Documentation](https://docs.rs/oak-julia/badge.svg)](https://docs.rs/oak-julia)
+[![Crates.io](https://img.shields.io/crates/v/data-text-julia.svg)](https://crates.io/crates/data-text-julia)
+[![Documentation](https://docs.rs/data-text-julia/badge.svg)](https://docs.rs/data-text-julia)
 
-**Numerical Computing Power with Rust Efficiency** — A high-performance, incremental Julia parser built on the Oak framework. Optimized for scientific computing, data analysis pipelines, and modern IDE support for the Julia language.
+**Numerical Computing Power with Rust Efficiency** — A high-performance, incremental Julia parser built on the `data.text` framework. Optimized for scientific computing, data analysis pipelines, and modern IDE support for the Julia language.
 
 ## 🎯 Project Vision
 
-Julia is renowned for its high performance in numerical and scientific computing. `oak-julia` aims to provide a robust, modern, Rust-powered infrastructure for parsing Julia that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex Julia projects in real-time. Whether you are building custom linters, performance analyzers, or sophisticated IDE extensions, `oak-julia` provides the high-fidelity AST and efficiency needed to keep pace with Julia's dynamic and high-performance ecosystem.
+Julia is renowned for its high performance in numerical and scientific computing. `data-text-julia` aims to provide a robust, modern, Rust-powered infrastructure for parsing Julia that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex Julia projects in real-time. Whether you are building custom linters, performance analyzers, or sophisticated IDE extensions, `data-text-julia` provides the high-fidelity AST and efficiency needed to keep pace with Julia's dynamic and high-performance ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Julia is renowned for its high performance in numerical and scientific computing
     - **Mathematical Constructs**: First-class support for Julia's unique mathematical syntax and operators.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 

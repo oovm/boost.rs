@@ -1,7 +1,7 @@
 //! Pandoc JSON exchange format.
 //!
 //! The crate owns the typed Pandoc AST, the strict wire codec, and the IR
-//! adapters. It does not own Oak or Acorn semantics: JSON syntax is handled by
+//! adapters. It does not own grammar or binary-format semantics: JSON syntax is handled by
 //! `serde_json`, while Pandoc constructors live only in this module.
 
 pub mod codec;

@@ -951,7 +951,7 @@ fn lower_name_expression(path: &frontend::ast::NamePath, span: SourceSpan) -> Hi
 }
 
 fn lower_quote_literal_kind(literal: &QuoteLiteral, source_id: SourceID) -> Result<HirExprKind, HirError> {
-    // 捕获事实来自 Oak：内容未解码、模板未分段；前缀解释、转义解码与模板解析
+    // 捕获事实来自 `data.text`：内容未解码、模板未分段；前缀解释、转义解码与模板解析
     // 由 `quote_literal` 模块按合同完成，失败结构化带原始源区间。
     let decoded = quote_literal::decode_quote_capture(literal, true)?;
     let prefix = literal.prefix.as_ref().map(|prefix| Identifier::new(&prefix.name));

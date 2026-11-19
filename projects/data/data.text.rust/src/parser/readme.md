@@ -4,7 +4,7 @@ The Rust Parser module provides full Rust language syntax analysis functionality
 
 ## Overview
 
-This module implements an incremental parser based on the Oak framework, supporting the full syntax structure of the Rust language. The parser uses a Red-Green tree architecture, providing efficient incremental parsing and error recovery capabilities.
+This module implements an incremental parser based on the `data.text` framework, supporting the full syntax structure of the Rust language. The parser uses a Red-Green tree architecture, providing efficient incremental parsing and error recovery capabilities.
 
 ## Core Components
 
@@ -24,7 +24,7 @@ Implements the `Parser<RustLanguage>` trait, providing:
 ## Usage
 
 ```rust,ignore
-use oak_rust::{RustParser, RustLanguage};
+use data_text_rust::{RustParser, RustLanguage};
 use data_text_core::{IncrementalCache, source::StringSource};
 
 let parser = RustParser::new();

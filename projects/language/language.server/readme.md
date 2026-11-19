@@ -1,13 +1,13 @@
-# 🚀 oak-lsp
+# 🚀 language-server
 
-[![Crates.io](https://img.shields.io/crates/v/oak-lsp.svg)](https://crates.io/crates/oak-lsp)
-[![Documentation](https://docs.rs/oak-lsp/badge.svg)](https://docs.rs/oak-lsp)
+[![Crates.io](https://img.shields.io/crates/v/language-server.svg)](https://crates.io/crates/language-server)
+[![Documentation](https://docs.rs/language-server/badge.svg)](https://docs.rs/language-server)
 
-**Language Server Protocol Implementation for Oak** — A complete LSP server framework for building language-aware editors and IDEs.
+**Language Server Protocol Implementation for `data.text`** — A complete LSP server framework for building language-aware editors and IDEs.
 
-## 🎯 Why oak-lsp?
+## 🎯 Why language-server?
 
-The Language Server Protocol (LSP) has become the standard for language tooling integration. `oak-lsp` provides a complete, production-ready LSP server implementation that works with any Oak language parser.
+The Language Server Protocol (LSP) has become the standard for language tooling integration. `language-server` provides a complete, production-ready LSP server implementation that works with any `data.text` language parser.
 
 ## ✨ Key Features
 
@@ -40,11 +40,11 @@ The Language Server Protocol (LSP) has become the standard for language tooling 
 
 ## 🔗 Ecosystem Integration
 
-Integrates with `oak-vfs` for file access, `oak-hover`/`oak-navigation`/`oak-symbols` for features, and any LSP-compatible editor.
+Integrates with `boost-source` for file access, `language-hover`/`language-navigation`/`data-text-symbols` for features, and any LSP-compatible editor.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-lsp).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-server).
 
 ## 🤝 Contributing
 

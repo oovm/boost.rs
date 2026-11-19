@@ -1,3 +1,3 @@
 # Css Mcp
 
-This module provides css mcp functionality for the Oaks project.
+This module provides css mcp functionality for the Boost `data.text` project.

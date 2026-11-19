@@ -1,11 +1,11 @@
-# 🚀 oak-semantic-search
+# 🚀 language-semantic-search
 
-[![Crates.io](https://img.shields.io/crates/v/oak-semantic-search.svg)](https://crates.io/crates/oak-semantic-search)
-[![Documentation](https://docs.rs/oak-semantic-search/badge.svg)](https://docs.rs/oak-semantic-search)
+[![Crates.io](https://img.shields.io/crates/v/language-semantic-search.svg)](https://crates.io/crates/language-semantic-search)
+[![Documentation](https://docs.rs/language-semantic-search/badge.svg)](https://docs.rs/language-semantic-search)
 
-**Semantic Search for Oak Languages** — Search code by meaning, not just text.
+**Semantic Search for Languages** — Search code by meaning, not just text.
 
-## 🎯 Why oak-semantic-search?
+## 🎯 Why language-semantic-search?
 
 Traditional text search finds literal matches, but semantic search understands code meaning. Search for concepts like "all functions that return Result" or "all implementations of this trait."
 
@@ -15,7 +15,7 @@ Traditional text search finds literal matches, but semantic search understands c
 - **📊 Pattern Matching** — Match code patterns across the codebase
 - **🌐 Workspace-Wide** — Search across multiple files and projects
 - **⚡ Fast Indexing** — Efficient indexing for quick searches
-- **🧩 Language Agnostic** — Works with any Oak language parser
+- **🧩 Language Agnostic** — Works with any `data.text` language parser
 
 ## 🏗️ Architecture
 
@@ -25,11 +25,11 @@ Traditional text search finds literal matches, but semantic search understands c
 
 ## 🔗 Ecosystem Integration
 
-Integrates with `oak-vfs` for file access, `oak-symbols` for symbol extraction, and IDE extensions for advanced search.
+Integrates with `boost-source` for file access, `data-text-symbols` for symbol extraction, and IDE extensions for advanced search.
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-semantic-search).
+For usage examples and API details, see the [API documentation](https://docs.rs/language-semantic-search).
 
 ## 🤝 Contributing
 

@@ -1,6 +1,6 @@
 //! VOS schema input chain of the Boost `schema.*` tree.
 //!
-//! Oak owns VOS lexing, parsing, CST and syntax projection (`data-text-vos`). This
+//! the grammar crate owns VOS lexing, parsing, CST and syntax projection (`data-text-vos`). This
 //! crate owns name resolution, canonical types, durable identity, the resolved
 //! contract and structured diagnostics. Foundational models are exposed through
 //! [`types`].
@@ -13,7 +13,7 @@
 
 pub use schema_types as types;
 
-/// Oak syntax surface consumed by VOS hosts.
+/// syntax surface consumed by VOS hosts.
 pub use data_text_vos as syntax;
 
 pub mod registry;
@@ -23,7 +23,7 @@ mod semantic;
 pub use semantic::*;
 
 /// Parses a VOS expression program (statements, `micro` declarations and an
-/// optional trailing result expression) through Oak.
+/// optional trailing result expression) through the `data.text` parser.
 ///
 /// This is the structured program projection consumed by hosts such as Iris to
 /// lower query and update bodies. It performs no name resolution or type
@@ -32,7 +32,7 @@ pub fn parse_program(source: &str) -> Result<syntax::VosProgram, String> {
     data_text_vos::parse_program(source)
 }
 
-/// Parses and validates a schema through Oak and the VOS schema contract.
+/// Parses and validates a schema through `data.text` and the VOS schema contract.
 pub fn validate_schema(source: &str) -> Result<schema_types::SchemaProjection, String> {
     let input = parse_oak(source)?;
     let projection = input.project_schema().map_err(|diagnostics| format!("VOS semantic projection failed: {diagnostics:?}"))?;

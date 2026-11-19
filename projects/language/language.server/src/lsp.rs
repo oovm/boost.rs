@@ -1,4 +1,4 @@
-//! `Lsp` 合同：把已建模的协议消息分派给 Oak 语言能力。
+//! `Lsp` 合同：把已建模的协议消息分派给 `data.text` 语言能力。
 //!
 //! 本模块是协议方法与语言能力之间的唯一分派点。传输适配者（stdio、HTTP、WebSocket）
 //! 只负责 framing 与 JSON-RPC 编解码，把已解析的消息交给 [`Lsp::handle_request`] 与

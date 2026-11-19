@@ -1,13 +1,13 @@
-# 🚀 oak-swift
+# 🚀 data-text-swift
 
-[![Crates.io](https://img.shields.io/crates/v/oak-swift.svg)](https://crates.io/crates/oak-swift)
-[![Documentation](https://docs.rs/oak-swift/badge.svg)](https://docs.rs/oak-swift)
+[![Crates.io](https://img.shields.io/crates/v/data-text-swift.svg)](https://crates.io/crates/data-text-swift)
+[![Documentation](https://docs.rs/data-text-swift/badge.svg)](https://docs.rs/data-text-swift)
 
-**Safety and Speed for Apple Ecosystem Development** — A high-performance, incremental Swift parser built on the Oak framework. Optimized for Swift 5.10+ features, complex generic systems, and highly responsive developer tools.
+**Safety and Speed for Apple Ecosystem Development** — A high-performance, incremental Swift parser built on the `data.text` framework. Optimized for Swift 5.10+ features, complex generic systems, and highly responsive developer tools.
 
 ## 🎯 Project Vision
 
-Swift is the modern foundation for Apple platform development, and its evolution brings sophisticated features like property wrappers, result builders, and complex concurrency models. `oak-swift` aims to provide a robust, premium, Rust-powered infrastructure for parsing Swift that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive Swift projects in real-time. Whether you are building custom linters, automated code generation tools, or sophisticated IDE extensions, `oak-swift` provides the high-fidelity AST and efficiency needed to keep pace with the continuous growth of the Swift language.
+Swift is the modern foundation for Apple platform development, and its evolution brings sophisticated features like property wrappers, result builders, and complex concurrency models. `data-text-swift` aims to provide a robust, premium, Rust-powered infrastructure for parsing Swift that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can handle massive Swift projects in real-time. Whether you are building custom linters, automated code generation tools, or sophisticated IDE extensions, `data-text-swift` provides the high-fidelity AST and efficiency needed to keep pace with the continuous growth of the Swift language.
 
 ## ✨ Core Features
 
@@ -20,11 +20,11 @@ Swift is the modern foundation for Apple platform development, and its evolution
     - **Functional & OOP**: Detailed mapping of Closures, Enums with associated values, Protocols, and Extensions.
     - **SwiftUI Support**: Precise parsing of declarative UI syntax patterns common in SwiftUI projects.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
-`oak-swift` follows the modern Green/Red Tree architecture (inspired by Roslyn):
+`data-text-swift` follows the modern Green/Red Tree architecture (inspired by Roslyn):
 
 - **Green Tree**: Immutable, lossless, and syntax-only tree. It captures the full fidelity of the source code, including trivia (comments, whitespace).
 - **Red Tree**: A facade over the Green Tree that provides a convenient, type-safe API for tree traversal and analysis, including parent pointers and absolute offsets.

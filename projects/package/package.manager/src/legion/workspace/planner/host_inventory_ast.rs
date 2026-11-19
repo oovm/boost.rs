@@ -1,4 +1,4 @@
-//! 从 Oak AST 收集 host contract / provider inventory（禁止文本行扫描）。
+//! 从 syntax tree 收集 host contract / provider inventory（禁止文本行扫描）。
 
 use std::{collections::BTreeSet, path::Path};
 

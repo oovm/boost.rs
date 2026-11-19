@@ -201,7 +201,7 @@ pub fn from_str<'de, T>(toml: &'de str) -> Result<T, TextError>
 where
     T: serde::Deserialize<'de>,
 {
-    // 首先使用 oak-toml 解析器解析 TOML 字符串
+    // 首先使用 data-text-toml 解析器解析 TOML 字符串
     let root = crate::parse(toml)?;
     // 将解析结果转换为 Value
     let toml_value = root_into_value(root);

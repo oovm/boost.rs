@@ -2,7 +2,7 @@
 use crate::ast::CRoot;
 use data_text_core::{Language, LanguageCategory};
 
-/// C language implementation for the Oaks framework.
+/// C language implementation for the `data.text` framework.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CLanguage {}

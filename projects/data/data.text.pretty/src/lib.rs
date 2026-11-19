@@ -1,6 +1,6 @@
 //! Document algebra and pretty-print renderer shared by `data.text` printers.
 //!
-//! The code originates from the former `oak-pretty-print` project (MPL-2.0) and
+//! The code originates from the former `language-format` project (MPL-2.0) and
 //! has been internalized and de-branded for Boost.
 
 #![allow(incomplete_features)]

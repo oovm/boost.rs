@@ -1,6 +1,6 @@
-# 🛠️ oak-dart Developer Guide
+# 🛠️ data-text-dart Developer Guide
 
-Dart support for the Oak language framework.
+Dart support for the `data.text` language framework.
 
 Welcome to the internal implementation of the Dart parser. This module provides the core logic for tokenizing and parsing Dart source code into a high-fidelity syntax tree.
 
@@ -9,14 +9,14 @@ Welcome to the internal implementation of the Dart parser. This module provides 
 - **Lexer**: Tokenizes Dart source code, handling comments, strings, and identifiers with full fidelity.
 - **Parser**: Implements the Dart grammar, producing a Green Tree that represents the concrete syntax.
 - **AST**: Provides a type-safe Red Tree facade for easy traversal and analysis.
-- **Language**: Defines the `DartLanguage` configuration and integration with the Oak framework.
+- **Language**: Defines the `DartLanguage` configuration and integration with the `data.text` framework.
 
 ## 🚀 Usage Example
 
 ### Basic Parsing
 
 ```rust
-use oak_dart::{DartParser, SourceText, DartLanguage};
+use data_text_dart::{DartParser, SourceText, DartLanguage};
 
 fn parse_dart_code(code: &str) {
     let source = SourceText::new(code);
@@ -34,7 +34,7 @@ fn parse_dart_code(code: &str) {
 ### Incremental Parsing
 
 ```rust
-use oak_dart::{DartParser, SourceText, DartLanguage};
+use data_text_dart::{DartParser, SourceText, DartLanguage};
 
 fn incremental_update(old_code: &str, new_code: &str) {
     let config = DartLanguage::new();

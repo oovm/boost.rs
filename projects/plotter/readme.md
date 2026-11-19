@@ -84,9 +84,9 @@ flowchart TB
 | `plotter.engraving`                      | `plotter-engraving`                      | **只做** `ScoreSpec → EngravingPlan → scene`，不含语言前端                                               |
 | `plotter.depiction`                       | `plotter-depiction`                       | **只做** `MoleculeSpec / ReactionSpec → DepictionPlan → scene`，不含语言前端                             |
 | `plotter.runtime` / `plotter.motion` | `plotter-runtime` / `plotter-motion` | 交互与过渡                                                                                               |
-| `plotter.input.mermaid`              | `plotter-input-mermaid`              | Oak Mermaid → `DiagramSpec`                                                                              |
-| `plotter.input.dot`                  | `plotter-input-dot`                  | Oak DOT 白名单 → `DiagramSpec`                                                                           |
-| `plotter.input.plantuml`             | `plotter-input-plantuml`             | Oak PlantUML 子集 → `DiagramSpec`                                                                        |
+| `plotter.input.mermaid`              | `plotter-input-mermaid`              | Mermaid → `DiagramSpec`                                                                              |
+| `plotter.input.dot`                  | `plotter-input-dot`                  | DOT 白名单 → `DiagramSpec`                                                                           |
+| `plotter.input.plantuml`             | `plotter-input-plantuml`             | PlantUML 子集 → `DiagramSpec`                                                                        |
 
 ## 2. 为什么没有 `plotter.ir`
 
@@ -145,10 +145,10 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  subgraph oak["Oak 前端（仓外）"]
-    OM[oak-mermaid]
-    OD[oak-dot]
-    OP[oak-plantuml]
+  subgraph textfront["data.text 前端"]
+    OM[data-text-mermaid]
+    OD[data-text-dot]
+    OP[data-text-plantuml]
   end
 
   subgraph input["plotter.input.*"]

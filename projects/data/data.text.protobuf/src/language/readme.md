@@ -1,3 +1,3 @@
 # Protobuf Language
 
-This module provides protobuf language functionality for the Oaks project.
+This module provides protobuf language functionality for the Boost `data.text` project.

@@ -1,4 +1,4 @@
-//! 从源码恢复 Oak 尚未完整降低的 `match`/`catch` arm 模式。
+//! 从源码恢复 `data.text` 尚未完整降低的 `match`/`catch` arm 模式。
 
 use std::ops::Range;
 
@@ -21,7 +21,7 @@ use super::errors::MatchRecoveryStage;
 
 use boost_math::numeric::OrderedF64;
 
-/// Oak 产出的 match arm 是否需从源码恢复。
+/// `data.text` 产出的 match arm 是否需从源码恢复。
 pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms: &[MatchArm]) -> bool {
     let expected = count_match_arms_in_source(source, match_span.clone());
     if expected == 0 {
@@ -33,7 +33,7 @@ pub fn match_needs_source_recovery(source: &str, match_span: Range<usize>, arms:
     if arms.iter().any(|arm| broken_wildcard_arm(source, arm) || oak_lost_case_pattern(source, arm)) {
         return true;
     }
-    // Oak 的 `Pattern` 没有区间变体，且 `case 2..=8:` 的 arm span 会从 `8` 起算
+    // `data.text` 的 `Pattern` 没有区间变体，且 `case 2..=8:` 的 arm span 会从 `8` 起算
     // （`2..=` 被解析器当作前导表达式吞掉），不能靠 `arm.span` 判定；必须直接从 match
     // 源码切分臂文本。区间必须进源码恢复，否则会退化成等值比较。
     source_match_has_range_pattern(source, match_span)
@@ -51,7 +51,7 @@ fn source_match_has_range_pattern(source: &str, match_span: Range<usize>) -> boo
 /// 按 match 源码顺序返回每臂的区间模式文本（`None` 表示该臂不是区间）。
 ///
 /// 逐臂路径不能用 `arm.span`：`case 2..=8:` 的 span 从 `8` 起算，前导 `2..=` 丢失。
-/// 返回列表长度与源码臂数一致；调用方只有在它与 Oak `arms` 等长时才按索引采用。
+/// 返回列表长度与源码臂数一致；调用方只有在它与 `data.text` `arms` 等长时才按索引采用。
 pub fn recovered_range_pattern_texts(source: &str, match_span: Range<usize>) -> Option<Vec<Option<String>>> {
     let interior = extract_match_block_interior(source, match_span)?;
     Some(
@@ -62,7 +62,7 @@ pub fn recovered_range_pattern_texts(source: &str, match_span: Range<usize>) -> 
     )
 }
 
-/// Oak `parse_match_pattern` 对个别原子仍可能落成 Wildcard，`case 7` 等需按源码恢复。
+/// `data.text` `parse_match_pattern` 对个别原子仍可能落成 Wildcard，`case 7` 等需按源码恢复。
 fn oak_lost_case_pattern(source: &str, arm: &MatchArm) -> bool {
     if !matches!(arm.pattern, data_text_valkyrie::ast::Pattern::Wildcard(_)) {
         return false;
@@ -83,9 +83,9 @@ fn extract_case_pattern_text(arm_text: &str) -> Option<String> {
     Some(after_case[..colon].trim().to_string())
 }
 
-/// 从 arm 源码恢复 Oak 丢失的对象模式字段名。
+/// 从 arm 源码恢复 `data.text` 丢失的对象模式字段名。
 ///
-/// Oak 的 `parse_match_pattern` 把花括号字段名当作裸标识符消费，builder 只保留首个标识符，
+/// `data.text` 的 `parse_match_pattern` 把花括号字段名当作裸标识符消费，builder 只保留首个标识符，
 /// 字段整体丢失（`Pattern::Class` 退化成 `Pattern::Type`）。这里只替换模式，不重解析臂体；
 /// 字段名按源码写法保留，供 HIR 按声明字段名绑定。
 pub fn recover_arm_object_pattern(source: &str, arm: &MatchArm, span: SourceSpan) -> Option<HirPattern> {
@@ -244,7 +244,7 @@ fn broken_wildcard_arm(source: &str, arm: &MatchArm) -> bool {
         && source.get(arm.span.start..arm.span.end).is_some_and(|text| text.trim_start().starts_with(':'))
 }
 
-/// 从 match 表达式 span 恢复 pattern 与 Oak body 表达式。
+/// 从 match 表达式 span 恢复 pattern 与 parser body 表达式。
 pub fn recover_match_arms(source: &str, match_span: Range<usize>) -> Result<Vec<(HirPattern, TermExpression)>, HirError> {
     let span = DiagnosticSpan { start: match_span.start, end: match_span.end };
     let interior = extract_match_block_interior(source, match_span.clone())
@@ -470,7 +470,7 @@ fn parse_range_endpoint(text: Option<&str>) -> Option<Option<HirLiteral>> {
 
 /// 区间模式端点不合法时给出结构化诊断。
 ///
-/// Oak 的 `Pattern` 没有区间变体，区间只能在源码恢复阶段识别；端点必须按整数字面量
+/// `data.text` 的 `Pattern` 没有区间变体，区间只能在源码恢复阶段识别；端点必须按整数字面量
 /// 解释，`2..=8.5`、`true..=8` 等种类不一致或非整数端点在这里拒绝。
 fn invalid_range_pattern_error(pattern_text: &str, span: DiagnosticSpan) -> Option<HirError> {
     let (start, end, _) = parse_range_pattern(pattern_text)?;

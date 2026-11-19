@@ -8,7 +8,7 @@ mod build_expression_tree;
 ///
 /// This builder is responsible for converting the generic syntax tree (green/red trees)
 /// into a strongly-typed SQL Abstract Syntax Tree (AST). It implements the [`Builder`]
-/// trait, allowing it to be used within the Oak incremental parsing framework.
+/// trait, allowing it to be used within the incremental parsing framework.
 ///
 /// # Usage
 ///

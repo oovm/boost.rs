@@ -1,18 +1,18 @@
-# Oak Stylus
+# Stylus
 
-Stylus language support for the Oak framework.
+Stylus language support for the `data.text` framework.
 
 ## Features
 
 - Lexical analysis for Stylus syntax
 - Syntax parsing for Stylus constructs
 - Abstract syntax tree (AST) representation
-- Integration with Oak core framework
+- Integration with `data.text` core framework
 
 ## Usage
 
 ```rust
-use oak_stylus::{StylusLanguage, StylusLexer, StylusParser, StylusBuilder};
+use data_text_stylus::{StylusLanguage, StylusLexer, StylusParser, StylusBuilder};
 use data_text_core::{Lexer, Parser, Builder, Source, SourceText};
 
 // Create a source text

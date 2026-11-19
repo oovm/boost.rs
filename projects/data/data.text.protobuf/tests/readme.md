@@ -1,6 +1,6 @@
 # 🧪 Testing & Verification
 
-Quality is the core of `oak-protobuf`. We ensure the stability of the code through multi-dimensional testing.
+Quality is the core of `data-text-protobuf`. We ensure the stability of the code through multi-dimensional testing.
 
 ## 📊 Testing Strategy
 

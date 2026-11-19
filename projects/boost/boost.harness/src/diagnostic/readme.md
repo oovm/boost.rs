@@ -34,5 +34,5 @@ The default feature set is empty. Parser cores, WASM builds, and binary kernels 
 
 The core crate does not provide business result wrappers, quick error facades,
 source storage, or terminal policy. Enable the `terminal` feature to render text
-diagnostics through `boost-console` and `boost-terminal`. Oak, Acorn, and Panduck keep their
+diagnostics through `boost-console` and `boost-terminal`. The internalized `data.text` and `data.binary` families keep their
 own result types and only share `DiagnosticSet` as the common diagnostic container.

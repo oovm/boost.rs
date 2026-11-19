@@ -74,7 +74,7 @@ pub enum HandleResult {
 ///
 /// # Usage Scenario
 ///
-/// The `ReplHandler` is used by [`OakRepl`] to:
+/// The `ReplHandler` is used by [`Repl`] to:
 /// 1. Customize the prompt based on whether it's a new command or a continuation.
 /// 2. Provide syntax highlighting for the current input line.
 /// 3. Determine if a multi-line input is complete and ready for execution.
@@ -207,14 +207,14 @@ impl LineBuffer {
 
 /// The main REPL engine.
 ///
-/// `OakRepl` manages the terminal interface, handles user input,
+/// `Repl` manages the terminal interface, handles user input,
 /// and coordinates with a `ReplHandler` to provide language-specific
 /// functionality.
 ///
 /// # Example
 ///
 /// ```no_run
-/// use language_repl::{HandleResult, OakRepl, ReplError, ReplHandler};
+/// use language_repl::{HandleResult, Repl, ReplError, ReplHandler};
 ///
 /// struct MyHandler;
 /// impl ReplHandler for MyHandler {
@@ -230,7 +230,7 @@ impl LineBuffer {
 ///     }
 /// }
 ///
-/// let mut repl = OakRepl::new(MyHandler);
+/// let mut repl = Repl::new(MyHandler);
 /// repl.run().expect("REPL failed");
 /// ```
 pub struct OakRepl<H: ReplHandler> {
@@ -239,7 +239,7 @@ pub struct OakRepl<H: ReplHandler> {
 }
 
 impl<H: ReplHandler> OakRepl<H> {
-    /// Creates a new `OakRepl` with the given handler.
+    /// Creates a new `Repl` with the given handler.
     pub fn new(handler: H) -> Self {
         Self { handler }
     }

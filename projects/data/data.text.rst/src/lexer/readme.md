@@ -1,4 +1,4 @@
-# oak-rst
+# data-text-rst
 
 High-performance incremental reStructuredText parser for the `data.text` family.
 
@@ -12,7 +12,7 @@ High-performance incremental reStructuredText parser for the `data.text` family.
 ## Usage
 
 ```rust
-use oak_rst::{RstLexer, RstParser, RstLanguage};
+use data_text_rst::{RstLexer, RstParser, RstLanguage};
 use data_text_core::{ParseSession, SourceText, Parser};
 
 let code = "# Heading\n\nParagraph with *emphasis* and **strong** text.";

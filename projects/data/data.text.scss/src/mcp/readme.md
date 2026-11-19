@@ -1,3 +1,3 @@
 # Scss Mcp
 
-This module provides scss mcp functionality for the Oaks project.
+This module provides scss mcp functionality for the Boost `data.text` project.

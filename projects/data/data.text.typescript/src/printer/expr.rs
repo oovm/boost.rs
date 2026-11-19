@@ -1,8 +1,8 @@
-//! Oak TypeScript expression → canonical text.
+//! TypeScript expression → canonical text.
 
 use crate::ast::{Expression, ExpressionKind, FunctionParam, ObjectProperty, Statement, TypeAnnotation};
 
-/// Print one Oak expression node.
+/// Print one expression node.
 pub fn print_expression(expr: &Expression) -> Option<String> {
     print_expr(expr, Prec::Lowest)
 }

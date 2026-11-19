@@ -1,13 +1,13 @@
-# 🚀 oak-wolfram
+# 🚀 data-text-wolfram
 
-[![Crates.io](https://img.shields.io/crates/v/oak-wolfram.svg)](https://crates.io/crates/oak-wolfram)
-[![Documentation](https://docs.rs/oak-wolfram/badge.svg)](https://docs.rs/oak-wolfram)
+[![Crates.io](https://img.shields.io/crates/v/data-text-wolfram.svg)](https://crates.io/crates/data-text-wolfram)
+[![Documentation](https://docs.rs/data-text-wolfram/badge.svg)](https://docs.rs/data-text-wolfram)
 
-**Making WOLFRAM processing simple** — A high-performance, incremental WOLFRAM parser built on the Oak framework.
+**Making WOLFRAM processing simple** — A high-performance, incremental WOLFRAM parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-wolfram` is dedicated to providing industrial-grade parsing support for the WOLFRAM language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-wolfram` is dedicated to providing industrial-grade parsing support for the WOLFRAM language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

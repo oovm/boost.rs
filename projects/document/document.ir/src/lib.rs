@@ -2,7 +2,7 @@
 //! Notedown document semantic IR.
 //!
 //! Stable identities, block semantics, relations, assets, and provenance.
-//! Independent from Oak AST, text parsers, Acorn binary views, and Panduck
+//! Independent from syntax tree, text parsers, Acorn binary views, and Panduck
 //! writers.
 
 mod asset;

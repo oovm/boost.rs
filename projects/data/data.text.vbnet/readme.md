@@ -1,13 +1,13 @@
-# 🚀 Oak VB.NET Parser
+# 🚀 VB.NET Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-vbnet.svg)](https://crates.io/crates/oak-vbnet)
-[![Documentation](https://docs.rs/oak-vbnet/badge.svg)](https://docs.rs/oak-vbnet)
+[![Crates.io](https://img.shields.io/crates/v/data-text-vbnet.svg)](https://crates.io/crates/data-text-vbnet)
+[![Documentation](https://docs.rs/data-text-vbnet/badge.svg)](https://docs.rs/data-text-vbnet)
 
-**Modern, Concise, and Incremental Parsing for VB.NET** — A high-performance VB.NET parser built on the Oak framework. Optimized for VB.NET 10+ features and highly responsive IDE integration.
+**Modern, Concise, and Incremental Parsing for VB.NET** — A high-performance VB.NET parser built on the `data.text` framework. Optimized for VB.NET 10+ features and highly responsive IDE integration.
 
 ## 🎯 Project Vision
 
-VB.NET remains a widely used language in enterprise environments, especially for Windows applications and services. `oak-vbnet` aims to provide a premium, Rust-powered parsing infrastructure that enables the creation of responsive developer tools for VB.NET codebases. By leveraging Oak's incremental parsing architecture, we enable the creation of ultra-responsive developer tools—from IDEs and static analyzers to custom refactoring engines—that can handle complex VB.NET codebases in real-time.
+VB.NET remains a widely used language in enterprise environments, especially for Windows applications and services. `data-text-vbnet` aims to provide a premium, Rust-powered parsing infrastructure that enables the creation of responsive developer tools for VB.NET codebases. By leveraging incremental parsing architecture, we enable the creation of ultra-responsive developer tools—from IDEs and static analyzers to custom refactoring engines—that can handle complex VB.NET codebases in real-time.
 
 ## ✨ Core Features
 
@@ -18,7 +18,7 @@ VB.NET remains a widely used language in enterprise environments, especially for
     - **Object-Oriented Programming**: Precise parsing of classes, interfaces, and inheritance hierarchies.
     - **Type System**: Detailed mapping of generics, delegates types, and extension methods.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a fluid developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

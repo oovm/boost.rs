@@ -28,7 +28,7 @@ This module defines the abstract syntax tree structure for the VOML language, us
 ## Usage Example
 
 ```rust,ignore
-use oak_voml::ast::*;
+use data_text_voml::ast::*;
 
 fn main() {
     let root = VomlRoot {

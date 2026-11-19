@@ -1,6 +1,6 @@
 # 🧪 C++ Parser Test Suite & Quality Assurance
 
-`oak-cpp` features a comprehensive test suite to ensure stability across the vast and complex landscape of C++, from foundational features to the latest C++23 standards.
+`data-text-cpp` features a comprehensive test suite to ensure stability across the vast and complex landscape of C++, from foundational features to the latest C++23 standards.
 
 ## 📊 Test Coverage
 
@@ -31,7 +31,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-cpp
+cargo test -p data-text-cpp
 
 # Or use the project-wide task runner
 wee test

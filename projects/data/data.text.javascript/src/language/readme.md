@@ -1,6 +1,6 @@
 # JavaScript Language Definition
 
-This module contains the metadata and configuration options for the JavaScript language within the Oak framework.
+This module contains the metadata and configuration options for the JavaScript language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -19,4 +19,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing JS-specific syntax structures like arrow functions, classes, and JSX elements.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the JavaScript source file.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of JavaScript's unique syntax and the evolving web ecosystem.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of JavaScript's unique syntax and the evolving web ecosystem.

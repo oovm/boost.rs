@@ -43,7 +43,7 @@ The Java AST is the central data structure used by the compiler, static analysis
 ## Usage Example
 
 ```rust
-use oak_java::ast::*;
+use data_text_java::ast::*;
 
 fn main() {
     // Manually constructing a simple AST for a Java class

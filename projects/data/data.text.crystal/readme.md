@@ -1,13 +1,13 @@
-# 🚀 oak-crystal
+# 🚀 data-text-crystal
 
-[![Crates.io](https://img.shields.io/crates/v/oak-crystal.svg)](https://crates.io/crates/oak-crystal)
-[![Documentation](https://docs.rs/oak-crystal/badge.svg)](https://docs.rs/oak-crystal)
+[![Crates.io](https://img.shields.io/crates/v/data-text-crystal.svg)](https://crates.io/crates/data-text-crystal)
+[![Documentation](https://docs.rs/data-text-crystal/badge.svg)](https://docs.rs/data-text-crystal)
 
-**Making CRYSTAL processing simple** — A high-performance, incremental CRYSTAL parser built on the Oak framework.
+**Making CRYSTAL processing simple** — A high-performance, incremental CRYSTAL parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-crystal` is dedicated to providing industrial-grade parsing support for the CRYSTAL language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-crystal` is dedicated to providing industrial-grade parsing support for the CRYSTAL language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

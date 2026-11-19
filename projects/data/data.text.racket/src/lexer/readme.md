@@ -1,3 +1,3 @@
 # Scheme Lexer
 
-This module provides scheme lexer functionality for the Oaks project.
+This module provides scheme lexer functionality for the Boost `data.text` project.

@@ -50,7 +50,7 @@ The builder provides comprehensive error handling with detailed source location 
 The builder is typically used through the `DejavuBuilder` when parsing Dejavu source code:
 
 ```rust
-use oak_dejavu::{DejavuBuilder, DejavuLanguage};
+use data_text_dejavu::{DejavuBuilder, DejavuLanguage};
 use data_text_core::{Builder, parser::ParseSession, source::SourceText};
 
 let language = DejavuLanguage::default();

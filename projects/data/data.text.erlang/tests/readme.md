@@ -1,6 +1,6 @@
 # 🧪 Testing & Verification
 
-Quality is the core of `oak-erlang`. We ensure the stability of the code through multi-dimensional testing.
+Quality is the core of `data-text-erlang`. We ensure the stability of the code through multi-dimensional testing.
 
 ## 📊 Testing Strategy
 

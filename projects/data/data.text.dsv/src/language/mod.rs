@@ -10,7 +10,7 @@ pub use deserializer::from_value;
 #[cfg(feature = "serde")]
 pub use serializer::to_value;
 
-/// DSV language implementation for the Oaks framework.
+/// DSV language implementation for the `data.text` framework.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, std::marker::ConstParamTy)]
 pub struct DsvLanguage {

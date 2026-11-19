@@ -3,7 +3,7 @@
 //! `recursion_depth` was removed from the CLI budget contract, so the pipeline
 //! refuses pathological nesting at a fixed, non-configurable depth. The scan
 //! runs on raw bytes before the format layer sees them: a document that would
-//! drive Oak's tree builder deep enough to overflow the stack never reaches it.
+//! drive the tree builder deep enough to overflow the stack never reaches it.
 
 use document_formats::{FormatError, from_format_error};
 use document_types::{AdapterError, Result};

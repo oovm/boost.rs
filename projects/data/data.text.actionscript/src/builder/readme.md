@@ -8,6 +8,6 @@ The `ActionScriptBuilder` is responsible for bridging the gap between the low-le
 - **Typed Mapping**: Maps the untyped `RedNode` elements into the structured `ActionScriptRoot` and `ActionScriptItem` types defined in the `ast` module.
 - **Diagnostics Integration**: Aggregates diagnostics from the lexing and parsing phases and potentially adds builder-specific validation errors.
 
-## 🔄 Integration with Oak
+## 🔄 Integration with `data.text`
 
 As a core part of the `data.text` family, the builder implements the `Builder` trait, allowing it to participate in the incremental compilation pipeline. It ensures that any changes to the source code are reflected in an updated AST with minimal re-computation.

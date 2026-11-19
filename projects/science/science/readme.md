@@ -12,7 +12,7 @@ API 面积。
 ## 不负责
 
 - 再定义一套 Engine / Session / eval
-- 方言特判、oak、N-API、WASM
+- 方言特判、N-API、WASM
 - 在 facade 中复制数学语义
 
 ## 与 `science-cas` 的边界

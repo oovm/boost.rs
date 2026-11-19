@@ -1,4 +1,4 @@
-//! AWSL **源码**格式化（Oak token-gap；与 AST printer 分离）。
+//! AWSL **源码**格式化（token-gap；与 AST printer 分离）。
 
 use crate::formatter::{FormatError, FormatOptions, FormattedOutput};
 

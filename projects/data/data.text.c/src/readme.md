@@ -1,8 +1,8 @@
 # 📖 C Parser User Guide
 
-C support for the Oak language framework.
+C support for the `data.text` language framework.
 
-This guide helps you integrate `oak-c` into your project and perform common parsing tasks efficiently.
+This guide helps you integrate `data-text-c` into your project and perform common parsing tasks efficiently.
 
 ## 🚀 Quick Start
 
@@ -11,7 +11,7 @@ This guide helps you integrate `oak-c` into your project and perform common pars
 The following is a standard workflow for parsing a C function:
 
 ```rust
-use oak_c::{CParser, language::CLanguage};
+use data_text_c::{CParser, language::CLanguage};
 use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
@@ -20,7 +20,7 @@ fn main() {
         #include <stdio.h>
         
         int main() {
-            printf("Hello, Oak!\n");
+            printf("Hello, Boost!\n");
             return 0;
         }
     "#;
@@ -51,7 +51,7 @@ After a successful parse, use the built-in visitor pattern or manually traverse 
 ### 2. Incremental Parsing
 Optimize performance by only re-parsing changed sections:
 ```rust
-use oak_c::{CParser, language::CLanguage};
+use data_text_c::{CParser, language::CLanguage};
 use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {
@@ -82,9 +82,9 @@ fn main() {
 ```
 
 ### 3. Diagnostics & Error Recovery
-`oak-c` provides detailed error contexts tailored for C developers:
+`data-text-c` provides detailed error contexts tailored for C developers:
 ```rust
-use oak_c::{CParser, language::CLanguage};
+use data_text_c::{CParser, language::CLanguage};
 use data_text_core::{SourceText, parser::Parser, source::TextEdit, parser::ParseSession};
 
 fn main() {

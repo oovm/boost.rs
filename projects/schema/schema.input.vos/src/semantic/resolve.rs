@@ -2,7 +2,7 @@
 //!
 //! Two cooperating passes live here:
 //!
-//! * **Collect pass** ([`collect_decls`]) walks an Oak-built AST root,
+//! * **Collect pass** ([`collect_decls`]) walks an parser-built AST root,
 //!   extracts `using` paths in both supported surface forms (namespace-style
 //!   and string-literal), and bundles every top-level declaration into a
 //!   [`SourceDecls`].
@@ -96,7 +96,7 @@ impl SymbolTable {
     }
 }
 
-/// Walks an Oak-built root and collects declarations plus using paths.
+/// Walks an parser-built root and collects declarations plus using paths.
 ///
 /// This is the **collect pass** — no file I/O happens here, we just
 /// examine what is already in memory.
@@ -167,7 +167,7 @@ fn walk_literals(node: &data_text_vos::VosSyntaxNode, out: &mut Vec<(usize, usiz
 
 /// Extracts the import string from a `Using` declaration.
 ///
-/// Oak builder handles two surface forms:
+/// builder handles two surface forms:
 /// * `using foo::bar` → `declaration.path = ["foo", "bar"]`.
 /// * `using "./foo.vos"` → `declaration.path = []`, the literal lives in
 ///   the CST as a [`VosTokenType::StringLiteral`] token.

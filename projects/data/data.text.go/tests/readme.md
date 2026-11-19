@@ -1,6 +1,6 @@
 # 🧪 Go Parser Test Suite & Quality Assurance
 
-`oak-go` features a robust test suite to ensure stability across Go's clean and efficient syntax, from simple scripts to complex microservices.
+`data-text-go` features a robust test suite to ensure stability across Go's clean and efficient syntax, from simple scripts to complex microservices.
 
 ## 📊 Test Coverage
 
@@ -31,7 +31,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-go
+cargo test -p data-text-go
 
 # Or use the project-wide task runner
 wee test

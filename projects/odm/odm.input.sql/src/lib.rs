@@ -1,6 +1,6 @@
 //! SQL DDL 输入面：降到统一的 [`odm_types::MappingModel`]。
 //!
-//! 第一阶段只接受极简 `CREATE TABLE` 文本形态的骨架降级；完整 Oak SQL AST
+//! 第一阶段只接受极简 `CREATE TABLE` 文本形态的骨架降级；完整 SQL AST
 //! 路径在后续补齐。本包不执行 DDL，也不绑定具体引擎方言产品。
 
 #![deny(missing_docs)]

@@ -1,13 +1,13 @@
-# 🚀 oak-wgsl
+# 🚀 data-text-wgsl
 
-[![Crates.io](https://img.shields.io/crates/v/oak-wgsl.svg)](https://crates.io/crates/oak-wgsl)
-[![Documentation](https://docs.rs/oak-wgsl/badge.svg)](https://docs.rs/oak-wgsl)
+[![Crates.io](https://img.shields.io/crates/v/data-text-wgsl.svg)](https://crates.io/crates/data-text-wgsl)
+[![Documentation](https://docs.rs/data-text-wgsl/badge.svg)](https://docs.rs/data-text-wgsl)
 
-**Making WGSL processing simple** — A high-performance, incremental WGSL parser built on the Oak framework.
+**Making WGSL processing simple** — A high-performance, incremental WGSL parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-wgsl` is dedicated to providing industrial-grade parsing support for the WGSL language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-wgsl` is dedicated to providing industrial-grade parsing support for the WGSL language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

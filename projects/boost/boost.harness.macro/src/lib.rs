@@ -65,7 +65,7 @@ pub fn facade_case(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// use boost_harness_macro::diagnose;
 ///
 /// let record = diagnose! {
-///     code: "oak.syntax.unexpected-token",
+///     code: "valkyrie.syntax.unexpected-token",
 ///     severity: error,
 ///     message: "unexpected token",
 /// };

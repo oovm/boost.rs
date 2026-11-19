@@ -369,11 +369,11 @@ pub fn analyze_meta_query(sql: &str, dialect: SqlDialect) -> Result<Option<MetaQ
     if let Some(scalar) = scalar_probe(sql, dialect) {
         return Ok(Some(scalar));
     }
-    // Oak stops at a dotted table reference, so the qualified metadata names are
+    // The parser stops at a dotted table reference, so the qualified metadata names are
     // folded into single identifiers of the same byte length before parsing.
     let normalised = normalize_metadata_tables(sql);
-    // `DATABASE` is a lexer keyword in Oak, so it cannot be used as a function
-    // name in the AST. Rewriting the token keeps Oak as the only SQL parser.
+    // `DATABASE` is a lexer keyword in the syntax, so it cannot be used as a function
+    // name in the AST. Rewriting the token keeps the shared parser as the only SQL parser.
     let normalized = normalize_database_calls(&normalised);
     let root = match parse_sql(&normalized, dialect) {
         Ok(root) => root,
@@ -440,7 +440,7 @@ fn normalize_metadata_tables(sql: &str) -> String {
 
 const DATABASE_SENTINEL: &str = "__yyds_metadata_database__";
 
-/// `DATABASE` is a lexer keyword in Oak and a function call on the right of
+/// `DATABASE` is a lexer keyword and a function call on the right of
 /// `=` is dropped by the parser, so the call is replaced with a string literal
 /// sentinel that [`filter_value`] maps back to the session schema.
 fn normalize_database_calls(sql: &str) -> String {
@@ -675,7 +675,7 @@ fn from_table(select: &SelectStatement, sql: &str) -> Result<Option<SourceTable>
 }
 
 fn source_table(table: &TableName, sql: &str) -> SourceTable {
-    // Oak keeps only the first segment of a dotted table reference in `name`,
+    // the parser keeps only the first segment of a dotted table reference in `name`,
     // so the qualified path and the alias are recovered from the source text
     // at the table span.
     let (name, alias) = table_reference(sql, table.span.start);

@@ -1,4 +1,4 @@
-//! Oak `AST` 类型表达式到 `HIR` 类型的 lowering 与预检查。
+//! syntax tree 类型表达式到 `HIR` 类型的 lowering 与预检查。
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
@@ -233,7 +233,7 @@ fn is_trait_associated_name(name: &str) -> bool {
     GENERIC_BINDER_SCOPE.with(|stack| stack.borrow().iter().rev().any(|frame| frame.associated.contains(name)))
 }
 
-/// 校验 Oak `AST` 类型表达式是否满足当前 `HIR` lowering 前提。
+/// 校验 syntax tree 类型表达式是否满足当前 `HIR` lowering 前提。
 #[doc(hidden)]
 pub fn validate_type_expression(ty: &TypeExpression) -> Result<(), HirError> {
     match ty {
@@ -291,7 +291,7 @@ pub fn validate_source_text_type_name(name: &str) -> Result<(), HirError> {
     Ok(())
 }
 
-/// 将 Oak `AST` 类型表达式降到最小 `HIR` 类型表示。
+/// 将 syntax tree 类型表达式降到最小 `HIR` 类型表示。
 ///
 /// 无法在当前作用域解析的类型短名会以 `HirError::TypeNotFound` 返回，由调用方
 /// 逐层传播；不再静默 fallback 成 `ValkyrieType::Named` 传递到 canonical 阶段。
@@ -867,7 +867,7 @@ fn expand_type_aliases(ty: &ValkyrieType, visiting: &mut BTreeSet<String>) -> Va
 }
 
 fn lower_type_namepath(path: &AstNamePath) -> Result<ValkyrieType, HirError> {
-    // 只消费 Oak 产出的结构化 NamePath；禁止按 span 切片重解析源码。
+    // 只消费 `data.text` 产出的结构化 NamePath；禁止按 span 切片重解析源码。
     let parts = path.parts.iter().map(|part| part.name.as_str()).collect::<Vec<_>>();
     let last = parts.last().copied().unwrap_or_default();
     if parts.len() == 1 && last == "Self" {

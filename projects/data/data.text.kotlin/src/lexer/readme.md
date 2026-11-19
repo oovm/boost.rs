@@ -2,4 +2,4 @@
 
 Lexer implementation for the Kotlin language.
 
-This module provides kotlin lexer functionality for the Oaks project.
+This module provides kotlin lexer functionality for the Boost `data.text` project.

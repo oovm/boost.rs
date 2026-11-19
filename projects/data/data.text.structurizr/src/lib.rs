@@ -1,6 +1,6 @@
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-//! Structurizr support for the Oak language framework.
+//! Structurizr support for the `data.text` language framework.
 
 /// Abstract Syntax Tree (AST) definitions for Structurizr.
 pub mod ast;

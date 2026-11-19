@@ -1,6 +1,6 @@
 # 🧪 Test Suite & Quality Assurance
 
-`oak-actionscript` features a comprehensive test suite to ensure stability across a wide range of complex AS3 syntax scenarios.
+`data-text-actionscript` features a comprehensive test suite to ensure stability across a wide range of complex AS3 syntax scenarios.
 
 ## 📊 Test Coverage
 

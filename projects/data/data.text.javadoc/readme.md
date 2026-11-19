@@ -1,13 +1,13 @@
-# 🚀 oak-javadoc
+# 🚀 data-text-javadoc
 
-[![Crates.io](https://img.shields.io/crates/v/oak-javadoc.svg)](https://crates.io/crates/oak-javadoc)
-[![Documentation](https://docs.rs/oak-javadoc/badge.svg)](https://docs.rs/oak-javadoc)
+[![Crates.io](https://img.shields.io/crates/v/data-text-javadoc.svg)](https://crates.io/crates/data-text-javadoc)
+[![Documentation](https://docs.rs/data-text-javadoc/badge.svg)](https://docs.rs/data-text-javadoc)
 
-**Making JAVADOC processing simple** — A high-performance, incremental JAVADOC parser built on the Oak framework.
+**Making JAVADOC processing simple** — A high-performance, incremental JAVADOC parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-javadoc` is dedicated to providing industrial-grade parsing support for the JAVADOC language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-javadoc` is dedicated to providing industrial-grade parsing support for the JAVADOC language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

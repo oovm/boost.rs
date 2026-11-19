@@ -520,7 +520,7 @@ impl<'a> TexLowerer<'a> {
     /// recognized math environment is a display math block.
     /// Lower a recognized math environment.
     ///
-    /// The environment's rows and cells come from Oak's AST, so the lowering
+    /// The environment's rows and cells come from the syntax tree, so the lowering
     /// never rescans the source for alignment tabs or row breaks. The formula
     /// keeps the authored source for round-trip and diagnostics, while the
     /// expression carries the structure consumers render.
@@ -556,7 +556,7 @@ impl<'a> TexLowerer<'a> {
     /// Register the `\label` anchors carried by a math environment.
     ///
     /// Labels, `\tag`, `\notag` and `\nonumber` are read from the command nodes
-    /// of Oak's row/cell AST, not by rescanning the environment source. Each
+    /// of the row/cell syntax tree, not by rescanning the environment source. Each
     /// numbered row consumes one equation counter slot, a row carrying
     /// `\notag` consumes none, and `\tag` replaces the displayed number.
     fn register_math_labels(&mut self, environment: &TexEnvironment, name: &str, starred: bool, node: NodeId) {

@@ -1,3 +1,3 @@
 # Ini Lexer
 
-This module provides ini lexer functionality for the Oaks project.
+This module provides ini lexer functionality for the Boost `data.text` project.

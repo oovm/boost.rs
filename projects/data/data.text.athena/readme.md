@@ -1,8 +1,8 @@
-# oak-athena
+# data-text-athena
 
-Oak language frontend for the **Athena** expression language (renamed from `oak-simple-math`).
+`data.text` language frontend for the **Athena** expression language (renamed from `oak-simple-math`).
 
-SXO product tags stay `simple-math` / `sm` / optional `sxo` — same pattern as `oak-metis` ↔ CVO `.cvo`.
+SXO product tags stay `simple-math` / `sm` / optional `sxo` — same pattern as `data-text-metis` ↔ CVO `.cvo`.
 
 Surface:
 
@@ -11,4 +11,4 @@ Surface:
 - lowercase calls `sin(x)`, `cos(x)`
 - lists `[a, b]`, dicts `{a: 1, "b": 2}`
 
-Not Mathematica / Wolfram — see `oak-wolfram` for that dialect. Not the CAS crate `athena`.
+Not Mathematica / Wolfram — see `data-text-wolfram` for that dialect. Not the CAS crate `athena`.

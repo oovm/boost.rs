@@ -7,9 +7,9 @@ pub mod ast;
 pub mod builder;
 /// The language configuration for VOS.
 pub mod language;
-/// The Oak lexer for VOS.
+/// The lexer for VOS.
 pub mod lexer;
-/// The Oak parser for VOS.
+/// The parser for VOS.
 pub mod parser;
 
 pub use crate::{
@@ -23,7 +23,7 @@ pub use crate::{
     parser::{VosElementType, VosParser},
 };
 
-/// Builds a structural VOS CST through Oak's lexer and parser pipeline.
+/// Builds a structural VOS CST through the `data.text` parser's lexer and parser pipeline.
 ///
 /// This entry rejects lexical errors and malformed delimiters. It does not
 /// establish full VOS grammar validity or produce a resolved VOS contract.
@@ -42,7 +42,7 @@ pub fn parse(source: &str) -> Result<VosRoot, String> {
 }
 
 /// Parses a VOS expression program (statements, `micro` declarations and an
-/// optional trailing result expression) from Oak tokens.
+/// optional trailing result expression) from parser tokens.
 ///
 /// This is the structured program projection consumed by hosts that execute
 /// VOS operations. It performs no name resolution or type checking.

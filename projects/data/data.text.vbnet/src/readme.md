@@ -1,6 +1,6 @@
-# VB.NET Parser for Oaks Framework
+# VB.NET Parser for `data.text` framework
 
-A comprehensive VB.NET parser implementation for the Oaks framework, providing lexing, parsing, and AST generation capabilities.
+A comprehensive VB.NET parser implementation for the `data.text` framework, providing lexing, parsing, and AST generation capabilities.
 
 ## Features
 
@@ -13,7 +13,7 @@ A comprehensive VB.NET parser implementation for the Oaks framework, providing l
 ## Usage
 
 ```rust
-use oak_vbnet::parse;
+use data_text_vbnet::parse;
 
 fn main() {
     let source = r#"

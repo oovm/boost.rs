@@ -13,7 +13,7 @@ The `LessBuilder` struct implements the `Builder` trait from `data_text_core` an
 ## Usage
 
 ```rust
-use oak_less::{LessBuilder, LessLanguage};
+use data_text_less::{LessBuilder, LessLanguage};
 use data_text_core::{SourceText, TextEdit};
 
 // Create a new builder with default configuration
@@ -35,7 +35,7 @@ match result.result {
 
 ## Features
 
-- **Builder Trait Implementation**: Follows the standard Oak builder pattern
+- **Builder Trait Implementation**: Follows the standard builder pattern
 - **Integration with Parser**: Works seamlessly with the Less parser
 - **Cache Support**: Uses builder cache for improved performance
 - **Diagnostics**: Propagates parsing diagnostics to the caller

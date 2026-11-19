@@ -1,6 +1,6 @@
 # 🛠️ TypeScript Parser Developer Guide
 
-Typescript support for the Oak language framework.
+Typescript support for the `data.text` language framework.
 
 This guide is designed to help you quickly get started with developing and integrating `data-text-typescript`.
 

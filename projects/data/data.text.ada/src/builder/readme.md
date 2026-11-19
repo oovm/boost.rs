@@ -1,3 +1,3 @@
 # Ada Builder
 
-This module provides ada builder functionality for the Oaks project.
+This module provides ada builder functionality for the Boost `data.text` project.

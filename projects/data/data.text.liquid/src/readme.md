@@ -1,4 +1,4 @@
-# oak-liquid
+# data-text-liquid
 
 High-performance incremental Liquid2 parser for the `data.text` family with flexible configuration, supporting template rendering and syntax analysis.
 
@@ -13,7 +13,7 @@ High-performance incremental Liquid2 parser for the `data.text` family with flex
 ## Usage
 
 ```rust
-use oak_liquid::{LiquidLexer, LiquidParser, LiquidBuilder};
+use data_text_liquid::{LiquidLexer, LiquidParser, LiquidBuilder};
 
 let source = "Hello, {{ name }}!";
 let lexer = LiquidLexer::new();
@@ -36,4 +36,4 @@ let root = builder.build(ast);
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/ygg-lang/oaks/blob/master/License.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/oovm/boost.rs/blob/master/License.md) file for details.

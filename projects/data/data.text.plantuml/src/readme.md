@@ -1,6 +1,6 @@
 # 🛠️ PlantUML Parser Developer Guide
 
-`oak-plantuml` implements the Oak lexer / parser / builder pipeline for a strict PlantUML subset.
+`data-text-plantuml` implements the lexer / parser / builder pipeline for a strict PlantUML subset.
 
 ## 📐 Grammar Surface
 
@@ -147,7 +147,7 @@ The `ast` module exposes `PlantUmlRoot { diagrams }`, where each diagram is a `C
 ## ✅ Testing
 
 ```text
-cargo test -p oak-plantuml
+cargo test -p data-text-plantuml
 ```
 
 The `tests` directory covers tokenization, grouped parser elements and typed AST construction for every diagram family.

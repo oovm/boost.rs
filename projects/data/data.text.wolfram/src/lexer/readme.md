@@ -36,7 +36,7 @@ The primary goal of this module is to accurately tokenize Wolfram Language expre
 ## Usage Example
 
 ```rust
-use oak_wolfram::lexer::WolframLexer;
+use data_text_wolfram::lexer::WolframLexer;
 
 fn main() {
     let wolfram_source = r#"

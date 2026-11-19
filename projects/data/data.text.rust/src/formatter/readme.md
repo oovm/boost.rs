@@ -36,7 +36,7 @@ This formatter is designed to:
 ### Basic Usage
 
 ```rust,ignore
-use oak_rust::formatter::RustFormatter;
+use data_text_rust::formatter::RustFormatter;
 
 let formatter = RustFormatter::new();
 let formatted_code = formatter.format_ast(&ast_root);
@@ -45,7 +45,7 @@ let formatted_code = formatter.format_ast(&ast_root);
 ### Custom Configuration
 
 ```rust,ignore
-use oak_rust::formatter::RustFormatter;
+use data_text_rust::formatter::RustFormatter;
 
 let formatter = RustFormatter::with_config("    ".to_string(), 120);
 let formatted_code = formatter.format_ast(&ast_root);
@@ -148,10 +148,10 @@ let mut name = String::from("Rust");
 
 ## Integration
 
-This formatter is designed to work seamlessly with the Oak Rust parser:
+This formatter is designed to work seamlessly with the Rust parser:
 
 ```rust,ignore
-use oak_rust::{parser::RustParser, formatter::RustFormatter};
+use data_text_rust::{parser::RustParser, formatter::RustFormatter};
 
 let parser = RustParser::new();
 let formatter = RustFormatter::new();
@@ -181,4 +181,4 @@ When contributing to the formatter:
 
 ## License
 
-This module is part of the Oak project and follows the same licensing terms.
+This module is part of the Boost `data.text` project and follows the same licensing terms.

@@ -1,6 +1,6 @@
 # JSON Language Definition
 
-This module contains the metadata and configuration options for the JSON language within the Oak framework.
+This module contains the metadata and configuration options for the JSON language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -38,4 +38,4 @@ By implementing the `Language` trait, this module provides the glue that connect
 - **`ElementType`**: Defined in the `parser` module, representing JSON objects, arrays, and value types.
 - **`TypedRoot`**: Defined in the `ast` module, providing a strongly-typed view of the JSON document.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of JSON's unique syntax and its modern extensions.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of JSON's unique syntax and its modern extensions.

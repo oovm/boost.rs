@@ -1,6 +1,6 @@
 # 🧪 Ruby Parser Test Suite
 
-`oak-ruby` employs a rigorous testing methodology to ensure accurate parsing of Ruby's diverse and often complex syntax patterns.
+`data-text-ruby` employs a rigorous testing methodology to ensure accurate parsing of Ruby's diverse and often complex syntax patterns.
 
 ## 📊 Test Coverage
 
@@ -29,10 +29,10 @@ Ensures the parser remains functional when facing:
 
 ```bash
 # Run all Ruby parser tests
-cargo test -p oak-ruby
+cargo test -p data-text-ruby
 
 # Run specific integration tests
-cargo test -p oak-ruby --test parser_tests
+cargo test -p data-text-ruby --test parser_tests
 ```
 
 ## 📈 Quality Assurance

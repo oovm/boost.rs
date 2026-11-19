@@ -1,6 +1,6 @@
 //! Formula lowering and layout pipeline.
 //!
-//! VuTeX does not parse math source. `notedown-formats` lowers Oak's AST into
+//! VuTeX does not parse math source. `notedown-formats` lowers the syntax tree into
 //! `notedown-ir::math`, and this pipeline maps that semantic tree onto the
 //! layout nodes and computes one immutable [`FormulaLayoutResult`].
 
@@ -23,7 +23,7 @@ pub fn default_base_size(display: bool) -> f64 {
 
 /// Lower authored TeX math through Notedown's import layer into the formula tree.
 ///
-/// The syntax stays in Oak and the semantics in `notedown-ir`; this function is
+/// The syntax stays in `data.text` and the semantics in `notedown-ir`; this function is
 /// orchestration for hosts that own only a formula string, such as WaTeX.
 pub fn lower_formula(source: &str, display: bool) -> MathResult<(FormulaTree, Vec<Diagnostic>)> {
     let formula = document_formats::lower_tex_formula_source(source, if display { MathDisplay::Display } else { MathDisplay::Inline });

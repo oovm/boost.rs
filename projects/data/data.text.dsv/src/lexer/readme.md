@@ -1,3 +1,3 @@
 # DSV Lexer
 
-This module provides DSV lexer functionality for the Oaks project.
+This module provides DSV lexer functionality for the Boost `data.text` project.

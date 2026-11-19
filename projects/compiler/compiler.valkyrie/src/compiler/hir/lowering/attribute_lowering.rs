@@ -211,7 +211,7 @@ pub fn lower_method_params(method: &MethodDeclaration, source_id: SourceID) -> R
 
 pub fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
     // 只有真正缺 path 的畸形 `using` 在这里 fail-closed；`using!` 是主空间导入，
-    // 由 oak 正常产出非空 path，并通过 `primary` 身份进入 HIR，不再走这条拒绝路径。
+    // 由 `data.text` 正常产出非空 path，并通过 `primary` 身份进入 HIR，不再走这条拒绝路径。
     if using.path.parts.is_empty() {
         return Err(HirError::UnrecognizedImport {
             source: compiler_types::DiagnosticSource { id: "<ast>".into(), revision: None },
@@ -227,7 +227,7 @@ pub fn lower_using(using: &UsingDeclaration) -> Result<HirImport, HirError> {
     })
 }
 
-/// `using!` 的主空间身份由 oak 的 `UsingDeclaration.primary` 决定。
+/// `using!` 的主空间身份由 `data.text` 的 `UsingDeclaration.primary` 决定。
 ///
 /// 所有身份读取集中在这里，不散落字段访问。
 #[inline]
@@ -235,7 +235,7 @@ pub fn using_is_primary(using: &UsingDeclaration) -> bool {
     using.primary
 }
 
-/// `namespace!` 的主空间身份由 oak 的 `NamespaceDeclaration.primary` 决定。
+/// `namespace!` 的主空间身份由 `data.text` 的 `NamespaceDeclaration.primary` 决定。
 #[inline]
 pub fn namespace_is_primary(namespace: &NamespaceDeclaration) -> bool {
     namespace.primary

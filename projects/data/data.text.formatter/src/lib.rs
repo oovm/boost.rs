@@ -1,6 +1,6 @@
 //! CST token-gap formatting primitives for `data.text` language adapters.
 //!
-//! The code originates from the former `oak-formatter` project (MPL-2.0) and has
+//! The code originates from the former `language-format` project (MPL-2.0) and has
 //! been internalized and de-branded for Boost.
 
 #![warn(missing_docs)]

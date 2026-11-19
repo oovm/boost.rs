@@ -1,13 +1,13 @@
-# 🚀 Oak Python Parser
+# 🚀 Python Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-python.svg)](https://crates.io/crates/oak-python)
-[![Documentation](https://docs.rs/oak-python/badge.svg)](https://docs.rs/oak-python)
+[![Crates.io](https://img.shields.io/crates/v/data-text-python.svg)](https://crates.io/crates/data-text-python)
+[![Documentation](https://docs.rs/data-text-python/badge.svg)](https://docs.rs/data-text-python)
 
-**Elegance and Speed for the Python Ecosystem** — A high-performance, incremental Python parser built on the Oak framework. Optimized for modern Python (3.10+) features, type checking, and real-time developer tools.
+**Elegance and Speed for the Python Ecosystem** — A high-performance, incremental Python parser built on the `data.text` framework. Optimized for modern Python (3.10+) features, type checking, and real-time developer tools.
 
 ## 🎯 Project Vision
 
-Python's growth has led to massive codebases where analysis and tooling speed are paramount. `oak-python` aims to provide a robust, Rust-powered parsing infrastructure that can handle the unique challenges of Python's indentation-based syntax while delivering sub-millisecond performance. By leveraging Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can process large Python projects in real-time. Whether you are building a custom type checker, a security scanner, or an advanced code completion engine, `oak-python` provides the high-fidelity AST and efficiency needed to keep pace with Python's rapid evolution.
+Python's growth has led to massive codebases where analysis and tooling speed are paramount. `data-text-python` aims to provide a robust, Rust-powered parsing infrastructure that can handle the unique challenges of Python's indentation-based syntax while delivering sub-millisecond performance. By leveraging incremental parsing architecture, we enable the creation of highly responsive IDEs, static analyzers, and refactoring tools that can process large Python projects in real-time. Whether you are building a custom type checker, a security scanner, or an advanced code completion engine, `data-text-python` provides the high-fidelity AST and efficiency needed to keep pace with Python's rapid evolution.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Python's growth has led to massive codebases where analysis and tooling speed ar
     - **Pattern Matching**: Robust support for PEP 634 structural pattern matching (`match` and `case`).
     - **Decorators & F-Strings**: Detailed mapping of function/class decorators and complex f-string expressions.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to handle incomplete or malformed code gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 
@@ -32,4 +32,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

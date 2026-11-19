@@ -4,7 +4,7 @@
 //! dialect. Database-truth documents stored by
 //! [`crate::engine::Connection::ensure_schema`] are VOS source text; semantic checking
 //! goes through `schema-input-vos` so 本地与分布式 / tooling stay aligned with
-//! Oak's parser and the VOS semantic contract.
+//! `data.text` parser and the VOS semantic contract.
 
 use std::collections::BTreeMap;
 
@@ -18,7 +18,7 @@ use schema_input_vos::{
     },
 };
 
-/// Parses a VOS document through Oak and returns its schema projection.
+/// Parses a VOS document through `data.text` and returns its schema projection.
 ///
 /// Rejects NUL bytes and enforces the VOS table-primary contract before the
 /// projection becomes database truth.
@@ -326,7 +326,7 @@ pub fn execution_catalog(document: &str) -> Result<ExecutionCatalog> {
     execution_catalog_from_resolved_contract(&contract)
 }
 
-/// Lower a strict Oak-backed VOS contract into the local execution catalog.
+/// Lower a strict VOS-backed VOS contract into the local execution catalog.
 ///
 /// This is the downstream path for new integrations. It does not parse source,
 /// inspect a VOS syntax AST, or infer identities from declaration order.
@@ -658,7 +658,7 @@ pub fn validate_migration_version(document: &str, expected: u32) -> Result<()> {
 
 /// Validate a schema document before it becomes database truth.
 ///
-/// Uses Oak parsing and VOS semantic projection before persistence.
+/// Uses `data.text` parsing and VOS semantic projection before persistence.
 pub fn validate_document(document: &str) -> Result<()> {
     if document.contains('\0') {
         return Err(Error::Schema { message: "VOS schema document must not contain NUL bytes".into() });

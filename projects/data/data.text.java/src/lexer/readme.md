@@ -42,7 +42,7 @@ This module is designed to provide a foundational tokenizer for Java development
 ## Usage Example
 
 ```rust
-use oak_java::lexer::JavaLexer;
+use data_text_java::lexer::JavaLexer;
 
 fn main() {
     let java_source = r#"

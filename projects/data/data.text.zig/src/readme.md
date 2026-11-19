@@ -1,8 +1,8 @@
 # 🛠️ Zig Parser Developer Guide
 
-Zig support for the Oak language framework.
+Zig support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-zig`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-zig`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-zig = { path = "..." }
+data-text-zig = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-zig = { path = "..." }
 The following is a standard workflow for parsing a Zig source file:
 
 ```rust
-use oak_zig::{ZigParser, SourceText, ZigLanguage};
+use data_text_zig::{ZigParser, SourceText, ZigLanguage};
 
 fn main() {
     // 1. Prepare Zig source code
@@ -27,7 +27,7 @@ fn main() {
 
         pub fn main() !void {
             const stdout = std.io.getStdOut().writer();
-            try stdout.print("Hello, {s}!\n", .{"Oak"});
+            try stdout.print("Hello, {s}!\n", .{"Boost"});
         }
     "#;
     let source = SourceText::new(code);
@@ -57,7 +57,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Zig constructs like function definitions, comptime blocks, or struct declarations.
 
 ### 2. Incremental Parsing
-Zig projects often involve many small files or frequent edits. `oak-zig` supports sub-millisecond incremental updates:
+Zig projects often involve many small files or frequent edits. `data-text-zig` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

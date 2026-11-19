@@ -1,6 +1,6 @@
 # 🛠️ Developer Guide
 
-Visualization tools for the Oak language framework.
+Visualization tools for the `data.text` language framework.
 
 This crate provides tools for generating visual representations of
 syntax trees and other language structures, primarily in SVG format.

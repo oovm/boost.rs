@@ -1,6 +1,6 @@
 # Dejavu Language Definition
 
-This module contains the metadata and configuration options for the Dejavu language within the Oak framework.
+This module contains the metadata and configuration options for the Dejavu language within the `data.text` framework.
 
 ## ⚙️ Configuration
 
@@ -24,5 +24,5 @@ pub struct DejavuLanguage {
 
 By implementing the `Language` trait, this module enables:
 1. **Generic Infrastructure**: Allows `data-text-core` to handle file management and incremental logic without needing to know Dejavu-specific details.
-2. **Type-Safe Analysis**: Ensures that any tool working with `oak-dejavu` has access to the correct token and element types at compile time.
+2. **Type-Safe Analysis**: Ensures that any tool working with `data-text-dejavu` has access to the correct token and element types at compile time.
 3. **Multi-Version Support**: Future-proofed to handle different Dejavu versions through configuration updates within this module.

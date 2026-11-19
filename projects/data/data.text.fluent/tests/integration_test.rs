@@ -1,4 +1,4 @@
-/// Integration tests for Oak Fluent.
+/// Integration tests for Fluent.
 use data_text_fluent::parser::parse;
 use data_text_fluent::translator::Translator;
 use std::collections::HashMap;

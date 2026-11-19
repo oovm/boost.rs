@@ -28,7 +28,7 @@ This module defines the abstract syntax tree structure for the V language, used 
 ## Usage Example
 
 ```rust,ignore
-use oak_vlang::ast::*;
+use data_text_vlang::ast::*;
 
 fn main() {
     let root = VRoot {

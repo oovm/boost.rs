@@ -8,7 +8,7 @@ use data_text_core::{Builder, BuilderCache, GreenNode, GreenTree, Lexer, TextDia
 
 mod program;
 
-/// Oak Builder for the initial VOS declaration AST.
+/// builder for the initial VOS declaration AST.
 #[derive(Clone, Debug, Default)]
 pub struct VosBuilder;
 

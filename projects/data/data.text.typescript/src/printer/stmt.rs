@@ -1,4 +1,4 @@
-//! Oak TypeScript statement → canonical text.
+//! TypeScript statement → canonical text.
 
 use crate::ast::{
     BlockStatement, ClassDeclaration, ClassMember, DoWhileStatement, ExportDeclaration, ExportSpecifier, FunctionDeclaration, ImportDeclaration, ImportSpecifier, ModifierKind, Statement, TryStatement, TypeAliasDeclaration, VariableDeclaration,

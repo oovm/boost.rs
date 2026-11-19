@@ -3,11 +3,11 @@
 [![Crates.io](https://img.shields.io/crates/v/data-text-tex.svg)](https://crates.io/crates/data-text-tex)
 [![Documentation](https://docs.rs/data-text-tex/badge.svg)](https://docs.rs/data-text-tex)
 
-**Typesetting Excellence with Modern Performance** — A high-performance, incremental TeX/LaTeX parser built on the Oak framework. Optimized for complex document structures, math environments, and responsive developer tools for technical writing.
+**Typesetting Excellence with Modern Performance** — A high-performance, incremental TeX/LaTeX parser built on the `data.text` framework. Optimized for complex document structures, math environments, and responsive developer tools for technical writing.
 
 ## 🎯 Project Vision
 
-TeX and its derivatives like LaTeX are the gold standard for high-quality typesetting in academia and technical publishing. `data-text-tex` aims to provide a robust, modern, Rust-powered infrastructure for parsing TeX that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, real-time previewers, and automated document analysis tools that can handle massive TeX projects instantly. Whether you are building custom linters for academic papers, automated bibliography managers, or sophisticated IDE extensions for TeXstudio or VS Code, `data-text-tex` provides the high-fidelity AST and efficiency needed to elevate the technical writing experience.
+TeX and its derivatives like LaTeX are the gold standard for high-quality typesetting in academia and technical publishing. `data-text-tex` aims to provide a robust, modern, Rust-powered infrastructure for parsing TeX that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, real-time previewers, and automated document analysis tools that can handle massive TeX projects instantly. Whether you are building custom linters for academic papers, automated bibliography managers, or sophisticated IDE extensions for TeXstudio or VS Code, `data-text-tex` provides the high-fidelity AST and efficiency needed to elevate the technical writing experience.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ TeX and its derivatives like LaTeX are the gold standard for high-quality typese
     - **Document Structure**: Clear identification of sections, subsections, and bibliography references.
     - **Indentation & Formatting**: Precise capture of indentation and whitespace for faithful code refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth writing experience during active document preparation.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent document discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent document discovery and analysis.
 
 ## 🏗️ Architecture
 

@@ -1,6 +1,6 @@
 # 🌐 Dart Language Integration
 
-This module defines the `DartLanguage` struct, which serves as the central configuration point for the Dart parser within the Oak framework.
+This module defines the `DartLanguage` struct, which serves as the central configuration point for the Dart parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
@@ -23,7 +23,7 @@ pub struct DartLanguage {
 ## 🚀 Usage
 
 ```rust
-use oak_dart::DartLanguage;
+use data_text_dart::DartLanguage;
 
 let config = DartLanguage::new();
 // Pass this config to DartParser::new(&config)

@@ -1,8 +1,8 @@
 # 🛠️ JSON Parser Developer Guide
 
-Json support for the Oak language framework.
+Json support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-json`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-json`.
 
 ## 🚦 Quick Start
 
@@ -11,14 +11,14 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a JSON object:
 
 ```rust
-use oak_json::{JsonParser, JsonLanguage};
+use data_text_json::{JsonParser, JsonLanguage};
 use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
         {
-            "name": "Oak Framework",
+            "name": "Boost",
             "version": "1.0.0",
             "features": ["Incremental Parsing", "High-Fidelity AST"]
         }
@@ -50,7 +50,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse massive JSON data when small changes occur:
 ```rust
-use oak_json::{JsonParser, JsonLanguage};
+use data_text_json::{JsonParser, JsonLanguage};
 use data_text_core::{SourceText, Parser, parser::ParseSession};
 
 # let config = JsonLanguage::standard();
@@ -62,9 +62,9 @@ let new_result = parser.parse(&new_source, &[], &mut session);
 ```
 
 ### 3. Diagnostics
-`oak-json` provides precise error feedback for malformed JSON, such as missing colons, unmatched braces, or invalid escape sequences:
+`data-text-json` provides precise error feedback for malformed JSON, such as missing colons, unmatched braces, or invalid escape sequences:
 ```rust
-# use oak_json::{JsonParser, JsonLanguage};
+# use data_text_json::{JsonParser, JsonLanguage};
 # use data_text_core::{SourceText, Parser, parser::ParseSession};
 # let config = JsonLanguage::standard();
 # let parser = JsonParser::new(&config);

@@ -31,7 +31,7 @@ The Dejavu AST is the central data structure used by the compiler and associated
 ## Usage Example
 
 ```rust
-use oak_dejavu::ast::*;
+use data_text_dejavu::ast::*;
 
 fn main() {
     // Constructing a simple AST for a Dejavu micro function

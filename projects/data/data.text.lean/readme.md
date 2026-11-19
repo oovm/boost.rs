@@ -1,13 +1,13 @@
-# 🚀 Oak Lean Parser
+# 🚀 Lean Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-lean.svg)](https://crates.io/crates/oak-lean)
-[![Documentation](https://docs.rs/oak-lean/badge.svg)](https://docs.rs/oak-lean)
+[![Crates.io](https://img.shields.io/crates/v/data-text-lean.svg)](https://crates.io/crates/data-text-lean)
+[![Documentation](https://docs.rs/data-text-lean/badge.svg)](https://docs.rs/data-text-lean)
 
-**Formal Verification Meets Modern Tooling** — A high-performance, incremental Lean parser built on the Oak framework.
+**Formal Verification Meets Modern Tooling** — A high-performance, incremental Lean parser built on the `data.text` framework.
 
-## 🎯 Why oak-lean?
+## 🎯 Why data-text-lean?
 
-Lean is a powerful theorem prover and programming language used for formal verification and mathematical proofs. `oak-lean` brings modern parsing infrastructure to the Lean ecosystem for building responsive IDEs and verification tools.
+Lean is a powerful theorem prover and programming language used for formal verification and mathematical proofs. `data-text-lean` brings modern parsing infrastructure to the Lean ecosystem for building responsive IDEs and verification tools.
 
 ## ✨ Key Features
 
@@ -15,7 +15,7 @@ Lean is a powerful theorem prover and programming language used for formal verif
 - **🔄 Incremental Parsing** — Essential for frequently-changing proof files
 - **🌳 High-Fidelity AST** — Captures theorems, lemmas, proofs, type classes, unification
 - **🛡️ Robust Error Recovery** — Handles incomplete proofs gracefully
-- **🧩 Deep Ecosystem Integration** — Works with `oak-lsp` and `oak-mcp`
+- **🧩 Deep Ecosystem Integration** — Works with `language-server` and `language-mcp`
 
 ## 🏗️ Architecture
 
@@ -23,7 +23,7 @@ Follows the Green/Red Tree architecture with efficient immutability, lossless sy
 
 ## 📖 Documentation
 
-For usage examples and API details, see the [API documentation](https://docs.rs/oak-lean).
+For usage examples and API details, see the [API documentation](https://docs.rs/data-text-lean).
 
 ## 🤝 Contributing
 

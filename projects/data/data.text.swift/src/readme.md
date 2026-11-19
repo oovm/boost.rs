@@ -1,8 +1,8 @@
 # 🛠️ Swift Parser Developer Guide
 
-Swift support for the Oak language framework.
+Swift support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-swift`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-swift`.
 
 ## 🚦 Quick Start
 
@@ -10,7 +10,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-swift = { path = "..." }
+data-text-swift = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -18,7 +18,7 @@ oak-swift = { path = "..." }
 The following is a standard workflow for parsing modern Swift with property wrappers, generics, and concurrency:
 
 ```rust
-use oak_swift::{SwiftParser, SourceText, SwiftLanguage};
+use data_text_swift::{SwiftParser, SourceText, SwiftLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -67,7 +67,7 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Swift specific constructs like property wrappers, actors, async functions, and result builders.
 
 ### 2. Incremental Parsing
-Swift projects (especially those using SwiftUI) can be very complex. `oak-swift` supports sub-millisecond incremental updates:
+Swift projects (especially those using SwiftUI) can be very complex. `data-text-swift` supports sub-millisecond incremental updates:
 ```rust
 // Re-parse only the modified section
 let new_result = parser.reparse(&new_source, &old_result);

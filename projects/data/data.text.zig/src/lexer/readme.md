@@ -1,3 +1,3 @@
 # Zig Lexer
 
-This module provides zig lexer functionality for the Oaks project.
+This module provides zig lexer functionality for the Boost `data.text` project.

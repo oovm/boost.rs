@@ -1,6 +1,6 @@
 # 🌐 Elixir Language Integration
 
-This module defines the `ElixirLanguage` struct, which serves as the central configuration point for the Elixir parser within the Oak framework.
+This module defines the `ElixirLanguage` struct, which serves as the central configuration point for the Elixir parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
@@ -23,7 +23,7 @@ pub struct ElixirLanguage {
 ## 🚀 Usage
 
 ```rust
-use oak_elixir::ElixirLanguage;
+use data_text_elixir::ElixirLanguage;
 
 let config = ElixirLanguage::new();
 // Pass this config to ElixirParser::new(&config)

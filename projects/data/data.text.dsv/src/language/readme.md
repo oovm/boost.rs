@@ -1,6 +1,6 @@
 # DSV Language Definition
 
-This module contains the metadata and configuration options for the DSV (Delimiter-Separated Values) language within the Oak framework.
+This module contains the metadata and configuration options for the DSV (Delimiter-Separated Values) language within the `data.text` framework.
 
 ## Overview
 
@@ -19,9 +19,9 @@ Currently, `DsvLanguage` provides configuration for:
 
 ## Usage
 
-The `DsvLanguage` configuration is used throughout the `oak-dsv` crate via const generics:
+The `DsvLanguage` configuration is used throughout the `data-text-dsv` crate via const generics:
 
 - **`Dsv<const LANG: DsvLanguage>`**: A marker struct for the language.
 - **`DsvRoot<const LANG: DsvLanguage>`**: Defined in the `ast` module, providing a strongly-typed view of the DSV dataset.
 
-This centralization allows the Oak framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of DSV's tabular structure.
+This centralization allows the `data.text` framework to handle generic tasks like incremental parsing and LSP support while remaining deeply aware of DSV's tabular structure.

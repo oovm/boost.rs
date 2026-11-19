@@ -1,6 +1,6 @@
 # 🧪 HLSL Parser Test Suite
 
-`oak-hlsl` utilizes a multi-layered testing strategy to ensure high fidelity parsing across various Shader Models and HLSL syntax versions.
+`data-text-hlsl` utilizes a multi-layered testing strategy to ensure high fidelity parsing across various Shader Models and HLSL syntax versions.
 
 ## 📊 Test Coverage
 
@@ -27,10 +27,10 @@ Verifies that the parser remains stable when encountering:
 
 ```bash
 # Run all HLSL parser tests
-cargo test -p oak-hlsl
+cargo test -p data-text-hlsl
 
 # Run specific lexer tests
-cargo test -p oak-hlsl --test lexer_tests
+cargo test -p data-text-hlsl --test lexer_tests
 ```
 
 ## 📈 Quality Standards

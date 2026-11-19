@@ -1,6 +1,6 @@
 # 🛠️ Svelte Parser Developer Guide
 
-This guide is designed to help you quickly get started with developing and integrating `oak-svelte`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-svelte`.
 
 ## 🚦 Quick Start
 
@@ -8,7 +8,7 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-oak-svelte = { path = "..." }
+data-text-svelte = { path = "..." }
 ```
 
 ### Basic Parsing Example
@@ -16,14 +16,14 @@ oak-svelte = { path = "..." }
 The following is a standard workflow for parsing Svelte components, supporting template, script, and style blocks:
 
 ```rust
-use oak_svelte::{SvelteParser, SvelteLanguage};
+use data_text_svelte::{SvelteParser, SvelteLanguage};
 use data_text_core::{SourceText, parser::Parser, ParseSession};
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
         <script>
-        let greeting = 'Hello from Oak!'
+        let greeting = 'Hello from Boost!'
         </script>
 
         <h1>{greeting}</h1>
@@ -53,9 +53,9 @@ fn main() {
 After a successful parse, you can use the built-in visitor pattern or manually traverse the Green/Red Tree to extract Svelte specific constructs like logic blocks (`{#if}`, `{#each}`), directives (`on:`, `bind:`), and Svelte 5 snippets.
 
 ### 2. Incremental Parsing
-Svelte components are often edited in IDEs. `oak-svelte` supports sub-millisecond incremental updates for a fluid editing experience:
+Svelte components are often edited in IDEs. `data-text-svelte` supports sub-millisecond incremental updates for a fluid editing experience:
 ```rust
-# use oak_svelte::{SvelteParser, SvelteLanguage};
+# use data_text_svelte::{SvelteParser, SvelteLanguage};
 # use data_text_core::{SourceText, parser::Parser, ParseSession};
 # let config = SvelteLanguage::default();
 # let parser = SvelteParser::new(&config);

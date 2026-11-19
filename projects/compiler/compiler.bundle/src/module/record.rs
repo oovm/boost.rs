@@ -1,4 +1,4 @@
-//! 模块事实记录形状：Oak TypeScript AST 的结构化投影。
+//! 模块事实记录形状：TypeScript AST 的结构化投影。
 //!
 //! 这里只记录「源码里确实出现了什么」，不做模块身份解析、链接与分包；
 //! 所有 span 均为源文件内 UTF-8 字节区间（inclusive start, exclusive end），
@@ -6,7 +6,7 @@
 
 use crate::diag::PackDiagnostic;
 
-/// 一个模块经 Oak AST 提取后的全部事实。
+/// 一个模块经 syntax tree 提取后的全部事实。
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleRecord {
     /// 模块路径，由调用方传入；本层不解析路径语义。
@@ -29,10 +29,10 @@ pub struct ModuleRecord {
     pub cjs_named_exports: Vec<String>,
     /// 模块级标志。
     pub flags: ModuleFlags,
-    /// 模块级绑定 scope 事实（Oak `module_scope_facts` 投影），
+    /// 模块级绑定 scope 事实（`data.text` `module_scope_facts` 投影），
     /// 供打包层做 rename-safe 的绑定重写。
     pub scope_bindings: Vec<ScopeBindingFact>,
-    /// scope 事实可能缺引用的精确原因（Oak `module_scope_facts` 投影），
+    /// scope 事实可能缺引用的精确原因（`data.text` `module_scope_facts` 投影），
     /// 空即完整；非空时消费者必须拒绝任何绑定改名。
     pub scope_incomplete_reasons: Vec<ScopeIncompleteReason>,
     /// 非致命诊断；解析失败走 `Err`，不进入本结构。
@@ -124,7 +124,7 @@ impl ModuleRecord {
 pub enum ImportKind {
     /// 静态绑定导入 `import … from '…'`。
     Static,
-    /// 仅副作用导入 `import '…'`；`import {} from '…'` 在 Oak AST 中与之同形，同样归入本类。
+    /// 仅副作用导入 `import '…'`；`import {} from '…'` 在 syntax tree 中与之同形，同样归入本类。
     SideEffect,
     /// 动态导入 `import('…')`。
     Dynamic,
@@ -242,7 +242,7 @@ pub struct StatementFact {
     /// 声明自身的 span（`export` 包裹时是被包裹声明的 span；
     /// `export default <表达式>` 是整条 export 语句的 span）。
     pub span: (usize, usize),
-    /// 声明引入的顶层绑定名。多 declarator 与解构都按 Oak 的
+    /// 声明引入的顶层绑定名。多 declarator 与解构都按 `data.text` 的
     /// `binding_names` 展开，去重保序。
     pub declared_names: Vec<String>,
     /// 语句子树中出现的标识符（含嵌套函数/类体与属性名，保守多收录），
@@ -262,7 +262,7 @@ pub enum StatementEffect {
     /// TDZ 与绑定可见性使其在模块保留时不可剪除。
     Init,
     /// 模块求值即可能产生副作用（调用、赋值、控制流、装饰器、
-    /// 初值非纯、Oak 无法可靠解析的形态）：模块保留时恒活跃。
+    /// 初值非纯、`data.text` 无法可靠解析的形态）：模块保留时恒活跃。
     SideEffect,
 }
 
@@ -293,7 +293,7 @@ pub struct RequireFact {
 pub struct ModuleFlags {
     /// 模块是否含顶层 await（TLA）。
     ///
-    /// 由 Oak root 级正式事实驱动：`await` 是独立 `AwaitExpression` 节点，
+    /// 由 syntax root 级正式事实驱动：`await` 是独立 `AwaitExpression` 节点，
     /// 未穿越函数边界的 await 与 `for await` 标记被记入
     /// `TypeScriptRoot::top_level_await_spans`，本标志取其非空性，不猜测。
     pub has_tla: bool,

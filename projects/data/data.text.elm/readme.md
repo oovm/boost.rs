@@ -1,13 +1,13 @@
-# 🚀 Oak Elixir Parser
+# 🚀 Elixir Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-elixir.svg)](https://crates.io/crates/oak-elixir)
-[![Documentation](https://docs.rs/oak-elixir/badge.svg)](https://docs.rs/oak-elixir)
+[![Crates.io](https://img.shields.io/crates/v/data-text-elixir.svg)](https://crates.io/crates/data-text-elixir)
+[![Documentation](https://docs.rs/data-text-elixir/badge.svg)](https://docs.rs/data-text-elixir)
 
-**Scalable and Fault-Tolerant Parsing for the Beam** — A high-performance, incremental Elixir parser built on the Oak framework. Optimized for distributed systems, high-concurrency environments, and modern developer tooling.
+**Scalable and Fault-Tolerant Parsing for the Beam** — A high-performance, incremental Elixir parser built on the `data.text` framework. Optimized for distributed systems, high-concurrency environments, and modern developer tooling.
 
 ## 🎯 Project Vision
 
-Elixir is designed for building scalable and maintainable applications, leveraging the Erlang VM (BEAM). `oak-elixir` aims to provide a robust, modern, Rust-powered infrastructure for parsing Elixir that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex Elixir projects in real-time. Whether you are building custom linters, automated code generators, or sophisticated IDE extensions, `oak-elixir` provides the high-fidelity AST and efficiency needed to keep pace with Elixir's productivity-focused ecosystem.
+Elixir is designed for building scalable and maintainable applications, leveraging the Erlang VM (BEAM). `data-text-elixir` aims to provide a robust, modern, Rust-powered infrastructure for parsing Elixir that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex Elixir projects in real-time. Whether you are building custom linters, automated code generators, or sophisticated IDE extensions, `data-text-elixir` provides the high-fidelity AST and efficiency needed to keep pace with Elixir's productivity-focused ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Elixir is designed for building scalable and maintainable applications, leveragi
     - **Protocols & Behaviors**: Detailed tracking of protocol implementations and behavior definitions.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 

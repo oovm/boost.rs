@@ -1,9 +1,9 @@
-# 🚀 Oak ActionScript Parser
+# 🚀 ActionScript Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-actionscript.svg)](https://crates.io/crates/oak-actionscript)
-[![Documentation](https://docs.rs/oak-actionscript/badge.svg)](https://docs.rs/oak-actionscript)
+[![Crates.io](https://img.shields.io/crates/v/data-text-actionscript.svg)](https://crates.io/crates/data-text-actionscript)
+[![Documentation](https://docs.rs/data-text-actionscript/badge.svg)](https://docs.rs/data-text-actionscript)
 
-**Modern Tooling for Legacy Code.** `oak-actionscript` is a high-performance, incremental ActionScript 3.0 parser built on the Oak framework. It's engineered for building modern IDEs, static analysis tools, and automated migration paths for Flash and Flex applications.
+**Modern Tooling for Legacy Code.** `data-text-actionscript` is a high-performance, incremental ActionScript 3.0 parser built on the `data.text` framework. It's engineered for building modern IDEs, static analysis tools, and automated migration paths for Flash and Flex applications.
 
 ## ✨ Core Features
 
@@ -25,4 +25,4 @@ Leveraging the **Green/Red Tree** pattern (similar to Roslyn and rust-analyzer):
 
 ## 🤝 Contributing
 
-We welcome contributions! Whether it's bug reports, feature requests, or code, help us bring modern tooling to the ActionScript ecosystem. Check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a PR.
+We welcome contributions! Whether it's bug reports, feature requests, or code, help us bring modern tooling to the ActionScript ecosystem. Check our [issues](https://github.com/oovm/boost.rs/issues) or submit a PR.

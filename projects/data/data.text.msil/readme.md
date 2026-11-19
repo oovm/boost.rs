@@ -1,13 +1,13 @@
-# 🚀 oak-msil
+# 🚀 data-text-msil
 
-[![Crates.io](https://img.shields.io/crates/v/oak-msil.svg)](https://crates.io/crates/oak-msil)
-[![Documentation](https://docs.rs/oak-msil/badge.svg)](https://docs.rs/oak-msil)
+[![Crates.io](https://img.shields.io/crates/v/data-text-msil.svg)](https://crates.io/crates/data-text-msil)
+[![Documentation](https://docs.rs/data-text-msil/badge.svg)](https://docs.rs/data-text-msil)
 
-**Making MSIL processing simple** — A high-performance, incremental MSIL parser built on the Oak framework.
+**Making MSIL processing simple** — A high-performance, incremental MSIL parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-msil` is dedicated to providing industrial-grade parsing support for the MSIL language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-msil` is dedicated to providing industrial-grade parsing support for the MSIL language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 

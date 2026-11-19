@@ -1,13 +1,13 @@
-# 🚀 Oak Sass Parser
+# 🚀 Sass Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-sass.svg)](https://crates.io/crates/oak-sass)
-[![Documentation](https://docs.rs/oak-sass/badge.svg)](https://docs.rs/oak-sass)
+[![Crates.io](https://img.shields.io/crates/v/data-text-sass.svg)](https://crates.io/crates/data-text-sass)
+[![Documentation](https://docs.rs/data-text-sass/badge.svg)](https://docs.rs/data-text-sass)
 
-**Style with Speed and Precision** — A high-performance, incremental Sass (indented syntax) parser built on the Oak framework. Optimized for modern CSS workflows, design systems, and real-time styling tools.
+**Style with Speed and Precision** — A high-performance, incremental Sass (indented syntax) parser built on the `data.text` framework. Optimized for modern CSS workflows, design systems, and real-time styling tools.
 
 ## 🎯 Project Vision
 
-Sass revolutionized web styling with its powerful features and indented syntax. `oak-sass` aims to provide a robust, modern, Rust-powered infrastructure for parsing Sass that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, style analyzers, and automated refactoring utilities that can handle complex design systems in real-time. Whether you are building custom linters, automated theme generators, or sophisticated IDE extensions for Sass, `oak-sass` provides the high-fidelity AST and efficiency needed to support the modern styling ecosystem.
+Sass revolutionized web styling with its powerful features and indented syntax. `data-text-sass` aims to provide a robust, modern, Rust-powered infrastructure for parsing Sass that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, style analyzers, and automated refactoring utilities that can handle complex design systems in real-time. Whether you are building custom linters, automated theme generators, or sophisticated IDE extensions for Sass, `data-text-sass` provides the high-fidelity AST and efficiency needed to support the modern styling ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ Sass revolutionized web styling with its powerful features and indented syntax. 
     - **Functions & Operators**: Detailed tracking of custom functions and complex mathematical expressions.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active styling.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent style discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent style discovery and analysis.
 
 ## 🏗️ Architecture
 

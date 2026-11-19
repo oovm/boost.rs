@@ -1,13 +1,13 @@
-# 🚀 Oak DOT Parser
+# 🚀 DOT Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-dot.svg)](https://crates.io/crates/oak-dot)
-[![Documentation](https://docs.rs/oak-dot/badge.svg)](https://docs.rs/oak-dot)
+[![Crates.io](https://img.shields.io/crates/v/data-text-dot.svg)](https://crates.io/crates/data-text-dot)
+[![Documentation](https://docs.rs/data-text-dot/badge.svg)](https://docs.rs/data-text-dot)
 
-**Visualizing Complexity with Speed** — A high-performance, incremental DOT parser built on the Oak framework. Optimized for Graphviz integration, automated diagram generation, and modern IDE support for the DOT graph description language.
+**Visualizing Complexity with Speed** — A high-performance, incremental DOT parser built on the `data.text` framework. Optimized for Graphviz integration, automated diagram generation, and modern IDE support for the DOT graph description language.
 
 ## 🎯 Project Vision
 
-The DOT language is the industry standard for describing graphs and networks, widely used for everything from architectural diagrams to state machines. `oak-dot` provides a modern, Rust-powered infrastructure for analyzing and manipulating graph structures with extreme efficiency. By utilizing Oak's incremental parsing capabilities, it enables the creation of highly responsive visual tools that can handle massive graphs with sub-millisecond updates. Whether you are building automated diagram generators, network analysis tools, or sophisticated graph editors, `oak-dot` provides the robust, efficient foundation you need for high-fidelity graph extraction.
+The DOT language is the industry standard for describing graphs and networks, widely used for everything from architectural diagrams to state machines. `data-text-dot` provides a modern, Rust-powered infrastructure for analyzing and manipulating graph structures with extreme efficiency. By utilizing incremental parsing capabilities, it enables the creation of highly responsive visual tools that can handle massive graphs with sub-millisecond updates. Whether you are building automated diagram generators, network analysis tools, or sophisticated graph editors, `data-text-dot` provides the robust, efficient foundation you need for high-fidelity graph extraction.
 
 ## ✨ Core Features
 
@@ -19,7 +19,7 @@ The DOT language is the industry standard for describing graphs and networks, wi
     - **Attributes**: Robust handling of global and local attribute lists for styling and metadata.
     - **Comments**: Retains all trivia for faithful code formatting and documentation generation.
 - **🛡️ Industrial-Grade Fault Tolerance**: Gracefully recovers from syntax errors, providing clear and actionable diagnostics—critical for maintaining a smooth developer experience during active graph design.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent graph discovery and structural analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent graph discovery and structural analysis.
 
 ## 🏗️ Architecture
 
@@ -30,4 +30,4 @@ The parser follows the **Green/Red Tree** architecture (inspired by Roslyn), whi
 
 ## 🤝 Contributing
 
-We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/ygg-lang/oaks/issues) or submit a pull request.
+We welcome contributions of all kinds! If you find a bug, have a feature request, or want to contribute code, please check our [issues](https://github.com/oovm/boost.rs/issues) or submit a pull request.

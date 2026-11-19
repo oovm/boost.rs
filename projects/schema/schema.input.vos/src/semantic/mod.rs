@@ -1,4 +1,4 @@
-//! Oak adapters and VOS semantic processing.
+//! `data.text` adapters and VOS semantic processing.
 
 #![deny(missing_docs)]
 
@@ -25,49 +25,49 @@ pub use provider::{
 pub use resolve::{DeclKind, SourceDecls, SourceId, SymbolTable, collect_decls, extract_using_path_with_literals, resolve_using_tree};
 pub use schema_types::*;
 
-/// Parses VOS source through Oak and wraps the resulting root for semantic use.
+/// Parses VOS source through `data.text` and wraps the resulting root for semantic use.
 pub fn parse_oak(source: &str) -> Result<ContractInput, String> {
     data_text_vos::parse(source).map(ContractInput::from_oak)
 }
 
-/// Oak output accepted by the VOS semantic pipeline.
+/// parser output accepted by the VOS semantic pipeline.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContractInput {
     root: VosRoot,
 }
 
 impl ContractInput {
-    /// Wraps an Oak-built VOS root without reparsing its source.
+    /// Wraps an parser-built VOS root without reparsing its source.
     pub fn from_oak(root: VosRoot) -> Self {
         Self { root }
     }
 
-    /// Returns the exact source owned by Oak.
+    /// Returns the exact source owned by the parser.
     pub fn source(&self) -> &str {
         &self.root.source
     }
 
-    /// Returns the lossless Oak CST for semantic traversal.
+    /// Returns the lossless CST for semantic traversal.
     pub fn syntax(&self) -> &VosSyntaxNode {
         &self.root.syntax
     }
 
-    /// Returns top-level declarations emitted by Oak Builder.
+    /// Returns top-level declarations emitted by builder.
     pub fn declarations(&self) -> &[VosDeclaration] {
         &self.root.declarations
     }
 
-    /// Returns Oak-projected fields without reparsing the source.
+    /// Returns syntax-projected fields without reparsing the source.
     pub fn fields<'a>(&self, declaration: &'a VosDeclaration) -> &'a [VosField] {
         &declaration.fields
     }
 
-    /// Consumes the wrapper and returns the Oak root.
+    /// Consumes the wrapper and returns the syntax root.
     pub fn into_oak(self) -> VosRoot {
         self.root
     }
 
-    /// Projects the Oak root into the first VOS schema artifact.
+    /// Projects the syntax root into the first VOS schema artifact.
     pub fn project_schema(&self) -> Result<SchemaProjection, Vec<ContractDiagnostic>> {
         projection::project_schema(&self.root)
     }
@@ -81,22 +81,22 @@ impl ContractInput {
         projection::project_schema_only(&self.root)
     }
 
-    /// Projects Oak operation declarations without reparsing their bodies.
+    /// Projects operation declarations without reparsing their bodies.
     pub fn project_operations(&self) -> Result<Vec<OperationProjection>, Vec<ContractDiagnostic>> {
         projection::project_operations(&self.root)
     }
 
-    /// Projects Oak operation declarations into a versioned syntax artifact.
+    /// Projects operation declarations into a versioned syntax artifact.
     pub fn project_operations_artifact(&self) -> Result<OperationProjectionArtifact, Vec<ContractDiagnostic>> {
         projection::project_operations_artifact(&self.root)
     }
 
-    /// Projects Oak service declarations without lowering their bodies.
+    /// Projects language service declarations without lowering their bodies.
     pub fn project_services(&self) -> Result<Vec<ServiceProjection>, Vec<ContractDiagnostic>> {
         projection::project_services(&self.root)
     }
 
-    /// Projects Oak service declarations into a versioned syntax artifact.
+    /// Projects language service declarations into a versioned syntax artifact.
     pub fn project_services_artifact(&self) -> Result<ServiceProjectionArtifact, Vec<ContractDiagnostic>> {
         projection::project_services_artifact(&self.root)
     }

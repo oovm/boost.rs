@@ -1,3 +1,3 @@
 # Tcl Ast
 
-This module provides tcl ast functionality for the Oaks project.
+This module provides tcl ast functionality for the Boost `data.text` project.

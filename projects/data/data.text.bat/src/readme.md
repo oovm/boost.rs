@@ -1,3 +1,3 @@
-Windows Batch (BAT) support for the Oak language framework.
+Windows Batch (BAT) support for the `data.text` language framework.
 
 

@@ -7,7 +7,7 @@ use data_text_core::{Builder, TextError, ParseCache, Parser, Source, parser::ses
 /// TOML language parser.
 ///
 /// Implements the `Parser` trait for the TOML language, providing
-/// basic parsing functionality by leveraging the Oak core's lexer-based parsing.
+/// basic parsing functionality by leveraging the the `data.text` core lexer-based parsing.
 pub struct TomlParser<'config> {
     /// Language configuration.
     pub(crate) config: &'config TomlLanguage,

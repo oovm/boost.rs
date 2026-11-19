@@ -12,7 +12,7 @@ pub fn parse_vx_source(source: &str) -> Result<ValkyrieRoot, String> {
     builder.build(&text, &[], &mut session).result.map_err(|error| error.to_string())
 }
 
-/// Map Oak span to byte range.
+/// Map syntax span to byte range.
 pub fn std_range(span: &data_text_core::Range<usize>) -> std::ops::Range<usize> {
     span.start..span.end
 }

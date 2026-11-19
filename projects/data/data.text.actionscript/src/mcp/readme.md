@@ -4,7 +4,7 @@ This module implements a Model Context Protocol (MCP) server for ActionScript, a
 
 ## 🤖 What is MCP?
 
-The Model Context Protocol (MCP) is an open protocol that enables seamless integration between AI models and local or remote data sources. By providing an MCP server, `oak-actionscript` allows AI assistants to:
+The Model Context Protocol (MCP) is an open protocol that enables seamless integration between AI models and local or remote data sources. By providing an MCP server, `data-text-actionscript` allows AI assistants to:
 - Navigate ActionScript projects.
 - Query AST structures.
 - Retrieve precise diagnostic information.

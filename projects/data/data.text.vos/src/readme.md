@@ -1,6 +1,6 @@
-# `oak-vos`
+# `data-text-vos`
 
-`oak-vos` is the Oak CST-first frontend for VOS. It owns source structure and
+`data-text-vos` is the CST-first frontend for VOS. It owns source structure and
 syntax recovery only. VOS name resolution, type checking, contract identity,
 UDF lowering, and YY execution lowering remain downstream responsibilities.
 

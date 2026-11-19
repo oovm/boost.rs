@@ -1,3 +1,3 @@
 # Swift Builder
 
-This module provides swift builder functionality for the Oaks project.
+This module provides swift builder functionality for the Boost `data.text` project.

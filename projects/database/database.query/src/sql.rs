@@ -1,4 +1,4 @@
-//! Oak SQL frontend entry point for compatibility gateways.
+//! SQL frontend entry point for compatibility gateways.
 //!
 //! This module only parses the SQL surface. It does not execute SQL, own a
 //! query planner, or bypass the YY execution model.
@@ -7,14 +7,14 @@ use std::borrow::Cow;
 
 use data_text_sql::ast::{BinaryOperator, Expression, Literal, SelectItem, SqlStatement};
 
-/// Structured failure category from the Oak SQL frontend, gateway binder,
+/// Structured failure category from the SQL frontend, gateway binder,
 /// planner or executor.
 ///
 /// Protocol adapters map categories to wire error codes and SQLSTATE values.
 /// They never inspect [`SqlFrontendError::message`] to recover the category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SqlErrorKind {
-    /// Oak rejected the SQL surface.
+    /// The parser rejected the SQL surface.
     Syntax,
     /// The catalog does not publish the referenced table.
     UnknownTable,
@@ -99,7 +99,7 @@ pub enum SqlErrorKind {
     SequenceNotCalled,
 }
 
-/// Structured failure from the Oak SQL frontend or gateway binder.
+/// Structured failure from the SQL frontend or gateway binder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqlFrontendError {
     /// Failure category consumed by protocol adapters.
@@ -114,7 +114,7 @@ impl SqlFrontendError {
         Self { kind, message: message.into() }
     }
 
-    /// Oak rejected the SQL surface.
+    /// The parser rejected the SQL surface.
     pub fn syntax(message: impl Into<String>) -> Self {
         Self::new(SqlErrorKind::Syntax, message)
     }
@@ -135,7 +135,7 @@ impl SqlFrontendError {
     }
 }
 
-/// A session statement lowered from Oak's SQL syntax tree.
+/// A session statement lowered from the SQL syntax tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlSessionCommand {
     /// `SET NAMES` character-set negotiation.
@@ -190,9 +190,9 @@ pub enum SqlSessionCommand {
 
 /// One of the three savepoint verbs the gateway recognises.
 ///
-/// Oak's SQL AST does not project a Savepoint node yet, so the gateway lowers the
+/// the SQL syntax tree does not project a Savepoint node yet, so the gateway lowers the
 /// verbs itself via [`parse_session_command`]'s pre-filter rather than routing them
-/// through Oak.
+/// through the `data.text` parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SavepointIntent {
     /// `SAVEPOINT <name>` — create a new named savepoint.
@@ -214,8 +214,8 @@ pub enum SavepointIntent {
 
 /// Target of a PostgreSQL `DISCARD` statement.
 ///
-/// Like [`SavepointIntent`], Oak's SQL AST does not project `DISCARD` yet, so the
-/// gateway lowers the verb itself before Oak runs.
+/// Like [`SavepointIntent`], the SQL syntax tree does not project `DISCARD` yet, so the
+/// gateway lowers the verb itself before the parser runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscardTarget {
     /// `DISCARD ALL` — full session reset.
@@ -239,7 +239,7 @@ pub enum SqlVariableScope {
     Local,
 }
 
-/// Transaction operation recognized by Oak and projected for protocol adapters.
+/// Transaction operation recognized by the parser and projected for protocol adapters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlTransactionAction {
     /// Start a transaction.
@@ -256,9 +256,9 @@ pub enum SqlTransactionAction {
     ReleaseSavepoint(String),
 }
 
-/// Parses one SQL surface statement through the official Oak SQL frontend.
+/// Parses one SQL surface statement through the official SQL frontend.
 ///
-/// The Oak parser is always built with [`SqlLanguage::mysql`] because that is the
+/// The parser is always built with [`SqlLanguage::mysql`] because that is the
 /// only language configuration that lexes backtick identifiers, which both the
 /// normalization step and MySQL clients need. PostgreSQL double-quoted identifiers
 /// are therefore normalized into backtick identifiers before parsing.
@@ -266,7 +266,7 @@ pub fn parse_sql(source: &str, dialect: SqlDialect) -> Result<data_text_sql::ast
     parse_ast(&normalise_sql_source(source, dialect))
 }
 
-/// Parses already-normalized SQL text and rejects Oak error statements.
+/// Parses already-normalized SQL text and rejects parser error statements.
 fn parse_ast(source: &str) -> Result<data_text_sql::ast::SqlRoot, SqlFrontendError> {
     use data_text_core::{Builder, parser::session::ParseSession, source::SourceText};
 
@@ -288,11 +288,11 @@ fn parse_ast(source: &str) -> Result<data_text_sql::ast::SqlRoot, SqlFrontendErr
     Ok(root)
 }
 
-/// 按方言把 SQL 文本改写成 Oak 能解析的形状。
+/// 按方言把 SQL 文本改写成 `data.text` 能解析的形状。
 ///
 /// 两处改写都是词法层事实，不是语义近似：
-/// - PostgreSQL 的双引号标识符改成反引号（Oak 只在反引号配置下产出标识符节点）。
-/// - `LEFT` / `RIGHT` 在 Oak 词表里是 JOIN 关键字，函数调用位置无法解析，改写成引号标识符。
+/// - PostgreSQL 的双引号标识符改成反引号（`data.text` 只在反引号配置下产出标识符节点）。
+/// - `LEFT` / `RIGHT` 在 `data.text` 词表里是 JOIN 关键字，函数调用位置无法解析，改写成引号标识符。
 fn normalise_sql_source(source: &str, dialect: SqlDialect) -> Cow<'_, str> {
     let quoted = normalise_quoted_identifiers(source, dialect);
     match normalize_reserved_function_calls(&quoted) {
@@ -375,7 +375,7 @@ fn skip_block_comment(bytes: &[u8], start: usize) -> usize {
     index
 }
 
-/// Projects the small set of protocol session commands from Oak's SQL AST.
+/// Projects the small set of protocol session commands from the SQL syntax tree.
 pub fn parse_session_command(source: &str) -> Result<Option<SqlSessionCommand>, SqlFrontendError> {
     if let Some(intent) = detect_savepoint_statement(source) {
         return Ok(Some(SqlSessionCommand::Savepoint(intent)));
@@ -427,7 +427,7 @@ pub fn parse_session_command(source: &str) -> Result<Option<SqlSessionCommand>, 
 }
 
 /// Matches `SAVEPOINT`, `ROLLBACK TO SAVEPOINT`, and `RELEASE SAVEPOINT` at the
-/// text level so the gateway can honour savepoints before Oak grows a Savepoint
+/// text level so the gateway can honour savepoints before the parser grows a Savepoint
 /// AST node. Returns `None` when the source is not a savepoint verb.
 pub fn detect_savepoint_statement(source: &str) -> Option<SavepointIntent> {
     let trimmed = source.trim();
@@ -469,11 +469,11 @@ pub fn detect_savepoint_statement(source: &str) -> Option<SavepointIntent> {
 
 /// Matches PostgreSQL `RESET <parameter>` / `RESET ALL` and
 /// `DISCARD ALL|PLANS|SEQUENCES|TEMPORARY|TEMP` at the text level, the same way
-/// [`detect_savepoint_statement`] covers the savepoint verbs Oak does not project.
+/// [`detect_savepoint_statement`] covers the savepoint verbs the parser does not project.
 ///
 /// The match is deliberately lexical and case-insensitive: only a complete
 /// statement made of a bare identifier (no quoting, no extra tokens) is claimed.
-/// Anything else falls through to Oak, which reports its own syntax error, so a
+/// Anything else falls through to the parser, which reports its own syntax error, so a
 /// mis-shaped statement can never be silently treated as a session reset.
 pub fn detect_session_reset_statement(source: &str) -> Option<SqlSessionCommand> {
     let trimmed = source.trim();
@@ -519,7 +519,7 @@ pub fn detect_session_reset_statement(source: &str) -> Option<SqlSessionCommand>
 
 /// Whether `token` is an unquoted SQL identifier: `$`/`_`/letters first, then
 /// `$`/`_`/letters/digits. Quoted or punctuated spellings stay outside the
-/// pre-filter and are left to Oak.
+/// pre-filter and are left to the parser.
 fn is_bare_session_identifier(token: &str) -> bool {
     let mut characters = token.chars();
     let Some(first) = characters.next()
@@ -533,7 +533,7 @@ fn is_bare_session_identifier(token: &str) -> bool {
 }
 
 /// MySQL and PostgreSQL clients may spell the opening boundary as `START
-/// TRANSACTION`; Oak's session grammar only reads `BEGIN`. Rewrite that one
+/// TRANSACTION`; the session grammar only reads `BEGIN`. Rewrite that one
 /// statement and leave every other SQL surface untouched.
 fn normalize_start_transaction(source: &str) -> Option<String> {
     let trimmed = source.trim();
@@ -552,7 +552,7 @@ fn normalize_start_transaction(source: &str) -> Option<String> {
 }
 
 /// MySQL clients spell charset negotiation as `SET NAMES 'utf8mb4' COLLATE
-/// 'utf8mb4_general_ci'`, while Oak's session grammar only reads bare
+/// 'utf8mb4_general_ci'`, while the session grammar only reads bare
 /// identifiers. Unquote simple identifier literals for this one statement and
 /// leave every other SQL surface untouched.
 fn normalize_quoted_set_names(source: &str) -> Option<String> {
@@ -586,7 +586,7 @@ fn project_variable_scope(scope: data_text_sql::ast::SessionScope) -> SqlVariabl
     }
 }
 
-/// Gateway-owned statement after Oak parsing and SQL-surface binding.
+/// Gateway-owned statement after `data.text` parsing and SQL-surface binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlBoundStatement {
     /// One SQL SELECT request awaiting 集群 catalog binding.
@@ -828,7 +828,7 @@ pub struct SqlBoundInsert {
 
 /// Source of the rows an `INSERT` writes.
 ///
-/// Oak reports three distinct spellings, and the gateway must keep all three
+/// The parser reports three distinct spellings, and the gateway must keep all three
 /// apart: `VALUES` supplies its rows through [`SqlBoundInsert::rows`],
 /// `DEFAULT VALUES` asks for one row built from column defaults (a shape the
 /// gateway does not implement), and `SELECT` carries its own bound query.
@@ -925,7 +925,7 @@ impl SqlBoundSetOperator {
 
 /// One operand of a SQL set operation.
 ///
-/// Oak publishes a flat operand chain, so the precedence fold may place an
+/// The parser publishes a flat operand chain, so the precedence fold may place an
 /// `INTERSECT` group here while leaves stay plain `SELECT` bindings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlBoundSetOperand {
@@ -1252,7 +1252,7 @@ impl SqlScalarFunction {
 
     /// Niladic spellings the SQL standard writes without parentheses.
     ///
-    /// Oak's SQL tree has no node for these keywords, so the catalog binder falls
+    /// the SQL syntax tree has no node for these keywords, so the catalog binder falls
     /// back to them only after an unqualified identifier fails to resolve to a
     /// column. `NOW` is deliberately absent: both dialects require `NOW()`.
     pub fn from_keyword(name: &str) -> Option<Self> {
@@ -1507,7 +1507,7 @@ pub fn bind_sql(source: &str, dialect: SqlDialect) -> Result<SqlBoundStatement, 
 /// Binds the non-recursive `WITH` prefix into CTE definitions.
 ///
 /// Each body goes through the same [`bind_select_statement`] path as every other
-/// query, so a CTE can only carry shapes the gateway already binds. Oak rejects
+/// query, so a CTE can only carry shapes the gateway already binds. The parser rejects
 /// `WITH RECURSIVE` while parsing. An explicit column list renames the CTE output;
 /// it is carried here and applied to the flattened column scope at catalog bind time.
 fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<Vec<SqlBoundCte>, SqlFrontendError> {
@@ -1535,7 +1535,7 @@ fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<V
     Ok(ctes)
 }
 
-/// Binds one Oak `SELECT` — shared by top-level statements and `IN (SELECT ...)` subqueries.
+/// Binds one `data.text` `SELECT` — shared by top-level statements and `IN (SELECT ...)` subqueries.
 fn bind_select_statement(select: &data_text_sql::ast::SelectStatement) -> Result<SqlBoundSelect, SqlFrontendError> {
     let with = bind_with_clause(select.with.as_ref())?;
     let distinct = match &select.quantifier {
@@ -1616,7 +1616,7 @@ fn bind_select_statement(select: &data_text_sql::ast::SelectStatement) -> Result
     })
 }
 
-/// Binds one Oak set operation. `ORDER BY` stays in surface form because it
+/// Binds one set operation. `ORDER BY` stays in surface form because it
 /// references the combined output columns rather than catalog columns.
 fn bind_set_operation(set: &data_text_sql::ast::SetOperationStatement) -> Result<SqlBoundSetOperation, SqlFrontendError> {
     let (limit, offset) = bind_limit_clause(set.limit.as_ref())?;
@@ -1641,7 +1641,7 @@ fn bind_set_operator(operator: data_text_sql::ast::SetOperator) -> SqlBoundSetOp
     }
 }
 
-/// Folds Oak's flat set-operation chain into a precedence tree.
+/// Folds the flat set-operation chain into a precedence tree.
 ///
 /// SQL gives `INTERSECT` / `INTERSECT ALL` tighter precedence than `UNION` /
 /// `UNION ALL` / `EXCEPT` / `EXCEPT ALL`, and combines operators of equal
@@ -1705,16 +1705,16 @@ fn close_intersect_group(operands: Vec<SqlBoundSetOperand>, operators: Vec<SqlBo
     SqlBoundSetOperand::SetOperation(Box::new(SqlBoundSetOperation { operands, operators, order_by: None, limit: None, offset: None }))
 }
 
-/// Binds an Oak `LIMIT` clause into gateway expressions.
+/// Binds an `data.text` `LIMIT` clause into gateway expressions.
 ///
-/// Oak publishes `LIMIT` and `OFFSET` as expressions, so the gateway keeps them
+/// The parser publishes `LIMIT` and `OFFSET` as expressions, so the gateway keeps them
 /// in the normal expression system and folds them to a row count while planning.
 /// Only the planner knows the statement dialect, and folding there keeps one
 /// evaluation path instead of a second literal-only parser.
 ///
 /// `LIMIT` is optional in the AST: a standalone `OFFSET n` binds to
 /// `(None, Some(n))` and must skip rows without capping the result, while
-/// `LIMIT m` alone keeps its row-count meaning. The keyword split is Oak's, so
+/// `LIMIT m` alone keeps its row-count meaning. The keyword split is the parser's, so
 /// the gateway never re-reads the text to guess which clause was written.
 ///
 /// Anything that would need a row — column references, `*`, subqueries or
@@ -1792,7 +1792,7 @@ fn validate_row_count_expression(expression: &SqlBoundExpression, clause: &str) 
     }
 }
 
-/// Binds an Oak `ORDER BY` clause into gateway order items.
+/// Binds an `data.text` `ORDER BY` clause into gateway order items.
 fn bind_order_by_clause(clause: Option<&data_text_sql::ast::OrderByClause>) -> Result<Option<Vec<SqlBoundOrderByItem>>, SqlFrontendError> {
     Ok(match clause {
         Some(clause) if !clause.items.is_empty() => {
@@ -1819,9 +1819,9 @@ fn bind_order_by_clause(clause: Option<&data_text_sql::ast::OrderByClause>) -> R
     })
 }
 
-/// Binds an Oak `OVER (...)` clause into a gateway window spec.
+/// Binds an `data.text` `OVER (...)` clause into a gateway window spec.
 ///
-/// Oak only parses `PARTITION BY <column>` and `ORDER BY <column>` inside a
+/// The parser only parses `PARTITION BY <column>` and `ORDER BY <column>` inside a
 /// window, so every partitioning / ordering term is a plain identifier.
 fn bind_window_spec(spec: &data_text_sql::ast::WindowSpec) -> Result<SqlBoundWindowSpec, SqlFrontendError> {
     let partition_by =
@@ -1863,7 +1863,7 @@ fn bind_window_spec(spec: &data_text_sql::ast::WindowSpec) -> Result<SqlBoundWin
 /// Binds an explicit window frame. `ROWS` counts physical row positions;
 /// `RANGE` compares values on the window `ORDER BY`, so it requires an
 /// `ORDER BY` and, for value offsets, exactly one ordering column. `GROUPS`
-/// never reaches this point: the Oak AST has no `GROUPS` unit and the parser
+/// never reaches this point: the syntax tree has no `GROUPS` unit and the parser
 /// rejects the spelling before binding.
 fn bind_window_frame(frame: &data_text_sql::ast::WindowFrame) -> Result<SqlBoundWindowFrame, SqlFrontendError> {
     let unit = match frame.unit {
@@ -1911,7 +1911,7 @@ fn window_integer_argument(argument: &SqlBoundExpression, display: &str, role: &
     Ok(*value)
 }
 
-/// Binds an Oak `FROM` / `JOIN` source into a catalog table reference or a
+/// Binds an `data.text` `FROM` / `JOIN` source into a catalog table reference or a
 /// derived table. A derived table is a full nested `SELECT`, so it is bound
 /// through the same [`bind_select_statement`] path as every other query.
 fn bind_table_source(source: &data_text_sql::ast::TableSource) -> Result<SqlBoundSource, SqlFrontendError> {
@@ -2206,7 +2206,7 @@ fn find_aggregate_call(expression: &SqlBoundExpression) -> Option<&str> {
     }
 }
 
-/// Binds one Oak literal, keeping integer spellings exact and rejecting numeric
+/// Binds one literal, keeping integer spellings exact and rejecting numeric
 /// literals that no SQL value in this gateway can represent.
 fn bind_literal(literal: &Literal) -> Result<SqlBoundLiteral, SqlFrontendError> {
     match literal {
@@ -2243,7 +2243,7 @@ pub fn is_binary_type_name(target: &str) -> bool {
 
 /// 把 `LEFT(...)` / `RIGHT(...)` 的保留字函数拼写改写成引号标识符。
 ///
-/// Oak 的 SQL 词表把 `LEFT` / `RIGHT` 固定成 JOIN 关键字，函数调用位置根本无法解析。
+/// `data.text` 的 SQL 词表把 `LEFT` / `RIGHT` 固定成 JOIN 关键字，函数调用位置根本无法解析。
 /// MySQL 与 PostgreSQL 都把这两个词当函数名使用，所以这里只在代码位置、只在这两个词
 /// 后面紧跟 `(` 时加一层引号（`` `LEFT` ``），绑定器 `normalize_identifier` 再还原成
 /// 同一个函数名。`LEFT JOIN` 等没有 `(` 的用法原样保留，字符串字面量、引号标识符与
@@ -2434,7 +2434,7 @@ fn bind_error(message: &str) -> SqlFrontendError {
 
 /// 规范化一个标识符：去掉一层引号（`` `x` `` / `"x"` / `[x]`）与前后空白。
 ///
-/// MySQL 客户端的标识符一律用反引号，PostgreSQL 用双引号，Oak 保留引号文本。
+/// MySQL 客户端的标识符一律用反引号，PostgreSQL 用双引号，`data.text` 保留引号文本。
 /// 网关按去掉引号后的名字解析表、列与函数，因此这里统一剥一层。
 /// 去掉标识符外层引号的一层包装。
 pub fn normalize_identifier(name: &str) -> String {

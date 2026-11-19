@@ -28,7 +28,7 @@ pub struct Step {
     pub predicates: Vec<Predicate>,
 }
 
-/// Supported XPath axes in the Oak subset.
+/// Supported XPath axes in the supported subset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Axis {
@@ -42,7 +42,7 @@ pub enum Axis {
     Attribute,
 }
 
-/// Node tests supported by the Oak XPath subset.
+/// Node tests supported by the XPath subset.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum NodeTest {

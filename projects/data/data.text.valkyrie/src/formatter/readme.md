@@ -1,6 +1,6 @@
 # Valkyrie formatter
 
-Public module: `oak_valkyrie::formatter` (CST rules live in private `formatter/` submodules).
+Public module: `data_text_valkyrie::formatter` (CST rules live in private `formatter/` submodules).
 
 - [`FormatOptions`](options.rs) — `indent_width`, `line_width`
 - [`FormatError`](error.rs) — formatting failure message

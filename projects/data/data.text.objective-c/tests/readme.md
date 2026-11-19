@@ -1,6 +1,6 @@
 # 🧪 Objective-C Parser Test Suite & Quality Assurance
 
-`oak-objective-c` features a comprehensive test suite to ensure stability across Objective-C's unique syntax and its integration with C/C++.
+`data-text-objective-c` features a comprehensive test suite to ensure stability across Objective-C's unique syntax and its integration with C/C++.
 
 ## 📊 Test Coverage
 
@@ -32,7 +32,7 @@ You can run the full test suite using:
 
 ```bash
 # Run standard Rust tests using cargo
-cargo test -p oak-objective-c
+cargo test -p data-text-objective-c
 
 # Or use the project-wide task runner
 wee test

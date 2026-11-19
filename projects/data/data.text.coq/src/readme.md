@@ -1,8 +1,8 @@
 # 🛠️ Coq Parser Developer Guide
 
-Coq support for the Oak language framework.
+Coq support for the `data.text` language framework.
 
-This guide is designed to help you quickly get started with developing and integrating `oak-coq`.
+This guide is designed to help you quickly get started with developing and integrating `data-text-coq`.
 
 ## 🚦 Quick Start
 
@@ -11,7 +11,7 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a simple Coq theorem:
 
 ```rust
-use oak_coq::{CoqParser, SourceText, CoqLanguage};
+use data_text_coq::{CoqParser, SourceText, CoqLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -52,7 +52,7 @@ let new_result = parser.reparse(&new_source, &old_result);
 ```
 
 ### 3. Diagnostics
-`oak-coq` provides rich error contexts specifically tailored for Coq developers:
+`data-text-coq` provides rich error contexts specifically tailored for Coq developers:
 ```rust
 for diag in result.diagnostics() {
     println!("[{}:{}] {}", diag.line, diag.column, diag.message);

@@ -1,3 +1,3 @@
 # Zig AST
 
-This module provides Zig AST functionality for the Oaks project.
+This module provides Zig AST functionality for the Boost `data.text` project.

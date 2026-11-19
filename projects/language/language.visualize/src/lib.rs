@@ -19,7 +19,7 @@ pub mod theme;
 /// Tree-specific visualization tools.
 pub mod tree;
 
-/// Error type for oak-visualize operations.
+/// Error type for language-visualize operations.
 #[derive(Debug)]
 pub enum Error {
     /// Layout computation error.
@@ -61,7 +61,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// Result type alias for oak-visualize operations
+/// Result type alias for language-visualize operations
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Trait for types that can be visualized

@@ -1,3 +1,3 @@
 # Dart LSP Formatter
 
-This module provides dart lsp formatter functionality for the Oaks project.
+This module provides dart lsp formatter functionality for the Boost `data.text` project.

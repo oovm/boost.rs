@@ -1,13 +1,13 @@
-# 🚀 Oak PowerShell Parser
+# 🚀 PowerShell Parser
 
-[![Crates.io](https://img.shields.io/crates/v/oak-powershell.svg)](https://crates.io/crates/oak-powershell)
-[![Documentation](https://docs.rs/oak-powershell/badge.svg)](https://docs.rs/oak-powershell)
+[![Crates.io](https://img.shields.io/crates/v/data-text-powershell.svg)](https://crates.io/crates/data-text-powershell)
+[![Documentation](https://docs.rs/data-text-powershell/badge.svg)](https://docs.rs/data-text-powershell)
 
-**Automation Mastery with Rust Efficiency** — A high-performance, incremental PowerShell parser built on the Oak framework. Optimized for system administration, DevOps automation, and modern IDE integration for the PowerShell language.
+**Automation Mastery with Rust Efficiency** — A high-performance, incremental PowerShell parser built on the `data.text` framework. Optimized for system administration, DevOps automation, and modern IDE integration for the PowerShell language.
 
 ## 🎯 Project Vision
 
-PowerShell is a powerful task automation and configuration management framework from Microsoft. `oak-powershell` aims to provide a robust, modern, Rust-powered infrastructure for parsing PowerShell that is both accurate and incredibly fast. By utilizing Oak's incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex PowerShell scripts and modules in real-time. Whether you are building custom linters, automated script generators, or sophisticated IDE extensions for PowerShell Core or Windows PowerShell, `oak-powershell` provides the high-fidelity AST and efficiency needed to support the PowerShell ecosystem.
+PowerShell is a powerful task automation and configuration management framework from Microsoft. `data-text-powershell` aims to provide a robust, modern, Rust-powered infrastructure for parsing PowerShell that is both accurate and incredibly fast. By utilizing incremental parsing architecture, we enable the creation of highly responsive IDEs, code analysis tools, and automated refactoring utilities that can handle complex PowerShell scripts and modules in real-time. Whether you are building custom linters, automated script generators, or sophisticated IDE extensions for PowerShell Core or Windows PowerShell, `data-text-powershell` provides the high-fidelity AST and efficiency needed to support the PowerShell ecosystem.
 
 ## ✨ Core Features
 
@@ -20,7 +20,7 @@ PowerShell is a powerful task automation and configuration management framework 
     - **Modules & Functions**: Support for module definitions, function declarations, and advanced script blocks.
     - **Comments & Whitespace**: Retains all trivia, enabling faithful round-trip processing and refactoring.
 - **🛡️ Industrial-Grade Fault Tolerance**: Engineered to recover from syntax errors gracefully, providing precise diagnostics—crucial for maintaining a smooth developer experience during active coding.
-- **🧩 Deep Ecosystem Integration**: Seamlessly works with `oak-lsp` for full LSP support and `oak-mcp` for intelligent code discovery and analysis.
+- **🧩 Deep Ecosystem Integration**: Seamlessly works with `language-server` for full LSP support and `language-mcp` for intelligent code discovery and analysis.
 
 ## 🏗️ Architecture
 

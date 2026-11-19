@@ -1,13 +1,13 @@
-# 🚀 oak-tailwind
+# 🚀 data-text-tailwind
 
-[![Crates.io](https://img.shields.io/crates/v/oak-tailwind.svg)](https://crates.io/crates/oak-tailwind)
-[![Documentation](https://docs.rs/oak-tailwind/badge.svg)](https://docs.rs/oak-tailwind)
+[![Crates.io](https://img.shields.io/crates/v/data-text-tailwind.svg)](https://crates.io/crates/data-text-tailwind)
+[![Documentation](https://docs.rs/data-text-tailwind/badge.svg)](https://docs.rs/data-text-tailwind)
 
-**Making TAILWIND processing simple** — A high-performance, incremental TAILWIND parser built on the Oak framework.
+**Making TAILWIND processing simple** — A high-performance, incremental TAILWIND parser built on the `data.text` framework.
 
 ## 🎯 Project Vision
 
-`oak-tailwind` is dedicated to providing industrial-grade parsing support for the TAILWIND language. By leveraging Rust's high-performance characteristics and Oak's incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
+`data-text-tailwind` is dedicated to providing industrial-grade parsing support for the TAILWIND language. By leveraging Rust's high-performance characteristics and incremental parsing architecture, it can easily handle a variety of application scenarios, from simple script analysis to complex IDE language servers.
 
 ## ✨ Core Features
 
