@@ -13,6 +13,7 @@ dl-tensor = { workspace = true }
 dl-ops = { workspace = true }
 
 [dev-dependencies]
+dl-autograd = { workspace = true }
 dl-nn = { workspace = true }
 dl-model = { workspace = true }
 boost-random = { workspace = true }

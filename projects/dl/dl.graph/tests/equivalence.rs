@@ -1,5 +1,6 @@
 //! 图执行与 eager 执行必须给出相同结果，checkpoint 恢复后也一样。
 
+use dl_autograd::Var;
 use dl_graph::{Bindings, GraphBuilder, NodeId};
 use dl_model;
 use dl_nn::{Module, mlp, seeded_random};
@@ -17,6 +18,25 @@ fn mlp_graph() -> dl_graph::Graph {
     let hidden = builder.relu(hidden).unwrap();
     let output = linear(&mut builder, hidden, weight1, bias1);
     builder.finish(vec![output]).unwrap()
+}
+
+/// 同一张 MLP 图追加反向节点：损失是输出均值，梯度节点作为额外输出。
+fn mlp_training_graph() -> (dl_graph::Graph, dl_graph::Gradients) {
+    let mut builder = GraphBuilder::new();
+    let input = builder.input("x", [4, 2]).unwrap();
+    let weight0 = builder.parameter("0.weight", [6, 2]).unwrap();
+    let bias0 = builder.parameter("0.bias", [6]).unwrap();
+    let weight1 = builder.parameter("2.weight", [1, 6]).unwrap();
+    let bias1 = builder.parameter("2.bias", [1]).unwrap();
+
+    let hidden = linear(&mut builder, input, weight0, bias0);
+    let hidden = builder.relu(hidden).unwrap();
+    let output = linear(&mut builder, hidden, weight1, bias1);
+    let loss = builder.mean_all(output).unwrap();
+    let gradients = builder.backward(loss).unwrap();
+    let mut outputs = vec![loss];
+    outputs.extend(gradients.nodes());
+    (builder.finish(outputs).unwrap(), gradients)
 }
 
 fn linear(builder: &mut GraphBuilder, input: NodeId, weight: NodeId, bias: NodeId) -> NodeId {
@@ -58,6 +78,32 @@ fn graph_matches_eager_forward() {
     assert_eq!(graph_output.len(), 1);
     assert_eq!(graph_output[0].shape(), eager.shape());
     assert_close(&graph_output[0].to_vec(), &eager.to_vec());
+}
+
+#[test]
+fn graph_gradients_match_eager_autograd() {
+    let mut random = seeded_random(20261120);
+    let model = mlp(&[2, 6, 1], &mut random).unwrap();
+    let input = sample();
+    let (graph, gradients) = mlp_training_graph();
+
+    let mut bindings = Bindings::new();
+    bindings.insert_input("x", input.clone());
+    let parameters = model.named_parameters();
+    for (name, parameter) in &parameters {
+        bindings.insert_parameter(name.clone(), parameter.value());
+    }
+    let values = graph.run(&bindings).unwrap();
+
+    let loss = model.forward(&Var::leaf(input)).unwrap().mean().unwrap();
+    loss.backward().unwrap();
+
+    for (name, parameter) in &parameters {
+        let node = gradients.parameter(name).unwrap_or_else(|| panic!("missing gradient for {name}"));
+        let index = graph.outputs().iter().position(|output| *output == node).unwrap();
+        assert_close(&values[index].to_vec(), &parameter.grad().unwrap().to_vec());
+    }
+    assert_close(&values[0].to_vec(), &loss.value().to_vec());
 }
 
 #[test]

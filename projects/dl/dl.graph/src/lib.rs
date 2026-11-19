@@ -3,8 +3,9 @@
 //! 图只描述算子依赖和形状，不持有数据。运行期通过 [`Bindings`] 绑定输入与参数；图执行
 //! 与 eager（`dl-autograd`）共用 `dl-ops` 内核，因此同一组权重必须给出相同结果。
 //!
-//! 本 crate 只做前向。反向、参数更新与 checkpoint 由 `dl-autograd`、`dl-train` 和
-//! `dl-model` 负责；可视化投影不是执行证明。
+//! 前向与反向都是图节点：[`GraphBuilder::backward`] 按算子解析式追加梯度节点，因此训练图
+//! 与前向图一样能被 `dl-plan` 放置、被 `dl-runtime` 流式执行。eager 自动微分在
+//! `dl-autograd`，参数更新与 checkpoint 在 `dl-train`/`dl-model`；可视化投影不是执行证明。
 
 #![warn(missing_docs)]
 
@@ -19,7 +20,10 @@ use dl_types::{DlError, Result, broadcast_shape, numel, require_non_zero};
 pub struct NodeId(pub usize);
 
 /// 节点算子。
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// 前向算子与反向算子共用同一 IR：反向建图只是把梯度计算追加成普通节点，因此放置与
+/// 流式执行对训练图不需要任何特殊分支。
+#[derive(Clone, Debug, PartialEq)]
 pub enum Op {
     /// 运行期输入。
     Input {
@@ -30,6 +34,11 @@ pub enum Op {
     Parameter {
         /// 绑定名。
         name: String,
+    },
+    /// 标量常量；反向种子和数值常数用它。
+    Constant {
+        /// 常量值。
+        value: f32,
     },
     /// 逐元素相加，支持广播。
     Add,
@@ -57,6 +66,25 @@ pub enum Op {
     SumAll,
     /// 全部元素求平均，输出标量。
     MeanAll,
+    /// 把广播后的梯度按目标形状求和。
+    SumToShape {
+        /// 目标形状。
+        shape: Vec<usize>,
+    },
+    /// 逐元素取负。
+    Neg,
+    /// 把标量广播到目标形状；只接受标量输入。
+    BroadcastTo {
+        /// 目标形状。
+        shape: Vec<usize>,
+    },
+    /// 全部元素乘以标量。
+    Scale {
+        /// 缩放系数。
+        factor: f32,
+    },
+    /// ReLU 反向：`gradient × (input > 0)`，输入顺序为「原输入, 上游梯度」。
+    ReluBackward,
 }
 
 #[derive(Clone, Debug)]
@@ -97,6 +125,35 @@ impl Bindings {
     /// 返回已绑定的参数。
     pub fn parameter(&self, name: &str) -> Option<&Tensor> {
         self.parameters.get(name)
+    }
+}
+
+/// 反向建图得到的梯度节点。
+///
+/// 节点是按名字对应的参数/输入在反向图里的梯度，可直接作为 [`GraphBuilder::finish`] 的输出，
+/// 与损失一起执行。
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Gradients {
+    /// 参数名与梯度节点，按参数声明顺序。
+    pub parameters: Vec<(String, NodeId)>,
+    /// 输入名与梯度节点，按输入声明顺序。
+    pub inputs: Vec<(String, NodeId)>,
+}
+
+impl Gradients {
+    /// 查询某个参数的梯度节点。
+    pub fn parameter(&self, name: &str) -> Option<NodeId> {
+        self.parameters.iter().find(|(parameter, _)| parameter == name).map(|(_, node)| *node)
+    }
+
+    /// 查询某个输入的梯度节点。
+    pub fn input(&self, name: &str) -> Option<NodeId> {
+        self.inputs.iter().find(|(input, _)| input == name).map(|(_, node)| *node)
+    }
+
+    /// 按参数在前、输入在后的顺序遍历全部梯度节点。
+    pub fn nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.parameters.iter().chain(self.inputs.iter()).map(|(_, node)| *node)
     }
 }
 
@@ -193,6 +250,208 @@ impl GraphBuilder {
     pub fn mean_all(&mut self, input: NodeId) -> Result<NodeId> {
         self.shape_of(input)?;
         Ok(self.push(Op::MeanAll, vec![input], Vec::new()))
+    }
+
+    /// 标量常量节点；反向种子用它，不占任何绑定。
+    pub fn constant(&mut self, value: f32) -> NodeId {
+        self.push(Op::Constant { value }, Vec::new(), Vec::new())
+    }
+
+    /// 把广播后的梯度归约回目标形状。
+    pub fn sum_to_shape(&mut self, input: NodeId, shape: impl Into<Vec<usize>>) -> Result<NodeId> {
+        let target = shape.into();
+        let source = self.shape_of(input)?;
+        let merged = broadcast_shape(&target, source, "sum_to_shape")?;
+        if merged.as_slice() != source {
+            return Err(DlError::ShapeMismatch { op: "sum_to_shape", lhs: source.to_vec(), rhs: target });
+        }
+        Ok(self.push(Op::SumToShape { shape: target.clone() }, vec![input], target))
+    }
+
+    /// 逐元素取负。
+    pub fn neg(&mut self, input: NodeId) -> Result<NodeId> {
+        let shape = self.shape_of(input)?.to_vec();
+        Ok(self.push(Op::Neg, vec![input], shape))
+    }
+
+    /// 把标量广播到目标形状。
+    pub fn broadcast_to(&mut self, input: NodeId, shape: impl Into<Vec<usize>>) -> Result<NodeId> {
+        let target = shape.into();
+        let source = self.shape_of(input)?.to_vec();
+        if !source.is_empty() {
+            return Err(DlError::ShapeMismatch { op: "broadcast_to", lhs: source, rhs: target });
+        }
+        require_non_zero(&target, "broadcast_to")?;
+        Ok(self.push(Op::BroadcastTo { shape: target.clone() }, vec![input], target))
+    }
+
+    /// 全部元素乘以标量。
+    pub fn scale(&mut self, input: NodeId, factor: f32) -> Result<NodeId> {
+        let shape = self.shape_of(input)?.to_vec();
+        Ok(self.push(Op::Scale { factor }, vec![input], shape))
+    }
+
+    /// ReLU 反向：梯度只通过正区间。
+    pub fn relu_backward(&mut self, input: NodeId, gradient: NodeId) -> Result<NodeId> {
+        let shape = self.shape_of(input)?.to_vec();
+        let gradient_shape = self.shape_of(gradient)?.to_vec();
+        if gradient_shape != shape {
+            return Err(DlError::ShapeMismatch { op: "relu_backward", lhs: shape, rhs: gradient_shape });
+        }
+        Ok(self.push(Op::ReluBackward, vec![input, gradient], shape))
+    }
+
+    /// 从标量输出反向建图，种子为标量 1。
+    pub fn backward(&mut self, output: NodeId) -> Result<Gradients> {
+        let shape = self.shape_of(output)?.to_vec();
+        if !shape.is_empty() {
+            return Err(DlError::ShapeMismatch { op: "backward", lhs: shape, rhs: Vec::new() });
+        }
+        let seed = self.constant(1.0);
+        self.backward_with_seed(output, seed)
+    }
+
+    /// 从给定种子节点反向建图。
+    ///
+    /// 梯度计算以普通节点追加进图，因此训练图可以直接交给 `dl-plan` 放置、交给
+    /// `dl-runtime` 流式执行。只有真正收到梯度的参数与输入会出现在返回值里。
+    pub fn backward_with_seed(&mut self, output: NodeId, seed: NodeId) -> Result<Gradients> {
+        let output_shape = self.shape_of(output)?.to_vec();
+        let seed_shape = self.shape_of(seed)?.to_vec();
+        if seed_shape != output_shape {
+            return Err(DlError::ShapeMismatch { op: "backward_seed", lhs: seed_shape, rhs: output_shape });
+        }
+
+        let count = self.nodes.len();
+        let mut pending: Vec<Option<NodeId>> = vec![None; count];
+        pending[output.0] = Some(seed);
+
+        for index in (0..count).rev() {
+            let gradient = match pending[index] {
+                Some(node) => node,
+                None => continue,
+            };
+            let node = self.nodes[index].clone();
+            match node.op {
+                Op::Input { .. } | Op::Parameter { .. } | Op::Constant { .. } => {}
+                Op::Add => {
+                    for parent in node.inputs {
+                        let shape = self.shape_of(parent)?.to_vec();
+                        let contribution = self.sum_to_shape(gradient, shape)?;
+                        self.accumulate(&mut pending[parent.0], contribution)?;
+                    }
+                }
+                Op::Sub => {
+                    let (left, right) = (node.inputs[0], node.inputs[1]);
+                    let left_shape = self.shape_of(left)?.to_vec();
+                    let right_shape = self.shape_of(right)?.to_vec();
+                    let left_gradient = self.sum_to_shape(gradient, left_shape)?;
+                    let folded = self.sum_to_shape(gradient, right_shape)?;
+                    let right_gradient = self.neg(folded)?;
+                    self.accumulate(&mut pending[left.0], left_gradient)?;
+                    self.accumulate(&mut pending[right.0], right_gradient)?;
+                }
+                Op::Mul => {
+                    let (left, right) = (node.inputs[0], node.inputs[1]);
+                    let left_shape = self.shape_of(left)?.to_vec();
+                    let right_shape = self.shape_of(right)?.to_vec();
+                    let left_product = self.mul(gradient, right)?;
+                    let left_gradient = self.sum_to_shape(left_product, left_shape)?;
+                    let right_product = self.mul(gradient, left)?;
+                    let right_gradient = self.sum_to_shape(right_product, right_shape)?;
+                    self.accumulate(&mut pending[left.0], left_gradient)?;
+                    self.accumulate(&mut pending[right.0], right_gradient)?;
+                }
+                Op::MatMul => {
+                    let (left, right) = (node.inputs[0], node.inputs[1]);
+                    let right_transposed = self.transpose(right, 0, 1)?;
+                    let left_transposed = self.transpose(left, 0, 1)?;
+                    let left_gradient = self.matmul(gradient, right_transposed)?;
+                    let right_gradient = self.matmul(left_transposed, gradient)?;
+                    self.accumulate(&mut pending[left.0], left_gradient)?;
+                    self.accumulate(&mut pending[right.0], right_gradient)?;
+                }
+                Op::Relu => {
+                    let input = node.inputs[0];
+                    let contribution = self.relu_backward(input, gradient)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::Reshape { .. } => {
+                    let input = node.inputs[0];
+                    let original = self.shape_of(input)?.to_vec();
+                    let contribution = self.reshape(gradient, original)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::Transpose { first, second } => {
+                    let input = node.inputs[0];
+                    let contribution = self.transpose(gradient, first, second)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::SumAll => {
+                    let input = node.inputs[0];
+                    let shape = self.shape_of(input)?.to_vec();
+                    let contribution = self.broadcast_to(gradient, shape)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::MeanAll => {
+                    let input = node.inputs[0];
+                    let shape = self.shape_of(input)?.to_vec();
+                    let count = numel(&shape).max(1) as f32;
+                    let broadcast = self.broadcast_to(gradient, shape)?;
+                    let contribution = self.scale(broadcast, 1.0 / count)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::SumToShape { .. } => {
+                    let input = node.inputs[0];
+                    let shape = self.shape_of(input)?.to_vec();
+                    let contribution = self.broadcast_to(gradient, shape)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::Neg => {
+                    let input = node.inputs[0];
+                    let contribution = self.neg(gradient)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::BroadcastTo { .. } => {
+                    let input = node.inputs[0];
+                    let contribution = self.sum_to_shape(gradient, Vec::<usize>::new())?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::Scale { factor } => {
+                    let input = node.inputs[0];
+                    let contribution = self.scale(gradient, factor)?;
+                    self.accumulate(&mut pending[input.0], contribution)?;
+                }
+                Op::ReluBackward => {
+                    // d/d(upstream) = mask(input)；ReLU 二阶导几乎处处为 0，不再回传 orig input。
+                    let (input, upstream) = (node.inputs[0], node.inputs[1]);
+                    let contribution = self.relu_backward(input, gradient)?;
+                    self.accumulate(&mut pending[upstream.0], contribution)?;
+                }
+            }
+        }
+
+        let mut gradients = Gradients::default();
+        for (index, node) in self.nodes.iter().enumerate().take(count) {
+            let Some(gradient) = pending[index]
+            else {
+                continue;
+            };
+            match &node.op {
+                Op::Parameter { name } => gradients.parameters.push((name.clone(), gradient)),
+                Op::Input { name } => gradients.inputs.push((name.clone(), gradient)),
+                _ => {}
+            }
+        }
+        Ok(gradients)
+    }
+
+    fn accumulate(&mut self, slot: &mut Option<NodeId>, contribution: NodeId) -> Result<()> {
+        *slot = Some(match *slot {
+            Some(existing) => self.add(existing, contribution)?,
+            None => contribution,
+        });
+        Ok(())
     }
 
     /// 结束构建；输出节点必须存在。
@@ -372,6 +631,11 @@ impl Graph {
         self.nodes.get(id.0).map(|node| &node.op)
     }
 
+    /// 是否为不参与执行的叶子节点（输入、参数、常量），放置计划不必为其分配后端。
+    pub fn is_binding(&self, id: NodeId) -> bool {
+        matches!(self.op(id), Some(Op::Input { .. } | Op::Parameter { .. } | Op::Constant { .. }))
+    }
+
     /// 返回节点的输入节点；未知节点返回 `None`。
     pub fn node_inputs(&self, id: NodeId) -> Option<&[NodeId]> {
         self.nodes.get(id.0).map(|node| node.inputs.as_slice())
@@ -493,6 +757,20 @@ fn eval(node: &Node, values: &[Option<Tensor>], bindings: &Bindings) -> Result<T
         Op::Transpose { first, second } => parent(values, node, 0)?.transpose(*first, *second),
         Op::SumAll => ops::sum_all(parent(values, node, 0)?),
         Op::MeanAll => ops::mean_all(parent(values, node, 0)?),
+        Op::Constant { value } => Tensor::full(Vec::<usize>::new(), *value),
+        Op::SumToShape { shape } => ops::sum_to_shape(parent(values, node, 0)?, shape),
+        Op::Neg => ops::neg(parent(values, node, 0)?),
+        Op::BroadcastTo { shape } => {
+            let scalar = parent(values, node, 0)?.as_slice()?[0];
+            Tensor::full(shape.clone(), scalar)
+        }
+        Op::Scale { factor } => ops::mul_scalar(parent(values, node, 0)?, *factor),
+        Op::ReluBackward => {
+            let input = parent(values, node, 0)?;
+            let gradient = parent(values, node, 1)?;
+            let mask = ops::map(input, |value| if value > 0.0 { 1.0 } else { 0.0 })?;
+            ops::mul(gradient, &mask)
+        }
     }
 }
 
@@ -599,5 +877,81 @@ mod tests {
         })
         .expect_err("incompatible matmul");
         assert!(matches!(error, DlError::ShapeMismatch { op: "matmul", .. }));
+    }
+
+    fn mlp_with_backward() -> (Graph, Gradients) {
+        let mut builder = GraphBuilder::new();
+        let x = builder.input("x", [2, 2]).unwrap();
+        let w = builder.parameter("w", [2, 2]).unwrap();
+        let b = builder.parameter("b", [2]).unwrap();
+        let product = builder.matmul(x, w).unwrap();
+        let biased = builder.add(product, b).unwrap();
+        let loss = builder.mean_all(biased).unwrap();
+        let gradients = builder.backward(loss).unwrap();
+        let mut outputs = vec![loss];
+        outputs.extend(gradients.nodes());
+        (builder.finish(outputs).unwrap(), gradients)
+    }
+
+    #[test]
+    fn backward_matches_closed_form_and_folds_broadcast() {
+        let (graph, gradients) = mlp_with_backward();
+        assert_eq!(gradients.parameters.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), vec!["w", "b"]);
+        assert_eq!(gradients.inputs.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), vec!["x"]);
+
+        let mut bindings = Bindings::new();
+        bindings.insert_input("x", Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap());
+        bindings.insert_parameter("w", Tensor::from_vec(vec![0.5, -0.5, 1.0, 2.0], [2, 2]).unwrap());
+        bindings.insert_parameter("b", Tensor::zeros([2]).unwrap());
+
+        let values = graph.run(&bindings).unwrap();
+        let value_of = |node: NodeId| values[graph.outputs().iter().position(|id| *id == node).unwrap()].clone();
+
+        assert_eq!(value_of(graph.outputs()[0]).to_vec(), vec![4.5]);
+        // dL/dproduct = 1/4
+        assert_eq!(value_of(gradients.parameter("w").unwrap()).to_vec(), vec![1.0, 1.0, 1.5, 1.5]);
+        assert_eq!(value_of(gradients.parameter("b").unwrap()).to_vec(), vec![0.5, 0.5]);
+        assert_eq!(value_of(gradients.input("x").unwrap()).to_vec(), vec![0.0, 0.75, 0.0, 0.75]);
+    }
+
+    #[test]
+    fn backward_accumulates_repeated_uses_and_masks_relu() {
+        let mut builder = GraphBuilder::new();
+        let x = builder.input("x", [2]).unwrap();
+        let squared = builder.mul(x, x).unwrap();
+        let positive = builder.relu(x).unwrap();
+        let combined = builder.add(squared, positive).unwrap();
+        let loss = builder.sum_all(combined).unwrap();
+        let gradients = builder.backward(loss).unwrap();
+        let mut outputs = vec![loss];
+        outputs.extend(gradients.nodes());
+        let graph = builder.finish(outputs).unwrap();
+
+        let mut bindings = Bindings::new();
+        bindings.insert_input("x", Tensor::from_vec(vec![3.0, -4.0], [2]).unwrap());
+        let values = graph.run(&bindings).unwrap();
+        // d/dx (x^2 + relu(x)) = 2x + mask(x)；x 被两处使用，梯度必须累加。
+        assert_eq!(values[1].to_vec(), vec![7.0, -8.0]);
+    }
+
+    #[test]
+    fn backward_requires_a_scalar_loss_or_matching_seed() {
+        let mut builder = GraphBuilder::new();
+        let x = builder.input("x", [2]).unwrap();
+        let vector_loss = builder.mul(x, x).unwrap();
+        assert!(matches!(builder.backward(vector_loss), Err(DlError::ShapeMismatch { op: "backward", .. })));
+
+        let seed = builder.input("seed", [1]).unwrap();
+        assert!(matches!(builder.backward_with_seed(vector_loss, seed), Err(DlError::ShapeMismatch { op: "backward_seed", .. })));
+    }
+
+    #[test]
+    fn backward_nodes_are_placeable_like_forward_nodes() {
+        let (graph, gradients) = mlp_with_backward();
+        assert!(graph.is_binding(NodeId(0)));
+        assert!(!graph.is_binding(gradients.parameter("w").unwrap()));
+        for node in gradients.nodes() {
+            assert!(graph.shape(node).is_some(), "gradient node {} must carry a shape", node.0);
+        }
     }
 }

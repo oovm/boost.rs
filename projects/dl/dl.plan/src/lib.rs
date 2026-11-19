@@ -197,8 +197,7 @@ pub fn plan_graph(
 
     for candidate in subgraphs {
         for node in &candidate.nodes {
-            let placeable =
-                node.0 < graph.node_count() && !matches!(graph.op(*node), None | Some(Op::Input { .. }) | Some(Op::Parameter { .. }));
+            let placeable = node.0 < graph.node_count() && graph.op(*node).is_some() && !graph.is_binding(*node);
             if !placeable {
                 return Err(PlanError::UnknownNode(*node));
             }
@@ -344,7 +343,12 @@ fn signature_for(graph: &Graph, node: NodeId) -> Option<ExecSignature> {
         Op::Transpose { .. } => "transpose",
         Op::SumAll => "sum_all",
         Op::MeanAll => "mean_all",
-        Op::Input { .. } | Op::Parameter { .. } => return None,
+        Op::SumToShape { .. } => "sum_to_shape",
+        Op::Neg => "neg",
+        Op::BroadcastTo { .. } => "broadcast_to",
+        Op::Scale { .. } => "scale",
+        Op::ReluBackward => "relu_backward",
+        Op::Input { .. } | Op::Parameter { .. } | Op::Constant { .. } => return None,
     };
     let shapes = graph.node_inputs(node)?.iter().map(|input| graph.shape(*input).map(<[usize]>::to_vec)).collect();
     Some(ExecSignature::operator(op, vec!["f32".into()], shapes))

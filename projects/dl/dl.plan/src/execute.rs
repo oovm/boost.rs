@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dl_graph::{Bindings, Graph, NodeId, Op};
+use dl_graph::{Bindings, Graph, NodeId};
 use dl_tensor::Tensor;
 use hardware_runtime::{SegmentId, SegmentStreamer, StreamError, StreamStats};
 
@@ -80,7 +80,7 @@ pub fn execute_plan(graph: &Graph, plan: &GraphPlan, bindings: &Bindings, stream
 
     for index in 0..graph.node_count() {
         let node = NodeId(index);
-        let is_binding = matches!(graph.op(node), Some(Op::Input { .. }) | Some(Op::Parameter { .. }));
+        let is_binding = graph.is_binding(node);
         if !is_binding {
             let assignment = assignments.get(&index).ok_or(RunError::MissingPlacement(node))?;
             let footprint = match assignment.subgraph.as_deref() {
@@ -159,6 +159,60 @@ mod tests {
         assert!(executed.stats.evictions > 0, "64-byte budget forces streaming");
         assert_eq!(executed.outputs[0].to_vec(), eager[0].to_vec());
         assert_eq!(streamer.device_used(), 48);
+    }
+
+    fn training_graph() -> Graph {
+        let mut builder = dl_graph::GraphBuilder::new();
+        let x = builder.input("x", [2, 2]).unwrap();
+        let w = builder.parameter("w", [2, 2]).unwrap();
+        let product = builder.matmul(x, w).unwrap();
+        let activated = builder.relu(product).unwrap();
+        let loss = builder.mean_all(activated).unwrap();
+        let gradients = builder.backward(loss).unwrap();
+        let mut outputs = vec![loss];
+        outputs.extend(gradients.nodes());
+        builder.finish(outputs).unwrap()
+    }
+
+    #[test]
+    fn streaming_execution_covers_the_backward_pass() {
+        let graph = training_graph();
+        let bindings = bindings();
+        let oracle = StageOracle { footprint: 48 };
+        let plan = plan_graph(&graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
+        let placeable = (0..graph.node_count()).filter(|index| !graph.is_binding(NodeId(*index))).count();
+        assert_eq!(plan.assignments.len(), placeable, "backward nodes must be placed too");
+
+        let mut streamer = SegmentStreamer::new(64, 1 << 20, 1 << 20);
+        let executed = execute_plan(&graph, &plan, &bindings, &mut streamer).expect("execute");
+        let eager = graph.run(&bindings).expect("eager");
+
+        assert_eq!(executed.outputs.len(), eager.len());
+        for (streamed, reference) in executed.outputs.iter().zip(&eager) {
+            assert_eq!(streamed.to_vec(), reference.to_vec());
+        }
+        assert!(executed.stats.evictions > 0, "64-byte budget forces the training graph to stream");
+    }
+
+    #[test]
+    fn disk_backed_streaming_runs_the_training_graph() {
+        let root = std::env::temp_dir().join(format!("boost-dl-plan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let graph = training_graph();
+        let bindings = bindings();
+        let oracle = StageOracle { footprint: 48 };
+        let plan = plan_graph(&graph, &[], &oracle, &MemoryBudget::new(1 << 20, 0, 0)).expect("plan");
+
+        let mut streamer = SegmentStreamer::with_disk_backing(&root, 64, 64, 1 << 20).expect("disk backing");
+        let executed = execute_plan(&graph, &plan, &bindings, &mut streamer).expect("execute");
+        let eager = graph.run(&bindings).expect("eager");
+
+        assert!(executed.stats.disk_read_bytes > 0, "segments must come back through real files");
+        for (streamed, reference) in executed.outputs.iter().zip(&eager) {
+            assert_eq!(streamed.to_vec(), reference.to_vec());
+        }
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
