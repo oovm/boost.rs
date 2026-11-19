@@ -1,10 +1,10 @@
 use std::{
-    fs::{self, DirEntry, FileType},
+    fs::{self, FileType, Metadata},
     path::{Path, PathBuf},
     rc::Rc,
 };
 
-use super::{Entry, Error, ErrorPolicy, Filter, Source, Walker};
+use super::{Entry, Error, ErrorPolicy, Filter, Walker};
 
 /// A predicate that decides what a walk yields and what it traverses.
 type EntryFilter = Box<dyn FnMut(&Entry) -> Filter>;
@@ -63,20 +63,22 @@ impl Ancestor {
     }
 }
 
+/// An entry on the pending stack. The listing already answered the file type, and on Windows it
+/// answered the attributes too, so a pending entry is small and never holds a listing handle.
 #[derive(Debug)]
 struct PendingEntry {
     path: PathBuf,
     depth: usize,
     ancestors: Option<Rc<Ancestor>>,
-    /// The listing entry that produced this path, absent only for the walk root.
-    listing: Option<DirEntry>,
+    /// Absent only for the walk root, which no listing entry describes.
+    file_type: Option<FileType>,
+    metadata: Option<Metadata>,
 }
 
-/// An entry whose file type and, while links are followed, canonical folder are known.
+/// An entry the walk is ready to yield, plus the canonical folder it belongs to while links are
+/// followed.
 struct Resolved {
-    path: PathBuf,
-    file_type: FileType,
-    source: Source,
+    entry: Entry,
     canonical: Option<PathBuf>,
 }
 
@@ -128,7 +130,14 @@ impl Iter {
             if child_path.file_name().is_some_and(|name| name == "." || name == "..") {
                 continue;
             }
-            children.push(PendingEntry { path: child_path, depth: depth + 1, ancestors: ancestors.clone(), listing: Some(entry) });
+            let file_type = entry.file_type().map_err(|err| Error::io(&child_path, depth + 1, err))?;
+            // On Windows the attributes ride on the listing entry, so capturing them here is a
+            // struct copy, not a syscall. Elsewhere they are read on demand by `Entry::metadata`.
+            #[cfg(windows)]
+            let metadata = entry.metadata().ok();
+            #[cfg(not(windows))]
+            let metadata = None;
+            children.push(PendingEntry { path: child_path, depth: depth + 1, ancestors: ancestors.clone(), file_type: Some(file_type), metadata });
         }
 
         if self.sort_by_file_name {
@@ -139,42 +148,38 @@ impl Iter {
         Ok(())
     }
 
-    /// Read the file type of an entry, and the canonical folder it belongs to while links are
+    /// Classify a pending entry, and read the canonical folder it belongs to while links are
     /// followed.
     fn resolve(&self, pending: PendingEntry) -> Result<Resolved, Error> {
-        let PendingEntry { path, depth, ancestors, listing } = pending;
-        // A folder listing already carries the file type, so a walk that does not follow links
-        // never stats an entry it is about to yield.
-        let listing_type = match &listing {
-            Some(entry) => entry.file_type().map_err(|err| Error::io(&path, depth, err))?,
-            None => fs::symlink_metadata(&path).map_err(|err| Error::io(&path, depth, err))?.file_type(),
+        let PendingEntry { path, depth, ancestors, file_type, metadata } = pending;
+        // The listing carried the file type for every entry below the root. Only the root is
+        // stat'ed, once, and its attributes are then captured like any other entry's.
+        let (file_type, metadata) = match file_type {
+            Some(file_type) => (file_type, metadata),
+            None => {
+                let meta = fs::symlink_metadata(&path).map_err(|err| Error::io(&path, depth, err))?;
+                (meta.file_type(), Some(meta))
+            }
         };
         if !self.follow_links {
-            return Ok(Resolved { path, file_type: listing_type, source: source_of(listing), canonical: None });
+            return Ok(Resolved { entry: Entry::new(path, depth, file_type, metadata), canonical: None });
         }
 
         // Following links is what makes a resolution ambiguous, so the canonical path is computed for
         // every folder on the branch and compared when a link is met.
         let canonical = fs::canonicalize(&path).map_err(|err| Error::io(&path, depth, err))?;
-        if !listing_type.is_symlink() {
-            return Ok(Resolved { path, file_type: listing_type, source: source_of(listing), canonical: Some(canonical) });
+        if !file_type.is_symlink() {
+            return Ok(Resolved { entry: Entry::new(path, depth, file_type, metadata), canonical: Some(canonical) });
         }
 
         if let Some(ancestor) = ancestors.as_deref().and_then(|branch| branch.matching(&canonical)) {
             return Err(Error::loop_at(&path, depth, ancestor.to_path_buf()));
         }
 
-        // The followed metadata replaces the listing entry: it describes what the walk classified.
+        // The followed metadata replaces the listing attributes: it describes what the walk
+        // classified.
         let followed = fs::metadata(&path).map_err(|err| Error::io(&path, depth, err))?;
-        Ok(Resolved { path, file_type: followed.file_type(), source: Source::Followed(followed), canonical: Some(canonical) })
-    }
-}
-
-/// The metadata source for a pending entry that was not followed through a link.
-fn source_of(listing: Option<DirEntry>) -> Source {
-    match listing {
-        Some(entry) => Source::Listing(entry),
-        None => Source::Root,
+        Ok(Resolved { entry: Entry::new(path, depth, followed.file_type(), Some(followed)), canonical: Some(canonical) })
     }
 }
 
@@ -188,7 +193,7 @@ impl Iterator for Iter {
 
         if !self.started {
             self.started = true;
-            self.stack.push(PendingEntry { path: self.root.clone(), depth: 0, ancestors: None, listing: None });
+            self.stack.push(PendingEntry { path: self.root.clone(), depth: 0, ancestors: None, file_type: None, metadata: None });
         }
 
         while let Some(pending) = self.stack.pop() {
@@ -199,7 +204,7 @@ impl Iterator for Iter {
                 Err(error) => return self.failure(error),
             };
 
-            let entry = Entry::new(resolved.path, depth, resolved.file_type, resolved.source);
+            let entry = resolved.entry;
             let decision = match self.filter.as_mut() {
                 Some(filter) => filter(&entry),
                 None => Filter::default(),
