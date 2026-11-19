@@ -97,6 +97,7 @@ fn map_http_request_error(error: NetError) -> CrawlError {
             make_transport_diag_u64(pd::FETCH_BODY_BUDGET, "response headers exceeded configured budget", limit as u64)
         }
         NetError::Protocol(msg) => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, &msg),
+        NetError::Rejected { status, .. } => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, &format!("handshake rejected with status {status}")),
         NetError::Closed => make_transport_diag(pd::FETCH_TRANSPORT_FAILED, "connection is closed"),
     }
 }
