@@ -723,6 +723,14 @@ pub fn encode_authenticate_ok(session_token: &str) -> Vec<u8> {
     body
 }
 
+/// 解码 `AuthenticateOk` 回复 body，取回会话令牌。
+pub fn decode_authenticate_ok(body: &[u8]) -> Result<String> {
+    let mut offset = 0;
+    let len = read_u32(body, &mut offset)?;
+    let bytes = read_bytes(body, &mut offset, len)?;
+    std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("authenticate ok token is not utf-8")).map(|s| s.to_owned())
+}
+
 // ─── Prepare / ExecutePrepared ────────────────────────────────────────────
 
 /// 编码 `Prepare` 请求 body：原始查询源文本。
@@ -882,5 +890,12 @@ mod tests {
         assert!(response_type(MessageType::Error).is_none());
         assert!(response_type(MessageType::Unknown(99)).is_none());
         assert!(response_type(MessageType::Unknown(2)).is_none());
+    }
+
+    #[test]
+    fn authenticate_ok_token_roundtrips() {
+        let body = encode_authenticate_ok("session-token-42");
+        assert_eq!(decode_authenticate_ok(&body).expect("decode"), "session-token-42");
+        assert!(decode_authenticate_ok(&[1, 0, 0]).is_err());
     }
 }
