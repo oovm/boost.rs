@@ -1,0 +1,160 @@
+use data_binary_core::{Budget, BudgetTracker};
+use boost_source::binary::{ByteSource, MemorySource};
+use acorn_zip::{ZipArchiveIndex, ZipIndexError, ZipMember, ZipNameEncoding, ZipViewError, index_zip, read_member_payload};
+
+use crate::{
+    container::{ContainerRootFile, parse_container_xml},
+    opf::{OpfDocument, parse_opf_xml},
+};
+
+const CONTAINER_XML: &str = "META-INF/container.xml";
+
+/// Errors opening or reading an EPUB OCF package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OcfError {
+    /// Underlying ZIP index failed.
+    Zip(ZipIndexError),
+    /// Member decode failed.
+    View(ZipViewError),
+    /// Package member was not found.
+    MemberNotFound(String),
+    /// Container or OPF XML could not be parsed.
+    Parse(String),
+}
+
+impl std::fmt::Display for OcfError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Zip(error) => write!(f, "zip index error: {error}"),
+            Self::View(error) => write!(f, "zip view error: {error}"),
+            Self::MemberNotFound(path) => write!(f, "ocf member not found: {path}"),
+            Self::Parse(message) => write!(f, "ocf parse error: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for OcfError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Zip(error) => Some(error),
+            Self::View(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<ZipIndexError> for OcfError {
+    fn from(error: ZipIndexError) -> Self {
+        Self::Zip(error)
+    }
+}
+
+impl From<ZipViewError> for OcfError {
+    fn from(error: ZipViewError) -> Self {
+        Self::View(error)
+    }
+}
+
+/// EPUB OCF package backed by a ZIP archive.
+#[derive(Debug, Clone)]
+pub struct OcfPackage {
+    source: MemorySource,
+    zip: ZipArchiveIndex,
+    rootfile: ContainerRootFile,
+}
+
+impl OcfPackage {
+    /// Indexes `bytes` as an EPUB OCF ZIP container.
+    pub fn open(label: impl Into<String>, bytes: Vec<u8>) -> Result<Self, OcfError> {
+        let source = MemorySource::from_bytes(label, bytes);
+        // The index reads only the tail record, the directory, and member headers, so
+        // opening a container no longer copies the whole archive.
+        let zip = index_zip(&source)?;
+        let mut ledger = BudgetTracker::new(Budget::default());
+        let container_xml = read_member_bytes(&source, &zip, CONTAINER_XML, &mut ledger)?;
+        let rootfiles = parse_container_xml(&container_xml).map_err(OcfError::Parse)?;
+        let rootfile = rootfiles
+            .iter()
+            .find(|root| root.media_type.contains("oebps-package"))
+            .cloned()
+            .or_else(|| rootfiles.first().cloned())
+            .ok_or_else(|| OcfError::Parse("container.xml has no rootfile".into()))?;
+        Ok(Self { source, zip, rootfile })
+    }
+
+    /// Root OPF path from `META-INF/container.xml`.
+    pub fn root_opf_path(&self) -> &str {
+        &self.rootfile.full_path
+    }
+
+    /// ZIP index for the package.
+    pub fn zip_index(&self) -> &ZipArchiveIndex {
+        &self.zip
+    }
+
+    /// Returns a member for a normalized package path.
+    pub fn member(&self, path: &str) -> Option<&ZipMember> {
+        let normalized = normalize_member_path(path);
+        self.zip.members.iter().find(|member| member_name(member) == normalized)
+    }
+
+    /// Reads and decodes a package member into memory.
+    ///
+    /// The member is settled against the caller's ledger, so every member of one
+    /// document shares a single allowance.
+    pub fn read_member(&self, path: &str, ledger: &mut BudgetTracker) -> Result<Vec<u8>, OcfError> {
+        read_member_bytes(&self.source, &self.zip, path, ledger)
+    }
+
+    /// Parses the root OPF document.
+    pub fn read_opf(&self, ledger: &mut BudgetTracker) -> Result<OpfDocument, OcfError> {
+        let xml = self.read_member(self.root_opf_path(), ledger)?;
+        parse_opf_xml(self.root_opf_path(), &xml).map_err(OcfError::Parse)
+    }
+
+    /// Lists normalized member paths in central directory order.
+    pub fn member_paths(&self) -> Vec<String> {
+        self.zip.members.iter().map(member_name).collect()
+    }
+
+    /// Resolves a manifest `href` relative to the OPF directory.
+    pub fn resolve_href(opf_path: &str, href: &str) -> String {
+        let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+        let joined = if base.is_empty() { href.to_string() } else { format!("{}/{}", base, href) };
+        normalize_member_path(&joined)
+    }
+}
+
+/// Decodes a member name for package lookup.
+///
+/// ZIP only records whether the writer declared UTF-8. OCF paths are ASCII, so a
+/// lossy fallback is enough here and the shared ZIP layer stays byte-level.
+fn member_name(member: &ZipMember) -> String {
+    match member.name_encoding() {
+        ZipNameEncoding::Utf8 => std::str::from_utf8(&member.raw_name)
+            .map(str::to_owned)
+            .unwrap_or_else(|_| String::from_utf8_lossy(&member.raw_name).into_owned()),
+        ZipNameEncoding::Unspecified => String::from_utf8_lossy(&member.raw_name).into_owned(),
+    }
+}
+
+/// Normalizes OCF member paths to forward slashes without a leading slash.
+pub fn normalize_member_path(path: &str) -> String {
+    let trimmed = path.trim().replace('\\', "/");
+    trimmed.trim_start_matches('/').to_string()
+}
+
+fn read_member_bytes(
+    source: &MemorySource,
+    zip: &ZipArchiveIndex,
+    path: &str,
+    ledger: &mut BudgetTracker,
+) -> Result<Vec<u8>, OcfError> {
+    let normalized = normalize_member_path(path);
+    let member = zip
+        .members
+        .iter()
+        .find(|member| member_name(member) == normalized)
+        .ok_or_else(|| OcfError::MemberNotFound(normalized))?;
+    read_member_payload(source.clone(), member, ledger).map_err(OcfError::from)
+}

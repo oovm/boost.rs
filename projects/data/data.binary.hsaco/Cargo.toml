@@ -1,0 +1,12 @@
+[package]
+name = "data-binary-hsaco"
+version.workspace = true
+authors.workspace = true
+description = "AMD HSACO ELF code object layout and structural validation (Acorn domain)"
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+[dependencies]
+data-binary-core = { workspace = true }
+boost-source = { workspace = true }

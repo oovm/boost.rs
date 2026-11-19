@@ -1,0 +1,17 @@
+[package]
+name = "data-binary-docx"
+version.workspace = true
+authors.workspace = true
+description = "DOCX OPC package indexer built on Acorn ZIP."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+[dependencies]
+data-binary-core = { workspace = true }
+boost-source = { workspace = true }
+acorn-zip = { workspace = true }
+data-text-xml = { workspace = true, default-features = false, features = ["serde"] }
+
+[dev-dependencies]
+data-compression = { workspace = true, features = ["deflate"] }

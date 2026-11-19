@@ -1,0 +1,14 @@
+//! 最小 `ELF64` 可执行镜像（`ET_EXEC`，x86-64）与 `ET_DYN` 共享库（AArch64）。
+
+mod layout;
+mod read;
+mod shared_writer;
+mod writer;
+
+pub use layout::ElfSectionLayout;
+pub use read::{Elf64Header, Elf64ParseError, parse_elf64};
+pub use shared_writer::{
+    SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec,
+    SharedElfWriteError, SharedElfWriter, SharedObjectExport,
+};
+pub use writer::{ElfWriteError, NativeElfImage, NativeElfWriter};
