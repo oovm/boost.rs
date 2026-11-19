@@ -768,20 +768,16 @@ fn collect_scan(
     out
 }
 
+/// Publishes one shard image through the storage-wide atomic publish contract.
+///
+/// The commit point, replacement primitive and failure semantics are the ones
+/// [`crate::local::publish`] proves for every database file: temp write, one
+/// directory-entry replace, parent sync. The shard keeps its own temp name and
+/// its own snapshot encoding, but not a second `rename` sequence.
 fn write_snapshot_durable(path: &Path, bytes: &[u8]) -> Result<()> {
     let temp =
         path.with_file_name(format!(".{}.yykv-tmp-{}", path.file_name().and_then(|name| name.to_str()).unwrap_or("shard"), std::process::id()));
-    let result = (|| -> Result<()> {
-        let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(&temp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        replace_file(&temp, path)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
+    crate::local::publish::publish_with_temp(path, bytes, temp).map(|_| ()).map_err(Error::from)
 }
 
 /// Opens a shard file, replaying its delta frames and normalizing it to the current layout.
@@ -832,34 +828,6 @@ fn open_shard(path: &Path, create_missing: bool) -> Result<FileShard> {
         shard.compact()?;
     }
     Ok(shard)
-}
-
-#[cfg(not(windows))]
-fn replace_file(temp: &Path, destination: &Path) -> Result<()> {
-    fs::rename(temp, destination).map_err(Error::Io)?;
-    // `rename` 只让新的目录项在内存里可见，掉电后替换本身仍可能丢失。提交点必须再同步父目录，
-    // 让目录项落盘。rename 已经发生，这里失败表示「耐久性未证实」而不是「什么都没提交」，
-    // 不能假装还能完整回滚。
-    let parent = destination.parent().ok_or(Error::Unsupported("shard path has no parent directory"))?;
-    fs::File::open(parent)?.sync_all().map_err(Error::Io)
-}
-
-#[cfg(windows)]
-fn replace_file(temp: &Path, destination: &Path) -> Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW};
-
-    fn wide(path: &Path) -> Vec<u16> {
-        path.as_os_str().encode_wide().chain(Some(0)).collect()
-    }
-
-    let temp_wide = wide(temp);
-    let destination_wide = wide(destination);
-    // `MoveFileExW` 与 Unix 的 `rename` 是同一个提交点：替换目录项，并且
-    // `MOVEFILE_WRITE_THROUGH` 让替换本身落盘。这里不用 `ReplaceFileW`，它会额外搬运
-    // 备份文件与安全属性，提交固定开销明显更高，而 shard 快照没有需要保留的旧副本。
-    let result = unsafe { MoveFileExW(temp_wide.as_ptr(), destination_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
-    if result == 0 { Err(Error::Io(std::io::Error::last_os_error())) } else { Ok(()) }
 }
 
 /// Compare-and-set helper built on top of [`KvStore`].

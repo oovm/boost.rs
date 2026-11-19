@@ -275,14 +275,23 @@ fn load(path: &Path) -> Result<RegistryState, SqlFrontendError> {
 
 /// Encodes the state into the contract document and publishes it atomically.
 ///
-/// The storage publish never destroys the previous document before the new one
-/// owns the name: a failed replacement keeps the old file readable, so a
-/// restart reopens the last complete schema instead of a half-written one.
+/// The publish result says whether the commit point was crossed and whether the
+/// old document is still intact; the registry only swaps memory state after a
+/// durable receipt.
 fn save(path: &Path, state: &RegistryState) -> Result<(), SqlFrontendError> {
     let document = document_from_state(state);
     let json = encode(&document).map_err(|error| SqlFrontendError::internal(format!("cannot encode SQL schema: {error}")))?;
     publish_atomic(path, json.as_bytes())
-        .map_err(|error| SqlFrontendError::internal(format!("cannot publish SQL schema `{}`: {error}", path.display())))
+        .map(|_receipt| ())
+        .map_err(|error| {
+            SqlFrontendError::internal(format!(
+                "cannot publish SQL schema `{}` at {:?} ({:?}, retryable={}): {error}",
+                path.display(),
+                error.stage(),
+                error.outcome(),
+                error.retryable()
+            ))
+        })
 }
 
 fn document_from_state(state: &RegistryState) -> SqlSchemaDocument {
