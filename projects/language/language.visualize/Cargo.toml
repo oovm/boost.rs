@@ -1,0 +1,28 @@
+[package]
+name = "language-visualize"
+version.workspace = true
+authors.workspace = true
+description = "High-performance visualization and layout algorithms for the oak ecosystem with flexible configuration, emphasizing tree and graph visualization."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+documentation = "https://docs.rs/oak-visualize"
+categories = ["visualization", "algorithms"]
+keywords = ["visualization", "layout", "ast", "tree", "graph"]
+
+[dependencies]
+boost-harness = { workspace = true, features = ["terminal"] }
+data-text-core = { workspace = true }
+language-highlight = { workspace = true, optional = true }
+language-format = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:serde_json", "data-text-core/serde"]
+
+[[test]]
+name = "theme_tests"
+required-features = ["serde"]

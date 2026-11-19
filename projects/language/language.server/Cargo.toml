@@ -1,0 +1,34 @@
+[package]
+name = "language-server"
+version.workspace = true
+authors.workspace = true
+description = "Lightweight LSP types for the Oak framework"
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "language-server", "types"]
+
+[dependencies]
+boost-harness = { workspace = true, features = ["serde", "terminal"] }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
+url = { workspace = true }
+data-text-core = { workspace = true, features = ["serde", "vfs", "vfs-disk"] }
+data-text-symbols = { workspace = true }
+language-navigation = { workspace = true }
+data-text-resolver = { workspace = true }
+language-folding = { workspace = true }
+language-hover = { workspace = true }
+language-semantic-tokens = { workspace = true }
+language-structural-view = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+default = [ "serde"]
+serde = ["dep:serde", "dep:serde_json", "data-text-core/serde", "language-navigation/serde", "language-hover/serde", "language-semantic-tokens/serde", "language-structural-view/serde", "language-folding/serde"]

@@ -1,0 +1,19 @@
+[package]
+name = "language-testing"
+version.workspace = true
+authors.workspace = true
+description = "Testing utilities for the Oak language toolchain."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true , optional = true }
+serde_json = { workspace = true, optional = true }
+triomphe = { workspace = true }
+boost-fs = { workspace = true }
+
+[features]
+serde = ["dep:serde", "dep:serde_json", "data-text-core/serde"]
+default = ["serde"]

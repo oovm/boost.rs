@@ -1,0 +1,38 @@
+#![feature(new_range_api)]
+#![warn(missing_docs)]
+#![doc = include_str!("readme.md")]
+use core::range::Range;
+use data_text_core::{language::Language, tree::RedNode};
+
+/// Enum of folding range kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+pub enum FoldingRangeKind {
+    /// A comment block.
+    Comment,
+    /// An import section.
+    Imports,
+    /// A custom defined region.
+    Region,
+}
+
+/// Represents a folding range in a document.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FoldingRange {
+    /// The span of the range to fold.
+    #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range", bound(serialize = "", deserialize = "")))]
+    pub range: Range<usize>,
+    /// The kind of folding range (e.g., 'comment', 'imports').
+    pub kind: Option<FoldingRangeKind>,
+}
+
+/// Trait for languages that support code folding.
+pub trait FoldingProvider<L: Language> {
+    /// Returns all folding ranges for the given document.
+    fn folding_ranges(&self, root: &RedNode<L>) -> Vec<FoldingRange> {
+        let _ = root;
+        Vec::new()
+    }
+}

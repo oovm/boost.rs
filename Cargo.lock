@@ -211,10 +211,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloca"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5a7d05ea6aea7e9e64d25b9156ba2fee3fdd659e34e41063cd2fc7cd020d7f4"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
+name = "anes"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "animator-bridge"
@@ -242,6 +257,56 @@ dependencies = [
 ]
 
 [[package]]
+name = "anstream"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
+dependencies = [
+ "anstyle",
+ "anstyle-parse",
+ "anstyle-query",
+ "anstyle-wincon",
+ "colorchoice",
+ "is_terminal_polyfill",
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+
+[[package]]
+name = "anstyle-parse"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
+dependencies = [
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle-query"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "anstyle-wincon"
+version = "3.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
+dependencies = [
+ "anstyle",
+ "once_cell_polyfill",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "arcstr"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -255,6 +320,12 @@ name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
+name = "assert_matches"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
 
 [[package]]
 name = "async-channel"
@@ -542,6 +613,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
+name = "bytes"
+version = "1.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
+
+[[package]]
+name = "cast"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
+
+[[package]]
 name = "cc"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -552,28 +641,94 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfb"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
+dependencies = [
+ "byteorder",
+ "fnv",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
-name = "commander-core"
-version = "0.1.0"
+name = "ciborium"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
 dependencies = [
- "commander-types",
- "serde_json",
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
 ]
 
 [[package]]
-name = "commander-prompt"
-version = "0.1.0"
+name = "ciborium-io"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
 dependencies = [
- "boost-terminal",
- "commander-core",
- "commander-types",
- "serde_json",
+ "ciborium-io",
+ "half",
 ]
+
+[[package]]
+name = "clap"
+version = "4.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac230478587d0269d8d6998b82ae69ea51509d55df66d9e92edd1f986904cd4a"
+dependencies = [
+ "clap_builder",
+ "clap_derive",
+]
+
+[[package]]
+name = "clap_builder"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "clap_lex",
+ "strsim",
+]
+
+[[package]]
+name = "clap_derive"
+version = "4.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "895c9d8d2ac2dd8b8a29f3724a14e72aaaa6debcf8c38c82f97305c6a172767a"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "clap_lex"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
+
+[[package]]
+name = "colorchoice"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "commander-types"
@@ -724,6 +879,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "convert_case"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "core_detect"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -845,10 +1009,97 @@ dependencies = [
 ]
 
 [[package]]
+name = "criterion"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "950046b2aa2492f9a536f5f4f9a3de7b9e2476e575e05bd6c333371add4d98f3"
+dependencies = [
+ "alloca",
+ "anes",
+ "cast",
+ "ciborium",
+ "clap",
+ "criterion-plot",
+ "itertools",
+ "num-traits",
+ "oorandom",
+ "page_size",
+ "plotters",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "tinytemplate",
+ "walkdir",
+]
+
+[[package]]
+name = "criterion-plot"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8d80a2f4f5b554395e47b5d8305bc3d27813bacb73493eb1001e8f76dae29ea"
+dependencies = [
+ "cast",
+ "itertools",
+]
+
+[[package]]
+name = "crossbeam-deque"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "622f3fc73690be383c7214310406f28a90e6edeadc3cea882f9d71e495b9711a"
+dependencies = [
+ "crossbeam-epoch",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-epoch"
+version = "0.9.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
+
+[[package]]
+name = "crossterm"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
+dependencies = [
+ "bitflags",
+ "crossterm_winapi",
+ "derive_more",
+ "document-features",
+ "mio",
+ "parking_lot",
+ "rustix",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
+name = "crossterm_winapi"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto-common"
@@ -884,8 +1135,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-aarch64"
+version = "0.1.0"
+dependencies = [
+ "data-binary-pe",
+]
+
+[[package]]
 name = "data-binary-asn1"
 version = "0.1.0"
+
+[[package]]
+name = "data-binary-cfb"
+version = "0.1.0"
+dependencies = [
+ "cfb",
+ "data-binary-core",
+]
 
 [[package]]
 name = "data-binary-core"
@@ -896,7 +1162,96 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-dex"
+version = "0.1.0"
+dependencies = [
+ "data-binary-jvm",
+]
+
+[[package]]
+name = "data-binary-doc"
+version = "0.1.0"
+dependencies = [
+ "data-binary-cfb",
+ "data-binary-core",
+]
+
+[[package]]
+name = "data-binary-docx"
+version = "0.1.0"
+dependencies = [
+ "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
+ "boost-source 0.1.0",
+ "data-binary-core",
+ "data-compression",
+ "data-text-xml",
+]
+
+[[package]]
+name = "data-binary-dxbc"
+version = "0.1.0"
+dependencies = [
+ "boost-source 0.1.0",
+ "data-binary-core",
+]
+
+[[package]]
+name = "data-binary-epub"
+version = "0.1.0"
+dependencies = [
+ "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
+ "boost-source 0.1.0",
+ "data-binary-core",
+ "data-text-xml",
+]
+
+[[package]]
+name = "data-binary-hsaco"
+version = "0.1.0"
+dependencies = [
+ "boost-source 0.1.0",
+ "data-binary-core",
+]
+
+[[package]]
+name = "data-binary-jvm"
+version = "0.1.0"
+dependencies = [
+ "acorn-zip 0.0.1 (git+https://github.com/yggdrasil-language/acorn.rs?rev=beccbdf77374dbb2ca67395be19af3e2048c57ca)",
+ "boost-source 0.1.0",
+ "data-binary-core",
+ "serde",
+]
+
+[[package]]
+name = "data-binary-mach-o"
+version = "0.1.0"
+
+[[package]]
+name = "data-binary-odin"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2 0.11.1",
+]
+
+[[package]]
+name = "data-binary-pe"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "data-binary-probe"
+version = "0.1.0"
+dependencies = [
+ "boost-source 0.1.0",
+ "data-binary-core",
+]
+
+[[package]]
+name = "data-binary-spirv"
 version = "0.1.0"
 dependencies = [
  "boost-source 0.1.0",
@@ -919,6 +1274,26 @@ dependencies = [
  "data-binary-core",
  "serde",
  "ttf-parser 0.21.1",
+]
+
+[[package]]
+name = "data-binary-tvm"
+version = "0.1.0"
+
+[[package]]
+name = "data-binary-wasm"
+version = "0.1.0"
+dependencies = [
+ "data-compression",
+ "serde",
+]
+
+[[package]]
+name = "data-binary-x64"
+version = "0.1.0"
+dependencies = [
+ "data-binary-pe",
+ "serde",
 ]
 
 [[package]]
@@ -949,6 +1324,244 @@ name = "data-encoding"
 version = "0.1.0"
 
 [[package]]
+name = "data-text-abc"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-actionscript"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-ada"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-apl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-ascii-doc"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-asciidoc"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-navigation",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-astro"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-athena"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-awsl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-valkyrie",
+ "language-format",
+ "language-testing",
+]
+
+[[package]]
+name = "data-text-bash"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-bat"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-c"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-c4"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-clojure"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-cmd"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-cobol"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-coq"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "data-text-core"
 version = "0.1.0"
 dependencies = [
@@ -958,6 +1571,1875 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test 4.0.1",
+]
+
+[[package]]
+name = "data-text-cpp"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-crystal"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-csharp"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-css"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-css-selector"
+version = "0.1.0"
+dependencies = [
+ "boost-harness",
+ "data-text-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "data-text-csv"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dsv",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-d"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-d2"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-dart"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-dejavu"
+version = "0.1.0"
+dependencies = [
+ "arcstr",
+ "bigdecimal",
+ "data-text-core",
+ "futures",
+ "im-rc",
+ "indexmap",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-macro",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "num",
+ "serde",
+ "tokio",
+ "unicode-ident",
+]
+
+[[package]]
+name = "data-text-delphi"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-dhall"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-django"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-dockerfile"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-dot"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-dsv"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-ejs"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-typescript",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-elixir"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-elm"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-erlang"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-fluent"
+version = "0.1.0"
+dependencies = [
+ "assert_matches",
+ "data-text-core",
+]
+
+[[package]]
+name = "data-text-fortran"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-fsharp"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-glsl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-go"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-graphql"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-groovy"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-gsgl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-handlebars"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-haskell"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-hlsl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-html"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-css-selector",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-idl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-ini"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-j"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-jasm"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-jasmin"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-java"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-javadoc"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-javascript"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-typescript",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-jinja"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-json"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-macro",
+ "language-mcp",
+ "language-navigation",
+ "language-server",
+ "language-testing",
+ "serde",
+ "serde_json",
+ "tokio",
+ "triomphe",
+]
+
+[[package]]
+name = "data-text-julia"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-koka"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-kotlin"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-lean"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-less"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-liquid"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-llvm-ir"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-lua"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-maple"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-markdown"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-navigation",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-matlab"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-mdl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-mermaid"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-uml",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-metis"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-mojo"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+]
+
+[[package]]
+name = "data-text-msil"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-nginx"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-nim"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-nix"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-notedown"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-objective-c"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-ocaml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-org-mode"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-pascal"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-json",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-perl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-php"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-plantuml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-powershell"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-prolog"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-protobuf"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-purescript"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-python"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-r"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-racket"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-raku"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-rbq"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-folding",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-macro",
+ "language-mcp",
+ "language-navigation",
+ "language-semantic-tokens",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-regex"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-resolver"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "data-text-symbols",
+ "serde",
+ "url",
+]
+
+[[package]]
+name = "data-text-rhombus"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-rst"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-navigation",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-ruby"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-format",
+ "language-highlight",
+ "serde",
+]
+
+[[package]]
+name = "data-text-rust"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-navigation",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+ "unicode-ident",
+]
+
+[[package]]
+name = "data-text-sass"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-scala"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-scheme"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-scss"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-smalltalk"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-smiles"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-solidity"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-source-map"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "criterion",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "data-text-sql"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-structurizr"
+version = "0.1.0"
+dependencies = [
+ "data-text-c4",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-stylus"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+ "triomphe",
+]
+
+[[package]]
+name = "data-text-svelte"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-swift"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-symbols"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-tailwind"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "lazy_static",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-tcl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-tex"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-toml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-tsv"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dsv",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-twig"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-typescript"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-format",
+ "serde",
+]
+
+[[package]]
+name = "data-text-typst"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-uml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "data-text-vala"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-valkyrie"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dejavu",
+ "language-format",
+ "language-testing",
+ "serde",
+ "unicode-ident",
+]
+
+[[package]]
+name = "data-text-vampire"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-vbnet"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+]
+
+[[package]]
+name = "data-text-verilog"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-vhdl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-vlang"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-voml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-von"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-format",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-vos"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "language-testing",
+]
+
+[[package]]
+name = "data-text-vue"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+]
+
+[[package]]
+name = "data-text-wat"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-wgsl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-wit-component"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+]
+
+[[package]]
+name = "data-text-wolfram"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-xml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-xpath",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "serde",
+]
+
+[[package]]
+name = "data-text-xpath"
+version = "0.1.0"
+dependencies = [
+ "boost-harness",
+ "data-text-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "data-text-yaml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
+name = "data-text-zig"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "futures",
+ "language-format",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "language-testing",
+ "serde",
 ]
 
 [[package]]
@@ -1078,7 +3560,6 @@ dependencies = [
 name = "database-harness"
 version = "0.1.0"
 dependencies = [
- "boost-math",
  "database-types",
  "plotter-chart",
  "plotter-scene",
@@ -1274,6 +3755,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_more"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d751e9e49156b02b44f9c1815bcb94b984cdcc4396ecc32521c739452808b134"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
+dependencies = [
+ "convert_case",
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1380,6 +3883,15 @@ dependencies = [
  "document-types",
  "serde_json",
  "serial_test 3.5.0",
+]
+
+[[package]]
+name = "document-features"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
+dependencies = [
+ "litrs",
 ]
 
 [[package]]
@@ -1604,6 +4116,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1622,6 +4140,16 @@ name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
+
+[[package]]
+name = "errno"
+version = "0.3.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "event-listener"
@@ -1700,6 +4228,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fnv"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1728,6 +4262,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "futures"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-executor",
+ "futures-io",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
+name = "futures-channel"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
+dependencies = [
+ "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -1767,6 +4326,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures-macro"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "futures-sink"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1944426bf7d03f1d14f708785e4b33efd750b36d48a157b836b3efc15ede8e1d"
+
+[[package]]
 name = "futures-task"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1778,8 +4354,13 @@ version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
+ "futures-macro",
+ "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -1838,6 +4419,17 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
+]
+
+[[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "cfg-if",
+ "crunchy",
+ "zerocopy",
 ]
 
 [[package]]
@@ -2092,6 +4684,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2296,6 +4894,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "is_terminal_polyfill"
+version = "1.70.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2313,6 +4926,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-folding"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
 name = "language-format"
 version = "0.1.0"
 dependencies = [
@@ -2325,6 +4946,126 @@ dependencies = [
 [[package]]
 name = "language-highlight"
 version = "0.1.0"
+
+[[package]]
+name = "language-hover"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "language-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
+
+[[package]]
+name = "language-mcp"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-symbols",
+ "futures",
+ "language-hover",
+ "language-navigation",
+ "language-semantic-search",
+ "language-server",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "language-navigation"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "language-repl"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "crossterm",
+ "data-text-core",
+ "language-highlight",
+ "unicode-width",
+]
+
+[[package]]
+name = "language-semantic-search"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "language-semantic-tokens"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "language-server"
+version = "0.1.0"
+dependencies = [
+ "boost-harness",
+ "dashmap",
+ "data-text-core",
+ "data-text-resolver",
+ "data-text-symbols",
+ "futures",
+ "language-folding",
+ "language-hover",
+ "language-navigation",
+ "language-semantic-tokens",
+ "language-structural-view",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "language-structural-view"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "serde",
+]
+
+[[package]]
+name = "language-testing"
+version = "0.1.0"
+dependencies = [
+ "boost-fs",
+ "data-text-core",
+ "serde",
+ "serde_json",
+ "triomphe",
+]
+
+[[package]]
+name = "language-visualize"
+version = "0.1.0"
+dependencies = [
+ "boost-harness",
+ "data-text-core",
+ "language-format",
+ "language-highlight",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "lazy_static"
@@ -2358,10 +5099,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
 name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
+
+[[package]]
+name = "litrs"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "lock_api"
@@ -2617,6 +5370,18 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "mio"
+version = "1.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20521a903f02b0a573cd6840e9d0a5a0cc043d361fe924092cd70f8556cc9c4a"
+dependencies = [
+ "libc",
+ "log",
+ "wasi",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "mongo"
@@ -3141,6 +5906,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "once_cell_polyfill"
+version = "1.70.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "oorandom"
+version = "11.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
+
+[[package]]
 name = "ordered-float"
 version = "5.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3239,6 +6016,16 @@ dependencies = [
  "package-registry",
  "serde",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "page_size"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30d5b2194ed13191c1999ae0704b7839fb18384fa22e49b57eeaa97d79ce40da"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]
@@ -3555,6 +6342,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "plotters"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aeb6f403d7a4911efb1e33402027fc44f29b5bf6def3effcc22d7bb75f2b747"
+dependencies = [
+ "num-traits",
+ "plotters-backend",
+ "plotters-svg",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "plotters-backend"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df42e13c12958a16b3f7f4386b9ab1f3e7933914ecea48da7139435263a4172a"
+
+[[package]]
+name = "plotters-svg"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
+dependencies = [
+ "plotters-backend",
+]
+
+[[package]]
 name = "postgres"
 version = "0.1.0"
 dependencies = [
@@ -3650,6 +6465,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayon"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb39b166781f92d482534ef4b4b1b2568f42613b53e5b6c160e24cfbfa30926d"
+dependencies = [
+ "either",
+ "rayon-core",
+]
+
+[[package]]
+name = "rayon-core"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
+dependencies = [
+ "crossbeam-deque",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3735,6 +6570,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
+name = "rustc_version"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+dependencies = [
+ "semver",
+]
+
+[[package]]
+name = "rustix"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
+dependencies = [
+ "bitflags",
+ "errno",
+ "libc",
+ "linux-raw-sys",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rustls"
 version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3788,6 +6645,15 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "same-file"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
+dependencies = [
+ "winapi-util",
+]
 
 [[package]]
 name = "schema-input-von"
@@ -4118,6 +6984,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ab42ca02749e120097e328d91d415325bdf43b1c72c4c8badf37375fe40a813"
 
 [[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4285,6 +7157,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio",
+ "signal-hook",
+]
+
+[[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4323,6 +7226,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
 
 [[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4354,6 +7267,12 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "subtle"
@@ -4525,10 +7444,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinytemplate"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be4d6b5f19ff7664e8c98d03e2139cb510db9b0a60b55f8e8709b689d939b6bc"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+
+[[package]]
+name = "tokio"
+version = "1.54.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
+dependencies = [
+ "bytes",
+ "libc",
+ "mio",
+ "parking_lot",
+ "pin-project-lite",
+ "signal-hook-registry",
+ "socket2",
+ "tokio-macros",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
+]
 
 [[package]]
 name = "toml"
@@ -4687,6 +7644,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+
+[[package]]
 name = "unicode-stringprep"
 version = "0.1.0"
 dependencies = [
@@ -4736,6 +7699,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
+name = "utf8parse"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
 name = "uuid"
 version = "1.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4762,6 +7731,16 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "walkdir"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b"
+dependencies = [
+ "same-file",
+ "winapi-util",
+]
 
 [[package]]
 name = "wasi"
@@ -4814,6 +7793,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "web-sys"
+version = "0.3.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7d179596ff5ec0f6de4db64d54011bde6289cc49603d3a6e4ce3f329207ab88"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "webpki-roots"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4821,6 +7810,37 @@ checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]
+
+[[package]]
+name = "winapi"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
+dependencies = [
+ "winapi-i686-pc-windows-gnu",
+ "winapi-x86_64-pc-windows-gnu",
+]
+
+[[package]]
+name = "winapi-i686-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
+
+[[package]]
+name = "winapi-util"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "winapi-x86_64-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows"

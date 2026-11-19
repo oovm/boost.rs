@@ -1,0 +1,268 @@
+//! Builder testing utilities for the Oak ecosystem.
+//!
+//! This module provides comprehensive testing infrastructure for builders,
+//! including file-based testing, expected output comparison, timeout handling,
+//! and test result serialization for typed root structures.
+
+use crate::{create_file, source_from_path};
+use data_text_core::{Builder, Language, errors::OakError};
+
+#[cfg(feature = "serde")]
+use crate::json_from_path;
+#[cfg(feature = "serde")]
+use serde::Serialize;
+
+#[cfg(feature = "serde")]
+use serde_json::Value as JsonValueNode;
+
+use boost_fs::walk::{ErrorPolicy, Walker};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+/// A concurrent builder testing utility that can run tests against multiple files with timeout support.
+///
+/// The `BuilderTester` provides functionality to test builders against a directory
+/// of files with specific extensions, comparing actual output against expected
+/// results stored in JSON files, with configurable timeout protection.
+pub struct BuilderTester {
+    root: PathBuf,
+    extensions: Vec<String>,
+    timeout: Duration,
+}
+
+/// Expected builder test results for comparison.
+///
+/// This struct represents the expected output of a builder test, including
+/// success status, typed root structure, and any expected errors.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BuilderTestExpected {
+    /// Whether the build was expected to succeed.
+    pub success: bool,
+    /// The expected typed root data, if any.
+    pub typed_root: Option<TypedRootData>,
+    /// Any expected error messages.
+    pub errors: Vec<String>,
+}
+
+/// Typed root data structure for builder testing.
+///
+/// Represents the typed root structure with its type name and serialized content
+/// used for testing builder output. Since TypedRoot can be any type, we serialize
+/// it as a generic structure for comparison.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TypedRootData {
+    /// The name of the type.
+    pub type_name: String,
+    /// The serialized content of the type.
+    #[cfg(feature = "serde")]
+    pub content: JsonValueNode,
+    #[cfg(not(feature = "serde"))]
+    pub content: (),
+}
+
+impl BuilderTester {
+    /// Creates a new builder tester with the specified root directory and default 10-second timeout.
+    pub fn new<P: AsRef<Path>>(root: P) -> Self {
+        Self { root: root.as_ref().to_path_buf(), extensions: vec![], timeout: Duration::from_secs(10) }
+    }
+
+    /// Adds a file extension to test against.
+    pub fn with_extension(mut self, extension: impl ToString) -> Self {
+        self.extensions.push(extension.to_string());
+        self
+    }
+
+    /// Sets the timeout for building operations.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Run tests for the given builder against all files in the root directory with the specified extensions.
+    #[cfg(feature = "serde")]
+    pub fn run_tests<L, B>(self, builder: &B) -> Result<(), OakError>
+    where
+        B: Builder<L> + Send + Sync,
+        L: Language + Send + Sync,
+        L::TypedRoot: serde::Serialize + Debug + Sync + Send,
+    {
+        let test_files = self.find_test_files()?;
+        let force_regenerated = std::env::var("REGENERATE_TESTS").unwrap_or("0".to_string()) == "1";
+        let mut regenerated_any = false;
+
+        for file_path in test_files {
+            println!("Testing file: {}", file_path.display());
+            regenerated_any |= self.test_single_file::<L, B>(&file_path, builder, force_regenerated)?
+        }
+
+        if regenerated_any && force_regenerated {
+            println!("Tests regenerated for: {}", self.root.display());
+            Ok(())
+        }
+        else {
+            Ok(())
+        }
+    }
+
+    /// Run tests for the given builder against all files in the root directory with the specified extensions.
+    #[cfg(not(feature = "serde"))]
+    pub fn run_tests<L, B>(self, _builder: &B) -> Result<(), OakError>
+    where
+        B: Builder<L> + Send + Sync,
+        L: Language + Send + Sync,
+        L::TypedRoot: Debug + Sync + Send,
+    {
+        Ok(())
+    }
+
+    fn find_test_files(&self) -> Result<Vec<PathBuf>, OakError> {
+        let mut files = Vec::new();
+
+        if !self.root.exists() {
+            return Ok(files);
+        }
+
+        for entry in Walker::new(&self.root).error_policy(ErrorPolicy::Strict) {
+            let entry = entry.map_err(|e| OakError::custom_error(e.to_string()))?;
+            let path = entry.path();
+
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_str().unwrap_or("");
+                    if self.extensions.iter().any(|e| e == ext_str) {
+                        // Ignore output files generated by the Tester itself to prevent recursive inclusion
+                        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let is_output_file = file_name.ends_with(".parsed.json") || file_name.ends_with(".lexed.json") || file_name.ends_with(".built.json") || file_name.ends_with(".expected.json");
+
+                        if !is_output_file {
+                            files.push(path.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(files)
+    }
+
+    #[cfg(feature = "serde")]
+    fn test_single_file<L, B>(&self, file_path: &Path, builder: &B, force_regenerated: bool) -> Result<bool, OakError>
+    where
+        B: Builder<L> + Send + Sync,
+        L: Language + Send + Sync,
+        L::TypedRoot: serde::Serialize + Debug + Sync + Send,
+    {
+        let source = source_from_path(file_path)?;
+
+        // Perform build in a thread and construct test results, with main thread handling timeout control
+        use std::sync::{Arc, Mutex};
+        let result: Arc<Mutex<Option<Result<BuilderTestExpected, OakError>>>> = Arc::new(Mutex::new(None));
+        let result_clone = Arc::clone(&result);
+        let timeout = self.timeout;
+        let file_path_string = file_path.display().to_string();
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(move || {
+                let mut cache = data_text_core::parser::ParseSession::<L>::new(1024);
+                let build_out = builder.build(&source, &[], &mut cache);
+
+                // Build typed root structure if build succeeded
+                let (success, typed_root) = match &build_out.result {
+                    Ok(root) => {
+                        // Serialize the typed root to JSON for comparison
+                        match serde_json::to_value(root) {
+                            Ok(content) => {
+                                let typed_root_data = TypedRootData { type_name: std::any::type_name::<L::TypedRoot>().to_string(), content };
+                                (true, Some(typed_root_data))
+                            }
+                            Err(_) => {
+                                // If serialization fails, still mark as success but with no typed root data
+                                (true, None)
+                            }
+                        }
+                    }
+                    Err(_) => (false, None),
+                };
+
+                // Collect error messages
+                let mut error_messages: Vec<String> = build_out.diagnostics.iter().map(|e| e.to_string()).collect();
+                if let Err(e) = &build_out.result {
+                    error_messages.push(e.to_string());
+                }
+
+                let test_result = BuilderTestExpected { success, typed_root, errors: error_messages };
+
+                let mut result = result_clone.lock().unwrap();
+                *result = Some(Ok(test_result));
+            });
+
+            // Wait for thread completion or timeout
+            let start_time = std::time::Instant::now();
+            let timeout_occurred = loop {
+                // Check if thread has finished
+                if handle.is_finished() {
+                    break false;
+                }
+
+                // Check for timeout
+                if start_time.elapsed() > timeout {
+                    break true;
+                }
+
+                // Sleep briefly to avoid busy waiting
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            };
+
+            // Return error if timed out
+            if timeout_occurred {
+                return Err(OakError::custom_error(format!("Builder test timed out after {:?} for file: {}", timeout, file_path_string)));
+            }
+
+            // Get build result
+            let test_result = {
+                let result_guard = result.lock().unwrap();
+                match result_guard.as_ref() {
+                    Some(Ok(test_result)) => test_result.clone(),
+                    Some(Err(e)) => return Err(e.clone()),
+                    None => return Err(OakError::custom_error("Builder thread disconnected unexpectedly")),
+                }
+            };
+
+            let mut regenerated = false;
+            let expected_file = file_path.with_extension(format!("{}.built.json", file_path.extension().unwrap_or_default().to_str().unwrap_or("")));
+
+            // Migration: If the new naming convention file doesn't exist, but the old one does, rename it
+            if !expected_file.exists() {
+                let legacy_file = file_path.with_extension("expected.json");
+                if legacy_file.exists() {
+                    let _ = std::fs::rename(&legacy_file, &expected_file);
+                }
+            }
+
+            if expected_file.exists() && !force_regenerated {
+                let expected_json = json_from_path(&expected_file)?;
+                let expected: BuilderTestExpected = serde_json::from_value(expected_json).map_err(|e| OakError::custom_error(e.to_string()))?;
+                if test_result != expected {
+                    return Err(OakError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
+                }
+            }
+            else {
+                use std::io::Write;
+                let mut file = create_file(&expected_file)?;
+                let mut buf = Vec::new();
+                let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    "); // 4 spaces indentation
+                let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
+                test_result.serialize(&mut ser).map_err(|e| OakError::custom_error(e.to_string()))?;
+                file.write_all(&buf).map_err(|e| OakError::custom_error(e.to_string()))?;
+                regenerated = true;
+            }
+
+            Ok(regenerated)
+        })
+    }
+}

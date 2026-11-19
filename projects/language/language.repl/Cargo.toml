@@ -1,0 +1,18 @@
+[package]
+name = "language-repl"
+version.workspace = true
+authors.workspace = true
+description = "Custom-built REPL infrastructure for Oak languages"
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+[dependencies]
+crossterm = { workspace = true }
+unicode-width = { workspace = true }
+clap = { workspace = true }
+language-highlight = { workspace = true }
+data-text-core = { workspace = true }
+
+[features]
+default = []

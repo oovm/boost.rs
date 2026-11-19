@@ -52,8 +52,20 @@ members = [
     "projects/interpreter/interpreter.vm.ovm",
     "projects/interpreter/interpreter.vm.wasm",
     "projects/compiler/compiler.valkyrie",
+    "projects/language/language.folding",
     "projects/language/language.format",
     "projects/language/language.highlight",
+    "projects/language/language.hover",
+    "projects/language/language.macro",
+    "projects/language/language.mcp",
+    "projects/language/language.navigation",
+    "projects/language/language.repl",
+    "projects/language/language.semantic-search",
+    "projects/language/language.semantic-tokens",
+    "projects/language/language.server",
+    "projects/language/language.structural-view",
+    "projects/language/language.testing",
+    "projects/language/language.visualize",
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
@@ -81,16 +93,175 @@ members = [
     "projects/database/facades/yydb-client",
     "projects/database/facades/yyds",
     "projects/database/facades/yyds-client",
+    "projects/data/data.binary.aarch64",
     "projects/data/data.binary.asn1",
+    "projects/data/data.binary.cfb",
     "projects/data/data.binary.core",
+    "projects/data/data.binary.dex",
+    "projects/data/data.binary.doc",
+    "projects/data/data.binary.docx",
+    "projects/data/data.binary.dxbc",
+    "projects/data/data.binary.epub",
+    "projects/data/data.binary.hsaco",
+    "projects/data/data.binary.jvm",
+    "projects/data/data.binary.mach-o",
+    "projects/data/data.binary.odin",
+    "projects/data/data.binary.pe",
     "projects/data/data.binary.probe",
+    "projects/data/data.binary.spirv",
     "projects/data/data.binary.tar",
     "projects/data/data.binary.ttf",
+    "projects/data/data.binary.tvm",
+    "projects/data/data.binary.wasm",
+    "projects/data/data.binary.x64",
     "projects/data/data.binary.zip",
     "projects/data/data.checksum",
     "projects/data/data.compression",
     "projects/data/data.encoding",
+    "projects/data/data.text.abc",
+    "projects/data/data.text.actionscript",
+    "projects/data/data.text.ada",
+    "projects/data/data.text.apl",
+    "projects/data/data.text.ascii-doc",
+    "projects/data/data.text.asciidoc",
+    "projects/data/data.text.astro",
+    "projects/data/data.text.athena",
+    "projects/data/data.text.awsl",
+    "projects/data/data.text.bash",
+    "projects/data/data.text.bat",
+    "projects/data/data.text.c",
+    "projects/data/data.text.c4",
+    "projects/data/data.text.clojure",
+    "projects/data/data.text.cmd",
+    "projects/data/data.text.cobol",
+    "projects/data/data.text.coq",
     "projects/data/data.text.core",
+    "projects/data/data.text.cpp",
+    "projects/data/data.text.crystal",
+    "projects/data/data.text.csharp",
+    "projects/data/data.text.css-selector",
+    "projects/data/data.text.css",
+    "projects/data/data.text.csv",
+    "projects/data/data.text.d",
+    "projects/data/data.text.d2",
+    "projects/data/data.text.dart",
+    "projects/data/data.text.dejavu",
+    "projects/data/data.text.delphi",
+    "projects/data/data.text.dhall",
+    "projects/data/data.text.django",
+    "projects/data/data.text.dockerfile",
+    "projects/data/data.text.dot",
+    "projects/data/data.text.dsv",
+    "projects/data/data.text.ejs",
+    "projects/data/data.text.elixir",
+    "projects/data/data.text.elm",
+    "projects/data/data.text.erlang",
+    "projects/data/data.text.fluent",
+    "projects/data/data.text.fortran",
+    "projects/data/data.text.fsharp",
+    "projects/data/data.text.glsl",
+    "projects/data/data.text.go",
+    "projects/data/data.text.graphql",
+    "projects/data/data.text.groovy",
+    "projects/data/data.text.gsgl",
+    "projects/data/data.text.handlebars",
+    "projects/data/data.text.haskell",
+    "projects/data/data.text.hlsl",
+    "projects/data/data.text.html",
+    "projects/data/data.text.idl",
+    "projects/data/data.text.ini",
+    "projects/data/data.text.j",
+    "projects/data/data.text.jasm",
+    "projects/data/data.text.jasmin",
+    "projects/data/data.text.java",
+    "projects/data/data.text.javadoc",
+    "projects/data/data.text.javascript",
+    "projects/data/data.text.jinja",
+    "projects/data/data.text.json",
+    "projects/data/data.text.julia",
+    "projects/data/data.text.koka",
+    "projects/data/data.text.kotlin",
+    "projects/data/data.text.lean",
+    "projects/data/data.text.less",
+    "projects/data/data.text.liquid",
+    "projects/data/data.text.llvm-ir",
+    "projects/data/data.text.lua",
+    "projects/data/data.text.maple",
+    "projects/data/data.text.markdown",
+    "projects/data/data.text.matlab",
+    "projects/data/data.text.mdl",
+    "projects/data/data.text.mermaid",
+    "projects/data/data.text.metis",
+    "projects/data/data.text.mojo",
+    "projects/data/data.text.msil",
+    "projects/data/data.text.nginx",
+    "projects/data/data.text.nim",
+    "projects/data/data.text.nix",
+    "projects/data/data.text.notedown",
+    "projects/data/data.text.objective-c",
+    "projects/data/data.text.ocaml",
+    "projects/data/data.text.org-mode",
+    "projects/data/data.text.pascal",
+    "projects/data/data.text.perl",
+    "projects/data/data.text.php",
+    "projects/data/data.text.plantuml",
+    "projects/data/data.text.powershell",
+    "projects/data/data.text.prolog",
+    "projects/data/data.text.protobuf",
+    "projects/data/data.text.purescript",
+    "projects/data/data.text.python",
+    "projects/data/data.text.r",
+    "projects/data/data.text.racket",
+    "projects/data/data.text.raku",
+    "projects/data/data.text.rbq",
+    "projects/data/data.text.regex",
+    "projects/data/data.text.resolver",
+    "projects/data/data.text.rhombus",
+    "projects/data/data.text.rst",
+    "projects/data/data.text.ruby",
+    "projects/data/data.text.rust",
+    "projects/data/data.text.sass",
+    "projects/data/data.text.scala",
+    "projects/data/data.text.scheme",
+    "projects/data/data.text.scss",
+    "projects/data/data.text.smalltalk",
+    "projects/data/data.text.smiles",
+    "projects/data/data.text.solidity",
+    "projects/data/data.text.source-map",
+    "projects/data/data.text.sql",
+    "projects/data/data.text.structurizr",
+    "projects/data/data.text.stylus",
+    "projects/data/data.text.svelte",
+    "projects/data/data.text.swift",
+    "projects/data/data.text.symbols",
+    "projects/data/data.text.tailwind",
+    "projects/data/data.text.tcl",
+    "projects/data/data.text.tex",
+    "projects/data/data.text.toml",
+    "projects/data/data.text.tsv",
+    "projects/data/data.text.twig",
+    "projects/data/data.text.typescript",
+    "projects/data/data.text.typst",
+    "projects/data/data.text.uml",
+    "projects/data/data.text.vala",
+    "projects/data/data.text.valkyrie",
+    "projects/data/data.text.vampire",
+    "projects/data/data.text.vbnet",
+    "projects/data/data.text.verilog",
+    "projects/data/data.text.vhdl",
+    "projects/data/data.text.vlang",
+    "projects/data/data.text.voml",
+    "projects/data/data.text.von",
+    "projects/data/data.text.vos",
+    "projects/data/data.text.vue",
+    "projects/data/data.text.wat",
+    "projects/data/data.text.wgsl",
+    "projects/data/data.text.wit-component",
+    "projects/data/data.text.wolfram",
+    "projects/data/data.text.xml",
+    "projects/data/data.text.xpath",
+    "projects/data/data.text.yaml",
+    "projects/data/data.text.zig",
     "projects/document/document",
     "projects/document/document.compose",
     "projects/document/document.convert",
@@ -283,8 +454,20 @@ compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
 compiler-valkyrie = { path = "projects/compiler/compiler.valkyrie" }
+language-folding = { path = "projects/language/language.folding" }
 language-format = { path = "projects/language/language.format" }
 language-highlight = { path = "projects/language/language.highlight" }
+language-hover = { path = "projects/language/language.hover" }
+language-macro = { path = "projects/language/language.macro" }
+language-mcp = { path = "projects/language/language.mcp" }
+language-navigation = { path = "projects/language/language.navigation" }
+language-repl = { path = "projects/language/language.repl" }
+language-semantic-search = { path = "projects/language/language.semantic-search" }
+language-semantic-tokens = { path = "projects/language/language.semantic-tokens" }
+language-server = { path = "projects/language/language.server" }
+language-structural-view = { path = "projects/language/language.structural-view" }
+language-testing = { path = "projects/language/language.testing" }
+language-visualize = { path = "projects/language/language.visualize" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }
@@ -442,16 +625,187 @@ unicode-types = { path = "projects/unicode/unicode.types" }
 unicode-width = { path = "projects/unicode/unicode.width" }
 
 # data 能力树
+data-binary-aarch64 = { path = "projects/data/data.binary.aarch64" }
 data-binary-asn1 = { path = "projects/data/data.binary.asn1" }
+data-binary-cfb = { path = "projects/data/data.binary.cfb" }
 data-binary-core = { path = "projects/data/data.binary.core" }
+data-binary-dex = { path = "projects/data/data.binary.dex" }
+data-binary-doc = { path = "projects/data/data.binary.doc" }
+data-binary-docx = { path = "projects/data/data.binary.docx" }
+data-binary-dxbc = { path = "projects/data/data.binary.dxbc" }
+data-binary-epub = { path = "projects/data/data.binary.epub" }
+data-binary-hsaco = { path = "projects/data/data.binary.hsaco" }
+data-binary-jvm = { path = "projects/data/data.binary.jvm" }
+data-binary-mach-o = { path = "projects/data/data.binary.mach-o" }
+data-binary-odin = { path = "projects/data/data.binary.odin" }
+data-binary-pe = { path = "projects/data/data.binary.pe" }
 data-binary-probe = { path = "projects/data/data.binary.probe" }
+data-binary-spirv = { path = "projects/data/data.binary.spirv" }
 data-binary-tar = { path = "projects/data/data.binary.tar" }
 data-binary-ttf = { path = "projects/data/data.binary.ttf" }
+data-binary-tvm = { path = "projects/data/data.binary.tvm" }
+data-binary-wasm = { path = "projects/data/data.binary.wasm" }
+data-binary-x64 = { path = "projects/data/data.binary.x64" }
 data-binary-zip = { path = "projects/data/data.binary.zip" }
+crossterm = "0.29.0"
+dashmap = { version = "6.1.0" }
+futures = { version = "0.3.32" }
+lazy_static = "1.5.0"
+tokio = { version = "1.50.0", default-features = false }
+triomphe = { version = "0.1.15", default-features = false, features = ["serde"] }
+unicode-ident = { version = "1.0.24" }
+arcstr = { version = "1.2.0", features = ["serde"] }
+bigdecimal = "0.4.10"
+im-rc = "15.1.0"
+indexmap = { version = "2.13.0", features = ["serde"] }
+num = "0.4.3"
 data-checksum = { path = "projects/data/data.checksum" }
 data-compression = { path = "projects/data/data.compression" }
 data-encoding = { path = "projects/data/data.encoding" }
+data-text-abc = { path = "projects/data/data.text.abc" }
+data-text-actionscript = { path = "projects/data/data.text.actionscript" }
+data-text-ada = { path = "projects/data/data.text.ada" }
+data-text-apl = { path = "projects/data/data.text.apl" }
+data-text-ascii-doc = { path = "projects/data/data.text.ascii-doc" }
+data-text-asciidoc = { path = "projects/data/data.text.asciidoc" }
+data-text-astro = { path = "projects/data/data.text.astro" }
+data-text-athena = { path = "projects/data/data.text.athena" }
+data-text-awsl = { path = "projects/data/data.text.awsl" }
+data-text-bash = { path = "projects/data/data.text.bash" }
+data-text-bat = { path = "projects/data/data.text.bat" }
+data-text-c = { path = "projects/data/data.text.c" }
+data-text-c4 = { path = "projects/data/data.text.c4" }
+data-text-clojure = { path = "projects/data/data.text.clojure" }
+data-text-cmd = { path = "projects/data/data.text.cmd" }
+data-text-cobol = { path = "projects/data/data.text.cobol" }
+data-text-coq = { path = "projects/data/data.text.coq" }
 data-text-core = { path = "projects/data/data.text.core" }
+data-text-cpp = { path = "projects/data/data.text.cpp" }
+data-text-crystal = { path = "projects/data/data.text.crystal" }
+data-text-csharp = { path = "projects/data/data.text.csharp" }
+data-text-css = { path = "projects/data/data.text.css" }
+data-text-css-selector = { path = "projects/data/data.text.css-selector" }
+data-text-csv = { path = "projects/data/data.text.csv" }
+data-text-d = { path = "projects/data/data.text.d" }
+data-text-d2 = { path = "projects/data/data.text.d2" }
+data-text-dart = { path = "projects/data/data.text.dart" }
+data-text-dejavu = { path = "projects/data/data.text.dejavu" }
+data-text-delphi = { path = "projects/data/data.text.delphi" }
+data-text-dhall = { path = "projects/data/data.text.dhall" }
+data-text-django = { path = "projects/data/data.text.django" }
+data-text-dockerfile = { path = "projects/data/data.text.dockerfile" }
+data-text-dot = { path = "projects/data/data.text.dot" }
+data-text-dsv = { path = "projects/data/data.text.dsv" }
+data-text-ejs = { path = "projects/data/data.text.ejs" }
+data-text-elixir = { path = "projects/data/data.text.elixir" }
+data-text-elm = { path = "projects/data/data.text.elm" }
+data-text-erlang = { path = "projects/data/data.text.erlang" }
+data-text-fluent = { path = "projects/data/data.text.fluent" }
+data-text-fortran = { path = "projects/data/data.text.fortran" }
+data-text-fsharp = { path = "projects/data/data.text.fsharp" }
+data-text-glsl = { path = "projects/data/data.text.glsl" }
+data-text-go = { path = "projects/data/data.text.go" }
+data-text-graphql = { path = "projects/data/data.text.graphql" }
+data-text-groovy = { path = "projects/data/data.text.groovy" }
+data-text-gsgl = { path = "projects/data/data.text.gsgl" }
+data-text-handlebars = { path = "projects/data/data.text.handlebars" }
+data-text-haskell = { path = "projects/data/data.text.haskell" }
+data-text-hlsl = { path = "projects/data/data.text.hlsl" }
+data-text-html = { path = "projects/data/data.text.html" }
+data-text-idl = { path = "projects/data/data.text.idl" }
+data-text-ini = { path = "projects/data/data.text.ini" }
+data-text-j = { path = "projects/data/data.text.j" }
+data-text-jasm = { path = "projects/data/data.text.jasm" }
+data-text-jasmin = { path = "projects/data/data.text.jasmin" }
+data-text-java = { path = "projects/data/data.text.java" }
+data-text-javadoc = { path = "projects/data/data.text.javadoc" }
+data-text-javascript = { path = "projects/data/data.text.javascript" }
+data-text-jinja = { path = "projects/data/data.text.jinja" }
+data-text-json = { path = "projects/data/data.text.json" }
+data-text-julia = { path = "projects/data/data.text.julia" }
+data-text-koka = { path = "projects/data/data.text.koka" }
+data-text-kotlin = { path = "projects/data/data.text.kotlin" }
+data-text-lean = { path = "projects/data/data.text.lean" }
+data-text-less = { path = "projects/data/data.text.less" }
+data-text-liquid = { path = "projects/data/data.text.liquid" }
+data-text-llvm-ir = { path = "projects/data/data.text.llvm-ir" }
+data-text-lua = { path = "projects/data/data.text.lua" }
+data-text-maple = { path = "projects/data/data.text.maple" }
+data-text-markdown = { path = "projects/data/data.text.markdown" }
+data-text-matlab = { path = "projects/data/data.text.matlab" }
+data-text-mdl = { path = "projects/data/data.text.mdl" }
+data-text-mermaid = { path = "projects/data/data.text.mermaid" }
+data-text-metis = { path = "projects/data/data.text.metis" }
+data-text-mojo = { path = "projects/data/data.text.mojo" }
+data-text-msil = { path = "projects/data/data.text.msil" }
+data-text-nginx = { path = "projects/data/data.text.nginx" }
+data-text-nim = { path = "projects/data/data.text.nim" }
+data-text-nix = { path = "projects/data/data.text.nix" }
+data-text-notedown = { path = "projects/data/data.text.notedown" }
+data-text-objective-c = { path = "projects/data/data.text.objective-c" }
+data-text-ocaml = { path = "projects/data/data.text.ocaml" }
+data-text-org-mode = { path = "projects/data/data.text.org-mode" }
+data-text-pascal = { path = "projects/data/data.text.pascal" }
+data-text-perl = { path = "projects/data/data.text.perl" }
+data-text-php = { path = "projects/data/data.text.php" }
+data-text-plantuml = { path = "projects/data/data.text.plantuml" }
+data-text-powershell = { path = "projects/data/data.text.powershell" }
+data-text-prolog = { path = "projects/data/data.text.prolog" }
+data-text-protobuf = { path = "projects/data/data.text.protobuf" }
+data-text-purescript = { path = "projects/data/data.text.purescript" }
+data-text-python = { path = "projects/data/data.text.python" }
+data-text-r = { path = "projects/data/data.text.r" }
+data-text-racket = { path = "projects/data/data.text.racket" }
+data-text-raku = { path = "projects/data/data.text.raku" }
+data-text-rbq = { path = "projects/data/data.text.rbq" }
+data-text-regex = { path = "projects/data/data.text.regex" }
+data-text-resolver = { path = "projects/data/data.text.resolver" }
+data-text-rhombus = { path = "projects/data/data.text.rhombus" }
+data-text-rst = { path = "projects/data/data.text.rst" }
+data-text-ruby = { path = "projects/data/data.text.ruby" }
+data-text-rust = { path = "projects/data/data.text.rust" }
+data-text-sass = { path = "projects/data/data.text.sass" }
+data-text-scala = { path = "projects/data/data.text.scala" }
+data-text-scheme = { path = "projects/data/data.text.scheme" }
+data-text-scss = { path = "projects/data/data.text.scss" }
+data-text-smalltalk = { path = "projects/data/data.text.smalltalk" }
+data-text-smiles = { path = "projects/data/data.text.smiles" }
+data-text-solidity = { path = "projects/data/data.text.solidity" }
+data-text-source-map = { path = "projects/data/data.text.source-map" }
+data-text-sql = { path = "projects/data/data.text.sql" }
+data-text-structurizr = { path = "projects/data/data.text.structurizr" }
+data-text-stylus = { path = "projects/data/data.text.stylus" }
+data-text-svelte = { path = "projects/data/data.text.svelte" }
+data-text-swift = { path = "projects/data/data.text.swift" }
+data-text-symbols = { path = "projects/data/data.text.symbols" }
+data-text-tailwind = { path = "projects/data/data.text.tailwind" }
+data-text-tcl = { path = "projects/data/data.text.tcl" }
+data-text-tex = { path = "projects/data/data.text.tex" }
+data-text-toml = { path = "projects/data/data.text.toml" }
+data-text-tsv = { path = "projects/data/data.text.tsv" }
+data-text-twig = { path = "projects/data/data.text.twig" }
+data-text-typescript = { path = "projects/data/data.text.typescript" }
+data-text-typst = { path = "projects/data/data.text.typst" }
+data-text-uml = { path = "projects/data/data.text.uml" }
+data-text-vala = { path = "projects/data/data.text.vala" }
+data-text-valkyrie = { path = "projects/data/data.text.valkyrie" }
+data-text-vampire = { path = "projects/data/data.text.vampire" }
+data-text-vbnet = { path = "projects/data/data.text.vbnet" }
+data-text-verilog = { path = "projects/data/data.text.verilog" }
+data-text-vhdl = { path = "projects/data/data.text.vhdl" }
+data-text-vlang = { path = "projects/data/data.text.vlang" }
+data-text-voml = { path = "projects/data/data.text.voml" }
+data-text-von = { path = "projects/data/data.text.von" }
+data-text-vos = { path = "projects/data/data.text.vos" }
+data-text-vue = { path = "projects/data/data.text.vue" }
+data-text-wat = { path = "projects/data/data.text.wat" }
+data-text-wgsl = { path = "projects/data/data.text.wgsl" }
+data-text-wit-component = { path = "projects/data/data.text.wit-component" }
+data-text-wolfram = { path = "projects/data/data.text.wolfram" }
+data-text-xml = { path = "projects/data/data.text.xml" }
+data-text-xpath = { path = "projects/data/data.text.xpath" }
+data-text-yaml = { path = "projects/data/data.text.yaml" }
+data-text-zig = { path = "projects/data/data.text.zig" }
 
 # 品牌化库
 mongo = { path = "projects/database/facades/mongo" }

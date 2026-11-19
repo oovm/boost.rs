@@ -1,0 +1,650 @@
+#![doc = "Graph layout algorithms for dependency and relationship visualization"]
+
+use crate::{
+    geometry::{Point, Rect, Size},
+    layout::{Edge, Layout},
+};
+use std::collections::{HashMap, HashSet};
+
+/// Graph node for visualization
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GraphNode {
+    /// Unique identifier for the node.
+    pub id: String,
+    /// Human-readable label for the node.
+    pub label: String,
+    /// Type of the node (e.g., "function", "struct").
+    pub node_type: String,
+    /// Optional size of the node.
+    pub size: Option<Size>,
+    /// Additional attributes for the node.
+    pub attributes: HashMap<String, String>,
+    /// Weight of the node for layout algorithms.
+    pub weight: f64,
+}
+
+impl GraphNode {
+    /// Creates a new `GraphNode`.
+    pub fn new(id: String, label: String) -> Self {
+        Self { id, label, node_type: "default".to_string(), size: None, attributes: HashMap::new(), weight: 1.0 }
+    }
+
+    /// Sets the type of the node.
+    pub fn with_type(mut self, node_type: String) -> Self {
+        self.node_type = node_type;
+        self
+    }
+
+    /// Sets the size of the node.
+    pub fn with_size(mut self, size: Size) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// Adds an attribute to the node.
+    pub fn with_attribute(mut self, key: String, value: String) -> Self {
+        self.attributes.insert(key, value);
+        self
+    }
+
+    /// Sets the weight of the node.
+    pub fn with_weight(mut self, weight: f64) -> Self {
+        self.weight = weight;
+        self
+    }
+}
+
+/// Graph edge for visualization
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GraphEdge {
+    /// Source node ID.
+    pub from: String,
+    /// Target node ID.
+    pub to: String,
+    /// Optional label for the edge.
+    pub label: Option<String>,
+    /// Type of the edge.
+    pub edge_type: String,
+    /// Weight of the edge for layout algorithms.
+    pub weight: f64,
+    /// Whether the edge is directed.
+    pub directed: bool,
+    /// Additional attributes for the edge.
+    pub attributes: HashMap<String, String>,
+}
+
+impl GraphEdge {
+    /// Creates a new `GraphEdge`.
+    pub fn new(from: String, to: String) -> Self {
+        Self { from, to, label: None, edge_type: "default".to_string(), weight: 1.0, directed: true, attributes: HashMap::new() }
+    }
+
+    /// Sets the label of the edge.
+    pub fn with_label(mut self, label: String) -> Self {
+        self.label = Some(label);
+        self
+    }
+
+    /// Sets the type of the edge.
+    pub fn with_type(mut self, edge_type: String) -> Self {
+        self.edge_type = edge_type;
+        self
+    }
+
+    /// Sets the weight of the edge.
+    pub fn with_weight(mut self, weight: f64) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    /// Makes the edge undirected.
+    pub fn undirected(mut self) -> Self {
+        self.directed = false;
+        self
+    }
+
+    /// Adds an attribute to the edge.
+    pub fn with_attribute(mut self, key: String, value: String) -> Self {
+        self.attributes.insert(key, value);
+        self
+    }
+}
+
+/// Graph representation
+#[derive(Debug, Clone)]
+pub struct Graph {
+    /// Nodes in the graph.
+    pub nodes: HashMap<String, GraphNode>,
+    /// Edges in the graph.
+    pub edges: Vec<GraphEdge>,
+    /// Whether the graph is directed.
+    pub directed: bool,
+}
+
+impl Graph {
+    /// Creates a new `Graph`.
+    pub fn new(directed: bool) -> Self {
+        Self { nodes: HashMap::new(), edges: Vec::new(), directed }
+    }
+
+    /// Adds a node to the graph.
+    pub fn add_node(&mut self, node: GraphNode) {
+        self.nodes.insert(node.id.clone(), node);
+    }
+
+    /// Adds an edge to the graph.
+    pub fn add_edge(&mut self, edge: GraphEdge) {
+        self.edges.push(edge);
+    }
+
+    /// Gets the neighbors of a node.
+    pub fn get_neighbors(&self, node_id: &str) -> Vec<&str> {
+        let mut neighbors = Vec::new();
+
+        for edge in &self.edges {
+            if edge.from == node_id {
+                neighbors.push(edge.to.as_str());
+            }
+            if !self.directed && edge.to == node_id {
+                neighbors.push(edge.from.as_str());
+            }
+        }
+
+        neighbors
+    }
+
+    /// Gets the degree of a node.
+    pub fn get_degree(&self, node_id: &str) -> usize {
+        self.get_neighbors(node_id).len()
+    }
+
+    /// Checks if the graph is connected.
+    pub fn is_connected(&self) -> bool {
+        if self.nodes.is_empty() {
+            return true;
+        }
+
+        let start_node = self.nodes.keys().next().unwrap();
+        let mut visited = HashSet::new();
+        let mut stack = vec![start_node.as_str()];
+
+        while let Some(node) = stack.pop() {
+            if visited.contains(node) {
+                continue;
+            }
+
+            visited.insert(node);
+
+            for neighbor in self.get_neighbors(node) {
+                if !visited.contains(neighbor) {
+                    stack.push(neighbor);
+                }
+            }
+        }
+
+        visited.len() == self.nodes.len()
+    }
+
+    /// Finds all cycles in the graph.
+    pub fn find_cycles(&self) -> Vec<Vec<String>> {
+        let mut cycles = Vec::new();
+        let mut visited = HashSet::new();
+        let mut rec_stack = HashSet::new();
+        let mut path = Vec::new();
+
+        for node_id in self.nodes.keys() {
+            if !visited.contains(node_id) {
+                self.dfs_cycles(node_id, &mut visited, &mut rec_stack, &mut path, &mut cycles);
+            }
+        }
+
+        cycles
+    }
+
+    fn dfs_cycles(&self, node: &str, visited: &mut HashSet<String>, rec_stack: &mut HashSet<String>, path: &mut Vec<String>, cycles: &mut Vec<Vec<String>>) {
+        visited.insert(node.to_string());
+        rec_stack.insert(node.to_string());
+        path.push(node.to_string());
+
+        for neighbor in self.get_neighbors(node) {
+            if !visited.contains(neighbor) {
+                self.dfs_cycles(neighbor, visited, rec_stack, path, cycles);
+            }
+            else if rec_stack.contains(neighbor) {
+                // Found a cycle
+                if let Some(cycle_start) = path.iter().position(|n| n == neighbor) {
+                    cycles.push(path[cycle_start..].to_vec());
+                }
+            }
+        }
+
+        rec_stack.remove(node);
+        path.pop();
+    }
+}
+
+impl crate::Visualize for Graph {
+    fn visualize(&self) -> crate::Result<String> {
+        GraphLayout::new().visualize(self)
+    }
+}
+
+/// Graph layout engine
+pub struct GraphLayout {
+    algorithm: GraphLayoutAlgorithm,
+    config: GraphLayoutConfig,
+}
+
+impl Default for GraphLayout {
+    fn default() -> Self {
+        Self { algorithm: GraphLayoutAlgorithm::ForceDirected, config: GraphLayoutConfig::default() }
+    }
+}
+
+impl GraphLayout {
+    /// Creates a new `GraphLayout` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a new `GraphLayout` using the force-directed algorithm.
+    pub fn force_directed() -> Self {
+        Self::new().with_algorithm(GraphLayoutAlgorithm::ForceDirected)
+    }
+
+    /// Creates a new `GraphLayout` using the circular algorithm.
+    pub fn circular() -> Self {
+        Self::new().with_algorithm(GraphLayoutAlgorithm::Circular)
+    }
+
+    /// Sets the algorithm for the layout.
+    pub fn with_algorithm(mut self, algorithm: GraphLayoutAlgorithm) -> Self {
+        self.algorithm = algorithm;
+        self
+    }
+
+    /// Sets the configuration for the layout.
+    pub fn with_config(mut self, config: GraphLayoutConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// Sets the repulsion strength for the force-directed layout.
+    pub fn with_repulsion(mut self, repulsion: f64) -> Self {
+        self.config.repulsion_strength = repulsion;
+        self
+    }
+
+    /// Sets the spring strength for the force-directed layout.
+    pub fn with_attraction(mut self, attraction: f64) -> Self {
+        self.config.spring_strength = attraction;
+        self
+    }
+
+    /// Sets the number of iterations for the force-directed layout.
+    pub fn with_iterations(mut self, iterations: usize) -> Self {
+        self.config.iterations = iterations;
+        self
+    }
+
+    /// Visualizes the graph as an SVG string.
+    pub fn visualize(&self, graph: &Graph) -> crate::Result<String> {
+        let layout = self.layout_graph(graph)?;
+        crate::render::SvgRenderer::new().render_layout(&layout)
+    }
+
+    /// Computes the layout for the given graph.
+    pub fn layout_graph(&self, graph: &Graph) -> crate::Result<Layout> {
+        match self.algorithm {
+            GraphLayoutAlgorithm::ForceDirected => self.force_directed_layout(graph),
+            GraphLayoutAlgorithm::Circular => self.circular_layout(graph),
+            GraphLayoutAlgorithm::Hierarchical => self.hierarchical_layout(graph),
+            GraphLayoutAlgorithm::Grid => self.grid_layout(graph),
+            GraphLayoutAlgorithm::Organic => self.organic_layout(graph),
+        }
+    }
+
+    /// Force-directed layout using spring-mass model
+    fn force_directed_layout(&self, graph: &Graph) -> crate::Result<Layout> {
+        let mut layout = Layout::new();
+
+        if graph.nodes.is_empty() {
+            return Ok(layout);
+        }
+
+        let mut positions: HashMap<String, Point> = HashMap::new();
+        let mut velocities: HashMap<String, Point> = HashMap::new();
+
+        // Initialize random positions
+        for (i, node_id) in graph.nodes.keys().enumerate() {
+            let angle = 2.0 * std::f64::consts::PI * i as f64 / graph.nodes.len() as f64;
+            let radius = 100.0;
+            positions.insert(node_id.clone(), Point::new(radius * angle.cos(), radius * angle.sin()));
+            velocities.insert(node_id.clone(), Point::origin());
+        }
+
+        // Run simulation
+        for _ in 0..self.config.iterations {
+            let mut forces: HashMap<String, Point> = HashMap::new();
+
+            // Initialize forces
+            for node_id in graph.nodes.keys() {
+                forces.insert(node_id.clone(), Point::origin());
+            }
+
+            // Repulsion forces between all nodes
+            let node_ids: Vec<_> = graph.nodes.keys().collect();
+            for i in 0..node_ids.len() {
+                for j in (i + 1)..node_ids.len() {
+                    let node1_id = node_ids[i];
+                    let node2_id = node_ids[j];
+
+                    if let (Some(pos1), Some(pos2)) = (positions.get(node1_id), positions.get(node2_id)) {
+                        let diff = *pos1 - *pos2;
+                        let distance = pos1.distance_to(pos2).max(1.0);
+                        let force_magnitude = self.config.repulsion_strength / (distance * distance);
+                        let force_direction = Point::new(diff.x / distance, diff.y / distance);
+                        let force = Point::new(force_direction.x * force_magnitude, force_direction.y * force_magnitude);
+
+                        *forces.get_mut(node1_id).unwrap() = *forces.get(node1_id).unwrap() + force;
+                        *forces.get_mut(node2_id).unwrap() = *forces.get(node2_id).unwrap() - force;
+                    }
+                }
+            }
+
+            // Attraction forces along edges
+            for edge in &graph.edges {
+                if let (Some(pos1), Some(pos2)) = (positions.get(&edge.from), positions.get(&edge.to)) {
+                    let diff = *pos2 - *pos1;
+                    let distance = pos1.distance_to(pos2);
+                    let ideal_length = self.config.ideal_edge_length;
+                    let force_magnitude = self.config.spring_strength * (distance - ideal_length) * edge.weight;
+
+                    if distance > 0.0 {
+                        let force_direction = Point::new(diff.x / distance, diff.y / distance);
+                        let force = Point::new(force_direction.x * force_magnitude, force_direction.y * force_magnitude);
+
+                        *forces.get_mut(&edge.from).unwrap() = *forces.get(&edge.from).unwrap() + force;
+                        *forces.get_mut(&edge.to).unwrap() = *forces.get(&edge.to).unwrap() - force;
+                    }
+                }
+            }
+
+            // Update positions
+            for node_id in graph.nodes.keys() {
+                if let (Some(force), Some(velocity), Some(position)) = (forces.get(node_id), velocities.get_mut(node_id), positions.get_mut(node_id)) {
+                    *velocity = Point::new(velocity.x * self.config.damping + force.x, velocity.y * self.config.damping + force.y);
+
+                    // Limit velocity
+                    let speed = (velocity.x * velocity.x + velocity.y * velocity.y).sqrt();
+                    if speed > self.config.max_velocity {
+                        let scale = self.config.max_velocity / speed;
+                        velocity.x *= scale;
+                        velocity.y *= scale;
+                    }
+
+                    *position = *position + *velocity;
+                }
+            }
+        }
+
+        // Convert positions to layout
+        for (node_id, node) in &graph.nodes {
+            if let Some(position) = positions.get(node_id) {
+                let size = node.size.unwrap_or(Size::new(self.config.node_width, self.config.node_height));
+                let rect = Rect::new(Point::new(position.x - size.width / 2.0, position.y - size.height / 2.0), size);
+                let nt = match node.node_type.as_str() {
+                    "function" => crate::layout::NodeType::Function,
+                    "struct" => crate::layout::NodeType::Struct,
+                    "module" => crate::layout::NodeType::Module,
+                    _ => crate::layout::NodeType::Default,
+                };
+                layout.add_node_with_metadata(node_id.clone(), node.label.clone(), rect, nt);
+            }
+        }
+
+        // Add edges
+        for edge in &graph.edges {
+            if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
+                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                layout.add_edge(layout_edge);
+            }
+        }
+
+        Ok(layout)
+    }
+
+    /// Circular layout - arrange nodes in a circle
+    fn circular_layout(&self, graph: &Graph) -> crate::Result<Layout> {
+        let mut layout = Layout::new();
+
+        if graph.nodes.is_empty() {
+            return Ok(layout);
+        }
+
+        let node_count = graph.nodes.len();
+        let radius = self.config.circle_radius;
+        let angle_step = 2.0 * std::f64::consts::PI / node_count as f64;
+
+        for (i, (node_id, node)) in graph.nodes.iter().enumerate() {
+            let angle = i as f64 * angle_step;
+            let position = Point::new(radius * angle.cos(), radius * angle.sin());
+            let size = node.size.unwrap_or(Size::new(self.config.node_width, self.config.node_height));
+            let rect = Rect::new(Point::new(position.x - size.width / 2.0, position.y - size.height / 2.0), size);
+            let nt = match node.node_type.as_str() {
+                "function" => crate::layout::NodeType::Function,
+                "struct" => crate::layout::NodeType::Struct,
+                "module" => crate::layout::NodeType::Module,
+                _ => crate::layout::NodeType::Default,
+            };
+            layout.add_node_with_metadata(node_id.clone(), node.label.clone(), rect, nt);
+        }
+
+        // Add edges
+        for edge in &graph.edges {
+            if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
+                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                layout.add_edge(layout_edge);
+            }
+        }
+
+        Ok(layout)
+    }
+
+    /// Hierarchical layout - arrange nodes in layers
+    fn hierarchical_layout(&self, graph: &Graph) -> crate::Result<Layout> {
+        let mut layout = Layout::new();
+
+        if graph.nodes.is_empty() {
+            return Ok(layout);
+        }
+
+        // Perform topological sort to determine layers
+        let layers = self.topological_layers(graph)?;
+
+        // Position nodes layer by layer
+        for (layer_index, layer) in layers.iter().enumerate() {
+            let y = layer_index as f64 * self.config.layer_distance;
+            let layer_width = layer.len() as f64 * (self.config.node_width + self.config.node_spacing);
+            let start_x = -layer_width / 2.0;
+
+            for (node_index, node_id) in layer.iter().enumerate() {
+                let x = start_x + node_index as f64 * (self.config.node_width + self.config.node_spacing);
+                let node = &graph.nodes[node_id];
+                let size = node.size.unwrap_or(Size::new(self.config.node_width, self.config.node_height));
+                let rect = Rect::new(Point::new(x, y), size);
+                let nt = match node.node_type.as_str() {
+                    "function" => crate::layout::NodeType::Function,
+                    "struct" => crate::layout::NodeType::Struct,
+                    "module" => crate::layout::NodeType::Module,
+                    _ => crate::layout::NodeType::Default,
+                };
+                layout.add_node_with_metadata(node_id.clone(), node.label.clone(), rect, nt);
+            }
+        }
+
+        // Add edges
+        for edge in &graph.edges {
+            if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
+                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                layout.add_edge(layout_edge);
+            }
+        }
+
+        Ok(layout)
+    }
+
+    /// Grid layout - arrange nodes in a regular grid
+    fn grid_layout(&self, graph: &Graph) -> crate::Result<Layout> {
+        let mut layout = Layout::new();
+
+        if graph.nodes.is_empty() {
+            return Ok(layout);
+        }
+
+        let node_count = graph.nodes.len();
+        let cols = (node_count as f64).sqrt().ceil() as usize;
+        let _rows = (node_count + cols - 1) / cols;
+
+        for (i, (node_id, node)) in graph.nodes.iter().enumerate() {
+            let row = i / cols;
+            let col = i % cols;
+            let x = col as f64 * (self.config.node_width + self.config.node_spacing);
+            let y = row as f64 * (self.config.node_height + self.config.node_spacing);
+            let size = node.size.unwrap_or(Size::new(self.config.node_width, self.config.node_height));
+            let rect = Rect::new(Point::new(x, y), size);
+            let nt = match node.node_type.as_str() {
+                "function" => crate::layout::NodeType::Function,
+                "struct" => crate::layout::NodeType::Struct,
+                "module" => crate::layout::NodeType::Module,
+                _ => crate::layout::NodeType::Default,
+            };
+            layout.add_node_with_metadata(node_id.clone(), node.label.clone(), rect, nt);
+        }
+
+        // Add edges
+        for edge in &graph.edges {
+            if let (Some(from_node), Some(to_node)) = (layout.nodes.get(&edge.from), layout.nodes.get(&edge.to)) {
+                let layout_edge = Edge::new(edge.from.clone(), edge.to.clone()).with_points(vec![from_node.rect.center(), to_node.rect.center()]);
+                layout.add_edge(layout_edge);
+            }
+        }
+
+        Ok(layout)
+    }
+
+    /// Organic layout - natural-looking arrangement
+    fn organic_layout(&self, graph: &Graph) -> crate::Result<Layout> {
+        // For now, use force-directed with different parameters
+        let mut organic_config = self.config.clone();
+        organic_config.spring_strength *= 0.5;
+        organic_config.repulsion_strength *= 1.5;
+        organic_config.damping = 0.95;
+
+        let organic_layout = GraphLayout::new().with_algorithm(GraphLayoutAlgorithm::ForceDirected).with_config(organic_config);
+
+        organic_layout.force_directed_layout(graph)
+    }
+
+    /// Perform topological sort to determine node layers
+    fn topological_layers(&self, graph: &Graph) -> crate::Result<Vec<Vec<String>>> {
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        let mut layers = Vec::new();
+
+        // Initialize in-degrees
+        for node_id in graph.nodes.keys() {
+            in_degree.insert(node_id.clone(), 0);
+        }
+
+        // Calculate in-degrees
+        for edge in &graph.edges {
+            *in_degree.get_mut(&edge.to).unwrap() += 1;
+        }
+
+        // Process layers
+        while !in_degree.is_empty() {
+            let mut current_layer = Vec::new();
+
+            // Find nodes with in-degree 0
+            let zero_in_degree: Vec<_> = in_degree.iter().filter(|&(_, &degree)| degree == 0).map(|(id, _)| id.clone()).collect();
+
+            if zero_in_degree.is_empty() {
+                // Cycle detected - break it by selecting node with minimum in-degree
+                if let Some((min_node, _)) = in_degree.iter().min_by_key(|&(_, &degree)| degree) {
+                    current_layer.push(min_node.clone());
+                }
+            }
+            else {
+                current_layer = zero_in_degree;
+            }
+
+            // Remove processed nodes and update in-degrees
+            for node_id in &current_layer {
+                in_degree.remove(node_id);
+
+                // Decrease in-degree of neighbors
+                for edge in &graph.edges {
+                    if edge.from == *node_id {
+                        if let Some(degree) = in_degree.get_mut(&edge.to) {
+                            *degree = degree.saturating_sub(1);
+                        }
+                    }
+                }
+            }
+
+            layers.push(current_layer);
+        }
+
+        Ok(layers)
+    }
+}
+
+/// Graph layout configuration
+#[derive(Debug, Clone)]
+pub struct GraphLayoutConfig {
+    /// Width of a node.
+    pub node_width: f64,
+    /// Height of a node.
+    pub node_height: f64,
+    /// Spacing between nodes.
+    pub node_spacing: f64,
+    /// Distance between layers in hierarchical layout.
+    pub layer_distance: f64,
+    /// Radius of the circle in circular layout.
+    pub circle_radius: f64,
+    /// Number of iterations for force-directed layout.
+    pub iterations: usize,
+    /// Strength of the spring force between connected nodes.
+    pub spring_strength: f64,
+    /// Strength of the repulsion force between all nodes.
+    pub repulsion_strength: f64,
+    /// Damping factor for node movement.
+    pub damping: f64,
+    /// Maximum velocity of a node per iteration.
+    pub max_velocity: f64,
+    /// Ideal length of an edge.
+    pub ideal_edge_length: f64,
+}
+
+impl Default for GraphLayoutConfig {
+    fn default() -> Self {
+        Self { node_width: 80.0, node_height: 40.0, node_spacing: 20.0, layer_distance: 100.0, circle_radius: 200.0, iterations: 100, spring_strength: 0.1, repulsion_strength: 1000.0, damping: 0.9, max_velocity: 10.0, ideal_edge_length: 100.0 }
+    }
+}
+
+/// Graph layout algorithms
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphLayoutAlgorithm {
+    /// Spring-mass model layout.
+    ForceDirected,
+    /// Arrange nodes in a circle.
+    Circular,
+    /// Layered arrangement for directed acyclic graphs.
+    Hierarchical,
+    /// Arrange nodes in a regular grid.
+    Grid,
+    /// Natural-looking organic arrangement.
+    Organic,
+}

@@ -1,0 +1,296 @@
+//! Parser testing utilities for the Oak ecosystem.
+//!
+//! This module provides comprehensive testing infrastructure for parsers,
+//! including file-based testing, expected output comparison, timeout handling,
+//! and test result serialization.
+
+use crate::{create_file, source_from_path};
+use data_text_core::{Language, Parser, errors::OakError};
+
+#[cfg(feature = "serde")]
+use crate::json_from_path;
+#[cfg(feature = "serde")]
+use serde::Serialize;
+
+use boost_fs::walk::{ErrorPolicy, Walker};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+/// A concurrent parser testing utility that can run tests against multiple files with timeout support.
+///
+/// The `ParserTester` provides functionality to test parsers against a directory
+/// of files with specific extensions, comparing actual output against expected
+/// results stored in JSON files, with configurable timeout protection.
+pub struct ParserTester {
+    root: PathBuf,
+    extensions: Vec<String>,
+    timeout: Duration,
+}
+
+/// Expected parser test results for comparison.
+///
+/// This struct represents the expected output of a parser test, including
+/// success status, node count, AST structure, and any expected errors.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ParserTestExpected {
+    /// Whether the parsing was expected to succeed.
+    pub success: bool,
+    /// The expected number of nodes in the AST.
+    pub node_count: usize,
+    /// The expected structure of the AST.
+    pub ast_structure: AstNodeData,
+    /// Any expected error messages.
+    pub errors: Vec<String>,
+}
+
+/// AST node data structure for parser testing.
+///
+/// Represents a node in the abstract kind tree with its kind, children,
+/// text length, and leaf status used for testing parser output.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AstNodeData {
+    /// The kind of the AST node as a string.
+    pub kind: String,
+    /// The child nodes of this AST node.
+    pub children: Vec<AstNodeData>,
+    /// The length of the text covered by this node.
+    pub text_length: usize,
+    /// Whether this node is a leaf node.
+    pub is_leaf: bool,
+}
+
+impl ParserTester {
+    /// Creates a new parser tester with the specified root directory and default 10-second timeout.
+    pub fn new<P: AsRef<Path>>(root: P) -> Self {
+        Self { root: root.as_ref().to_path_buf(), extensions: vec![], timeout: Duration::from_secs(10) }
+    }
+
+    /// Adds a file extension to test against.
+    pub fn with_extension(mut self, extension: impl ToString) -> Self {
+        self.extensions.push(extension.to_string());
+        self
+    }
+
+    /// Sets the timeout for parsing operations.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Run tests for the given parser against all files in the root directory with the specified extensions.
+    #[cfg(feature = "serde")]
+    pub fn run_tests<L, P>(self, parser: &P) -> Result<(), OakError>
+    where
+        P: Parser<L> + Send + Sync,
+        L: Language + Send + Sync,
+        L::ElementType: serde::Serialize + Debug + Sync + Send + Eq + From<L::TokenType>,
+    {
+        let test_files = self.find_test_files()?;
+        let force_regenerated = std::env::var("REGENERATE_TESTS").unwrap_or("0".to_string()) == "1";
+        let mut regenerated_any = false;
+
+        for file_path in test_files {
+            println!("Testing file: {}", file_path.display());
+            regenerated_any |= self.test_single_file::<L, P>(&file_path, parser, force_regenerated)?;
+        }
+
+        if regenerated_any && force_regenerated {
+            println!("Tests regenerated for: {}", self.root.display());
+            Ok(())
+        }
+        else {
+            Ok(())
+        }
+    }
+
+    /// Run tests for the given parser against all files in the root directory with the specified extensions.
+    #[cfg(not(feature = "serde"))]
+    pub fn run_tests<L, P>(self, _parser: &P) -> Result<(), OakError>
+    where
+        P: Parser<L> + Send + Sync,
+        L: Language + Send + Sync,
+        L::ElementType: Debug + Sync + Send + Eq + From<L::TokenType>,
+    {
+        Ok(())
+    }
+
+    fn find_test_files(&self) -> Result<Vec<PathBuf>, OakError> {
+        let mut files = Vec::new();
+
+        if !self.root.exists() {
+            return Ok(files);
+        }
+
+        for entry in Walker::new(&self.root).error_policy(ErrorPolicy::Strict) {
+            let entry = entry.map_err(|e| OakError::custom_error(e.to_string()))?;
+            let path = entry.path();
+
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_str().unwrap_or("");
+                    if self.extensions.iter().any(|e| e == ext_str) {
+                        // Ignore output files generated by the Tester itself to prevent recursive inclusion
+                        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let is_output_file = file_name.ends_with(".parsed.json") || file_name.ends_with(".lexed.json") || file_name.ends_with(".built.json") || file_name.ends_with(".expected.json");
+
+                        if !is_output_file {
+                            files.push(path.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(files)
+    }
+
+    #[cfg(feature = "serde")]
+    fn test_single_file<L, P>(&self, file_path: &Path, parser: &P, force_regenerated: bool) -> Result<bool, OakError>
+    where
+        P: Parser<L> + Send + Sync,
+        L: Language + Send + Sync,
+        L::ElementType: serde::Serialize + Debug + Sync + Send + Eq + From<L::TokenType>,
+    {
+        let source = source_from_path(file_path)?;
+
+        // Perform parsing in a thread and construct test results, with main thread handling timeout control
+        use std::sync::{Arc, Mutex};
+        let result: Arc<Mutex<Option<Result<ParserTestExpected, OakError>>>> = Arc::new(Mutex::new(None));
+        let result_clone = Arc::clone(&result);
+        let timeout = self.timeout;
+
+        std::thread::scope(|s| {
+            let handle = s.spawn(move || {
+                let mut cache = data_text_core::parser::ParseSession::<L>::default();
+                let parse_out = parser.parse(&source, &[], &mut cache);
+
+                // Build AST structure if parse succeeded, else create a minimal error node
+                let (success, ast_structure) = match &parse_out.result {
+                    Ok(root) => {
+                        let ast = Self::to_ast::<L>(root);
+                        (true, ast)
+                    }
+                    Err(_) => {
+                        let ast = AstNodeData { kind: "Error".to_string(), children: vec![], text_length: 0, is_leaf: true };
+                        (false, ast)
+                    }
+                };
+
+                // Collect error messages
+                let mut error_messages: Vec<String> = parse_out.diagnostics.iter().map(|e| e.to_string()).collect();
+                if let Err(e) = &parse_out.result {
+                    error_messages.push(e.to_string());
+                }
+
+                // Count nodes (including leaves)
+                let node_count = Self::count_nodes(&ast_structure);
+
+                let test_result = ParserTestExpected { success, node_count, ast_structure, errors: error_messages };
+
+                let mut result = result_clone.lock().unwrap();
+                *result = Some(Ok(test_result));
+            });
+
+            // Wait for thread completion or timeout
+            let start_time = std::time::Instant::now();
+            let timeout_occurred = loop {
+                // Check if thread has finished
+                if handle.is_finished() {
+                    break false;
+                }
+
+                // Check for timeout
+                if start_time.elapsed() > timeout {
+                    break true;
+                }
+
+                // Sleep briefly to avoid busy waiting
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            };
+
+            // Return error if timed out
+            if timeout_occurred {
+                return Err(OakError::custom_error(&format!("Parser test timed out after {:?} for file: {}", timeout, file_path.display())));
+            }
+
+            // Get parsing result
+            let test_result = {
+                let result_guard = result.lock().unwrap();
+                match result_guard.as_ref() {
+                    Some(Ok(test_result)) => test_result.clone(),
+                    Some(Err(e)) => return Err(e.clone()),
+                    None => return Err(OakError::custom_error("Parser test thread disconnected unexpectedly")),
+                }
+            };
+
+            let mut regenerated = false;
+            let expected_file = file_path.with_extension(format!("{}.parsed.json", file_path.extension().unwrap_or_default().to_str().unwrap_or("")));
+
+            // Migration: If the new naming convention file doesn't exist, but the old one does, rename it
+            if !expected_file.exists() {
+                let legacy_file = file_path.with_extension("expected.json");
+                if legacy_file.exists() {
+                    let _ = std::fs::rename(&legacy_file, &expected_file);
+                }
+            }
+
+            if expected_file.exists() && !force_regenerated {
+                let expected_json = json_from_path(&expected_file)?;
+                let expected: ParserTestExpected = serde_json::from_value(expected_json).map_err(|e| OakError::custom_error(e.to_string()))?;
+                if test_result != expected {
+                    return Err(OakError::test_failure(file_path.to_path_buf(), format!("{:#?}", expected), format!("{:#?}", test_result)));
+                }
+            }
+            else {
+                use std::io::Write;
+                let mut file = create_file(&expected_file)?;
+                let mut buf = Vec::new();
+                let formatter = serde_json::ser::PrettyFormatter::with_indent(b"    "); // 4 spaces indentation
+                let mut ser = serde_json::Serializer::with_formatter(&mut buf, formatter);
+                test_result.serialize(&mut ser).map_err(|e| OakError::custom_error(e.to_string()))?;
+                file.write_all(&buf).map_err(|e| OakError::custom_error(e.to_string()))?;
+
+                if force_regenerated {
+                    regenerated = true;
+                }
+                else {
+                    return Err(OakError::test_regenerated(expected_file));
+                }
+            }
+
+            Ok(regenerated)
+        })
+    }
+
+    fn to_ast<'a, L: Language>(root: &'a data_text_core::GreenNode<'a, L>) -> AstNodeData {
+        let kind_str = format!("{:?}", root.kind);
+        let mut children = Vec::new();
+        let mut leaf_count: usize = 0;
+        let mut leaf_text_length: usize = 0;
+
+        for c in root.children {
+            match c {
+                data_text_core::GreenTree::Node(n) => children.push(Self::to_ast(n)),
+                data_text_core::GreenTree::Leaf(l) => {
+                    leaf_count += 1;
+                    leaf_text_length += l.length as usize;
+                }
+            }
+        }
+
+        if leaf_count > 0 {
+            children.push(AstNodeData { kind: format!("Leaves({})", leaf_count), children: vec![], text_length: leaf_text_length, is_leaf: true });
+        }
+
+        AstNodeData { kind: kind_str, children, text_length: root.byte_length as usize, is_leaf: false }
+    }
+
+    fn count_nodes(node: &AstNodeData) -> usize {
+        1 + node.children.iter().map(Self::count_nodes).sum::<usize>()
+    }
+}

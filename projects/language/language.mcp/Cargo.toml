@@ -1,0 +1,30 @@
+[package]
+name = "language-mcp"
+version.workspace = true
+authors.workspace = true
+description = "Oak MCP server with support for compact code structures and fuzzy semantic search."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["mcp", "context-protocol", "ai"]
+
+[dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "io-util", "time", "io-std"] }
+serde = { workspace = true , optional = true }
+serde_json = { workspace = true, optional = true }
+data-text-core = { workspace = true }
+language-server = { workspace = true }
+data-text-symbols = { workspace = true }
+language-hover = { workspace = true }
+language-navigation = { workspace = true }
+language-semantic-search = { workspace = true }
+futures = { workspace = true }
+
+
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "dep:serde_json", "data-text-core/serde"]
+io-std = ["tokio/io-std"]

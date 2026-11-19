@@ -1,0 +1,22 @@
+[package]
+name = "language-macro"
+version.workspace = true
+authors.workspace = true
+description = "Procedural macros for the Oak framework to simplify parser and AST definition."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools", "rust-patterns"]
+keywords = ["macros", "proc-macro", "codegen"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+
+[features]
+default = []

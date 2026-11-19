@@ -1,0 +1,19 @@
+[package]
+name = "language-structural-view"
+version.workspace = true
+authors.workspace = true
+description = "AST-based document structure and structure generation for the Oak framework."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["structure", "outline", "ast", "symbols"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]

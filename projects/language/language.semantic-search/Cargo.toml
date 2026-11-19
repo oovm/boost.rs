@@ -1,0 +1,21 @@
+[package]
+name = "language-semantic-search"
+version.workspace = true
+authors.workspace = true
+description = "Fuzzy semantic search and code indexing for the Oak framework."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["search", "semantic", "fuzzy", "indexing"]
+
+[dependencies]
+data-text-core = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
+serde = { workspace = true, optional = true }
+# data-text-json = { workspace = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]

@@ -1,0 +1,19 @@
+[package]
+name = "language-hover"
+version.workspace = true
+authors.workspace = true
+description = "Hover information and documentation lookup support for the Oak framework."
+edition.workspace = true
+license = "MPL-2.0"
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["hover", "documentation", "lsp"]
+
+[dependencies]
+data-text-core = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "data-text-core/serde"]
