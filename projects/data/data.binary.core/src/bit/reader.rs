@@ -1,9 +1,6 @@
 //! Bit-level input over a finite byte slice.
 
-use crate::{
-    bit::{BitOrder, BitPosition},
-    error::CodecError,
-};
+use crate::bit::{BitError, BitOrder, BitPosition};
 
 /// Maximum number of bits a single read may request.
 pub const MAX_READ_BITS: u8 = 32;
@@ -70,30 +67,30 @@ impl<'a> BitReader<'a> {
 
     /// Reads one bit.
     #[inline]
-    pub fn read_bit(&mut self) -> Result<u32, CodecError> {
+    pub fn read_bit(&mut self) -> Result<u32, BitError> {
         self.read_bits(1)
     }
 
     /// Reads `count` bits without consuming them.
-    pub fn peek_bits(&mut self, count: u8) -> Result<u32, CodecError> {
+    pub fn peek_bits(&mut self, count: u8) -> Result<u32, BitError> {
         if count > MAX_READ_BITS {
-            return Err(CodecError::InvalidBitPattern { offset: self.byte_offset(), width: count });
+            return Err(BitError::InvalidBitPattern { offset: self.byte_offset(), width: count });
         }
         self.ensure_bits(count)?;
         Ok(self.extract(count))
     }
 
     /// Reads `count` bits and advances the cursor.
-    pub fn read_bits(&mut self, count: u8) -> Result<u32, CodecError> {
+    pub fn read_bits(&mut self, count: u8) -> Result<u32, BitError> {
         let value = self.peek_bits(count)?;
         self.consume_bits(count)?;
         Ok(value)
     }
 
     /// Discards `count` bits without reading their value.
-    pub fn consume_bits(&mut self, count: u8) -> Result<(), CodecError> {
+    pub fn consume_bits(&mut self, count: u8) -> Result<(), BitError> {
         if count > MAX_READ_BITS {
-            return Err(CodecError::InvalidBitPattern { offset: self.byte_offset(), width: count });
+            return Err(BitError::InvalidBitPattern { offset: self.byte_offset(), width: count });
         }
         self.ensure_bits(count)?;
         self.bit_buffer >>= count;
@@ -112,26 +109,26 @@ impl<'a> BitReader<'a> {
     }
 
     /// Reads a whole byte, discarding the remaining bits of the current byte.
-    pub fn read_byte(&mut self) -> Result<u8, CodecError> {
+    pub fn read_byte(&mut self) -> Result<u8, BitError> {
         self.align_to_byte();
         Ok(self.read_bits(8)? as u8)
     }
 
     /// Reads a little-endian `u16` from two whole bytes.
-    pub fn read_u16_le(&mut self) -> Result<u16, CodecError> {
+    pub fn read_u16_le(&mut self) -> Result<u16, BitError> {
         let low = self.read_byte()?;
         let high = self.read_byte()?;
         Ok(u16::from(low) | (u16::from(high) << 8))
     }
 
-    fn ensure_bits(&mut self, count: u8) -> Result<(), CodecError> {
+    fn ensure_bits(&mut self, count: u8) -> Result<(), BitError> {
         if self.bit_count >= count {
             return Ok(());
         }
         let missing = count - self.bit_count;
         let bytes = usize::from(missing.div_ceil(8));
         if self.byte_pos + bytes > self.data.len() {
-            return Err(CodecError::InputExhausted { offset: self.byte_offset(), needed: bytes });
+            return Err(BitError::InputExhausted { offset: self.byte_offset(), needed: bytes });
         }
         for _ in 0..bytes {
             let bits = match self.order {
@@ -160,10 +157,7 @@ impl<'a> BitReader<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        bit::{BitOrder, BitPosition, BitReader},
-        error::CodecError,
-    };
+    use crate::bit::{BitError, BitOrder, BitPosition, BitReader};
 
     #[test]
     fn least_significant_bit_first_reads_field_in_stream_order() {
@@ -217,13 +211,13 @@ mod tests {
         let mut reader = BitReader::new(&[0x0F], BitOrder::LeastSignificantBitFirst);
         assert_eq!(reader.read_bits(4).expect("half byte"), 0x0F);
         let error = reader.read_bits(9).expect_err("truncated");
-        assert!(matches!(error, CodecError::InputExhausted { needed: 1, .. }));
+        assert!(matches!(error, BitError::InputExhausted { needed: 1, .. }));
         assert_eq!(reader.position(), BitPosition::new(0, 4));
     }
 
     #[test]
     fn oversized_read_is_rejected() {
         let mut reader = BitReader::new(&[0, 0, 0, 0, 0], BitOrder::LeastSignificantBitFirst);
-        assert!(matches!(reader.read_bits(33), Err(CodecError::InvalidBitPattern { width: 33, .. })));
+        assert!(matches!(reader.read_bits(33), Err(BitError::InvalidBitPattern { width: 33, .. })));
     }
 }

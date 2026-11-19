@@ -18,7 +18,7 @@ pub mod snappy;
 pub mod zstd;
 
 #[cfg(feature = "deflate")]
-pub(crate) mod bit;
+pub(crate) use data_binary_core::bit;
 #[cfg(feature = "deflate")]
 mod error;
 #[cfg(feature = "deflate")]

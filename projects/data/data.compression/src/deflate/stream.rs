@@ -11,10 +11,10 @@
 //! a later push resumes exactly where the previous read stopped.
 
 use crate::{
-    bit::{BitPosition, BitSource, MAX_READ_BITS},
+    bit::{BitError, BitPosition, BitSource, MAX_READ_BITS},
     error::CodecError,
     facts::StreamState,
-    input::{InputQueue, exhausted},
+    input::InputQueue,
     limits::CodecLimits,
     stream::StreamChunk,
 };
@@ -87,11 +87,11 @@ impl<'q> StreamBits<'q> {
         self.bit_pos / 8
     }
 
-    fn load(&mut self, byte: u64) -> Result<u8, CodecError> {
+    fn load(&mut self, byte: u64) -> Result<u8, BitError> {
         if byte < self.cache_start || byte >= self.cache_start + self.cache_len {
             let end = self.queue.end();
             if byte >= end {
-                return Err(exhausted(self.byte_offset(), (byte + 1 - end) as usize));
+                return Err(BitError::InputExhausted { offset: self.byte_offset(), needed: (byte + 1 - end) as usize });
             }
             let count = (end - byte).min(BIT_CACHE_BYTES) as usize;
             for index in 0..count {
@@ -105,17 +105,17 @@ impl<'q> StreamBits<'q> {
 }
 
 impl BitSource for StreamBits<'_> {
-    fn read_bits(&mut self, count: u8) -> Result<u32, CodecError> {
+    fn read_bits(&mut self, count: u8) -> Result<u32, BitError> {
         if count == 0 {
             return Ok(0);
         }
         if count > MAX_READ_BITS {
-            return Err(CodecError::InvalidBitPattern { offset: self.byte_offset(), width: count });
+            return Err(BitError::InvalidBitPattern { offset: self.byte_offset(), width: count });
         }
         let end = self.bit_pos + u64::from(count);
         let last_byte = (end - 1) / 8;
         if last_byte >= self.queue.end() {
-            return Err(exhausted(self.byte_offset(), (last_byte + 1 - self.queue.end()) as usize));
+            return Err(BitError::InputExhausted { offset: self.byte_offset(), needed: (last_byte + 1 - self.queue.end()) as usize });
         }
 
         let mut value = 0u32;

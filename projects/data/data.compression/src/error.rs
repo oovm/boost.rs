@@ -1,6 +1,16 @@
 //! Codec errors independent of format adapters and parse budgets.
 
-use crate::{bit::BitPosition, facts::StreamState};
+use crate::{bit::BitError, facts::StreamState};
+use data_binary_core::bit::BitPosition;
+
+impl From<BitError> for CodecError {
+    fn from(error: BitError) -> Self {
+        match error {
+            BitError::InputExhausted { offset, needed } => Self::InputExhausted { offset, needed },
+            BitError::InvalidBitPattern { offset, width } => Self::InvalidBitPattern { offset, width },
+        }
+    }
+}
 
 /// Expansion ratio limit expressed as output/input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

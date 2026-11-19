@@ -1,9 +1,6 @@
 //! Bit-level output into a byte buffer.
 
-use crate::{
-    bit::{BitOrder, BitPosition},
-    error::CodecError,
-};
+use crate::bit::{BitError, BitOrder, BitPosition};
 
 /// Maximum number of bits a single write may request.
 pub const MAX_WRITE_BITS: u8 = 32;
@@ -51,9 +48,9 @@ impl BitWriter {
     }
 
     /// Writes the low `count` bits of `value` in the configured order.
-    pub fn write_bits(&mut self, value: u32, count: u8) -> Result<(), CodecError> {
+    pub fn write_bits(&mut self, value: u32, count: u8) -> Result<(), BitError> {
         if count > MAX_WRITE_BITS {
-            return Err(CodecError::InvalidBitPattern { offset: self.position().byte_offset as usize, width: count });
+            return Err(BitError::InvalidBitPattern { offset: self.position().byte_offset as usize, width: count });
         }
         for index in 0..count {
             let bit = match self.order {
@@ -112,10 +109,7 @@ impl BitWriter {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        bit::{BitOrder, BitPosition, BitReader, BitWriter},
-        error::CodecError,
-    };
+    use crate::bit::{BitError, BitOrder, BitPosition, BitReader, BitWriter};
 
     #[test]
     fn least_significant_bit_first_writes_byte_boundaries() {
@@ -160,6 +154,6 @@ mod tests {
     #[test]
     fn oversized_write_is_rejected() {
         let mut writer = BitWriter::new(BitOrder::LeastSignificantBitFirst);
-        assert!(matches!(writer.write_bits(0, 33), Err(CodecError::InvalidBitPattern { width: 33, .. })));
+        assert!(matches!(writer.write_bits(0, 33), Err(BitError::InvalidBitPattern { width: 33, .. })));
     }
 }

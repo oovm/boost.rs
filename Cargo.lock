@@ -884,6 +884,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-core"
+version = "0.1.0"
+dependencies = [
+ "boost-harness",
+ "serde",
+]
+
+[[package]]
 name = "data-checksum"
 version = "0.1.0"
 
@@ -891,6 +899,7 @@ version = "0.1.0"
 name = "data-compression"
 version = "0.1.0"
 dependencies = [
+ "data-binary-core",
  "data-checksum",
  "ruzstd",
 ]

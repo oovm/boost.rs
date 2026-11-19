@@ -15,11 +15,8 @@
 //! order: the first bit read becomes bit 0 for least-significant-first order,
 //! and the most significant bit for most-significant-first order. Positions are
 //! reported as [`BitPosition`] values counted from the start of the buffer.
-// The bit primitives ride along with the private Deflate block writers until
-// the binary-layout closure gives them an authoritative home; not every
-// primitive has a caller in this crate yet.
-#![allow(dead_code)]
 
+mod error;
 mod order;
 mod position;
 mod reader;
@@ -27,9 +24,10 @@ mod source;
 mod writer;
 
 pub use self::{
+    error::BitError,
     order::BitOrder,
     position::BitPosition,
     reader::{BitReader, MAX_READ_BITS},
     source::BitSource,
-    writer::BitWriter,
+    writer::{BitWriter, MAX_WRITE_BITS},
 };

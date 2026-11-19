@@ -6,8 +6,6 @@
 //! keeps peak memory proportional to the caller's push chunk size rather than
 //! to the archive size.
 
-use crate::error::CodecError;
-
 /// Bytes consumed before the buffer is compacted.
 const COMPACT_THRESHOLD: usize = 64 * 1024;
 
@@ -77,9 +75,4 @@ impl InputQueue {
         let live_start = self.base + self.start as u64;
         self.end().saturating_sub(index.max(live_start)) as usize
     }
-}
-
-/// Reports a shortage as `InputExhausted` so a streaming decoder can resume.
-pub(crate) fn exhausted(offset: usize, needed: usize) -> CodecError {
-    CodecError::InputExhausted { offset, needed }
 }
