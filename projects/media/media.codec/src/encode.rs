@@ -272,12 +272,8 @@ mod windows_encoder {
                 // fail with a generic "unsupported" instead of saying which
                 // side mismatched, so the choice is made from the codec here.
                 let aac = *audio_subtype == mf::MFAudioFormat_AAC;
-                let (in_subtype, bits, block_align) = if aac {
-                    (&mf::MFAudioFormat_PCM, 16u32, 4u32)
-                }
-                else {
-                    (&mf::MFAudioFormat_Float, 32u32, 8u32)
-                };
+                let (in_subtype, bits, block_align) =
+                    if aac { (&mf::MFAudioFormat_PCM, 16u32, 4u32) } else { (&mf::MFAudioFormat_Float, 32u32, 8u32) };
                 unsafe {
                     set_guid(&audio_in, &mf::MF_MT_MAJOR_TYPE, &mf::MFMediaType_Audio).map_err(|e| encode_error("audio in major", e))?;
                     set_guid(&audio_in, &mf::MF_MT_SUBTYPE, in_subtype).map_err(|e| encode_error("audio in subtype", e))?;
@@ -411,7 +407,7 @@ mod portable_encoder {
 
     use crate::{
         jpeg::{DEFAULT_QUALITY, encode_nv12},
-        mp4::{VIDEO_TIMESCALE, AudioParams, Muxer, VideoParams},
+        mp4::{AudioParams, Muxer, VIDEO_TIMESCALE, VideoParams},
     };
 
     pub(super) struct PortableEncoder {
@@ -473,7 +469,7 @@ mod portable_encoder {
             }
             let jpeg = encode_nv12(self.width, self.height, nv12, DEFAULT_QUALITY)?;
             let duration = VIDEO_TIMESCALE / fps.max(1);
-            self.muxer.write_video_sample(&jpeg, duration)
+            self.muxer.write_video_sample(&jpeg, duration, true)
         }
 
         pub fn write_audio(&mut self, pcm: &[i16], start_sample: u64) -> Result<(), Error> {

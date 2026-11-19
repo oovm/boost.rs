@@ -55,19 +55,22 @@ struct Track {
     sizes: Vec<u32>,
     durations: Vec<u32>,
     timescale: u32,
+    /// Per-sample sync flag; only meaningful on the video track.
+    syncs: Vec<bool>,
 }
 
 impl Track {
     fn new(timescale: u32) -> Self {
-        Self { sizes: Vec::new(), durations: Vec::new(), timescale }
+        Self { sizes: Vec::new(), durations: Vec::new(), timescale, syncs: Vec::new() }
     }
 
-    fn push(&mut self, size: usize, duration: u32) -> Result<(), Error> {
+    fn push(&mut self, size: usize, duration: u32, sync: bool) -> Result<(), Error> {
         if size > u32::MAX as usize {
             return Err(Error::encode("mp4: sample larger than 4 GiB"));
         }
         self.sizes.push(size as u32);
         self.durations.push(duration);
+        self.syncs.push(sync);
         Ok(())
     }
 
@@ -160,11 +163,24 @@ impl Muxer {
     }
 
     /// Appends one encoded video sample of `duration` ticks.
-    pub fn write_video_sample(&mut self, data: &[u8], duration: u32) -> Result<(), Error> {
-        self.video.push(data.len(), duration)?;
+    ///
+    /// `sync` marks a random-access point (an IDR keyframe for H.264); when
+    /// any sample is not sync, the track gets an `stss` listing the sync
+    /// samples so seeking does not guess.
+    pub fn write_video_sample(&mut self, data: &[u8], duration: u32, sync: bool) -> Result<(), Error> {
+        self.video.push(data.len(), duration, sync)?;
         self.file.write_all(data).map_err(|e| io_error("write video sample", e))?;
         self.mdat_bytes += data.len() as u64;
         Ok(())
+    }
+
+    /// Replaces the video sample entry's child boxes before `finish`.
+    ///
+    /// A hardware encoder only reveals its parameter set (`avcC`) after the
+    /// first frame, while the muxer streams `mdat` from frame one — the
+    /// children therefore have to be attachable after opening.
+    pub fn set_video_entry_children(&mut self, children: Vec<u8>) {
+        self.video_params.entry_children = children;
     }
 
     /// Appends one encoded audio sample of `duration` ticks.
@@ -172,7 +188,7 @@ impl Muxer {
         if self.audio.is_none() {
             return Err(Error::invalid_input("mp4: this file was opened without an audio track"));
         }
-        self.audio.as_mut().expect("checked").push(data.len(), duration)?;
+        self.audio.as_mut().expect("checked").push(data.len(), duration, true)?;
         self.file.write_all(data).map_err(|e| io_error("write audio sample", e))?;
         self.mdat_bytes += data.len() as u64;
         Ok(())
@@ -244,7 +260,8 @@ impl Muxer {
         if is_video {
             tkhd.extend_from_slice(&(u32::from(self.video_params.width) << 16).to_be_bytes());
             tkhd.extend_from_slice(&(u32::from(self.video_params.height) << 16).to_be_bytes());
-        } else {
+        }
+        else {
             tkhd.extend_from_slice(&[0; 8]); // width/height zero for audio
         }
         // flags: enabled | in movie | (preview for video)
@@ -273,7 +290,8 @@ impl Muxer {
         let mut minf = Vec::new();
         if is_video {
             full_box(&mut minf, b"vmhd", 1, 1, &[0; 8]); // graphicsmode 0, opcolor 0
-        } else {
+        }
+        else {
             full_box(&mut minf, b"smhd", 0, 0, &[0; 4]); // balance 0
         }
 
@@ -325,6 +343,17 @@ impl Muxer {
         }
         full_box(&mut stbl, b"stco", 0, 0, &stco);
 
+        // --- stss: only needed once some sample is not a random-access point ---
+        if is_video && track.syncs.iter().any(|&sync| !sync) {
+            let mut stss = Vec::new();
+            let syncs: Vec<u32> = track.syncs.iter().enumerate().filter(|&(_, &sync)| sync).map(|(index, _)| (index + 1) as u32).collect();
+            stss.extend_from_slice(&(syncs.len() as u32).to_be_bytes());
+            for sample in syncs {
+                stss.extend_from_slice(&sample.to_be_bytes());
+            }
+            full_box(&mut stbl, b"stss", 0, 0, &stss);
+        }
+
         box_out(&mut minf, b"stbl", &stbl);
         box_out(&mut mdia, b"minf", &minf);
         box_out(&mut trak, b"mdia", &mdia);
@@ -353,7 +382,8 @@ impl Muxer {
             entry.extend_from_slice(&[0; 32]); // compressor name
             entry.extend_from_slice(&24u16.to_be_bytes()); // depth
             entry.extend_from_slice(&(-1i16).to_be_bytes()); // pre_defined
-        } else {
+        }
+        else {
             let params = self.audio_params.as_ref().expect("audio track implies params");
             fourcc = params.fourcc;
             entry.extend_from_slice(&[0; 6]); // reserved
@@ -414,7 +444,8 @@ mod tests {
             if size == 1 {
                 total = u64::from_be_bytes(body[at + 8..at + 16].try_into().unwrap());
                 payload = at + 16;
-            } else if size == 0 {
+            }
+            else if size == 0 {
                 total = (body.len() - at) as u64;
             }
             out.push((fourcc, &body[payload..at + total as usize]));
@@ -445,9 +476,9 @@ mod tests {
         )
         .expect("open muxer");
         let frames: [&[u8]; 3] = [b"frame-one!!", b"frame-two!!", b"frame-three!!!"];
-        for frame in frames {
-            muxer.write_video_sample(frame, VIDEO_TIMESCALE / 30).expect("video sample");
-        }
+        muxer.write_video_sample(frames[0], VIDEO_TIMESCALE / 30, true).expect("keyframe");
+        muxer.write_video_sample(frames[1], VIDEO_TIMESCALE / 30, false).expect("delta frame");
+        muxer.write_video_sample(frames[2], VIDEO_TIMESCALE / 30, true).expect("keyframe");
         muxer.write_audio_sample(b"aaaa", 480).expect("audio sample");
         muxer.write_audio_sample(b"bb", 240).expect("audio sample");
         muxer.finish().expect("finish");
@@ -501,7 +532,7 @@ mod tests {
         let mut muxer =
             Muxer::open(&path, VideoParams { fourcc: *b"jpeg", width: 8, height: 8, entry_children: Vec::new() }, None).expect("open");
         for _ in 0..4 {
-            muxer.write_video_sample(b"same", 1).expect("sample");
+            muxer.write_video_sample(b"same", 1, true).expect("sample");
         }
         muxer.finish().expect("finish");
         let bytes = std::fs::read(&path).expect("read");
