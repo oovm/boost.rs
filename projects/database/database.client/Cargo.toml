@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 base64 = { workspace = true }
+database-protocol-mongo = { workspace = true }
 database-protocol-mysql = { workspace = true }
 database-protocol-pgsql = { workspace = true }
 database-protocol-redis = { workspace = true }

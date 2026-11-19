@@ -558,6 +558,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "commander-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "compiler-analysis"
 version = "0.1.0"
 dependencies = [
@@ -896,6 +905,7 @@ dependencies = [
  "boost-crypto",
  "boost-random",
  "database-formats",
+ "database-protocol-mongo",
  "database-protocol-mysql",
  "database-protocol-pgsql",
  "database-protocol-redis",

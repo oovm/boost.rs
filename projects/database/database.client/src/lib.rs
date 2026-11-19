@@ -1,6 +1,8 @@
 //! `database-client`：连接、认证、请求/响应传输与结果读取。
 #![deny(missing_docs)]
 
+/// MongoDB 方言客户端。
+pub mod mongo;
 /// MySQL 方言客户端。
 pub mod mysql;
 /// PostgreSQL 方言客户端。
