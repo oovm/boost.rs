@@ -122,111 +122,78 @@ fn hex_upper(bytes: &[u8]) -> String {
 
 /// The `Sec-MS-GEC` token for one Unix timestamp, as the service computes it.
 ///
-/// The token is `<cs64>-<sha256>` over the ASCII text
-/// `{filetime_ticks}{TRUSTED_CLIENT_TOKEN}`, where the tick count is the time
-/// rounded down to a five-minute window in 100-nanosecond intervals since the
-/// Windows epoch. The SHA-256 half is a plain hash of that text behind a
-/// 57-byte zero prefix; the CS64 half is a keyed universal hash over the text
-/// and the digest's first eight bytes.
+/// The hashed input is Edge's 57-byte copyright line followed by the ASCII
+/// text `{filetime_ticks}{TRUSTED_CLIENT_TOKEN}`, where the tick count is the
+/// time rounded down to a five-minute window in 100-nanosecond intervals since
+/// the Windows epoch. The token is `<cs64>-<sha256>`: the SHA-256 half is a
+/// plain digest of that message; the CS64 half is a keyed universal hash over
+/// the message read as little-endian 32-bit word pairs, keyed by the digest's
+/// first eight bytes.
 #[must_use]
 pub fn sec_ms_gec(unix_seconds: f64) -> String {
     let mut ticks = unix_seconds + WIN_EPOCH;
     ticks -= ticks % 300.0;
     ticks *= 1e7;
-    let message = format!("{ticks:.0}{TRUSTED_CLIENT_TOKEN}");
+    let message = format!("{EDGE_COPYRIGHT}{ticks:.0}{TRUSTED_CLIENT_TOKEN}");
     let bytes = message.as_bytes();
-    let mut preimage = vec![0u8; 57];
-    preimage.extend_from_slice(bytes);
-    let digest = boost_crypto::hash::sha256(&preimage);
+    let digest = boost_crypto::hash::sha256(bytes);
     let cs64 = cs64_digest(bytes, &digest);
     format!("{}-{}", hex_upper(&cs64), hex_upper(&digest))
 }
+
+/// The exact line Edge hashes into the DRM token.
+const EDGE_COPYRIGHT: &str = "Copyright (C) Microsoft Corporation. All rights reserved.";
 
 fn rol16(value: u32) -> u32 {
     value.rotate_left(16)
 }
 
-/// Little-endian 32-bit words of `data`, zero-padded to an even count.
-fn words_le4_even(data: &[u8]) -> Vec<u32> {
-    let mut padded = data.to_vec();
-    while padded.len() % 4 != 0 {
-        padded.push(0);
-    }
-    let mut words: Vec<u32> = padded.chunks_exact(4).map(|chunk| u32::from_le_bytes(chunk.try_into().expect("four-byte chunk"))).collect();
-    if words.len() % 2 == 1 {
-        words.push(0);
-    }
-    words
+/// CS64 multipliers for the first and the second word of each pair:
+/// (word, sum, product) — the same constants Edge's JavaScript uses.
+const SWAP_FIRST: (u32, u32, u32) = (0xEF05_69FB, 0x76F5_0F34, 0xC3EF_EA97);
+const SWAP_SECOND: (u32, u32, u32) = (0xC317_13DB, 0x1881_CE3C, 0x35BD_1EC9);
+const MIX_FIRST: [u32; 4] = [0xCF98_B111, 0x8708_5B9F, 0x12CE_B96D, 0x257E_1D83];
+const MIX_SECOND: [u32; 4] = [0xA274_16F5, 0xD383_96FF, 0x7C93_2B89, 0xBFA4_9F69];
+
+fn swap_term(word: u32, key: u32, (swapped_word, swapped_sum, swapped_product): (u32, u32, u32)) -> u32 {
+    let sum = word.wrapping_mul(key).wrapping_add(rol16(word).wrapping_mul(swapped_word));
+    let product = rol16(sum).wrapping_mul(swapped_sum);
+    rol16(product).wrapping_mul(swapped_product).wrapping_add(product)
 }
 
-const CS64_COEFFICIENTS: [(u32, u32); 14] = [
-    (0xE82E_91B1, 0xB327_00D0),
-    (0x44DE_24C6, 0x88DF_F51D),
-    (0x3BEB_65BC, 0x2951_4038),
-    (0xC89C_5933, 0xB328_CBDF),
-    (0x8D1E_C211, 0xD405_B4D5),
-    (0x314E_F5D5, 0x26E5_5F3C),
-    (0xE924_91B1, 0x6078_01C6),
-    (0xF0A5_B9D5, 0x82B2_C1FB),
-    (0x0606_4CF3, 0xFA51_A3DA),
-    (0xDA79_FA60, 0x207C_C464),
-    (0xBED2_0560, 0x3C3C_74F3),
-    (0x89F9_C9F8, 0xD2D1_4B61),
-    (0x35FA_38C6, 0xBB04_A2C1),
-    (0xCB49_E3C6, 0xC562_6167),
-];
-const CS64_FACTOR: u32 = 0x8289_3933;
-const CS64_ADJUSTMENT0: u32 = 0xF2F9_0B1A;
-const CS64_ADJUSTMENT1: u32 = 0x0B1A_0000;
+fn swap_and_multiply(mut value: u32, multipliers: &[u32; 4]) -> u32 {
+    for multiplier in multipliers {
+        value = rol16(value).wrapping_mul(*multiplier);
+    }
+    value
+}
 
-/// The CS64 half of the token: eight bytes, as the service derives them.
-fn cs64_digest(data: &[u8], digest: &[u8; 32]) -> [u8; 8] {
+/// The CS64 half of the token: eight bytes over the whole message.
+fn cs64_digest(message: &[u8], digest: &[u8; 32]) -> [u8; 8] {
     let key_a = u32::from_le_bytes(digest[0..4].try_into().expect("four-byte key")) | 1;
     let key_b = u32::from_le_bytes(digest[4..8].try_into().expect("four-byte key")) | 1;
-    let factors = [key_a.wrapping_mul(CS64_FACTOR), key_b.wrapping_mul(CS64_FACTOR)];
-    let mut terms: Vec<u32> = CS64_COEFFICIENTS.iter().enumerate().map(|(index, (coefficient, _))| coefficient.wrapping_mul(factors[index % 2])).collect();
-    let mut offsets: Vec<u32> = CS64_COEFFICIENTS.iter().map(|(_, offset)| *offset).collect();
-    let words = words_le4_even(&[&[0u8][..], data].concat());
-    for (index, word) in words.iter().enumerate() {
-        let mut term = word.wrapping_mul(if index % 2 == 0 { key_a } else { key_b });
-        let mut offset = rol16(*word).wrapping_mul(if index % 2 == 0 { 0xEF05_69FB } else { 0xC317_13DB });
-        if index == 0 {
-            term = term.wrapping_add(CS64_ADJUSTMENT0.wrapping_mul(factors[0]));
-            offset = offset.wrapping_add(CS64_ADJUSTMENT1);
-        }
-        terms.push(term);
-        offsets.push(offset);
+    let mut padded = message.to_vec();
+    while padded.len() % 8 != 0 {
+        padded.push(0);
     }
-    let mut swap_acc = 0u32;
-    let mut swap_last = 0u32;
-    let mut state = 0u32;
-    let mut acc = 0u32;
-    for pair in 0..terms.len() / 2 {
-        let i = pair * 2;
-        let (x, y) = (terms[i], terms[i + 1]);
-        let t = rol16(offsets[i].wrapping_add(x));
-        let q = t.wrapping_mul(0x76F5_0F34);
-        swap_acc = swap_acc.wrapping_add(rol16(q).wrapping_mul(0xC3EF_EA97).wrapping_add(q));
-        let t = rol16(offsets[i + 1].wrapping_add(y));
-        let q = t.wrapping_mul(0x1881_CE3C);
-        swap_last = rol16(q).wrapping_mul(0x35BD_1EC9).wrapping_add(q);
-        swap_acc = swap_acc.wrapping_add(swap_last);
-
-        state = state.wrapping_mul(key_a).wrapping_add(x);
-        state = rol16(state).wrapping_mul(0xCF98_B111);
-        state = rol16(state).wrapping_mul(0x8708_5B9F);
-        state = rol16(state).wrapping_mul(0x12CE_B96D);
-        state = rol16(state).wrapping_mul(0x257E_1D83);
-        acc = acc.wrapping_add(state);
-        let mut t = state.wrapping_mul(key_b).wrapping_add(y);
-        t = rol16(t).wrapping_mul(0xA274_16F5);
-        t = rol16(t).wrapping_mul(0xD383_96FF);
-        state = rol16(rol16(t).wrapping_mul(0x7C93_2B89)).wrapping_mul(0xBFA4_9F69);
-        acc = acc.wrapping_add(state);
+    let mut swap_sum = 0u32;
+    let mut last_swap = 0u32;
+    let mut mix = 0u32;
+    let mut mix_sum = 0u32;
+    for pair in padded.chunks_exact(8) {
+        let first = u32::from_le_bytes(pair[0..4].try_into().expect("four-byte word"));
+        let second = u32::from_le_bytes(pair[4..8].try_into().expect("four-byte word"));
+        let first_swap = swap_term(first, key_a, SWAP_FIRST);
+        last_swap = swap_term(second, key_b, SWAP_SECOND);
+        swap_sum = swap_sum.wrapping_add(first_swap).wrapping_add(last_swap);
+        mix = swap_and_multiply(mix.wrapping_add(first).wrapping_mul(key_a), &MIX_FIRST);
+        mix_sum = mix_sum.wrapping_add(mix);
+        mix = swap_and_multiply(mix.wrapping_add(second).wrapping_mul(key_b), &MIX_SECOND);
+        mix_sum = mix_sum.wrapping_add(mix);
     }
     let mut out = [0u8; 8];
-    out[0..4].copy_from_slice(&(swap_last ^ state).to_le_bytes());
-    out[4..8].copy_from_slice(&(swap_acc ^ acc).to_le_bytes());
+    out[0..4].copy_from_slice(&(last_swap ^ mix).to_le_bytes());
+    out[4..8].copy_from_slice(&(swap_sum ^ mix_sum).to_le_bytes());
     out
 }
 
@@ -682,15 +649,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_sha_half_of_the_token_matches_an_independent_digest() {
-        // For unix 1_750_000_000 the rounded FILETIME is 133944735000000000;
-        // the 57-zero-prefixed SHA-256 of its ASCII text plus the trusted
-        // client token was computed outside this crate.
-        let token = sec_ms_gec(1_750_000_000.0);
-        let (cs64, sha) = token.split_once('-').expect("cs64-sha form");
-        assert_eq!(sha, "8079ED27E1BF2707B0ADD0AE3C35D810C9E08778384B7AFE242854C49E57A4FE");
-        assert_eq!(cs64.len(), 16);
-        assert!(cs64.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+    fn the_token_matches_an_independent_reference_implementation() {
+        // The same timestamp hashed by a verbatim port of MsEdgeTTS's
+        // production TypeScript (`SecMsGec.ts`), outside this crate.
+        assert_eq!(
+            sec_ms_gec(1_750_000_000.0),
+            "B029A7426816F097-4579D112DC47FC3BF432B499C0A282F427C659474AF9BF5FA33CE2C003F9E9C2"
+        );
     }
 
     #[test]
