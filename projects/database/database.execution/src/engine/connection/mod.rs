@@ -31,7 +31,7 @@ mod state;
 mod transaction;
 mod udf;
 
-pub use query::ReadProfile;
+pub use query::{ClockQuality, ClockSource, ReadProfile};
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct State {

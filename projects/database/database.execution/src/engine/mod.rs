@@ -27,7 +27,7 @@ mod storage;
 
 pub use batch::Batch;
 pub use bytes::{ObjectStoreResolver, YydbBytesPolicy, YydbVectorPolicy};
-pub use connection::Connection;
+pub use connection::{ClockQuality, ClockSource, Connection, ReadProfile};
 pub use journal::{JournalMode, OpenFlags};
 pub use objects::ObjectStore;
 pub use udf::ScalarUdf;

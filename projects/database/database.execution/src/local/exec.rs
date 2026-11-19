@@ -4,8 +4,10 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::{BTreeMap, BTreeSet, HashMap},
-    time::Instant,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,10 +39,13 @@ thread_local! {
     static EXEC_PROFILE: RefCell<Option<ExecProfile>> = const { RefCell::new(None) };
 }
 
-/// Where one read pipeline spends its time, accumulated across operators.
+/// Where one read pipeline spends its time and how much work it does,
+/// accumulated across operators.
 ///
 /// Filled only by [`execute_ops_profiled`]; the engine never reads these
-/// numbers.
+/// numbers. Every counter is measured where the work happens: scans count the
+/// rows storage handed over, probes count primary-key lookups, and neither is
+/// derived from the result length.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ExecProfile {
     /// Table scan: record-map range walk plus row-record decode into [`QueryRow`].
@@ -53,6 +58,15 @@ pub struct ExecProfile {
     pub sort_ns: u128,
     /// Joins, set operations, aggregates, windows, qualification, skip and take.
     pub other_ns: u128,
+    /// Rows storage handed to table scans, including join right sides.
+    pub scanned_rows: u64,
+    /// Row records decoded from storage. A table load decodes every row it
+    /// returns; a primary-key probe decodes at most one.
+    pub decoded_rows: u64,
+    /// Primary-key probes that answered a scan plus filter without scanning.
+    pub index_probes: u64,
+    /// Operators replaced by one index probe (the scan and its filter).
+    pub fused_ops: u64,
 }
 
 impl ExecProfile {
@@ -60,6 +74,39 @@ impl ExecProfile {
     pub fn total_ns(&self) -> u128 {
         self.scan_ns + self.filter_ns + self.project_ns + self.sort_ns + self.other_ns
     }
+}
+
+/// 计时起点：原生用单调时钟，浏览器 WASM 用墙钟（毫秒）。
+#[cfg(not(target_arch = "wasm32"))]
+type Tick = Instant;
+/// 浏览器 WASM 下的计时起点：`Date.now()` 毫秒时间戳。
+#[cfg(target_arch = "wasm32")]
+type Tick = u64;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+fn tick() -> Tick {
+    Instant::now()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn tick() -> Tick {
+    // Browser WASM has no `Instant`; profile numbers here are wall-clock
+    // milliseconds and the caller must treat them as such.
+    js_sys::Date::now() as u64
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+fn tick_nanos(started: Tick) -> u128 {
+    started.elapsed().as_nanos()
+}
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn tick_nanos(started: Tick) -> u128 {
+    (js_sys::Date::now() as u64).saturating_sub(started) as u128 * 1_000_000
 }
 
 /// Wall-clock microseconds since UNIX epoch.
@@ -189,10 +236,27 @@ fn execute_ops_in_profiled(
     records: &ReadRows<'_>,
     bound_values: &[Value],
 ) -> Result<(Vec<QueryRow>, ExecProfile)> {
-    EXEC_PROFILE.with(|slot| *slot.borrow_mut() = Some(ExecProfile::default()));
-    let rows = execute_ops_in(ops, contract, records, bound_values, None);
-    let profile = EXEC_PROFILE.with(|slot| slot.borrow_mut().take()).unwrap_or_default();
-    rows.map(|rows| (rows, profile))
+    // Install a fresh slot and restore whatever the caller had, so an error or
+    // a panic inside the pipeline cannot leak a half-filled profile into the
+    // next execution on this thread.
+    let previous = EXEC_PROFILE.with(|slot| slot.borrow_mut().replace(ExecProfile::default()));
+    let scope = ExecProfileScope { previous };
+    let result = execute_ops_in(ops, contract, records, bound_values, None);
+    let profile = EXEC_PROFILE.with(|slot| slot.borrow().unwrap_or_default());
+    drop(scope);
+    result.map(|rows| (rows, profile))
+}
+
+/// Restores the enclosing profile context when the profiled pipeline exits.
+struct ExecProfileScope {
+    previous: Option<ExecProfile>,
+}
+
+impl Drop for ExecProfileScope {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        EXEC_PROFILE.with(|slot| *slot.borrow_mut() = previous);
+    }
 }
 
 /// Operator bucket one elapsed time belongs in.
@@ -210,6 +274,18 @@ fn note_profile(op: &QueryOp, elapsed: u128) {
     EXEC_PROFILE.with(|slot| {
         if let Some(profile) = slot.borrow_mut().as_mut() {
             *profile_slot(op)(profile) += elapsed;
+        }
+    });
+}
+
+/// Records measured work (rows, probes, fused operators) on the active profile.
+///
+/// The counters are updated where the work happens; they are never derived
+/// from the pipeline's output length.
+fn note_profile_counts(update: impl FnOnce(&mut ExecProfile)) {
+    EXEC_PROFILE.with(|slot| {
+        if let Some(profile) = slot.borrow_mut().as_mut() {
+            update(profile);
         }
     });
 }
@@ -253,7 +329,7 @@ fn execute_ops_in(
     // operator beyond a predictable branch.
     let profiling = EXEC_PROFILE.with(|slot| slot.borrow().is_some());
     for (index, op) in ops.iter().enumerate() {
-        let started = profiling.then(Instant::now);
+        let started = profiling.then(tick);
         if skip_next {
             skip_next = false;
             continue;
@@ -271,19 +347,34 @@ fn execute_ops_in(
                 if let (Some(contract), Some(next)) = (contract, ops.get(index + 1)) {
                     if let QueryOp::Filter { predicate } = next {
                         if let Some(key) = primary_key_lookup(predicate, contract, table, bound_values)? {
-                            rows = match key {
-                                Some(pk) => match records.load_row_optional(&storage_table, &pk)? {
-                                    Some(row) => vec![row],
-                                    None => Vec::new(),
-                                },
-                                None => Vec::new(),
+                            let hit = match key {
+                                Some(pk) => records.load_row_optional(&storage_table, &pk)?,
+                                None => None,
                             };
+                            let decoded = u64::from(hit.is_some());
+                            rows = hit.into_iter().collect();
+                            // The probe answers both this scan and the following
+                            // filter. Record the fused work instead of skipping the
+                            // operator: the elapsed time still lands in `scan_ns`
+                            // below because the loop body finishes normally.
+                            note_profile_counts(|profile| {
+                                profile.index_probes += 1;
+                                profile.fused_ops += 1;
+                                profile.scanned_rows += decoded;
+                                profile.decoded_rows += decoded;
+                            });
                             skip_next = true;
-                            continue;
                         }
                     }
                 }
-                rows = records.load_table(&storage_table)?;
+                if !skip_next {
+                    rows = records.load_table(&storage_table)?;
+                    let loaded = rows.len() as u64;
+                    note_profile_counts(|profile| {
+                        profile.scanned_rows += loaded;
+                        profile.decoded_rows += loaded;
+                    });
+                }
             }
             QueryOp::Qualify { prefix } => {
                 rows = rows.into_iter().map(|row| row.into_iter().map(|(key, value)| (format!("{prefix}.{key}"), value)).collect()).collect();
@@ -325,6 +416,11 @@ fn execute_ops_in(
                     None => right.clone(),
                 };
                 let right_rows = records.load_table(&storage_right)?;
+                let loaded = right_rows.len() as u64;
+                note_profile_counts(|profile| {
+                    profile.scanned_rows += loaded;
+                    profile.decoded_rows += loaded;
+                });
                 let prefix = right_alias.clone().unwrap_or_else(|| right.clone());
                 rows = execute_join(*kind, &rows, &right_rows, &prefix, on, contract, records, bound_values, outer)?;
             }
@@ -448,7 +544,7 @@ fn execute_ops_in(
             QueryOp::Collect => {}
         }
         if let Some(started) = started {
-            note_profile(op, started.elapsed().as_nanos());
+            note_profile(op, tick_nanos(started));
         }
     }
     Ok(rows)

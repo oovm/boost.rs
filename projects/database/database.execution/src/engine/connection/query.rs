@@ -8,9 +8,6 @@ use std::{collections::BTreeMap, sync::Arc};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-#[cfg(target_arch = "wasm32")]
-use super::super::kv::lease::now_millis;
-
 use crate::engine::{
     Error, Result,
     bytes::{ObjectStoreResolver, Placement},
@@ -29,12 +26,13 @@ const STATEMENT_CACHE_LIMIT: usize = 256;
 /// 单条语句的阶段计时起点。
 ///
 /// 原生目标用单调时钟 `Instant`。浏览器 WASM 目标上 `Instant::now()` 会
-/// panic（`wasm-pack --target web` 关掉了 std 时钟），因此改走租约路径
-/// `lease::now_millis` 的同一条 cfg 时钟，不再另造第二个时钟实现。
+/// panic（`wasm-pack --target web` 关掉了 std 时钟），这里显式使用墙钟
+/// `Date.now()` 并把时钟能力写进 [`ClockQuality`]，不再借用 KV 租约时钟：
+/// 租约的绝对时间与语句耗时是两种语义，复用会把系统时间跳变伪装成耗时。
 #[cfg(not(target_arch = "wasm32"))]
 type Tick = Instant;
 
-/// 浏览器 WASM 下的计时起点：毫秒时间戳。
+/// 浏览器 WASM 下的计时起点：墙钟毫秒时间戳。
 #[cfg(target_arch = "wasm32")]
 type Tick = u64;
 
@@ -47,7 +45,7 @@ fn tick() -> Tick {
 #[cfg(target_arch = "wasm32")]
 #[inline]
 fn tick() -> Tick {
-    now_millis()
+    js_sys::Date::now() as u64
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -59,8 +57,8 @@ fn tick_nanos(started: Tick) -> u128 {
 #[cfg(target_arch = "wasm32")]
 #[inline]
 fn tick_nanos(started: Tick) -> u128 {
-    // 租约时钟只有毫秒精度，换算回纳秒让 `*_ns` 字段保持同一单位。
-    now_millis().saturating_sub(started) as u128 * 1_000_000
+    // 墙钟只有毫秒精度，换算回纳秒让 `*_ns` 字段保持同一单位。
+    (js_sys::Date::now() as u64).saturating_sub(started) as u128 * 1_000_000
 }
 
 impl Connection {
@@ -245,7 +243,9 @@ impl Connection {
         else {
             let state = self.read_state()?;
             self.check_schema_drift(stmt, &state)?;
-            return self.execute_with(stmt, values, resolved_contract(&state)?, &state.records);
+            // The narrowing plan does not apply, but the profiled run must still
+            // report the operator work instead of silently dropping it.
+            return self.execute_with_profiled(stmt, values, resolved_contract(&state)?, &state.records, profile);
         };
 
         // Memory-backed connections already hold every row.
@@ -271,7 +271,7 @@ impl Connection {
             // Fall back to a single full snapshot rather than trust it.
             let state = self.read_state()?;
             self.check_schema_drift(stmt, &state)?;
-            return self.execute_with(stmt, values, resolved_contract(&state)?, &state.records);
+            return self.execute_with_profiled(stmt, values, resolved_contract(&state)?, &state.records, profile);
         }
         self.execute_with_rows(stmt, values, resolved_contract(&state)?, &state.records, rows.as_ref(), profile)
     }
@@ -340,9 +340,13 @@ impl Connection {
         Ok(out)
     }
 
-    fn add_exec_profile(&self, profile: &mut ReadProfile, started: Tick, exec: &crate::local::ExecProfile, row_count: usize) {
+    fn add_exec_profile(&self, profile: &mut ReadProfile, started: Tick, exec: &crate::local::ExecProfile, emitted_rows: usize) {
         profile.exec_ns += tick_nanos(started);
-        profile.scanned_rows += row_count;
+        profile.scanned_rows += exec.scanned_rows;
+        profile.decoded_rows += exec.decoded_rows;
+        profile.emitted_rows += emitted_rows as u64;
+        profile.index_probes += exec.index_probes;
+        profile.fused_ops += exec.fused_ops;
         profile.scan_ns += exec.scan_ns;
         profile.filter_ns += exec.filter_ns;
         profile.project_ns += exec.project_ns;
@@ -638,7 +642,7 @@ impl Connection {
     }
 }
 
-/// Per-stage timings of one prepared read.
+/// Per-stage timings and work counts of one prepared read.
 ///
 /// Filled only by [`Connection::query_prepared_ordered_profiled`]; ordinary
 /// reads never take timers. Values accumulate across calls, so a caller that
@@ -667,8 +671,18 @@ pub struct ReadProfile {
     pub sort_ns: u128,
     /// Joins, set operations, aggregates and windows inside [`Self::exec_ns`].
     pub exec_other_ns: u128,
-    /// Rows the executor emitted, summed across calls.
-    pub scanned_rows: usize,
+    /// Rows storage handed to table scans, summed across calls.
+    pub scanned_rows: u64,
+    /// Row records decoded from storage, summed across calls.
+    pub decoded_rows: u64,
+    /// Rows emitted to the caller, summed across calls.
+    pub emitted_rows: u64,
+    /// Primary-key probes that replaced a scan plus filter, summed across calls.
+    pub index_probes: u64,
+    /// Operators fused away by the primary-key shortcut, summed across calls.
+    pub fused_ops: u64,
+    /// Clock every `*_ns` field was measured with.
+    pub clock: ClockQuality,
 }
 
 impl ReadProfile {
@@ -676,6 +690,47 @@ impl ReadProfile {
     pub fn total_ns(&self) -> u128 {
         self.bind_ns + self.metadata_ns + self.drift_ns + self.plan_ns + self.window_read_ns + self.exec_ns
     }
+}
+
+/// Clock a profile's `*_ns` fields were measured with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClockQuality {
+    /// Clock source the timings come from.
+    pub source: ClockSource,
+    /// Nominal resolution in nanoseconds.
+    pub resolution_ns: u64,
+}
+
+impl ClockQuality {
+    /// Capability of the clock this build takes timings with.
+    #[must_use]
+    pub const fn current() -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Self { source: ClockSource::Monotonic, resolution_ns: 1 }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            Self { source: ClockSource::Wall, resolution_ns: 1_000_000 }
+        }
+    }
+}
+
+impl Default for ClockQuality {
+    fn default() -> Self {
+        Self::current()
+    }
+}
+
+/// Where a profile's timings come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockSource {
+    /// Monotonic clock (`std::time::Instant`): elapsed time never jumps.
+    Monotonic,
+    /// Wall clock (`Date.now()` in the browser): may jump with system time.
+    Wall,
+    /// No clock on this platform: every `*_ns` field stays zero.
+    Unavailable,
 }
 
 fn resolved_contract(state: &super::State) -> Result<&schema_input_vos::ResolvedContract> {
