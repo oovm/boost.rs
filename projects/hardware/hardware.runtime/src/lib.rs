@@ -4,6 +4,7 @@
 mod capacity;
 mod diagnostics;
 mod runtime;
+mod stream;
 
 pub use capacity::{
     CapacityPolicy, ResourceMigration, apply_capacity, check_soft_limit, domain_bytes, migrate_overflow_to_host,
@@ -11,6 +12,7 @@ pub use capacity::{
 };
 pub use diagnostics::{ExecutionDiagnostics, ExecutionEvent, ExecutionEventBuilder, kinds as event_kinds};
 pub use runtime::Runtime;
+pub use stream::{LoadPlan, SegmentId, SegmentStreamer, StreamError, StreamStats, Tier, Transfer};
 
 use hardware_ir::Graph;
 use hardware_scheduler::{NoopBackend, Result};
