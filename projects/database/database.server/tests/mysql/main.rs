@@ -1,7 +1,6 @@
-//! Migrated integration tests for `mysql`.
+//! MySQL gateway smoke.
+//!
+//! Wire, cancellation and column-type matrices live downstream in
+//! `mysql-conformance`.
 
-mod affected_rows;
-mod cancellable;
-mod column_types;
 mod gateway;
-mod wire;
