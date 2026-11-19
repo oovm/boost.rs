@@ -7,9 +7,10 @@
 
 use std::collections::BTreeMap;
 
+use boost_random::{ChaCha12, Random};
 use dl_autograd::{Var, mse_loss};
-use dl_graph::{Bindings, Graph, TrainingGraph};
-use dl_nn::Module;
+use dl_graph::{Bindings, Graph, GraphBuilder, TrainingGraph};
+use dl_nn::{Module, mlp};
 use dl_tensor::Tensor;
 use dl_types::{DlError, Result};
 
@@ -424,12 +425,161 @@ where
     Ok(reports)
 }
 
+/// 固定批大小的图版 MLP：参数、前向图与训练图一次建好，之后只替换批次数据。
+///
+/// 图输入形状在构建期固定，因此每个批次必须正好是 [`GraphMlp::batch_size`] 行；不足一批的
+/// 尾行由调用方丢弃或补齐。损失固定为 softmax 交叉熵，前向输出为分类 logits。
+pub struct GraphMlp {
+    forward: Graph,
+    losses: Graph,
+    training: TrainingGraph,
+    bindings: Bindings,
+    input: String,
+    target: String,
+    batch_size: usize,
+    sizes: Vec<usize>,
+}
+
+impl GraphMlp {
+    /// 按层宽构造 `Linear + ReLU` 堆叠的图版 MLP，权重来自与 `dl-nn` 相同的确定性初始化。
+    pub fn new(sizes: &[usize], batch_size: usize, random: &mut Random<ChaCha12>) -> Result<Self> {
+        if batch_size == 0 {
+            return Err(DlError::Format { detail: "batch_size must be positive".to_owned() });
+        }
+        if sizes.len() < 2 {
+            return Err(DlError::Format { detail: "graph mlp needs at least input and output sizes".to_owned() });
+        }
+        let features = sizes[0];
+        let classes = sizes[sizes.len() - 1];
+        let model = mlp(sizes, random)?;
+
+        let mut builder = GraphBuilder::new();
+        let input = builder.input("x", [batch_size, features])?;
+        let target = builder.input("y", [batch_size, classes])?;
+        let mut current = input;
+        let total = sizes.len();
+        for (position, window) in sizes.windows(2).enumerate() {
+            // 与 `dl-nn::Sequential` 的层下标一致：Linear 在偶数位，ReLU 在奇数位。
+            let layer = position * 2;
+            let weight = builder.parameter(format!("{layer}.weight"), [window[1], window[0]])?;
+            let bias = builder.parameter(format!("{layer}.bias"), [window[1]])?;
+            let transposed = builder.transpose(weight, 0, 1)?;
+            current = builder.matmul(current, transposed)?;
+            current = builder.add(current, bias)?;
+            if position + 2 < total {
+                current = builder.relu(current)?;
+            }
+        }
+        let logits = current;
+        let loss = builder.softmax_cross_entropy(logits, target)?;
+        let forward = builder.finish(vec![logits])?;
+        let losses = GraphBuilder::from_graph(&forward).finish(vec![loss])?;
+        let training = forward.training(loss)?;
+
+        let mut bindings = Bindings::new();
+        for (name, parameter) in model.named_parameters() {
+            bindings.insert_parameter(name, parameter.value());
+        }
+
+        Ok(Self {
+            forward,
+            losses,
+            training,
+            bindings,
+            input: "x".to_owned(),
+            target: "y".to_owned(),
+            batch_size,
+            sizes: sizes.to_vec(),
+        })
+    }
+
+    /// 每批固定行数。
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    /// 层宽。
+    pub fn sizes(&self) -> &[usize] {
+        &self.sizes
+    }
+
+    /// 训练图。
+    pub fn training(&self) -> &TrainingGraph {
+        &self.training
+    }
+
+    /// 参数名与形状，按声明顺序。
+    pub fn parameters(&self) -> Vec<(String, Vec<usize>)> {
+        self.forward.parameters().map(|(name, shape)| (name.to_owned(), shape.to_vec())).collect()
+    }
+
+    /// 读取参数值。
+    pub fn parameter(&self, name: &str) -> Option<&Tensor> {
+        self.bindings.parameter(name)
+    }
+
+    /// 覆盖参数值；形状必须与建图时一致。
+    pub fn set_parameter(&mut self, name: impl Into<String>, value: Tensor) -> Result<()> {
+        let name = name.into();
+        let expected = self
+            .forward
+            .parameters()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|(_, shape)| shape.to_vec())
+            .ok_or_else(|| DlError::MissingBinding { kind: "parameter", name: name.clone() })?;
+        if value.shape() != expected.as_slice() {
+            return Err(DlError::BindingShape { kind: "parameter", name, expected, actual: value.shape().to_vec() });
+        }
+        self.bindings.insert_parameter(name, value);
+        Ok(())
+    }
+
+    /// 用一次前向得到 logits；行数必须等于批大小。
+    pub fn predict_batch(&self, inputs: Tensor) -> Result<Tensor> {
+        self.require_batch("predict_batch", &inputs, None)?;
+        let mut bindings = self.bindings.clone();
+        bindings.insert_input(self.input.clone(), inputs);
+        let mut outputs = self.forward.run(&bindings)?;
+        outputs.pop().ok_or_else(|| DlError::Format { detail: "forward graph produced no outputs".to_owned() })
+    }
+
+    /// 不反向、不更新参数，只计算一个批次的交叉熵。
+    pub fn loss_batch(&self, inputs: Tensor, targets: Tensor) -> Result<f32> {
+        self.require_batch("loss_batch", &inputs, Some(&targets))?;
+        let mut bindings = self.bindings.clone();
+        bindings.insert_input(self.input.clone(), inputs);
+        bindings.insert_input(self.target.clone(), targets);
+        let values = self.losses.run(&bindings)?;
+        values.first().ok_or_else(|| DlError::Format { detail: "loss graph produced no outputs".to_owned() })?.as_slice().map(|slice| slice[0])
+    }
+
+    /// 执行一个批次的前向 + 反向 + 参数更新，返回该批交叉熵。
+    pub fn step_batch(&mut self, optimizer: &mut dyn GraphOptimizer, inputs: Tensor, targets: Tensor) -> Result<f32> {
+        self.require_batch("step_batch", &inputs, Some(&targets))?;
+        self.bindings.insert_input(self.input.clone(), inputs);
+        self.bindings.insert_input(self.target.clone(), targets);
+        optimizer.step(&mut self.bindings)
+    }
+
+    fn require_batch(&self, op: &'static str, inputs: &Tensor, targets: Option<&Tensor>) -> Result<()> {
+        let features = self.sizes[0];
+        let classes = self.sizes[self.sizes.len() - 1];
+        if inputs.shape() != [self.batch_size, features] {
+            return Err(DlError::ShapeMismatch { op, lhs: inputs.shape().to_vec(), rhs: vec![self.batch_size, features] });
+        }
+        if let Some(targets) = targets
+            && targets.shape() != [self.batch_size, classes]
+        {
+            return Err(DlError::ShapeMismatch { op, lhs: targets.shape().to_vec(), rhs: vec![self.batch_size, classes] });
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dl_graph::GraphBuilder;
-    use dl_nn::{mlp, seeded_random};
-    use dl_tensor::Tensor;
+    use dl_nn::seeded_random;
 
     #[test]
     fn training_reduces_loss_and_updates_parameters() -> Result<()> {
@@ -530,6 +680,49 @@ mod tests {
         let last = reports.last().expect("epochs").mean_loss;
         assert!(last.is_finite() && last < first * 0.5, "graph training did not converge: {first} -> {last}");
         assert_ne!(bindings.parameter("0.weight").expect("updated weight").to_vec(), initial_weight);
+        Ok(())
+    }
+
+    fn argmax_rows(values: &Tensor, rows: usize, classes: usize) -> Vec<usize> {
+        let data = values.to_vec();
+        (0..rows)
+            .map(|row| {
+                let slice = &data[row * classes..(row + 1) * classes];
+                let mut best = 0usize;
+                for (index, value) in slice.iter().enumerate() {
+                    if *value > slice[best] {
+                        best = index;
+                    }
+                }
+                best
+            })
+            .collect()
+    }
+
+    #[test]
+    fn graph_mlp_trains_classification_through_softmax_cross_entropy() -> Result<()> {
+        let mut random = seeded_random(20261120);
+        let mut model = GraphMlp::new(&[2, 8, 3], 4, &mut random)?;
+        let inputs = Tensor::from_vec(vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [4, 2])?;
+        let targets = Tensor::from_vec(
+            vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+            [4, 3],
+        )?;
+
+        let mut optimizer = GraphAdam::new(model.training(), 0.05);
+        let mut first = f32::NAN;
+        let mut last = f32::NAN;
+        for epoch in 0..400 {
+            let loss = model.step_batch(&mut optimizer, inputs.clone(), targets.clone())?;
+            if epoch == 0 {
+                first = loss;
+            }
+            last = loss;
+        }
+        assert!(last.is_finite() && last < first * 0.5, "cross entropy did not fall: {first} -> {last}");
+
+        let predictions = argmax_rows(&model.predict_batch(inputs)?, 4, 3);
+        assert_eq!(predictions, vec![0, 1, 2, 0]);
         Ok(())
     }
 

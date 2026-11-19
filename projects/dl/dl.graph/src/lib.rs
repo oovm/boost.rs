@@ -85,6 +85,10 @@ pub enum Op {
     },
     /// ReLU 反向：`gradient × (input > 0)`，输入顺序为「原输入, 上游梯度」。
     ReluBackward,
+    /// 多分类 softmax 交叉熵，输入顺序为「logits, one-hot 目标」，输出按行平均的标量。
+    SoftmaxCrossEntropy,
+    /// softmax 交叉熵对 logits 的梯度 `(softmax - target) / rows`。
+    SoftmaxCrossEntropyBackward,
 }
 
 #[derive(Clone, Debug)]
@@ -218,6 +222,16 @@ impl GraphBuilder {
     pub fn relu(&mut self, input: NodeId) -> Result<NodeId> {
         let shape = self.shape_of(input)?.to_vec();
         Ok(self.push(Op::Relu, vec![input], shape))
+    }
+
+    /// 多分类 softmax 交叉熵；`logits` 与 `targets` 必须是同形状的 `[rows, classes]`。
+    pub fn softmax_cross_entropy(&mut self, logits: NodeId, targets: NodeId) -> Result<NodeId> {
+        let logits_shape = self.shape_of(logits)?.to_vec();
+        let targets_shape = self.shape_of(targets)?.to_vec();
+        if logits_shape.len() != 2 || logits_shape != targets_shape {
+            return Err(DlError::ShapeMismatch { op: "softmax_cross_entropy", lhs: logits_shape, rhs: targets_shape });
+        }
+        Ok(self.push(Op::SoftmaxCrossEntropy, vec![logits, targets], Vec::new()))
     }
 
     /// 改变形状；元素总数必须一致。
@@ -433,6 +447,14 @@ impl GraphBuilder {
                     let contribution = self.relu_backward(input, gradient)?;
                     self.accumulate(&mut pending[upstream.0], contribution)?;
                 }
+                Op::SoftmaxCrossEntropy => {
+                    // 目标是一次性标签输入，只把梯度回传给 logits。
+                    let (logits, targets) = (node.inputs[0], node.inputs[1]);
+                    let shape = self.shape_of(logits)?.to_vec();
+                    let contribution = self.push(Op::SoftmaxCrossEntropyBackward, vec![logits, targets], shape);
+                    self.accumulate(&mut pending[logits.0], contribution)?;
+                }
+                Op::SoftmaxCrossEntropyBackward => {}
             }
         }
 
@@ -546,6 +568,11 @@ impl Trace {
     /// ReLU 激活。
     pub fn relu(&mut self, input: TNode) -> Result<TNode> {
         self.builder.relu(input.0).map(TNode)
+    }
+
+    /// 多分类 softmax 交叉熵。
+    pub fn softmax_cross_entropy(&mut self, logits: TNode, targets: TNode) -> Result<TNode> {
+        self.builder.softmax_cross_entropy(logits.0, targets.0).map(TNode)
     }
 
     /// 改变形状。
@@ -800,6 +827,10 @@ fn eval(node: &Node, values: &[Option<Tensor>], bindings: &Bindings) -> Result<T
             let mask = ops::map(input, |value| if value > 0.0 { 1.0 } else { 0.0 })?;
             ops::mul(gradient, &mask)
         }
+        Op::SoftmaxCrossEntropy => ops::softmax_cross_entropy(parent(values, node, 0)?, parent(values, node, 1)?),
+        Op::SoftmaxCrossEntropyBackward => {
+            ops::softmax_cross_entropy_backward(parent(values, node, 0)?, parent(values, node, 1)?)
+        }
     }
 }
 
@@ -871,6 +902,39 @@ mod tests {
         builder.input("x", [2]).unwrap();
         builder.input("x", [2]).unwrap();
         assert!(matches!(builder.finish(Vec::new()), Err(DlError::Format { .. })));
+    }
+
+    #[test]
+    fn training_graph_backpropagates_softmax_cross_entropy() {
+        let mut builder = GraphBuilder::new();
+        let x = builder.input("x", [2, 2]).unwrap();
+        let target = builder.input("y", [2, 2]).unwrap();
+        let weight = builder.parameter("w", [2, 2]).unwrap();
+        let logits = builder.matmul(x, weight).unwrap();
+        let loss = builder.softmax_cross_entropy(logits, target).unwrap();
+        let graph = builder.finish(vec![loss]).unwrap();
+        let training = graph.training(loss).unwrap();
+
+        let inputs = Tensor::from_vec(vec![1.0, 0.0, 0.0, 1.0], [2, 2]).unwrap();
+        let targets = Tensor::from_vec(vec![1.0, 0.0, 0.0, 1.0], [2, 2]).unwrap();
+        let weights = Tensor::from_vec(vec![0.2, -0.1, 0.4, 0.3], [2, 2]).unwrap();
+        let mut bindings = Bindings::new();
+        bindings.insert_input("x", inputs.clone());
+        bindings.insert_input("y", targets.clone());
+        bindings.insert_parameter("w", weights.clone());
+
+        let values = training.graph.run(&bindings).unwrap();
+        let loss_value = values[0].as_slice().unwrap()[0];
+        assert!(loss_value.is_finite() && loss_value > 0.0);
+
+        let logits = ops::matmul(&inputs, &weights).unwrap();
+        let logits_gradient = ops::softmax_cross_entropy_backward(&logits, &targets).unwrap();
+        let expected = ops::matmul(&inputs.transpose(0, 1).unwrap(), &logits_gradient).unwrap();
+        let (_, gradient_node) = training.gradients.parameters.first().expect("weight gradient");
+        let index = training.graph.outputs().iter().position(|node| node == gradient_node).expect("gradient output");
+        for (actual, expected) in values[index].to_vec().iter().zip(expected.to_vec()) {
+            assert!((actual - expected).abs() < 1e-5, "gradient mismatch: {actual} vs {expected}");
+        }
     }
 
     #[test]

@@ -13,3 +13,4 @@ dl-tensor = { workspace = true }
 dl-autograd = { workspace = true }
 dl-graph = { workspace = true }
 dl-nn = { workspace = true }
+boost-random = { workspace = true }

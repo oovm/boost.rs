@@ -3698,6 +3698,7 @@ dependencies = [
 name = "dl-train"
 version = "0.1.0"
 dependencies = [
+ "boost-random",
  "dl-autograd",
  "dl-graph",
  "dl-nn",

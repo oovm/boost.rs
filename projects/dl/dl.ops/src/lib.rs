@@ -169,6 +169,52 @@ pub fn softmax_last(input: &Tensor) -> Result<Tensor> {
     Tensor::from_vec(output, input.shape().to_vec())
 }
 
+/// 多分类 softmax 交叉熵；输入 `[rows, classes]`，目标为同形状 one-hot，返回按行平均的标量。
+pub fn softmax_cross_entropy(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
+    let rows = checked_classification_pair("softmax_cross_entropy", logits, targets)?;
+    let classes = logits.shape()[1];
+    let logits = logits.to_vec();
+    let targets = targets.to_vec();
+    let mut total = 0.0f32;
+    for row in 0..rows {
+        let offset = row * classes;
+        let slice = &logits[offset..offset + classes];
+        let maximum = slice.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let shifted: f32 = slice.iter().map(|value| (value - maximum).exp()).sum();
+        let logsumexp = maximum + shifted.ln();
+        let mut weighted = 0.0f32;
+        for column in 0..classes {
+            weighted += targets[offset + column] * slice[column];
+        }
+        total += logsumexp - weighted;
+    }
+    Tensor::from_vec(vec![total / rows as f32], Vec::<usize>::new())
+}
+
+/// softmax 交叉熵对 logits 的梯度：`(softmax(logits) - targets) / rows`。
+pub fn softmax_cross_entropy_backward(logits: &Tensor, targets: &Tensor) -> Result<Tensor> {
+    checked_classification_pair("softmax_cross_entropy_backward", logits, targets)?;
+    let probabilities = softmax_last(logits)?;
+    let rows = logits.shape()[0] as f32;
+    let scale = mul_scalar(&probabilities, 1.0 / rows)?;
+    let scaled_targets = mul_scalar(targets, 1.0 / rows)?;
+    sub(&scale, &scaled_targets)
+}
+
+fn checked_classification_pair(op: &'static str, logits: &Tensor, targets: &Tensor) -> Result<usize> {
+    if logits.rank() != 2 || targets.rank() != 2 {
+        return Err(DlError::Format { detail: format!("{op} expects rank-2 logits and targets") });
+    }
+    if logits.shape() != targets.shape() {
+        return Err(DlError::ShapeMismatch { op, lhs: logits.shape().to_vec(), rhs: targets.shape().to_vec() });
+    }
+    let rows = logits.shape()[0];
+    if rows == 0 {
+        return Err(DlError::Format { detail: format!("{op} received zero rows") });
+    }
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +231,30 @@ mod tests {
         let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
         let right = Tensor::from_vec(vec![5.0, 6.0, 7.0, 8.0], [2, 2]).unwrap();
         assert_eq!(matmul(&left, &right).unwrap().to_vec(), vec![19.0, 22.0, 43.0, 50.0]);
+    }
+
+    #[test]
+    fn softmax_cross_entropy_matches_the_analytic_value() {
+        let logits = Tensor::from_vec(vec![0.0, 0.0, 0.0, 0.0], [2, 2]).unwrap();
+        let targets = Tensor::from_vec(vec![1.0, 0.0, 0.0, 1.0], [2, 2]).unwrap();
+        let loss = softmax_cross_entropy(&logits, &targets).unwrap();
+        assert!((loss.as_slice().unwrap()[0] - 2.0f32.ln()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn softmax_cross_entropy_backward_is_probability_minus_target() {
+        let logits = Tensor::from_vec(vec![1.0, 0.0, 0.0, 1.0], [2, 2]).unwrap();
+        let targets = Tensor::from_vec(vec![1.0, 0.0, 0.0, 1.0], [2, 2]).unwrap();
+        let gradient = softmax_cross_entropy_backward(&logits, &targets).unwrap();
+        let probabilities = softmax_last(&logits).unwrap().to_vec();
+        let expected: Vec<f32> = probabilities
+            .iter()
+            .zip(targets.to_vec())
+            .map(|(probability, target)| (probability - target) / 2.0)
+            .collect();
+        for (actual, expected) in gradient.to_vec().iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
     }
 
     #[test]
