@@ -1,10 +1,11 @@
 //! `database-harness`：测试与基准的判定协议。
 //!
-//! 负责七件事：语料身份（seed / count / 摘要）、已知差异台账（登记、匹配、
+//! 负责八件事：语料身份（seed / count / 摘要）、已知差异台账（登记、匹配、
 //! 未登记、信号变化、陈旧条目）、观测比对与归类、基准统计与报告行、报告
 //! 信封、grammar 驱动的模糊输入生成（确定性 PRNG、复现信封与收缩状态机，
 //! 语法内容由调用方提供）、门禁判定（套件计数汇总与 floor 判定，测试输出
-//! 解析留在产品仓）。它不解析线协议、不实现 SQL 或命令语义，也不生成
+//! 解析留在产品仓），以及分层 span 计时与 folded stacks（火焰图/深渊图
+//! 数据源）。它不解析线协议、不实现 SQL 或命令语义，也不生成
 //! 任何期望值；期望值始终由真实外部引擎、官方语料或冻结基线提供。
 //!
 //! feature `charts` 打开后经 `plotter-chart` 把基准报告行渲染为分组柱图
@@ -21,6 +22,7 @@ pub mod corpus;
 pub mod fuzz;
 pub mod gate;
 pub mod observe;
+pub mod profile;
 pub mod report;
 
 #[cfg(feature = "charts")]
@@ -44,6 +46,7 @@ pub use gate::{
     OracleQualification, SuiteReport, SuiteTally, evaluate, evaluate_with_manifest,
 };
 pub use observe::{Cell, ErrorShape, Observed, ObservedBody, TruthProvenance};
+pub use profile::{ProfileReport, ProfileRow, Profiler, SpanGuard};
 pub use report::{CorpusReport, REPORT_VERSION, ReportEnvelope, RunIdentity, render_json};
 
 /// 判定协议的错误。
