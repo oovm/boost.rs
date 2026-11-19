@@ -1,7 +1,5 @@
-//! YY wire 服务端集成测试。
+//! YY wire 服务端 smoke。
+//!
+//! 认证、授权与绑定策略的详细矩阵在下游 `yydb-conformance`。
 
-mod auth_bootstrap;
-mod auth_env_tokens;
-mod authz;
-mod bind_policy;
 mod tcp_roundtrip;
