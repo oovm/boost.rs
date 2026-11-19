@@ -1,19 +1,16 @@
 //! Running a declared bridged engine as a child process.
 //!
-//! A bridged backend is a plugin with its own runtime (for example `edge-tts`
-//! on a Python interpreter). This module owns the parts that are the same for
-//! every such engine: the command line built from the request, the word
-//! timings the engine writes, and the failure contract.
+//! A bridged backend is an engine with its own host process. This module owns
+//! the parts that are the same for every such engine: the command line shape,
+//! the word timings the engine writes, and the failure contract.
 //!
 //! It deliberately does not hide the process: the caller states the program and
-//! the runtime. Nothing is downloaded, installed or retried here, and a failing
+//! the arguments. Nothing is downloaded, installed or retried here, and a failing
 //! engine returns an error instead of falling back to another voice.
 //!
-//! Word timings arrive as SRT cues from engines that report them
-//! (`edge-tts --write-subtitles`). They are the measured alignment; a cue that
-//! only has estimated timing must not claim these numbers.
-
-use std::path::Path;
+//! Word timings arrive as SRT cues from engines that report them. They are the
+//! measured alignment; a cue that only has estimated timing must not claim these
+//! numbers.
 
 use media_types::Error;
 use serde::{Deserialize, Serialize};
@@ -43,43 +40,10 @@ impl WordTiming {
 /// One program invocation: the executable and its arguments, nothing else.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BridgeCommand {
-    /// Program to start, e.g. `python`.
+    /// Program to start.
     pub program: String,
     /// Arguments in order.
     pub args: Vec<String>,
-}
-
-/// Builds the `edge-tts` invocation for one request.
-///
-/// The rate is the engine's own `+N%` form; the caller passes the integer
-/// percentage. Both outputs are written by the engine, so nothing is piped
-/// through this process.
-#[must_use]
-pub fn edge_tts_command(
-    python: &str,
-    text: &str,
-    voice: &str,
-    rate_percent: i32,
-    media_out: &Path,
-    subtitle_out: &Path,
-) -> BridgeCommand {
-    BridgeCommand {
-        program: python.to_owned(),
-        args: vec![
-            "-m".into(),
-            "edge_tts".into(),
-            "--text".into(),
-            text.to_owned(),
-            "--voice".into(),
-            voice.to_owned(),
-            "--rate".into(),
-            format!("{rate_percent:+}%"),
-            "--write-media".into(),
-            media_out.to_string_lossy().into_owned(),
-            "--write-subtitles".into(),
-            subtitle_out.to_string_lossy().into_owned(),
-        ],
-    }
 }
 
 /// Parses the SRT the engine writes for word boundaries.
@@ -153,26 +117,6 @@ pub fn run_bridge(command: &BridgeCommand) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn an_edge_tts_command_states_every_input_and_both_outputs() {
-        let command = edge_tts_command(
-            "python",
-            "先看请求",
-            "zh-CN-XiaoxiaoNeural",
-            10,
-            Path::new("audio/c1.mp3"),
-            Path::new("audio/c1.srt"),
-        );
-        assert_eq!(command.program, "python");
-        let joined = command.args.join(" ");
-        assert!(joined.contains("-m edge_tts"));
-        assert!(joined.contains("--text 先看请求"));
-        assert!(joined.contains("--voice zh-CN-XiaoxiaoNeural"));
-        assert!(joined.contains("--rate +10%"), "{joined}");
-        assert!(joined.contains("--write-media audio/c1.mp3"));
-        assert!(joined.contains("--write-subtitles audio/c1.srt"));
-    }
 
     #[test]
     fn word_timings_come_from_the_engine_srt() {

@@ -30,6 +30,6 @@ pub mod spec;
 pub mod tract;
 
 pub use backend::{BackendCapability, CostModel, Execution, Timing, VoiceArtifact, VoiceFeature, VoiceRequest, check_request, request_fingerprint};
-pub use bridge::{BridgeCommand, WordTiming, edge_tts_command, parse_word_srt, run_bridge};
+pub use bridge::{BridgeCommand, WordTiming, parse_word_srt, run_bridge};
 pub use formant::render;
 pub use spec::{Coda, Onset, Syllable, Vibrato, VoiceSpec, Vowel};

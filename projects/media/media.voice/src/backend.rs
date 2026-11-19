@@ -11,8 +11,8 @@
 //!   A backend is never assumed to support everything, and an undeclared
 //!   feature, language, voice or option is an explicit error.
 //! - Execution location and cost model are part of the declaration. A remote
-//!   service states its endpoint identity; a bridged engine states its runtime
-//!   (for example a Python version) so an installer can decide about it.
+//!   service states its endpoint identity; a bridged engine states the runtime
+//!   it needs so an installer can decide about it.
 //! - A request carries a fingerprint of everything that changes the output.
 //!   Caching compares fingerprints; a changed text, voice or engine version is
 //!   a different result, not a cache hit.
@@ -116,7 +116,7 @@ pub enum Timing {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct BackendCapability {
-    /// Stable backend id, e.g. `edge-tts` or `openvocaloid.formant`.
+    /// Stable backend id, e.g. `openvocaloid.formant` or a declared remote service.
     pub id: String,
     /// Engine or library version the declaration refers to.
     pub version: String,
@@ -303,17 +303,17 @@ pub struct VoiceArtifact {
 mod tests {
     use super::*;
 
-    fn edge() -> BackendCapability {
+    fn bridged() -> BackendCapability {
         BackendCapability {
-            id: "edge-tts".to_owned(),
-            version: "7.0.0".to_owned(),
+            id: "openvocaloid.bridged".to_owned(),
+            version: "1.0.0".to_owned(),
             features: vec![VoiceFeature::Tts],
             languages: vec!["zh-CN".to_owned(), "en-US".to_owned()],
-            voices: vec!["zh-CN-XiaoxiaoNeural".to_owned()],
+            voices: vec!["zh-CN-Standard".to_owned()],
             rate: true,
             streaming: true,
             timing: Timing::Word,
-            execution: Execution::Bridged { runtime: "python>=3.10".to_owned() },
+            execution: Execution::Bridged { runtime: "engine>=1.0".to_owned() },
             billing: CostModel::Free,
         }
     }
@@ -322,7 +322,7 @@ mod tests {
         VoiceRequest {
             feature: VoiceFeature::Tts,
             text: Some("瑞利散射".to_owned()),
-            voice: Some("zh-CN-XiaoxiaoNeural".to_owned()),
+            voice: Some("zh-CN-Standard".to_owned()),
             language: Some("zh-CN".to_owned()),
             speed: Some(1.0),
             streaming: false,
@@ -332,21 +332,21 @@ mod tests {
 
     #[test]
     fn a_declared_request_passes() {
-        check_request(&edge(), &tts()).expect("the declaration covers the request");
+        check_request(&bridged(), &tts()).expect("the declaration covers the request");
     }
 
     #[test]
     fn an_undeclared_feature_is_refused_by_name() {
         let mut request = tts();
         request.feature = VoiceFeature::Svs;
-        let error = check_request(&edge(), &request).expect_err("svs is not declared");
+        let error = check_request(&bridged(), &request).expect_err("svs is not declared");
         assert_eq!(error.code(), "unsupported_platform");
-        assert!(error.message.contains("edge-tts") && error.message.contains("svs"), "{}", error.message);
+        assert!(error.message.contains("openvocaloid.bridged") && error.message.contains("svs"), "{}", error.message);
     }
 
     #[test]
     fn undeclared_language_voice_and_options_are_refused() {
-        let backend = edge();
+        let backend = bridged();
         let mut language = tts();
         language.language = Some("ja-JP".to_owned());
         assert!(check_request(&backend, &language).expect_err("language").message.contains("ja-JP"));
@@ -368,12 +368,12 @@ mod tests {
     fn tts_needs_text() {
         let mut request = tts();
         request.text = Some("   ".to_owned());
-        assert!(check_request(&edge(), &request).expect_err("blank text").message.contains("needs text"));
+        assert!(check_request(&bridged(), &request).expect_err("blank text").message.contains("needs text"));
     }
 
     #[test]
     fn a_bridge_without_a_runtime_is_invalid() {
-        let mut backend = edge();
+        let mut backend = bridged();
         backend.execution = Execution::Bridged { runtime: String::new() };
         let error = backend.validate().expect_err("bridge needs a runtime");
         assert!(error.message.contains("without a runtime"), "{}", error.message);
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn the_fingerprint_covers_text_voice_and_engine_version() {
-        let backend = edge();
+        let backend = bridged();
         let base = request_fingerprint(&backend, &tts());
 
         let mut other_text = tts();
@@ -389,11 +389,11 @@ mod tests {
         assert_ne!(base, request_fingerprint(&backend, &other_text));
 
         let mut other_voice = tts();
-        other_voice.voice = Some("zh-CN-YunxiNeural".to_owned());
+        other_voice.voice = Some("zh-CN-Warm".to_owned());
         assert_ne!(base, request_fingerprint(&backend, &other_voice));
 
         let mut upgraded = backend.clone();
-        upgraded.version = "7.0.1".to_owned();
+        upgraded.version = "1.0.1".to_owned();
         assert_ne!(base, request_fingerprint(&upgraded, &tts()), "an engine upgrade invalidates cached audio");
 
         assert_eq!(base, request_fingerprint(&backend, &tts()), "the same request is stable");
