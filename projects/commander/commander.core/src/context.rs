@@ -44,6 +44,9 @@ pub struct CommandContext<'a> {
 }
 
 impl<'a> CommandContext<'a> {
+    // One internal constructor mirrors the whole TS context surface; splitting
+    // it into builders would add ceremony without safety.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         cli: &'a Cli,
         command: &'a Command,

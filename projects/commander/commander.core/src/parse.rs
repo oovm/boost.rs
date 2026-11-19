@@ -130,8 +130,7 @@ fn parse_core(argv: &[String], defs: &[OptionSpec], strict_mode: bool) -> Result
             }
             break;
         }
-        if a.starts_with("--") {
-            let body = &a[2..];
+        if let Some(body) = a.strip_prefix("--") {
             let (long, attached) = match body.find('=') {
                 Some(eq) => (&body[..eq], Some(body[eq + 1..].to_string())),
                 None => (body, None),
@@ -243,10 +242,8 @@ pub(crate) fn apply_config(
 ) -> Result<(), CommanderError> {
     for def in defs {
         let provided = used.contains(&def.long);
-        if !provided {
-            if let Some(default) = &def.default {
-                options.insert(def.long.clone(), Value::String(default.clone()));
-            }
+        if !provided && let Some(default) = &def.default {
+            options.insert(def.long.clone(), Value::String(default.clone()));
         }
         let Some(value) = options.get(&def.long).cloned() else {
             if def.required {

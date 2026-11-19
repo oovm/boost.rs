@@ -119,7 +119,7 @@ fn help_section(
     let header = localized_or_id(localizer, header_key, &BTreeMap::new())
         .unwrap_or_else(|| header_fallback.to_string());
     let width = rows.iter().map(|(token, _)| token.chars().count()).max().unwrap_or(0);
-    let mut lines = vec![format!("{header}")];
+    let mut lines = vec![header.to_string()];
     for (token, help) in rows {
         let text = match help {
             Some(key) => localized_or_id(localizer, key, &BTreeMap::new()).unwrap_or_default(),

@@ -151,10 +151,10 @@ impl Cli {
             if !longs.insert(option.long.clone()) {
                 return Err(parse_failed(&format!("duplicate global option `--{}`", option.long)));
             }
-            if let Some(c) = option.short {
-                if !shorts.insert(c) {
-                    return Err(parse_failed(&format!("duplicate global short option `-{c}`")));
-                }
+            if let Some(c) = option.short
+                && !shorts.insert(c)
+            {
+                return Err(parse_failed(&format!("duplicate global short option `-{c}`")));
             }
         }
         let mut identities: BTreeSet<String> = BTreeSet::new();
@@ -204,7 +204,7 @@ impl Cli {
             ExitCode::Ok
         } else {
             let token = rest[0].clone();
-            let matched = self.commands.iter().find(|c| c.name == token || c.aliases.iter().any(|a| *a == token));
+            let matched = self.commands.iter().find(|c| c.name == token || c.aliases.contains(&token));
             match matched {
                 None => {
                     let names: Vec<String> = self
@@ -485,7 +485,7 @@ fn is_help_token(token: &str) -> bool {
 /// host-driven, so this only removes a first token that looks like an
 /// executable path (contains a separator or ends in `.exe`).
 pub fn normalize_argv(argv: &[String]) -> Vec<String> {
-    if argv.len() >= 1 && (argv[0].contains('/') || argv[0].contains('\\') || argv[0].ends_with(".exe")) {
+    if !argv.is_empty() && (argv[0].contains('/') || argv[0].contains('\\') || argv[0].ends_with(".exe")) {
         return argv[1..].to_vec();
     }
     argv.to_vec()
