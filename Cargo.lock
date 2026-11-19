@@ -1235,7 +1235,9 @@ name = "document-convert"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "boost-collection",
  "boost-harness",
+ "boost-math",
  "document-compose",
  "document-diagnostic",
  "document-fonts",
