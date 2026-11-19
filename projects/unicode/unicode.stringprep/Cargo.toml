@@ -1,0 +1,11 @@
+[package]
+name = "unicode-stringprep"
+description = "字符串准备（StringPrep）家族：RFC 4013 SASLprep 口令规范化，登记为 unicode.stringprep"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+unicode-normalization = { workspace = true }

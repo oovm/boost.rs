@@ -220,6 +220,7 @@ members = [
     "projects/template/template.types",
     "projects/template/template.input.hbs",
     "projects/template/template.input.jinja",
+    "projects/unicode/unicode.stringprep",
     "projects/unicode/unicode.types",
     "projects/unicode/unicode.width",
 ]
@@ -419,6 +420,7 @@ template-input-hbs = { path = "projects/template/template.input.hbs" }
 template-types = { path = "projects/template/template.types" }
 
 # unicode 能力树
+unicode-stringprep = { path = "projects/unicode/unicode.stringprep" }
 unicode-types = { path = "projects/unicode/unicode.types" }
 unicode-width = { path = "projects/unicode/unicode.width" }
 
