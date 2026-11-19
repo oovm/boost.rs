@@ -354,17 +354,29 @@ impl PostgreSQL {
     }
 
     /// Stops every listener, releases the directory lock and consumes the engine.
+    ///
+    /// A listener that fails to stop is reported after the directory lease is
+    /// released: the two resources are independent, and the caller must see the
+    /// stop failure instead of a silent success.
     pub fn close(self) -> Result<(), Error> {
+        let mut stop_error = None;
         if let Ok(mut listeners) = self.listeners.lock() {
             for slot in listeners.drain(..) {
                 let service = slot.lock().ok().and_then(|mut service| service.take());
                 if let Some(service) = service {
-                    let _ = service.stop();
+                    if let Err(error) = service.stop() {
+                        stop_error.get_or_insert(Error::Io(error));
+                    }
                 }
             }
         }
         let instance = self.instance.lock().map_err(|_| poisoned())?.take().ok_or_else(|| Error::State("store already closed".to_owned()))?;
-        instance.close().map_err(Error::from)
+        let closed = instance.close().map_err(Error::from);
+        match (stop_error, closed) {
+            (None, closed) => closed,
+            (Some(stop), Ok(())) => Err(stop),
+            (Some(stop), Err(close)) => Err(Error::State(format!("listener stop failed: {stop}; directory close failed: {close}"))),
+        }
     }
 
     /// Shared statement core used by [`PostgreSQL::query`] and by transaction
@@ -435,13 +447,17 @@ impl Listener {
     }
 
     /// Stops this listener's accept loop. The engine stays open.
-    pub fn close(self) {
+    ///
+    /// The stop outcome of the shared server resource is returned instead of
+    /// being discarded, so a failed join is observable to the caller.
+    pub fn close(self) -> Result<(), Error> {
         if let Ok(mut listeners) = self.registry.lock() {
             listeners.retain(|existing| !Arc::ptr_eq(existing, &self.slot));
         }
         let service = self.slot.lock().ok().and_then(|mut service| service.take());
-        if let Some(service) = service {
-            let _ = service.stop();
+        match service {
+            Some(service) => service.stop().map_err(Error::Io),
+            None => Ok(()),
         }
     }
 }

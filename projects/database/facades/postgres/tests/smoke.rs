@@ -169,7 +169,7 @@ fn copy_from_stdin_accepts_text_and_csv_streams() {
     // The connection stays usable after a rejected COPY.
     assert_eq!(missing.execute("SELECT 1").unwrap().len(), 1);
     missing.close();
-    listener.close();
+    listener.close().expect("listener stops");
     engine.close().unwrap();
 }
 
@@ -190,7 +190,7 @@ fn listen_and_notify_reach_another_connection_before_its_next_ready() {
     assert_eq!(notifications[0].payload, "payload");
     publisher.close();
     subscriber.close();
-    listener.close();
+    listener.close().expect("listener stops");
     engine.close().unwrap();
 }
 
@@ -235,7 +235,7 @@ fn listeners_require_the_configured_password_authentication() {
             text.contains("28P01") || source.as_deref().is_some_and(|source| source.contains("28P01")),
             "{label} must reject a wrong password with 28P01, got {text} / {source:?}"
         );
-        listener.close();
+        listener.close().expect("listener stops");
     }
     engine.close().unwrap();
 }
@@ -298,7 +298,7 @@ fn listeners_verify_the_password_a_role_stores() {
             text.contains("28P01") || source.as_deref().is_some_and(|source| source.contains("28P01")),
             "{method:?} must reject a role without a stored password with 28P01, got {text} / {source:?}"
         );
-        listener.close();
+        listener.close().expect("listener stops");
     }
     engine.close().unwrap();
 }
