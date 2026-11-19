@@ -18,7 +18,7 @@ pub enum LegionError {
     /// 裸 I/O（无额外上下文时用 `?` 即可）。
     Io(std::io::Error),
     /// `data.text` VON 解析，带操作上下文与展示标签。
-    Oak {
+    Text {
         /// 操作上下文说明。
         context: String,
         /// VON/`data.text` 片段标签。
@@ -41,8 +41,8 @@ impl LegionError {
         Self::Message(message.into())
     }
 
-    pub(crate) fn oak(context: impl Into<String>, label: impl Into<String>, error: TextError) -> Self {
-        Self::Oak { context: context.into(), label: label.into(), error }
+    pub(crate) fn text(context: impl Into<String>, label: impl Into<String>, error: TextError) -> Self {
+        Self::Text { context: context.into(), label: label.into(), error }
     }
 
     pub(crate) fn emitter(message: impl Into<String>) -> Self {
@@ -56,7 +56,7 @@ impl Display for LegionError {
             Self::Planner(error) => Display::fmt(error, f),
             Self::Manifest(error) => Display::fmt(error, f),
             Self::Io(error) => Display::fmt(error, f),
-            Self::Oak { context, label, error } => {
+            Self::Text { context, label, error } => {
                 if let Some(offset) = error.source_offset() {
                     write!(f, "{context}: {label} [{offset}..{}]: {error}", offset.saturating_add(1))
                 }
@@ -76,7 +76,7 @@ impl std::error::Error for LegionError {
             Self::Planner(error) => Some(error),
             Self::Manifest(error) => Some(error),
             Self::Io(error) => Some(error),
-            Self::Oak { error, .. } => Some(error),
+            Self::Text { error, .. } => Some(error),
             Self::Emitter { .. } | Self::Message(_) => None,
         }
     }

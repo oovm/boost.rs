@@ -1,13 +1,14 @@
 #![doc = include_str!("readme.md")]
-use data_text_core::errors::ParseResult;
-use oak_highlight::{HighlightResult, Highlighter, OakHighlighter, themes::Theme};
 
+use data_text_core::errors::ParseResult;
+use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
+use language_highlight::themes::Theme;
 /// Vampire syntax highlighter
 pub struct VampireHighlighter;
 
-impl Highlighter for VampireHighlighter {
+impl HighlightSource for VampireHighlighter {
     fn highlight<'a>(&self, source: &'a str, language: &str, theme: Theme) -> ParseResult<HighlightResult<'a>> {
-        let highlighter = OakHighlighter::new().theme(theme);
+        let highlighter = TreeHighlighter::new().theme(theme);
         highlighter.highlight(source, language, theme)
     }
 }

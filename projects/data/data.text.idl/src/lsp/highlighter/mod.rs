@@ -1,9 +1,7 @@
 #![doc = include_str!("readme.md")]
+use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
+use language_highlight::themes::Theme;
 use data_text_core::{Language, errors::ParseResult};
-use oak_highlight::{
-    highlighter::{HighlightResult, Highlighter, OakHighlighter},
-    themes::Theme,
-};
 
 pub struct IdlHighlighter {
     use_parser: bool,
@@ -15,9 +13,9 @@ impl IdlHighlighter {
     }
 }
 
-impl Highlighter for IdlHighlighter {
+impl HighlightSource for IdlHighlighter {
     fn highlight<'a>(&self, source: &'a str, _language: &str, theme: Theme) -> ParseResult<HighlightResult<'a>> {
-        let highlighter = OakHighlighter::new();
+        let highlighter = TreeHighlighter::new();
 
         if self.use_parser {
             let config = crate::language::IdlLanguage::default();

@@ -100,7 +100,7 @@ fn consumer_with_imports() -> (SharedElfImage, Vec<SharedObjectExport>, Vec<Stri
     (
         image(text),
         vec![SharedObjectExport { name: "main".into(), text_offset: 0 }],
-        vec!["acorn_probe".into()],
+        vec!["host_probe".into()],
         vec![SharedElfImportCall { rel32_field: 2, import: 0 }],
     )
 }
@@ -123,7 +123,7 @@ fn writes_undefined_imports_with_relocations() {
     assert_eq!(header.file_type, 3);
     assert_eq!(header.machine, 62);
     let haystack = String::from_utf8_lossy(&bytes);
-    assert!(haystack.contains("acorn_probe"), "导入符号必须进入动态符号表");
+    assert!(haystack.contains("host_probe"), "导入符号必须进入动态符号表");
     // 导入必须产生独立的可写 GOT 段（PF_W）。
     let phnum = u16::from_le_bytes([bytes[56], bytes[57]]) as usize;
     let mut has_writable = false;
@@ -149,7 +149,7 @@ fn multiple_call_sites_share_one_import_slot() {
     text.extend_from_slice(&[0xFF, 0x15, 0, 0, 0, 0, 0xC3]);
     let image = image(text);
     let exports = vec![SharedObjectExport { name: "main".into(), text_offset: 0 }];
-    let imports = vec!["acorn_probe".into()];
+    let imports = vec!["host_probe".into()];
     let calls = vec![SharedElfImportCall { rel32_field: 2, import: 0 }, SharedElfImportCall { rel32_field: 12, import: 0 }];
     let bytes = write_imports(&image, &exports, &imports, &calls);
 
@@ -162,7 +162,7 @@ fn multiple_call_sites_share_one_import_slot() {
     let first_slot = text_off as i64 + 2 + 4 + first;
     let second_slot = text_off as i64 + 12 + 4 + second;
     assert_eq!(first_slot, second_slot, "同一导入的调用点必须共享 GOT 槽");
-    assert_eq!(String::from_utf8_lossy(&bytes).matches("acorn_probe").count(), 1, "符号只应声明一次");
+    assert_eq!(String::from_utf8_lossy(&bytes).matches("host_probe").count(), 1, "符号只应声明一次");
 }
 
 /// 读取 `.dynamic` 的 tag 序列（`PT_DYNAMIC` 的 `p_offset` 与 `p_vaddr` 恒等）。
@@ -300,7 +300,7 @@ fn linux_dlopen_resolves_a_host_import_through_the_got() {
 
     let provider = SharedElfWriter::write_x86_64(
         &image(vec![0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3]),
-        &[SharedObjectExport { name: "acorn_probe".into(), text_offset: 0 }],
+        &[SharedObjectExport { name: "host_probe".into(), text_offset: 0 }],
     )
     .expect("write provider");
     let (image, exports, imports, calls) = consumer_with_imports();

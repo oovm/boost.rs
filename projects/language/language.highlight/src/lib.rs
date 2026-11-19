@@ -14,6 +14,8 @@ pub mod highlighter;
 pub mod html;
 pub mod kind;
 pub mod span;
+pub mod syntax;
+pub mod themes;
 
 pub use ansi::{AnsiExporter, Exporter, HighlightResult};
 pub use highlighter::{

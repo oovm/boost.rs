@@ -1,13 +1,14 @@
 #![doc = include_str!("readme.md")]
+use language_highlight::syntax::{HighlightSource, HighlightResult};
+use language_highlight::themes::Theme;
 use crate::VerilogLanguage;
-use oak_highlight::highlighter::Highlighter;
 
 /// Highlighter implementation for Verilog.
 pub struct VerilogHighlighter {}
 
-impl Highlighter for VerilogHighlighter {
-    fn highlight<'a>(&self, source: &'a str, language: &str, theme: oak_highlight::themes::Theme) -> data_text_core::errors::ParseResult<oak_highlight::highlighter::HighlightResult<'a>> {
+impl HighlightSource for VerilogHighlighter {
+    fn highlight<'a>(&self, source: &'a str, language: &str, theme: Theme) -> data_text_core::errors::ParseResult<HighlightResult<'a>> {
         let theme_config = theme.get_theme();
-        Ok(oak_highlight::highlighter::HighlightResult { segments: vec![], source: std::borrow::Cow::Borrowed(source) })
+        Ok(HighlightResult { segments: vec![], source: std::borrow::Cow::Borrowed(source) })
     }
 }

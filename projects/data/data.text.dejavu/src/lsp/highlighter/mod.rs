@@ -1,11 +1,8 @@
 #![doc = include_str!("readme.md")]
-use data_text_core::errors::ParseResult;
-use oak_highlight::{
-    HighlightResult,
-    highlighter::{Highlighter, OakHighlighter},
-    themes::Theme,
-};
 
+use data_text_core::errors::ParseResult;
+use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
+use language_highlight::themes::Theme;
 /// A syntax highlighter for Dejavu source code.
 pub struct DejavuHighlighter {
     /// Whether to use parser-based highlighting for enhanced accuracy
@@ -25,9 +22,9 @@ impl DejavuHighlighter {
     }
 }
 
-impl Highlighter for DejavuHighlighter {
+impl HighlightSource for DejavuHighlighter {
     fn highlight<'a>(&self, source: &'a str, _language: &str, theme: Theme) -> ParseResult<HighlightResult<'a>> {
-        let highlighter = OakHighlighter::new().theme(theme);
+        let highlighter = TreeHighlighter::new().theme(theme);
 
         if self.use_parser {
             let config = crate::DejavuLanguage::default();

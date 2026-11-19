@@ -1,7 +1,8 @@
 #![doc = include_str!("readme.md")]
-use data_text_core::errors::ParseResult;
-use oak_highlight::{HighlightResult, Highlighter, themes::Theme};
 
+use data_text_core::errors::ParseResult;
+use language_highlight::syntax::{HighlightSource, HighlightResult};
+use language_highlight::themes::Theme;
 /// Smalltalk syntax highlighter
 pub struct SmalltalkHighlighter;
 
@@ -18,7 +19,7 @@ impl Default for SmalltalkHighlighter {
     }
 }
 
-impl Highlighter for SmalltalkHighlighter {
+impl HighlightSource for SmalltalkHighlighter {
     fn highlight<'a>(&self, source: &'a str, _language: &str, _theme: Theme) -> ParseResult<HighlightResult<'a>> {
         // TODO: Implement real Smalltalk highlighting logic
         Ok(HighlightResult { segments: Vec::new(), source: std::borrow::Cow::Borrowed(source) })

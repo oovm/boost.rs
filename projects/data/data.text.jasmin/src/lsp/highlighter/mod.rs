@@ -1,10 +1,8 @@
 #![doc = include_str!("readme.md")]
-use crate::language::JasminLanguage;
 use data_text_core::errors::ParseResult;
-use oak_highlight::{
-    highlighter::{HighlightResult, Highlighter, OakHighlighter},
-    themes::Theme,
-};
+use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
+use language_highlight::themes::Theme;
+use crate::language::JasminLanguage;
 
 /// Jasmin highlighter implementation.
 pub struct JasminHighlighter;
@@ -16,9 +14,9 @@ impl JasminHighlighter {
     }
 }
 
-impl Highlighter for JasminHighlighter {
+impl HighlightSource for JasminHighlighter {
     fn highlight<'a>(&self, source: &'a str, _language: &str, theme: Theme) -> ParseResult<HighlightResult<'a>> {
-        let highlighter = OakHighlighter::new();
+        let highlighter = TreeHighlighter::new();
         let config = JasminLanguage::default();
         let parser = crate::parser::JasminParser::new(&config);
         let lexer = crate::lexer::JasminLexer::new(&config);

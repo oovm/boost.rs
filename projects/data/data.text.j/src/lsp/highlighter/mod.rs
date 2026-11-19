@@ -1,5 +1,8 @@
 #![doc = include_str!("readme.md")]
 
+use language_highlight::syntax::{HighlightResult, HighlightSource};
+use language_highlight::themes::Theme;
+
 /// Local definition of highlight kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HighlightKind {
@@ -67,9 +70,8 @@ impl Highlighter for JHighlighter {
 }
 
 #[cfg(feature = "language-highlight")]
-impl oak_highlight::Highlighter for JHighlighter {
-    fn highlight<'a>(&self, _source: &'a str, _language: &str, _theme: oak_highlight::Theme) -> data_text_core::errors::ParseResult<oak_highlight::HighlightResult<'a>> {
-        // TODO: Implement proper highlighting using the new language-highlight API
-        Ok(oak_highlight::HighlightResult { segments: Vec::new(), source: std::borrow::Cow::Borrowed(_source) })
+impl HighlightSource for JHighlighter {
+    fn highlight<'a>(&self, source: &'a str, _language: &str, _theme: Theme) -> data_text_core::errors::ParseResult<HighlightResult<'a>> {
+        Ok(HighlightResult { segments: Vec::new(), source: std::borrow::Cow::Borrowed(source) })
     }
 }

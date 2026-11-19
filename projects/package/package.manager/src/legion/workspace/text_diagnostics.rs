@@ -12,10 +12,10 @@ pub fn source_point_span(error: &TextError) -> Option<Range<usize>> {
 
 /// 将 `data.text` 解析错误转为 Legion 错误（结构化标签见 `utilities::diagnostic` / boost）。
 pub fn labeled_report(error: TextError, label: impl Into<String>) -> LegionError {
-    LegionError::oak("", label, error)
+    LegionError::text("", label, error)
 }
 
 /// 将 `data.text` 解析错误包装为带上下文的 Legion 错误。
 pub fn labeled_report_with_context(error: TextError, context: impl std::fmt::Display, label: impl Into<String>) -> LegionError {
-    LegionError::oak(context.to_string(), label, error)
+    LegionError::text(context.to_string(), label, error)
 }

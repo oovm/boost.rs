@@ -7,7 +7,7 @@ use std::{
     result::Result,
 };
 
-use crate::legion::{CanonicalTarget, PublishFormat, RunnerSelector, von::from_str, workspace::oak::source_point_span};
+use crate::legion::{CanonicalTarget, PublishFormat, RunnerSelector, von::from_str, workspace::text_diagnostics::source_point_span};
 use data_text_core::TextError as VonError;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,

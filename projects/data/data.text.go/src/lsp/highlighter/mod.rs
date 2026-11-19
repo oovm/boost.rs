@@ -1,7 +1,7 @@
 #![doc = include_str!("readme.md")]
 
-use oak_highlight::HighlightSegment;
 
+use language_highlight::syntax::{HighlightSegment, HighlightSource};
 use crate::ast::GoRoot;
 
 /// Go syntax highlighter.

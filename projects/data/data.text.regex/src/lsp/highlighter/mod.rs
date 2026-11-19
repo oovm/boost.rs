@@ -1,10 +1,8 @@
 #![doc = include_str!("readme.md")]
-use data_text_core::errors::ParseResult;
-use oak_highlight::{
-    highlighter::{HighlightResult, Highlighter, OakHighlighter},
-    themes::Theme,
-};
 
+use data_text_core::errors::ParseResult;
+use language_highlight::syntax::{HighlightSource, HighlightResult, TreeHighlighter};
+use language_highlight::themes::Theme;
 /// Syntax highlighter for regular expressions.
 pub struct RegexHighlighter {}
 
@@ -15,9 +13,9 @@ impl RegexHighlighter {
     }
 }
 
-impl Highlighter for RegexHighlighter {
+impl HighlightSource for RegexHighlighter {
     fn highlight<'a>(&self, source: &'a str, language: &str, theme: Theme) -> ParseResult<HighlightResult<'a>> {
-        let highlighter = OakHighlighter::new();
+        let highlighter = TreeHighlighter::new();
         highlighter.highlight(source, language, theme)
     }
 }

@@ -4,7 +4,7 @@
 
 /// `legion.von` / `legions.von` 清单模型与解析错误。
 pub mod manifest;
-pub mod oak;
+pub mod text_diagnostics;
 /// workspace 发现、依赖解析与构建计划生成。
 pub mod planner;
 pub mod script;
@@ -15,7 +15,7 @@ pub use manifest::{
     BuildPluginSpec, BuildTargetSpec, DependencySpec, LocalLegionConfig, ProjectArtifactKind, ProjectManifest, PublishTargetSpec,
     RunnerBinding, WorkspaceDefaults, WorkspaceManifest,
 };
-pub use oak::{labeled_report, labeled_report_with_context, source_point_span};
+pub use text_diagnostics::{labeled_report, labeled_report_with_context, source_point_span};
 pub use planner::{
     BuildPlan, BuildRequest, PlannedDependency, PlannedHostContract, PlannedHostProvider, PlannedProject, PlannedSemanticSourceGroup,
     PlannerError, ProjectResolutionMode, WorkspaceResolver, canonical_target, collect_project_root_v_files, collect_project_v_files,
