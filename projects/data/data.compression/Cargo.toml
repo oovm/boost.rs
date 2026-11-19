@@ -1,0 +1,11 @@
+[package]
+name = "data-compression"
+description = "通用压缩编解码：Snappy block 格式与 Zstandard 帧的独立实现，登记为 boost.data.compression"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ruzstd = { workspace = true }
