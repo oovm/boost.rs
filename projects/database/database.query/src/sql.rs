@@ -1572,7 +1572,7 @@ fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<V
         // binding only the seed operand.
         if clause.recursive || cte.recursive_tail.is_some() {
             return Err(SqlFrontendError::unsupported(
-                "WITH RECURSIVE and set-operation CTE bodies are supported by the native engine, not by the SQL gateway",
+                "the SQL gateway inlines CTEs at each reference and cannot materialize a recursive fixed point: WITH RECURSIVE and set-operation CTE bodies run only on the native engine",
             ));
         }
         let name = normalize_identifier(cte.name.name.as_ref());
