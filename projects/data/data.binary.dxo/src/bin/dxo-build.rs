@@ -130,12 +130,35 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 || args.len() > 3 {
-        return Err("usage: dxo-build <build.json> [output-dir]".to_string());
+    let mut positional: Vec<String> = Vec::new();
+    let mut volume_width: u64 = 0;
+    let mut max_volume_bytes: Option<u64> = None;
+    let mut it = args.iter().skip(1);
+    while let Some(arg) = it.next() {
+        let (flag, inline) = match arg.split_once('=') {
+            Some((flag, value)) => (flag, Some(value.to_string())),
+            None => (arg.as_str(), None),
+        };
+        match flag {
+            "--volume-width" => {
+                let value = inline.or_else(|| it.next().cloned()).ok_or("--volume-width requires a value")?;
+                volume_width = value.parse().map_err(|_| format!("invalid --volume-width {value:?}"))?;
+            }
+            "--max-volume-bytes" => {
+                let value = inline.or_else(|| it.next().cloned()).ok_or("--max-volume-bytes requires a value")?;
+                max_volume_bytes = Some(value.parse().map_err(|_| format!("invalid --max-volume-bytes {value:?}"))?);
+            }
+            _ => positional.push(arg.clone()),
+        }
     }
-    let spec_path = PathBuf::from(&args[1]);
+    if positional.is_empty() || positional.len() > 2 {
+        return Err(
+            "usage: dxo-build <build.json> [output-dir] [--volume-width N --max-volume-bytes N]".to_string()
+        );
+    }
+    let spec_path = PathBuf::from(&positional[0]);
     let base_dir = spec_path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
-    let output_dir = args.get(2).map(PathBuf::from).unwrap_or_else(|| base_dir.clone());
+    let output_dir = positional.get(1).map(PathBuf::from).unwrap_or_else(|| base_dir.clone());
 
     let raw = std::fs::read(&spec_path).map_err(|e| format!("{}: {e}", spec_path.display()))?;
     let spec: BuildSpec = serde_json::from_slice(&raw).map_err(|e| format!("{}: {e}", spec_path.display()))?;
@@ -202,7 +225,7 @@ fn run() -> Result<(), String> {
         tool_version: p.tool_version,
     });
 
-    let asset_spec = AssetSpec { kind, tensors, boundaries, dataset, weights, provenance, volume_width: 0, max_volume_bytes: None };
+    let asset_spec = AssetSpec { kind, tensors, boundaries, dataset, weights, provenance, volume_width, max_volume_bytes };
 
     let artifact = build(&asset_spec).map_err(|e| format!("build: {e}"))?;
     artifact.publish(&output_dir, &spec.output).map_err(|e| format!("publish: {e}"))?;
