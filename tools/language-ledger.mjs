@@ -3,7 +3,7 @@
 // (stub / partial / full) plus the `data.text.*` languages without a service
 // crate. Run from the repository root; `--write <file>` writes the markdown
 // instead of printing it to stdout.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -87,12 +87,12 @@ const crates = listDirs(languageRoot)
   })
   .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
 
-const allLanguageCrats = new Set(crates.map((crate) => crate.name.slice('language.'.length)))
+const allLanguageCrates = new Set(crates.map((crate) => crate.name.slice('language.'.length)))
 
 const gaps = listDirs(dataRoot)
   .filter((name) => name.startsWith('data.text.'))
   .map((dir) => ({ dir, lang: dir.slice('data.text.'.length) }))
-  .filter(({ lang }) => !allLanguageCrats.has(lang))
+  .filter(({ lang }) => !allLanguageCrates.has(lang))
   .map(({ dir, lang }) => {
     const src = join(dataRoot, dir, 'src')
     const hasParser = existsSync(join(src, 'parser')) || existsSync(join(src, 'lexer'))
