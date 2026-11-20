@@ -270,7 +270,9 @@ members = [
     "projects/data/data.text.zig",
     "projects/data/data.safetensors",
     "projects/dl/dl.autograd",
+    "projects/dl/dl.autotune",
     "projects/dl/dl.graph",
+    "projects/dl/dl.harness",
     "projects/dl/dl.model",
     "projects/dl/dl.nn",
     "projects/dl/dl.ops",
@@ -346,7 +348,9 @@ members = [
     "projects/media/media.voice",
     "projects/media/media.voxel",
     "projects/ml/ml.data",
+    "projects/ml/ml.harness",
     "projects/ml/ml.metrics",
+    "projects/ml/ml.types",
     "projects/package/package.cache",
     "projects/package/package.manager",
     "projects/package/package.manager.legion",
@@ -533,6 +537,8 @@ dl-nn = { path = "projects/dl/dl.nn" }
 dl-train = { path = "projects/dl/dl.train" }
 dl-model = { path = "projects/dl/dl.model" }
 dl-plan = { path = "projects/dl/dl.plan" }
+dl-autotune = { path = "projects/dl/dl.autotune" }
+dl-harness = { path = "projects/dl/dl.harness" }
 document-compose = { path = "projects/document/document.compose" }
 document-convert = { path = "projects/document/document.convert" }
 document-diagnostic = { path = "projects/document/document.diagnostic" }
@@ -601,7 +607,9 @@ media-vector = { path = "projects/media/media.vector" }
 media-voice = { path = "projects/media/media.voice" }
 media-voxel = { path = "projects/media/media.voxel" }
 ml-data = { path = "projects/ml/ml.data" }
+ml-harness = { path = "projects/ml/ml.harness" }
 ml-metrics = { path = "projects/ml/ml.metrics" }
+ml-types = { path = "projects/ml/ml.types" }
 
 package-cache = { path = "projects/package/package.cache" }
 package-manager = { path = "projects/package/package.manager" }

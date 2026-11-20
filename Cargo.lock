@@ -3629,6 +3629,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dl-autotune"
+version = "0.1.0"
+dependencies = [
+ "dl-graph",
+ "dl-plan",
+ "dl-tensor",
+ "hardware-capability",
+]
+
+[[package]]
 name = "dl-graph"
 version = "0.1.0"
 dependencies = [
@@ -3639,6 +3649,17 @@ dependencies = [
  "dl-ops",
  "dl-tensor",
  "dl-types",
+]
+
+[[package]]
+name = "dl-harness"
+version = "0.1.0"
+dependencies = [
+ "dl-autotune",
+ "dl-graph",
+ "dl-plan",
+ "dl-tensor",
+ "hardware-capability",
 ]
 
 [[package]]
@@ -5321,10 +5342,31 @@ dependencies = [
  "dl-train",
  "dl-types",
  "ml-metrics",
+ "ml-types",
+]
+
+[[package]]
+name = "ml-harness"
+version = "0.1.0"
+dependencies = [
+ "boost-random",
+ "dl-tensor",
+ "dl-train",
+ "dl-types",
+ "ml-data",
+ "ml-metrics",
+ "ml-types",
 ]
 
 [[package]]
 name = "ml-metrics"
+version = "0.1.0"
+dependencies = [
+ "ml-types",
+]
+
+[[package]]
+name = "ml-types"
 version = "0.1.0"
 
 [[package]]

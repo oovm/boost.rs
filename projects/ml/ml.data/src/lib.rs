@@ -1,6 +1,7 @@
 //! 数据集、批次切分与表格预处理。
 //!
 //! 本 crate 只做数据组织，不做模型计算：批次产出 `dl-tensor` 张量，直接交给 `dl-*`。
+//! 样本类型 [`Sample`] 来自 `ml-types`（单一事实源），本 crate 再导出以保持既有路径可用；
 //! 标签以整数保存，批次目标使用 one-hot f32，便于与 `dl-ops` / `dl-train` 的 MSE
 //! 损失衔接。
 
@@ -8,6 +9,8 @@
 
 use dl_tensor::Tensor;
 use dl_types::DlError;
+
+pub use ml_types::Sample;
 
 /// 数据层错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,22 +103,6 @@ fn idx_header(bytes: &[u8], expected_magic: u32, kind: &str) -> Result<(usize, u
     let rows = if rank >= 2 { dimension(1) } else { 1 };
     let cols = if rank >= 3 { dimension(2) } else { 1 };
     Ok((dimension(0), rows, cols, header))
-}
-
-/// 一条带整数标签的稠密样本。
-#[derive(Debug, Clone, PartialEq)]
-pub struct Sample {
-    /// 连续特征。
-    pub features: Vec<f32>,
-    /// 类别标签。
-    pub label: u32,
-}
-
-impl Sample {
-    /// 构造样本。
-    pub fn new(features: impl Into<Vec<f32>>, label: u32) -> Self {
-        Self { features: features.into(), label }
-    }
 }
 
 /// 固定特征宽度与类别数的数据集。

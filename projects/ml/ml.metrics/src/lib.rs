@@ -1,9 +1,12 @@
 //! 分类与回归评估指标。
 //!
 //! 输入是普通切片，不依赖张量或训练框架；调用方把模型输出转成预测标签/数值后即可使用。
-//! 空输入与长度不一致都返回可判别错误，不做静默截断。
+//! 样本级入口（[`accuracy_on_samples`] 等）使用 `ml-types` 的 [`Sample`]，避免各消费者
+//! 自己重复取 `label`。空输入与长度不一致都返回可判别错误，不做静默截断。
 
 #![deny(missing_docs)]
+
+use ml_types::Sample;
 
 /// 指标计算错误。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +50,12 @@ pub fn accuracy(predictions: &[u32], targets: &[u32]) -> Result<f32, MetricError
     let count = check_lengths(predictions.len(), targets.len())?;
     let correct = predictions.iter().zip(targets).filter(|(prediction, target)| prediction == target).count();
     Ok(correct as f32 / count as f32)
+}
+
+/// 对样本集合计算准确率：`predictions[i]` 对应 `samples[i].label`。
+pub fn accuracy_on_samples(predictions: &[u32], samples: &[Sample]) -> Result<f32, MetricError> {
+    let labels: Vec<u32> = samples.iter().map(|sample| sample.label).collect();
+    accuracy(predictions, &labels)
 }
 
 /// 二分类精确率、召回率与 F1。

@@ -1,0 +1,22 @@
+[package]
+name = "ml-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "End-to-end ML acceptance harness: dataset, graph training, metrics, gate"
+publish = false
+
+[dependencies]
+boost-random = { workspace = true }
+dl-tensor = { workspace = true }
+dl-train = { workspace = true }
+dl-types = { workspace = true }
+ml-data = { workspace = true }
+ml-metrics = { workspace = true }
+
+[dev-dependencies]
+ml-types = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
