@@ -16,8 +16,12 @@ pub fn jwk_thumbprint(canonical_jwk: &str) -> String {
 }
 
 /// The ES256 account key used for JWS signatures and dns-01 key authorizations.
+///
+/// The key stores its scalar so it stays cheap to clone across retries and
+/// bounded polling loops; the signing key object is derived per signature.
+#[derive(Clone, PartialEq, Eq)]
 pub struct AccountKey {
-    signing: SigningKey,
+    scalar: [u8; 32],
 }
 
 impl core::fmt::Debug for AccountKey {
@@ -29,22 +33,30 @@ impl core::fmt::Debug for AccountKey {
 impl AccountKey {
     /// Generate a fresh P-256 account key from the host CSPRNG.
     pub fn generate() -> AcmeResult<Self> {
-        SigningKey::generate().map(|signing| Self { signing }).map_err(|error| AcmeError::invalid_argument(error.to_string()))
+        SigningKey::generate()
+            .map(|signing| Self { scalar: signing.to_bytes() })
+            .map_err(|error| AcmeError::invalid_argument(error.to_string()))
     }
 
     /// Adopt an existing P-256 scalar (32 big-endian bytes).
     pub fn from_bytes(bytes: &[u8]) -> AcmeResult<Self> {
-        SigningKey::from_bytes(bytes).map(|signing| Self { signing }).map_err(|error| AcmeError::invalid_argument(error.to_string()))
+        SigningKey::from_bytes(bytes)
+            .map(|signing| Self { scalar: signing.to_bytes() })
+            .map_err(|error| AcmeError::invalid_argument(error.to_string()))
     }
 
     /// Export the P-256 scalar (32 big-endian bytes) for product-side key storage.
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.signing.to_bytes()
+        self.scalar
+    }
+
+    fn signing_key(&self) -> SigningKey {
+        SigningKey::from_bytes(&self.scalar).expect("a validated scalar stays valid")
     }
 
     /// The JWK object with only the required members `crv`, `kty`, `x`, `y`.
     fn jwk_value(&self) -> Value {
-        let point = self.signing.verifying_key().to_sec1_bytes();
+        let point = self.signing_key().verifying_key().to_sec1_bytes();
         let mut members = Map::new();
         members.insert("crv".to_owned(), Value::String("P-256".to_owned()));
         members.insert("kty".to_owned(), Value::String("EC".to_owned()));
@@ -98,7 +110,7 @@ pub fn build_jws(key: &AccountKey, account: &AccountRef, url: &str, nonce: &str,
 
     let protected = b64url(Value::Object(protected).to_string().as_bytes());
     let payload = b64url(payload_json.as_bytes());
-    let signature = key.signing.sign_fixed(format!("{protected}.{payload}").as_bytes());
+    let signature = key.signing_key().sign_fixed(format!("{protected}.{payload}").as_bytes());
 
     let mut document = Map::new();
     document.insert("protected".to_owned(), Value::String(protected));

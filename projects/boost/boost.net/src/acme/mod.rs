@@ -5,11 +5,11 @@
 //! disk, CSR generation, DNS provider credentials, certificate delivery, or
 //! renewal scheduling: those stay with the consuming product.
 
-mod client;
-mod directory;
+pub mod client;
+pub mod directory;
 mod error;
-mod jws;
-mod types;
+pub mod jws;
+pub mod types;
 
 pub use client::{
     AcmeClient, BAD_NONCE, DnsChallenge, LOCATION_HEADER, NONCE_HEADER, OrderPollVerdict, RETRY_AFTER_HEADER, dns01_record_name, http01_path,
