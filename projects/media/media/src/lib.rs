@@ -18,6 +18,8 @@ pub use media_codec as codec;
 pub use media_dsp as dsp;
 #[cfg(feature = "gpu")]
 pub use media_gpu as gpu;
+#[cfg(feature = "gpu-wgsl")]
+pub use media_gpu::{FRAME_ELEMENTS, STOP_ELEMENTS, ShaderBundle, ShaderManifest, shader_bundles};
 #[cfg(feature = "image")]
 pub use media_image as image;
 #[cfg(feature = "layout")]

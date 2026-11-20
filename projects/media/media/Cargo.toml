@@ -33,6 +33,9 @@ media-gpu = { workspace = true, optional = true }
 default = ["image", "scene", "raster", "canvas", "pixel", "voxel", "layout", "particles", "text", "codec", "dsp", "synthesis", "voice", "audio", "post", "render", "gpu", "sfx-export", "voice-export", "image-pipeline", "vector", "svg", "vector-export", "obj", "voxel-export", "layout-export"]
 # GPU 合成后端（ADR 0005）：D3D12 计算算子复现 CPU 参考，CPU 只作显式降级路径。
 gpu = ["dep:media-gpu", "media-render/gpu"]
+# Build-time WGSL emission for Web/WASM hosts: the same UCF kernels emitted
+# through the text ABI plus the binding manifest (no D3D12 required).
+gpu-wgsl = ["dep:media-gpu", "media-gpu/wgsl"]
 image = ["dep:media-image"]
 scene = ["dep:media-scene", "image"]
 raster = ["dep:media-raster", "image"]
