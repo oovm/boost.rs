@@ -12,18 +12,12 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(feature = "lsp")]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 
 pub use crate::{ast::ZigRoot, builder::ZigBuilder, language::ZigLanguage, lexer::ZigLexer, parser::ZigParser};
 pub use data_text_core::{ElementType, TokenType};
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::ZigLanguageService;
 
 // /// MCP service implementation.
 // #[cfg(feature = "mcp")]

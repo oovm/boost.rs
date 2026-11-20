@@ -1,0 +1,20 @@
+[package]
+name = "language-toml"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Toml (LSP, MCP, formatter, highlighter adapters over data-text-toml)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "toml"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-toml = { workspace = true }
+futures = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

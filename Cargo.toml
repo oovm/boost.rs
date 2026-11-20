@@ -71,6 +71,36 @@ members = [
     "projects/language/language.valkyrie",
     "projects/language/language.visualize",
     "projects/language/language.von",
+    "projects/language/language.rhombus",
+    "projects/language/language.sass",
+    "projects/language/language.scala",
+    "projects/language/language.scheme",
+    "projects/language/language.scss",
+    "projects/language/language.smalltalk",
+    "projects/language/language.solidity",
+    "projects/language/language.sql",
+    "projects/language/language.stylus",
+    "projects/language/language.svelte",
+    "projects/language/language.swift",
+    "projects/language/language.tailwind",
+    "projects/language/language.tcl",
+    "projects/language/language.tex",
+    "projects/language/language.toml",
+    "projects/language/language.tsv",
+    "projects/language/language.twig",
+    "projects/language/language.typst",
+    "projects/language/language.vala",
+    "projects/language/language.vampire",
+    "projects/language/language.verilog",
+    "projects/language/language.vhdl",
+    "projects/language/language.vlang",
+    "projects/language/language.voml",
+    "projects/language/language.wat",
+    "projects/language/language.wgsl",
+    "projects/language/language.wit-component",
+    "projects/language/language.wolfram",
+    "projects/language/language.xml",
+    "projects/language/language.zig",
     "projects/language/language.cpp",
     "projects/language/language.dejavu",
     "projects/language/language.haskell",
@@ -593,6 +623,36 @@ language-typescript = { path = "projects/language/language.typescript" }
 language-valkyrie = { path = "projects/language/language.valkyrie" }
 language-visualize = { path = "projects/language/language.visualize" }
 language-von = { path = "projects/language/language.von" }
+language-rhombus = { path = "projects/language/language.rhombus" }
+language-sass = { path = "projects/language/language.sass" }
+language-scala = { path = "projects/language/language.scala" }
+language-scheme = { path = "projects/language/language.scheme" }
+language-scss = { path = "projects/language/language.scss" }
+language-smalltalk = { path = "projects/language/language.smalltalk" }
+language-solidity = { path = "projects/language/language.solidity" }
+language-sql = { path = "projects/language/language.sql" }
+language-stylus = { path = "projects/language/language.stylus" }
+language-svelte = { path = "projects/language/language.svelte" }
+language-swift = { path = "projects/language/language.swift" }
+language-tailwind = { path = "projects/language/language.tailwind" }
+language-tcl = { path = "projects/language/language.tcl" }
+language-tex = { path = "projects/language/language.tex" }
+language-toml = { path = "projects/language/language.toml" }
+language-tsv = { path = "projects/language/language.tsv" }
+language-twig = { path = "projects/language/language.twig" }
+language-typst = { path = "projects/language/language.typst" }
+language-vala = { path = "projects/language/language.vala" }
+language-vampire = { path = "projects/language/language.vampire" }
+language-verilog = { path = "projects/language/language.verilog" }
+language-vhdl = { path = "projects/language/language.vhdl" }
+language-vlang = { path = "projects/language/language.vlang" }
+language-voml = { path = "projects/language/language.voml" }
+language-wat = { path = "projects/language/language.wat" }
+language-wgsl = { path = "projects/language/language.wgsl" }
+language-wit-component = { path = "projects/language/language.wit-component" }
+language-wolfram = { path = "projects/language/language.wolfram" }
+language-xml = { path = "projects/language/language.xml" }
+language-zig = { path = "projects/language/language.zig" }
 language-cpp = { path = "projects/language/language.cpp" }
 language-dejavu = { path = "projects/language/language.dejavu" }
 language-haskell = { path = "projects/language/language.haskell" }

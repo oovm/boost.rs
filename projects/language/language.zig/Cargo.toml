@@ -1,0 +1,17 @@
+[package]
+name = "language-zig"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Zig (LSP, MCP, formatter, highlighter adapters over data-text-zig)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "zig"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-zig = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

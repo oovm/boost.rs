@@ -13,20 +13,12 @@ keywords = ["parser", "xml", "markup", "document"]
 [dependencies]
 data-text-core = { workspace = true }
 data-text-xpath = { workspace = true }
-language-highlight = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-language-server = { workspace = true, optional = true }
-language-hover = { workspace = true, optional = true }
-language-mcp = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
 
 [features]
 default = ["serde"]
 serde = ["dep:serde", "data-text-core/serde"]
 diagnostic = ["data-text-core/diagnostic"]
-lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
-mcp = ["lsp", "language-mcp/io-std"]
 
 [package.metadata.docs.rs]
 all-features = true

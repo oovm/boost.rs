@@ -14,9 +14,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 pub use crate::{ast::VRoot, builder::VomlBuilder, language::VomlLanguage, lexer::VomlLexer, parser::VomlParser};
@@ -34,8 +31,5 @@ pub fn parse(voml: &str) -> Result<crate::ast::VRoot, String> {
 /// Syntax module.
 pub use data_text_core::{ElementType, TokenType};
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::VomlLanguageService;
 pub use lexer::token_type::VomlTokenType;
 pub use parser::element_type::VomlElementType;

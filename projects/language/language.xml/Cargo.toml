@@ -1,0 +1,17 @@
+[package]
+name = "language-xml"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Xml (LSP, MCP, formatter, highlighter adapters over data-text-xml)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "xml"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-xml = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

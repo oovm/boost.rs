@@ -15,8 +15,6 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 // /// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 // pub mod mcp;
 /// Parser module.
 pub mod parser;
@@ -25,12 +23,9 @@ pub use crate::{ast::WatRoot, builder::WatBuilder, language::WatLanguage, lexer:
 
 //
 /// Dummy highlighter for Wat.
-#[cfg(feature = "language-highlight")]
 pub mod dummy_highlighter {}
 
 // /// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::WatLanguageService;
 
 pub use lexer::token_type::WatTokenType;
 pub use parser::element_type::WatElementType;

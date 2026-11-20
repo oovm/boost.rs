@@ -1,0 +1,18 @@
+[package]
+name = "language-verilog"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Verilog (LSP, MCP, formatter, highlighter adapters over data-text-verilog)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "verilog"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-verilog = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }

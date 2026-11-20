@@ -12,12 +12,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
@@ -30,16 +24,5 @@ pub use crate::{
     parser::{ValaParser, element_type::ValaElementType},
 };
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::ValaHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::ValaLanguageService;
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::formatter::ValaFormatter;
 
-/// MCP service implementation.
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_vala_mcp;

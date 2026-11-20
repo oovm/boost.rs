@@ -10,13 +10,6 @@ edition.workspace = true
 data-text-core = { workspace = true }
 triomphe = { workspace = true }
 serde = { workspace = true, optional = true }
-language-server = { workspace = true, optional = true }
-language-hover = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true, features = ["rt", "net"] }
-language-highlight = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
-language-mcp = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
 
 [dev-dependencies]
 language-testing = { workspace = true }
@@ -24,10 +17,6 @@ language-testing = { workspace = true }
 [features]
 default = ["serde"]
 serde = ["dep:serde", "data-text-core/serde"]
-lsp = ["dep:language-server", "dep:language-hover", "dep:language-highlight", "dep:futures", "dep:language-format"]
-mcp = ["lsp", "dep:tokio", "dep:language-mcp"]
-language-highlight = ["dep:language-highlight"]
-language-format = ["dep:language-format"]
 
 [package.metadata.docs.rs]
 all-features = true

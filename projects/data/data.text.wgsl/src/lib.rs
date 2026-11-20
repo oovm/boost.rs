@@ -11,9 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 
@@ -33,8 +30,5 @@ pub fn parse_wgsl(source: &str) -> Result<WgslRoot, String> {
     builder.build(&text, &[], &mut cache).result.map_err(|error| error.to_string())
 }
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::WgslLanguageService;
 pub use lexer::token_type::WgslTokenType;
 pub use parser::element_type::WgslElementType;

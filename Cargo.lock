@@ -2201,15 +2201,8 @@ name = "data-text-rhombus"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2255,15 +2248,8 @@ name = "data-text-sass"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2271,15 +2257,8 @@ name = "data-text-scala"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2287,15 +2266,8 @@ name = "data-text-scheme"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2303,15 +2275,8 @@ name = "data-text-scss"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2319,15 +2284,8 @@ name = "data-text-smalltalk"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2343,15 +2301,8 @@ name = "data-text-solidity"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2370,15 +2321,8 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-pretty",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2403,15 +2347,8 @@ name = "data-text-stylus"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
  "triomphe",
 ]
 
@@ -2420,12 +2357,6 @@ name = "data-text-svelte"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2435,15 +2366,8 @@ name = "data-text-swift"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2458,18 +2382,10 @@ dependencies = [
 name = "data-text-tailwind"
 version = "0.1.0"
 dependencies = [
- "dashmap",
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "lazy_static",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2477,15 +2393,8 @@ name = "data-text-tcl"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2493,15 +2402,8 @@ name = "data-text-tex"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2509,15 +2411,8 @@ name = "data-text-toml"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2526,12 +2421,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-dsv",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2541,15 +2430,8 @@ name = "data-text-twig"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2565,15 +2447,8 @@ name = "data-text-typst"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2589,15 +2464,8 @@ name = "data-text-vala"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2617,15 +2485,8 @@ name = "data-text-vampire"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2647,12 +2508,6 @@ name = "data-text-verilog"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2662,12 +2517,6 @@ name = "data-text-vhdl"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2677,12 +2526,6 @@ name = "data-text-vlang"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2692,12 +2535,6 @@ name = "data-text-voml"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2733,12 +2570,6 @@ name = "data-text-wat"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2748,12 +2579,6 @@ name = "data-text-wgsl"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2763,12 +2588,6 @@ name = "data-text-wit-component"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2778,14 +2597,7 @@ name = "data-text-wolfram"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2794,12 +2606,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-xpath",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "serde",
 ]
 
@@ -2827,12 +2633,6 @@ name = "data-text-zig"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -5640,6 +5440,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-rhombus"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-rhombus",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
 name = "language-rust"
 version = "0.1.0"
 dependencies = [
@@ -5647,6 +5460,60 @@ dependencies = [
  "data-text-core",
  "data-text-rust",
  "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-sass"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-sass",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-scala"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-scala",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-scheme"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-scheme",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-scss"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-scss",
+ "futures",
+ "language-highlight",
  "language-hover",
  "language-mcp",
  "language-server",
@@ -5691,11 +5558,112 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-smalltalk"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-smalltalk",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-solidity"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-solidity",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-sql"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-sql",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
 name = "language-structural-view"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
  "serde",
+]
+
+[[package]]
+name = "language-stylus"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-stylus",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-svelte"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-svelte",
+]
+
+[[package]]
+name = "language-swift"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-swift",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-tailwind"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-tailwind",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-tcl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-tcl",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
 ]
 
 [[package]]
@@ -5710,6 +5678,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-tex"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-tex",
+ "futures",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-toml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-toml",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-tsv"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-tsv",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-twig"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-twig",
+ "futures",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
 name = "language-typescript"
 version = "0.1.0"
 dependencies = [
@@ -5717,6 +5733,30 @@ dependencies = [
  "data-text-typescript",
  "language-format",
  "serde",
+]
+
+[[package]]
+name = "language-typst"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-typst",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-vala"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-vala",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+ "tokio",
 ]
 
 [[package]]
@@ -5756,6 +5796,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-vampire"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-vampire",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-verilog"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-verilog",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+]
+
+[[package]]
+name = "language-vhdl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-vhdl",
+]
+
+[[package]]
 name = "language-visualize"
 version = "0.1.0"
 dependencies = [
@@ -5767,6 +5838,26 @@ dependencies = [
  "language-highlight",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "language-vlang"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-vlang",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-voml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-voml",
+ "futures",
+ "language-server",
 ]
 
 [[package]]
@@ -5789,6 +5880,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-wat"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-wat",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-wgsl"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-wgsl",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-wit-component"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-wit-component",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-wolfram"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-wolfram",
+ "futures",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-xml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-xml",
+ "futures",
+ "language-server",
+]
+
+[[package]]
 name = "language-yaml"
 version = "0.1.0"
 dependencies = [
@@ -5797,6 +5940,16 @@ dependencies = [
  "language-mcp",
  "language-server",
  "tokio",
+]
+
+[[package]]
+name = "language-zig"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-zig",
+ "futures",
+ "language-server",
 ]
 
 [[package]]

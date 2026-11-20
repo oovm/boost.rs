@@ -13,9 +13,6 @@ pub mod lexer;
 /// The parser for TSV.
 pub mod parser;
 
-/// Language service implementation for TSV.
-#[cfg(feature = "lsp")]
-pub mod lsp;
 
 pub use crate::{
     ast::{TsvField, TsvRecord, TsvRoot},
@@ -57,6 +54,3 @@ pub fn parse(tsv: &str) -> Result<crate::ast::TsvRoot, data_text_core::TextError
     result.result
 }
 
-/// Language service implementation for TSV.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::TsvLanguageService;

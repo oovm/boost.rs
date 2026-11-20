@@ -12,29 +12,11 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// Syntax module.
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 /// Parser module.
 pub mod parser;
 
 pub use crate::{ast::ScalaRoot, builder::ScalaBuilder, language::ScalaLanguage, lexer::ScalaLexer, parser::ScalaParser};
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::ScalaHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::ScalaLanguageService;
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::formatter::ScalaFormatter;
 
-/// MCP service implementation.
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_scala_mcp;
 pub use data_text_core::{ElementType, TokenType};

@@ -17,8 +17,6 @@ pub mod language;
 /// Lexer module.
 pub mod lexer;
 // /// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 // pub mod mcp;
 /// Parser module.
 pub mod parser;
@@ -30,8 +28,6 @@ pub use data_text_core::{ElementType, TokenType};
 // pub use crate::lsp::highlighter::VLangHighlighter;
 
 // /// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::VLangLanguageService;
 // #[cfg(feature = "lsp")]
 // pub use crate::lsp::formatter::VLangFormatter;
 pub use lexer::token_type::VLangTokenType;

@@ -11,12 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module for SQL.
 pub mod lexer;
-/// LSP module for SQL.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module for SQL.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module for SQL.
 pub mod parser;
@@ -49,9 +43,4 @@ pub mod kind {
     pub use crate::lexer::token_type::SqlTokenType as SqlSyntaxKind;
 }
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::SqlHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::{SqlLanguageService, formatter::SqlFormatter};

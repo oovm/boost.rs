@@ -1,0 +1,18 @@
+[package]
+name = "language-tailwind"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Tailwind (LSP, MCP, formatter, highlighter adapters over data-text-tailwind)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "tailwind"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-tailwind = { workspace = true }
+language-mcp = { workspace = true, features = ["io-std"] }
+language-server = { workspace = true }
+tokio = { workspace = true }
