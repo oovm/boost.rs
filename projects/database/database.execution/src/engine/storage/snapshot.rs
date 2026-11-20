@@ -89,7 +89,7 @@ fn payload_len(bytes: &[u8]) -> Option<usize> {
 /// and a schema change misses instead of serving a stale contract.
 #[derive(Debug, Default)]
 pub(crate) struct ContractCache {
-    slot: std::sync::Mutex<Option<(String, u64, Option<std::sync::Arc<schema_input_vos::ResolvedContract>>)>>,
+    slot: std::sync::Mutex<Option<(String, u64, Option<std::sync::Arc<schema_types::ResolvedContract>>)>>,
 }
 
 impl ContractCache {
@@ -98,7 +98,7 @@ impl ContractCache {
         &self,
         basis: (String, u64),
         bytes: Option<Vec<u8>>,
-    ) -> Result<Option<std::sync::Arc<schema_input_vos::ResolvedContract>>> {
+    ) -> Result<Option<std::sync::Arc<schema_types::ResolvedContract>>> {
         let mut slot = self.slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some((fingerprint, revision, contract)) = slot.as_ref() {
             if *fingerprint == basis.0 && *revision == basis.1 {
@@ -384,7 +384,7 @@ fn decode_identity(bytes: Option<Vec<u8>>) -> Result<Option<schema_types::Identi
     }
 }
 
-fn encode_contract(contract: &Option<std::sync::Arc<schema_input_vos::ResolvedContract>>) -> Result<Vec<u8>> {
+fn encode_contract(contract: &Option<std::sync::Arc<schema_types::ResolvedContract>>) -> Result<Vec<u8>> {
     match contract {
         None => Ok(vec![0]),
         Some(contract) => {
@@ -398,7 +398,7 @@ fn encode_contract(contract: &Option<std::sync::Arc<schema_input_vos::ResolvedCo
     }
 }
 
-fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<std::sync::Arc<schema_input_vos::ResolvedContract>>> {
+fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<std::sync::Arc<schema_types::ResolvedContract>>> {
     let bytes = bytes.unwrap_or(vec![0]);
     match bytes.first() {
         None | Some(0) => Ok(None),
@@ -412,7 +412,7 @@ fn decode_contract(bytes: Option<Vec<u8>>) -> Result<Option<std::sync::Arc<schem
                 return Err(Error::Corrupt("resolved contract meta length mismatch"));
             }
             Ok(Some(std::sync::Arc::new(
-                schema_input_vos::ResolvedContract::from_json(
+                schema_types::ResolvedContract::from_json(
                     &String::from_utf8(bytes[5..end].to_vec()).map_err(|_| Error::Corrupt("resolved contract is not UTF-8"))?,
                 )
                 .map_err(|_| Error::Corrupt("resolved contract meta is invalid"))?,

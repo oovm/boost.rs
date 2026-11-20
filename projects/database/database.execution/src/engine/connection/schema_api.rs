@@ -14,7 +14,7 @@ impl Connection {
     }
 
     /// Current validated VOS resolved contract, if the database has one.
-    pub fn resolved_contract(&self) -> Result<Option<std::sync::Arc<schema_input_vos::ResolvedContract>>> {
+    pub fn resolved_contract(&self) -> Result<Option<std::sync::Arc<schema_types::ResolvedContract>>> {
         Ok(self.read_state()?.resolved_contract)
     }
 
@@ -265,7 +265,7 @@ fn join_schema_documents(documents: &[&str]) -> String {
 /// no longer rebinds to the durable identities fails with [`Error::Schema`]
 /// without rewriting any state; a database whose identity ledger is missing
 /// stays a corruption error, because no caller document can explain it away.
-fn rebind_identities(state: &super::State, projection: &schema_types::SchemaProjection) -> Result<schema_input_vos::ResolvedContract> {
+fn rebind_identities(state: &super::State, projection: &schema_types::SchemaProjection) -> Result<schema_types::ResolvedContract> {
     let history = state.identity_history.as_ref().ok_or(Error::Corrupt("catalog identity ledger does not match schema"))?;
     let manifest = schema_vos::manifest_from_snapshot(&history.snapshot);
     let bound = schema_vos::bind(projection, &manifest).map_err(|_| schema_mismatch())?;

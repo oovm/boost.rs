@@ -38,7 +38,7 @@ pub use schema_api::CatalogDefinition;
 pub(crate) struct State {
     pub(crate) schema: Option<SchemaVersion>,
     pub(crate) identity_history: Option<schema_types::IdentityHistory>,
-    pub(crate) resolved_contract: Option<std::sync::Arc<schema_input_vos::ResolvedContract>>,
+    pub(crate) resolved_contract: Option<std::sync::Arc<schema_types::ResolvedContract>>,
     pub(crate) records: BTreeMap<String, Vec<u8>>,
     pub(crate) unique_constraints: Vec<database_types::TableUniqueConstraint>,
 }

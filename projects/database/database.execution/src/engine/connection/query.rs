@@ -289,7 +289,7 @@ impl Connection {
         &self,
         stmt: &PreparedStatement,
         values: &[Value],
-        contract: &schema_input_vos::ResolvedContract,
+        contract: &schema_types::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
     ) -> Result<Vec<QueryRow>> {
         with_object_resolver(Some(self.object_resolver()), || crate::local::execute_prepared(stmt, values, Some(contract), records))
@@ -299,7 +299,7 @@ impl Connection {
         &self,
         stmt: &PreparedStatement,
         values: &[Value],
-        contract: &schema_input_vos::ResolvedContract,
+        contract: &schema_types::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
         profile: Option<&mut ReadProfile>,
     ) -> Result<Vec<QueryRow>> {
@@ -324,7 +324,7 @@ impl Connection {
         &self,
         stmt: &PreparedStatement,
         values: &[Value],
-        contract: &schema_input_vos::ResolvedContract,
+        contract: &schema_types::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
         rows: Option<&database_storage::local::RowWindow>,
         profile: Option<&mut ReadProfile>,
@@ -439,7 +439,7 @@ impl Connection {
     /// the table, so the statement no longer needs every row loaded.
     fn rules_warm(
         &self,
-        contract: &schema_input_vos::ResolvedContract,
+        contract: &schema_types::ResolvedContract,
         declared: &[database_types::TableUniqueConstraint],
         basis: &(String, u64),
     ) -> bool {
@@ -726,7 +726,7 @@ pub enum ClockSource {
     Unavailable,
 }
 
-fn resolved_contract(state: &super::State) -> Result<&schema_input_vos::ResolvedContract> {
+fn resolved_contract(state: &super::State) -> Result<&schema_types::ResolvedContract> {
     state.resolved_contract.as_deref().ok_or_else(|| Error::Schema { message: "query requires ensure_schema before execution".into() })
 }
 
