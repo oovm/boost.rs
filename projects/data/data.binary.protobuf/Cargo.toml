@@ -1,0 +1,12 @@
+[package]
+name = "data-binary-protobuf"
+version.workspace = true
+authors.workspace = true
+description = "Protocol Buffers wire-format substrate: tag/varint/fixed traversal, packed repeats, sub-message nesting, unknown-field skipping and bounds checks (`data.binary` domain)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }

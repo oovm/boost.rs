@@ -112,6 +112,7 @@ members = [
     "projects/data/data.binary.odin",
     "projects/data/data.binary.pe",
     "projects/data/data.binary.probe",
+    "projects/data/data.binary.protobuf",
     "projects/data/data.binary.spirv",
     "projects/data/data.binary.tar",
     "projects/data/data.binary.ttf",
@@ -686,6 +687,7 @@ data-binary-mach-o = { path = "projects/data/data.binary.mach-o" }
 data-binary-odin = { path = "projects/data/data.binary.odin" }
 data-binary-pe = { path = "projects/data/data.binary.pe" }
 data-binary-probe = { path = "projects/data/data.binary.probe" }
+data-binary-protobuf = { path = "projects/data/data.binary.protobuf" }
 data-binary-spirv = { path = "projects/data/data.binary.spirv" }
 data-binary-tar = { path = "projects/data/data.binary.tar" }
 data-binary-ttf = { path = "projects/data/data.binary.ttf" }
