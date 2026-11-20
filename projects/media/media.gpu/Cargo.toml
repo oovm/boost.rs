@@ -1,0 +1,23 @@
+[package]
+name = "media-gpu"
+description = "GPU compositor backend: wgpu/WGSL frame operators that reproduce the CPU reference on packed RGBA8 display bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+media-image = { workspace = true }
+serde = { workspace = true }
+wgpu = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+
+[features]
+default = ["gpu"]
+gpu = ["dep:wgpu", "dep:pollster"]
+
+[dev-dependencies]
+geometry = { workspace = true }
+media-raster = { workspace = true }
+media-post = { workspace = true }

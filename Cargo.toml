@@ -332,6 +332,7 @@ members = [
     "projects/media/media.canvas",
     "projects/media/media.codec",
     "projects/media/media.dsp",
+    "projects/media/media.gpu",
     "projects/media/media.harness",
     "projects/media/media.image",
     "projects/media/media.layout",
@@ -591,6 +592,7 @@ media-audio = { path = "projects/media/media.audio" }
 media-canvas = { path = "projects/media/media.canvas" }
 media-codec = { path = "projects/media/media.codec" }
 media-dsp = { path = "projects/media/media.dsp" }
+media-gpu = { path = "projects/media/media.gpu" }
 media-harness = { path = "projects/media/media.harness" }
 media-image = { path = "projects/media/media.image" }
 media-layout = { path = "projects/media/media.layout" }
@@ -948,6 +950,9 @@ windows-sys = { version = "0.61.2", default-features = false, features = ["Win32
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 encoding_rs = "0.8.35"
+# GPU 合成后端（ADR 0005）：wgpu + WGSL 跨平台，CPU 只作 fallback。
+wgpu = "25"
+pollster = "0.4"
 
 [profile.release]
 lto = true
