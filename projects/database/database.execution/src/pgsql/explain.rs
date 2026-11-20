@@ -108,6 +108,13 @@ fn plan_lines(plan: &SqlExecutionPlan, catalog: &SqlCatalog) -> Vec<String> {
             lines
         }
         SqlExecutionPlan::Scalar(_) => vec!["Result".to_owned()],
+        SqlExecutionPlan::RecursiveCte(recursive) => {
+            let mut lines = vec![format!("Recursive Union on \"{}\"", recursive.name)];
+            lines.extend(plan_lines(&recursive.seed, catalog).into_iter().map(|line| format!("  Seed: {line}")));
+            lines.extend(plan_lines(&recursive.step, catalog).into_iter().map(|line| format!("  Step: {line}")));
+            lines.extend(plan_lines(&recursive.consumer, catalog).into_iter().map(|line| format!("  {line}")));
+            lines
+        }
         SqlExecutionPlan::SetOperation(set) => {
             let mut lines = vec!["Append".to_owned()];
             for operand in &set.operands {

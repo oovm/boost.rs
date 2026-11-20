@@ -255,11 +255,13 @@ fn required_privilege(plan: &SqlExecutionPlan) -> Option<(database_storage::pgsq
         SqlExecutionPlan::Delete(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
         SqlExecutionPlan::DeleteScan(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
         // `DELETE ... USING` 跨多张表，与连接一样无法归到单表授权，交由受限角色拒绝。
+        // 递归 CTE 的 seed 同样跨表读取，合成 namespace 也不属于任何授权对象。
         SqlExecutionPlan::Join(_)
         | SqlExecutionPlan::Scalar(_)
         | SqlExecutionPlan::SetOperation(_)
         | SqlExecutionPlan::InsertSelect(_)
-        | SqlExecutionPlan::DeleteUsing(_) => None,
+        | SqlExecutionPlan::DeleteUsing(_)
+        | SqlExecutionPlan::RecursiveCte(_) => None,
     }
 }
 
@@ -663,6 +665,7 @@ fn run_statement_inner(
             | SqlExecutionPlan::Join(_)
             | SqlExecutionPlan::Scalar(_)
             | SqlExecutionPlan::SetOperation(_)
+            | SqlExecutionPlan::RecursiveCte(_)
     );
     // Derive the result shape from the catalog plan so an empty result set
     // reports the declared type instead of falling back to `text`.
@@ -693,7 +696,8 @@ fn run_statement_inner(
             | SqlExecutionPlan::Scan(_)
             | SqlExecutionPlan::Join(_)
             | SqlExecutionPlan::Scalar(_)
-            | SqlExecutionPlan::SetOperation(_) => {
+            | SqlExecutionPlan::SetOperation(_)
+            | SqlExecutionPlan::RecursiveCte(_) => {
                 format!("SELECT {}", result.rows.len())
             }
         }

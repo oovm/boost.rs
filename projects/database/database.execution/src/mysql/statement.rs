@@ -628,6 +628,7 @@ fn finish_plan(
             | SqlExecutionPlan::Join(_)
             | SqlExecutionPlan::Scalar(_)
             | SqlExecutionPlan::SetOperation(_)
+            | SqlExecutionPlan::RecursiveCte(_)
     );
     // MySQL drivers enable transactions with `SET autocommit = 0` rather than
     // sending `BEGIN`, so the first write has to open the handle lazily before

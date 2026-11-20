@@ -22,7 +22,8 @@ use crate::{
         SqlCatalog, SqlCatalogBoundColumn, SqlCatalogBoundConflict, SqlCatalogBoundConflictAction, SqlCatalogBoundDelete,
         SqlCatalogBoundExpression, SqlCatalogBoundInsert, SqlCatalogBoundOrderByItem, SqlCatalogBoundProjection, SqlCatalogBoundSelect,
         SqlCatalogBoundSetOperand, SqlCatalogBoundSetOperation, SqlCatalogBoundStatement, SqlCatalogBoundTable, SqlCatalogBoundUpdate,
-        SqlCatalogOuterColumn, SqlCatalogTable, SqlFieldType, bind_sql_catalog, collect_column_ids, reject_unknown_field,
+        SqlCatalogOuterColumn, SqlCatalogRecursiveCte, SqlCatalogTable, SqlFieldType, bind_sql_catalog, collect_column_ids,
+        is_synthetic_type_id, reject_unknown_field, synthetic_namespace,
     },
     sql::{
         SqlAggregateFunction, SqlBoundBinaryOperator, SqlBoundExpression, SqlBoundLiteral, SqlBoundOrderByItem, SqlBoundOrderDirection,
@@ -98,23 +99,45 @@ pub fn plan_select(select: SqlCatalogBoundSelect, catalog: &SqlCatalog) -> Resul
 }
 
 /// 计划一个 SELECT，NULL 排序规则由 `dialect` 决定。
+///
+/// 公开入口：合成关系不可扫描，递归 CTE 只能由声明它的 SELECT 自己物化。
 pub fn plan_select_for_dialect(
     select: SqlCatalogBoundSelect,
     catalog: &SqlCatalog,
     dialect: SqlDialect,
 ) -> Result<SqlExecutionPlan, SqlFrontendError> {
+    plan_select_mode(select, catalog, dialect, &[])
+}
+
+/// 在一个允许扫描给定递归 CTE 合成关系的上下文中规划 SELECT。
+///
+/// `declared` 列出当前执行阶段已物化（或将先于本计划物化）的不动点。绑定期
+/// 嵌入的子查询计划走空集合：它们无法引用外层作用域的递归 CTE，遇到即拒绝。
+fn plan_select_mode(
+    select: SqlCatalogBoundSelect,
+    catalog: &SqlCatalog,
+    dialect: SqlDialect,
+    declared: &[SqlCatalogRecursiveCte],
+) -> Result<SqlExecutionPlan, SqlFrontendError> {
+    if !select.recursive_ctes.is_empty() {
+        return plan_recursive_select(select, catalog, dialect, declared);
+    }
     // `LIMIT` / `OFFSET` 是表达式：在计划阶段按方言折叠成行数，后续所有分支只处理 usize。
     let limit = plan_row_count(select.limit.as_ref(), "LIMIT", dialect)?;
     let offset = plan_row_count(select.offset.as_ref(), "OFFSET", dialect)?;
     validate_distinct_shape(&select)?;
     if !select.joins.is_empty() {
-        return plan_join_select(select, limit, offset, catalog, dialect);
+        return plan_join_select(select, limit, offset, catalog, dialect, declared);
     }
     // 无 FROM 的 SELECT 只做常量 / 内建函数求值（驱动探测 VERSION()、SELECT 1 等）。
     let Some(source) = select.source.as_ref()
     else {
         return plan_source_less_select(select, limit, offset);
     };
+    if is_synthetic_type_id(source.type_id) {
+        let payload = declared.iter().find(|cte| cte.type_id == source.type_id).ok_or_else(synthetic_reference_error)?;
+        return plan_synthetic_scan(select, payload, limit, offset, dialect);
+    }
     let table = find_table(catalog, source.type_id)?;
     let namespace = format!("table:{}", source.type_id);
     let pk_field = primary_key_of(table)?;
@@ -129,7 +152,7 @@ pub fn plan_select_for_dialect(
         match projection {
             SqlCatalogBoundProjection::Star(star_table) => {
                 has_non_aggregate = true;
-                let star_table = find_table(catalog, star_table.type_id)?;
+                let star_table = source_fields(catalog, declared, star_table.type_id)?;
                 for (index, field) in star_table.fields.iter().enumerate() {
                     reject_unknown_field(field)?;
                     // 扁平化 CTE 的 `*` 只展开 body 投影出来的列，未投影字段对外层不可见。
@@ -458,6 +481,7 @@ fn plan_join_select(
     offset: Option<usize>,
     catalog: &SqlCatalog,
     dialect: SqlDialect,
+    declared: &[SqlCatalogRecursiveCte],
 ) -> Result<SqlExecutionPlan, SqlFrontendError> {
     let SqlCatalogBoundSelect { source, joins, projections, predicate, group_by, having, order_by, distinct, .. } = select;
     let base = source.ok_or_else(|| planner_error("SQL JOIN requires a FROM table"))?;
@@ -480,7 +504,7 @@ fn plan_join_select(
         match projection {
             SqlCatalogBoundProjection::Star(table) => {
                 has_non_aggregate = true;
-                let catalog_table = find_table(catalog, table.type_id)?;
+                let catalog_table = source_fields(catalog, declared, table.type_id)?;
                 for (index, field) in catalog_table.fields.iter().enumerate() {
                     reject_unknown_field(field)?;
                     let name = table.visible_column_name(index, field);
@@ -548,10 +572,10 @@ fn plan_join_select(
     // 3. 每个来源只解码自己表的字段。
     let mut field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> = std::collections::BTreeMap::new();
     let mut field_defaults: std::collections::BTreeMap<u64, DefaultValue> = std::collections::BTreeMap::new();
-    let base = join_source_plan(base, None, crate::sql::SqlBoundJoinKind::Inner, catalog, &needed, &mut field_types, &mut field_defaults)?;
+    let base = join_source_plan(base, None, crate::sql::SqlBoundJoinKind::Inner, catalog, declared, &needed, &mut field_types, &mut field_defaults)?;
     let mut join_sources = Vec::with_capacity(joins.len());
     for join in joins {
-        join_sources.push(join_source_plan(join.table, Some(join.on), join.kind, catalog, &needed, &mut field_types, &mut field_defaults)?);
+        join_sources.push(join_source_plan(join.table, Some(join.on), join.kind, catalog, declared, &needed, &mut field_types, &mut field_defaults)?);
     }
 
     Ok(SqlExecutionPlan::Join(JoinPlan {
@@ -583,11 +607,13 @@ fn join_source_plan(
     on: Option<SqlCatalogBoundExpression>,
     kind: crate::sql::SqlBoundJoinKind,
     catalog: &SqlCatalog,
+    declared: &[SqlCatalogRecursiveCte],
     needed: &[u64],
     field_types: &mut std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     field_defaults: &mut std::collections::BTreeMap<u64, DefaultValue>,
 ) -> Result<JoinSourcePlan, SqlFrontendError> {
-    let catalog_table = find_table(catalog, table.type_id)?;
+    let synthetic = is_synthetic_type_id(table.type_id);
+    let catalog_table = source_fields(catalog, declared, table.type_id)?;
     let mut needed_field_ids = Vec::new();
     let mut row_ids = Vec::new();
     for field in &catalog_table.fields {
@@ -601,7 +627,188 @@ fn join_source_plan(
             row_ids.push(row_id);
         }
     }
-    Ok(JoinSourcePlan { namespace: format!("table:{}", catalog_table.type_id), needed_field_ids, row_ids, on, kind })
+    let namespace = if synthetic { synthetic_namespace(catalog_table.type_id) } else { format!("table:{}", catalog_table.type_id) };
+    Ok(JoinSourcePlan { namespace, needed_field_ids, row_ids, on, kind })
+}
+
+/// Resolve the field list behind one scan source: a catalog table, or the
+/// synthetic relation of a recursive CTE that the planning context allows.
+fn source_fields<'a>(
+    catalog: &'a SqlCatalog,
+    declared: &'a [SqlCatalogRecursiveCte],
+    type_id: u64,
+) -> Result<std::borrow::Cow<'a, SqlCatalogTable>, SqlFrontendError> {
+    if !is_synthetic_type_id(type_id) {
+        return Ok(std::borrow::Cow::Borrowed(find_table(catalog, type_id)?));
+    }
+    let payload = declared.iter().find(|cte| cte.type_id == type_id).ok_or_else(synthetic_reference_error)?;
+    Ok(std::borrow::Cow::Owned(SqlCatalogTable {
+        type_id,
+        name: payload.name.clone(),
+        fields: payload.fields.clone(),
+        unique_constraints: Vec::new(),
+        indexes: Vec::new(),
+        check_constraints: Vec::new(),
+        foreign_keys: Vec::new(),
+    }))
+}
+
+/// Diagnostic for a synthetic relation scanned outside the scope that declares it.
+fn synthetic_reference_error() -> SqlFrontendError {
+    SqlFrontendError::unsupported(
+        "the SQL gateway materializes a recursive CTE only around the SELECT that declares it: a subquery or set-operation operand cannot scan the fixed point of an enclosing scope",
+    )
+}
+
+/// 把 SELECT 声明的递归 CTE 包成不动点计划。
+///
+/// 定义按书写顺序嵌套：先声明的 CTE 在外层执行，后声明的 CTE（其 seed 可以引用
+/// 前者）位于它的 consumer 之内。每个 seed 只能扫描在它之前已物化的合成关系，
+/// 每个 step 还能扫描自己——这正是「工作集 = 本轮增量」的递归语义。外层查询作为
+/// 最内层 consumer，在全量结果就位后执行。
+fn plan_recursive_select(
+    mut select: SqlCatalogBoundSelect,
+    catalog: &SqlCatalog,
+    dialect: SqlDialect,
+    context: &[SqlCatalogRecursiveCte],
+) -> Result<SqlExecutionPlan, SqlFrontendError> {
+    let declared = std::mem::take(&mut select.recursive_ctes);
+    let mut allowed: Vec<SqlCatalogRecursiveCte> = context.to_vec();
+    let mut nodes = Vec::with_capacity(declared.len());
+    for payload in declared {
+        let seed = plan_select_mode(payload.seed.clone(), catalog, dialect, &allowed)?;
+        let mut step_allowed = allowed.clone();
+        step_allowed.push(payload.clone());
+        let step = plan_select_mode(payload.step.clone(), catalog, dialect, &step_allowed)?;
+        allowed.push(payload.clone());
+        nodes.push((payload, seed, step));
+    }
+    let mut result = plan_select_mode(select, catalog, dialect, &allowed)?;
+    for (payload, seed, step) in nodes.into_iter().rev() {
+        result = SqlExecutionPlan::RecursiveCte(RecursiveCtePlan {
+            name: payload.name,
+            type_id: payload.type_id,
+            fields: payload.fields,
+            seed: Box::new(seed),
+            step: Box::new(step),
+            union_all: payload.union_all,
+            consumer: Box::new(result),
+        });
+    }
+    Ok(result)
+}
+
+/// 规划对递归 CTE 合成关系的一次扫描。
+///
+/// 不动点住在执行层的工作集里，不在 KV 存储中：没有主键可以下推、没有二级索引
+/// 可以探测、也没有声明默认值需要回填，所以全部谓词都留在行级过滤，行键由执行
+/// 层按插入顺序分配。`pk_row_id` 取 `u64::MAX` 哨兵——任何真实 row id 都到不了
+/// 那个值，执行层的 pk 有序窗口与索引重建据此自动跳过。
+fn plan_synthetic_scan(
+    select: SqlCatalogBoundSelect,
+    payload: &SqlCatalogRecursiveCte,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    dialect: SqlDialect,
+) -> Result<SqlExecutionPlan, SqlFrontendError> {
+    let source = select.source.clone().ok_or_else(|| planner_error("SQL scan requires a FROM table"))?;
+    let mut projection_fields: Vec<(u64, String)> = Vec::new();
+    let mut projection_expressions: Vec<(SqlCatalogBoundExpression, String)> = Vec::new();
+    let mut has_aggregate = false;
+    let mut has_non_aggregate = false;
+    let mut has_window = false;
+    for projection in &select.projections {
+        match projection {
+            SqlCatalogBoundProjection::Star(_) => {
+                has_non_aggregate = true;
+                for (index, field) in payload.fields.iter().enumerate() {
+                    if !source.exposes_column(index) {
+                        continue;
+                    }
+                    let name = source.visible_column_name(index, field);
+                    projection_fields.push((source.row_id(field.field_id), name));
+                }
+            }
+            SqlCatalogBoundProjection::Expression { expression, alias } => {
+                if expression_has_window(expression) && !is_window_call(expression) {
+                    return Err(planner_error("SQL window function must be the entire projection expression, not part of a larger one"));
+                }
+                match expression {
+                    SqlCatalogBoundExpression::Column(col) => {
+                        has_non_aggregate = true;
+                        projection_fields.push((col.row_id, alias.clone().unwrap_or_else(|| col.visible_name.clone())));
+                    }
+                    SqlCatalogBoundExpression::Function { window: Some(_), .. } => {
+                        has_window = true;
+                        projection_expressions.push((expression.clone(), alias.clone().unwrap_or_else(|| scalar_projection_label(expression))));
+                    }
+                    SqlCatalogBoundExpression::Function { .. } if expression_has_aggregate(expression) => {
+                        has_aggregate = true;
+                        projection_expressions
+                            .push((expression.clone(), alias.clone().unwrap_or_else(|| expression_default_label(expression))));
+                    }
+                    other @ SqlCatalogBoundExpression::Cast { .. } if expression_has_aggregate(other) => {
+                        has_aggregate = true;
+                        projection_expressions.push((other.clone(), alias.clone().unwrap_or_else(|| expression_default_label(other))));
+                    }
+                    other => {
+                        has_non_aggregate = true;
+                        projection_expressions.push((other.clone(), alias.clone().unwrap_or_else(|| expression_default_label(other))));
+                    }
+                }
+            }
+        }
+    }
+    validate_window_placement(&select)?;
+    if has_window && has_aggregate {
+        return Err(planner_error("cannot mix window and aggregate projections in the same SELECT"));
+    }
+    if has_window && select.group_by.is_some() {
+        return Err(planner_error("SQL window functions cannot be combined with GROUP BY"));
+    }
+    if has_aggregate && has_non_aggregate && select.group_by.is_none() {
+        return Err(planner_error("cannot mix aggregate and non-aggregate projections without GROUP BY"));
+    }
+    validate_grouped_select(&select, has_aggregate)?;
+    validate_correlated_placement(&select, has_aggregate, has_window)?;
+    if select.distinct {
+        validate_distinct_order_by(select.order_by.as_ref(), &projection_fields, &projection_expressions)?;
+    }
+
+    let remaining_predicate = select.predicate;
+    let has_order_by = select.order_by.is_some();
+    let has_group_by = select.group_by.is_some();
+    let has_predicate = remaining_predicate.is_some();
+    let has_offset = offset.unwrap_or(0) > 0;
+    let needs_post_filter_limit = has_order_by || has_group_by || has_aggregate || has_predicate || has_window || has_offset;
+    let kv_limit = if needs_post_filter_limit { 0 } else { limit.unwrap_or(0) };
+    let field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> =
+        payload.fields.iter().map(|f| (source.row_id(f.field_id), f.field_type.clone())).collect();
+    Ok(SqlExecutionPlan::Scan(ScanPlan {
+        namespace: synthetic_namespace(payload.type_id),
+        pk_row_id: u64::MAX,
+        rowid_prefix: Vec::new(),
+        rowid_after: None,
+        rowid_before: None,
+        limit: kv_limit,
+        index: None,
+        unique_indexes: Vec::new(),
+        projection_fields,
+        projection_expressions,
+        remaining_predicate,
+        group_by: select.group_by,
+        having: select.having,
+        order_by: select.order_by,
+        limit_after_sort: limit.unwrap_or(0),
+        offset_after_sort: offset.unwrap_or(0),
+        nulls_first: dialect.nulls_sort_first(),
+        has_aggregate,
+        has_window,
+        distinct: select.distinct,
+        suppress_rows: limit == Some(0),
+        field_types,
+        field_defaults: std::collections::BTreeMap::new(),
+    }))
 }
 
 /// 计划一个没有 FROM 的 SELECT：只允许常量与内建函数，不访问任何 namespace。
@@ -1513,6 +1720,32 @@ pub enum SqlExecutionPlan {
     DeleteScan(DeleteScanPlan),
     /// DELETE ... USING — 目标表与 USING 源做交叉连接，谓词命中后删除目标行。
     DeleteUsing(DeleteUsingPlan),
+    /// `WITH RECURSIVE` — 不动点物化：先跑 seed，再把增量反复喂给 step 直到不再
+    /// 产生新行，最终结果作为合成关系交给 consumer 计划消费。
+    RecursiveCte(RecursiveCtePlan),
+}
+
+/// `WITH RECURSIVE` 不动点执行计划。
+///
+/// `seed` 与 `step` 都是完整计划；`step` 对合成关系 `cte:{type_id}` 做扫描，
+/// 执行层在每一轮把当前增量物化进该命名空间的工作集。`union_all` 决定增量合并
+/// 是否按整行去重。`consumer` 是引用这条 CTE 的外层查询，在全量结果物化后执行。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecursiveCtePlan {
+    /// CTE 名称，仅用于诊断文案。
+    pub name: String,
+    /// 合成关系 identity（类型 id 空间的保留高位）。
+    pub type_id: u64,
+    /// 输出列 identity 与类型，执行层据此编码工作集行。
+    pub fields: Vec<crate::catalog_bind::SqlCatalogField>,
+    /// 非递归操作数 —— 初始工作集。
+    pub seed: Box<SqlExecutionPlan>,
+    /// 递归操作数，扫描合成关系。
+    pub step: Box<SqlExecutionPlan>,
+    /// 递归体是否写作 `UNION ALL`（保留重复行）。
+    pub union_all: bool,
+    /// 引用这条 CTE 的外层查询计划。
+    pub consumer: Box<SqlExecutionPlan>,
 }
 
 /// SELECT 精确主键等值执行计划。
@@ -2514,7 +2747,7 @@ fn scalar_projection_label(expr: &SqlCatalogBoundExpression) -> String {
     }
 }
 
-fn expression_default_label(expr: &SqlCatalogBoundExpression) -> String {
+pub(crate) fn expression_default_label(expr: &SqlCatalogBoundExpression) -> String {
     format!("{expr:?}")
 }
 
@@ -2706,6 +2939,11 @@ fn visit_plan_outer_columns(plan: &SqlExecutionPlan, visit: &mut impl FnMut(&Sql
             }
         }
         SqlExecutionPlan::InsertSelect(insert) => visit_plan_outer_columns(&insert.source, &mut *visit),
+        SqlExecutionPlan::RecursiveCte(recursive) => {
+            visit_plan_outer_columns(&recursive.seed, &mut *visit);
+            visit_plan_outer_columns(&recursive.step, &mut *visit);
+            visit_plan_outer_columns(&recursive.consumer, &mut *visit);
+        }
         // 写语句计划不接受相关子查询，绑定期已经拒绝，因此没有外层列可读。
         SqlExecutionPlan::Insert(_)
         | SqlExecutionPlan::MultiInsert(_)

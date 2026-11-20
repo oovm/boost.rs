@@ -68,6 +68,8 @@ pub fn describe_plan_for_dialect(plan: &SqlExecutionPlan, dialect: SqlDialect) -
         SqlExecutionPlan::Delete(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
         SqlExecutionPlan::DeleteScan(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
         SqlExecutionPlan::DeleteUsing(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
+        // 递归 CTE 的结果形状由它的 consumer 定义：不动点只是为外层查询准备数据。
+        SqlExecutionPlan::RecursiveCte(plan) => describe_plan_for_dialect(&plan.consumer, dialect),
     }
 }
 
@@ -187,7 +189,7 @@ fn describe_projections(plan: &impl ProjectedPlan, dialect: SqlDialect) -> Vec<S
 
 /// Infers the declared type of an expression. The result only needs to be
 /// accurate enough to pick a wire type — execution remains the source of truth.
-fn infer_expression_type(
+pub(crate) fn infer_expression_type(
     expression: &SqlCatalogBoundExpression,
     field_types: &BTreeMap<u64, SqlFieldType>,
     dialect: SqlDialect,

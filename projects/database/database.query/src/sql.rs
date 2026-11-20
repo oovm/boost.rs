@@ -640,7 +640,12 @@ impl SqlDialect {
     }
 }
 
-/// One non-recursive `WITH` definition retained by the gateway binder.
+/// One `WITH` definition retained by the gateway binder.
+///
+/// A recursive definition carries the fixed-point shape written as
+/// `WITH RECURSIVE name AS (<seed> UNION [ALL] <step>)`: `query` holds the seed,
+/// `step` the recursive operand and `union_all` the union spelling. Non-recursive
+/// definitions leave `step` as `None`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqlBoundCte {
     /// Name the CTE is referenced by in `FROM` / `JOIN`.
@@ -648,8 +653,13 @@ pub struct SqlBoundCte {
     /// Explicit output column names written as `WITH name (a, b) AS (...)`. Empty
     /// means the body's own output names apply.
     pub columns: Vec<String>,
-    /// Bound body of the CTE.
+    /// Bound seed body of the CTE (the non-recursive operand for a recursive CTE).
     pub query: Box<SqlBoundSelect>,
+    /// Bound recursive operand, present only for `WITH RECURSIVE` definitions.
+    pub step: Option<Box<SqlBoundSelect>>,
+    /// Whether the recursive body combined its operands with `UNION ALL` (keep
+    /// duplicates) instead of `UNION` (deduplicate whole rows).
+    pub union_all: bool,
 }
 
 /// SQL SELECT request owned by the compatibility gateway.
@@ -1566,15 +1576,25 @@ fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<V
     }
     let mut ctes: Vec<SqlBoundCte> = Vec::with_capacity(clause.ctes.len());
     for cte in &clause.ctes {
-        // The gateway inlines every CTE at its reference sites, which cannot express
-        // a self-referencing fixed point or a set-operation body. The native VOS
-        // engine materializes those; the gateway rejects them instead of silently
-        // binding only the seed operand.
-        if clause.recursive || cte.recursive_tail.is_some() {
-            return Err(SqlFrontendError::unsupported(
-                "the SQL gateway inlines CTEs at each reference and cannot materialize a recursive fixed point: WITH RECURSIVE and set-operation CTE bodies run only on the native engine",
-            ));
-        }
+        // A recursive definition is materialized as a fixed point at execution
+        // time: the seed binds as the initial working set and the tail binds as
+        // the step evaluated against the CTE's own synthetic relation. A
+        // set-operation body under a plain `WITH` still cannot be inlined at
+        // each reference site, so the gateway keeps rejecting that shape.
+        let step = match (&cte.recursive_tail, clause.recursive) {
+            (Some(tail), true) => Some(Box::new(bind_select_statement(tail)?)),
+            (None, true) => {
+                return Err(SqlFrontendError::unsupported(
+                    "a recursive CTE body must be written as `<seed> UNION [ALL] <step>`: the gateway found a `WITH RECURSIVE` definition without a recursive operand",
+                ));
+            }
+            (Some(_), false) => {
+                return Err(SqlFrontendError::unsupported(
+                    "the SQL gateway inlines CTEs at each reference and cannot materialize a set-operation body: declare the CTE under `WITH RECURSIVE` for a fixed point or run the union on the native engine",
+                ));
+            }
+            (None, false) => None,
+        };
         let name = normalize_identifier(cte.name.name.as_ref());
         if ctes.iter().any(|existing| existing.name == name) {
             return Err(bind_error(&format!("SQL common table expression `{name}` is defined more than once")));
@@ -1585,7 +1605,7 @@ fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<V
         {
             return Err(bind_error(&format!("SQL common table expression `{name}` lists output column `{duplicate}` more than once")));
         }
-        ctes.push(SqlBoundCte { name, columns, query: Box::new(bind_select_statement(&cte.query)?) });
+        ctes.push(SqlBoundCte { name, columns, query: Box::new(bind_select_statement(&cte.query)?), step, union_all: cte.recursive_union_all });
     }
     Ok(ctes)
 }

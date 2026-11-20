@@ -444,6 +444,10 @@ pub(crate) fn scan_rows(
     limit: usize,
     operation: &str,
 ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, SqlFrontendError> {
+    // 递归 CTE 的合成 namespace 只活在当前线程的工作集里，绝不落 KV。
+    if let Some(rows) = working_set_scan(&namespace.0, prefix, after, before, limit) {
+        return Ok(rows);
+    }
     match transaction {
         Some(handle) => handle
             .execute_scan(namespace, prefix, after, before, limit)

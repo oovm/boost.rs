@@ -623,6 +623,59 @@ pub struct SqlCatalogBoundSelect {
     pub order_by: Option<Vec<SqlCatalogBoundOrderByItem>>,
     /// Whether the projection list carries the `DISTINCT` modifier.
     pub distinct: bool,
+    /// `WITH RECURSIVE` definitions declared by this select, in source order.
+    ///
+    /// Each entry carries the fully bound seed and step plus the synthetic
+    /// relation the step scans. The planner materializes them as a fixed point
+    /// below the select that references them.
+    pub recursive_ctes: Vec<SqlCatalogRecursiveCte>,
+}
+
+/// Monotonic counter handing out identities for recursive-CTE synthetic tables.
+static SYNTHETIC_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Synthetic type ids live at the very top of the id space; cluster-issued ids
+/// never reach it, so `cte:{type_id}` namespaces cannot collide with `table:`.
+const SYNTHETIC_TYPE_ID_TOP: u64 = 1 << 63;
+
+/// Synthetic field ids start here. A real row id is `field_id + slot * 2^40`,
+/// which cannot reach this band for any realistic catalog and occurrence count.
+const SYNTHETIC_FIELD_ID_TOP: u64 = 1 << 62;
+
+/// Field-id stride between two synthetic tables; also the column cap of one.
+const SYNTHETIC_FIELD_STRIDE: u64 = 1 << 8;
+
+/// Whether `type_id` names a recursive-CTE synthetic relation rather than a
+/// catalog table.
+pub fn is_synthetic_type_id(type_id: u64) -> bool {
+    type_id >= SYNTHETIC_TYPE_ID_TOP
+}
+
+/// The KV namespace a recursive-CTE materialization lives under.
+pub fn synthetic_namespace(type_id: u64) -> String {
+    format!("cte:{type_id}")
+}
+
+/// A `WITH RECURSIVE` definition after catalog binding.
+///
+/// The seed and step are complete bound selects. The step scans [`Self::fields`]
+/// as a synthetic relation keyed by [`Self::type_id`]; every synthetic occurrence
+/// is pinned to row slot 0, so its row ids equal the synthetic field ids and the
+/// executor materializes working-set rows under exactly those keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqlCatalogRecursiveCte {
+    /// Name the CTE is referenced by in `FROM` / `JOIN`.
+    pub name: String,
+    /// Synthetic relation identity, top of the type-id space.
+    pub type_id: u64,
+    /// Output columns: name and inferred type taken from the seed projection.
+    pub fields: Vec<SqlCatalogField>,
+    /// Bound non-recursive operand — the initial working set.
+    pub seed: SqlCatalogBoundSelect,
+    /// Bound recursive operand, evaluated against the synthetic relation.
+    pub step: SqlCatalogBoundSelect,
+    /// Whether the body combined its operands with `UNION ALL` (keep duplicates).
+    pub union_all: bool,
 }
 
 /// One ORDER BY item after SQL names are bound to 集群 catalog identity.
@@ -1375,7 +1428,16 @@ fn bind_set_operation_in(
         return Err(SqlFrontendError::new(SqlErrorKind::Syntax, "set operation operands and operators do not line up"));
     }
     let own_with = take_leading_with(&mut operands);
-    let ctes = resolve_cte_scope(own_with, inherited, catalog, variables, scope)?;
+    let (ctes, declared, _augmented) = resolve_cte_scope(own_with, inherited, catalog, variables, scope)?;
+    // The fixed point is materialized around the single SELECT that references it.
+    // A set operation has no such host: each operand plans independently, so the
+    // working set could not outlive the operand that declared it.
+    if let Some(recursive) = declared.first() {
+        return Err(SqlFrontendError::unsupported(format!(
+            "recursive CTE `{}` cannot scope a top-level UNION through the SQL gateway: reference it inside one SELECT instead",
+            recursive.name
+        )));
+    }
     let limit = bind_row_count(limit, &ctes, catalog, variables)?;
     let offset = bind_row_count(offset, &ctes, catalog, variables)?;
     let operands =
@@ -1427,35 +1489,208 @@ fn bind_select(
 /// keeping the definitions inherited from an enclosing scope.
 ///
 /// Definitions apply in source order: each body only sees the definitions written
-/// before it, so a body can neither reference itself nor a later CTE, and a name
-/// defined here shadows an inherited one. Every definition is flattened as soon as
-/// it is resolved, even when nothing references it, so an unexpressible body never
-/// hides behind an unused name.
+/// before it, so a non-recursive body can neither reference itself nor a later CTE,
+/// and a name defined here shadows an inherited one. Every non-recursive definition
+/// is flattened as soon as it is resolved, even when nothing references it, so an
+/// unexpressible body never hides behind an unused name.
+///
+/// A recursive definition is materialized, not inlined: the seed binds against the
+/// catalog as it stands, its projection names and types become a synthetic relation,
+/// and the step binds against that relation made visible to itself. The synthetic
+/// table is appended to an owned copy of the catalog which the caller uses for the
+/// rest of this select, so column lookups by `type_id` find it like any catalog
+/// table. The returned declarations travel with the bound select to the planner.
 fn resolve_cte_scope(
     own: Vec<SqlBoundCte>,
     inherited: &[SqlCatalogCte],
     catalog: &SqlCatalog,
     variables: &dyn Fn(&str) -> Result<SqlBoundLiteral, SqlFrontendError>,
     scope: &SqlCorrelationScope,
-) -> Result<Vec<SqlCatalogCte>, SqlFrontendError> {
+) -> Result<(Vec<SqlCatalogCte>, Vec<SqlCatalogRecursiveCte>, Option<SqlCatalog>), SqlFrontendError> {
     let mut ctes: Vec<SqlCatalogCte> = inherited.to_vec();
+    let mut declared: Vec<SqlCatalogRecursiveCte> = Vec::new();
+    let mut augmented: Option<SqlCatalog> = None;
     for cte in own {
-        let definition = SqlCatalogCte { name: cte.name.clone(), columns: cte.columns, query: *cte.query, visible: ctes.clone() };
-        let mut probe = std::collections::BTreeMap::new();
-        flatten_body(
-            &definition.query,
-            &definition.name,
-            &definition.columns,
-            "common table expression",
-            &definition.visible,
-            &scope.from_clause(&[]),
-            catalog,
-            variables,
-            &mut probe,
-        )?;
-        ctes.push(definition);
+        let catalog_now: &SqlCatalog = augmented.as_ref().unwrap_or(catalog);
+        let Some(step) = cte.step else {
+            let definition = SqlCatalogCte {
+                name: cte.name.clone(),
+                columns: cte.columns,
+                query: *cte.query,
+                visible: ctes.clone(),
+                recursive: None,
+            };
+            let mut probe = std::collections::BTreeMap::new();
+            flatten_body(
+                &definition.query,
+                &definition.name,
+                &definition.columns,
+                "common table expression",
+                &definition.visible,
+                &scope.from_clause(&[]),
+                catalog_now,
+                variables,
+                &mut probe,
+            )?;
+            ctes.push(definition);
+            continue;
+        };
+        // The seed never sees the synthetic relation: like PostgreSQL, only the
+        // recursive operand may reference the CTE being defined.
+        let seed_raw = *cte.query;
+        let seed = bind_select_in(seed_raw.clone(), catalog_now, variables, &ctes, scope)?;
+        let (names, field_types) = recursive_output_shape(&seed, &cte.columns, catalog_now)?;
+        let seq = SYNTHETIC_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let type_id = u64::MAX - 1 - seq;
+        let fields: Vec<SqlCatalogField> = names
+            .iter()
+            .zip(field_types)
+            .enumerate()
+            .map(|(index, (name, field_type))| SqlCatalogField {
+                field_id: SYNTHETIC_FIELD_ID_TOP + seq * SYNTHETIC_FIELD_STRIDE + (index as u64) + 1,
+                name: name.clone(),
+                field_type,
+                vos_type_name: None,
+                capacity: None,
+                default: None,
+                check: None,
+                generated: None,
+            })
+            .collect();
+        let payload = SqlCatalogRecursiveCte { name: cte.name.clone(), type_id, fields: fields.clone(), seed, step: SqlCatalogBoundSelect {
+            source: None,
+            joins: Vec::new(),
+            projections: Vec::new(),
+            predicate: None,
+            group_by: None,
+            having: None,
+            limit: None,
+            offset: None,
+            order_by: None,
+            distinct: false,
+            recursive_ctes: Vec::new(),
+        }, union_all: cte.union_all };
+        // The step sees the definition itself: its references to the CTE name scan
+        // the synthetic relation, which is what makes the body a fixed point. The
+        // synthetic table must already live in the catalog the step binds against,
+        // because column lookup resolves its fields by `type_id`.
+        let synthetic = SqlCatalogTable { type_id, name: cte.name.clone(), fields: fields.clone(), unique_constraints: Vec::new(), indexes: Vec::new(), check_constraints: Vec::new(), foreign_keys: Vec::new() };
+        let mut tables = catalog_now.tables.clone();
+        tables.push(synthetic);
+        let augmented_now = SqlCatalog::assemble(catalog_now.schema_version, tables);
+        let mut step_visible = ctes.clone();
+        step_visible.push(SqlCatalogCte { name: cte.name.clone(), columns: cte.columns.clone(), query: seed_raw, visible: ctes.clone(), recursive: Some(Box::new(payload.clone())) });
+        let step_bound = bind_select_in(*step, &augmented_now, variables, &step_visible, scope)?;
+        let mut payload = payload;
+        payload.step = step_bound;
+        augmented = Some(augmented_now);
+        declared.push(payload.clone());
+        ctes.push(SqlCatalogCte { name: cte.name, columns: cte.columns, query: seed_raw_placeholder(), visible: ctes.clone(), recursive: Some(Box::new(payload)) });
     }
-    Ok(ctes)
+    Ok((ctes, declared, augmented))
+}
+
+/// Placeholder body kept on a recursive `SqlCatalogCte`.
+///
+/// Recursive definitions are never flattened, so this body is never read; it only
+/// keeps the shared `SqlCatalogCte` shape uniform.
+fn seed_raw_placeholder() -> SqlBoundSelect {
+    SqlBoundSelect {
+        with: Vec::new(),
+        source: None,
+        joins: Vec::new(),
+        projections: Vec::new(),
+        predicate: None,
+        group_by: None,
+        having: None,
+        limit: None,
+        offset: None,
+        order_by: None,
+        distinct: false,
+    }
+}
+
+/// Output column names and types of a recursive CTE's seed.
+///
+/// Names come from the explicit `WITH name (a, b)` list when written, otherwise
+/// from the seed projection's own labels. Types are inferred with the same
+/// projection-type machinery `Describe` uses; a column whose seed type cannot be
+/// inferred is rejected instead of becoming an untyped working-set column.
+/// Every synthetic column is nullable: a later round may produce `NULL` where the
+/// seed produced a value, and PostgreSQL types recursive columns by the seed
+/// while still admitting `NULL` rows.
+fn recursive_output_shape(
+    seed: &SqlCatalogBoundSelect,
+    columns: &[String],
+    catalog: &SqlCatalog,
+) -> Result<(Vec<String>, Vec<SqlFieldType>), SqlFrontendError> {
+    let mut field_types = std::collections::BTreeMap::new();
+    for table in seed.source.iter().chain(seed.joins.iter().map(|join| &join.table)) {
+        let catalog_table = catalog
+            .tables
+            .iter()
+            .find(|candidate| candidate.type_id == table.type_id)
+            .ok_or_else(|| internal_error("catalog table identity is not published"))?;
+        for field in &catalog_table.fields {
+            field_types.insert(table.row_id(field.field_id), field.field_type.clone());
+        }
+    }
+    let mut names: Vec<String> = Vec::new();
+    let mut types: Vec<SqlFieldType> = Vec::new();
+    for projection in &seed.projections {
+        match projection {
+            SqlCatalogBoundProjection::Star(table) => {
+                let catalog_table = catalog
+                    .tables
+                    .iter()
+                    .find(|candidate| candidate.type_id == table.type_id)
+                    .ok_or_else(|| internal_error("catalog table identity is not published"))?;
+                for (index, field) in catalog_table.fields.iter().enumerate() {
+                    reject_unknown_field(field)?;
+                    if !table.exposes_column(index) {
+                        continue;
+                    }
+                    names.push(table.visible_column_name(index, field));
+                    types.push(field.field_type.clone());
+                }
+            }
+            SqlCatalogBoundProjection::Expression { expression, alias } => {
+                let inferred = crate::sql_describe::infer_expression_type(expression, &field_types, SqlDialect::Postgres);
+                if inferred.inner() == SqlFieldType::Unknown {
+                    let label = alias.clone().unwrap_or_else(|| crate::sql_planner::expression_default_label(expression));
+                    return Err(SqlFrontendError::unsupported(format!(
+                        "recursive CTE column `{label}` has no type the seed projection can establish: give the seed a typed column or an explicit cast"
+                    )));
+                }
+                names.push(alias.clone().unwrap_or_else(|| match expression {
+                    SqlCatalogBoundExpression::Column(column) => column.visible_name.clone(),
+                    other => crate::sql_planner::expression_default_label(other),
+                }));
+                types.push(match inferred {
+                    SqlFieldType::Optional(_) => inferred,
+                    inner => SqlFieldType::Optional(Box::new(inner)),
+                });
+            }
+        }
+    }
+    if names.is_empty() {
+        return Err(SqlFrontendError::unsupported("a recursive CTE seed must project at least one column"));
+    }
+    if !columns.is_empty() {
+        if columns.len() != names.len() {
+            return Err(unsupported_source(
+                "common table expression",
+                &format!("the explicit column list names {} columns but the seed outputs {}", columns.len(), names.len()),
+            ));
+        }
+        names = columns.to_vec();
+    }
+    if names.len() as u64 > SYNTHETIC_FIELD_STRIDE {
+        return Err(SqlFrontendError::unsupported(format!(
+            "a recursive CTE cannot expose more than {SYNTHETIC_FIELD_STRIDE} columns through the SQL gateway"
+        )));
+    }
+    Ok((names, types))
 }
 
 /// Binds one select whose `FROM` may also reference CTEs from an enclosing scope.
@@ -1467,7 +1702,10 @@ fn bind_select_in(
     scope: &SqlCorrelationScope,
 ) -> Result<SqlCatalogBoundSelect, SqlFrontendError> {
     // CTE 在引用处才被展开成基表，同一条 CTE 被引用两次就得到两个互不覆盖的行槽。
-    let ctes = resolve_cte_scope(select.with, inherited, catalog, variables, scope)?;
+    let (ctes, declared, augmented) = resolve_cte_scope(select.with, inherited, catalog, variables, scope)?;
+    // 递归 CTE 的合成表随增强目录一起参与本 select 的列解析；没有递归定义时
+    // 增强目录为空，沿用调用方传入的目录。
+    let catalog: &SqlCatalog = augmented.as_ref().unwrap_or(catalog);
     let mut occurrences: std::collections::BTreeMap<u64, u64> = std::collections::BTreeMap::new();
     // 派生表被扁平化成它自己的基表，内层 `WHERE` 改由外层 `WHERE` 表达。
     let mut derived_predicates: Vec<SqlCatalogBoundExpression> = Vec::new();
@@ -1546,6 +1784,7 @@ fn bind_select_in(
         offset: bind_row_count(select.offset, &ctes, catalog, variables)?,
         order_by,
         distinct: select.distinct,
+        recursive_ctes: declared,
     })
 }
 
@@ -1894,6 +2133,9 @@ struct SqlCatalogCte {
     query: SqlBoundSelect,
     /// Definitions visible inside `query`, in source order.
     visible: Vec<SqlCatalogCte>,
+    /// `Some` for a `WITH RECURSIVE` definition: references scan the synthetic
+    /// relation instead of flattening `query` at each occurrence.
+    recursive: Option<Box<SqlCatalogRecursiveCte>>,
 }
 
 /// Binds one `FROM` / `JOIN` source, assigning the occurrence slot used to build row ids.
@@ -1912,6 +2154,7 @@ fn bind_source(
 ) -> Result<(SqlCatalogBoundTable, Option<SqlCatalogBoundExpression>), SqlFrontendError> {
     match source {
         SqlBoundSource::Table { name, alias } => match ctes.iter().rev().find(|cte| cte.name == *name) {
+            Some(cte) if cte.recursive.is_some() => Ok((recursive_occurrence(cte, alias.as_deref().unwrap_or(name), occurrences)?, None)),
             Some(cte) => flatten_body(
                 &cte.query,
                 alias.as_deref().unwrap_or(name),
@@ -1942,6 +2185,37 @@ fn assign_row_slot(mut table: SqlCatalogBoundTable, occurrences: &mut std::colle
     table.row_slot = *slot;
     *slot += 1;
     table
+}
+
+/// Builds the single occurrence of a recursive CTE's synthetic relation.
+///
+/// The fixed point materializes into one working set keyed by the synthetic
+/// field ids with row slot pinned to `0`, so its row ids equal its field ids.
+/// A second reference to the same recursive CTE in one query — a self join of
+/// the fixed point — cannot get its own row slot, so it is rejected instead of
+/// silently sharing one.
+fn recursive_occurrence(
+    cte: &SqlCatalogCte,
+    alias: &str,
+    occurrences: &mut std::collections::BTreeMap<u64, u64>,
+) -> Result<SqlCatalogBoundTable, SqlFrontendError> {
+    let payload = cte.recursive.as_ref().ok_or_else(|| internal_error("recursive CTE occurrence without a bound payload"))?;
+    let slot = occurrences.entry(payload.type_id).or_insert(0);
+    if *slot != 0 {
+        return Err(SqlFrontendError::unsupported(format!(
+            "recursive CTE `{}` cannot be referenced more than once in one query: the gateway materializes a single working set for its fixed point",
+            cte.name
+        )));
+    }
+    *slot += 1;
+    Ok(SqlCatalogBoundTable {
+        type_id: payload.type_id,
+        name: cte.name.clone(),
+        alias: Some(alias.to_string()),
+        row_slot: 0,
+        column_names: None,
+        visible_columns: None,
+    })
 }
 
 /// Flattens one derived table or CTE body into the single catalog table it
@@ -1994,6 +2268,7 @@ fn flatten_body(
     // 更早 CTE 的显式列名同样作用于这里的内层展开，否则 `SELECT x FROM renamed_cte`
     // 会在扁平化时按基表字段名解析失败。
     let (table, inner_predicate) = match visible.iter().rev().find(|cte| cte.name == *name) {
+        Some(cte) if cte.recursive.is_some() => (recursive_occurrence(cte, inner_alias.as_deref().unwrap_or(name), occurrences)?, None),
         Some(cte) => flatten_body(
             &cte.query,
             inner_alias.as_deref().unwrap_or(name),

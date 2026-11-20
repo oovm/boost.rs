@@ -22,8 +22,8 @@ pub mod sqlite;
 pub use catalog_bind::{
     SqlCatalog, SqlCatalogBoundColumn, SqlCatalogBoundExpression, SqlCatalogBoundJoin, SqlCatalogBoundProjection, SqlCatalogBoundSelect,
     SqlCatalogBoundSetOperand, SqlCatalogBoundSetOperation, SqlCatalogBoundStatement, SqlCatalogBoundTable, SqlCatalogField,
-    SqlCatalogForeignKey, SqlCatalogOuterColumn, SqlCatalogTable, SqlFieldType, bind_sql_catalog, bind_sql_catalog_with_variables,
-    project_resolved_type,
+    SqlCatalogForeignKey, SqlCatalogOuterColumn, SqlCatalogRecursiveCte, SqlCatalogTable, SqlFieldType, bind_sql_catalog,
+    bind_sql_catalog_with_variables, is_synthetic_type_id, project_resolved_type, synthetic_namespace,
 };
 pub use pgsql::{
     CopyFormat, FetchDirection, PgObjectStatement, PgUtilityStatement, parse_pg_object_statement, parse_pg_utility, rewrite_double_colon_casts,

@@ -41,10 +41,11 @@ use database_query::cluster_kv::{KeyValueAction, KeyValueCommand};
 mod index;
 mod outer;
 mod read;
+mod recursive;
 mod window;
 mod write;
 
-pub(crate) use self::{index::*, outer::*, read::*, window::*, write::*};
+pub(crate) use self::{index::*, outer::*, read::*, recursive::*, window::*, write::*};
 pub(crate) use database_query::sql_execute::{cmp_string, eq_string, expression_needed_field_ids, scan_needed_field_ids};
 
 /// 执行一个已计划的 SQL 语句。
@@ -75,6 +76,7 @@ pub fn execute_plan(
         SqlExecutionPlan::Delete(delete_plan) => execute_delete(executor, transaction, delete_plan, dialect),
         SqlExecutionPlan::DeleteScan(delete_plan) => execute_delete_scan(executor, transaction, delete_plan, dialect),
         SqlExecutionPlan::DeleteUsing(delete_plan) => execute_delete_using(executor, transaction, delete_plan, dialect),
+        SqlExecutionPlan::RecursiveCte(recursive_plan) => execute_recursive_cte(executor, transaction, recursive_plan, dialect),
     }
 }
 
@@ -134,6 +136,7 @@ fn resolve_subqueries(
                 resolve_subqueries(operand, executor, transaction, dialect)?;
             }
         }
+        SqlExecutionPlan::RecursiveCte(plan) => resolve_recursive_subqueries(plan, executor, transaction, dialect)?,
         SqlExecutionPlan::Insert(plan) => {
             lower_write_plan(plan, executor, transaction, dialect)?;
         }
