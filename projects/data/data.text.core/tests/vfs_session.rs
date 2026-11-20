@@ -32,3 +32,27 @@ fn close_document_clears_snapshot() {
     vfs.close_document("file://a");
     assert!(vfs.document_snapshot("file://a").is_none());
 }
+
+#[test]
+fn revisions_grow_numerically_and_stay_per_uri() {
+    let vfs = MemoryVfs::new();
+    let first = vfs.open_document("file://a", Arc::<str>::from("a"));
+    let second = vfs.change_document("file://a", Arc::<str>::from("ab"));
+    let other = vfs.open_document("file://b", Arc::<str>::from("b"));
+
+    let number = |snapshot: &data_text_core::source::DocumentSnapshot| snapshot.revision().as_str().parse::<u64>().expect("numeric revision");
+    assert!(number(&second) > number(&first));
+    assert!(number(&other) > number(&second));
+    assert_eq!(vfs.document_snapshot("file://a").unwrap().revision(), second.revision());
+}
+
+#[test]
+fn stale_snapshot_keeps_the_text_it_was_taken_from() {
+    let vfs = MemoryVfs::new();
+    let stale = vfs.open_document("file://a", Arc::<str>::from("alpha"));
+    vfs.change_document("file://a", Arc::<str>::from("beta"));
+
+    assert_eq!(stale.source().get_text_in(Range { start: 0, end: 5 }), "alpha", "旧快照不得观察到后续编辑");
+    assert_ne!(vfs.document_snapshot("file://a").unwrap().revision(), stale.revision());
+    assert_eq!(vfs.request_source("file://a").unwrap().get_text_in(Range { start: 0, end: 4 }), "beta");
+}
