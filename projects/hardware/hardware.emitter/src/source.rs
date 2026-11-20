@@ -11,13 +11,39 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use hardware_program::{
-    program_hash, validate_program, BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr, Function, Program, ScalarTy, Stmt, Ty, UnOp,
+    program_hash, validate_program, BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr, Function, Program, Rounding, ScalarTy, Stmt, Ty, UnOp,
 };
 
 /// Frozen text-ABI version of this emitter slice.
-pub const ABI_VERSION: u32 = 1;
+///
+/// Version 2 adds the integer, bitwise, shift and conversion constructs plus
+/// host-declared element bounds. The semantics below are frozen; a host may
+/// rely on them without consulting the target driver:
+///
+/// - `u32 / u32` is truncating division, matching WGSL and the CPU reference.
+///   A zero divisor yields `0`: the emitted helper `ucf_div_u32` guards it, so
+///   no target's undefined behaviour is ever reached. The CPU interpreter
+///   instead traps (`DivideByZero`); the text ABI cannot trap, so the frozen
+///   GPU result is `0`.
+/// - `u32 % u32` is the truncating remainder with the same divisor rule: a
+///   zero divisor yields `0` (`ucf_mod_u32`).
+/// - `u32 & u32`, `u32 | u32` map to the native WGSL/HLSL/GLSL operators.
+///   `u32 << u32` and `u32 >> u32` map to `ucf_shl_u32` / `ucf_shr_u32`,
+///   which return `0` when the shift amount is `>= 32` (the IR contract:
+///   HLSL masks the count, GLSL leaves it undefined, so the guard is explicit).
+/// - `Bitcast` keeps all 32 bits (WGSL `bitcast`, HLSL `asfloat`/`asuint`,
+///   GLSL `uintBitsToFloat`/`floatBitsToUint`). `U32ToF32` is the exact IEEE
+///   conversion. `F32ToU32(Trunc)` is `u32(v)` and `F32ToU32(Round)` is
+///   half-away-from-zero (the CPU `f32::round` contract), both saturating:
+///   NaN and any `v <= 0` give `0`, any `v >= 2^32` gives `u32::MAX`
+///   (`ucf_f32_to_u32_trunc` / `ucf_f32_to_u32_round`).
+/// - A storage resource declared with [`ResourceDecl::elements`] may be
+///   indexed by a computed value; the declared count is published as the
+///   required minimum size in [`ShaderSource::min_binding_sizes`]. Without a
+///   declared count, only the statically bounded index subset is emitted.
+pub const ABI_VERSION: u32 = 2;
 /// Emitter identity mixed into every artifact hash.
-pub const EMITTER_VERSION: &str = "ucf-text-emit/1";
+pub const EMITTER_VERSION: &str = "ucf-text-emit/2";
 /// Threads per workgroup of the first compute ABI slice, fixed at `(64, 1, 1)`.
 pub const WORKGROUP_SIZE: u32 = 64;
 /// Sentinel resource id used in [`ShaderSource::bindings`] for the params block.
@@ -108,6 +134,14 @@ pub struct ResourceDecl {
     pub access: ResourceAccess,
     /// Element type; the first ABI slice only supports [`BufferElement::U32`].
     pub element: BufferElement,
+    /// Host-declared element count of the binding.
+    ///
+    /// `None` keeps the conservative rule: only statically bounded indices are
+    /// emittable and a computed index is rejected. `Some(n)` states that the
+    /// host binds at least `n` elements, which admits computed (data-dependent)
+    /// indices into the text ABI and is published as the required minimum size
+    /// in [`ShaderSource::min_binding_sizes`].
+    pub elements: Option<u32>,
 }
 
 /// Entry declaration for one text emission request.
@@ -359,9 +393,8 @@ fn feature_supported(target: &str, feature: &str) -> bool {
         | "f64"
         | "indirect-index-unbounded"
         | "raster-stage"
-        | "u32-div"
-        | "u32-mod"
         | "vec3" => false,
+        "bitwise-u32" | "f32-u32-convert" | "indirect-index-bounded" | "shift-u32" | "u32-div" | "u32-mod" => true,
         _ => true,
     }
 }
@@ -369,12 +402,15 @@ fn feature_supported(target: &str, feature: &str) -> bool {
 /// Shared feature list, sorted.
 const CAP_FEATURES: &[&str] = &[
     "atan2-f32",
+    "bitwise-u32",
     "cfg-acyclic-branch",
     "cfg-back-edge",
     "f32-mod",
+    "f32-u32-convert",
     "f64",
     "function-call",
     "i32",
+    "indirect-index-bounded",
     "indirect-index-unbounded",
     "isfinite",
     "pow-f32",
@@ -383,6 +419,7 @@ const CAP_FEATURES: &[&str] = &[
     "scalar-f32",
     "scalar-u32",
     "select-lazy",
+    "shift-u32",
     "u32-div",
     "u32-mod",
     "uniform-u32x4-words",
@@ -404,6 +441,15 @@ struct Emitted {
     text: String,
 }
 
+/// How one binary operation spells in the emitted text.
+#[derive(Debug, Clone, Copy)]
+enum BinaryText {
+    /// Native infix operator, e.g. `(a & b)`.
+    Infix(&'static str),
+    /// Call form, either a target builtin or one of the guarded helpers.
+    Call(&'static str),
+}
+
 impl Emitted {
     fn plain(text: String) -> Self {
         Self { pre: Vec::new(), text }
@@ -421,6 +467,30 @@ enum Bound {
 struct ResBound {
     static_max: u64,
     count_dependent: bool,
+}
+
+/// Guarded helper function a body relies on, emitted once and sorted by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Helper {
+    DivU32,
+    ModU32,
+    ShlU32,
+    ShrU32,
+    F32ToU32Trunc,
+    F32ToU32Round,
+}
+
+impl Helper {
+    fn name(self) -> &'static str {
+        match self {
+            Self::DivU32 => "ucf_div_u32",
+            Self::ModU32 => "ucf_mod_u32",
+            Self::ShlU32 => "ucf_shl_u32",
+            Self::ShrU32 => "ucf_shr_u32",
+            Self::F32ToU32Trunc => "ucf_f32_to_u32_trunc",
+            Self::F32ToU32Round => "ucf_f32_to_u32_round",
+        }
+    }
 }
 
 /// SSA index trace result cache source.
@@ -548,6 +618,12 @@ pub fn emit_shader_source(program: &Program, iface: &ShaderInterface, target: So
     }
 
     let words = uniform_slots.keys().next_back().map(|slot| slot.saturating_add(2).div_ceil(4)).unwrap_or(1).max(1);
+    let mut res_bounds = BTreeMap::new();
+    for decl in resources.values() {
+        if let Some(elements) = decl.elements {
+            res_bounds.insert(decl.id, ResBound { static_max: u64::from(elements), count_dependent: false });
+        }
+    }
     let mut emitter = Emitter {
         target,
         iface,
@@ -567,7 +643,9 @@ pub fn emit_shader_source(program: &Program, iface: &ShaderInterface, target: So
         temp: 0,
         loop_counter: 0,
         loop_depth: 0,
-        res_bounds: BTreeMap::new(),
+        res_bounds,
+        helpers: BTreeSet::new(),
+        helper_at: 0,
         ssa_types: BTreeMap::new(),
         ssa_defs: BTreeMap::new(),
         incoming: BTreeMap::new(),
@@ -595,6 +673,7 @@ pub fn emit_shader_source(program: &Program, iface: &ShaderInterface, target: So
             }
         }
     }
+    emitter.insert_helpers();
     emitter.indent = 0;
     emitter.push("}");
 
@@ -699,6 +778,8 @@ struct Emitter<'a> {
     loop_counter: u32,
     loop_depth: usize,
     res_bounds: BTreeMap<u32, ResBound>,
+    helpers: BTreeSet<Helper>,
+    helper_at: usize,
     ssa_types: BTreeMap<u32, VType>,
     ssa_defs: BTreeMap<u32, SsaDef>,
     incoming: BTreeMap<u32, Vec<Vec<u32>>>,
@@ -846,6 +927,7 @@ impl<'a> Emitter<'a> {
                     };
                     self.push(&format!("@group(0) @binding({}) var<storage, {access}> {}: array<u32>;", rank + 1, decl.name));
                 }
+                self.helper_at = self.out.len();
                 self.push("");
                 self.push("@compute @workgroup_size(64)");
                 self.push(&format!("fn {}(@builtin(global_invocation_id) id: vec3<u32>) {{", self.entry));
@@ -867,6 +949,7 @@ impl<'a> Emitter<'a> {
                         }
                     }
                 }
+                self.helper_at = self.out.len();
                 self.push("");
                 self.push("[numthreads(64, 1, 1)]");
                 self.push("void main(uint3 id : SV_DispatchThreadID) {");
@@ -888,6 +971,7 @@ impl<'a> Emitter<'a> {
                         decl.name
                     ));
                 }
+                self.helper_at = self.out.len();
                 self.push("");
                 self.push("layout(local_size_x = 64) in;");
                 self.push("");
@@ -906,6 +990,31 @@ impl<'a> Emitter<'a> {
         self.push(&format!("if ({index} >= {count}) {{ return; }}"));
     }
 
+    /// Splices the guarded helpers the body used in front of the entry
+    /// function and shifts the source map by the inserted line count.
+    fn insert_helpers(&mut self) {
+        if self.helpers.is_empty() {
+            return;
+        }
+        let mut lines = Vec::new();
+        for helper in &self.helpers {
+            lines.extend(helper_lines(self.target, *helper));
+        }
+        let at = self.helper_at;
+        for location in &mut self.source_map {
+            if location.line as usize > at {
+                location.line += lines.len() as u32;
+            }
+        }
+        self.out.splice(at..at, lines);
+    }
+
+    /// Records the guarded helper `helper` and returns its call text.
+    fn helper_call(&mut self, helper: Helper, args: &[String]) -> String {
+        self.helpers.insert(helper);
+        self.call_text(helper.name(), args)
+    }
+
     fn record_bound(&mut self, resource: u32, bound: Bound) {
         let entry = self.res_bounds.entry(resource).or_insert(ResBound { static_max: 0, count_dependent: false });
         match bound {
@@ -914,7 +1023,18 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn trace_structured_index(&self, expr: &Expr) -> Result<Bound, SourceError> {
+    fn declared_bound(&self, resource: u32) -> Option<Bound> {
+        self.resources.get(&resource).and_then(|decl| decl.elements).map(|elements| Bound::Static(u64::from(elements)))
+    }
+
+    fn trace_structured_index(&self, resource: u32, expr: &Expr) -> Result<Bound, SourceError> {
+        match self.trace_index_expr(expr) {
+            Ok(bound) => Ok(bound),
+            Err(error) => self.declared_bound(resource).ok_or(error),
+        }
+    }
+
+    fn trace_index_expr(&self, expr: &Expr) -> Result<Bound, SourceError> {
         match expr {
             Expr::ConstU32(value) => match u64::from(*value).checked_add(1) {
                 Some(bound) => Ok(Bound::Static(bound)),
@@ -959,10 +1079,14 @@ impl<'a> Emitter<'a> {
         Some(bound)
     }
 
-    fn ssa_index_bound(&self, value: u32) -> Result<Bound, SourceError> {
+    fn ssa_index_bound(&self, resource: u32, value: u32) -> Result<Bound, SourceError> {
         let mut visiting = BTreeSet::new();
-        self.trace_ssa_index(value, &mut visiting)
-            .ok_or_else(|| self.capability(format!("indirect buffer index through SSA value {value} is outside the bounded subset")))
+        match self.trace_ssa_index(value, &mut visiting) {
+            Some(bound) => Ok(bound),
+            None => self.declared_bound(resource).ok_or_else(|| {
+                self.capability(format!("indirect buffer index through SSA value {value} is outside the bounded subset"))
+            }),
+        }
     }
 
     fn declare_local(&mut self, id: u32, ty: VType) {
@@ -1055,7 +1179,7 @@ impl<'a> Emitter<'a> {
                 if ty != VType::U32 {
                     return Err(self.abi("buffer index must be u32".into()));
                 }
-                let bound = self.trace_structured_index(index)?;
+                let bound = self.trace_structured_index(*resource, index)?;
                 self.record_bound(*resource, bound);
                 Ok((Emitted { pre: emitted.pre, text: format!("{}[{}]", decl.name, emitted.text) }, VType::U32))
             }
@@ -1063,11 +1187,10 @@ impl<'a> Emitter<'a> {
             Expr::BinOp { op, lhs, rhs } => {
                 let (left, lty) = self.expr(lhs)?;
                 let (right, rty) = self.expr(rhs)?;
-                let (out_ty, symbol) = self.binop_result(*op, lty, rty)?;
-                let text = if matches!(op, BinOp::Min | BinOp::Max | BinOp::Mod | BinOp::Pow | BinOp::Atan2) {
-                    self.call_text(symbol, &[left.text, right.text])
-                } else {
-                    format!("({} {} {})", left.text, symbol, right.text)
+                let (out_ty, spelling) = self.binop_result(*op, lty, rty)?;
+                let text = match spelling {
+                    BinaryText::Infix(symbol) => format!("({} {} {})", left.text, symbol, right.text),
+                    BinaryText::Call(name) => self.call_text(name, &[left.text, right.text]),
                 };
                 let mut pre = left.pre;
                 pre.extend(right.pre);
@@ -1119,40 +1242,45 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    fn binop_result(&self, op: BinOp, lty: VType, rty: VType) -> Result<(VType, &'static str), SourceError> {
+    fn binop_result(&mut self, op: BinOp, lty: VType, rty: VType) -> Result<(VType, BinaryText), SourceError> {
         match op {
-            BinOp::Add => Ok((self.same_numeric(lty, rty)?, "+")),
-            BinOp::Sub => Ok((self.same_numeric(lty, rty)?, "-")),
-            BinOp::Mul => Ok((self.same_numeric(lty, rty)?, "*")),
+            BinOp::Add => Ok((self.same_numeric(lty, rty)?, BinaryText::Infix("+"))),
+            BinOp::Sub => Ok((self.same_numeric(lty, rty)?, BinaryText::Infix("-"))),
+            BinOp::Mul => Ok((self.same_numeric(lty, rty)?, BinaryText::Infix("*"))),
             BinOp::Div => {
-                if lty == VType::U32 && rty == VType::U32 {
-                    return Err(self.capability("u32 division semantics are not frozen".into()));
-                }
-                Ok((self.same_numeric(lty, rty)?, "/"))
-            }
-            BinOp::Min => Ok((self.same_numeric(lty, rty)?, "min")),
-            BinOp::Max => Ok((self.same_numeric(lty, rty)?, "max")),
-            BinOp::Mod => {
-                if lty == VType::U32 || rty == VType::U32 {
-                    return Err(self.capability("u32 modulo semantics are not frozen".into()));
-                }
                 let ty = self.same_numeric(lty, rty)?;
+                if ty == VType::U32 {
+                    // Truncating u32 division with a guarded zero divisor.
+                    self.helpers.insert(Helper::DivU32);
+                    return Ok((VType::U32, BinaryText::Call(Helper::DivU32.name())));
+                }
+                Ok((ty, BinaryText::Infix("/")))
+            }
+            BinOp::Min => Ok((self.same_numeric(lty, rty)?, BinaryText::Call("min"))),
+            BinOp::Max => Ok((self.same_numeric(lty, rty)?, BinaryText::Call("max"))),
+            BinOp::Mod => {
+                let ty = self.same_numeric(lty, rty)?;
+                if ty == VType::U32 {
+                    // Truncating u32 remainder with a guarded zero divisor.
+                    self.helpers.insert(Helper::ModU32);
+                    return Ok((VType::U32, BinaryText::Call(Helper::ModU32.name())));
+                }
                 if self.target == SourceTarget::Glsl {
                     return Err(self.capability("GLSL mod() is floor-mod and does not match the CPU f32 remainder".into()));
                 }
-                Ok((ty, "mod"))
+                Ok((ty, BinaryText::Call("mod")))
             }
             BinOp::Pow => {
                 let ty = self.same_numeric(lty, rty)?;
                 if ty != VType::F32 {
                     return Err(self.capability("pow requires f32 operands".into()));
                 }
-                Ok((ty, "pow"))
+                Ok((ty, BinaryText::Call("pow")))
             }
             BinOp::Dot => Err(self.capability("vec3 dot is outside the text ABI subset".into())),
             BinOp::Atan2 => {
                 if lty == VType::F32 && rty == VType::F32 {
-                    Ok((VType::F32, "atan2"))
+                    Ok((VType::F32, BinaryText::Call("atan2")))
                 } else {
                     Err(self.capability("atan2 requires f32 operands".into()))
                 }
@@ -1165,16 +1293,31 @@ impl<'a> Emitter<'a> {
                     _ => ">=",
                 };
                 self.same_numeric(lty, rty)?;
-                Ok((VType::Bool, symbol))
+                Ok((VType::Bool, BinaryText::Infix(symbol)))
             }
             BinOp::Eq | BinOp::Ne => {
                 if lty != rty {
                     return Err(self.abi(format!("operand type mismatch: {lty:?} vs {rty:?}")));
                 }
-                Ok((VType::Bool, if op == BinOp::Eq { "==" } else { "!=" }))
+                Ok((VType::Bool, BinaryText::Infix(if op == BinOp::Eq { "==" } else { "!=" })))
             }
-            BinOp::And | BinOp::Or | BinOp::Shl | BinOp::Shr => {
-                Err(self.capability("integer bitwise and shift operations are outside the text ABI subset".into()))
+            BinOp::And | BinOp::Or => {
+                let ty = self.same_numeric(lty, rty)?;
+                if ty != VType::U32 {
+                    return Err(self.capability("bitwise and/or require u32 operands".into()));
+                }
+                Ok((VType::U32, BinaryText::Infix(if op == BinOp::And { "&" } else { "|" })))
+            }
+            BinOp::Shl | BinOp::Shr => {
+                let ty = self.same_numeric(lty, rty)?;
+                if ty != VType::U32 {
+                    return Err(self.capability("shift operations require u32 operands".into()));
+                }
+                // The IR freezes shift amounts >= 32 to 0; HLSL masks the count
+                // and GLSL leaves it undefined, so the guard is explicit.
+                let helper = if op == BinOp::Shl { Helper::ShlU32 } else { Helper::ShrU32 };
+                self.helpers.insert(helper);
+                Ok((VType::U32, BinaryText::Call(helper.name())))
             }
         }
     }
@@ -1183,7 +1326,7 @@ impl<'a> Emitter<'a> {
         format!("{name}({})", args.join(", "))
     }
 
-    fn unop_result(&self, op: UnOp, ty: VType, text: &str) -> Result<(VType, String), SourceError> {
+    fn unop_result(&mut self, op: UnOp, ty: VType, text: &str) -> Result<(VType, String), SourceError> {
         match op {
             UnOp::Neg => match ty {
                 VType::F32 => Ok((VType::F32, format!("(-{text})"))),
@@ -1221,9 +1364,45 @@ impl<'a> Emitter<'a> {
             UnOp::Length | UnOp::Normalize | UnOp::Vec3Comp(_) => {
                 Err(self.capability("vec3 operations are outside the text ABI subset".into()))
             }
-            UnOp::Bitcast | UnOp::U32ToF32 | UnOp::F32ToU32(_) => {
-                Err(self.capability("integer and float conversions are outside the text ABI subset".into()))
-            }
+            UnOp::Bitcast => match ty {
+                VType::U32 => {
+                    let cast = match self.target {
+                        SourceTarget::Wgsl => format!("bitcast<f32>({text})"),
+                        SourceTarget::Hlsl => self.call_text("asfloat", &[text.into()]),
+                        SourceTarget::Glsl => self.call_text("uintBitsToFloat", &[text.into()]),
+                    };
+                    Ok((VType::F32, cast))
+                }
+                VType::F32 => {
+                    let cast = match self.target {
+                        SourceTarget::Wgsl => format!("bitcast<u32>({text})"),
+                        SourceTarget::Hlsl => self.call_text("asuint", &[text.into()]),
+                        SourceTarget::Glsl => self.call_text("floatBitsToUint", &[text.into()]),
+                    };
+                    Ok((VType::U32, cast))
+                }
+                VType::Bool => Err(self.abi("bitcast requires a u32 or f32 operand".into())),
+            },
+            UnOp::U32ToF32 => match ty {
+                VType::U32 => {
+                    let cast = match self.target {
+                        SourceTarget::Wgsl => format!("f32({text})"),
+                        _ => format!("float({text})"),
+                    };
+                    Ok((VType::F32, cast))
+                }
+                _ => Err(self.capability("u32-to-f32 conversion requires a u32 operand".into())),
+            },
+            UnOp::F32ToU32(rounding) => match ty {
+                VType::F32 => {
+                    let helper = match rounding {
+                        Rounding::Trunc => Helper::F32ToU32Trunc,
+                        Rounding::Round => Helper::F32ToU32Round,
+                    };
+                    Ok((VType::U32, self.helper_call(helper, &[text.into()])))
+                }
+                _ => Err(self.capability("f32-to-u32 conversion requires an f32 operand".into())),
+            },
         }
     }
 
@@ -1278,7 +1457,7 @@ impl<'a> Emitter<'a> {
                 if index_ty != VType::U32 {
                     return Err(self.abi("buffer index must be u32".into()));
                 }
-                let bound = self.trace_structured_index(index)?;
+                let bound = self.trace_structured_index(*resource, index)?;
                 let (value_emitted, value_ty) = self.expr(value)?;
                 if value_ty != VType::U32 {
                     return Err(self.abi(format!("illegal mixed type: resource {resource} elements are u32 but the stored value is {value_ty:?}")));
@@ -1647,7 +1826,7 @@ impl<'a> Emitter<'a> {
                 if self.ssa_type(*index)? != VType::U32 {
                     return Err(self.abi("buffer index must be u32".into()));
                 }
-                let bound = self.ssa_index_bound(*index)?;
+                let bound = self.ssa_index_bound(*resource, *index)?;
                 self.record_bound(*resource, bound);
                 let text = format!("{}[{}]", decl.name, self.ssa_text(*index));
                 self.declare_ssa(*result, VType::U32, text);
@@ -1661,11 +1840,10 @@ impl<'a> Emitter<'a> {
             CfgInstruction::Binary { result, op, lhs, rhs } => {
                 let lty = self.ssa_type(*lhs)?;
                 let rty = self.ssa_type(*rhs)?;
-                let (out_ty, symbol) = self.binop_result(*op, lty, rty)?;
-                let text = if matches!(op, BinOp::Min | BinOp::Max | BinOp::Mod | BinOp::Pow | BinOp::Atan2) {
-                    self.call_text(symbol, &[self.ssa_text(*lhs), self.ssa_text(*rhs)])
-                } else {
-                    format!("({} {} {})", self.ssa_text(*lhs), symbol, self.ssa_text(*rhs))
+                let (out_ty, spelling) = self.binop_result(*op, lty, rty)?;
+                let text = match spelling {
+                    BinaryText::Infix(symbol) => format!("({} {} {})", self.ssa_text(*lhs), symbol, self.ssa_text(*rhs)),
+                    BinaryText::Call(name) => self.call_text(name, &[self.ssa_text(*lhs), self.ssa_text(*rhs)]),
                 };
                 self.declare_ssa(*result, out_ty, text);
                 Ok(())
@@ -1720,7 +1898,7 @@ impl<'a> Emitter<'a> {
                 if vt != VType::U32 {
                     return Err(self.abi(format!("illegal mixed type: resource {resource} elements are u32 but the stored value is {vt:?}")));
                 }
-                let bound = self.ssa_index_bound(*index)?;
+                let bound = self.ssa_index_bound(*resource, *index)?;
                 self.record_bound(*resource, bound);
                 self.push(&format!("{}[{}] = {};", decl.name, self.ssa_text(*index), self.ssa_text(*value)));
                 Ok(())
@@ -1743,6 +1921,104 @@ fn cfg_instruction_value(instruction: &CfgInstruction) -> Option<u32> {
         | CfgInstruction::Select { result, .. } => Some(*result),
         CfgInstruction::StoreBuffer { .. } => None,
     }
+}
+
+/// Text of one guarded helper for `target`, terminated by a blank line.
+///
+/// The guards are what freeze the semantics: no target's masked or undefined
+/// behaviour is ever relied on.
+fn helper_lines(target: SourceTarget, helper: Helper) -> Vec<String> {
+    let lines: Vec<&str> = match (target, helper) {
+        (SourceTarget::Wgsl, Helper::DivU32) => vec![
+            "fn ucf_div_u32(a: u32, b: u32) -> u32 {",
+            "    if (b == 0u) { return 0u; }",
+            "    return a / b;",
+            "}",
+            "",
+        ],
+        (SourceTarget::Wgsl, Helper::ModU32) => vec![
+            "fn ucf_mod_u32(a: u32, b: u32) -> u32 {",
+            "    if (b == 0u) { return 0u; }",
+            "    return a % b;",
+            "}",
+            "",
+        ],
+        (SourceTarget::Wgsl, Helper::ShlU32) => vec![
+            "fn ucf_shl_u32(a: u32, b: u32) -> u32 {",
+            "    if (b >= 32u) { return 0u; }",
+            "    return a << b;",
+            "}",
+            "",
+        ],
+        (SourceTarget::Wgsl, Helper::ShrU32) => vec![
+            "fn ucf_shr_u32(a: u32, b: u32) -> u32 {",
+            "    if (b >= 32u) { return 0u; }",
+            "    return a >> b;",
+            "}",
+            "",
+        ],
+        (SourceTarget::Wgsl, Helper::F32ToU32Trunc) => vec![
+            "fn ucf_f32_to_u32_trunc(v: f32) -> u32 {",
+            "    if (!(v > 0.0)) { return 0u; }",
+            "    if (v >= 4294967296.0) { return 4294967295u; }",
+            "    return u32(v);",
+            "}",
+            "",
+        ],
+        (SourceTarget::Wgsl, Helper::F32ToU32Round) => vec![
+            "fn ucf_f32_to_u32_round(v: f32) -> u32 {",
+            "    if (!(v > 0.0)) { return 0u; }",
+            "    if (v >= 4294967296.0) { return 4294967295u; }",
+            "    return u32(floor(v + 0.5));",
+            "}",
+            "",
+        ],
+        (_, Helper::DivU32) => vec![
+            "uint ucf_div_u32(uint a, uint b) {",
+            "    if (b == 0u) { return 0u; }",
+            "    return a / b;",
+            "}",
+            "",
+        ],
+        (_, Helper::ModU32) => vec![
+            "uint ucf_mod_u32(uint a, uint b) {",
+            "    if (b == 0u) { return 0u; }",
+            "    return a % b;",
+            "}",
+            "",
+        ],
+        (_, Helper::ShlU32) => vec![
+            "uint ucf_shl_u32(uint a, uint b) {",
+            "    if (b >= 32u) { return 0u; }",
+            "    return a << b;",
+            "}",
+            "",
+        ],
+        (_, Helper::ShrU32) => vec![
+            "uint ucf_shr_u32(uint a, uint b) {",
+            "    if (b >= 32u) { return 0u; }",
+            "    return a >> b;",
+            "}",
+            "",
+        ],
+        (_, Helper::F32ToU32Trunc) => vec![
+            "uint ucf_f32_to_u32_trunc(float v) {",
+            "    if (!(v > 0.0)) { return 0u; }",
+            "    if (v >= 4294967296.0) { return 4294967295u; }",
+            "    return uint(v);",
+            "}",
+            "",
+        ],
+        (_, Helper::F32ToU32Round) => vec![
+            "uint ucf_f32_to_u32_round(float v) {",
+            "    if (!(v > 0.0)) { return 0u; }",
+            "    if (v >= 4294967296.0) { return 4294967295u; }",
+            "    return uint(floor(v + 0.5));",
+            "}",
+            "",
+        ],
+    };
+    lines.into_iter().map(str::to_string).collect()
 }
 
 fn is_identifier(name: &str) -> bool {

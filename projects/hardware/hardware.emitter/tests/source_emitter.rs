@@ -5,7 +5,7 @@ use hardware_emitter::{
     ShaderStage, SourceError, SourceTarget, UniformDecl, PARAM_RESOURCE,
 };
 use hardware_program::{
-    BinOp, CpuInterpreter, Expr, Function, FunctionBuilder, Program, ProgramBuilder, ScalarTy, Stmt, StructuredFunctionBuilder, Ty,
+    BinOp, CpuInterpreter, Expr, Function, FunctionBuilder, Program, ProgramBuilder, Rounding, ScalarTy, Stmt, StructuredFunctionBuilder, Ty,
     UnOp, Value,
 };
 
@@ -45,8 +45,8 @@ fn copy_iface() -> ShaderInterface {
         program_version: 1,
         params: vec![],
         resources: vec![
-            ResourceDecl { id: 7, name: "src".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32 },
-            ResourceDecl { id: 9, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32 },
+            ResourceDecl { id: 7, name: "src".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32, elements: None },
+            ResourceDecl { id: 9, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32, elements: None },
         ],
     }
 }
@@ -80,7 +80,7 @@ fn param_iface() -> ShaderInterface {
         abi_version: ABI_VERSION,
         program_version: 1,
         params: vec![UniformDecl { slot: 0, ty: ParamTy::F32 }, UniformDecl { slot: 3, ty: ParamTy::U32 }],
-        resources: vec![ResourceDecl { id: 1, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32 }],
+        resources: vec![ResourceDecl { id: 1, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32, elements: None }],
     }
 }
 
@@ -264,7 +264,7 @@ fn t0_profile_abi_and_stage_mismatches_are_located() {
 #[test]
 fn t0_capability_matrix_is_frozen_and_sorted() {
     let rows = capability_matrix();
-    assert_eq!(rows.len(), 60);
+    assert_eq!(rows.len(), 72);
     let mut sorted = rows.clone();
     sorted.sort_by_key(|row| (row.target, row.feature));
     assert_eq!(rows, sorted);
@@ -275,8 +275,12 @@ fn t0_capability_matrix_is_frozen_and_sorted() {
         assert!(support(target, "scalar-u32"), "{target} u32");
         assert!(support(target, "scalar-f32"), "{target} f32");
         assert!(support(target, "scalar-bool"), "{target} bool");
-        assert!(!support(target, "u32-div"), "{target} u32-div");
-        assert!(!support(target, "u32-mod"), "{target} u32-mod");
+        assert!(support(target, "u32-div"), "{target} u32-div");
+        assert!(support(target, "u32-mod"), "{target} u32-mod");
+        assert!(support(target, "bitwise-u32"), "{target} bitwise");
+        assert!(support(target, "shift-u32"), "{target} shift");
+        assert!(support(target, "f32-u32-convert"), "{target} convert");
+        assert!(support(target, "indirect-index-bounded"), "{target} bounded");
         assert!(!support(target, "function-call"), "{target} call");
         assert!(!support(target, "cfg-back-edge"), "{target} backedge");
         assert!(!support(target, "indirect-index-unbounded"), "{target} indirect");
@@ -354,8 +358,8 @@ fn t1_add_uniform_kernel_matches_cpu_interpreter() {
         program_version: 1,
         params: vec![UniformDecl { slot: 2, ty: ParamTy::U32 }],
         resources: vec![
-            ResourceDecl { id: 0, name: "src".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32 },
-            ResourceDecl { id: 1, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32 },
+            ResourceDecl { id: 0, name: "src".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32, elements: None },
+            ResourceDecl { id: 1, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32, elements: None },
         ],
     };
     let source = emit(&program, &iface, SourceTarget::Wgsl);
@@ -386,8 +390,8 @@ fn t1_for_loop_index_is_static_bounded() {
         program_version: 1,
         params: vec![],
         resources: vec![
-            ResourceDecl { id: 0, name: "src".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32 },
-            ResourceDecl { id: 1, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32 },
+            ResourceDecl { id: 0, name: "src".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32, elements: None },
+            ResourceDecl { id: 1, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32, elements: None },
         ],
     };
     let source = emit(&program, &iface, SourceTarget::Wgsl);
@@ -421,7 +425,7 @@ fn t1_while_loop_semantics_match_cpu_interpreter() {
         abi_version: ABI_VERSION,
         program_version: 1,
         params: vec![],
-        resources: vec![ResourceDecl { id: 0, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32 }],
+        resources: vec![ResourceDecl { id: 0, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32, elements: None }],
     };
     let source = emit(&program, &iface, SourceTarget::Wgsl);
     assert!(source.source.contains("while (ucf_g0 < 10u && (v0 < 5u))"), "{}", source.source);
@@ -453,9 +457,9 @@ fn t1_ast_select_is_lazy_if_not_eager_builtin() {
         program_version: 1,
         params: vec![],
         resources: vec![
-            ResourceDecl { id: 0, name: "a".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32 },
-            ResourceDecl { id: 1, name: "b".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32 },
-            ResourceDecl { id: 2, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32 },
+            ResourceDecl { id: 0, name: "a".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32, elements: None },
+            ResourceDecl { id: 1, name: "b".into(), access: ResourceAccess::ReadOnly, element: BufferElement::U32, elements: None },
+            ResourceDecl { id: 2, name: "dst".into(), access: ResourceAccess::WriteOnly, element: BufferElement::U32, elements: None },
         ],
     };
     let source = emit(&program, &iface, SourceTarget::Wgsl);
@@ -617,12 +621,13 @@ fn t1_cfg_unrecoverable_shapes_are_rejected() {
 
 #[test]
 fn t1_unsupported_ops_are_rejected_per_target() {
-    let div = |lhs: Expr, rhs: Expr| Expr::BinOp { op: BinOp::Div, lhs: Box::new(lhs), rhs: Box::new(rhs) };
+    // u32 negation stays outside the frozen subset.
     let mut f = StructuredFunctionBuilder::new("main");
-    f.store_buffer(9, div(Expr::LoadBuffer { resource: 7, index: Box::new(Expr::GlobalId) }, Expr::ConstU32(2)), Expr::ConstU32(0));
+    f.store_buffer(9, Expr::GlobalId, Expr::UnOp { op: UnOp::Neg, arg: Box::new(Expr::GlobalId) });
     let program = structured_entry(f);
     let error = emit_shader_source(&program, &copy_iface(), SourceTarget::Wgsl).unwrap_err();
     assert!(matches!(error, SourceError::CapabilityMissing { .. }), "{error}");
+    assert!(error.to_string().contains("negation"), "{error}");
 
     // f32 %: fine in WGSL/HLSL, rejected in GLSL (floor-mod semantics).
     let mut f = StructuredFunctionBuilder::new("main");
@@ -662,6 +667,191 @@ fn t1_unbounded_indirect_index_is_rejected() {
     let error = emit_shader_source(&program, &copy_iface(), SourceTarget::Wgsl).unwrap_err();
     assert!(matches!(error, SourceError::CapabilityMissing { .. }), "{error}");
     assert!(error.to_string().contains("indirect"), "{error}");
+}
+
+// ---------------------------------------------------------------------------
+// T2: text ABI v2 — frozen integer semantics, conversions, declared bounds.
+// ---------------------------------------------------------------------------
+
+/// `q = src[i] / 3; r = src[i] % 3; dst[i] = q`.
+fn u32_arith_program() -> Program {
+    let mut f = StructuredFunctionBuilder::new("main");
+    let src = Expr::LoadBuffer { resource: 7, index: Box::new(Expr::GlobalId) };
+    let div = Expr::BinOp { op: BinOp::Div, lhs: Box::new(src.clone()), rhs: Box::new(Expr::ConstU32(3)) };
+    let q = f.let_value(u32_ty(), div);
+    let div = Expr::BinOp { op: BinOp::Mod, lhs: Box::new(src), rhs: Box::new(Expr::ConstU32(3)) };
+    let r = f.let_value(u32_ty(), div);
+    let sum = Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(q)), rhs: Box::new(Expr::LoadLocal(r)) };
+    f.store_buffer(9, Expr::GlobalId, sum);
+    structured_entry(f)
+}
+
+/// `dst[i] = ((i & 15) | 1) << 33 >> 64`.
+fn bitwise_program() -> Program {
+    let mut f = StructuredFunctionBuilder::new("main");
+    let and = Expr::BinOp { op: BinOp::And, lhs: Box::new(Expr::GlobalId), rhs: Box::new(Expr::ConstU32(15)) };
+    let a = f.let_value(u32_ty(), and);
+    let or = Expr::BinOp { op: BinOp::Or, lhs: Box::new(Expr::LoadLocal(a)), rhs: Box::new(Expr::ConstU32(1)) };
+    let b = f.let_value(u32_ty(), or);
+    let shl = Expr::BinOp { op: BinOp::Shl, lhs: Box::new(Expr::LoadLocal(b)), rhs: Box::new(Expr::ConstU32(33)) };
+    let c = f.let_value(u32_ty(), shl);
+    let shr = Expr::BinOp { op: BinOp::Shr, lhs: Box::new(Expr::LoadLocal(c)), rhs: Box::new(Expr::ConstU32(64)) };
+    let d = f.let_value(u32_ty(), shr);
+    f.store_buffer(9, Expr::GlobalId, Expr::LoadLocal(d));
+    structured_entry(f)
+}
+
+/// Bitcasts both ways, `u32→f32`, then `f32→u32` truncating and rounding.
+fn conversion_program() -> Program {
+    let mut f = StructuredFunctionBuilder::new("main");
+    let bits = Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::GlobalId), rhs: Box::new(Expr::ConstU32(1)) };
+    let bits = f.let_value(u32_ty(), bits);
+    let bitcast = Expr::UnOp { op: UnOp::Bitcast, arg: Box::new(Expr::LoadLocal(bits)) };
+    let value = f.let_value(f32_ty(), bitcast);
+    let back = f.let_value(u32_ty(), Expr::UnOp { op: UnOp::Bitcast, arg: Box::new(Expr::LoadLocal(value)) });
+    let as_f32 = f.let_value(f32_ty(), Expr::UnOp { op: UnOp::U32ToF32, arg: Box::new(Expr::LoadLocal(back)) });
+    let trunc = Expr::UnOp { op: UnOp::F32ToU32(Rounding::Trunc), arg: Box::new(Expr::LoadLocal(as_f32)) };
+    let trunc = f.let_value(u32_ty(), trunc);
+    let round = Expr::UnOp { op: UnOp::F32ToU32(Rounding::Round), arg: Box::new(Expr::LoadLocal(as_f32)) };
+    let round = f.let_value(u32_ty(), round);
+    let sum = Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::LoadLocal(trunc)), rhs: Box::new(Expr::LoadLocal(round)) };
+    f.store_buffer(9, Expr::GlobalId, sum);
+    structured_entry(f)
+}
+
+/// `dst[i + 1] = 0`, i.e. a computed (data-dependent) store index.
+fn computed_index_program() -> Program {
+    let mut f = StructuredFunctionBuilder::new("main");
+    let idx = Expr::BinOp { op: BinOp::Add, lhs: Box::new(Expr::GlobalId), rhs: Box::new(Expr::ConstU32(1)) };
+    let idx = f.let_value(u32_ty(), idx);
+    f.store_buffer(9, Expr::LoadLocal(idx), Expr::ConstU32(0));
+    structured_entry(f)
+}
+
+fn with_declared_elements(mut iface: ShaderInterface, elements: u32) -> ShaderInterface {
+    for decl in &mut iface.resources {
+        decl.elements = Some(elements);
+    }
+    iface
+}
+
+#[test]
+fn t2_u32_division_and_modulo_guard_zero_divisors() {
+    for target in [SourceTarget::Wgsl, SourceTarget::Hlsl, SourceTarget::Glsl] {
+        let source = emit(&u32_arith_program(), &copy_iface(), target);
+        let text = &source.source;
+        assert!(text.contains("ucf_div_u32("), "{target}: {text}");
+        assert!(text.contains("ucf_mod_u32("), "{target}: {text}");
+        assert!(text.contains("if (b == 0u) { return 0u; }"), "{target}: {text}");
+        assert!(text.contains("return a / b;"), "{target}: {text}");
+        assert!(text.contains("return a % b;"), "{target}: {text}");
+        let definition = match target {
+            SourceTarget::Wgsl => "fn ucf_div_u32",
+            _ => "uint ucf_div_u32",
+        };
+        assert_eq!(text.matches(definition).count(), 1, "{target} emits the helper once");
+    }
+    // Helpers are module scope: defined before the entry point, never inside it.
+    let source = emit(&u32_arith_program(), &copy_iface(), SourceTarget::Wgsl);
+    assert!(source.source.find("fn ucf_div_u32").unwrap() < source.source.find("fn main(").unwrap());
+    assert!(!source.source.contains("(u32 / u32)"), "{}", source.source);
+}
+
+#[test]
+fn t2_bitwise_operators_are_native_and_shifts_are_guarded() {
+    let source = emit(&bitwise_program(), &copy_iface(), SourceTarget::Wgsl);
+    let text = &source.source;
+    assert!(text.contains(" & "), "{text}");
+    assert!(text.contains(" | "), "{text}");
+    assert!(text.contains("ucf_shl_u32("), "{text}");
+    assert!(text.contains("ucf_shr_u32("), "{text}");
+    // Shift amounts >= 32 are frozen to 0 instead of HLSL masking / GLSL UB.
+    assert!(text.contains("if (b >= 32u) { return 0u; }"), "{text}");
+    assert!(text.contains("return a << b;") && text.contains("return a >> b;"), "{text}");
+    for target in [SourceTarget::Hlsl, SourceTarget::Glsl] {
+        let other = emit(&bitwise_program(), &copy_iface(), target);
+        assert!(other.source.contains("ucf_shl_u32("), "{target}: {}", other.source);
+        assert!(other.source.contains("if (b >= 32u) { return 0u; }"), "{target}: {}", other.source);
+    }
+}
+
+#[test]
+fn t2_conversions_are_bit_exact_and_saturating() {
+    let wgsl = emit(&conversion_program(), &copy_iface(), SourceTarget::Wgsl);
+    let text = &wgsl.source;
+    assert!(text.contains("bitcast<f32>("), "{text}");
+    assert!(text.contains("bitcast<u32>("), "{text}");
+    assert!(text.contains("f32("), "{text}");
+    assert!(text.contains("ucf_f32_to_u32_trunc("), "{text}");
+    assert!(text.contains("ucf_f32_to_u32_round("), "{text}");
+    // NaN and negatives clamp to 0, >= 2^32 saturates, rounding is half-away-from-zero.
+    assert!(text.contains("if (!(v > 0.0)) { return 0u; }"), "{text}");
+    assert!(text.contains("if (v >= 4294967296.0) { return 4294967295u; }"), "{text}");
+    assert!(text.contains("return u32(v);"), "{text}");
+    assert!(text.contains("return u32(floor(v + 0.5));"), "{text}");
+
+    let hlsl = emit(&conversion_program(), &copy_iface(), SourceTarget::Hlsl);
+    assert!(hlsl.source.contains("asfloat(") && hlsl.source.contains("asuint("), "{}", hlsl.source);
+    assert!(hlsl.source.contains("return uint(floor(v + 0.5));"), "{}", hlsl.source);
+
+    let glsl = emit(&conversion_program(), &copy_iface(), SourceTarget::Glsl);
+    assert!(glsl.source.contains("uintBitsToFloat(") && glsl.source.contains("floatBitsToUint("), "{}", glsl.source);
+}
+
+#[test]
+fn t2_declared_elements_admit_computed_indices() {
+    let program = computed_index_program();
+
+    // Without a declared element count the computed index is still rejected.
+    let error = emit_shader_source(&program, &copy_iface(), SourceTarget::Wgsl).unwrap_err();
+    assert!(matches!(error, SourceError::CapabilityMissing { .. }), "{error}");
+    assert!(error.to_string().contains("indirect"), "{error}");
+
+    // With a declared count the index enters the text ABI and shows up as the
+    // minimum binding size the host must honour.
+    let iface = with_declared_elements(copy_iface(), 4096);
+    let source = emit(&program, &iface, SourceTarget::Wgsl);
+    assert!(source.source.contains("dst[v0] = 0u;"), "{}", source.source);
+    let dst = source.min_binding_sizes.iter().find(|size| size.resource == 9).unwrap();
+    assert_eq!(dst.min_elements_static, 4096);
+    assert!(!dst.count_dependent);
+    let src = source.min_binding_sizes.iter().find(|size| size.resource == 7).unwrap();
+    assert_eq!(src.min_elements_static, 4096);
+}
+
+#[test]
+fn t2_declared_elements_also_admit_ssa_computed_indices() {
+    let mut f = FunctionBuilder::new("main");
+    let gid = f.emit_global_id().unwrap();
+    let one = f.emit_const_u32(1).unwrap();
+    let idx = f.emit_binary(BinOp::Add, gid, one).unwrap();
+    f.emit_store_buffer(9, idx, one).unwrap();
+    f.return_value(one).unwrap();
+    let program = ProgramBuilder::new().entry(f).unwrap().finish().unwrap();
+
+    let error = emit_shader_source(&program, &copy_iface(), SourceTarget::Wgsl).unwrap_err();
+    assert!(matches!(error, SourceError::CapabilityMissing { .. }), "{error}");
+
+    let iface = with_declared_elements(copy_iface(), 128);
+    for target in [SourceTarget::Wgsl, SourceTarget::Hlsl, SourceTarget::Glsl] {
+        let source = emit(&program, &iface, target);
+        let dst = source.min_binding_sizes.iter().find(|size| size.resource == 9).unwrap();
+        assert_eq!(dst.min_elements_static, 128, "{target}");
+    }
+}
+
+#[test]
+fn t2_source_map_survives_helper_insertion() {
+    let source = emit(&u32_arith_program(), &copy_iface(), SourceTarget::Wgsl);
+    let lines: Vec<&str> = source.source.lines().collect();
+    for location in &source.source_map {
+        let line = lines[(location.line - 1) as usize];
+        assert!(!line.trim().is_empty(), "mapped line {} is blank", location.line);
+    }
+    assert!(
+        source.source_map.iter().any(|location| lines[(location.line - 1) as usize].contains("ucf_div_u32(")),
+        "no mapped line calls the division helper"
+    );
 }
 
 #[test]
