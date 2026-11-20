@@ -499,3 +499,130 @@ fn uuid_secondary_index_probes_sixteen_octet_payloads() {
     assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM sessions WHERE user_id = '00000000-0000-0000-0000-000000000002'"), 1);
     assert_eq!(gateway.scalar_integer("SELECT COUNT(*) FROM sessions WHERE user_id = '00000000-0000-0000-0000-000000000003'"), 0);
 }
+
+/// 经典计数下钻：`WITH RECURSIVE r AS (SELECT 1 UNION ALL SELECT n+1 FROM r WHERE n < 10)`
+/// 必须收敛到 10 行，consumer 的聚合与排序都读全量结果。
+#[test]
+fn recursive_cte_union_all_counts_down_to_fixpoint() {
+    let gateway = Gateway::new("recursive-count");
+    assert_eq!(
+        gateway.scalar_integer("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 10) SELECT COUNT(*) FROM r"),
+        10
+    );
+    assert_eq!(
+        gateway.scalar_integer("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 10) SELECT SUM(n) FROM r"),
+        55
+    );
+    // 全量结果按插入序（BFS 语义）可投影、可过滤。
+    let result = gateway.expect_sql("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 10) SELECT n FROM r WHERE n > 8");
+    assert_eq!(result.rows, vec![vec![SqlValue::Integer(9)], vec![SqlValue::Integer(10)]]);
+}
+
+/// `UNION`（去重）与 `UNION ALL`（全收）的分歧：step 生成 {1,2} 环时，
+/// 去重版只收敛到 2 行，全收版在轮次上限处报错。
+#[test]
+fn recursive_cte_union_deduplicates_and_union_all_terminates_only_by_bound() {
+    let gateway = Gateway::new("recursive-dedup");
+    // 1↔2 环：UNION 去重后第二轮就没有新行。
+    assert_eq!(
+        gateway.scalar_integer("WITH RECURSIVE r AS (SELECT 1 AS n UNION SELECT 3 - n FROM r WHERE n < 3) SELECT COUNT(*) FROM r"),
+        2
+    );
+    // 同一个环改成 UNION ALL：行数每轮 +1，永不收敛，撞上轮次上限。
+    let error = gateway
+        .sql("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT 3 - n FROM r WHERE n < 3) SELECT COUNT(*) FROM r")
+        .expect_err("a growing UNION ALL must not run forever");
+    assert!(error.message.contains("exceeded 10000 rounds without reaching a fixpoint"), "unexpected error: {}", error.message);
+}
+
+/// 树遍历：seed 从真实表取根节点，step 按 parent 关系下钻；显式列清单改名生效。
+#[test]
+fn recursive_cte_walks_a_tree_from_a_real_table_seed() {
+    let gateway = Gateway::new("recursive-tree");
+    gateway.expect_sql("CREATE TABLE nodes (id INT NOT NULL PRIMARY KEY, parent INT, label TEXT)");
+    gateway.expect_sql("INSERT INTO nodes (id, parent, label) VALUES (1, NULL, 'root'), (2, 1, 'a'), (3, 1, 'b'), (4, 2, 'aa'), (5, 4, 'aaa')");
+    // 从 root 出发的两种形态都要验证：`IN (SELECT n FROM subtree)` 被子查询合同
+    // 拒绝，语义等价的 JOIN 形态才是网关支持的树遍历写法。
+    let error = gateway.sql(
+        "WITH RECURSIVE subtree (n) AS (SELECT id FROM nodes WHERE parent IS NULL UNION ALL SELECT id FROM nodes WHERE parent IN (SELECT n FROM subtree)) SELECT n FROM subtree ORDER BY n",
+    )
+    .expect_err("a subquery cannot scan the fixed point");
+    assert!(error.message.contains("recursive CTE") || error.message.contains("materializes"), "unexpected error: {}", error.message);
+    let descendants = gateway.expect_sql(
+        "WITH RECURSIVE subtree (id, label, depth) AS (SELECT id, label, 0 FROM nodes WHERE parent IS NULL UNION ALL SELECT n.id, n.label, subtree.depth + 1 FROM nodes n JOIN subtree ON n.parent = subtree.id) SELECT COUNT(*) FROM subtree",
+    );
+    assert_eq!(descendants.rows[0][0], SqlValue::Integer(5));
+    let deepest = gateway
+        .scalar_integer("WITH RECURSIVE subtree (id, label, depth) AS (SELECT id, label, 0 FROM nodes WHERE parent IS NULL UNION ALL SELECT n.id, n.label, subtree.depth + 1 FROM nodes n JOIN subtree ON n.parent = subtree.id) SELECT MAX(depth) FROM subtree");
+    assert_eq!(deepest, 3);
+}
+
+/// 两条递归 CTE 按书写顺序级联：后一条的 seed 能扫到前一条的全量结果。
+#[test]
+fn two_recursive_ctes_chain_in_source_order() {
+    let gateway = Gateway::new("recursive-chain");
+    let result = gateway.expect_sql(
+        "WITH RECURSIVE a (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM a WHERE n < 3), b (m) AS (SELECT n * 10 FROM a UNION ALL SELECT m + 1 FROM b WHERE m < 12) SELECT COUNT(*) FROM b",
+    );
+    // b 的 seed 扫 a 的全量 {1,2,3} → {10,20,30}；step 只把 10 推到 11、12，
+    // 20/30 越过界不产出。全量 {10,11,12,20,30} 共 5 行。
+    assert_eq!(result.rows[0][0], SqlValue::Integer(5));
+    let values = gateway.expect_sql(
+        "WITH RECURSIVE a (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM a WHERE n < 3), b (m) AS (SELECT n * 10 FROM a UNION ALL SELECT m + 1 FROM b WHERE m < 12) SELECT m FROM b ORDER BY m",
+    );
+    assert_eq!(
+        values.rows,
+        vec![
+            vec![SqlValue::Integer(10)],
+            vec![SqlValue::Integer(11)],
+            vec![SqlValue::Integer(12)],
+            vec![SqlValue::Integer(20)],
+            vec![SqlValue::Integer(30)],
+        ]
+    );
+}
+
+/// 范围控制：同一查询两次引用同一条递归 CTE（不动点自连接）在绑定期拒绝，
+/// 子查询引用同样拒绝，绝不静默地共享一份行槽。
+#[test]
+fn recursive_cte_rejects_second_reference_and_subquery_scan() {
+    let gateway = Gateway::new("recursive-scope");
+    let error = gateway
+        .sql("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) SELECT * FROM r a, r b")
+        .expect_err("a self join of the fixed point must be refused");
+    assert!(error.message.contains("more than once"), "unexpected error: {}", error.message);
+    gateway.expect_sql("CREATE TABLE probe (id INT NOT NULL PRIMARY KEY)");
+    gateway.expect_sql("INSERT INTO probe (id) VALUES (1), (2)");
+    let error = gateway
+        .sql("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) SELECT id FROM probe WHERE id IN (SELECT n FROM r)")
+        .expect_err("a subquery cannot scan the fixed point");
+    assert!(error.message.contains("recursive CTE") || error.message.contains("materializes"), "unexpected error: {}", error.message);
+}
+
+/// 工作集是语句局部的：递归查询结束后，合成 namespace 不再出现在任何后续
+/// 扫描里；重复执行同一递归语句得到相同结果。
+#[test]
+fn recursive_cte_working_set_leaves_no_trace_between_statements() {
+    let gateway = Gateway::new("recursive-clean");
+    let first = gateway.scalar_integer("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 5) SELECT SUM(n) FROM r");
+    let second = gateway.scalar_integer("WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 5) SELECT SUM(n) FROM r");
+    assert_eq!(first, 15);
+    assert_eq!(second, 15);
+    // 普通表扫描不受工作集影响。
+    gateway.expect_sql("CREATE TABLE plain (id INT NOT NULL PRIMARY KEY)");
+    gateway.expect_sql("INSERT INTO plain (id) VALUES (7)");
+    assert_eq!(gateway.scalar_integer("SELECT id FROM plain"), 7);
+}
+
+/// `WITH RECURSIVE` 形态的边界：没有 UNION 递归操作数的定义被拒绝；非递归
+/// `WITH` 的集合体保持原拒绝。
+#[test]
+fn recursive_shape_guards_stay_closed() {
+    let gateway = Gateway::new("recursive-guards");
+    let error = gateway
+        .sql("WITH RECURSIVE r AS (SELECT 1 AS n) SELECT * FROM r")
+        .expect_err("a recursive definition needs a UNION operand");
+    assert!(error.message.contains("UNION"), "unexpected error: {}", error.message);
+    let error = gateway.sql("WITH r AS (SELECT 1 AS n UNION SELECT 2) SELECT * FROM r").expect_err("plain WITH keeps rejecting set bodies");
+    assert!(error.message.contains("set-operation"), "unexpected error: {}", error.message);
+}

@@ -105,11 +105,12 @@ fn extract_interval_and_jsonb_operators() {
     }
     let rows = engine.query("SELECT id FROM t WHERE ts > now() - INTERVAL '30 days'").unwrap();
     assert_eq!(rows_of(&rows), vec![vec!["1".to_owned()]], "an INTERVAL predicate bounds a timestamp comparison");
-    // The gateway inlines CTEs at each reference and cannot materialize a fixed
-    // point; recursion runs only on the native engine (see tests/local/sql.rs).
-    let rejected = engine.query("WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums ORDER BY n");
-    assert!(rejected.is_err(), "the gateway must reject a recursive CTE");
-    assert!(format!("{}", rejected.unwrap_err()).contains("recursive fixed point"), "the rejection names the inlining gap");
+    // The gateway materializes a recursive fixed point in a statement-local
+    // working set; the native engine keeps its own implementation (tests/local/sql.rs).
+    let rows = engine.query("WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums ORDER BY n").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["1".to_owned()], vec!["2".to_owned()], vec!["3".to_owned()], vec!["4".to_owned()], vec!["5".to_owned()]], "the gateway materializes the fixed point");
+    let rows = engine.query("WITH RECURSIVE walk(n) AS (SELECT 1 UNION SELECT 3 - n FROM walk WHERE n < 3) SELECT count(*) FROM walk").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["2".to_owned()]], "UNION deduplicates the fixed point by whole row");
     engine.close().unwrap();
 }
 
