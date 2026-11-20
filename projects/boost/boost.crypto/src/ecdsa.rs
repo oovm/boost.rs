@@ -773,6 +773,14 @@ macro_rules! ecdsa_curve {
                     Ok(Self(scalar))
                 }
 
+                /// 导出私钥标量的定长大端字节。
+                pub fn to_bytes(&self) -> [u8; $byte_len] {
+                    let bytes = self.0.to_be_bytes();
+                    let mut out = [0u8; $byte_len];
+                    out.copy_from_slice(&bytes[bytes.len() - $byte_len..]);
+                    out
+                }
+
                 /// 对消息签名，返回 DER 编码。
                 pub fn sign_der(&self, message: &[u8]) -> Vec<u8> {
                     let sig = ecdsa_sign(self.0, message, &CURVE, $hash, $hmac);

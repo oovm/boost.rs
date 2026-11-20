@@ -12,6 +12,10 @@ Protocol-layer network primitives for the rust-boost workspace.
 - `tls` — `TlsConfig` / `TlsVersion` selection shared by HTTPS and WSS. A secure URL either
   negotiates one of the configured versions or fails with a structured error; it never falls back
   to plaintext.
+- `acme` — RFC 8555 protocol core: directory, account, order, authorization and challenge
+  documents, ES256 JWS signing over an injected `Transport`, `dns-01` / `http-01` challenge
+  material, and `Retry-After`-aware polling. Account key storage, CSR generation, DNS provider
+  credentials, certificate delivery and renewal schedules stay with the consuming product.
 
 `NetError` is the single error surface for every protocol in the crate.
 

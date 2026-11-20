@@ -4,6 +4,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "std")]
+pub mod acme;
 pub mod http;
 #[cfg(feature = "tls")]
 pub mod pki;

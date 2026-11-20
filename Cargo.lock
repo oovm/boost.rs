@@ -376,6 +376,7 @@ dependencies = [
  "boost-random",
  "data-binary-asn1",
  "data-encoding",
+ "serde_json",
  "url",
 ]
 
