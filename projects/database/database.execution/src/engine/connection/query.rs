@@ -467,74 +467,7 @@ impl Connection {
     /// Mutates the active connection state. When a transaction is open, changes
     /// stay in the snapshot until [`Self::commit`] or [`Self::rollback`].
     pub fn execute_vos_write(&self, source: &str) -> Result<()> {
-        self.guard_session_alive()?;
-        let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.mutate_narrowed_write_unlocked(
-            |metadata, holds_every_row| {
-                let contract = resolved_contract(metadata)?;
-                let schema_document = metadata.schema.as_ref().map(|schema| schema.document.as_str());
-                let basis = schema_basis(metadata);
-                // The same source under the same schema basis parses to the same
-                // program, so a repeated statement pays the parse only once.
-                let cached = self
-                    .write_program_cache
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .get(source)
-                    .filter(|(fingerprint, revision, _)| *fingerprint == basis.0 && *revision == basis.1)
-                    .map(|(_, _, program)| program.clone());
-                let program = match cached {
-                    Some(program) => program,
-                    None => {
-                        let parsed = crate::local::parse_write_program(source)?;
-                        let mut cache = self.write_program_cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                        if cache.len() >= STATEMENT_CACHE_LIMIT {
-                            cache.clear();
-                        }
-                        cache.insert(source.to_owned(), (basis.0.clone(), basis.1, parsed.clone()));
-                        parsed
-                    }
-                };
-                let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
-                let keys = self
-                    .with_row_resolver(|| {
-                        crate::local::point_write_keys_parsed(
-                            &program,
-                            contract,
-                            &metadata.unique_constraints,
-                            schema_document,
-                            &[],
-                            exempt,
-                            &self.planning_placement(),
-                        )
-                    })
-                    .map(|keys| keys.map(Self::key_windows))?;
-                let complete = keys.is_none() || holds_every_row;
-                Ok((keys, (program, basis, complete)))
-            },
-            |state, (program, basis, complete)| {
-                // The write executor mutates `state.records`, so it cannot hold a
-                // borrow of the contract inside the same state.
-                let contract = resolved_contract(state)?.clone();
-                let schema_document = state.schema.as_ref().map(|schema| schema.document.as_str());
-                let records = &mut state.records;
-                let constraints = &state.unique_constraints;
-                let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
-                let placement = self.placement();
-                self.with_row_resolver(|| {
-                    crate::local::execute_write_parsed_indexed(
-                        &program,
-                        &contract,
-                        constraints,
-                        schema_document,
-                        records,
-                        &[],
-                        Some(&index),
-                        &placement,
-                    )
-                })
-            },
-        )
+        self.execute_vos_write_with_params(source, &BTreeMap::new())
     }
 
     /// Execute a VOS insert program with named `$name` parameter bindings.

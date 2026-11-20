@@ -120,8 +120,6 @@ pub struct Connection {
     /// the cache instead of serving a plan for the old schema.
     pub(crate) prepared_cache:
         Mutex<HashMap<(database_query::local::Dialect, String), (String, u64, database_query::local::PreparedStatement)>>,
-    /// Parsed VOS write programs keyed by source and schema basis.
-    pub(crate) write_program_cache: Mutex<HashMap<String, (String, u64, schema_input_vos::syntax::VosProgram)>>,
     /// Parsed and expanded parameterized VOS writes keyed by source and schema
     /// basis.
     pub(crate) bound_write_cache: Mutex<HashMap<String, (String, u64, database_query::local::ParsedVosWrite)>>,
@@ -171,7 +169,6 @@ impl Connection {
             contract_cache: Default::default(),
             metadata_cache: Mutex::new(None),
             prepared_cache: Mutex::new(HashMap::new()),
-            write_program_cache: Mutex::new(HashMap::new()),
             bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
             backend: std::sync::Arc::new(Backend::File { path: path.clone(), database: Mutex::new(database) }),
@@ -201,7 +198,6 @@ impl Connection {
             contract_cache: Default::default(),
             metadata_cache: Mutex::new(None),
             prepared_cache: Mutex::new(HashMap::new()),
-            write_program_cache: Mutex::new(HashMap::new()),
             bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
             backend: std::sync::Arc::new(Backend::Memory { state: Mutex::new(State::default()) }),
@@ -228,7 +224,6 @@ impl Connection {
             contract_cache: Default::default(),
             metadata_cache: Mutex::new(None),
             prepared_cache: Mutex::new(HashMap::new()),
-            write_program_cache: Mutex::new(HashMap::new()),
             bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::clone(&self.unique_index),
             udfs: Mutex::new(UdfSubsystem::default()),
