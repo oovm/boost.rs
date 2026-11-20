@@ -827,6 +827,35 @@ impl Item {
             | Item::Callout { at, dur, .. } => (*at, *at + *dur),
         }
     }
+
+    /// The static anchor point this item paints around in normalized frame
+    /// coordinates, when it has one. Full-frame effects, nested layers and
+    /// items without a layout position report `None`, so a spatial check can
+    /// skip them instead of inventing a position they never paint at.
+    pub fn anchor(&self) -> Option<(f32, f32)> {
+        match self {
+            Item::Text { x, y, .. }
+            | Item::Code { x, y, .. }
+            | Item::Counter { x, y, .. }
+            | Item::Card { x, y, .. }
+            | Item::Shape { x, y, .. }
+            | Item::Instance { x, y, .. }
+            | Item::Glow { x, y, .. }
+            | Item::Footnote { x, y, .. }
+            | Item::Image { x, y, .. }
+            | Item::Video { x, y, .. }
+            | Item::Chart { x, y, .. }
+            | Item::Callout { x, y, .. } => Some((*x, *y)),
+            Item::Path { points, .. } => {
+                if points.is_empty() {
+                    return None;
+                }
+                let sum = points.iter().fold((0.0_f32, 0.0_f32), |acc, [x, y]| (acc.0 + x, acc.1 + y));
+                Some((sum.0 / points.len() as f32, sum.1 / points.len() as f32))
+            }
+            Item::Bands { .. } | Item::Grain { .. } | Item::Layer { .. } | Item::Progress { .. } => None,
+        }
+    }
 }
 
 /// One bar series of an [`Item::Chart`].

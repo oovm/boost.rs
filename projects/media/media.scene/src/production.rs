@@ -722,6 +722,30 @@ impl Production {
                             "panel `{}` requires node `{id}` but it is off screen in frames {}–{}",
                             panel.id, panel.range[0], panel.range[1]
                         ));
+                        continue;
+                    }
+                    // "The audience must see this evidence" is a spatial claim
+                    // too: a node bound as witness has to reach the panel's
+                    // safe area at some point in the shared window. The same
+                    // three samples the renderer's motion uses (start, middle,
+                    // end) catch a node parked outside the safe box for the
+                    // whole shot, while an animated one that passes through
+                    // stays accepted.
+                    if let (Some([x0, y0, x1, y1]), Some((ax, ay))) = (panel.safe_area, node.item.anchor()) {
+                        let from = panel.range[0].max(start);
+                        let to = panel.range[1].min(end);
+                        let inside = |frame: u32| -> bool {
+                            let motion = node.anim.sample(frame as f32);
+                            let px = motion.follow.map(|point| point[0]).or(motion.x).unwrap_or(ax);
+                            let py = motion.follow.map(|point| point[1]).or(motion.y).unwrap_or(ay);
+                            (x0..=x1).contains(&px) && (y0..=y1).contains(&py)
+                        };
+                        if ![from, (from + to) / 2, to.saturating_sub(1)].iter().any(|frame| inside(*frame)) {
+                            problems.push(format!(
+                                "panel `{}` requires node `{id}` but it stays outside the safe area in frames {from}–{to}",
+                                panel.id
+                            ));
+                        }
                     }
                 }
             }
@@ -1142,6 +1166,66 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("has no such node")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("off screen in frames 0–30")), "{problems:?}");
         assert!(!problems.iter().any(|p| p.contains("`on-screen`")), "a live node inside the panel is accepted: {problems:?}");
+    }
+
+    /// A safe area is a promise about what the audience sees, so a witness
+    /// parked outside it for the whole panel is a contradiction, while a node
+    /// that drifts through it is not.
+    #[test]
+    fn a_witness_must_reach_the_panel_safe_area() {
+        let project: Project = serde_json::from_value(json!({
+            "width": 640, "height": 360, "fps": 30, "duration_frames": 60,
+            "scenes": [{
+                "id": "a", "start": 0, "duration": 60,
+                "background": { "kind": "solid", "color": "#101820" },
+                "items": [
+                    { "kind": "text", "id": "inside", "at": 0, "dur": 60, "content": "x", "x": 0.5, "y": 0.5, "size": 20, "color": "#ffffff" },
+                    { "kind": "text", "id": "parked", "at": 0, "dur": 60, "content": "x", "x": 0.97, "y": 0.5, "size": 20, "color": "#ffffff" },
+                    {
+                        "kind": "text", "id": "crossing", "at": 0, "dur": 60, "content": "x", "x": 0.1, "y": 0.5, "size": 20, "color": "#ffffff",
+                        "anim": { "x": { "keys": [{ "at": 0, "value": 0.1 }, { "at": 60, "value": 0.9 }] } }
+                    }
+                ]
+            }],
+            "audio": null
+        }))
+        .expect("project");
+        let mut production = Production::new(project);
+        production.shots.push(Shot {
+            id: ShotId::new("s1").unwrap(),
+            scene: "a".to_owned(),
+            locked: false,
+            panels: vec![
+                Panel {
+                    id: PanelId::new("p-in").unwrap(),
+                    range: [0, 60],
+                    purpose: "see it".to_owned(),
+                    composition: "wide".to_owned(),
+                    dialogue: None,
+                    camera: None,
+                    sound: None,
+                    safe_area: Some([0.08, 0.08, 0.92, 0.86]),
+                    witness: vec![NodeId::new("inside").unwrap(), NodeId::new("crossing").unwrap()],
+                    notes: Vec::new(),
+                },
+                Panel {
+                    id: PanelId::new("p-out").unwrap(),
+                    range: [0, 60],
+                    purpose: "see it".to_owned(),
+                    composition: "wide".to_owned(),
+                    dialogue: None,
+                    camera: None,
+                    sound: None,
+                    safe_area: Some([0.08, 0.08, 0.92, 0.86]),
+                    witness: vec![NodeId::new("parked").unwrap()],
+                    notes: Vec::new(),
+                },
+            ],
+        });
+
+        let problems = production.problems();
+        assert!(problems.iter().any(|p| p.contains("p-out") && p.contains("parked") && p.contains("stays outside the safe area")), "{problems:?}");
+        assert!(!problems.iter().any(|p| p.contains("inside") || p.contains("crossing")), "a static node inside and a drifting node through the safe box pass: {problems:?}");
     }
 
     #[test]
