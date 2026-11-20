@@ -12,27 +12,15 @@ keywords = ["parser", "asciidoc", "adoc", "extension"]
 
 [dependencies]
 data-text-core = { workspace = true }
-language-server = { workspace = true, optional = true }
-language-hover = { workspace = true, optional = true }
-language-navigation = { workspace = true }
-dashmap = { workspace = true }
-futures = { workspace = true, optional = true }
-language-highlight = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-language-mcp = { workspace = true, optional = true }
 
-tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 language-testing = { workspace = true }
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "data-text-core/serde", "language-navigation/serde"]
-lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures", "dep:tokio"]
-mcp = ["lsp", "dep:language-mcp", "language-mcp/io-std", "io-std"]
-io-std = ["dep:tokio"]
+serde = ["dep:serde", "data-text-core/serde"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -1,4 +1,4 @@
-//! Tests for the JASM parser and formatter.
+//! Tests for the JASM parser.
 
 use data_text_core::{Parser, Source, SourceText};
 use data_text_jasm::{JasmLanguage, JasmLexer, JasmParser};
@@ -195,43 +195,4 @@ public static main:"([Ljava/lang/String;)V"
     let result = parser.parse(&source, &[], &mut cache);
     // Should not panic, even with syntax errors
     assert!(result.result.is_ok());
-}
-
-/// Test code formatter.
-#[test]
-fn test_formatter() {
-    let source = SourceText::new(
-        r#"
-.class public Test
-.version 65:0
-
-.method public static main:"([Ljava/lang/String;)V"
-return
-.end method
-"#,
-    );
-
-    let language = JasmLanguage::default();
-    let lexer = JasmLexer::new(&language);
-    let parser = JasmParser::new(&language);
-    let mut cache = data_text_core::parser::ParseSession::default();
-
-    let result = parser.parse(&source, &[], &mut cache);
-    assert!(result.result.is_ok());
-
-    let _green = result.result.unwrap();
-    {
-        use data_text_core::Builder;
-        use data_text_jasm::{JasmBuilder, JasmFormatter};
-        let builder = JasmBuilder::new(&language);
-        let mut build_cache = data_text_core::parser::ParseSession::default();
-        let typed = builder.build(&source, &[], &mut build_cache);
-        let root = typed.result.expect("jasm typed root");
-        let formatter = JasmFormatter::new();
-        let formatted = formatter.format(&root);
-        assert!(!formatted.is_empty());
-
-        let pretty_formatted = formatter.format_pretty(&root);
-        assert!(!pretty_formatted.is_empty());
-    }
 }

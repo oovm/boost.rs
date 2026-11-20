@@ -1,6 +1,7 @@
 #![cfg(feature = "lsp")]
 use data_text_core::{Parser, SourceText, parser::session::ParseSession};
-use data_text_rbq::{RbqFormatter, RbqLanguage, RbqParser};
+use data_text_rbq::{RbqLanguage, RbqParser};
+use language_rbq::RbqFormatter;
 
 #[ignore = "RBQ formatter spacing expectations are out of date"]
 #[test]

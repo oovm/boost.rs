@@ -1,6 +1,6 @@
 #[test]
 fn test_rust_formatter() -> Result<(), data_text_core::TextError> {
-    use data_text_rust::RustFormatter;
+    use language_rust::RustFormatter;
 
     let formatter = RustFormatter::new();
     let source = "fn main(){let x=42;println!(\"x={}\",x)}";
@@ -14,7 +14,7 @@ fn test_rust_formatter() -> Result<(), data_text_core::TextError> {
 
 #[test]
 fn test_rust_formatter_with_config() -> Result<(), data_text_core::TextError> {
-    use data_text_rust::RustFormatter;
+    use language_rust::RustFormatter;
 
     let formatter = RustFormatter::with_config("    ".to_string(), 80);
 

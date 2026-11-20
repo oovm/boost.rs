@@ -2,8 +2,6 @@
 
 mod builder;
 mod files;
-mod formatter;
-mod highlighter;
 mod lexer;
 mod parser;
 

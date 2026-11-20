@@ -1308,18 +1308,9 @@ dependencies = [
 name = "data-text-asciidoc"
 version = "0.1.0"
 dependencies = [
- "dashmap",
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-navigation",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1502,15 +1493,8 @@ name = "data-text-d2"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1946,15 +1930,8 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-uml",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2209,18 +2186,9 @@ dependencies = [
 name = "data-text-rst"
 version = "0.1.0"
 dependencies = [
- "dashmap",
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-navigation",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2228,8 +2196,6 @@ name = "data-text-ruby"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "language-format",
- "language-highlight",
  "serde",
 ]
 
@@ -2331,15 +2297,8 @@ version = "0.1.0"
 dependencies = [
  "data-text-c4",
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2494,12 +2453,6 @@ name = "data-text-vbnet"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "serde",
 ]
 

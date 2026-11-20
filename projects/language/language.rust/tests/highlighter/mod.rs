@@ -1,4 +1,4 @@
-use data_text_rust::{Highlighter, RustHighlighter};
+use language_rust::{Highlighter, RustHighlighter};
 
 #[test]
 fn test_rust_highlighter() -> Result<(), data_text_core::TextError> {

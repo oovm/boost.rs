@@ -12,8 +12,6 @@ keywords = ["parser", "ruby", "ast", "language"]
 
 [dependencies]
 data-text-core = { workspace = true }
-language-highlight = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 
 [features]
