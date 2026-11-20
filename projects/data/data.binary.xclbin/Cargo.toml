@@ -1,0 +1,11 @@
+[package]
+name = "data-binary-xclbin"
+version.workspace = true
+authors.workspace = true
+description = "XCLBIN2 device image container layout, validation and authoring (`data.binary` domain)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]

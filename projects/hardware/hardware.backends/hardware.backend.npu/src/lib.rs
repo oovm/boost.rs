@@ -4,6 +4,8 @@
 //! - XDNA 只接受固定形状、已编译的量化子图，以及白名单内的单算子；
 //! - 动态 shape、未知 dtype/layout、未编译子图都在 [`Backend::supports`] 阶段被拒绝；
 //! - 编译与提交由调用方附着的 [`KernelLauncher`] 完成，后端按任务身份缓存编译产物；
+//! - [`NpuBackend::load_overlay`] 在装载边界只做 `xclbin2` 容器结构校验与节表登记，
+//!   不调用驱动、不执行设备代码；
 //! - 没有附着 XDNA 运行时或 launcher 之前，[`Backend::submit_task`] 返回明确错误，绝不静默回退 CPU。
 //!
 //! 真实 kernel 由后续接入的 XDNA 运行时生成；本 crate 负责让调度器在计划阶段区分
@@ -13,6 +15,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use data_binary_xclbin::{SectionKind, Xclbin, XclbinError};
 use hardware_capability::{
     Conversion, DeviceId, DeviceState, ExecDecision, ExecKind, ExecPlan, ExecRefusal, ExecSignature, Feature, FeatureSet, Health, MemoryBudget,
     OutputDomain,
@@ -137,17 +140,84 @@ fn kernel_key(task: &TaskNode) -> String {
     }
 }
 
+/// 节表条目摘要（`axlf_section_header` 的装载侧视图）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverlaySection {
+    /// 原始 `axlf_section_kind` 编号。
+    pub kind: u32,
+    /// 节名。
+    pub name: String,
+    /// 载荷字节数。
+    pub size: u64,
+}
+
+/// 装载边界登记的 XCLBIN 设备镜像。
+///
+/// [`Overlay::stage`] 只完成 `xclbin2` 容器结构校验与节表登记：不解释 PDI /
+/// AIE 载荷、不调用驱动、不执行任何设备代码。设备代码生成与真实装载分别由
+/// `hardware.emitter` 与 XDNA 运行时接入负责。
+#[derive(Debug, Clone)]
+pub struct Overlay {
+    bytes: Vec<u8>,
+    uuid: String,
+    platform: String,
+    sections: Vec<OverlaySection>,
+}
+
+impl Overlay {
+    /// 校验并登记一个 `xclbin2` 容器；结构不合法时返回原因，不产出半成品。
+    pub fn stage(bytes: Vec<u8>) -> std::result::Result<Self, XclbinError> {
+        let summary = {
+            let image = Xclbin::parse(&bytes)?;
+            (
+                image.uuid_hex(),
+                image.platform.to_owned(),
+                image.sections.iter().map(|s| OverlaySection { kind: s.kind, name: s.name.to_owned(), size: s.size }).collect(),
+            )
+        };
+        Ok(Self { bytes, uuid: summary.0, platform: summary.1, sections: summary.2 })
+    }
+
+    /// 容器原始字节。
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// xclbin UUID（小写十六进制）。
+    pub fn uuid(&self) -> &str {
+        &self.uuid
+    }
+
+    /// `m_platformVBNV` 平台标识。
+    pub fn platform(&self) -> &str {
+        &self.platform
+    }
+
+    /// 节表登记。
+    pub fn sections(&self) -> &[OverlaySection] {
+        &self.sections
+    }
+
+    /// 是否携带设备配置镜像（PDI / 部分 PDI / AIE 分区任一）。
+    pub fn has_device_config(&self) -> bool {
+        self.sections.iter().any(|section| {
+            matches!(SectionKind::from_raw(section.kind), Some(SectionKind::Pdi | SectionKind::BitstreamPartialPdi | SectionKind::AiePartition))
+        })
+    }
+}
+
 /// AMD XDNA NPU 后端。
 pub struct NpuBackend {
     config: NpuConfig,
     launcher: Option<Box<dyn KernelLauncher + Send + Sync>>,
     kernels: BTreeMap<String, KernelArtifact>,
+    overlay: Option<Overlay>,
 }
 
 impl NpuBackend {
     /// 用给定配置构造后端。
     pub fn new(config: NpuConfig) -> Self {
-        Self { config, launcher: None, kernels: BTreeMap::new() }
+        Self { config, launcher: None, kernels: BTreeMap::new(), overlay: None }
     }
 
     /// 只完成设备发现的默认实例。
@@ -174,6 +244,19 @@ impl NpuBackend {
     /// 是否已附着 XDNA 运行时。
     pub fn runtime_attached(&self) -> bool {
         self.config.runtime.is_some()
+    }
+
+    /// 装载（登记）一个 XCLBIN overlay：只做容器结构校验与节表登记，
+    /// 不调用驱动、不执行设备代码。校验失败时保持原装载状态不变。
+    pub fn load_overlay(&mut self, bytes: Vec<u8>) -> Result<()> {
+        let overlay = Overlay::stage(bytes).map_err(|e| Error::Backend("npu".into(), format!("XCLBIN 容器校验失败：{e}")))?;
+        self.overlay = Some(overlay);
+        Ok(())
+    }
+
+    /// 当前登记的 overlay；未装载时为 `None`。
+    pub fn overlay(&self) -> Option<&Overlay> {
+        self.overlay.as_ref()
     }
 }
 
@@ -421,5 +504,44 @@ mod tests {
         let plan = backend.supports(&signature).plan().cloned().expect("accepted");
         assert!(plan.footprint_bytes() > budget.available_bytes());
         assert!(plan.fits_budget(&budget));
+    }
+
+    fn authored_container() -> Vec<u8> {
+        data_binary_xclbin::XclbinBuilder::new()
+            .platform("xilinx_v1_ipu_0_0")
+            .uuid([0x11; 16])
+            .add_section(data_binary_xclbin::SectionKind::Pdi, "pdi", vec![0xA5u8; 16])
+            .add_section(data_binary_xclbin::SectionKind::AieMetadata, "aie_metadata", vec![1u8; 8])
+            .build()
+    }
+
+    #[test]
+    fn load_overlay_validates_the_container_and_registers_the_inventory() {
+        let mut backend = NpuBackend::discovered();
+        assert!(backend.overlay().is_none());
+        backend.load_overlay(authored_container()).expect("valid container");
+        let overlay = backend.overlay().expect("staged overlay");
+        assert_eq!(overlay.platform(), "xilinx_v1_ipu_0_0");
+        assert_eq!(overlay.uuid().len(), 32);
+        assert_eq!(overlay.sections().len(), 2);
+        assert_eq!(overlay.sections()[0].name, "pdi");
+        assert!(overlay.has_device_config());
+    }
+
+    #[test]
+    fn load_overlay_rejects_non_container_bytes_without_staging() {
+        let mut backend = NpuBackend::discovered();
+        let error = backend.load_overlay(b"definitely not an xclbin image".to_vec()).expect_err("garbage");
+        assert!(error.to_string().contains("容器校验失败"), "{error}");
+        assert!(backend.overlay().is_none());
+    }
+
+    #[test]
+    fn overlay_without_device_config_is_still_a_valid_container() {
+        let bytes = data_binary_xclbin::XclbinBuilder::new()
+            .add_section(data_binary_xclbin::SectionKind::MemTopology, "mem_topology", vec![1u8; 8])
+            .build();
+        let overlay = Overlay::stage(bytes).expect("valid");
+        assert!(!overlay.has_device_config());
     }
 }

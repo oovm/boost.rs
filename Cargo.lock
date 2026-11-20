@@ -1080,6 +1080,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-xclbin"
+version = "0.1.0"
+
+[[package]]
 name = "data-binary-zip"
 version = "0.1.0"
 dependencies = [
@@ -4411,6 +4415,7 @@ dependencies = [
 name = "hardware-backend-npu"
 version = "0.1.0"
 dependencies = [
+ "data-binary-xclbin",
  "hardware-capability",
  "hardware-ir",
  "hardware-scheduler",

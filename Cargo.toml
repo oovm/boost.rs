@@ -118,6 +118,7 @@ members = [
     "projects/data/data.binary.tvm",
     "projects/data/data.binary.wasm",
     "projects/data/data.binary.x64",
+    "projects/data/data.binary.xclbin",
     "projects/data/data.binary.zip",
     "projects/data/data.checksum",
     "projects/data/data.compression",
@@ -689,6 +690,7 @@ data-binary-ttf = { path = "projects/data/data.binary.ttf" }
 data-binary-tvm = { path = "projects/data/data.binary.tvm" }
 data-binary-wasm = { path = "projects/data/data.binary.wasm" }
 data-binary-x64 = { path = "projects/data/data.binary.x64" }
+data-binary-xclbin = { path = "projects/data/data.binary.xclbin" }
 data-binary-zip = { path = "projects/data/data.binary.zip" }
 crossterm = "0.29.0"
 dashmap = { version = "6.1.0" }
