@@ -91,6 +91,36 @@ pub enum Op {
     SoftmaxCrossEntropyBackward,
 }
 
+impl Op {
+    /// 算子名。
+    ///
+    /// 这是算子在规划、签名和日志里的唯一名字：新增算子必须在这里登记，`dl-plan` 等下游
+    /// 只按名字查询，不再各自维护一份算子清单。
+    pub fn name(&self) -> &'static str {
+        match self {
+            Op::Input { .. } => "input",
+            Op::Parameter { .. } => "parameter",
+            Op::Constant { .. } => "constant",
+            Op::Add => "add",
+            Op::Sub => "sub",
+            Op::Mul => "mul",
+            Op::MatMul => "matmul",
+            Op::Relu => "relu",
+            Op::Reshape { .. } => "reshape",
+            Op::Transpose { .. } => "transpose",
+            Op::SumAll => "sum_all",
+            Op::MeanAll => "mean_all",
+            Op::SumToShape { .. } => "sum_to_shape",
+            Op::Neg => "neg",
+            Op::BroadcastTo { .. } => "broadcast_to",
+            Op::Scale { .. } => "scale",
+            Op::ReluBackward => "relu_backward",
+            Op::SoftmaxCrossEntropy => "softmax_cross_entropy",
+            Op::SoftmaxCrossEntropyBackward => "softmax_cross_entropy_backward",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Node {
     op: Op,

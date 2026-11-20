@@ -1,7 +1,8 @@
-//! 把 DL 前向图翻译成硬件放置计划。
+//! 把 DL 前向图翻译成硬件放置计划，并按计划执行。
 //!
-//! 本 crate 只做计划，不执行：`dl-graph` 提供完整算子语义，[`CapabilityOracle`] 由调用方
-//! 接上具体后端（CPU / GPU / NPU）。规划顺序与用户合同一致：
+//! 本 crate 是 `dl.*` 唯一的放置与执行层：`dl-graph` 提供算子语义，[`CapabilityOracle`]
+//! 由调用方接上具体后端（CPU / GPU / NPU）。训练、推理一律经由这里，不再各自直接
+//! `Graph::run`，否则放置与流式装载永远不会生效。规划顺序与用户合同一致：
 //!
 //! 1. 先尝试调用方声明的子图候选（如 NPU 已编译量化子图），只有比逐节点方案更便宜才采用；
 //! 2. 其余节点逐算子查询所有后端，先过滤健康/预算不可行的方案，再取端到端代价最小者；
@@ -11,13 +12,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dl_graph::{Graph, NodeId, Op};
+use dl_graph::{Graph, NodeId};
 use hardware_capability::{BackendId, Conversion, DeviceId, ExecDecision, ExecPlan, ExecRefusal, ExecSignature, MemoryBudget};
 
 mod execute;
 mod stream;
 
-pub use execute::{ExecutedPlan, RunError, execute_plan};
+pub use execute::{ExecutedPlan, PlannedGraph, RunError, execute_plan};
 pub use scheduler_oracle::SchedulerOracle;
 pub use stream::{StreamReport, StreamStep, stream_plan};
 
@@ -55,6 +56,37 @@ impl Attempt {
 pub trait CapabilityOracle {
     /// 返回所有后端对该签名的应答。
     fn candidates(&self, signature: &ExecSignature) -> Vec<Attempt>;
+}
+
+/// 未接后端时的默认应答：本机 CPU 接受全部算子。
+///
+/// 训练与推理默认使用它，因此默认路径同样经过放置与流式执行；接入真实后端时换成
+/// [`SchedulerOracle`]，执行代码不变。代价按签名输入的元素总数估算，保证不同算子的
+/// 相对大小可比较。
+pub struct CpuOracle {
+    backend: BackendId,
+    device: DeviceId,
+}
+
+impl CpuOracle {
+    /// 以 `cpu` / `cpu0` 为唯一执行面构造。
+    pub fn new() -> Self {
+        Self { backend: BackendId::new("cpu"), device: DeviceId::new("cpu0") }
+    }
+}
+
+impl Default for CpuOracle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CapabilityOracle for CpuOracle {
+    fn candidates(&self, signature: &ExecSignature) -> Vec<Attempt> {
+        let cost = signature.element_count().map_or(0, |elements| elements as u64);
+        let plan = ExecPlan::new(self.backend.clone(), self.device.clone()).with_estimated_cost(cost);
+        vec![Attempt::accepted(self.backend.clone(), self.device.clone(), plan)]
+    }
 }
 
 /// 调用方声明的子图候选（例如整段可编译到 NPU 的连通子图）。
@@ -331,25 +363,14 @@ fn best_node_cost(graph: &Graph, node: NodeId, oracle: &dyn CapabilityOracle, bu
     best_attempt(&signature, oracle, budget).plan.map(|plan| plan.estimated_cost)
 }
 
-/// 构造算子的可执行性签名；输入/参数节点返回 `None`。
+/// 构造算子的可执行性签名；输入/参数/常量节点返回 `None`。
+///
+/// 算子名来自 [`Op::name`]，新算子只要在 `dl-graph` 登记就不会被规划层漏掉。
 fn signature_for(graph: &Graph, node: NodeId) -> Option<ExecSignature> {
-    let op = match graph.op(node)? {
-        Op::Add => "add",
-        Op::Sub => "sub",
-        Op::Mul => "mul",
-        Op::MatMul => "matmul",
-        Op::Relu => "relu",
-        Op::Reshape { .. } => "reshape",
-        Op::Transpose { .. } => "transpose",
-        Op::SumAll => "sum_all",
-        Op::MeanAll => "mean_all",
-        Op::SumToShape { .. } => "sum_to_shape",
-        Op::Neg => "neg",
-        Op::BroadcastTo { .. } => "broadcast_to",
-        Op::Scale { .. } => "scale",
-        Op::ReluBackward => "relu_backward",
-        Op::Input { .. } | Op::Parameter { .. } | Op::Constant { .. } => return None,
-    };
+    if graph.is_binding(node) {
+        return None;
+    }
+    let op = graph.op(node)?.name();
     let shapes = graph.node_inputs(node)?.iter().map(|input| graph.shape(*input).map(<[usize]>::to_vec)).collect();
     Some(ExecSignature::operator(op, vec!["f32".into()], shapes))
 }
@@ -528,5 +549,26 @@ mod tests {
         let unknown = SubgraphCandidate { name: "c".into(), nodes: vec![NodeId(0)], ..base };
         let error = plan_graph(&graph(), &[unknown], &oracle, &budget).expect_err("input node");
         assert!(matches!(error, PlanError::UnknownNode(NodeId(0))));
+    }
+
+    fn loss_training_graph() -> dl_graph::TrainingGraph {
+        let mut builder = dl_graph::GraphBuilder::new();
+        let x = builder.input("x", [2, 3]).expect("input");
+        let target = builder.input("target", [2, 2]).expect("target");
+        let weight = builder.parameter("w", [3, 2]).expect("weight");
+        let logits = builder.matmul(x, weight).expect("matmul");
+        let loss = builder.softmax_cross_entropy(logits, target).expect("loss");
+        let forward = builder.finish(vec![logits]).expect("forward");
+        forward.training(loss).expect("training")
+    }
+
+    #[test]
+    fn default_cpu_oracle_places_every_operator_including_the_loss_ops() {
+        let training = loss_training_graph();
+        let plan = plan_graph(&training.graph, &[], &CpuOracle::new(), &MemoryBudget::unlimited()).expect("plan");
+        let placeable = (0..training.graph.node_count()).filter(|index| !training.graph.is_binding(NodeId(*index))).count();
+        assert_eq!(plan.assignments.len(), placeable, "softmax 交叉熵及其反向节点也必须被放置");
+        assert!(plan.assignments.iter().all(|assignment| assignment.backend.as_str() == "cpu"));
+        assert!(plan.total_estimated_cost > 0);
     }
 }

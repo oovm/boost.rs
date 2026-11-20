@@ -3702,6 +3702,7 @@ dependencies = [
  "dl-autograd",
  "dl-graph",
  "dl-nn",
+ "dl-plan",
  "dl-tensor",
  "dl-types",
 ]

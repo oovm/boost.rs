@@ -3,14 +3,17 @@
 //! 执行顺序与 `dl-graph` 的节点顺序一致，每个算子执行前把它在计划中的足迹提交给
 //! [`SegmentStreamer`]，因此大于设备预算的模型也能逐段算完。分步执行和 `graph.run` 共用
 //! 同一内核，测试要求两者数值完全一致。
+//!
+//! 调用方通常直接用 [`PlannedGraph`]：计划只算一次，之后每次执行都按计划走。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use dl_graph::{Bindings, Graph, NodeId, TrainingGraph};
 use dl_tensor::Tensor;
+use hardware_capability::MemoryBudget;
 use hardware_runtime::{SegmentId, SegmentStreamer, StreamError, StreamStats};
 
-use crate::{GraphPlan, NodeAssignment, StreamStep};
+use crate::{CpuOracle, GraphPlan, NodeAssignment, PlanError, StreamStep, plan_graph};
 
 /// 流式执行错误。
 #[derive(Debug)]
@@ -120,6 +123,46 @@ pub fn execute_plan(graph: &Graph, plan: &GraphPlan, bindings: &Bindings, stream
     }
 
     Ok(ExecutedPlan { outputs: interpreter.outputs()?, steps, stats: streamer.stats() })
+}
+
+/// 计划固定下来的可执行图。
+///
+/// 计划在构造时算一次，之后每次 [`PlannedGraph::run`] 都按同一计划执行；每次执行新建流式器，
+/// 段身份按本次执行分配，重复调用不会冲突。训练与推理都应走这里，而不是直接 `Graph::run`，
+/// 否则放置与流式装载永远不会生效。
+pub struct PlannedGraph {
+    graph: Graph,
+    plan: GraphPlan,
+}
+
+impl PlannedGraph {
+    /// 用默认 CPU 放置（[`CpuOracle`]）为整张图建计划。
+    pub fn new(graph: Graph) -> Result<Self, PlanError> {
+        let plan = plan_graph(&graph, &[], &CpuOracle::new(), &MemoryBudget::unlimited())?;
+        Ok(Self { graph, plan })
+    }
+
+    /// 复用调用方已经算好的计划。
+    pub fn from_plan(graph: Graph, plan: GraphPlan) -> Self {
+        Self { graph, plan }
+    }
+
+    /// 底层图。
+    pub fn graph(&self) -> &Graph {
+        &self.graph
+    }
+
+    /// 放置计划。
+    pub fn plan(&self) -> &GraphPlan {
+        &self.plan
+    }
+
+    /// 按绑定执行整张图，返回输出与本次流式统计。
+    pub fn run(&self, bindings: &Bindings) -> Result<ExecutedPlan, RunError> {
+        let device_capacity = self.plan.total_footprint_bytes.max(1);
+        let mut streamer = SegmentStreamer::new(device_capacity, u64::MAX, u64::MAX);
+        execute_plan(&self.graph, &self.plan, bindings, &mut streamer)
+    }
 }
 
 #[cfg(test)]
@@ -233,6 +276,37 @@ mod tests {
         assert_eq!(executed.gradient(&training, "x").map(Tensor::to_vec), Some(eager[2].to_vec()));
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn planned_graph_matches_direct_execution_through_the_default_cpu_plan() {
+        let mut builder = dl_graph::GraphBuilder::new();
+        let x = builder.input("x", [2, 2]).unwrap();
+        let target = builder.input("y", [2, 3]).unwrap();
+        let weight = builder.parameter("w", [2, 3]).unwrap();
+        let logits = builder.matmul(x, weight).unwrap();
+        let loss = builder.softmax_cross_entropy(logits, target).unwrap();
+        let forward = builder.finish(vec![logits]).unwrap();
+        let training = forward.training(loss).unwrap();
+        let graph = &training.graph;
+
+        let mut bindings = Bindings::new();
+        bindings.insert_input("x", Tensor::from_vec(vec![1.0, -2.0, 0.5, 3.0], [2, 2]).unwrap());
+        bindings.insert_input("y", Tensor::from_vec(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [2, 3]).unwrap());
+        bindings.insert_parameter("w", Tensor::from_vec(vec![0.2, -0.1, 0.4, 0.3, 0.5, -0.2], [2, 3]).unwrap());
+
+        let planned = PlannedGraph::new(graph.clone()).expect("default cpu plan");
+        let placeable = (0..graph.node_count()).filter(|index| !graph.is_binding(NodeId(*index))).count();
+        assert_eq!(planned.plan().assignments.len(), placeable);
+
+        let executed = planned.run(&bindings).expect("execute");
+        let eager = graph.run(&bindings).expect("eager");
+        for (streamed, reference) in executed.outputs.iter().zip(&eager) {
+            assert_eq!(streamed.to_vec(), reference.to_vec(), "planned execution must match graph.run");
+        }
+        // 计划可重复执行：每次执行都新建流式器，段身份不会冲突。
+        let again = planned.run(&bindings).expect("execute twice");
+        assert_eq!(again.outputs[0].to_vec(), eager[0].to_vec());
     }
 
     #[test]

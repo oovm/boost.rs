@@ -2,6 +2,9 @@
 //!
 //! 训练只做三件事：前向、反向、参数更新；checkpoint 由 `dl-model` 负责。优化器持有
 //! 参数 [`Var`] 的共享句柄，因此模型与优化器看到的是同一份存储。
+//!
+//! 图训练一律经 `dl-plan` 的放置计划执行（[`PlannedGraph`]），不直接 `Graph::run`；
+//! 这样训练和推理共用同一条放置/流式路径，接入 GPU/NPU 后端时训练自动受益。
 
 #![warn(missing_docs)]
 
@@ -11,6 +14,7 @@ use boost_random::{ChaCha12, Random};
 use dl_autograd::{Var, mse_loss};
 use dl_graph::{Bindings, Graph, GraphBuilder, TrainingGraph};
 use dl_nn::{Module, mlp};
+use dl_plan::{PlannedGraph, RunError};
 use dl_tensor::Tensor;
 use dl_types::{DlError, Result};
 
@@ -128,8 +132,8 @@ impl Optimizer for Adam {
 
 /// 基于 `dl-graph` 训练图的 SGD。
 ///
-/// 参数存放在调用方的 [`Bindings`] 里；每一步执行整张训练图（前向 + 反向节点），再按梯度
-/// 原地更新参数。同一张训练图既能直接 [`Graph::run`]，也能交给 `dl-plan` 的流式执行。
+/// 参数存放在调用方的 [`Bindings`] 里；每一步按 `dl-plan` 的放置计划执行整张训练图
+/// （前向 + 反向节点），再按梯度原地更新参数。
 pub struct GraphSgd {
     pass: GraphPass,
     learning_rate: f32,
@@ -138,9 +142,9 @@ pub struct GraphSgd {
 }
 
 impl GraphSgd {
-    /// 从训练图创建无动量 SGD。
-    pub fn new(training: &TrainingGraph, learning_rate: f32) -> Self {
-        Self { pass: GraphPass::new(training), learning_rate, momentum: 0.0, velocity: BTreeMap::new() }
+    /// 从训练图创建无动量 SGD；放置计划在构造时算一次。
+    pub fn new(training: &TrainingGraph, learning_rate: f32) -> Result<Self> {
+        Ok(Self { pass: GraphPass::new(training)?, learning_rate, momentum: 0.0, velocity: BTreeMap::new() })
     }
 
     /// 启用动量。
@@ -184,10 +188,10 @@ pub struct GraphAdam {
 }
 
 impl GraphAdam {
-    /// 以默认超参数创建 Adam。
-    pub fn new(training: &TrainingGraph, learning_rate: f32) -> Self {
-        Self {
-            pass: GraphPass::new(training),
+    /// 以默认超参数创建 Adam；放置计划在构造时算一次。
+    pub fn new(training: &TrainingGraph, learning_rate: f32) -> Result<Self> {
+        Ok(Self {
+            pass: GraphPass::new(training)?,
             learning_rate,
             beta1: 0.9,
             beta2: 0.999,
@@ -195,7 +199,7 @@ impl GraphAdam {
             step_count: 0,
             first_moment: BTreeMap::new(),
             second_moment: BTreeMap::new(),
-        }
+        })
     }
 
     /// 训练图本身。
@@ -228,15 +232,16 @@ impl GraphAdam {
     }
 }
 
-/// 训练图的执行骨架：定位损失输出与各参数梯度输出，一次执行取出两者。
+/// 训练图的执行骨架：按放置计划执行一次，定位损失输出与各参数梯度输出。
 struct GraphPass {
-    graph: Graph,
+    pass: PlannedGraph,
     loss_index: usize,
     parameter_grads: Vec<(String, Vec<usize>, usize)>,
 }
 
 impl GraphPass {
-    fn new(training: &TrainingGraph) -> Self {
+    /// 为训练图建一次放置计划；之后每步都按同一计划执行。
+    fn new(training: &TrainingGraph) -> Result<Self> {
         let graph = training.graph.clone();
         let loss_index = graph.outputs().iter().position(|output| *output == training.loss).unwrap_or(0);
         let parameter_grads = training
@@ -249,19 +254,33 @@ impl GraphPass {
                 (name.clone(), shape, index)
             })
             .collect();
-        Self { graph, loss_index, parameter_grads }
+        let pass = PlannedGraph::new(graph).map_err(placement_error)?;
+        Ok(Self { pass, loss_index, parameter_grads })
     }
 
     fn graph(&self) -> &Graph {
-        &self.graph
+        self.pass.graph()
     }
 
     fn run(&self, bindings: &Bindings) -> Result<(f32, Vec<(String, Vec<usize>, Vec<f32>)>)> {
-        let values = self.graph.run(bindings)?;
+        let values = self.pass.run(bindings).map_err(execution_error)?.outputs;
         let loss = values[self.loss_index].as_slice()?[0];
         let gradients =
             self.parameter_grads.iter().map(|(name, shape, index)| (name.clone(), shape.clone(), values[*index].to_vec())).collect();
         Ok((loss, gradients))
+    }
+}
+
+/// 放置失败：图本身或默认后端覆盖不了该图。
+fn placement_error(error: dl_plan::PlanError) -> DlError {
+    DlError::Format { detail: format!("training graph placement failed: {error}") }
+}
+
+/// 执行失败：保留内核错误，其余（流式装载、缺放置）按格式错误上报。
+fn execution_error(error: RunError) -> DlError {
+    match error {
+        RunError::Eval(error) => error,
+        other => DlError::Format { detail: other.to_string() },
     }
 }
 
@@ -430,8 +449,8 @@ where
 /// 图输入形状在构建期固定，因此每个批次必须正好是 [`GraphMlp::batch_size`] 行；不足一批的
 /// 尾行由调用方丢弃或补齐。损失固定为 softmax 交叉熵，前向输出为分类 logits。
 pub struct GraphMlp {
-    forward: Graph,
-    losses: Graph,
+    forward: PlannedGraph,
+    losses: PlannedGraph,
     training: TrainingGraph,
     bindings: Bindings,
     input: String,
@@ -472,9 +491,9 @@ impl GraphMlp {
         }
         let logits = current;
         let loss = builder.softmax_cross_entropy(logits, target)?;
-        let forward = builder.finish(vec![logits])?;
-        let losses = GraphBuilder::from_graph(&forward).finish(vec![loss])?;
-        let training = forward.training(loss)?;
+        let forward = PlannedGraph::new(builder.finish(vec![logits])?).map_err(placement_error)?;
+        let losses = PlannedGraph::new(GraphBuilder::from_graph(forward.graph()).finish(vec![loss])?).map_err(placement_error)?;
+        let training = forward.graph().training(loss)?;
 
         let mut bindings = Bindings::new();
         for (name, parameter) in model.named_parameters() {
@@ -501,7 +520,7 @@ impl GraphMlp {
 
     /// 参数名与形状，按声明顺序。
     pub fn parameters(&self) -> Vec<(String, Vec<usize>)> {
-        self.forward.parameters().map(|(name, shape)| (name.to_owned(), shape.to_vec())).collect()
+        self.forward.graph().parameters().map(|(name, shape)| (name.to_owned(), shape.to_vec())).collect()
     }
 
     /// 读取参数值。
@@ -514,6 +533,7 @@ impl GraphMlp {
         let name = name.into();
         let expected = self
             .forward
+            .graph()
             .parameters()
             .find(|(candidate, _)| *candidate == name)
             .map(|(_, shape)| shape.to_vec())
@@ -530,7 +550,7 @@ impl GraphMlp {
         self.require_batch("predict_batch", &inputs, None)?;
         let mut bindings = self.bindings.clone();
         bindings.insert_input(self.input.clone(), inputs);
-        let mut outputs = self.forward.run(&bindings)?;
+        let mut outputs = self.forward.run(&bindings).map_err(execution_error)?.outputs;
         outputs.pop().ok_or_else(|| DlError::Format { detail: "forward graph produced no outputs".to_owned() })
     }
 
@@ -540,7 +560,7 @@ impl GraphMlp {
         let mut bindings = self.bindings.clone();
         bindings.insert_input(self.input.clone(), inputs);
         bindings.insert_input(self.target.clone(), targets);
-        let values = self.losses.run(&bindings)?;
+        let values = self.losses.run(&bindings).map_err(execution_error)?.outputs;
         values.first().ok_or_else(|| DlError::Format { detail: "loss graph produced no outputs".to_owned() })?.as_slice().map(|slice| slice[0])
     }
 
@@ -664,7 +684,7 @@ mod tests {
         let inputs = Tensor::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], [4, 2])?;
         let targets = Tensor::from_vec(vec![0.0, 1.0, 1.0, 2.0], [4, 1])?;
 
-        let mut optimizer = GraphSgd::new(&training, 0.05).with_momentum(0.9);
+        let mut optimizer = GraphSgd::new(&training, 0.05)?.with_momentum(0.9);
         let reports = fit_graph(&mut optimizer, &mut bindings, "x", "target", 400, || vec![Ok((inputs.clone(), targets.clone()))])?;
 
         let first = reports.first().expect("epochs").mean_loss;
@@ -697,7 +717,7 @@ mod tests {
         let inputs = Tensor::from_vec(vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0], [4, 2])?;
         let targets = Tensor::from_vec(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0], [4, 3])?;
 
-        let mut optimizer = GraphAdam::new(model.training(), 0.05);
+        let mut optimizer = GraphAdam::new(model.training(), 0.05)?;
         let mut first = f32::NAN;
         let mut last = f32::NAN;
         for epoch in 0..400 {
@@ -726,7 +746,7 @@ mod tests {
         let inputs = Tensor::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0], [4, 2])?;
         let targets = Tensor::from_vec(vec![0.0, 1.0, 1.0, 2.0], [4, 1])?;
 
-        let mut optimizer = GraphAdam::new(&training, 0.02);
+        let mut optimizer = GraphAdam::new(&training, 0.02)?;
         let reports = fit_graph(&mut optimizer, &mut bindings, "x", "target", 300, || vec![Ok((inputs.clone(), targets.clone()))])?;
         let first = reports.first().expect("epochs").mean_loss;
         let last = reports.last().expect("epochs").mean_loss;
