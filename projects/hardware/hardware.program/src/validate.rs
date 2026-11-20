@@ -261,6 +261,13 @@ fn cfg_instruction_type(instruction: &CfgInstruction, definitions: &HashMap<u32,
         CfgInstruction::Binary { op, lhs, rhs, .. } => {
             let left = definitions.get(lhs).ok_or(())?.0.clone();
             let right = definitions.get(rhs).ok_or(())?.0.clone();
+            if matches!(*op, crate::BinOp::And | crate::BinOp::Or | crate::BinOp::Shl | crate::BinOp::Shr) {
+                let integer = Ty::Scalar(ScalarTy::U32);
+                if left != integer || right != integer {
+                    return Err(());
+                }
+                return Ok(integer);
+            }
             if *op == crate::BinOp::Atan2 && !matches!(left, Ty::Scalar(ScalarTy::F32 | ScalarTy::F64)) {
                 return Err(());
             }
@@ -291,6 +298,27 @@ fn cfg_instruction_type(instruction: &CfgInstruction, definitions: &HashMap<u32,
                 crate::UnOp::IsFinite => Ok(Ty::Scalar(ScalarTy::Bool)),
                 crate::UnOp::Length | crate::UnOp::Vec3Comp(_) if ty == Ty::Vec3 => Ok(Ty::f64()),
                 crate::UnOp::Normalize if ty == Ty::Vec3 => Ok(Ty::Vec3),
+                crate::UnOp::Bitcast => match ty {
+                    Ty::Scalar(ScalarTy::U32) => Ok(Ty::f32()),
+                    Ty::Scalar(ScalarTy::F32) => Ok(Ty::Scalar(ScalarTy::U32)),
+                    _ => Err(()),
+                },
+                crate::UnOp::U32ToF32 => {
+                    if ty == Ty::Scalar(ScalarTy::U32) {
+                        Ok(Ty::f32())
+                    }
+                    else {
+                        Err(())
+                    }
+                }
+                crate::UnOp::F32ToU32(_) => {
+                    if ty == Ty::Scalar(ScalarTy::F32) {
+                        Ok(Ty::Scalar(ScalarTy::U32))
+                    }
+                    else {
+                        Err(())
+                    }
+                }
                 _ => Ok(ty),
             }
         }

@@ -211,6 +211,8 @@ pub(crate) enum Opcode {
     Eq = 24,
     /// `exp`, the base-two exponential.
     Exp = 25,
+    /// `ftou`, converting a float to an unsigned integer with round-toward-zero saturation.
+    FtoU = 28,
     /// `ge`.
     Ge = 29,
     /// `iadd`.
@@ -259,6 +261,8 @@ pub(crate) enum Opcode {
     Ret = 62,
     /// `round_ni`.
     RoundNI = 65,
+    /// `round_pi`.
+    RoundPI = 66,
     /// `rsq`.
     Rsq = 68,
     /// `sqrt`.
@@ -277,6 +281,8 @@ pub(crate) enum Opcode {
     UMin = 84,
     /// `ushr`.
     UShr = 85,
+    /// `utof`, converting an unsigned integer to a float.
+    Utof = 86,
     /// `dcl_constantbuffer`.
     DclConstantBuffer = 89,
     /// `dcl_input`.

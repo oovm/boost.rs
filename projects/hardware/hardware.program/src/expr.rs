@@ -20,6 +20,23 @@ pub enum BinOp {
     Gt,
     /// 四象限角度，操作数依次为 y、x，返回弧度。输入须为同精度浮点标量。
     Atan2,
+    /// u32 按位与。两个操作数都必须是 `u32` 标量。
+    And,
+    /// u32 按位或。两个操作数都必须是 `u32` 标量。
+    Or,
+    /// u32 逻辑左移。移位量 >= 32 时结果为 0。
+    Shl,
+    /// u32 逻辑右移。移位量 >= 32 时结果为 0。
+    Shr,
+}
+
+/// `F2I` 转换的显式舍入模式。语义与 Rust CPU 参考（`f32::round` / `as` 饱和转换）对齐。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Rounding {
+    /// 向零舍入（C 风格截断），随后饱和到 `u32` 范围。
+    Trunc,
+    /// 就近舍入、平局远离零（与 Rust `f32::round` 一致），随后饱和到 `u32` 范围。
+    Round,
 }
 
 /// 一元运算（L0）。
@@ -38,6 +55,12 @@ pub enum UnOp {
     IsFinite,
     /// 取向量分量：0=x，1=y，2=z。
     Vec3Comp(u8),
+    /// u32 与 f32 之间的按位重解读，不改变 32 位位模式。
+    Bitcast,
+    /// u32 到 f32 的精确转换；超出 2^24 精确范围按 IEEE 就近取偶舍入。
+    U32ToF32,
+    /// f32 到 u32 的转换，带显式舍入模式；结果饱和（负数与 NaN 得 0，超界得 u32::MAX）。
+    F32ToU32(Rounding),
 }
 
 /// 表达式节点。

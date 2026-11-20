@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     error::ProgramError,
-    expr::{BinOp, Expr, UnOp},
+    expr::{BinOp, Expr, Rounding, UnOp},
     program::{Function, Program},
     stmt::{CfgInstruction, CfgTerminator, Stmt},
     validate::validate_program,
@@ -136,11 +136,14 @@ impl CpuInterpreter {
                         let value = self.uniforms.get(slot).cloned().ok_or(ProgramError::MissingUniform(*slot))?;
                         values.insert(*result, coerce_binding_value(value, ty)?);
                     }
-                    CfgInstruction::LoadBuffer { result, resource, index, .. } => {
+                    CfgInstruction::LoadBuffer { result, resource, index, ty } => {
                         let index = value_index(values.get(index).cloned().ok_or_else(|| missing_ssa(*index))?)?;
                         let buffer = self.buffers.get(resource).ok_or(ProgramError::MissingBuffer(*resource))?;
                         let length = buffer.len();
                         let value = buffer.get(index).cloned().ok_or(ProgramError::BufferOutOfBounds { resource: *resource, index, length })?;
+                        // 整数域加载：声明 u32 时把绑定值收敛到 Value::U32，与 DXBC 发射的整数寄存器一致。
+                        let value =
+                            if matches!(ty, crate::Ty::Scalar(crate::ScalarTy::U32)) { coerce_binding_value(value, ty)? } else { value };
                         values.insert(*result, value);
                     }
                     CfgInstruction::GlobalId { result } => {
@@ -382,6 +385,11 @@ impl CpuInterpreter {
                 BinOp::Min => Some((*left).min(*right)),
                 BinOp::Max => Some((*left).max(*right)),
                 BinOp::Mod => Some(left % right),
+                BinOp::And => Some(left & right),
+                BinOp::Or => Some(left | right),
+                // 移位量 >= 32 定义为 0：DXBC 对该情形未定义，IR 层固定此约定并在真机测试验证。
+                BinOp::Shl => Some(if *right >= 32 { 0 } else { *left << *right }),
+                BinOp::Shr => Some(if *right >= 32 { 0 } else { *left >> *right }),
                 _ => None,
             };
             if let Some(result) = result {
@@ -405,6 +413,9 @@ impl CpuInterpreter {
             }
         }
         match op {
+            BinOp::And | BinOp::Or | BinOp::Shl | BinOp::Shr => {
+                Err(ProgramError::UnsupportedOp("integer bitwise and shift operations require u32 operands".into()))
+            }
             BinOp::Dot => {
                 let a = l.as_vec3().map_err(|_| ProgramError::UnsupportedOp("dot".into()))?;
                 let b = r.as_vec3().map_err(|_| ProgramError::UnsupportedOp("dot".into()))?;
@@ -541,6 +552,24 @@ impl CpuInterpreter {
                 }
                 Ok(Value::Vec3([a[0] / len, a[1] / len, a[2] / len]))
             }
+            UnOp::Bitcast => match v {
+                Value::U32(bits) => Ok(Value::F32(f32::from_bits(bits))),
+                Value::F32(value) => Ok(Value::U32(value.to_bits())),
+                other => Err(type_mismatch("u32 or f32 bitcast source", &other)),
+            },
+            UnOp::U32ToF32 => match v {
+                // Rust `as` 转换：超出 f32 精确整数范围按 IEEE 就近取偶舍入。
+                Value::U32(value) => Ok(Value::F32(value as f32)),
+                other => Err(type_mismatch("u32 conversion source", &other)),
+            },
+            UnOp::F32ToU32(rounding) => match v {
+                // Rust `as u32` 饱和转换：NaN 与负数得 0，超界得 u32::MAX。
+                Value::F32(value) => Ok(Value::U32(match rounding {
+                    Rounding::Trunc => value as u32,
+                    Rounding::Round => value.round() as u32,
+                })),
+                other => Err(type_mismatch("f32 conversion source", &other)),
+            },
         }
     }
 }

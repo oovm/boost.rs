@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use hardware_program::{
-    BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr, Function as UcfFunction, Program, ScalarTy, Stmt, Ty, UnOp, validate_program,
+    BinOp, CfgBlock, CfgInstruction, CfgTerminator, Expr, Function as UcfFunction, Program, Rounding, ScalarTy, Stmt, Ty, UnOp, validate_program,
 };
 
 use crate::dxbc::{
@@ -527,18 +527,23 @@ impl Lowerer {
             CfgInstruction::ConstF64 { .. } => return Err(ProgramDxbcError::UnsupportedType("F64 constant".into())),
             CfgInstruction::ConstU32 { value, .. } => (self.literal(*value), Kind::U32),
             CfgInstruction::LoadUniform { slot, ty, .. } => {
-                if *ty != Ty::f32() {
-                    return Err(ProgramDxbcError::UnsupportedType(format!("uniform {slot}: {ty:?}")));
-                }
-                (self.uniform(*slot), Kind::Float)
+                // 整数域 uniform：`u32` 声明产出整数寄存器，位模式与 cb0 字一致。
+                let kind = match ty {
+                    Ty::Scalar(ScalarTy::F32) => Kind::Float,
+                    Ty::Scalar(ScalarTy::U32) => Kind::U32,
+                    other => return Err(ProgramDxbcError::UnsupportedType(format!("uniform {slot}: {other:?}"))),
+                };
+                (self.uniform(*slot), kind)
             }
             CfgInstruction::GlobalId { .. } => (self.mov(Operand::thread_id(Select::Scalar(0))), Kind::U32),
             CfgInstruction::LoadBuffer { resource, index, ty, .. } => {
-                if *ty != Ty::f32() {
-                    return Err(ProgramDxbcError::UnsupportedType(format!("buffer {resource}: {ty:?}")));
-                }
+                let kind = match ty {
+                    Ty::Scalar(ScalarTy::F32) => Kind::Float,
+                    Ty::Scalar(ScalarTy::U32) => Kind::U32,
+                    other => return Err(ProgramDxbcError::UnsupportedType(format!("buffer {resource}: {other:?}"))),
+                };
                 let index = *values.get(index).ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown CFG value {index}")))?;
-                (self.load_buffer(*resource, index)?, Kind::Float)
+                (self.load_buffer(*resource, index)?, kind)
             }
             CfgInstruction::Binary { op, lhs, rhs, .. } => {
                 let left = *values.get(lhs).ok_or_else(|| ProgramDxbcError::UnsupportedExpression(format!("unknown CFG value {lhs}")))?;
@@ -709,6 +714,38 @@ impl Lowerer {
         if lhs.1 == Kind::Vec3 || rhs.1 == Kind::Vec3 {
             return self.lower_vector_binary(op, lhs, rhs);
         }
+        if matches!(op, BinOp::And | BinOp::Or | BinOp::Shl | BinOp::Shr) {
+            // 整数位运算/移位：两端都必须是整数寄存器，类型检查而非静默换标签。
+            if lhs.1 != Kind::U32 || rhs.1 != Kind::U32 {
+                return Err(ProgramDxbcError::UnsupportedExpression(format!("integer operation {op:?} requires u32 operands")));
+            }
+            let left = self.scalar(lhs.1, lhs.0);
+            let right = self.scalar(rhs.1, rhs.0);
+            let target = self.temp();
+            if matches!(op, BinOp::And | BinOp::Or) {
+                self.emit(if op == BinOp::And { Opcode::And } else { Opcode::Or }, 0, vec![Self::dest(target), left, right]);
+                return Ok((target, Kind::U32));
+            }
+            // DXBC `ishl` / `ushr` 对移位量 >31 行为未定义（真机按 mod 32 回绕，实测如此）；
+            // 用 `uge` + `movc` 守卫钉死 IR 约定“移位量 >= 32 结果为 0”，与 CPU 解释器一致。
+            let shifted = self.temp();
+            self.emit(if op == BinOp::Shl { Opcode::IShl } else { Opcode::UShr }, 0, vec![Self::dest(shifted), left, right.clone()]);
+            let too_far = self.temp();
+            let limit = self.literal(32);
+            self.emit(Opcode::Uge, 0, vec![Self::dest(too_far), right, Operand::temp(limit, Select::Scalar(0))]);
+            let zero = self.literal(0);
+            self.emit(
+                Opcode::MovC,
+                0,
+                vec![
+                    Self::dest(target),
+                    Operand::temp(too_far, Select::Scalar(0)),
+                    Operand::temp(zero, Select::Scalar(0)),
+                    Operand::temp(shifted, Select::Scalar(0)),
+                ],
+            );
+            return Ok((target, Kind::U32));
+        }
         let float = lhs.1 == Kind::Float;
         if float != (rhs.1 == Kind::Float) {
             return Err(ProgramDxbcError::UnsupportedExpression(format!("mixed-width operand of {op:?}")));
@@ -716,6 +753,10 @@ impl Lowerer {
         let left = self.scalar(lhs.1, lhs.0);
         let right = self.scalar(rhs.1, rhs.0);
         match op {
+            // 已在上方整数分支处理；此处仅满足穷尽性。
+            BinOp::And | BinOp::Or | BinOp::Shl | BinOp::Shr => {
+                Err(ProgramDxbcError::UnsupportedExpression(format!("integer operation {op:?} requires u32 operands")))
+            }
             BinOp::Add => {
                 let target = self.temp();
                 self.emit(if float { Opcode::Add } else { Opcode::IAdd }, 0, vec![Self::dest(target), left, right]);
@@ -1095,6 +1136,63 @@ impl Lowerer {
                 Ok((target, Kind::Bool))
             }
             UnOp::Vec3Comp(_) => Err(ProgramDxbcError::UnsupportedType("vector component access".into())),
+            UnOp::Bitcast => {
+                if !matches!(arg.1, Kind::Float | Kind::U32) {
+                    return Err(ProgramDxbcError::UnsupportedExpression("bitcast source must be f32 or u32".into()));
+                }
+                // 寄存器位重解读：`mov` 原样搬运 32 位位模式，类型由 Kind 翻转表达。
+                let target = self.temp();
+                self.emit(Opcode::Mov, 0, vec![Self::dest(target), source]);
+                Ok((target, if arg.1 == Kind::Float { Kind::U32 } else { Kind::Float }))
+            }
+            UnOp::U32ToF32 => {
+                if arg.1 != Kind::U32 {
+                    return Err(ProgramDxbcError::UnsupportedExpression("u32 to f32 conversion on non-integer value".into()));
+                }
+                let target = self.temp();
+                self.emit(Opcode::Utof, 0, vec![Self::dest(target), source]);
+                Ok((target, Kind::Float))
+            }
+            UnOp::F32ToU32(Rounding::Trunc) => {
+                if arg.1 != Kind::Float {
+                    return Err(ProgramDxbcError::UnsupportedExpression("f32 to u32 conversion on non-float value".into()));
+                }
+                // `ftou` 即向零舍入 + 饱和（NaN 得 0），与 Rust `as u32` 一致。
+                let target = self.temp();
+                self.emit(Opcode::FtoU, 0, vec![Self::dest(target), source]);
+                Ok((target, Kind::U32))
+            }
+            UnOp::F32ToU32(Rounding::Round) => {
+                if arg.1 != Kind::Float {
+                    return Err(ProgramDxbcError::UnsupportedExpression("f32 to u32 conversion on non-float value".into()));
+                }
+                // DXBC 没有"就近舍入、平局远离零"的单指令；`floor(x+0.5)` / `ceil(x-0.5)` 按符号
+                // 分支与 Rust `f32::round` 逐位一致，再由 `ftou` 饱和到 u32。
+                let plus = self.temp();
+                self.emit(Opcode::Add, 0, vec![Self::dest(plus), source.clone(), Operand::immediate(&[0x3f00_0000])]);
+                let down = self.temp();
+                self.emit(Opcode::RoundNI, 0, vec![Self::dest(down), Operand::temp(plus, Select::Scalar(0))]);
+                let minus = self.temp();
+                self.emit(Opcode::Add, 0, vec![Self::dest(minus), source.clone(), Operand::immediate(&[0xbf00_0000])]);
+                let up = self.temp();
+                self.emit(Opcode::RoundPI, 0, vec![Self::dest(up), Operand::temp(minus, Select::Scalar(0))]);
+                let test = self.temp();
+                self.emit(Opcode::Ge, 0, vec![Self::dest(test), source, Operand::immediate(&[0])]);
+                let selected = self.temp();
+                self.emit(
+                    Opcode::MovC,
+                    0,
+                    vec![
+                        Self::dest(selected),
+                        Operand::temp(test, Select::Scalar(0)),
+                        Operand::temp(down, Select::Scalar(0)),
+                        Operand::temp(up, Select::Scalar(0)),
+                    ],
+                );
+                let target = self.temp();
+                self.emit(Opcode::FtoU, 0, vec![Self::dest(target), Operand::temp(selected, Select::Scalar(0))]);
+                Ok((target, Kind::U32))
+            }
         }
     }
 }

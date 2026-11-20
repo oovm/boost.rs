@@ -347,6 +347,16 @@ impl FunctionBuilder {
     pub fn emit_binary(&mut self, op: BinOp, lhs: ValueId, rhs: ValueId) -> Result<ValueId, BuildError> {
         let lhs_ty = self.value_type(lhs)?.clone();
         let rhs_ty = self.value_type(rhs)?.clone();
+        if matches!(op, BinOp::And | BinOp::Or | BinOp::Shl | BinOp::Shr) {
+            let integer = Ty::Scalar(crate::ScalarTy::U32);
+            if lhs_ty != integer {
+                return Err(BuildError::TypeMismatch { expected: integer.clone(), actual: lhs_ty });
+            }
+            if rhs_ty != integer {
+                return Err(BuildError::TypeMismatch { expected: integer, actual: rhs_ty });
+            }
+            return self.emit_value(integer, Instruction::Binary { result: ValueId(0), op, lhs, rhs });
+        }
         if op == BinOp::Atan2 && !matches!(lhs_ty, Ty::Scalar(crate::ScalarTy::F32 | crate::ScalarTy::F64)) {
             return Err(BuildError::TypeMismatch { expected: Ty::f32(), actual: lhs_ty });
         }
@@ -370,7 +380,31 @@ impl FunctionBuilder {
 
     /// 发出一元指令。
     pub fn emit_unary(&mut self, op: UnOp, arg: ValueId, result_ty: Ty) -> Result<ValueId, BuildError> {
-        self.value_type(arg)?;
+        let arg_ty = self.value_type(arg)?.clone();
+        let u32_ty = Ty::Scalar(crate::ScalarTy::U32);
+        let expected = match op {
+            UnOp::Bitcast => match arg_ty {
+                Ty::Scalar(crate::ScalarTy::U32) => Ty::f32(),
+                Ty::Scalar(crate::ScalarTy::F32) => u32_ty,
+                other => return Err(BuildError::TypeMismatch { expected: u32_ty, actual: other }),
+            },
+            UnOp::U32ToF32 => {
+                if arg_ty != u32_ty {
+                    return Err(BuildError::TypeMismatch { expected: u32_ty, actual: arg_ty });
+                }
+                Ty::f32()
+            }
+            UnOp::F32ToU32(_) => {
+                if arg_ty != Ty::f32() {
+                    return Err(BuildError::TypeMismatch { expected: Ty::f32(), actual: arg_ty });
+                }
+                u32_ty
+            }
+            _ => result_ty.clone(),
+        };
+        if expected != result_ty {
+            return Err(BuildError::TypeMismatch { expected, actual: result_ty });
+        }
         self.emit_value(result_ty, Instruction::Unary { result: ValueId(0), op, arg })
     }
 

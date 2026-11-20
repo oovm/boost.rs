@@ -1173,6 +1173,9 @@ impl<'a> Emitter<'a> {
                 }
                 Ok((VType::Bool, if op == BinOp::Eq { "==" } else { "!=" }))
             }
+            BinOp::And | BinOp::Or | BinOp::Shl | BinOp::Shr => {
+                Err(self.capability("integer bitwise and shift operations are outside the text ABI subset".into()))
+            }
         }
     }
 
@@ -1217,6 +1220,9 @@ impl<'a> Emitter<'a> {
             }
             UnOp::Length | UnOp::Normalize | UnOp::Vec3Comp(_) => {
                 Err(self.capability("vec3 operations are outside the text ABI subset".into()))
+            }
+            UnOp::Bitcast | UnOp::U32ToF32 | UnOp::F32ToU32(_) => {
+                Err(self.capability("integer and float conversions are outside the text ABI subset".into()))
             }
         }
     }
