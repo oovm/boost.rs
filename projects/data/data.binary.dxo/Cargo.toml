@@ -12,7 +12,13 @@ publish.workspace = true
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 data-compression = { workspace = true, features = ["deflate"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [[bin]]
 name = "dxo-idx2dxo"
 path = "src/bin/dxo-idx2dxo.rs"
+
+[[bin]]
+name = "dxo-build"
+path = "src/bin/dxo-build.rs"
