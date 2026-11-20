@@ -354,7 +354,9 @@ pub fn run_fmt(args: &AsgardFmtArgs) -> AsgardResult<ExitCode> {
 
 /// 分发 `asgard` 子命令。
 pub fn run(command: &AsgardCommands) -> AsgardResult<ExitCode> {
-    // 格式化是平台能力：Valkyrie formatter / printer 由前端在入口注册。
+    // 格式化是平台能力：formatter / printer provider 由各语言服务 crate 在入口注册。
+    language_awsl::register_source_formatter();
+    language_von::register_source_formatter();
     language_valkyrie::compiler::services::format_provider::register_format_providers();
     match command {
         AsgardCommands::Build(args) => run_build(args),

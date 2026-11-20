@@ -6,7 +6,6 @@ use data_text_core::{Builder, SourceText, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{ExpressionKind, FunctionParam, Statement, TypeScriptRoot},
-    formatter::{FormatOptions, format_source},
 };
 
 fn build(source: &str) -> TypeScriptRoot {
@@ -24,10 +23,6 @@ fn params_of(source: &str) -> Vec<FunctionParam> {
         panic!("expected a function declaration: {:#?}", root.statements)
     };
     declaration.params.clone()
-}
-
-fn print(source: &str) -> String {
-    format_source(source, &FormatOptions::default()).expect("format")
 }
 
 #[test]
@@ -49,7 +44,6 @@ fn rest_parameter_marks_is_rest_and_keeps_name() {
     assert!(params[0].is_rest);
     assert_eq!(params[0].name, "args");
     assert_eq!(params[0].binding_names, vec!["args".to_string()]);
-    assert_eq!(print("function f(...args) {}"), "function f(...args) {}");
 }
 
 #[test]
@@ -81,12 +75,4 @@ fn optional_and_typed_parameter_round_trip() {
     assert!(!params[1].is_optional());
     assert!(params[1].ty.is_some());
     assert!(params[1].default.is_some());
-    assert_eq!(print("function f(a?: string, b: number = 2) {}"), "function f(a?: string, b: number = 2) {}");
-}
-
-#[test]
-fn arrow_destructured_and_rest_parameters_round_trip() {
-    assert_eq!(print("const f = ({ a, b }) => a + b;"), "const f = ({ a, b }) => a + b;");
-    assert_eq!(print("const g = (...xs) => xs;"), "const g = (...xs) => xs;");
-    assert_eq!(print("const h = (x = 1) => x;"), "const h = (x = 1) => x;");
 }

@@ -7,7 +7,6 @@ use data_text_core::{Builder, SourceText, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{Statement, TypeScriptRoot},
-    formatter::{FormatOptions, format_source},
 };
 
 fn build(source: &str) -> TypeScriptRoot {
@@ -27,10 +26,6 @@ fn variable_declaration(source: &str) -> data_text_typescript::ast::VariableDecl
     declaration.clone()
 }
 
-fn print(source: &str) -> String {
-    format_source(source, &FormatOptions::default()).expect("format")
-}
-
 #[test]
 fn single_declarator_keeps_binding_and_initializer_span() {
     let source = "const a = 1;";
@@ -42,8 +37,6 @@ fn single_declarator_keeps_binding_and_initializer_span() {
     assert_eq!(declarator.pattern_text, None, "a plain binding has no pattern text");
     assert_eq!(source[declarator.span.start..declarator.span.end].trim(), "a = 1");
     assert_eq!(declaration.name(), "a");
-
-    assert_eq!(print(source), source, "printer must keep the single declarator");
 }
 
 #[test]
@@ -60,8 +53,6 @@ fn multiple_declarators_keep_their_own_bindings_and_initializers() {
     assert_eq!(second.binding_names, vec!["b".to_string()]);
     assert_eq!(source[first.span.start..first.span.end].trim(), "a = 1");
     assert_eq!(source[second.span.start..second.span.end].trim(), "b = 2");
-
-    assert_eq!(print(source), source, "printer must print every declarator");
 }
 
 #[test]
@@ -74,8 +65,6 @@ fn object_pattern_resolves_aliases_rest_and_nested_targets() {
     assert_eq!(declarator.binding_names, vec!["a".to_string(), "c".to_string(), "rest".to_string()]);
     assert_eq!(declarator.pattern_text.as_deref(), Some("{ a, b: c, ...rest }"));
     assert_eq!(source[declarator.span.start..declarator.span.end].trim(), "{ a, b: c, ...rest } = require('./m')");
-
-    assert_eq!(print(source), source, "the destructuring pattern must be printed as written");
 
     let nested = variable_declaration("const { a: { b = 1 }, c: [d] } = m;");
     assert_eq!(nested.declarators[0].binding_names, vec!["b".to_string(), "d".to_string()]);
@@ -91,10 +80,6 @@ fn array_pattern_skips_holes_and_keeps_rest() {
     assert_eq!(declarator.binding_names, vec!["x".to_string(), "ys".to_string()]);
     assert_eq!(declarator.pattern_text.as_deref(), Some("[x, , ...ys]"));
     assert_eq!(source[declarator.span.start..declarator.span.end].trim(), "[x, , ...ys] = arr");
-
-    // The token-gap formatter collapses the space in an elision hole, but keeps
-    // the hole and the rest element. `pattern_text` above is untouched.
-    assert_eq!(print(source), "const [x,, ...ys] = arr;");
 }
 
 #[test]
@@ -125,6 +110,4 @@ fn exported_destructuring_declaration_reaches_the_root() {
     assert_eq!(declaration.declarators.len(), 1);
     assert_eq!(declaration.declarators[0].binding_names, vec!["a".to_string()]);
     assert_eq!(declaration.name(), "a");
-
-    assert_eq!(print(source), source);
 }

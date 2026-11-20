@@ -719,16 +719,6 @@ mod spaceship_operator_tests {
         assert!(output.diagnostics[0].to_string().contains("需要表达式"), "diagnostics: {:?}", output.diagnostics);
     }
 
-    /// 格式化往返：CST token-gap 格式化保留 `<=>`，重解析仍是三向比较算子。
-    #[test]
-    fn formatter_roundtrip_preserves_spaceship() {
-        let formatted = crate::formatter::format_source("micro f(){a<=>b}\n", &crate::formatter::FormatOptions::default())
-            .expect("formatting must succeed");
-        assert!(formatted.contains("<=>"), "formatted output must keep the operator: {formatted:?}");
-        let expr = single_micro_body_expr(&formatted);
-        assert_eq!(operator_of(&expr), Some(ValkyrieTokenType::LessEqGreater), "reparsed expression: {expr:?}");
-    }
-
     /// 正例：`pair.0` / `pair.1` 的成员名是整数字面量 token，语法层照常成 FieldExpression。
     #[test]
     fn tuple_index_member_parses_as_field_expression() {
@@ -795,19 +785,6 @@ mod spaceship_operator_tests {
         assert_eq!(field.name, "x", "member name after the trailing dot: {expr:?}");
     }
 
-    /// 格式化往返：CST token-gap 格式化保留 `.0`，重解析仍是数字成员 DotCall。
-    #[test]
-    fn formatter_roundtrip_preserves_tuple_index_member() {
-        let formatted = crate::formatter::format_source("micro f(){pair.0}\n", &crate::formatter::FormatOptions::default())
-            .expect("formatting must succeed");
-        assert!(formatted.contains("pair.0"), "formatted output must keep the index member: {formatted:?}");
-        let expr = single_micro_body_expr(&formatted);
-        let TermExpression::DotCall { field, .. } = &expr
-        else {
-            panic!("reparsed expression must stay a member access, got {expr:?}")
-        };
-        assert_eq!(field.name, "0", "reparsed member name: {expr:?}");
-    }
 }
 
 #[cfg(test)]
@@ -933,22 +910,6 @@ mod trait_template_tests {
         assert!(!leaves.iter().any(|(kind, _)| *kind == ValkyrieTokenType::Error), "template must not degrade into error tokens: {leaves:?}");
         assert_eq!(leaves.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::TemplateL).count(), 4, "leaves: {leaves:?}");
         assert_eq!(leaves.iter().filter(|(kind, _)| *kind == ValkyrieTokenType::TemplateR).count(), 4, "leaves: {leaves:?}");
-    }
-
-    /// 正例：CST 格式化往返保留模板原文，重解析仍得到同一批分支成员。
-    #[test]
-    fn formatter_roundtrip_preserves_trait_body_template() {
-        let formatted =
-            crate::formatter::format_source(TARGET_TRAIT, &crate::formatter::FormatOptions::default()).expect("formatting must succeed");
-        assert!(formatted.contains("<% match arch %>"), "formatted output must keep the directive: {formatted:?}");
-        let root = root(&formatted);
-        let iterator = trait_of(&root, "Iterator");
-        let TemplateNode::Match(matched) = single_template(iterator)
-        else {
-            panic!("reparsed trait must keep the match template: {:?}", iterator.body.templates)
-        };
-        assert_eq!(member_names(&matched.arms[0].body), ["filter_map"], "reparsed wasm arm: {:?}", matched.arms[0].body);
-        assert_eq!(member_names(&matched.arms[1].body), ["take_while"], "reparsed native arm: {:?}", matched.arms[1].body);
     }
 
     /// 反例：缺少 `<% end %>` 必须报结构化语法错误，不能静默吞掉模板。

@@ -1,4 +1,4 @@
-use data_text_typescript::formatter::{FormatOptions, QuoteStyle, format_source};
+use language_typescript::formatter::{FormatOptions, QuoteStyle, format_source};
 
 fn format(source: &str) -> String {
     let options = FormatOptions::default();

@@ -16,9 +16,6 @@ pub mod component;
 /// Parse errors.
 pub mod error;
 
-/// CST token-gap source formatter (markup-aware lossless scan).
-pub mod formatter;
-
 /// HTML void-element helpers.
 pub mod html;
 

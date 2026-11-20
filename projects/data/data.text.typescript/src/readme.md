@@ -18,7 +18,8 @@ data-text-typescript = { path = "..." }
 The following is a standard workflow for parsing modern TypeScript with interfaces, generics, and TSX:
 
 ```rust
-use data_text_typescript::{Parser, SourceText};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_typescript::{TypeScriptBuilder, TypeScriptLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -40,16 +41,18 @@ fn main() {
     let source = SourceText::new(code);
 
     // 2. Initialize parser
-    let parser = Parser::new();
+    let language = TypeScriptLanguage::standard();
+    let builder = TypeScriptBuilder::new(&language);
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<TypeScriptLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -62,15 +65,30 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse the entire file when small changes occur:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_typescript::{TypeScriptBuilder, TypeScriptLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = TypeScriptLanguage::standard();
+let builder = TypeScriptBuilder::new(&language);
+let mut session = ParseSession::<TypeScriptLanguage>::new(32);
+let old_result = builder.build(&SourceText::new("const a = 1;"), &[], &mut session);
+let new_result = builder.build(&SourceText::new("const a = 2;"), &[], &mut session);
+let _ = (old_result, new_result);
 ```
 
 ### 3. Diagnostics
 `data-text-typescript` provides rich error contexts specifically tailored for TS developers, handling complex scenarios like missing type annotations or malformed TSX:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_typescript::{TypeScriptBuilder, TypeScriptLanguage};
+
+let language = TypeScriptLanguage::standard();
+let builder = TypeScriptBuilder::new(&language);
+let mut session = ParseSession::<TypeScriptLanguage>::new(32);
+let result = builder.build(&SourceText::new("const x: = ;"), &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 

@@ -43,6 +43,10 @@ impl FmtArgs {
 
 /// 执行 `legion fmt`。
 pub fn run(args: &FmtArgs) -> LegionResult<ExitCode> {
+    // 前端装配入口：formatter provider 由语言服务 crate 注册，平台不反向依赖前端。
+    language_awsl::register_source_formatter();
+    language_von::register_source_formatter();
+    language_valkyrie::compiler::services::format_provider::register_format_providers();
     let options = args.to_cli_options();
     let report = run_format_cli_with(&options).map_err(|error| report!("{error}"))?;
     if report_format_cli_with(&report, &options) { Ok(ExitCode::FAILURE) } else { Ok(ExitCode::SUCCESS) }

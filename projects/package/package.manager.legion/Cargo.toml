@@ -25,6 +25,7 @@ compiler-emitter = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
 language-valkyrie = { workspace = true }
+language-von = { workspace = true }
 document-formats = { workspace = true }
 document-ir = { workspace = true }
 interpreter-vm-ovm = { workspace = true }

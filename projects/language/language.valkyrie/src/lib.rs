@@ -16,8 +16,10 @@
 //! 产品工具链（`legion` 编排与 `asgard` 交付）已移入 `package.manager.legion`：
 //! 它们是 Valkyrie 生态的产品策略与 CLI，不属于语言编译事实。本 crate 只保留编译本身。
 
+#![feature(new_range_api)]
 #![warn(missing_docs)]
 
 #[macro_use]
 pub mod utilities;
 pub mod compiler;
+pub mod formatter;

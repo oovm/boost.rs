@@ -35,6 +35,7 @@ language-awsl = { workspace = true }
 language-format = { workspace = true, features = ["serde"] }
 language-highlight = { workspace = true }
 language-valkyrie = { workspace = true }
+language-von = { workspace = true }
 package-cache = { workspace = true }
 package-manager = { workspace = true }
 package-manager-legion = { workspace = true }

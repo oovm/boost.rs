@@ -12,7 +12,6 @@ keywords = ["parser", "awsl", "asgard", "template"]
 
 [dependencies]
 data-text-core = { workspace = true }
-data-text-formatter = { workspace = true }
 data-text-valkyrie = { workspace = true }
 
 [features]

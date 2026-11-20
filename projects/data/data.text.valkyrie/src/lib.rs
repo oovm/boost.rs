@@ -14,8 +14,6 @@ pub mod lexer;
 /// Parser module.
 pub mod parser;
 
-/// CST token-gap source formatter.
-pub mod formatter;
 /// AST pretty printer (`source` → parse → AST → text).
 pub mod printer;
 

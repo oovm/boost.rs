@@ -8,7 +8,6 @@ use data_text_core::{Builder, SourceText, parser::ParseSession};
 use data_text_typescript::{
     TypeScriptBuilder, TypeScriptLanguage,
     ast::{ClassMember, ExpressionKind, Statement, TypeAnnotation, TypeScriptRoot},
-    formatter::{FormatOptions, format_source},
 };
 
 fn parse(source: &str) -> data_text_core::TextDiagnostics<TypeScriptRoot> {
@@ -171,17 +170,4 @@ fn named_class_declaration_regression() {
     assert!(matches!(&declaration.body[0], ClassMember::Property { name, initializer: Some(_), .. } if name == "a"));
 }
 
-#[test]
-fn class_expression_survives_the_formatter_round_trip() {
-    for source in [
-        "var X = class { };\n",
-        "var X = class { a = 1; constructor(v) { this.a = v; } };\n",
-        "const C = class Named extends Base { static s = 1; m() { } };\n",
-        "export default class { c = 3; }\n",
-    ] {
-        let options = FormatOptions::default();
-        let output = format_source(source, &options).expect("format");
-        assert!(output.contains("class"), "class keyword lost: {output:?}");
-        assert_eq!(format_source(&output, &options).expect("idempotent"), output, "not idempotent: {source:?}");
-    }
-}
+

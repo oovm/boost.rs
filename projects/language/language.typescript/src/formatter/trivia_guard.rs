@@ -2,7 +2,7 @@
 
 use data_text_core::{Lexer, ParseSession, SourceText};
 
-use crate::{
+use data_text_typescript::{
     language::TypeScriptLanguage,
     lexer::{TypeScriptLexer, token_type::TypeScriptTokenType},
 };

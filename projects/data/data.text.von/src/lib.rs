@@ -8,8 +8,6 @@ extern crate alloc;
 pub mod ast;
 /// Builder module.
 pub mod builder;
-/// CST token-gap source formatter.
-pub mod formatter;
 /// Language configuration module.
 pub mod language;
 /// Lexer module.

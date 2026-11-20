@@ -12,7 +12,6 @@ default = []
 serde = ["dep:serde", "data-text-von/serde"]
 
 [dependencies]
-data-text-awsl = { workspace = true }
 data-text-core = { workspace = true }
 data-text-von = { workspace = true }
 serde = { workspace = true, optional = true, features = ["derive"] }

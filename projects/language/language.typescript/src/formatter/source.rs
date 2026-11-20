@@ -5,7 +5,7 @@ use data_text_core::{Lexer, ParseSession, SourceText};
 use data_text_formatter::{TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
 
 use super::FormatOptions;
-use crate::{
+use data_text_typescript::{
     language::TypeScriptLanguage,
     lexer::{TypeScriptLexer, token_type::TypeScriptTokenType},
 };

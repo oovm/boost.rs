@@ -12,7 +12,6 @@ keywords = ["frontend", "language", "typescript"]
 
 [dependencies]
 data-text-core = { workspace = true }
-data-text-formatter = { workspace = true }
 serde = { workspace = true, optional = true }
 
 [features]

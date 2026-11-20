@@ -1378,7 +1378,6 @@ name = "data-text-awsl"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "data-text-formatter",
  "data-text-valkyrie",
  "language-testing",
 ]
@@ -3110,7 +3109,6 @@ name = "data-text-typescript"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "data-text-formatter",
  "serde",
 ]
 
@@ -3160,7 +3158,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-dejavu",
- "data-text-formatter",
  "data-text-pretty",
  "language-testing",
  "serde",
@@ -3262,7 +3259,6 @@ name = "data-text-von"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "data-text-formatter",
  "data-text-pretty",
  "language-testing",
  "serde",
@@ -5173,6 +5169,8 @@ dependencies = [
  "data-binary-zip",
  "data-text-awsl",
  "data-text-core",
+ "data-text-formatter",
+ "language-format",
  "language-valkyrie",
  "serde",
  "serde_json",
@@ -5191,7 +5189,6 @@ dependencies = [
 name = "language-format"
 version = "0.1.0"
 dependencies = [
- "data-text-awsl",
  "data-text-core",
  "data-text-von",
  "serde",
@@ -5313,6 +5310,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-typescript"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-formatter",
+ "data-text-typescript",
+ "serde",
+]
+
+[[package]]
 name = "language-valkyrie"
 version = "0.1.0"
 dependencies = [
@@ -5335,6 +5342,7 @@ dependencies = [
  "data-binary-zip",
  "data-text-awsl",
  "data-text-core",
+ "data-text-formatter",
  "data-text-valkyrie",
  "data-text-von",
  "document-formats",
@@ -5360,6 +5368,17 @@ dependencies = [
  "language-highlight",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "language-von"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-formatter",
+ "data-text-von",
+ "language-format",
+ "serde",
 ]
 
 [[package]]
@@ -6098,6 +6117,7 @@ dependencies = [
  "language-format",
  "language-highlight",
  "language-valkyrie",
+ "language-von",
  "package-cache",
  "package-manager",
  "package-manager-legion",
@@ -6141,6 +6161,7 @@ dependencies = [
  "language-format",
  "language-highlight",
  "language-valkyrie",
+ "language-von",
  "package-cache",
  "package-manager",
  "package-publish",

@@ -6,7 +6,7 @@ use data_text_core::{Lexer, ParseSession, SourceText};
 use data_text_formatter::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
 
 use super::FormatOptions;
-use crate::{
+use data_text_valkyrie::{
     language::ValkyrieLanguage,
     lexer::{ValkyrieLexer, token_type::ValkyrieTokenType},
 };

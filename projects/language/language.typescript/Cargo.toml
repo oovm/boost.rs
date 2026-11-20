@@ -1,0 +1,18 @@
+[package]
+name = "language-typescript"
+description = "TypeScript language services: CST token-gap source formatter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-formatter = { workspace = true }
+data-text-typescript = { workspace = true }
+serde = { workspace = true, optional = true }

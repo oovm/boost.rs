@@ -1,7 +1,7 @@
 //! Valkyrie 前端向 `nyar-format` 平台注册格式化 provider（依赖方向：前端 → 平台）。
 //!
 //! 平台层不反向依赖本 crate；`legion` / `asgard` CLI 与集成测试在格式化入口调用
-//! [`register_format_providers`]。formatter 直接委托 `data_text_valkyrie::formatter`（CST token-gap），
+//! [`register_format_providers`]。formatter 由本地 `crate::formatter` 实现（CST token-gap），
 //! printer 直接委托 `data_text_valkyrie::printer` 并以 [`ValkyrieRoot`] 作为下转类型。
 
 use std::any::Any;
@@ -66,11 +66,10 @@ impl Printer for ValkyriePrinter {
     }
 }
 
-/// Valkyrie / VX 源码正规格式化（CST token-gap 路径，直接委托 `data_text_valkyrie::formatter`）。
+/// Valkyrie / VX 源码正规格式化（CST token-gap 路径，由 `crate::formatter` 实现）。
 pub fn format_valkyrie_source(source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
-    let format_options =
-        data_text_valkyrie::formatter::FormatOptions { indent_width: options.indent_width.min(255) as u8, line_width: options.max_width };
-    let text = data_text_valkyrie::formatter::format_source(source, &format_options)
+    let format_options = crate::formatter::FormatOptions { indent_width: options.indent_width.min(255) as u8, line_width: options.max_width };
+    let text = crate::formatter::format_source(source, &format_options)
         .map_err(|error| FormatError::Parse { path: None, message: error.to_string() })?;
     let mut out = text;
     if options.ensure_trailing_newline && !out.is_empty() && !out.ends_with('\n') {

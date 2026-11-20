@@ -2,9 +2,9 @@
 //!
 //! 本模块只提供平台侧注册表与扩展名表：具体语言的 formatter 由前端 crate 在启动时调用
 //! [`register_source_provider`] 注册（方向是前端 → 平台），平台不反向依赖任何前端。
-//! 语言前端 provider 由前端装配入口注册；VON / AWSL 由本 crate 直接注册。合法 formatter
-//! 只能来自上游 `data-text-<language>/src/formatter/`（见 `data-text-typescript::formatter`），
-//! 不得在此新增 CST token-gap 排版规则。
+//! 语言前端 provider 由前端装配入口注册（`language-von` / `language-awsl` / `language-valkyrie`
+//! 的 `register_source_formatter`）；平台不直接注册任何具体语言。合法 formatter 实现归
+//! 各语言服务 crate `language.<lang>`，不得在此新增 CST token-gap 排版规则。
 //!
 //! 与 [`crate::printer`]（AST pretty print）严格分离，对齐 `data.text` 的 `formatter/` vs `printer/`；
 //! 早期把 printer API 与 deprecated `FormatBuffer` 从本模块重导出的混合接口已删除，
@@ -52,9 +52,9 @@ pub fn is_awsl_extension(ext: &str) -> bool {
 /// 携带这些事实。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
-    /// VON 数据：`.von`（`data-text-von::formatter`）。
+    /// VON 数据：`.von`（`language-von::formatter`）。
     Von,
-    /// AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`data-text-awsl::formatter`）。
+    /// AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`language-awsl::formatter`）。
     Awsl,
 }
 
@@ -104,42 +104,19 @@ pub struct FormatFileOutcome {
     pub changed: bool,
 }
 
-struct VonSourceFormatter;
-impl SourceFormatter for VonSourceFormatter {
-    fn language_id(&self) -> &str {
-        "von"
-    }
-
-    fn format_document(&self, source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
-        crate::von::source_format::format_von_source(source, options)
-    }
-}
-
-struct AwslSourceFormatter;
-impl SourceFormatter for AwslSourceFormatter {
-    fn language_id(&self) -> &str {
-        "awsl"
-    }
-
-    fn format_document(&self, source: &str, options: &FormatOptions) -> Result<FormattedOutput, FormatError> {
-        crate::awsl::source_format::format_awsl(source, options)
-    }
-}
-
 /// 平台源码格式化注册表（启动时由各前端 provider 补全）。
 ///
 /// 读取方应通过 [`format_source`] / [`format_source_for_extension`] / [`format_path`]
-/// 间接访问，避免长时间持有写锁。扩展名 → formatter 的映射由平台注册（VON / AWSL）
-/// 与前端 provider 注册共同构成；未注册的扩展名返回 [`FormatError::Unsupported`]。
+/// 间接访问，避免长时间持有写锁。扩展名 → formatter 的映射完全由前端 provider 注册
+/// （`language-von` / `language-awsl` / `language-valkyrie` 等）构成；未注册的扩展名
+/// 返回 [`FormatError::Unsupported`]。
 ///
 /// 不要反向依赖具体前端；provider 由装配层（宿主 CLI、集成测试）注册。
 pub fn source_registry() -> &'static RwLock<SourceFormatterRegistry> {
     static REGISTRY: OnceLock<RwLock<SourceFormatterRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        let mut reg = SourceFormatterRegistry::new();
-        reg.register(&["von"], VON_EXTENSIONS, Box::new(VonSourceFormatter));
-        reg.register(&["awsl"], AWSL_EXTENSIONS, Box::new(AwslSourceFormatter));
-        // JS/TS/JSON 与 Python 的源码排版归各自 formatter（`data-text-typescript::formatter` 等）；
+        let reg = SourceFormatterRegistry::new();
+        // JS/TS/JSON 与 Python 的源码排版归各自语言服务 crate（`language-typescript::formatter` 等）；
         // 本 crate 不得再注册「只裁剪空白行」的第二套本地 formatter 冒充格式化。
         // 在这些 formatter 接入前，相应扩展名按 unsupported 失败。
         RwLock::new(reg)
@@ -167,8 +144,7 @@ pub fn format_source_range(kind: SourceKind, source: &str, range: ByteRange, opt
 
 /// 按源码文件扩展名格式化。
 ///
-/// 扩展名 → formatter 的映射来自注册表：平台注册 VON / AWSL，前端 provider 注册
-/// 自己语言面的扩展名。
+/// 扩展名 → formatter 的映射来自注册表：由前端 provider 注册自己语言面的扩展名。
 pub fn format_source_for_extension(extension: &str, source: &str, options: &FormatOptions) -> Result<String, FormatError> {
     let registry = source_registry_read();
     let language = registry.extension_language_id(extension).ok_or_else(|| FormatError::unsupported_language(extension))?;

@@ -3,6 +3,7 @@
 //!
 //! 本 crate 只覆盖语言层语义；交付工具链（WASM 岛、部署、发布、宿主产物）
 //! 在 `package.manager.asgard`。
+#![feature(new_range_api)]
 #![deny(missing_docs)]
 
 #[macro_use]
@@ -11,8 +12,10 @@ extern crate language_valkyrie;
 pub mod awsl;
 pub mod codegen;
 pub mod error;
+pub mod formatter;
 pub mod layout;
 pub mod ssg;
 pub mod style;
 
 pub use error::{AwslError, AwslResult};
+pub use formatter::register_source_formatter;
