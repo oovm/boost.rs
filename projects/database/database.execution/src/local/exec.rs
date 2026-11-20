@@ -380,6 +380,32 @@ fn execute_ops_in(
                     });
                 }
             }
+            QueryOp::Get { table, value } => {
+                // VOS `Type.get(id)`: the primary key is a schema property, so
+                // it is resolved here — where the contract is available — and
+                // the one stored row is read directly, never a full decode.
+                let contract = contract.ok_or_else(|| query_runtime_error("`get` requires a resolved contract"))?;
+                current_table = Some(table.clone());
+                let storage_table = table_row_key_name(contract, table)?;
+                // A table without a primary key cannot answer `get`.
+                let _ = primary_field_name(table_type_by_name(contract, table)?)?;
+                let value = resolve_bound_value(value, bound_values)?;
+                if matches!(value, Value::Null) {
+                    rows = Vec::new();
+                }
+                else {
+                    let key = constraints::value_text(&value)
+                        .map_err(|_| query_runtime_error(format!("`get` key cannot name a stored row on `{table}`")))?;
+                    let hit = records.load_row_optional(&storage_table, &key)?;
+                    let decoded = u64::from(hit.is_some());
+                    rows = hit.into_iter().collect();
+                    note_profile_counts(|profile| {
+                        profile.index_probes += 1;
+                        profile.scanned_rows += decoded;
+                        profile.decoded_rows += decoded;
+                    });
+                }
+            }
             QueryOp::SingleRow => {
                 // A `SELECT` with no `FROM`: exactly one empty row for the
                 // projection to compute over.

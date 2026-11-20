@@ -975,6 +975,18 @@ pub enum QueryOp {
         /// Table name as written by the frontend.
         table: String,
     },
+    /// Load the one row whose primary key equals `value`.
+    ///
+    /// Lowered from the VOS boundary `Type.get(id)`. The primary key is a
+    /// schema property, so it is resolved by the executor (where the contract
+    /// is available) rather than at lowering time. The result is zero or one
+    /// row, mirroring `WHERE pk = value` in SQL.
+    Get {
+        /// Table name as written by the frontend.
+        table: String,
+        /// Primary-key value to look up.
+        value: BoundValue,
+    },
     /// Yield exactly one row with no columns.
     ///
     /// The source of a `SELECT` with no `FROM` clause (and of a recursive CTE's
