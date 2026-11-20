@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use geometry::{Rgba, apply, camera_at, fade, parse, parse_or, smooth_polyline};
 use media_audio::{
     AudioPlan, BgmPlan, ClipPlacement, InstrumentRequest, NarrationPlacement, NotePlacement, PatternPlacement, PatternRequest,
-    PatternTrackRequest, SfxPlacement, SfxRequest, VoicePlacement, build_audio,
+    PatternTrackRequest, SfxPlacement, SfxRequest, VoicePlacement, build_audio_with,
 };
 use media_codec::{DecodeLimits, Encoder, MediaLibrary};
 use media_image::{Bitmap, Frame};
@@ -185,13 +185,13 @@ impl RenderOptions<'_> {
 /// The compositor that actually paints frames for one run.
 ///
 /// `Cpu` is the reference path and always available. `Gpu` exists only when
-/// the `gpu` feature is compiled in and a wgpu adapter was acquired; every
+/// the `gpu` feature is compiled in and a D3D12 adapter was acquired; every
 /// operator mirrors the CPU reference operation by operation (ADR 0005), so
 /// switching backends is a throughput decision, never a semantic one.
 enum RunCompositor {
     /// The CPU reference path.
     Cpu,
-    /// The wgpu compute pipeline.
+    /// The D3D12 compute pipeline.
     #[cfg(feature = "gpu")]
     Gpu(media_gpu::GpuCompositor),
 }
@@ -333,7 +333,7 @@ fn resolve_compositor(request: Option<&str>) -> Result<CompositorSetup, Error> {
 }
 
 /// Acquires the GPU pipeline: high-performance adapter first, then the
-/// software fallback (WARP et al.), which is still the wgpu compute path.
+/// software fallback (WARP et al.), which is still the D3D12 compute path.
 #[cfg(feature = "gpu")]
 fn acquire_gpu() -> Result<RunCompositor, String> {
     media_gpu::GpuCompositor::new()
@@ -564,7 +564,7 @@ pub fn render_project_with(
         return Err(Error::cancelled("render cancelled after resource preflight"));
     }
     let assets = fingerprint_assets(&project, &plan, &optional_missing);
-    let audio = build_audio(&plan, &mut media, limits)?;
+    let audio = build_audio_with(&plan, &mut media, limits, &|| options.cancelled())?;
     // Loudness normalization runs first, then the limiter: gaining toward a
     // target can push peaks up, and the ceiling must be the last word.
     let mut loudness = None;
@@ -616,8 +616,9 @@ pub fn render_project_with(
     let ss = supersample(&project);
     let mut pool = FramePool::new((w as f32 * ss).round() as u32, (h as f32 * ss).round() as u32);
     let total = last - first;
-    // The reported duration is the interval that was actually written, not the
-    // whole film, so interval exports do not overstate their length.
+    // The reported duration covers the interval that was actually written: the
+    // loop below encodes exactly `total = last - first` frames, so a range
+    // export never reports the whole film's `duration_frames` instead.
     let seconds = project.time_base().to_seconds(total);
     let mut written_samples = 0usize;
     for f in first..last {
@@ -1267,7 +1268,7 @@ fn preflight(
                 return Err(Error::cancelled(format!("preflight cancelled at scene {index} item {slot}")));
             }
             let where_ = format!("scene {index} item {slot}");
-            preflight_item(project, &where_, item, fonts, media, limits, &mut failures, &mut optional_missing, &mut decode_failed);
+            preflight_item(project, &where_, item, fonts, media, limits, &mut failures, &mut optional_missing, &mut decode_failed, cancelled)?;
         }
     }
     // The narration slot is a contract: it was lowered, so it must exist.
@@ -1395,7 +1396,14 @@ fn preflight_item(
     failures: &mut Vec<String>,
     optional_missing: &mut Vec<String>,
     decode_failed: &mut bool,
-) {
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(), Error> {
+    // Layers and component instances recurse: a project whose top-level scene
+    // is small can still expand into many decodes, so every nested item polls
+    // the host's stop request instead of only the outer scene loop.
+    if cancelled() {
+        return Err(Error::cancelled(format!("preflight cancelled at {where_}")));
+    }
     match &node.item {
         Item::Image { src, required, .. } => match media.image(src, limits) {
             Ok(_) => {}
@@ -1432,7 +1440,8 @@ fn preflight_item(
                             failures,
                             optional_missing,
                             decode_failed,
-                        );
+                            cancelled,
+                        )?;
                     }
                 }
             }
@@ -1454,7 +1463,8 @@ fn preflight_item(
                     failures,
                     optional_missing,
                     decode_failed,
-                );
+                    cancelled,
+                )?;
             }
         }
         _ => {}
@@ -1466,6 +1476,7 @@ fn preflight_item(
             failures.push(format!("{where_}: no glyph for `{listed}` in the loaded fonts"));
         }
     }
+    Ok(())
 }
 
 /// Every string the item draws, tagged with whether it uses the code face.
@@ -3078,6 +3089,33 @@ mod tests {
         assert!(!out.exists(), "a cancelled render must not publish an artifact");
     }
 
+    /// Nested layers are preflight items of their own: a stop request is seen
+    /// even when the outer scene and item checks have already passed.
+    #[test]
+    fn nested_preflight_items_poll_cancellation() {
+        let out = std::env::temp_dir().join("opencut-media-tests").join("cancelled-nested.mp4");
+        let _ = std::fs::remove_file(&out);
+        let film = serde_json::json!({
+            "width": 64, "height": 64, "fps": 15, "duration_frames": 10,
+            "scenes": [{ "start": 0, "duration": 10,
+                "background": { "kind": "solid", "color": "#05070f" },
+                "items": [{ "kind": "layer", "at": 0, "dur": 10, "zoom_from": 1.0, "zoom_to": 1.0,
+                    "items": [{ "kind": "glow", "at": 0, "dur": 10, "x": 0.5, "y": 0.5,
+                                "radius": 0.2, "color": "#ffcc88", "intensity": 1.0 }] }] }],
+            "audio": null
+        });
+        let polls = std::cell::Cell::new(0u32);
+        let stop = || {
+            polls.set(polls.get() + 1);
+            polls.get() >= 4
+        };
+        let options = super::RenderOptions { cancel: Some(&stop), ..Default::default() };
+        let error =
+            super::render_project_with(&film.to_string(), &out, &options, &mut |_, _| {}).expect_err("a nested item must observe the stop");
+        assert_eq!(error.code(), "cancelled", "{error}");
+        assert!(!out.exists(), "a cancelled preflight must not publish an artifact");
+    }
+
     /// Narration is a slot, not a guess: a path that does not decode aborts the
     /// mix instead of producing a film that quietly has no voice.
     #[test]
@@ -3208,6 +3246,10 @@ mod tests {
         let stats = super::render_project_with(&film.to_string(), &out, &options, &mut |_, _| {}).expect("range");
         assert_eq!(stats.frames, 30);
         assert_eq!(stats.range, [15, 45]);
+        // The 30 written frames are 2 s at 15 fps; the 60-frame film would be
+        // 4 s, so this pins `seconds` to the interval and not the source length.
+        assert!((stats.seconds - 2.0).abs() < 1e-9, "seconds must cover the interval, got {}", stats.seconds);
+        assert_eq!(stats.seconds, stats.frames as f64 / stats.fps as f64);
         assert!(out.exists());
     }
 

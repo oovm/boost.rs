@@ -344,46 +344,69 @@ pub struct AudioPlan {
 /// `limits` bounds what one decode of an imported clip may allocate; the
 /// project layer passes them explicitly to the codec.
 pub fn build_audio(plan: &AudioPlan, media: &mut MediaLibrary, limits: DecodeLimits) -> Result<Vec<i16>, Error> {
+    build_audio_with(plan, media, limits, &|| false)
+}
+
+/// Builds the bed like [`build_audio`] and polls `cancelled` while it mixes.
+///
+/// A host stop is observed before the buffer is allocated, between placements
+/// and inside the long BGM and clip loops, so an aborted render returns the
+/// shared `cancelled` error instead of finishing the whole film's audio first.
+pub fn build_audio_with(
+    plan: &AudioPlan,
+    media: &mut MediaLibrary,
+    limits: DecodeLimits,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Vec<i16>, Error> {
     if plan.channels != 2 {
         return Err(Error::invalid_input(format!("the mixer is stereo-only, got {} channels", plan.channels)));
     }
     if plan.sample_rate == 0 || plan.time_base.numerator() == 0 {
         return Err(Error::invalid_input("sample_rate and the time base must be positive"));
     }
+    // Plan validation is instant; poll once before the bed buffer is allocated
+    // so a host that already gave up does not pay for the whole film's memory.
+    poll_cancel(cancelled, "the start of the mix")?;
     let frames = plan.time_base.to_samples_ceil(plan.duration_frames, plan.sample_rate);
     let mut buf = vec![0f32; frames * 2];
 
     if let Some(bgm) = &plan.bgm {
-        synth_pad(&mut buf, bgm.volume, plan.sample_rate);
-        synth_plucks(&mut buf, bgm.volume * 0.5, plan.sample_rate);
+        synth_pad(&mut buf, bgm.volume, plan.sample_rate, cancelled)?;
+        synth_plucks(&mut buf, bgm.volume * 0.5, plan.sample_rate, cancelled)?;
     }
-    for sfx in &plan.sfx {
+    for (index, sfx) in plan.sfx.iter().enumerate() {
+        poll_cancel(cancelled, &format!("sound effect {index}"))?;
         let spec = sfx.request.resolve()?;
         let samples = render_sfx(&spec, plan.sample_rate as f32)?;
         let start = plan.time_base.to_samples(sfx.at_frames, plan.sample_rate);
         mix_frames(&mut buf, start, &samples, sfx.volume);
     }
-    for voice in &plan.voice {
+    for (index, voice) in plan.voice.iter().enumerate() {
+        poll_cancel(cancelled, &format!("voice {index}"))?;
         let samples = media_voice::render(&voice.song, plan.sample_rate as f32)?;
         let start = plan.time_base.to_samples(voice.at_frames, plan.sample_rate);
         mix_frames(&mut buf, start, &samples, voice.volume);
     }
-    for note in &plan.notes {
+    for (index, note) in plan.notes.iter().enumerate() {
+        poll_cancel(cancelled, &format!("note {index}"))?;
         let spec = note.request.resolve()?;
         let samples = render_instrument(&spec, plan.sample_rate as f32)?;
         let start = plan.time_base.to_samples(note.at_frames, plan.sample_rate);
         mix_frames(&mut buf, start, &samples, note.volume);
     }
-    for pattern in &plan.patterns {
+    for (index, pattern) in plan.patterns.iter().enumerate() {
+        poll_cancel(cancelled, &format!("pattern {index}"))?;
         let groove = pattern.request.resolve()?;
         let samples = render_pattern(&groove, plan.sample_rate as f32)?;
         let start = plan.time_base.to_samples(pattern.at_frames, plan.sample_rate);
         mix_frames(&mut buf, start, &samples, pattern.volume);
     }
     if let Some(narration) = &plan.narration {
+        poll_cancel(cancelled, "the narration slot")?;
         mix_wav(&mut buf, &narration.wav, narration.delay_frames, narration.volume, plan)?;
     }
-    for clip in &plan.clips {
+    for (index, clip) in plan.clips.iter().enumerate() {
+        poll_cancel(cancelled, &format!("audio clip {index}"))?;
         let samples = match media.audio_pcm(&clip.src, plan.sample_rate, limits) {
             Ok(samples) => samples,
             Err(error) => {
@@ -402,14 +425,30 @@ pub fn build_audio(plan: &AudioPlan, media: &mut MediaLibrary, limits: DecodeLim
         let total = frames_len(&buf);
         let placed = limit.min(samples.len().saturating_sub(offset)).min(total.saturating_sub(start));
         for i in 0..placed {
+            if i % CANCEL_POLL_FRAMES == 0 {
+                poll_cancel(cancelled, &format!("audio clip {index}"))?;
+            }
             let gain = clip.volume * clip_gain(i, placed, clip.fade_in_frames as usize, clip.fade_out_frames as usize);
             let sample = &samples[offset + i];
             buf[(start + i) * 2] += sample[0] * gain;
             buf[(start + i) * 2 + 1] += sample[1] * gain;
         }
     }
+    poll_cancel(cancelled, "the final mix")?;
 
     Ok(buf.into_iter().map(|s| (s.clamp(-1.0, 1.0) * 32767.0) as i16).collect())
+}
+
+/// Audio frames synthesized between two cancellation polls: short enough that
+/// a stop is noticed within a fraction of a second of bed time.
+const CANCEL_POLL_FRAMES: usize = 16_384;
+
+/// Returns the shared `cancelled` error when the host has asked to stop.
+fn poll_cancel(cancelled: &dyn Fn() -> bool, stage: &str) -> Result<(), Error> {
+    if cancelled() {
+        return Err(Error::cancelled(format!("audio bed cancelled at {stage}")));
+    }
+    Ok(())
 }
 
 fn frames_len(buf: &[f32]) -> usize {
@@ -446,11 +485,14 @@ fn clip_gain(i: usize, placed: usize, fade_in: usize, fade_out: usize) -> f32 {
 }
 
 /// Slow chord pad: four chords cycling, two detuned partials each.
-fn synth_pad(buf: &mut [f32], volume: f32, sample_rate: u32) {
+fn synth_pad(buf: &mut [f32], volume: f32, sample_rate: u32, cancelled: &dyn Fn() -> bool) -> Result<(), Error> {
     // A minor bed: Am, F, C, G — root frequencies.
     let chords = [[110.0, 164.81, 220.0], [87.31, 130.81, 174.61], [130.81, 164.81, 196.0], [98.0, 123.47, 146.83]];
     let chord_seconds = 8.0;
     for i in 0..frames_len(buf) {
+        if i % CANCEL_POLL_FRAMES == 0 {
+            poll_cancel(cancelled, "the BGM pad")?;
+        }
         let t = i as f64 / sample_rate as f64;
         let chord = &chords[((t / chord_seconds) as usize) % chords.len()];
         let phase_in_chord = (t % chord_seconds) / chord_seconds;
@@ -467,6 +509,7 @@ fn synth_pad(buf: &mut [f32], volume: f32, sample_rate: u32) {
         buf[i * 2] += value as f32;
         buf[i * 2 + 1] += value as f32 * 0.92;
     }
+    Ok(())
 }
 
 /// Sparse pentatonic plucks seeded deterministically.
@@ -474,12 +517,13 @@ fn synth_pad(buf: &mut [f32], volume: f32, sample_rate: u32) {
 /// Each slot is a pure function of its index through the shared
 /// `media.dsp::Rng` stream — the same contract the synthesis voices use, so
 /// the bed has exactly one formal source of randomness.
-fn synth_plucks(buf: &mut [f32], volume: f32, sample_rate: u32) {
+fn synth_plucks(buf: &mut [f32], volume: f32, sample_rate: u32, cancelled: &dyn Fn() -> bool) -> Result<(), Error> {
     let scale = [440.0, 523.25, 587.33, 659.25, 783.99];
     let total = frames_len(buf);
     let mut slot = 0usize;
     let mut cursor = (sample_rate as usize) * 3; // start after 3s
     while cursor < total {
+        poll_cancel(cancelled, "the BGM plucks")?;
         let note = scale[(Rng::new(slot as u32).next_u32() % scale.len() as u32) as usize];
         let decay_seconds = 1.6;
         let len = ((decay_seconds * sample_rate as f64) as usize).min(total - cursor);
@@ -495,6 +539,7 @@ fn synth_plucks(buf: &mut [f32], volume: f32, sample_rate: u32) {
         let gap = 2.0 + (Rng::new(slot as u32 * 7 + 13).next_u32() % 40) as f64 / 10.0;
         cursor += (gap * sample_rate as f64) as usize;
     }
+    Ok(())
 }
 
 /// Decodes a PCM16 WAV file and mixes it at the given frame offset.
@@ -613,6 +658,21 @@ mod tests {
         )
         .expect("reserved slot stays silent");
         assert!(bed.iter().all(|s| *s == 0), "optional missing clip must be silence");
+    }
+
+    /// A host stop is observed while the bed is still being synthesized, not
+    /// only after the whole film's audio has been built.
+    #[test]
+    fn cancelled_bed_stops_during_synthesis() {
+        let mut p = plan(Vec::new());
+        p.bgm = Some(BgmPlan { volume: 0.1, mood: "pad".into() });
+        let polls = std::cell::Cell::new(0u32);
+        let cancel = || {
+            polls.set(polls.get() + 1);
+            polls.get() > 1
+        };
+        let error = build_audio_with(&p, &mut MediaLibrary::new(), DecodeLimits::unbounded(), &cancel).expect_err("cancel must stop the bed");
+        assert_eq!(error.code(), "cancelled", "{error}");
     }
 
     #[test]
