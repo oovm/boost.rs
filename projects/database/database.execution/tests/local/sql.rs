@@ -4969,16 +4969,6 @@ fn recursive_cte_union_deduplicates_and_union_all_hits_the_round_cap() {
 }
 
 #[test]
-fn probe_tmp_cte_in_subquery_ops() {
-    let stmt = prepare_sql(
-        "WITH scored AS (SELECT account_id FROM Account WHERE score >= 20) \
-         SELECT email FROM Account WHERE account_id IN (SELECT account_id FROM scored) ORDER BY account_id",
-    )
-    .expect("prepare");
-    println!("{:#?}", stmt.ops);
-}
-
-#[test]
 fn recursive_cte_column_list_renames_the_seed_projection() {
     let contract = contract();
     let mut records = BTreeMap::new();
@@ -5056,6 +5046,7 @@ fn recursive_step_naming_an_undefined_relation_is_rejected() {
 fn non_recursive_with_keeps_a_union_body_and_nested_union_is_not_recursion() {
     let contract = contract();
     let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
 
     // A plain `WITH` whose body is a two-operand UNION keeps both operands:
     // the parser splits them the same way a recursive body is split, and

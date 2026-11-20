@@ -463,6 +463,10 @@ fn execute_ops_in(
                     bound_values,
                     outer,
                 )?;
+                // The merged rows carry the left operand's column names, so a
+                // `WITH` or derived-table pipeline continuing with a filter or
+                // projection resolves bare columns against an unnamed source.
+                current_table = Some(String::new());
             }
             QueryOp::Aggregate { group_keys, aggregates } => {
                 rows = execute_aggregate(&rows, group_keys, aggregates, contract, records, bound_values, outer)?;
