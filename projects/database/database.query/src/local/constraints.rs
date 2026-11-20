@@ -69,6 +69,14 @@ impl UniqueIndex {
         tables.get(table).is_some_and(|index| index.basis.0 == basis.0 && index.basis.1 == basis.1)
     }
 
+    /// Number of cached keys for `table`, only when its index still describes
+    /// `basis`. A cold or foreign-basis table reports `None`, so callers can
+    /// tell "maintained incrementally" apart from "dropped and rebuilt".
+    pub fn len(&self, table: &str, basis: (&str, u64)) -> Option<usize> {
+        let tables = self.tables.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        tables.get(table).filter(|index| index.basis.0 == basis.0 && index.basis.1 == basis.1).map(|index| index.entries.len())
+    }
+
     /// Check `row` against every rule on `table` and record its keys.
     ///
     /// `old` is the row being replaced: its keys are removed first, so a

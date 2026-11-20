@@ -589,7 +589,13 @@ impl Connection {
                     holds_every_row,
                     exempt,
                 )?;
-                let complete = windows.is_none() || holds_every_row;
+                // `write_windows` widens a cold-rule write with the whole table of
+                // every rule target, so the narrowed snapshot still answers the
+                // from-records rebuild a cold index needs: that is complete for
+                // [`constraints::WriteIndex`]. A warm exempt write keeps only point
+                // keys and stays partial, which is exactly what the warm index
+                // answers from.
+                let complete = windows.is_none() || holds_every_row || !exempt;
                 Ok((windows, (basis, complete)))
             },
             |state, (basis, complete)| {
@@ -597,6 +603,14 @@ impl Connection {
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
+                // The same rule set the VOS frontend enforces: the attributes the
+                // schema contract declares plus the host-declared rules. Without
+                // the merge an SQL write would skip both the duplicate check and
+                // the index maintenance for document-derived constraints.
+                let constraints = database_query::local::constraints::merge(
+                    database_query::local::constraints::from_contract(&contract)?,
+                    &state.unique_constraints,
+                );
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 let placement = self.placement();
                 let outcome = self.with_row_resolver(|| {
@@ -604,7 +618,7 @@ impl Connection {
                         &stmt,
                         &values,
                         &contract,
-                        &state.unique_constraints,
+                        &constraints,
                         &mut state.records,
                         &placement,
                         Some(&index),
@@ -736,4 +750,44 @@ fn schema_basis(state: &super::State) -> (String, u64) {
     let fingerprint = state.schema.as_ref().map(|schema| fp(&schema.document)).unwrap_or_default();
     let revision = state.identity_history.as_ref().map(|history| history.revision).unwrap_or(0);
     (fingerprint, revision)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// MUT-01: the SQL write path maintains the shared unique-key cache
+    /// instead of dropping it, both frontends keep rejecting duplicate keys,
+    /// and a rolled-back insert leaves rows and cache consistent.
+    #[test]
+    fn sql_writes_keep_the_unique_index_warm_and_rollback_stays_consistent() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.ensure_schema("table Member { @@id: i64, [unique] email: utf8 }").unwrap();
+        // Warm the index through the VOS frontend.
+        conn.execute_vos_write(r#"Member.insert({ id: 1, email: "a@example.com" })"#).unwrap();
+        let state = conn.read_state().unwrap();
+        let basis = schema_basis(&state);
+        drop(state);
+        let index = &conn.unique_index;
+        let basis_ref = (basis.0.as_str(), basis.1);
+        assert!(index.is_warm("Member", basis_ref), "the VOS write must have warmed the index");
+        // The SQL frontend must maintain the warm index incrementally rather
+        // than invalidate it wholesale.
+        conn.execute_sql_write("INSERT INTO Member (id, email) VALUES (2, 'b@example.com')", &[]).unwrap();
+        assert!(index.is_warm("Member", basis_ref), "an SQL write must not invalidate the warm unique index");
+        assert_eq!(index.len("Member", basis_ref), Some(2), "both keys must sit in the same warm index");
+        // Both frontends still reject a duplicate key.
+        let duplicate_vos = conn.execute_vos_write(r#"Member.insert({ id: 3, email: "a@example.com" })"#);
+        assert!(matches!(duplicate_vos, Err(Error::UniqueViolation { .. })), "{duplicate_vos:?}");
+        let duplicate_sql = conn.execute_sql_write("INSERT INTO Member (id, email) VALUES (4, 'b@example.com')", &[]);
+        assert!(matches!(duplicate_sql, Err(Error::UniqueViolation { .. })), "{duplicate_sql:?}");
+        assert_eq!(conn.query_sql("SELECT id FROM Member").unwrap().len(), 2, "rejected inserts stored nothing");
+        // A rolled-back insert must not leave a phantom key in the cache.
+        conn.begin().unwrap();
+        conn.execute_vos_write(r#"Member.insert({ id: 5, email: "c@example.com" })"#).unwrap();
+        conn.rollback().unwrap();
+        assert_eq!(conn.query_sql("SELECT id FROM Member").unwrap().len(), 2);
+        conn.execute_vos_write(r#"Member.insert({ id: 5, email: "c@example.com" })"#).unwrap();
+        assert_eq!(conn.query_sql("SELECT id FROM Member").unwrap().len(), 3, "the rolled-back key must not be cached");
+    }
 }
