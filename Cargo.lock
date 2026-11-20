@@ -177,6 +177,7 @@ version = "0.1.0"
 dependencies = [
  "atlas",
  "atlas-cloud",
+ "boost-harness",
  "boost-net",
  "serde_json",
 ]

@@ -3,13 +3,15 @@
 //! 本 crate 只做云调用专用的观察与诊断，不重做 `boost.harness` 的测试运行器：
 //! 用例编排、断言与结果投影仍由调用方自己的测试框架负责。
 //!
-//! # 两件事
+//! # 三件事
 //!
 //! - **简化测试**：[`Replay`] 是 [`boost_net::http::Transport`] 的脚本化替身，直接交给
 //!   `atlas-cloud` 的客户端，就能在不联网、不读环境变量的前提下走完「构造 payload →
 //!   签名 → 解析响应 → 结果分层」。
 //! - **根因查找**：[`diagnose_error`]、[`diagnose_sms`] 与 [`diagnose_cos`] 把结果映射成
 //!   [`Diagnosis`]，明确指出哪一层出错、是否可能已生效、能不能重试、下一步查什么。
+//! - **运行期记录**：[`runtime`] 模块（核心来自 `boost_harness::hotspot`）常开聚合云调用
+//!   耗时与卡点事件，有界内存、关闭近零开销，供宿主进程持续调优。
 //!
 //! # 示例
 //!
@@ -45,8 +47,10 @@ mod diagnosis;
 mod error;
 mod replay;
 mod report;
+pub mod runtime;
 
 pub use diagnosis::{Diagnosis, Layer, diagnose_cos, diagnose_error, diagnose_sms};
 pub use error::HarnessError;
 pub use replay::{CannedResponse, RecordedRequest, Replay};
 pub use report::{Record, Report};
+pub use runtime::{Hotspot, HotspotRow, HotspotSnapshot, StallEvent, report_json};
