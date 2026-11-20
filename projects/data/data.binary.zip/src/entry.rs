@@ -21,6 +21,8 @@ pub const DOS_ATTRIBUTE_DIRECTORY: u8 = 0x10;
 pub const UNIX_FILE_TYPE_MASK: u32 = 0xf000;
 /// Unix directory file type.
 pub const UNIX_DIRECTORY: u32 = 0x4000;
+/// Unix symbolic link file type.
+pub const UNIX_SYMLINK: u32 = 0xa000;
 
 /// Host system recorded in `version made by` for Unix.
 pub const HOST_UNIX: u8 = 3;
@@ -53,8 +55,8 @@ pub struct ZipMember {
     /// Raw name bytes from the central directory.
     ///
     /// The bytes are not decoded here. [`ZipMember::name_encoding`] reports
-    /// whether the writer declared UTF-8, and the caller chooses any fallback
-    /// decoding order.
+    /// whether the writer declared UTF-8, and [`ZipMember::decode_name`] applies
+    /// the portable candidate ladder with caller-supplied regional fallbacks.
     pub raw_name: Vec<u8>,
     /// Version made by, including the host system in its upper byte.
     pub version_made_by: u16,
@@ -144,5 +146,76 @@ impl ZipMember {
     /// treated as a directory remain the caller's decision.
     pub fn is_directory(&self) -> bool {
         self.name_is_directory() || self.attributes_are_directory()
+    }
+
+    /// Whether the external attributes mark a Unix symbolic link.
+    ///
+    /// Only Unix-host mode bits can say this. A DOS-only writer stores a link as an
+    /// ordinary file, and that ambiguity stays with the caller.
+    pub fn is_symlink(&self) -> bool {
+        self.unix_mode().is_some_and(|mode| mode & UNIX_FILE_TYPE_MASK == UNIX_SYMLINK)
+    }
+
+    /// Decodes the raw member name through the portable candidate ladder.
+    ///
+    /// The UTF-8 declaration from [`ZipMember::name_encoding`] is advisory, so strict
+    /// UTF-8 is always tried first, then each `regional` decoder in order, then CP437,
+    /// the legacy ZIP default.
+    pub fn decode_name(&self, regional: &[data_binary_core::RegionalDecoder]) -> String {
+        data_binary_core::decode_entry_name(&self.raw_name, regional, data_binary_core::NameTerminal::Cp437)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use data_binary_core::RegionalDecoder;
+
+    fn member(raw_name: &[u8], version_made_by: u16, external_attributes: u32, flag: u16) -> ZipMember {
+        ZipMember {
+            raw_name: raw_name.to_vec(),
+            version_made_by,
+            version_needed: 20,
+            general_purpose_bit_flag: flag,
+            compression_method: 0,
+            crc32: 0,
+            modified: ZipDosDateTime::default(),
+            modified_unix: None,
+            internal_attributes: 0,
+            external_attributes,
+            local_header_offset: 0,
+            compressed_size: 0,
+            uncompressed_size: 0,
+            data_range: ByteExtent::new_allowing_empty(0, 0).expect("empty extent"),
+            payload_range: ByteExtent::new_allowing_empty(0, 0).expect("empty extent"),
+        }
+    }
+
+    /// A fake regional encoding accepting only the single byte `0xC8`.
+    fn only_c8(raw: &[u8]) -> Option<String> {
+        if raw == [0xC8] { Some("REG".to_string()) } else { None }
+    }
+
+    const ONLY_C8: RegionalDecoder = &only_c8;
+
+    #[test]
+    fn symlink_needs_unix_host_and_link_mode() {
+        let unix_version = (u16::from(HOST_UNIX) << 8) | 20;
+        assert!(member(b"link", unix_version, 0xa1ff_0000, 0).is_symlink());
+        assert!(!member(b"file", unix_version, 0x81ff_0000, 0).is_symlink());
+        assert!(!member(b"dir", unix_version, 0x41ff_0000, 0).is_symlink());
+        assert!(!member(b"link", 0, 0xa1ff_0000, 0).is_symlink(), "DOS host mode bits are not Unix");
+    }
+
+    #[test]
+    fn decode_name_prefers_utf8_then_regional_then_cp437() {
+        let declared = member("文档.txt".as_bytes(), 0, 0, FLAG_UTF8_NAME);
+        assert_eq!(declared.decode_name(&[ONLY_C8]), "文档.txt");
+        let undeclared = member("plain.txt".as_bytes(), 0, 0, 0);
+        assert_eq!(undeclared.decode_name(&[]), "plain.txt");
+        let regional = member(&[0xC8], 0, 0, 0);
+        assert_eq!(regional.decode_name(&[ONLY_C8]), "REG");
+        let legacy = member(&[0x82], 0, 0, 0);
+        assert_eq!(legacy.decode_name(&[]), "é", "CP437 terminal");
     }
 }

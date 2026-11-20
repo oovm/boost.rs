@@ -18,8 +18,8 @@ pub use crc::ieee_crc32;
 pub use data_compression::StreamChunk;
 pub use decode::{MemberDecodeFacts, decode_member, decode_member_with_facts, read_member_payload};
 pub use entry::{
-    DOS_ATTRIBUTE_DIRECTORY, FLAG_DATA_DESCRIPTOR, FLAG_ENCRYPTED, FLAG_MASKED_DATA, FLAG_STRONG_ENCRYPTION, FLAG_UTF8_NAME, ZipEncryption,
-    ZipMember, ZipNameEncoding,
+    DOS_ATTRIBUTE_DIRECTORY, FLAG_DATA_DESCRIPTOR, FLAG_ENCRYPTED, FLAG_MASKED_DATA, FLAG_STRONG_ENCRYPTION, FLAG_UTF8_NAME, UNIX_SYMLINK,
+    ZipEncryption, ZipMember, ZipNameEncoding,
 };
 pub use eocd::{EndOfCentralDirectory, find_eocd, scan_eocd_fields};
 pub use index::{ZipArchiveIndex, ZipIndexError, index_zip, index_zip_bytes};
