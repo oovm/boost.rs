@@ -1,0 +1,4 @@
+{
+  "note": "P2 桩 crate 冻结名单：服务侧无消费者、无测试，数据侧保留；解冻需在 规划设计/rust-boost/45-languages交接与后续计划.md 登记。",
+  "frozen": ["language.dot", "language.dsv", "language.gsgl", "language.racket"]
+}

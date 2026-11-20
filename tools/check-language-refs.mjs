@@ -9,6 +9,8 @@
 //      are allowed.
 //   4. `language.*/src/mcp` is a protocol adapter: it must reuse the same
 //      language service as `src/lsp`, not carry its own semantics or stay empty.
+//   5. Crates listed in `tools/language-frozen.json` are frozen stubs: nothing
+//      may depend on them until the freeze is lifted.
 //
 // Run from the repository root.
 import { execFileSync } from 'node:child_process'
@@ -126,6 +128,24 @@ for (const file of tracked) {
   }
 }
 
+// ---- Gate 5: frozen stubs stay unconsumed --------------------------------
+const frozen = new Set(JSON.parse(readFileSync(resolve(root, 'tools/language-frozen.json'), 'utf8')).frozen ?? [])
+const frozenPackages = new Map(
+  [...frozen].map((dir) => [`language-${dir.slice('language.'.length)}`, dir]),
+)
+for (const file of tracked) {
+  if (!/^projects\/.+\/Cargo\.toml$/.test(file)) {
+    continue
+  }
+  for (const dependency of dependenciesOf(file)) {
+    const crate = frozenPackages.get(dependency.name)
+    if (!crate || file === `projects/language/${crate}/Cargo.toml`) {
+      continue
+    }
+    report(file, dependency.line, `frozen stub "${crate}" must not be depended on; lift the freeze in tools/language-frozen.json first`)
+  }
+}
+
 if (failures.length > 0) {
   console.error('language boundary violations:')
   for (const failure of failures) {
@@ -137,5 +157,5 @@ if (failures.length > 0) {
 console.log(
   `checked ${languageCrates.size} language crates and ${dataCrates.size} data crates: ` +
     'no service modules on the data side, no reversed or cross-language dependencies, ' +
-    'every mcp adapter reuses its lsp service',
+    `every mcp adapter reuses its lsp service, ${frozen.size} frozen stubs stay unconsumed`,
 )
