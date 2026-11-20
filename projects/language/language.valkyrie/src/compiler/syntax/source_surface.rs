@@ -20,7 +20,7 @@ pub enum SourceKind {
     Vx,
     /// VON 数据：`.von`（`data-text-von::formatter`）。
     Von,
-    /// Asgard AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`data-text-awsl::formatter`）。
+    /// Asgard AWSL 模板：`.awsl`（规范拼写）或同义缩写 `.w`（`language_format::formatter`）。
     Awsl,
 }
 

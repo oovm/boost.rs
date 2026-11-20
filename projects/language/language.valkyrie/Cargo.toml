@@ -30,12 +30,10 @@ compiler-emitter = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
 interpreter-vm-ovm = { workspace = true }
-data-text-awsl = { workspace = true }
 data-text-core = { workspace = true }
 language-format = { workspace = true, features = ["serde"] }
 language-highlight = { workspace = true }
 data-text-valkyrie = { workspace = true }
-data-text-von = { workspace = true }
 package-registry = { workspace = true }
 package-resolve = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
