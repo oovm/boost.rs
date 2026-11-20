@@ -15,6 +15,4 @@ mod compositor;
 mod probe;
 
 pub use compositor::{GpuCompositor, GpuError};
-pub use probe::{
-    CompositorKind, CompositorPreference, GpuBackendInfo, GpuStatus, compositor_preference, preferred_compositor, probe_gpu, probe_gpu_fallback,
-};
+pub use probe::{CompositorKind, GpuBackendInfo, GpuStatus, probe_gpu, probe_gpu_fallback};

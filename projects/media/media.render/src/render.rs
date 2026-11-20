@@ -169,8 +169,8 @@ pub struct RenderOptions<'a> {
     /// clamped to +/-24 dB and applied before any limiter, so the report names
     /// the measured value, the gain and what the file actually achieved.
     pub loudness_target_lufs: Option<f32>,
-    /// Compositor backend for this run: `auto`, `gpu` or `cpu`. `None` defers
-    /// to the `MEDIA_COMPOSITOR` environment variable, then to `auto`. `gpu`
+    /// Compositor policy for this run: `auto`, `gpu` or `cpu`. `None` uses
+    /// `auto`. The host supplies any product configuration explicitly. `gpu`
     /// fails the run when no adapter exists; `auto` prefers GPU and reports
     /// the CPU fallback in [`RenderStats::compositor`] (ADR 0005).
     pub compositor: Option<&'a str>,
@@ -306,16 +306,13 @@ struct CompositorSetup {
     label: String,
 }
 
-/// Resolves the compositor: explicit option > `MEDIA_COMPOSITOR` > `auto`.
+/// Resolves the explicit compositor policy, defaulting to `auto`.
 ///
 /// `cpu` never touches the backend. `gpu` makes a missing adapter a hard
 /// error. `auto` prefers GPU and names the CPU fallback in the label — a
 /// silent fallback is never acceptable (ADR 0005).
 fn resolve_compositor(request: Option<&str>) -> Result<CompositorSetup, Error> {
-    let preference = match request {
-        Some(value) => value.trim().to_ascii_lowercase(),
-        None => std::env::var("MEDIA_COMPOSITOR").unwrap_or_else(|_| "auto".to_string()).trim().to_ascii_lowercase(),
-    };
+    let preference = request.unwrap_or("auto").trim().to_ascii_lowercase();
     match preference.as_str() {
         "cpu" => Ok(CompositorSetup { compositor: RunCompositor::Cpu, label: "cpu".to_string() }),
         "gpu" | "auto" => match acquire_gpu() {
