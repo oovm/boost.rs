@@ -34,6 +34,21 @@ impl<S> Wire<S> {
     pub fn stream_mut(&mut self) -> &mut S {
         &mut self.stream
     }
+
+    /// Split into the transport and the bytes read past the last complete record.
+    pub fn into_parts(self) -> (S, Vec<u8>) {
+        (self.stream, self.pending)
+    }
+
+    /// Wrap a transport that already has bytes buffered.
+    pub fn with_pending(stream: S, pending: Vec<u8>) -> Self {
+        Self { stream, pending }
+    }
+
+    /// Take the bytes read past the last complete record.
+    pub fn take_pending(&mut self) -> Vec<u8> {
+        core::mem::take(&mut self.pending)
+    }
 }
 
 impl<S: Read> Wire<S> {

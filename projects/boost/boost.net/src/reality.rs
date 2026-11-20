@@ -11,6 +11,7 @@
 
 use core::cell::Cell;
 use std::{
+    io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -53,11 +54,11 @@ pub struct RealityConfig<'a> {
 }
 
 /// A TLS connection whose peer proved it holds the REALITY server key.
-pub struct RealityConnection {
-    tls: TlsClient<TcpStream>,
+pub struct RealityConnection<S> {
+    tls: TlsClient<S>,
 }
 
-impl RealityConnection {
+impl<S: Read + Write> RealityConnection<S> {
     /// Encrypt and send application data through the tunnel.
     pub fn send(&mut self, data: &[u8]) -> TlsResult<()> {
         self.tls.send(data)
@@ -68,13 +69,13 @@ impl RealityConnection {
         self.tls.receive(out)
     }
 
-    /// The underlying TCP stream, for timeout and socket options.
-    pub fn socket_mut(&mut self) -> &mut TcpStream {
+    /// The underlying transport, for timeout and socket options.
+    pub fn stream_mut(&mut self) -> &mut S {
         self.tls.socket_mut()
     }
 
     /// The TLS client, for protocols that need to take over the raw stream.
-    pub fn into_inner(self) -> TlsClient<TcpStream> {
+    pub fn into_inner(self) -> TlsClient<S> {
         self.tls
     }
 }
@@ -151,7 +152,29 @@ pub fn connect<A: ToSocketAddrs>(
     anchors: &[TrustAnchor],
     address: A,
     timeout: Duration,
-) -> TlsResult<RealityConnection> {
+) -> TlsResult<RealityConnection<TcpStream>> {
+    let tls = with_options(config, anchors, timeout, |client, options| TlsClient::connect_with(client, options, address))?;
+    Ok(RealityConnection { tls })
+}
+
+/// Complete REALITY authentication over an already connected stream.
+pub fn handshake<S: Read + Write>(
+    config: &RealityConfig<'_>,
+    anchors: &[TrustAnchor],
+    stream: S,
+    timeout: Duration,
+) -> TlsResult<RealityConnection<S>> {
+    let tls = with_options(config, anchors, timeout, |client, options| TlsClient::handshake_with(client, options, stream))?;
+    Ok(RealityConnection { tls })
+}
+
+/// Run one handshake with the shared auth key wired into both hooks.
+fn with_options<R>(
+    config: &RealityConfig<'_>,
+    anchors: &[TrustAnchor],
+    timeout: Duration,
+    run: impl FnOnce(&ClientConfig<'_>, &HandshakeOptions<'_>) -> TlsResult<R>,
+) -> TlsResult<R> {
     if config.short_id.len() > AUTH_PLAINTEXT_LEN - 8 {
         return Err(TlsError::Unsupported("the REALITY short id is longer than 8 bytes".to_string()));
     }
@@ -159,8 +182,8 @@ pub fn connect<A: ToSocketAddrs>(
     let hook = SealSessionId { config, auth: &auth };
     let policy = RealityPolicy { auth: &auth };
     let options = HandshakeOptions { alpn: Some(config.alpn.unwrap_or(DEFAULT_ALPN)), hello: Some(&hook), policy: Some(&policy) };
-    let client = TlsClient::connect_with(&ClientConfig { hostname: config.server_name, anchors, timeout }, &options, address)?;
-    Ok(RealityConnection { tls: client })
+    let client = ClientConfig { hostname: config.server_name, anchors, timeout };
+    run(&client, &options)
 }
 
 #[cfg(test)]

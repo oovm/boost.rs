@@ -401,6 +401,144 @@ impl<S: Read + Write> Write for TlsClient<S> {
     }
 }
 
+/// The read half of an established TLS 1.3 connection.
+///
+/// Splitting lets a protocol such as `xtls-rprx-vision` hand the two directions
+/// to different threads and later leave TLS framing on one direction at a time.
+/// A `KeyUpdate` request from the server is applied to the read key but not
+/// answered, because the reply would need the write half.
+pub struct TlsReader<S> {
+    wire: Wire<S>,
+    app: TrafficKey,
+    app_secret: [u8; 32],
+    buffer: Vec<u8>,
+    position: usize,
+}
+
+impl<S: Read> TlsReader<S> {
+    /// Read application data into `out`, returning the byte count. A clean TCP
+    /// close at a record boundary reports end of stream as zero bytes.
+    pub fn receive(&mut self, out: &mut [u8]) -> TlsResult<usize> {
+        loop {
+            if self.position < self.buffer.len() {
+                let take = out.len().min(self.buffer.len() - self.position);
+                out[..take].copy_from_slice(&self.buffer[self.position..self.position + take]);
+                self.position += take;
+                if self.position == self.buffer.len() {
+                    self.buffer.clear();
+                    self.position = 0;
+                }
+                return Ok(take);
+            }
+            let (inner, body) = match self.wire.read_encrypted(&mut self.app) {
+                Ok(pair) => pair,
+                Err(TlsError::Eof) => return Ok(0),
+                Err(error) => return Err(error),
+            };
+            match inner {
+                0x17 => {
+                    self.buffer = body;
+                    self.position = 0;
+                }
+                0x15 => {
+                    let description = body.get(1).copied().unwrap_or(0);
+                    if description == 0 {
+                        return Ok(0);
+                    }
+                    return Err(TlsError::Alert(description));
+                }
+                0x18 => {
+                    let next = derive_secret(&self.app_secret, "traffic upd", &[])?;
+                    self.app_secret = next;
+                    self.app = TrafficKey::from_secret(&next)?;
+                }
+                0x16 => {}
+                other => return Err(TlsError::Protocol(format!("unexpected encrypted type {other}"))),
+            }
+        }
+    }
+}
+
+impl<S: Read> Read for TlsReader<S> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        match self.receive(out) {
+            Ok(count) => Ok(count),
+            Err(TlsError::Io(error)) => Err(error),
+            Err(error) => Err(io::Error::new(io::ErrorKind::InvalidData, error.to_string())),
+        }
+    }
+}
+
+impl TlsReader<TcpStream> {
+    /// Give up TLS framing and return the socket plus bytes already decrypted
+    /// or read past the last complete record, in delivery order.
+    pub fn into_raw(self) -> (TcpStream, Vec<u8>) {
+        let Self { wire, buffer, position, .. } = self;
+        let (stream, pending) = wire.into_parts();
+        let mut leftover = buffer[position..].to_vec();
+        leftover.extend_from_slice(&pending);
+        (stream, leftover)
+    }
+}
+
+/// The write half of an established TLS 1.3 connection.
+pub struct TlsWriter<S> {
+    wire: Wire<S>,
+    app: TrafficKey,
+}
+
+impl<S: Write> TlsWriter<S> {
+    /// Encrypt and send application data, flushing the records.
+    pub fn send(&mut self, data: &[u8]) -> TlsResult<()> {
+        for chunk in data.chunks(MAX_FRAGMENT) {
+            self.wire.write_encrypted(&mut self.app, 0x17, chunk)?;
+        }
+        self.wire.flush()
+    }
+
+    /// Send `close_notify`.
+    pub fn close(&mut self) -> TlsResult<()> {
+        self.wire.write_encrypted(&mut self.app, 0x15, &[1, 0])?;
+        self.wire.flush()
+    }
+}
+
+impl<S: Write> Write for TlsWriter<S> {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        match self.send(data) {
+            Ok(()) => Ok(data.len()),
+            Err(TlsError::Io(error)) => Err(error),
+            Err(error) => Err(io::Error::new(io::ErrorKind::InvalidData, error.to_string())),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.wire.flush().map_err(|error| match error {
+            TlsError::Io(error) => error,
+            error => io::Error::new(io::ErrorKind::InvalidData, error.to_string()),
+        })
+    }
+}
+
+impl TlsWriter<TcpStream> {
+    /// Give up TLS framing and return the socket.
+    pub fn into_raw(self) -> TcpStream {
+        self.wire.into_parts().0
+    }
+}
+
+impl TlsClient<TcpStream> {
+    /// Split an established connection into independent read and write halves.
+    pub fn split(self) -> TlsResult<(TlsReader<TcpStream>, TlsWriter<TcpStream>)> {
+        let writer_stream = self.wire.stream().try_clone().map_err(TlsError::Io)?;
+        let TlsClient { wire, server_app, server_app_secret, client_app, read_buffer, read_position, .. } = self;
+        let (stream, pending) = wire.into_parts();
+        let reader = TlsReader { wire: Wire::with_pending(stream, pending), app: server_app, app_secret: server_app_secret, buffer: read_buffer, position: read_position };
+        let writer = TlsWriter { wire: Wire::new(writer_stream), app: client_app };
+        Ok((reader, writer))
+    }
+}
+
 /// HMAC-SHA256 over one Finished transcript hash.
 fn hmac(key: &[u8], data: &[u8]) -> TlsResult<[u8; 32]> {
     hmac_sha256(key, data).map_err(|error| TlsError::Unsupported(format!("hmac: {error}")))

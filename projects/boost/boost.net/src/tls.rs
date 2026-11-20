@@ -18,7 +18,7 @@ mod kx;
 mod record;
 
 #[cfg(feature = "tls")]
-pub use client::{CertificatePolicy, ClientConfig, ClientHelloHook, EphemeralKey, HandshakeOptions, TlsClient};
+pub use client::{CertificatePolicy, ClientConfig, ClientHelloHook, EphemeralKey, HandshakeOptions, TlsClient, TlsReader, TlsWriter};
 #[cfg(feature = "tls")]
 pub use error::{TlsError, TlsResult};
 
