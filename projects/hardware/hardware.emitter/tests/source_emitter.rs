@@ -807,7 +807,7 @@ function f32Bits(x) {
   return view.getUint32(0, true);
 }
 
-const STORAGE = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ;
+const STORAGE = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
 const UNIFORM = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
 
 function write(device, values, usage) {
@@ -817,9 +817,14 @@ function write(device, values, usage) {
 }
 
 async function readBack(device, buffer) {
-  await buffer.mapAsync(GPUMapMode.READ);
-  const out = new Uint32Array(buffer.getMappedRange().slice(0));
-  buffer.unmap();
+  const readback = device.createBuffer({ size: buffer.size, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ });
+  const encoder = device.createCommandEncoder();
+  encoder.copyBufferToBuffer(buffer, 0, readback, 0, buffer.size);
+  device.queue.submit([encoder.finish()]);
+  await readback.mapAsync(GPUMapMode.READ);
+  const out = new Uint32Array(readback.getMappedRange().slice(0));
+  readback.unmap();
+  readback.destroy();
   return out;
 }
 
