@@ -71,7 +71,7 @@ function f32Bits(x) {
   return view.getUint32(0, true);
 }
 
-const STORAGE = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
+const STORAGE = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ;
 const UNIFORM = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
 
 function write(device, values, usage) {
@@ -165,8 +165,7 @@ async function main() {
       await runParamCase(device, param, count, 1.0, 42);
     }
   } catch (error) {
-    failures++;
-    log('FAIL  ' + error);
+    check(false, 'fatal: ' + error);
   }
   if (failures === 0) {
     summaryEl.textContent = 'ALL PASS (' + checks + ' checks)';
