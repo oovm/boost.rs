@@ -11,3 +11,5 @@ publish.workspace = true
 [dependencies]
 serde = { workspace = true }
 geometry-types = { workspace = true }
+data-compression = { workspace = true, features = ["deflate"] }
+data-checksum = { workspace = true }

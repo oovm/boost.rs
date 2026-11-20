@@ -7,11 +7,13 @@
 #![warn(missing_docs)]
 
 mod bitmap;
+mod decode;
 mod fit;
 mod frame;
 mod hdr;
 
 pub use bitmap::Bitmap;
+pub use decode::{DecodeError, DecodeLimits, DecodedImage, Orientation, decode, decode_jpeg, decode_png};
 pub use fit::Fit;
 pub use frame::Frame;
 pub use hdr::{Framebuffer, FramebufferEncoding};

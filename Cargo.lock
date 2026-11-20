@@ -6074,6 +6074,8 @@ dependencies = [
 name = "media-image"
 version = "0.1.0"
 dependencies = [
+ "data-checksum",
+ "data-compression",
  "geometry-types",
  "serde",
 ]

@@ -1,6 +1,7 @@
 //! Decoded RGBA8 image storage, decoupled from whatever decoded it.
 
 /// A decoded RGBA8 image, decoupled from whatever decoded it.
+#[derive(Debug, Clone)]
 pub struct Bitmap {
     pub width: u32,
     pub height: u32,
