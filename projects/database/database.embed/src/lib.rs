@@ -229,6 +229,32 @@ impl EmbedDb {
         Ok(())
     }
 
+    /// 在一个事务里运行 `body`：期间的多条写合并成一次提交、一次落盘。
+    ///
+    /// 每条独立的 [`Self::execute`] 都会走一遍完整发布（写临时文件、fsync、
+    /// 原子替换），实测单行写约九成耗时花在这一步。凡是"一条主记录加若干
+    /// 子行"这类多语句写，都应放进事务，让持久化只发生一次。`body` 出错即
+    /// 回滚，期间的写全部作废；事务内的读写对 `body` 可见。嵌套调用会因
+    /// 底层已有打开的事务而报错。
+    pub fn transaction<T>(&self, body: impl FnOnce(&EmbedDb) -> Result<T>) -> Result<T> {
+        self.conn.begin()?;
+        let output = match body(self) {
+            Ok(value) => value,
+            Err(error) => {
+                let _ = self.conn.rollback();
+                return Err(error);
+            }
+        };
+        match self.conn.commit() {
+            Ok(()) => Ok(output),
+            Err(error) => {
+                // 乐观提交冲突时事务已被引擎关闭，这里只兜底其他残留状态。
+                let _ = self.conn.rollback();
+                Err(error.into())
+            }
+        }
+    }
+
     /// 写入一个原始 KV 记录（不经 schema；供宿主内部状态使用）。
     pub fn put_raw(&self, key: &str, bytes: &[u8]) -> Result<()> {
         self.conn.put(key, bytes)?;

@@ -207,6 +207,42 @@ fn query_profiled_matches_query_and_reports_stages() {
     let missing = db.query_profiled(source, &params(&[])).expect_err("a declared parameter must be bound");
     assert!(missing.to_string().contains("conversation"), "unexpected error: {missing}");
 }
+
+/// 事务把多条写合并成一次提交：全部可见，或一个不留。
+#[test]
+fn transaction_commits_and_rolls_back_as_one_unit() {
+    let db = EmbedDb::open_in_memory().unwrap();
+    db.ensure_schema(SCHEMA).unwrap();
+
+    db.transaction(|tx| {
+        insert(tx, 1, "c-1", 1, "kept-a");
+        insert(tx, 2, "c-1", 2, "kept-b");
+        Ok(())
+    })
+    .expect("commit");
+    assert_eq!(db.query("Message.all().collect()", &params(&[])).unwrap().len(), 2);
+
+    let failure = db
+        .transaction(|tx| -> database_embed::Result<()> {
+            insert(tx, 3, "c-1", 3, "rolled-back");
+            Err(database_embed::EmbedError::UnsupportedJson("boom".to_string()))
+        })
+        .expect_err("the body error must roll the write back");
+    assert!(failure.to_string().contains("boom"), "unexpected error: {failure}");
+    let rows = db.query("Message.all().collect()", &params(&[])).unwrap();
+    assert_eq!(rows.len(), 2, "the rolled-back row must not be visible");
+
+    // 事务内的读能看到尚未提交的写。
+    db.transaction(|tx| {
+        insert(tx, 4, "c-2", 1, "inside");
+        let seen = tx.query("Message.all().filter(x => x.text == $b).collect()", &params(&[("b", json!("inside"))])).unwrap();
+        assert_eq!(seen.len(), 1, "a transaction must read its own writes");
+        Ok(())
+    })
+    .expect("commit");
+    assert_eq!(db.query("Message.all().collect()", &params(&[])).unwrap().len(), 3);
+}
+
 /// 多表 schema 的 identity 与 contract 远超一页，落盘必须分块并在重开后重组。
 #[test]
 fn large_schema_survives_reopen() {
