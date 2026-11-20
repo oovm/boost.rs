@@ -75,9 +75,8 @@ fn write_and_read_cost_split_between_memory_and_disk() {
     let mut scan_profile = database_embed::ReadProfile::default();
     let mut probe_profile = database_embed::ReadProfile::default();
     for _ in 0..200 {
-        let (_, profile) = file
-            .query_profiled("Item.all().filter(x => x.group_name == $g).collect()", &params(&[("g", json!("team"))]))
-            .expect("scan");
+        let (_, profile) =
+            file.query_profiled("Item.all().filter(x => x.group_name == $g).collect()", &params(&[("g", json!("team"))])).expect("scan");
         scan_profile.bind_ns += profile.bind_ns;
         scan_profile.metadata_ns += profile.metadata_ns;
         scan_profile.drift_ns += profile.drift_ns;
@@ -141,14 +140,13 @@ fn transaction_batches_the_publish_cost() {
     let one_by_one = started.elapsed();
 
     let started = Instant::now();
-    file
-        .transaction(|tx| {
-            for index in 0..200 {
-                insert(tx, &format!("txn-{index:05}"), index);
-            }
-            Ok(())
-        })
-        .expect("batched commit");
+    file.transaction(|tx| {
+        for index in 0..200 {
+            insert(tx, &format!("txn-{index:05}"), index);
+        }
+        Ok(())
+    })
+    .expect("batched commit");
     let batched = started.elapsed();
 
     println!(

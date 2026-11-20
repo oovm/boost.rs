@@ -3471,6 +3471,7 @@ name = "database-embed"
 version = "0.1.0"
 dependencies = [
  "database-execution",
+ "database-storage",
  "database-types",
  "serde_json",
  "thiserror 2.0.21",
@@ -3672,6 +3673,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "boost-collection",
+ "boost-harness",
  "boost-math",
  "boost-random",
  "data-encoding",

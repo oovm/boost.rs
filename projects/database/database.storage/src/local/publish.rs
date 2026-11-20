@@ -10,13 +10,39 @@
 //! 提交点是否已经越过、旧内容当前是否仍在、此刻能否安全重试。`PublishError`
 //! 因此携带阶段 [`PublishStage`]、结果 [`PublishOutcome`] 与可重试事实；恢复
 //! 再次失败时备份路径和第二次错误都不会被丢弃。
+//!
+//! 发布链同时是 yydb 唯一的提交点，因此也是运行期记录的自然汇聚处：
+//! [`PUBLISH_SPOTS`] 常开聚合 temp 写落盘、目录项替换与整体发布的耗时
+//! （`yydb.publish.temp`、`yydb.publish.replace`、`yydb.publish`），并登记
+//! 明确卡点（`replace-blocked`、`restore-unconfirmed`）。记录关闭时单次埋点
+//! 只付一次原子读，开启时不改变任何控制流，产品运行不受影响；宿主经
+//! [`publish_runtime_snapshot`] 取快照做持续调优。
 
 use std::{
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        LazyLock,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
 };
+
+use boost_harness::hotspot::{Hotspot, HotspotSnapshot};
+
+/// 发布链的运行期记录器：常开、有界、近零开销。
+pub static PUBLISH_SPOTS: LazyLock<Hotspot> = LazyLock::new(Hotspot::new);
+
+/// 当前发布链快照，供宿主诊断接口合并展示。
+pub fn publish_runtime_snapshot() -> HotspotSnapshot {
+    PUBLISH_SPOTS.snapshot()
+}
+
+/// 总开关：测量窗口需要排除记录本身时关闭。
+pub fn set_publish_runtime_enabled(enabled: bool) {
+    PUBLISH_SPOTS.set_enabled(enabled);
+}
 
 /// 失败发生在发布的哪个阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,6 +251,7 @@ fn publish_with(path: &Path, bytes: &[u8], steps: &dyn PublishSteps) -> Result<P
 }
 
 fn publish_with_steps(path: &Path, bytes: &[u8], temp: PathBuf, steps: &dyn PublishSteps) -> Result<PublishReceipt, PublishError> {
+    let started = Instant::now();
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -234,21 +261,30 @@ fn publish_with_steps(path: &Path, bytes: &[u8], temp: PathBuf, steps: &dyn Publ
     if result.is_err() {
         let _ = fs::remove_file(&temp);
     }
+    PUBLISH_SPOTS.record("yydb.publish", started.elapsed());
     result
 }
 
 fn write_and_replace(path: &Path, bytes: &[u8], temp: &Path, steps: &dyn PublishSteps) -> Result<PublishReceipt, PublishError> {
+    let temp_started = Instant::now();
     let mut file =
         fs::File::create(temp).map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
     file.write_all(bytes).map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
     file.sync_all().map_err(|error| PublishError::new(PublishStage::WriteTemp, PublishOutcome::Unchanged, true, error))?;
     drop(file);
-    match steps.replace(temp, path) {
+    PUBLISH_SPOTS.record("yydb.publish.temp", temp_started.elapsed());
+    let replace_started = Instant::now();
+    let replaced = steps.replace(temp, path);
+    PUBLISH_SPOTS.record("yydb.publish.replace", replace_started.elapsed());
+    match replaced {
         Ok(()) => match steps.sync_parent(path) {
             Ok(()) => Ok(PublishReceipt { path: path.to_path_buf(), durable: true }),
             Err(error) => Err(PublishError::new(PublishStage::SyncParent, PublishOutcome::VisibleNotDurable, false, error)),
         },
-        Err(first) => recover_with_backup(path, temp, steps, first),
+        Err(first) => {
+            PUBLISH_SPOTS.stall("yydb.publish", "replace-blocked", format!("目录项替换失败，进入备份路径：{first}"));
+            recover_with_backup(path, temp, steps, first)
+        }
     }
 }
 
@@ -278,9 +314,12 @@ fn recover_with_backup(path: &Path, temp: &Path, steps: &dyn PublishSteps, first
             let _ = fs::remove_file(temp);
             match steps.restore(&backup, path) {
                 Ok(()) => Err(PublishError::new(PublishStage::Replace, PublishOutcome::Unchanged, true, second)),
-                Err(error) => Err(PublishError::new(PublishStage::Restore, PublishOutcome::RestoreUnconfirmed, false, second)
-                    .with_backup(backup)
-                    .with_restore(error)),
+                Err(error) => {
+                    PUBLISH_SPOTS.stall("yydb.publish", "restore-unconfirmed", format!("两次替换失败且放回失败：{second} / {error}"));
+                    Err(PublishError::new(PublishStage::Restore, PublishOutcome::RestoreUnconfirmed, false, second)
+                        .with_backup(backup)
+                        .with_restore(error))
+                }
             }
         }
     }
@@ -518,5 +557,20 @@ mod tests {
         publish_with(fixture.path(), b"new", &AtomicRename).expect("retry");
         assert_eq!(fs::read(fixture.path()).expect("read"), b"new");
         assert!(fixture.leftovers().is_empty(), "leftovers: {:?}", fixture.leftovers());
+    }
+
+    #[test]
+    fn publish_chain_records_runtime_hotspots_and_stalls() {
+        let fixture = Fixture::new("runtime");
+        publish_with(fixture.path(), b"first", &AtomicRename).expect("seed");
+        // 第一次替换失败、备份路径成功：既产生耗时行，也产生卡点事件。
+        let steps = Faults::none().replace(1);
+        publish_with(fixture.path(), b"second", &steps).expect("publish after backup");
+        let snapshot = publish_runtime_snapshot();
+        let row = snapshot.rows.iter().find(|row| row.key == "yydb.publish").expect("yydb.publish 行");
+        assert!(row.hits >= 2, "{row:?}");
+        assert!(snapshot.rows.iter().any(|row| row.key == "yydb.publish.temp"), "temp 阶段必须单独成行");
+        assert!(snapshot.rows.iter().any(|row| row.key == "yydb.publish.replace"), "替换阶段必须单独成行");
+        assert!(snapshot.stalls.iter().any(|event| event.cause == "replace-blocked"), "卡点事件: {:?}", snapshot.stalls);
     }
 }

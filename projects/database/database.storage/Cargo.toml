@@ -12,6 +12,8 @@ publish = false
 data-encoding = { workspace = true }
 blake3 = { workspace = true }
 boost-collection = { workspace = true }
+# 运行期记录核心：发布链用它常开聚合提交耗时与卡点（见 `local::publish`）。
+boost-harness = { workspace = true }
 boost-math = { workspace = true }
 boost-random = { workspace = true, features = ["system"] }
 database-cluster = { workspace = true }

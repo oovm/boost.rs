@@ -37,6 +37,7 @@ use database_types::{Error as DbError, Value, scalar};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 pub use database_execution::engine::ReadProfile;
+pub use database_storage::local::publish::{PUBLISH_SPOTS, publish_runtime_snapshot, set_publish_runtime_enabled};
 
 /// One live handle registered for a canonical database path.
 ///
@@ -209,9 +210,7 @@ impl EmbedDb {
         // 声明槽位按 index 升序；把命名参数摆成有序值，走带计时的执行入口。
         let mut values: Vec<Value> = Vec::with_capacity(stmt.parameters.len());
         for parameter in &stmt.parameters {
-            let value = named
-                .get(&parameter.name)
-                .ok_or_else(|| EmbedError::UnsupportedJson(format!("缺少参数 `${}`", parameter.name)))?;
+            let value = named.get(&parameter.name).ok_or_else(|| EmbedError::UnsupportedJson(format!("缺少参数 `${}`", parameter.name)))?;
             values.push(value.clone());
         }
         if let Some(extra) = named.keys().find(|key| !stmt.parameters.iter().any(|parameter| parameter.name == **key)) {
