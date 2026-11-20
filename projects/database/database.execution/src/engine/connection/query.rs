@@ -625,25 +625,41 @@ impl Connection {
         self.mutate_narrowed_write_unlocked(
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
+                let basis = schema_basis(metadata);
+                // The same warm-index exemption the VOS write path uses: when the
+                // shared unique-key cache already covers every rule table, the
+                // duplicate check reads the cache instead of the whole table.
+                let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 // Window planning is pure: `write_windows` only reads the bound
                 // values, so no placement is involved and nothing is written.
-                let windows =
-                    database_query::local::write_windows(&stmt.write_ops, &contract, &metadata.unique_constraints, &values, holds_every_row)?;
-                Ok((windows, ()))
+                let windows = database_query::local::write_windows(
+                    &stmt.write_ops,
+                    &contract,
+                    &metadata.unique_constraints,
+                    &values,
+                    holds_every_row,
+                    exempt,
+                )?;
+                let complete = windows.is_none() || holds_every_row;
+                Ok((windows, (basis, complete)))
             },
-            |state, ()| {
+            |state, (basis, complete)| {
                 self.check_schema_drift(&stmt, state)?;
-                // The SQL write executor checks uniqueness by scanning rows and
-                // does not maintain the unique-key index, so any cached entries
-                // stop being authoritative from here. The next VOS write on a
-                // rule table takes the full path and rebuilds.
-                self.unique_index.invalidate_all();
                 // The write executor mutates `state.records`, so it cannot hold a
                 // borrow of the contract inside the same state.
                 let contract = resolved_contract(state)?.clone();
+                let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 let placement = self.placement();
                 let outcome = self.with_row_resolver(|| {
-                    crate::local::execute_write_prepared(&stmt, &values, &contract, &state.unique_constraints, &mut state.records, &placement)
+                    crate::local::execute_write_prepared(
+                        &stmt,
+                        &values,
+                        &contract,
+                        &state.unique_constraints,
+                        &mut state.records,
+                        &placement,
+                        Some(&index),
+                    )
                 })?;
                 affected = outcome.affected;
                 Ok(())

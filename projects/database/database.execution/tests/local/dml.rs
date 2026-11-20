@@ -222,7 +222,7 @@ fn sql_windows(source: &str, values: &[Value]) -> Option<Vec<ReadWindow>> {
     let contract = keyed_contract();
     let stmt = prepare_sql(source).expect("prepare");
     let bound = database_query::local::bind_ordered(&stmt, values).expect("bind");
-    write_windows(&stmt.write_ops, &contract, &[], &bound, false).expect("plan")
+    write_windows(&stmt.write_ops, &contract, &[], &bound, false, false).expect("plan")
 }
 
 fn doc_key(id: i64) -> String {
@@ -315,7 +315,7 @@ fn an_sql_insert_into_a_host_rule_table_narrows_to_its_table() {
     let bound = database_query::local::bind_ordered(&stmt, &[Value::I64(7), Value::Text("seven".into())]).expect("bind");
     let rule =
         TableUniqueConstraint::new("Doc", UniqueConstraint::new("doc_title", vec!["title".into()], false).expect("rule")).expect("binding");
-    let windows = write_windows(&stmt.write_ops, &contract, &[rule], &bound, false).expect("plan").expect("narrowable");
+    let windows = write_windows(&stmt.write_ops, &contract, &[rule], &bound, false, false).expect("plan").expect("narrowable");
     assert_eq!(
         windows.last(),
         Some(&table_row_window("Doc")),

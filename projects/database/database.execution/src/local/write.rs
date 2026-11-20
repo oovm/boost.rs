@@ -43,6 +43,11 @@ pub struct WriteOutcome {
 /// the row-build choke point, after coercion. Execution passes
 /// [`Placement::Commit`] so the object store receives the payload; a caller
 /// without a store passes [`Placement::Inline`].
+///
+/// `index` is the connection's shared unique-key cache. When present, every
+/// uniqueness check runs through it and every published row maintains it, so a
+/// SQL write leaves the cache exactly as warm as the equivalent VOS write
+/// would. Without one the checks fall back to scanning the stored rows.
 pub fn execute_ops(
     ops: &[WriteOp],
     contract: &ResolvedContract,
@@ -50,13 +55,24 @@ pub fn execute_ops(
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     placement: &Placement,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<WriteOutcome> {
     let mut outcome = WriteOutcome::default();
     for op in ops {
         match op {
             WriteOp::Insert { table, rows, conflict, returning } => {
-                let inserted =
-                    insert_rows(table, rows, conflict.as_ref(), returning.as_ref(), contract, declared, records, bound_values, placement)?;
+                let inserted = insert_rows(
+                    table,
+                    rows,
+                    conflict.as_ref(),
+                    returning.as_ref(),
+                    contract,
+                    declared,
+                    records,
+                    bound_values,
+                    placement,
+                    index,
+                )?;
                 outcome.affected += inserted.len();
                 outcome.rows.extend(inserted);
             }
@@ -73,15 +89,17 @@ pub fn execute_ops(
                     records,
                     bound_values,
                     placement,
+                    index,
                 )?;
                 outcome.affected += inserted.len();
                 outcome.rows.extend(inserted);
             }
             WriteOp::Update { table, assignments, predicate } => {
-                outcome.affected += update_rows(table, assignments, predicate.as_ref(), contract, declared, records, bound_values, placement)?;
+                outcome.affected +=
+                    update_rows(table, assignments, predicate.as_ref(), contract, declared, records, bound_values, placement, index)?;
             }
             WriteOp::Delete { table, predicate } => {
-                outcome.affected += delete_rows(table, predicate.as_ref(), contract, records, bound_values)?;
+                outcome.affected += delete_rows(table, predicate.as_ref(), contract, records, bound_values, index)?;
             }
         }
     }
@@ -268,6 +286,7 @@ fn conflicting_row(
 /// wrote (inserted, or updated by `DO UPDATE`), or the written rows themselves
 /// when the statement has no `RETURNING`. Projection happens before publication,
 /// so an unknown column in the clause fails without publishing anything.
+#[allow(clippy::too_many_arguments)]
 fn insert_rows(
     table: &str,
     rows: &[Vec<WriteField>],
@@ -278,6 +297,7 @@ fn insert_rows(
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     placement: &Placement,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<Vec<QueryRow>> {
     let (entry, storage) = resolve_table(contract, table)?;
     let pk_field = catalog::primary_field_name(entry)?.to_string();
@@ -292,14 +312,17 @@ fn insert_rows(
         }
     };
 
-    // Uniqueness checks and conflict detection both compare against the current
-    // table contents, so the rows are loaded whenever either is in play.
-    let mut working: Vec<WorkingRow> = if target.is_some() || constraints::has_rules(declared, &storage) {
-        load_table_entries(records, &storage)?.into_iter().map(|(key, row)| WorkingRow { key, row }).collect()
-    }
-    else {
-        Vec::new()
-    };
+    // Conflict detection compares against the current table contents, so the
+    // rows are loaded whenever an `ON CONFLICT` clause is in play. A uniqueness
+    // check reads the shared index when one is attached and only needs the
+    // stored rows when the caller has no index to maintain.
+    let mut working: Vec<WorkingRow> =
+        if target.is_some() || (index.is_none() && constraints::has_rules(declared, &storage)) {
+            load_table_entries(records, &storage)?.into_iter().map(|(key, row)| WorkingRow { key, row }).collect()
+        }
+        else {
+            Vec::new()
+        };
 
     let mut pending: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut staged_pks: Vec<String> = Vec::with_capacity(rows.len());
@@ -317,7 +340,7 @@ fn insert_rows(
         let pk_text = constraints::value_text(pk)?;
 
         if let (Some(target), Some(clause)) = (&target, conflict)
-            && let Some(index) = conflicting_row(&working, target, &pk_field, &pk_text, &row)?
+            && let Some(position) = conflicting_row(&working, target, &pk_field, &pk_text, &row)?
         {
             match &clause.action {
                 ConflictAction::DoNothing => continue,
@@ -327,7 +350,7 @@ fn insert_rows(
                         entry,
                         contract,
                         &pk_field,
-                        &working[index].row,
+                        &working[position].row,
                         assignments,
                         predicate.as_ref(),
                         &working,
@@ -336,6 +359,7 @@ fn insert_rows(
                         records,
                         bound_values,
                         placement,
+                        index,
                     )?
                     else {
                         continue;
@@ -348,7 +372,7 @@ fn insert_rows(
                         .ok_or_else(|| write_error(format!("updated `{table}` row lost primary key field `{pk_field}`")))?;
                     let matched_pk_text = constraints::value_text(matched_pk)?;
                     upsert_row(&mut pending, &storage, &matched_pk_text, &updated)?;
-                    working[index].row = updated.clone();
+                    working[position].row = updated.clone();
                     written.push(project_returned(returning, &updated, table, contract, records, bound_values)?);
                     continue;
                 }
@@ -362,8 +386,13 @@ fn insert_rows(
                 columns: vec![pk_field.clone()],
             });
         }
-        let known: Vec<QueryRow> = working.iter().map(|candidate| candidate.row.clone()).collect();
-        constraints::check_against_rows(&known, declared, &storage, &pk_field, &pk_text, &row)?;
+        match index {
+            Some(ctx) => ctx.index.enforce(ctx, records, declared, &storage, &pk_field, &pk_text, None, &row)?,
+            None => {
+                let known: Vec<QueryRow> = working.iter().map(|candidate| candidate.row.clone()).collect();
+                constraints::check_against_rows(&known, declared, &storage, &pk_field, &pk_text, &row)?;
+            }
+        }
 
         let key = row_key(&storage, &pk_text);
         upsert_row(&mut pending, &storage, &pk_text, &row)?;
@@ -438,6 +467,11 @@ fn validate_returning_expr(entry: &ResolvedTypeContract, table: &str, expr: &Exp
             }
             Ok(())
         }
+        Expr::Interval { .. } => Ok(()),
+        Expr::JsonAccess { left, key, .. } => {
+            validate_returning_expr(entry, table, left)?;
+            validate_returning_expr(entry, table, key)
+        }
         // The subquery carries its own row sources, which lowering already
         // resolved against their own scope.
         Expr::Subquery { .. } => Ok(()),
@@ -464,6 +498,7 @@ fn validate_returning_column(entry: &ResolvedTypeContract, table: &str, path: &[
 /// `None` means the predicate rejected the update: the incoming row is dropped
 /// and the conflicting row stays as it was. The updated row still has to pass
 /// the table's uniqueness rules before the caller publishes it.
+#[allow(clippy::too_many_arguments)]
 fn conflict_update_row(
     table: &str,
     entry: &ResolvedTypeContract,
@@ -478,6 +513,7 @@ fn conflict_update_row(
     records: &BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     placement: &Placement,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<Option<QueryRow>> {
     if let Some(predicate) = predicate {
         let predicate = exec::resolve_subquery_predicates(predicate, None, &ReadRows::owned(records), bound_values)?;
@@ -500,8 +536,15 @@ fn conflict_update_row(
     let matched_pk =
         matched.get(pk_field).ok_or_else(|| write_error(format!("conflicting `{table}` row has no primary key field `{pk_field}`")))?;
     let matched_pk_text = constraints::value_text(matched_pk)?;
-    let known: Vec<QueryRow> = working.iter().map(|candidate| candidate.row.clone()).collect();
-    constraints::check_against_rows(&known, declared, storage, pk_field, &matched_pk_text, &row)?;
+    match index {
+        // The updated row replaces the conflicting one, so its old keys are
+        // retracted before the new ones are checked and recorded.
+        Some(ctx) => ctx.index.enforce(ctx, records, declared, storage, pk_field, &matched_pk_text, Some(matched), &row)?,
+        None => {
+            let known: Vec<QueryRow> = working.iter().map(|candidate| candidate.row.clone()).collect();
+            constraints::check_against_rows(&known, declared, storage, pk_field, &matched_pk_text, &row)?;
+        }
+    }
     Ok(Some(row))
 }
 
@@ -513,6 +556,7 @@ fn conflict_update_row(
 /// target columns by position and handed to [`insert_rows`], which is the same
 /// staging path `VALUES` uses: coercion, primary-key presence and uniqueness are
 /// all checked before anything is published.
+#[allow(clippy::too_many_arguments)]
 fn insert_from_query(
     table: &str,
     columns: &[String],
@@ -525,6 +569,7 @@ fn insert_from_query(
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     placement: &Placement,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<Vec<QueryRow>> {
     let source_rows = exec::execute_ops(source, Some(contract), records, bound_values)?;
 
@@ -556,7 +601,7 @@ fn insert_from_query(
                 .collect()
         })
         .collect();
-    insert_rows(table, &rows, conflict, returning, contract, declared, records, bound_values, placement)
+    insert_rows(table, &rows, conflict, returning, contract, declared, records, bound_values, placement, index)
 }
 
 /// Columns a `SELECT *` source produces, in catalog declaration order.
@@ -581,6 +626,7 @@ fn star_output_fields(contract: &ResolvedContract, source: &[QueryOp]) -> Result
     Ok(entry.fields.iter().map(|field| field.canonical_name.clone()).collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_rows(
     table: &str,
     assignments: &[WriteAssignment],
@@ -590,6 +636,7 @@ fn update_rows(
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     placement: &Placement,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<usize> {
     let (entry, storage) = resolve_table(contract, table)?;
     let pk_field = catalog::primary_field_name(entry)?.to_string();
@@ -597,7 +644,7 @@ fn update_rows(
         predicate.map(|predicate| exec::resolve_subquery_predicates(predicate, None, &ReadRows::owned(records), bound_values)).transpose()?;
     let predicate = predicate.as_ref();
 
-    let mut replacements: Vec<(String, QueryRow)> = Vec::new();
+    let mut replacements: Vec<(String, Option<QueryRow>, QueryRow)> = Vec::new();
     {
         let entries = load_table_entries(records, &storage)?;
         for (key, mut row) in entries {
@@ -606,6 +653,8 @@ fn update_rows(
                     continue;
                 }
             }
+            // The index needs the pre-image to retract the old keys.
+            let old = index.map(|_| row.clone());
             for assignment in assignments {
                 let slot = catalog::field_on_table(entry, &assignment.field)?;
                 if assignment.field == pk_field {
@@ -615,14 +664,17 @@ fn update_rows(
                 let coerced = coerce::value_to_scalar(value, &slot.canonical_type, contract)?;
                 row.insert(assignment.field.clone(), placement.place(coerced)?);
             }
-            replacements.push((key, row));
+            replacements.push((key, old, row));
         }
     }
 
-    for (key, row) in &replacements {
+    for (key, old, row) in &replacements {
         let pk = row.get(&pk_field).ok_or_else(|| write_error(format!("updated `{table}` row lost primary key field `{pk_field}`")))?;
         let pk_text = constraints::value_text(pk)?;
-        constraints::check(records, declared, &storage, &pk_field, &pk_text, row)?;
+        match index {
+            Some(ctx) => ctx.index.enforce(ctx, records, declared, &storage, &pk_field, &pk_text, old.as_ref(), row)?,
+            None => constraints::check(records, declared, &storage, &pk_field, &pk_text, row)?,
+        }
         remove_row(records, key);
         upsert_row(records, &storage, &pk_text, row)?;
     }
@@ -635,12 +687,14 @@ fn delete_rows(
     contract: &ResolvedContract,
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<usize> {
-    let (_, storage) = resolve_table(contract, table)?;
+    let (entry, storage) = resolve_table(contract, table)?;
+    let pk_field = catalog::primary_field_name(entry)?.to_string();
     let predicate =
         predicate.map(|predicate| exec::resolve_subquery_predicates(predicate, None, &ReadRows::owned(records), bound_values)).transpose()?;
     let predicate = predicate.as_ref();
-    let mut doomed: Vec<String> = Vec::new();
+    let mut doomed: Vec<(String, QueryRow)> = Vec::new();
     {
         let entries = load_table_entries(records, &storage)?;
         for (key, row) in entries {
@@ -649,12 +703,20 @@ fn delete_rows(
                     continue;
                 }
             }
-            doomed.push(key);
+            doomed.push((key, row));
         }
     }
     let mut removed = 0;
-    for key in doomed {
-        if remove_row(records, &key) {
+    for (key, row) in &doomed {
+        // A deleted row's keys must leave the shared index, or a later insert
+        // of the same value would collide with a ghost entry.
+        if let Some(ctx) = index
+            && let Some(pk) = row.get(&pk_field)
+            && let Ok(pk_text) = constraints::value_text(pk)
+        {
+            ctx.index.retract(ctx, &[], &storage, &pk_text, row);
+        }
+        if remove_row(records, key) {
             removed += 1;
         }
     }

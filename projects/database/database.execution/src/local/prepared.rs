@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use database_query::local::{PreparedStatement, QueryKind, QueryRow, bind_ordered, prepare_sql};
+use database_query::local::{PreparedStatement, QueryKind, QueryRow, bind_ordered, constraints, prepare_sql};
 use database_storage::local::RowSource;
 use database_types::{Error, Result, TableUniqueConstraint, Value};
 use schema_types::ResolvedContract;
@@ -76,11 +76,12 @@ pub fn execute_write_prepared(
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
     placement: &Placement,
+    index: Option<&constraints::WriteIndex<'_>>,
 ) -> Result<WriteOutcome> {
     if stmt.write_ops.is_empty() {
         return Err(Error::Unsupported("statement is a read pipeline, not a write program"));
     }
-    write::execute_ops(&stmt.write_ops, contract, declared, records, values, placement)
+    write::execute_ops(&stmt.write_ops, contract, declared, records, values, placement, index)
 }
 
 /// Result of one SQL statement.
@@ -115,7 +116,7 @@ pub fn execute_sql(
             // This one-shot SQL entry has no attached object store, so every
             // `bytes` / `vector<N>` value stays inline; the connection surface
             // passes [`Placement::Commit`] through `execute_write_prepared`.
-            let outcome = execute_write_prepared(&stmt, &bound, contract, declared, records, &Placement::Inline)?;
+            let outcome = execute_write_prepared(&stmt, &bound, contract, declared, records, &Placement::Inline, None)?;
             Ok(SqlOutcome { rows: outcome.rows, affected: outcome.affected })
         }
         QueryKind::Session => {
