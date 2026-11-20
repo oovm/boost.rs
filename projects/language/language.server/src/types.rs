@@ -1,9 +1,9 @@
 use data_text_core::{Arc, Range, language::UniversalElementRole};
-pub use language_folding::FoldingRange;
-pub use language_hover::Hover;
-pub use language_navigation::Location as LocationRange;
-pub use language_semantic_tokens::SemanticToken;
-pub use language_structural_view::StructureItem;
+pub use crate::folding::FoldingRange;
+pub use crate::hover::Hover;
+pub use crate::navigation::Location as LocationRange;
+pub use crate::semantic_tokens::SemanticToken;
+pub use crate::structural_view::StructureItem;
 
 /// A range in the source code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

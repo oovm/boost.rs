@@ -2,7 +2,7 @@
 pub mod highlighter;
 
 use {
-    language_hover::{Hover as ProviderHover, HoverProvider},
+    language_server::hover::{Hover as ProviderHover, HoverProvider},
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover as LspHover},
     std::future::Future,

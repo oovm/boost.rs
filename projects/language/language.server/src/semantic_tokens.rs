@@ -1,5 +1,4 @@
-#![warn(missing_docs)]
-#![doc = include_str!("readme.md")]
+//! Semantic tokens contract: [`SemanticToken`] and [`SemanticTokensProvider`].
 use data_text_core::{
     language::Language,
     source::{LineMap, Source},

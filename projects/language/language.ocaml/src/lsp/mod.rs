@@ -5,7 +5,7 @@ use data_text_ocaml::{OCamlLanguage, parser::element_type::OCamlElementType};
 use data_text_core::{Range, tree::RedNode};
 use {
     futures::Future,
-    language_hover::HoverProvider,
+    language_server::hover::HoverProvider,
     language_server::Vfs,
     language_server::{
         service::LanguageService,
@@ -15,7 +15,7 @@ use {
 /// Hover provider implementation for OCaml.
 pub struct OCamlHoverProvider;
 impl HoverProvider<OCamlLanguage> for OCamlHoverProvider {
-    fn hover(&self, node: &RedNode<OCamlLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<OCamlLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             OCamlElementType::LetBinding => "### OCaml Let Binding\nDefines a value or function binding.",
@@ -24,7 +24,7 @@ impl HoverProvider<OCamlLanguage> for OCamlHoverProvider {
             OCamlElementType::MatchExpr => "### OCaml Match\nPattern matching expression.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for OCaml.

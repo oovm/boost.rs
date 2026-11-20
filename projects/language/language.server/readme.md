@@ -40,7 +40,7 @@ The Language Server Protocol (LSP) has become the standard for language tooling 
 
 ## 🔗 Ecosystem Integration
 
-Integrates with `boost-source` for file access, `language-hover`/`language-navigation`/`data-text-symbols` for features, and any LSP-compatible editor.
+Integrates with `boost-source` for file access, the `hover`/`navigation` capability modules plus `data-text-symbols` for features, and any LSP-compatible editor.
 
 ## 📖 Documentation
 

@@ -5,14 +5,24 @@
 
 /// Structured diagnostic conversion for LSP clients.
 pub mod diagnostic;
+/// Code folding contract shared by language implementations.
+pub mod folding;
 /// Handlers for LSP requests and notifications.
 pub mod handlers;
+/// Hover information contract shared by language implementations.
+pub mod hover;
 /// `Lsp` contract that dispatches protocol messages to `data.text` language capabilities.
 pub mod lsp;
+/// Definition/reference navigation contracts and helpers.
+pub mod navigation;
 /// LSP protocol messages, methods and capabilities.
 pub mod protocol;
+/// Semantic tokens contract shared by language implementations.
+pub mod semantic_tokens;
 /// Language service trait and utilities.
 pub mod service;
+/// Structure view contract shared by language implementations.
+pub mod structural_view;
 /// Transport adapters and the driver loop, orthogonal to server providers.
 pub mod transport;
 /// LSP-specific type definitions.

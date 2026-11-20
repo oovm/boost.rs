@@ -14,7 +14,6 @@ keywords = ["lsp", "mcp", "ada"]
 data-text-ada = { workspace = true }
 data-text-core = { workspace = true }
 futures = { workspace = true }
-language-hover = { workspace = true }
 language-mcp = { workspace = true }
 language-server = { workspace = true }
 tokio = { workspace = true }

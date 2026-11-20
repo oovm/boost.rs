@@ -4,7 +4,7 @@ pub mod highlighter;
 use data_text_org_mode::{OrgModeElementType, OrgModeLanguage};
 use core::range::Range;
 use data_text_core::tree::RedNode;
-use language_hover::{Hover as ProviderHover, HoverProvider};
+use language_server::hover::{Hover as ProviderHover, HoverProvider};
 use language_server::Vfs;
 use language_server::{service::LanguageService, types::Hover as LspHover};
 /// Hover provider implementation for Org-mode.

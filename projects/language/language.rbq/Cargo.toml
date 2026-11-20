@@ -15,10 +15,7 @@ dashmap = { workspace = true }
 data-text-core = { workspace = true }
 data-text-rbq = { workspace = true }
 futures = { workspace = true }
-language-folding = { workspace = true }
 language-highlight = { workspace = true }
-language-hover = { workspace = true }
 language-mcp = { workspace = true }
-language-semantic-tokens = { workspace = true }
 language-server = { workspace = true }
 tokio = { workspace = true }

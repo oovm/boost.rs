@@ -5,7 +5,7 @@ use data_text_core::{
     source::{LineMap, Source},
     tree::{RedNode, RedTree},
 };
-use language_semantic_tokens::{SemanticToken, SemanticTokensProvider};
+use language_server::semantic_tokens::{SemanticToken, SemanticTokensProvider};
 
 /// RBQ semantic tokens provider.
 pub struct RbqSemanticTokensProvider;

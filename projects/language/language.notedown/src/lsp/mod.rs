@@ -5,13 +5,13 @@ use data_text_notedown::{language::NotedownLanguage, lexer::token_type::NoteToke
 use core::range::Range;
 use data_text_core::tree::RedNode;
 use {
-    futures::Future, language_hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService,
+    futures::Future, language_server::hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService,
     language_server::types::Hover as LspHover,
 };
 /// Hover provider implementation for Notedown.
 pub struct NoteHoverProvider;
 impl HoverProvider<NotedownLanguage> for NoteHoverProvider {
-    fn hover(&self, node: &RedNode<NotedownLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<NotedownLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             NoteElementType::Token(t) if t == NoteTokenType::Heading1 => "### Heading 1\nTop-level heading.",
@@ -20,7 +20,7 @@ impl HoverProvider<NotedownLanguage> for NoteHoverProvider {
             NoteElementType::Token(t) if t == NoteTokenType::Table => "### Table\nMarkdown table structure.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for Notedown.

@@ -6,7 +6,7 @@
 #![warn(missing_docs)]
 
 #[cfg(feature = "folding")]
-pub use language_folding as folding;
+pub use language_server::folding;
 
 #[cfg(feature = "format")]
 pub use language_format as format;
@@ -15,13 +15,13 @@ pub use language_format as format;
 pub use language_highlight as highlight;
 
 #[cfg(feature = "hover")]
-pub use language_hover as hover;
+pub use language_server::hover;
 
 #[cfg(feature = "mcp")]
 pub use language_mcp as mcp;
 
 #[cfg(feature = "navigation")]
-pub use language_navigation as navigation;
+pub use language_server::navigation;
 
 #[cfg(feature = "repl")]
 pub use language_repl as repl;
@@ -30,13 +30,13 @@ pub use language_repl as repl;
 pub use language_semantic_search as semantic_search;
 
 #[cfg(feature = "semantic-tokens")]
-pub use language_semantic_tokens as semantic_tokens;
+pub use language_server::semantic_tokens;
 
 #[cfg(feature = "server")]
 pub use language_server as server;
 
 #[cfg(feature = "structural-view")]
-pub use language_structural_view as structural_view;
+pub use language_server::structural_view;
 
 #[cfg(feature = "testing")]
 pub use language_testing as testing;

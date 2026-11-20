@@ -4,11 +4,11 @@ pub mod highlighter;
 use data_text_nix::{NixLanguage, parser::element_type::NixElementType};
 use core::range::Range;
 use data_text_core::tree::RedNode;
-use {language_hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService, std::future::Future};
+use {language_server::hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService, std::future::Future};
 /// Hover provider implementation for Nix.
 pub struct NixHoverProvider;
 impl HoverProvider<NixLanguage> for NixHoverProvider {
-    fn hover(&self, node: &RedNode<NixLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<NixLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             NixElementType::Let => "### Nix Let expression\nStarts a let-binding block.",
@@ -17,7 +17,7 @@ impl HoverProvider<NixLanguage> for NixHoverProvider {
             NixElementType::Root => "### Nix Expression\nThe root of a Nix configuration.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for Nix.

@@ -14,10 +14,10 @@ use data_text_core::{
 };
 use data_text_resolver::ModuleResolver;
 use data_text_symbols::SymbolProvider;
-use language_folding::FoldingProvider;
-use language_hover::HoverProvider;
-use language_navigation::{DefinitionProvider, ReferencesProvider};
-use language_semantic_tokens::SemanticTokensProvider;
+use crate::folding::FoldingProvider;
+use crate::hover::HoverProvider;
+use crate::navigation::{DefinitionProvider, ReferencesProvider};
+use crate::semantic_tokens::SemanticTokensProvider;
 use std::future::Future;
 
 /// A trait that defines the capabilities and behavior of a language-specific service.
@@ -66,7 +66,7 @@ pub trait LanguageService: Send + Sync {
 
     /// 返回本服务的 hover 能力实现；默认没有。
     ///
-    /// 能力语义由 `language-hover` 拥有，服务只提供接缝，不重复实现内容生成。
+    /// 能力语义由 `hover` 模块拥有，服务只提供接缝，不重复实现内容生成。
     fn hover_provider(&self) -> Option<&(dyn HoverProvider<Self::Lang> + Send + Sync)> {
         None
     }
@@ -191,7 +191,7 @@ pub trait LanguageService: Send + Sync {
 
     /// Finds the definition(s) of a symbol at the specified range.
     ///
-    /// 优先委托 `language-navigation` 的 provider，其次使用工作区符号索引与模块解析。
+    /// 优先委托 `navigation` 模块的 provider，其次使用工作区符号索引与模块解析。
     fn definition<'a>(&'a self, uri: &'a str, range: Range<usize>) -> impl Future<Output = Vec<LocationRange>> + Send + 'a {
         let uri = uri.to_string();
         async move {

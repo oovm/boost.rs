@@ -23,7 +23,7 @@ Resolution process: Parse → Collect → Index → Resolve
 
 ## 🔗 Ecosystem Integration
 
-Integrates with `boost-source` for file access, `language-navigation` for definition/reference providers, and `language-server` for workspace symbol support.
+Integrates with `boost-source` for file access, `language_server::navigation` for definition/reference providers, and `language-server` for workspace symbol support.
 
 ## 📖 Documentation
 

@@ -4,14 +4,14 @@ pub mod highlighter;
 use data_text_nim::{language::NimLanguage, parser::element_type::NimElementType};
 use dashmap::DashMap;
 use data_text_core::{Range, parser::session::ParseSession, tree::RedNode};
-use language_hover::HoverProvider;
+use language_server::hover::HoverProvider;
 use language_server::Vfs;
 use language_server::service::LanguageService;
 use std::{future::Future, sync::Arc};
 /// Hover provider implementation for Nim.
 pub struct NimHoverProvider;
 impl HoverProvider<NimLanguage> for NimHoverProvider {
-    fn hover(&self, node: &RedNode<'_, NimLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<'_, NimLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             NimElementType::ProcKeyword => "### Nim Procedure\nDefines a callable procedure in Nim.",
@@ -20,7 +20,7 @@ impl HoverProvider<NimLanguage> for NimHoverProvider {
             NimElementType::Root => "### Nim Module\nThe root of a Nim module.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for Nim.

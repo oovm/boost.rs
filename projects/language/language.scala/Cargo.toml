@@ -14,7 +14,6 @@ keywords = ["lsp", "mcp", "scala"]
 data-text-core = { workspace = true }
 data-text-scala = { workspace = true }
 language-highlight = { workspace = true }
-language-hover = { workspace = true }
 language-mcp = { workspace = true }
 language-server = { workspace = true }
 tokio = { workspace = true }

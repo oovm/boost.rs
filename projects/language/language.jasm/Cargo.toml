@@ -16,7 +16,6 @@ data-text-jasm = { workspace = true }
 data-text-pretty = { workspace = true }
 futures = { workspace = true }
 language-highlight = { workspace = true }
-language-hover = { workspace = true }
 language-mcp = { workspace = true, features = ["io-std"] }
 language-server = { workspace = true }
 tokio = { workspace = true }

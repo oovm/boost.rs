@@ -15,7 +15,6 @@ data-text-core = { workspace = true }
 data-text-html = { workspace = true }
 futures = { workspace = true }
 language-highlight = { workspace = true }
-language-hover = { workspace = true }
 language-mcp = { workspace = true }
 language-server = { workspace = true }
 tokio = { workspace = true }

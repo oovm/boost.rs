@@ -1,6 +1,5 @@
-#![feature(new_range_api)]
-#![warn(missing_docs)]
-#![doc = include_str!("readme.md")]
+//! Navigation contracts: [`Location`], [`DefinitionProvider`], [`ReferencesProvider`]
+//! and the [`SimpleReferenceFinder`] helper.
 use core::range::Range;
 use data_text_core::{Language, TokenType, language::UniversalTokenRole, tree::RedNode, visitor::Visitor};
 

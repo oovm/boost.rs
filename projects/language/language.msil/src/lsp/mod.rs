@@ -5,7 +5,7 @@ use data_text_msil::{MsilLanguage, parser::element_type::MsilElementType};
 use core::range::Range;
 use data_text_core::tree::RedNode;
 use {
-    language_hover::HoverProvider,
+    language_server::hover::HoverProvider,
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover},
     std::future::Future,
@@ -13,7 +13,7 @@ use {
 /// Hover provider implementation for MSIL.
 pub struct MsilHoverProvider;
 impl HoverProvider<MsilLanguage> for MsilHoverProvider {
-    fn hover(&self, node: &RedNode<MsilLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<MsilLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             MsilElementType::Method => "### MSIL Method\nDefines a method in MSIL.",
@@ -22,7 +22,7 @@ impl HoverProvider<MsilLanguage> for MsilHoverProvider {
             MsilElementType::Instruction => "### MSIL Instruction\nA single MSIL instruction.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for MSIL.

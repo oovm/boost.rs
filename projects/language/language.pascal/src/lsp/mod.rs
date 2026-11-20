@@ -4,13 +4,13 @@ pub mod highlighter;
 use data_text_pascal::{PascalElementType, PascalLanguage};
 use core::range::Range;
 use data_text_core::tree::RedNode;
-use language_hover::HoverProvider;
+use language_server::hover::HoverProvider;
 use language_server::Vfs;
 use language_server::{service::LanguageService, types::Hover};
 /// Hover provider implementation for Pascal.
 pub struct PascalHoverProvider;
 impl HoverProvider<PascalLanguage> for PascalHoverProvider {
-    fn hover(&self, node: &RedNode<PascalLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<PascalLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             PascalElementType::Program => "### Pascal Program\nThe main entry point of the application.",
@@ -19,7 +19,7 @@ impl HoverProvider<PascalLanguage> for PascalHoverProvider {
             PascalElementType::VarSection => "### Variable Declaration Section\nDeclares variables for use in the program.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for Pascal.

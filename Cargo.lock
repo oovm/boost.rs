@@ -351,17 +351,12 @@ dependencies = [
 name = "boost-language"
 version = "0.1.0"
 dependencies = [
- "language-folding",
  "language-format",
  "language-highlight",
- "language-hover",
  "language-mcp",
- "language-navigation",
  "language-repl",
  "language-semantic-search",
- "language-semantic-tokens",
  "language-server",
- "language-structural-view",
  "language-testing",
  "language-visualize",
 ]
@@ -4068,7 +4063,6 @@ dependencies = [
  "data-text-actionscript",
  "data-text-core",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4081,7 +4075,6 @@ dependencies = [
  "data-text-ada",
  "data-text-core",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4094,7 +4087,6 @@ dependencies = [
  "data-text-apl",
  "data-text-core",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4198,7 +4190,6 @@ dependencies = [
  "data-text-coq",
  "data-text-core",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4392,14 +4383,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "language-folding"
-version = "0.1.0"
-dependencies = [
- "data-text-core",
- "serde",
-]
-
-[[package]]
 name = "language-format"
 version = "0.1.0"
 dependencies = [
@@ -4476,7 +4459,6 @@ dependencies = [
  "data-text-core",
  "data-text-handlebars",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4490,7 +4472,6 @@ dependencies = [
  "data-text-haskell",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4511,18 +4492,9 @@ dependencies = [
  "data-text-hlsl",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
-]
-
-[[package]]
-name = "language-hover"
-version = "0.1.0"
-dependencies = [
- "data-text-core",
- "serde",
 ]
 
 [[package]]
@@ -4533,7 +4505,6 @@ dependencies = [
  "data-text-html",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4547,7 +4518,6 @@ dependencies = [
  "data-text-idl",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4561,7 +4531,6 @@ dependencies = [
  "data-text-ini",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4575,7 +4544,6 @@ dependencies = [
  "data-text-j",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4590,7 +4558,6 @@ dependencies = [
  "data-text-pretty",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4663,7 +4630,6 @@ dependencies = [
  "data-text-core",
  "data-text-json",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4744,7 +4710,6 @@ dependencies = [
  "data-text-core",
  "data-text-llvm-ir",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4757,7 +4722,6 @@ dependencies = [
  "data-text-core",
  "data-text-lua",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4779,9 +4743,7 @@ dependencies = [
  "data-text-core",
  "data-text-markdown",
  "futures",
- "language-hover",
  "language-mcp",
- "language-navigation",
  "language-server",
  "tokio",
 ]
@@ -4792,7 +4754,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-matlab",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4805,8 +4766,6 @@ dependencies = [
  "data-text-core",
  "data-text-symbols",
  "futures",
- "language-hover",
- "language-navigation",
  "language-semantic-search",
  "language-server",
  "serde",
@@ -4828,18 +4787,9 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-msil",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
-]
-
-[[package]]
-name = "language-navigation"
-version = "0.1.0"
-dependencies = [
- "data-text-core",
- "serde",
 ]
 
 [[package]]
@@ -4848,7 +4798,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-nginx",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4861,7 +4810,6 @@ dependencies = [
  "dashmap",
  "data-text-core",
  "data-text-nim",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4873,7 +4821,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-nix",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4886,7 +4833,6 @@ dependencies = [
  "data-text-core",
  "data-text-notedown",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4898,7 +4844,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-objective-c",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4911,7 +4856,6 @@ dependencies = [
  "data-text-core",
  "data-text-ocaml",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4923,7 +4867,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-org-mode",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4935,7 +4878,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-pascal",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4948,7 +4890,6 @@ dependencies = [
  "data-text-core",
  "data-text-perl",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4961,7 +4902,6 @@ dependencies = [
  "data-text-core",
  "data-text-php",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4974,7 +4914,6 @@ dependencies = [
  "data-text-core",
  "data-text-powershell",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4986,7 +4925,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-prolog",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -4998,7 +4936,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-protobuf",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5021,7 +4958,6 @@ dependencies = [
  "data-text-core",
  "data-text-python",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5034,7 +4970,6 @@ dependencies = [
  "data-text-core",
  "data-text-r",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5055,7 +4990,6 @@ dependencies = [
  "data-text-core",
  "data-text-raku",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5069,11 +5003,8 @@ dependencies = [
  "data-text-core",
  "data-text-rbq",
  "futures",
- "language-folding",
  "language-highlight",
- "language-hover",
  "language-mcp",
- "language-semantic-tokens",
  "language-server",
  "tokio",
 ]
@@ -5086,7 +5017,6 @@ dependencies = [
  "data-text-regex",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5110,7 +5040,6 @@ dependencies = [
  "data-text-core",
  "data-text-rhombus",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5124,7 +5053,6 @@ dependencies = [
  "data-text-core",
  "data-text-rust",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5138,7 +5066,6 @@ dependencies = [
  "data-text-sass",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5151,7 +5078,6 @@ dependencies = [
  "data-text-core",
  "data-text-scala",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5164,7 +5090,6 @@ dependencies = [
  "data-text-core",
  "data-text-scheme",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5178,7 +5103,6 @@ dependencies = [
  "data-text-scss",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5194,14 +5118,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "language-semantic-tokens"
-version = "0.1.0"
-dependencies = [
- "data-text-core",
- "serde",
-]
-
-[[package]]
 name = "language-server"
 version = "0.1.0"
 dependencies = [
@@ -5211,11 +5127,6 @@ dependencies = [
  "data-text-resolver",
  "data-text-symbols",
  "futures",
- "language-folding",
- "language-hover",
- "language-navigation",
- "language-semantic-tokens",
- "language-structural-view",
  "serde",
  "serde_json",
  "url",
@@ -5229,7 +5140,6 @@ dependencies = [
  "data-text-smalltalk",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5243,7 +5153,6 @@ dependencies = [
  "data-text-solidity",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5257,18 +5166,9 @@ dependencies = [
  "data-text-sql",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
-]
-
-[[package]]
-name = "language-structural-view"
-version = "0.1.0"
-dependencies = [
- "data-text-core",
- "serde",
 ]
 
 [[package]]
@@ -5279,7 +5179,6 @@ dependencies = [
  "data-text-stylus",
  "futures",
  "language-highlight",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5300,7 +5199,6 @@ dependencies = [
  "data-text-core",
  "data-text-swift",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5324,7 +5222,6 @@ dependencies = [
  "data-text-core",
  "data-text-tcl",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",
@@ -5361,7 +5258,6 @@ dependencies = [
  "data-text-core",
  "data-text-toml",
  "futures",
- "language-hover",
  "language-mcp",
  "language-server",
  "tokio",

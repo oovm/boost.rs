@@ -19,16 +19,11 @@ dashmap = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 data-text-core = { workspace = true, features = ["serde", "vfs", "vfs-disk"] }
 data-text-symbols = { workspace = true }
-language-navigation = { workspace = true }
 data-text-resolver = { workspace = true }
-language-folding = { workspace = true }
-language-hover = { workspace = true }
-language-semantic-tokens = { workspace = true }
-language-structural-view = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
 
 [features]
 default = [ "serde"]
-serde = ["dep:serde", "dep:serde_json", "data-text-core/serde", "language-navigation/serde", "language-hover/serde", "language-semantic-tokens/serde", "language-structural-view/serde", "language-folding/serde"]
+serde = ["dep:serde", "dep:serde_json", "data-text-core/serde"]

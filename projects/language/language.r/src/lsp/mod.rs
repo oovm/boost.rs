@@ -2,7 +2,7 @@
 pub mod highlighter;
 
 use futures::Future;
-use language_hover::{Hover, HoverProvider};
+use language_server::hover::{Hover, HoverProvider};
 use language_server::Vfs;
 use language_server::service::LanguageService;
 pub mod formatter;

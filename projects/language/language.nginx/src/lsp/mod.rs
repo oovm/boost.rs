@@ -4,7 +4,7 @@ pub mod highlighter;
 use data_text_nginx::{NginxLanguage, parser::element_type::NginxElementType};
 use data_text_core::{Range, tree::RedNode};
 use {
-    language_hover::HoverProvider,
+    language_server::hover::HoverProvider,
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover},
     std::future::Future,
@@ -12,7 +12,7 @@ use {
 /// Hover provider implementation for Nginx.
 pub struct NginxHoverProvider;
 impl HoverProvider<NginxLanguage> for NginxHoverProvider {
-    fn hover(&self, root: &RedNode<'_, NginxLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, root: &RedNode<'_, NginxLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = root.green.kind;
         let contents = match kind {
             NginxElementType::Directive => "### Nginx Directive\nA configuration instruction for the Nginx server.",
@@ -20,7 +20,7 @@ impl HoverProvider<NginxLanguage> for NginxHoverProvider {
             NginxElementType::Root => "### Nginx Configuration\nThe root of an Nginx configuration file.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(root.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(root.span()) })
     }
 }
 /// Language service implementation for Nginx.

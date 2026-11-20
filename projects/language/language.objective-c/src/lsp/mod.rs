@@ -5,7 +5,7 @@ use data_text_objective_c::{ObjectiveCLanguage, parser::element_type::ObjectiveC
 use core::range::Range;
 use data_text_core::tree::RedNode;
 use {
-    language_hover::HoverProvider,
+    language_server::hover::HoverProvider,
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover},
     std::future::Future,
@@ -13,7 +13,7 @@ use {
 /// Hover provider implementation for Objective-C.
 pub struct ObjectiveCHoverProvider;
 impl HoverProvider<ObjectiveCLanguage> for ObjectiveCHoverProvider {
-    fn hover(&self, node: &RedNode<'_, ObjectiveCLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<'_, ObjectiveCLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             ObjectiveCElementType::InterfaceDeclaration => "### Objective-C @interface\nDefines the interface for a class.",
@@ -22,7 +22,7 @@ impl HoverProvider<ObjectiveCLanguage> for ObjectiveCHoverProvider {
             ObjectiveCElementType::PropertyDeclaration => "### Objective-C @property\nDeclares a property for a class.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for Objective-C.

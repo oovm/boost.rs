@@ -5,7 +5,7 @@ use data_text_llvm_ir::language::LLvmLanguage;
 use data_text_core::{Range, tree::RedNode};
 use {
     futures::Future,
-    language_hover::{Hover, HoverProvider},
+    language_server::hover::{Hover, HoverProvider},
     language_server::Vfs,
     language_server::service::LanguageService,
     language_server::types::Hover as LspHover,

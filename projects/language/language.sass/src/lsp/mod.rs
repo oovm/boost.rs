@@ -3,7 +3,7 @@ pub mod highlighter;
 
 use {
     futures::Future,
-    language_hover::{Hover as ProviderHover, HoverProvider},
+    language_server::hover::{Hover as ProviderHover, HoverProvider},
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover as LspHover},
 };

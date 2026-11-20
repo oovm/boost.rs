@@ -4,7 +4,7 @@ pub mod highlighter;
 use data_text_protobuf::{language::ProtobufLanguage, parser::element_type::ProtobufElementType};
 use data_text_core::{Range, tree::RedNode};
 use {
-    language_hover::{Hover as ProviderHover, HoverProvider},
+    language_server::hover::{Hover as ProviderHover, HoverProvider},
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover as LspHover},
     std::future::Future,

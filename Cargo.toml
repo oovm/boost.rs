@@ -54,18 +54,13 @@ members = [
     "projects/interpreter/interpreter.vm.ovm",
     "projects/interpreter/interpreter.vm.wasm",
     "projects/language/language.awsl",
-    "projects/language/language.folding",
-    "projects/language/language.format",
+   "projects/language/language.format",
     "projects/language/language.highlight",
-    "projects/language/language.hover",
     "projects/language/language.macro",
     "projects/language/language.mcp",
-    "projects/language/language.navigation",
     "projects/language/language.repl",
     "projects/language/language.semantic-search",
-    "projects/language/language.semantic-tokens",
     "projects/language/language.server",
-    "projects/language/language.structural-view",
     "projects/language/language.testing",
     "projects/language/language.typescript",
     "projects/language/language.valkyrie",
@@ -606,18 +601,13 @@ compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
 language-awsl = { path = "projects/language/language.awsl" }
-language-folding = { path = "projects/language/language.folding" }
 language-format = { path = "projects/language/language.format" }
 language-highlight = { path = "projects/language/language.highlight" }
-language-hover = { path = "projects/language/language.hover" }
 language-macro = { path = "projects/language/language.macro" }
 language-mcp = { path = "projects/language/language.mcp" }
-language-navigation = { path = "projects/language/language.navigation" }
 language-repl = { path = "projects/language/language.repl" }
 language-semantic-search = { path = "projects/language/language.semantic-search" }
-language-semantic-tokens = { path = "projects/language/language.semantic-tokens" }
 language-server = { path = "projects/language/language.server" }
-language-structural-view = { path = "projects/language/language.structural-view" }
 language-testing = { path = "projects/language/language.testing" }
 language-typescript = { path = "projects/language/language.typescript" }
 language-valkyrie = { path = "projects/language/language.valkyrie" }

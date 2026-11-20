@@ -14,9 +14,7 @@ keywords = ["lsp", "mcp", "markdown"]
 data-text-core = { workspace = true }
 data-text-markdown = { workspace = true }
 futures = { workspace = true }
-language-hover = { workspace = true }
 language-mcp = { workspace = true }
-language-navigation = { workspace = true }
 language-server = { workspace = true }
 tokio = { workspace = true }
 [features]

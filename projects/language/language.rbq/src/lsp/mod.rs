@@ -3,7 +3,7 @@ pub mod highlighter;
 
 use {
     futures::Future,
-    language_hover::{Hover, HoverProvider},
+    language_server::hover::{Hover, HoverProvider},
     language_server::Vfs,
     language_server::service::LanguageService,
 };
@@ -13,7 +13,7 @@ use self::semantic_tokens::RbqSemanticTokensProvider;
 use data_text_rbq::{language::RbqLanguage, lexer::token_type::RbqTokenType, parser::element_type::RbqElementType};
 use core::range::Range;
 use data_text_core::{Parser, source::Source, tree::RedNode};
-use language_folding::{FoldingProvider, FoldingRange, FoldingRangeKind};
+use language_server::folding::{FoldingProvider, FoldingRange, FoldingRangeKind};
 /// RBQ hover provider.
 pub struct RbqHoverProvider;
 impl HoverProvider<RbqLanguage> for RbqHoverProvider {
@@ -129,7 +129,7 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
             let output = parser.parse(&source, &[], &mut cache);
             let root_green = output.result.ok()?;
             let root = RedNode { green: root_green, offset: 0 };
-            use language_semantic_tokens::SemanticTokensProvider;
+            use language_server::semantic_tokens::SemanticTokensProvider;
             let tokens = self.semantic_tokens_provider.semantic_tokens(&root, &source, &line_map);
             Some(language_server::SemanticTokens {
                 result_id: None,

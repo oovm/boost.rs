@@ -25,7 +25,7 @@ Symbols are the building blocks of code — functions, classes, variables, and m
 
 ## 🔗 Ecosystem Integration
 
-Used by `language-server` for `textDocument/documentSymbol` and `workspace/symbol`, `language-structural-view` for outline views, and `language-mcp` for AI-assisted symbol discovery.
+Used by `language-server` for `textDocument/documentSymbol` and `workspace/symbol`, `language_server::structural_view` for outline views, and `language-mcp` for AI-assisted symbol discovery.
 
 ## 📖 Documentation
 

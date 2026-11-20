@@ -5,7 +5,7 @@ use data_text_prolog::{language::PrologLanguage, parser::element_type::PrologEle
 use core::range::Range;
 use data_text_core::tree::RedNode;
 use {
-    language_hover::{Hover, HoverProvider},
+    language_server::hover::{Hover, HoverProvider},
     language_server::Vfs,
     language_server::service::LanguageService,
     std::future::Future,

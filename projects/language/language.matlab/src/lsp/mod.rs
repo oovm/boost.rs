@@ -4,11 +4,11 @@ pub mod highlighter;
 use data_text_matlab::{MatlabLanguage, parser::element_type::MatlabElementType};
 use core::range::Range;
 use data_text_core::tree::RedNode;
-use {language_hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService, std::future::Future};
+use {language_server::hover::HoverProvider, language_server::Vfs, language_server::service::LanguageService, std::future::Future};
 /// Hover provider implementation for MATLAB.
 pub struct MatlabHoverProvider;
 impl HoverProvider<MatlabLanguage> for MatlabHoverProvider {
-    fn hover(&self, node: &RedNode<MatlabLanguage>, _range: Range<usize>) -> Option<language_hover::Hover> {
+    fn hover(&self, node: &RedNode<MatlabLanguage>, _range: Range<usize>) -> Option<language_server::hover::Hover> {
         let kind = node.green.kind;
         let contents = match kind {
             MatlabElementType::Root => "### MATLAB Root\nTop-level expression container.",
@@ -27,7 +27,7 @@ impl HoverProvider<MatlabLanguage> for MatlabHoverProvider {
             MatlabElementType::PersistentStmt => "### MATLAB Persistent\n`persistent` name declaration.",
             _ => return None,
         };
-        Some(language_hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
+        Some(language_server::hover::Hover { contents: contents.to_string(), range: Some(node.span()) })
     }
 }
 /// Language service implementation for MATLAB.

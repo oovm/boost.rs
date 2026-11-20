@@ -6,7 +6,7 @@ use core::range::Range;
 use data_text_core::tree::RedNode;
 use {
     futures::Future,
-    language_hover::{Hover, HoverProvider},
+    language_server::hover::{Hover, HoverProvider},
     language_server::Vfs,
     language_server::service::LanguageService,
 };

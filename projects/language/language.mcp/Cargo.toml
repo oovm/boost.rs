@@ -17,8 +17,6 @@ serde_json = { workspace = true, optional = true }
 data-text-core = { workspace = true }
 language-server = { workspace = true }
 data-text-symbols = { workspace = true }
-language-hover = { workspace = true }
-language-navigation = { workspace = true }
 language-semantic-search = { workspace = true }
 futures = { workspace = true }
 

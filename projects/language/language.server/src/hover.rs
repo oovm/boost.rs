@@ -1,7 +1,4 @@
-#![feature(new_range_api)]
-#![warn(missing_docs)]
-#![doc = include_str!("readme.md")]
-
+//! Hover information contract: [`Hover`] and [`HoverProvider`].
 use core::range::Range;
 use data_text_core::{language::Language, tree::RedNode};
 

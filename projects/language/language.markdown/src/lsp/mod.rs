@@ -6,7 +6,7 @@ use core::range::Range;
 use data_text_core::{ElementRole, ElementType, Source, TokenType, tree::RedNode};
 use {
     futures::Future,
-    language_hover::{Hover as HoverInfo, HoverProvider},
+    language_server::hover::{Hover as HoverInfo, HoverProvider},
     language_server::Vfs,
     language_server::{service::LanguageService, types::Hover as LspHover},
 };
@@ -139,7 +139,7 @@ impl<V: Vfs + Send + Sync + 'static + language_server::DocumentSession> Language
                         let mut refs = Vec::new();
                         if let Some(file_source) = self.vfs().request_source(&file_uri) {
                             let full_text = file_source.get_text_in(Range { start: 0, end: file_source.length() });
-                            let found = language_navigation::SimpleReferenceFinder::find(&file_root, &name, &full_text, file_uri.clone());
+                            let found = language_server::navigation::SimpleReferenceFinder::find(&file_root, &name, &full_text, file_uri.clone());
                             refs.extend(found.into_iter().map(|l| language_server::LocationRange { uri: l.uri, range: l.range }));
                         }
                         refs
