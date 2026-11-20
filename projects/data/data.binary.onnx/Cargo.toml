@@ -1,0 +1,13 @@
+[package]
+name = "data-binary-onnx"
+version.workspace = true
+authors.workspace = true
+description = "Hand-written ONNX ModelProto reader: opset and IR gating, graph/node/attribute decoding, initializer tensor materialisation (`data.binary` domain)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+data-binary-protobuf = { workspace = true }
+thiserror = { workspace = true }
