@@ -8,6 +8,8 @@ extern crate alloc;
 pub mod benchmark;
 pub mod diagnostic;
 #[cfg(feature = "std")]
+pub mod hotspot;
+#[cfg(feature = "std")]
 pub mod log;
 #[cfg(feature = "std")]
 pub mod test;

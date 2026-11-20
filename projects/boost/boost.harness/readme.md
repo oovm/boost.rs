@@ -2,7 +2,7 @@
 
 Structured log events, diagnostics, tests, fixtures, and benchmarks for the rust-boost family.
 
-The harness is one library with four explicit modules:
+The harness is one library with five explicit modules:
 
 | Module | Owns |
 |--------|------|
@@ -10,6 +10,7 @@ The harness is one library with four explicit modules:
 | `boost_harness::diagnostic` | Diagnostic facts, collections, wire encoding, and terminal rendering |
 | `boost_harness::test` | Test identity, assertions, fixtures, cases, and structured results |
 | `boost_harness::benchmark` | Explicit samples, warmup, and structured benchmark reports |
+| `boost_harness::hotspot` | Always-on runtime hotspot and stall recording with bounded memory |
 
 ```rust
 use boost_harness::log::{Level, VecSink, event, set_global_sink};
@@ -29,8 +30,8 @@ The test attributes `#[test]`, `#[fixture]`, and `#[case]` are re-exported from 
 
 | Feature | What you get |
 |---------|----------------|
-| `std` (default) | `log`, `test`, `benchmark`, diagnostic log projection, and console rendering |
-| `serde` | Diagnostic wire encoding |
+| `std` (default) | `log`, `test`, `benchmark`, `hotspot`, diagnostic log projection, and console rendering |
+| `serde` | Diagnostic wire encoding and hotspot snapshot serialization |
 | `terminal` | Diagnostic terminal rendering (implies `std`) |
 | `concolor` | Console color forcing hooks (implies `std`) |
 
