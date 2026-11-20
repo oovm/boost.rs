@@ -93,8 +93,15 @@ impl<S: Read> Wire<S> {
             }
             let aad = [0x17u8, 0x03, 0x03, (body.len() as u16 >> 8) as u8, body.len() as u16 as u8];
             let opened = key.open(&body, &aad).ok_or_else(|| TlsError::Protocol("record authentication failed".to_string()))?;
-            let inner_type = *opened.last().ok_or_else(|| TlsError::Protocol("empty encrypted record".to_string()))?;
-            return Ok((inner_type, opened[..opened.len() - 1].to_vec()));
+            // RFC 8446 §5.4: TLSInnerPlaintext is `content || type || zeros`.
+            // REALITY servers pad the first handshake records, so scan back
+            // past the zero padding before reading the content type.
+            let end = opened
+                .iter()
+                .rposition(|byte| *byte != 0)
+                .ok_or_else(|| TlsError::Protocol("empty encrypted record".to_string()))?;
+            let inner_type = opened[end];
+            return Ok((inner_type, opened[..end].to_vec()));
         }
     }
 }
@@ -154,6 +161,33 @@ mod tests {
         let mut wire = Wire::new(TcpStream::connect(address).expect("connect"));
         let mut key = TrafficKey::from_secret(&secret).expect("key");
         wire.write_encrypted(&mut key, 0x17, b"payload").expect("write");
+        wire.flush().expect("flush");
+        let (inner, body) = handle.join().expect("join");
+        assert_eq!(inner, 0x17);
+        assert_eq!(body, b"payload");
+    }
+
+    #[test]
+    fn padded_encrypted_record_is_unwrapped() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let address = listener.local_addr().expect("addr");
+        let secret = [5u8; 32];
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut wire = Wire::new(stream);
+            let mut key = TrafficKey::from_secret(&secret).expect("key");
+            wire.read_encrypted(&mut key).expect("read")
+        });
+        let mut wire = Wire::new(TcpStream::connect(address).expect("connect"));
+        let mut key = TrafficKey::from_secret(&secret).expect("key");
+        // TLSInnerPlaintext = `payload || type || zeros`, as REALITY servers send.
+        let mut plaintext = b"payload".to_vec();
+        plaintext.push(0x17);
+        plaintext.extend_from_slice(&[0u8; 9]);
+        let sealed_length = plaintext.len() + TAG_LEN;
+        let aad = [0x17u8, 0x03, 0x03, (sealed_length as u16 >> 8) as u8, sealed_length as u16 as u8];
+        let sealed = key.seal(&plaintext, &aad).expect("seal");
+        wire.write_record(0x17, &sealed).expect("write");
         wire.flush().expect("flush");
         let (inner, body) = handle.join().expect("join");
         assert_eq!(inner, 0x17);
