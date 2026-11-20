@@ -236,23 +236,47 @@ impl EmbedDb {
     /// 子行"这类多语句写，都应放进事务，让持久化只发生一次。`body` 出错即
     /// 回滚，期间的写全部作废；事务内的读写对 `body` 可见。嵌套调用会因
     /// 底层已有打开的事务而报错。
+    ///
+    /// 闭包固定用 [`EmbedError`] 作错误类型；宿主若要在事务里复用自定义
+    /// 错误类型，改用低层的 [`Self::begin`] / [`Self::commit`] / [`Self::rollback`]。
     pub fn transaction<T>(&self, body: impl FnOnce(&EmbedDb) -> Result<T>) -> Result<T> {
-        self.conn.begin()?;
+        self.begin()?;
         let output = match body(self) {
             Ok(value) => value,
             Err(error) => {
-                let _ = self.conn.rollback();
+                let _ = self.rollback();
                 return Err(error);
             }
         };
-        match self.conn.commit() {
+        match self.commit() {
             Ok(()) => Ok(output),
             Err(error) => {
                 // 乐观提交冲突时事务已被引擎关闭，这里只兜底其他残留状态。
-                let _ = self.conn.rollback();
-                Err(error.into())
+                let _ = self.rollback();
+                Err(error)
             }
         }
+    }
+
+    /// 打开一个事务：之后的写都进内存快照，直到 [`Self::commit`] 才落盘。
+    ///
+    /// 供自带错误类型的宿主使用；能直接用 [`Self::transaction`] 时优先用它，
+    /// 不会漏 `commit` / `rollback`。
+    pub fn begin(&self) -> Result<()> {
+        self.conn.begin()?;
+        Ok(())
+    }
+
+    /// 提交 [`Self::begin`] 打开的事务，把期间所有写一次性落盘。
+    pub fn commit(&self) -> Result<()> {
+        self.conn.commit()?;
+        Ok(())
+    }
+
+    /// 回滚 [`Self::begin`] 打开的事务，丢弃期间所有未提交的写。
+    pub fn rollback(&self) -> Result<()> {
+        self.conn.rollback()?;
+        Ok(())
     }
 
     /// 写入一个原始 KV 记录（不经 schema；供宿主内部状态使用）。
