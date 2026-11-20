@@ -3,21 +3,11 @@ use hardware_ir::{Graph, ResourceId};
 use hardware_scheduler::{Backend, Result};
 use hardware_types::TaskNode;
 
+use crate::{AdapterInfo, ComputeAdapterInfo, ProgramCacheStats, SharedBufferId, Vertex};
+
 /// The only failure a non-Windows DX12 handle can report.
 fn unsupported() -> hardware_scheduler::Error {
     hardware_scheduler::Error::Backend("dx12".into(), "DirectX 12 backend requires Windows".into())
-}
-
-/// One vertex of the vertex-buffer raster path.
-///
-/// `position` is in pixels of the render target with the origin at its top-left
-/// corner, and `color` is straight (non-premultiplied) RGBA in `0..=1`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vertex {
-    /// Pixel-space position.
-    pub position: [f32; 2],
-    /// RGBA colour.
-    pub color: [f32; 4],
 }
 
 /// Non-Windows stub: DX12 is only available on Windows.
@@ -26,14 +16,39 @@ pub struct Dx12Backend {
 }
 
 impl Dx12Backend {
-    /// Returns a non-Windows stub backend handle.
+    /// DirectX 12 is unavailable off Windows.
+    ///
+    /// The stub used to hand out a handle whose every call failed; that made
+    /// cross-platform callers treat the backend as usable and only discover
+    /// otherwise mid-dispatch. Failing here lets them skip cleanly.
     pub fn new() -> Result<Self> {
-        Ok(Self { strategies: WiredStrategies::from_features(&FeatureSet::new()) })
+        Err(unsupported())
+    }
+
+    /// Software-adapter fallback, equally unavailable off Windows.
+    pub fn new_allowing_software() -> Result<Self> {
+        Err(unsupported())
+    }
+
+    /// No DXGI adapter exists on a non-Windows host, which is an empty list
+    /// rather than a failure: probing for adapters is a query.
+    pub fn enumerate_adapters() -> Result<Vec<AdapterInfo>> {
+        Ok(Vec::new())
+    }
+
+    /// No DXCore adapter exists on a non-Windows host.
+    pub fn enumerate_compute_adapters() -> Result<Vec<ComputeAdapterInfo>> {
+        Ok(Vec::new())
     }
 
     /// Degrade-chain strategies resolved when the backend opened.
     pub fn strategies(&self) -> WiredStrategies {
         self.strategies
+    }
+
+    /// No multisampled raster target is ever created off Windows.
+    pub fn raster_samples(&self) -> u32 {
+        1
     }
 
     /// Descriptor path label (always empty on the stub).
@@ -49,6 +64,34 @@ impl Dx12Backend {
     /// Pipeline path label (always empty on the stub).
     pub fn last_pipeline_path(&self) -> &'static str {
         ""
+    }
+
+    /// No pipeline cache is ever populated off Windows.
+    pub fn program_cache_stats(&self) -> ProgramCacheStats {
+        ProgramCacheStats::default()
+    }
+
+    /// No cached pipeline to drop off Windows.
+    pub fn clear_program_cache(&mut self) {}
+
+    /// Shared-buffer allocation, rejected on non-Windows hosts.
+    pub fn shared_alloc(&mut self, _bytes: usize) -> Result<(SharedBufferId, isize)> {
+        Err(unsupported())
+    }
+
+    /// Shared-buffer upload, rejected on non-Windows hosts.
+    pub fn shared_write_f32(&mut self, _id: SharedBufferId, _values: &[f32]) -> Result<()> {
+        Err(unsupported())
+    }
+
+    /// Shared-buffer NT handle, rejected on non-Windows hosts.
+    pub fn shared_nt_handle(&self, _id: SharedBufferId) -> Result<isize> {
+        Err(unsupported())
+    }
+
+    /// Shared-buffer publication, rejected on non-Windows hosts.
+    pub fn publish_shared(&mut self, _resource: ResourceId, _shared: SharedBufferId) -> Result<()> {
+        Err(unsupported())
     }
 
     /// Buffer upload, rejected on non-Windows hosts.
@@ -83,7 +126,7 @@ impl Dx12Backend {
 
 impl Default for Dx12Backend {
     fn default() -> Self {
-        Self::new().expect("dx12 stub")
+        Self { strategies: WiredStrategies::from_features(&FeatureSet::new()) }
     }
 }
 
