@@ -53,6 +53,7 @@ members = [
     "projects/interpreter/interpreter.vm.jvm",
     "projects/interpreter/interpreter.vm.ovm",
     "projects/interpreter/interpreter.vm.wasm",
+    "projects/language/language.awsl",
     "projects/language/language.folding",
     "projects/language/language.format",
     "projects/language/language.highlight",
@@ -481,6 +482,7 @@ compiler-bundle = { path = "projects/compiler/compiler.bundle" }
 compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }
+language-awsl = { path = "projects/language/language.awsl" }
 language-folding = { path = "projects/language/language.folding" }
 language-format = { path = "projects/language/language.format" }
 language-highlight = { path = "projects/language/language.highlight" }

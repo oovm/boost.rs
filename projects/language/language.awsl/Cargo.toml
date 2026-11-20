@@ -1,0 +1,16 @@
+[package]
+name = "language-awsl"
+version = "0.0.22"
+edition.workspace = true
+description = "AWSL 语言实现：模板降级、ABI 索引、Render IR 与静态渲染栈"
+license = "MIT"
+
+[dependencies]
+compiler-emitter = { workspace = true }
+data-binary-zip = { workspace = true }
+data-text-awsl = { workspace = true }
+data-text-core = { workspace = true }
+language-valkyrie = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

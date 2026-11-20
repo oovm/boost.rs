@@ -1132,6 +1132,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-onnx"
+version = "0.1.0"
+dependencies = [
+ "data-binary-protobuf",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "data-binary-pe"
 version = "0.1.0"
 dependencies = [
@@ -1144,6 +1152,13 @@ version = "0.1.0"
 dependencies = [
  "boost-source",
  "data-binary-core",
+]
+
+[[package]]
+name = "data-binary-protobuf"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5128,6 +5143,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "language-awsl"
+version = "0.0.22"
+dependencies = [
+ "compiler-emitter",
+ "data-binary-zip",
+ "data-text-awsl",
+ "data-text-core",
+ "language-valkyrie",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "language-folding"
 version = "0.1.0"
 dependencies = [
@@ -6042,6 +6071,7 @@ dependencies = [
  "document-formats",
  "document-ir",
  "interpreter-vm-ovm",
+ "language-awsl",
  "language-format",
  "language-highlight",
  "language-valkyrie",
