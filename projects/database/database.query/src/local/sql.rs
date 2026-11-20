@@ -2156,6 +2156,13 @@ fn lower_update(update: &UpdateStatement, parameters: &[ParameterDescriptor]) ->
 }
 
 fn lower_delete(delete: &DeleteStatement, parameters: &[ParameterDescriptor]) -> Result<WriteOp> {
+    // The parser accepts `DELETE ... USING` into `using_tables`, but the local
+    // write path deletes by scanning one stored table: silently ignoring the
+    // extra sources would evaluate WHERE against the wrong rows, so reject
+    // the shape explicitly.
+    if !delete.using_tables.is_empty() {
+        return Err(sql_error("DELETE ... USING is not supported by the local SQL executor"));
+    }
     let predicate = delete.selection.as_ref().map(|expr| lower_predicate(expr, parameters, &CteScope::new())).transpose()?;
     let mut returning = lower_returning(delete.returning.as_ref(), parameters)?;
     // `RETURNING x.id` names the column through the DELETE target alias. The

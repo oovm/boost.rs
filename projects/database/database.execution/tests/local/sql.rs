@@ -203,6 +203,65 @@ fn delete_returning_rejects_foreign_alias_qualifier() {
 }
 
 #[test]
+fn delete_unaliased_returning_projects_bare_columns() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // Without an alias, `RETURNING` names the stored columns directly.
+    let outcome =
+        execute_sql("DELETE FROM Account WHERE tenant = 't1' RETURNING account_id, email", &[], &contract, &[], &mut records)
+            .expect("unaliased returning");
+    assert_eq!(outcome.affected, 2);
+    let mut returned: Vec<i64> = outcome.rows.iter().map(|row| match row.get("account_id") {
+        Some(Value::I64(id)) => *id,
+        other => panic!("unexpected account_id {other:?}"),
+    }).collect();
+    returned.sort();
+    assert_eq!(returned, vec![1, 2]);
+    assert_eq!(outcome.rows.iter().find(|row| row.get("account_id") == Some(&Value::I64(1))).unwrap().get("email"),
+        Some(&Value::Text("ada@example.test".into())));
+
+    let remaining = execute_sql("SELECT account_id FROM Account", &[], &contract, &[], &mut records).expect("read").rows;
+    assert_eq!(ids(&remaining), vec![3]);
+}
+
+#[test]
+fn delete_alias_with_bare_where_columns_and_qualified_returning() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // The single DELETE target keeps bare WHERE columns resolvable even when
+    // the target carries an alias.
+    let outcome = execute_sql("DELETE FROM Account AS a WHERE score = 30 RETURNING a.email", &[], &contract, &[], &mut records)
+        .expect("aliased delete with bare where");
+    assert_eq!(outcome.affected, 1);
+    assert_eq!(outcome.rows[0].get("a.email"), Some(&Value::Text("linus@example.test".into())));
+
+    let remaining = execute_sql("SELECT account_id FROM Account ORDER BY account_id", &[], &contract, &[], &mut records).expect("read").rows;
+    assert_eq!(ids(&remaining), vec![1, 3]);
+}
+
+#[test]
+fn mysql_multi_table_delete_is_rejected_explicitly() {
+    // `DELETE a, b FROM …` is the MySQL multi-table form: the parser refuses
+    // it instead of mis-binding the first name as the target.
+    let error = prepare_sql("DELETE a, b FROM Account AS a JOIN Account AS b ON a.account_id = b.account_id")
+        .expect_err("multi-table delete must reject");
+    assert!(format!("{error}").contains("multi-table"), "unexpected error: {error}");
+}
+
+#[test]
+fn delete_using_is_rejected_explicitly() {
+    // The local write path scans exactly one stored table; a `USING` source
+    // must fail loudly instead of being ignored while WHERE silently misreads.
+    let error = prepare_sql("DELETE FROM Account USING Project WHERE Account.account_id = Project.owner_id")
+        .expect_err("DELETE USING must reject");
+    assert!(format!("{error}").contains("USING"), "unexpected error: {error}");
+}
+
+#[test]
 fn update_rejects_primary_key_reassignment() {
     let contract = contract();
     let mut records = BTreeMap::new();
