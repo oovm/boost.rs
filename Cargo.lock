@@ -3502,6 +3502,7 @@ dependencies = [
 name = "database-harness"
 version = "0.1.0"
 dependencies = [
+ "boost-harness",
  "boost-math",
  "database-types",
  "plotter-chart",

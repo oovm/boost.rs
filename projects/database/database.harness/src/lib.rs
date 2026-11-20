@@ -1,11 +1,12 @@
 //! `database-harness`：测试与基准的判定协议。
 //!
-//! 负责八件事：语料身份（seed / count / 摘要）、已知差异台账（登记、匹配、
+//! 负责九件事：语料身份（seed / count / 摘要）、已知差异台账（登记、匹配、
 //! 未登记、信号变化、陈旧条目）、观测比对与归类、基准统计与报告行、报告
 //! 信封、grammar 驱动的模糊输入生成（确定性 PRNG、复现信封与收缩状态机，
 //! 语法内容由调用方提供）、门禁判定（套件计数汇总与 floor 判定，测试输出
-//! 解析留在产品仓），以及分层 span 计时与 folded stacks（火焰图/深渊图
-//! 数据源）。它不解析线协议、不实现 SQL 或命令语义，也不生成
+//! 解析留在产品仓）、分层 span 计时与 folded stacks（火焰图/深渊图
+//! 数据源），以及运行期记录机制（高频操作耗时与卡点事件的常开、有界、
+//! 近零开销聚合，供产品进程持续调优）。它不解析线协议、不实现 SQL 或命令语义，也不生成
 //! 任何期望值；期望值始终由真实外部引擎、官方语料或冻结基线提供。
 //!
 //! feature `charts` 打开后经 `plotter-chart` 把基准报告行渲染为分组柱图
@@ -25,6 +26,7 @@ pub mod gate;
 pub mod observe;
 pub mod profile;
 pub mod report;
+pub mod runtime;
 
 #[cfg(feature = "charts")]
 pub mod chart;
@@ -50,6 +52,7 @@ pub use gate::{
 pub use observe::{Cell, ErrorShape, Observed, ObservedBody, TruthProvenance};
 pub use profile::{ProfileReport, ProfileRow, Profiler, SpanGuard};
 pub use report::{CorpusReport, REPORT_VERSION, ReportEnvelope, RunIdentity, render_json};
+pub use runtime::{Hotspot, HotspotRow, HotspotSnapshot, StallEvent, report_json};
 
 /// 判定协议的错误。
 #[derive(Debug, thiserror::Error)]
