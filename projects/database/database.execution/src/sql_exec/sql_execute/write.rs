@@ -1044,6 +1044,80 @@ pub(crate) fn execute_delete_scan(
     Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
 }
 
+/// `DELETE ... USING`：目标表全扫 × USING 源行做交叉连接，谓词命中后删除目标行。
+///
+/// 谓词里的列引用在绑定时已按行槽展开成 `row_id`（目标表槽 0，USING 源槽 ≥1），
+/// 因此执行层把各源的行值键平移到自己的槽位后与目标行合并即可求值。
+/// 主键下推不适用于该形态；任一 USING 源为空 ⇒ 交叉连接为空 ⇒ 不删任何行。
+pub(crate) fn execute_delete_using(
+    executor: &dyn KeyValueExecutor,
+    transaction: Option<&dyn TransactionHandle>,
+    plan: &DeleteUsingPlan,
+    dialect: SqlDialect,
+) -> Result<SqlResult, SqlFrontendError> {
+    let namespace = Namespace(plan.namespace.clone());
+    let scanned = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "delete_using")?;
+    // USING 源整体物化：每个源的行值键平移到自己的行槽，与谓词列的 row_id 对齐。
+    let mut combinations: Vec<RowFieldValues> = vec![RowFieldValues::new()];
+    for source in &plan.sources {
+        let source_namespace = Namespace(source.namespace.clone());
+        let rows = scan_rows(executor, transaction, &source_namespace, &[], None, None, 0, "delete_using")?;
+        let mut shifted: Vec<RowFieldValues> = Vec::with_capacity(rows.len());
+        for (_, image) in rows {
+            let decoded = decode_row(&image)?;
+            let mut row = RowFieldValues::new();
+            for (field_id, bytes) in decoded.iter() {
+                row.insert(field_id + source.row_slot * ROW_ID_STRIDE, bytes.clone());
+            }
+            shifted.push(row);
+        }
+        let mut next = Vec::with_capacity(combinations.len() * shifted.len());
+        for base in &combinations {
+            for row in &shifted {
+                let mut merged = base.clone();
+                merged.merge(row);
+                next.push(merged);
+            }
+        }
+        combinations = next;
+    }
+    let mut indexes = IndexMaintenance::open(executor, transaction, &plan.namespace, &plan.unique_constraints, &plan.field_types)?;
+    if indexes.needs_backfill() {
+        let stored = index_snapshot(executor, transaction, &namespace)?;
+        indexes.backfill(&stored)?;
+    }
+    let mut changes = Vec::new();
+    for (rowid, pre_image) in scanned {
+        let row = decode_row(&pre_image)?;
+        let matched = if combinations.is_empty() {
+            false
+        }
+        else if let Some(predicate) = &plan.predicate {
+            combinations.iter().any(|using_row| {
+                let mut combined = row.clone();
+                combined.merge(using_row);
+                eval_expression(predicate, &combined, &plan.field_types, dialect).map(|value| truthy(&value)).unwrap_or(false)
+            })
+        }
+        else {
+            true
+        };
+        if !matched {
+            continue;
+        }
+        if indexes.is_active() {
+            indexes.remember_remove(Some(&row), &rowid);
+        }
+        changes.push(StatementChange {
+            command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Delete },
+            pre_image,
+        });
+    }
+    let index_commands = indexes.take_commands();
+    let affected = apply_statement_changes(executor, transaction, changes, index_commands, &namespace, "delete_using")?;
+    Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
+}
+
 pub(crate) fn write_plan_to_row(plan: &WritePlan) -> Result<RowFieldValues, SqlFrontendError> {
     let mut row = RowFieldValues::new();
     for field in &plan.fields {

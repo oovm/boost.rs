@@ -58,6 +58,21 @@ fn eat_word<S: Source + ?Sized>(state: &mut State<'_, S>, word: &str) -> bool {
     }
 }
 
+/// Returns whether the current token is a bare interval unit word.
+///
+/// The unit names are not keywords, so `INTERVAL 30 DAY` keeps `DAY` an
+/// identifier; only the known units join the interval text, which keeps an
+/// alias like `INTERVAL '1 day' d` reading as an alias.
+fn at_interval_unit<S: Source + ?Sized>(state: &State<'_, S>) -> bool {
+    const UNITS: &[&str] = &[
+        "microsecond", "microseconds", "millisecond", "milliseconds", "second", "seconds", "minute", "minutes", "hour", "hours", "day", "days",
+        "week", "weeks", "month", "months", "quarter", "quarters", "year", "years", "decade", "decades", "century", "centuries", "millennium",
+        "millennia", "timezone", "timezone_hour", "timezone_minute", "isoyear", "epoch",
+    ];
+    state.peek_kind() == Some(crate::lexer::SqlTokenType::Identifier_)
+        && state.peek_text().is_some_and(|text| UNITS.iter().any(|unit| text.eq_ignore_ascii_case(unit)))
+}
+
 /// Returns whether the current token can start a column of a window clause.
 ///
 /// Inside `OVER (...)` the clause words are syntax, so `ROWS`, `RANGE`,
@@ -183,6 +198,44 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
                 state.expect(RightParen).ok();
                 state.finish_at(cp, SqlElementType::Expression)
             }
+            Some(Extract) => {
+                // EXTRACT(field FROM expr) — the field names (`YEAR`, `MONTH`,
+                // `EPOCH`, ...) are not keywords in this lexer, so the field is
+                // always a bare identifier leaf and column names keep working.
+                state.bump(); // EXTRACT
+                state.expect(LeftParen).ok();
+                if state.peek_kind() == Some(Identifier_) {
+                    state.bump();
+                }
+                else {
+                    state.errors.push(TextError::custom_error("`EXTRACT` requires a time field such as `YEAR` or `MONTH`"));
+                }
+                state.expect(From).ok();
+                PrattParser::parse(state, 0, self);
+                state.expect(RightParen).ok();
+                state.finish_at(cp, SqlElementType::Expression)
+            }
+            Some(Interval) => {
+                // Two spellings are accepted: the standard `INTERVAL '1 day'`
+                // (quantity inside the quoted text) and MySQL's `INTERVAL 30 DAY`
+                // (separate number and unit word). The engine has no interval
+                // type, so consumers parse the joined text itself.
+                state.bump(); // INTERVAL
+                let has_quantity = match state.peek_kind() {
+                    Some(StringLiteral) | Some(NumberLiteral) => {
+                        state.bump();
+                        true
+                    }
+                    _ => false,
+                };
+                if !has_quantity {
+                    state.errors.push(TextError::custom_error("`INTERVAL` requires a quoted string or a number with a time unit"));
+                }
+                else if at_interval_unit(state) {
+                    state.bump(); // unit word joins the interval text
+                }
+                state.finish_at(cp, SqlElementType::Expression)
+            }
             _ => {
                 state.bump();
                 state.finish_at(cp, SqlElementType::ErrorNode)
@@ -218,7 +271,7 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
         // `NOT IN`, `NOT BETWEEN` and `NOT LIKE` are infix forms: the `NOT` belongs
         // to the operator rather than to a prefix expression. Detect it without
         // consuming anything so a rejected precedence check leaves the state intact.
-        let negated_operator = kind == Not && matches!(state.peek_non_trivia_kind_at(1), Some(In | Between | Like));
+        let negated_operator = kind == Not && matches!(state.peek_non_trivia_kind_at(1), Some(In | Between | Like | Ilike));
         let operator = if negated_operator { state.peek_non_trivia_kind_at(1)? } else { kind };
 
         // Function call postfix: `Identifier '(' args? ')'`.
@@ -257,6 +310,12 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
             // `SELECT COUNT(*) over` does not start a window specification.
             if at_word(state, "OVER") && state.peek_non_trivia_kind_at(1) == Some(LeftParen) {
                 self.parse_window_spec(state);
+            }
+            // `FILTER (WHERE ...)` narrows the rows an aggregate sees. It stays a
+            // child node of the call so the builder can attach it without
+            // confusing it with an argument expression.
+            if at_word(state, "FILTER") && state.peek_non_trivia_kind_at(1) == Some(LeftParen) {
+                self.parse_aggregate_filter(state);
             }
             return Some(state.finish_at(cp, SqlElementType::FunctionCall));
         }
@@ -340,12 +399,14 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
         let (prec, assoc) = match operator {
             Or => (1, Associativity::Left),
             And => (2, Associativity::Left),
-            Equal | NotEqual | Less | Greater | LessEqual | GreaterEqual | Like => (4, Associativity::Left),
+            Equal | NotEqual | Less | Greater | LessEqual | GreaterEqual | Like | Ilike => (4, Associativity::Left),
             // SQLite puts `||` above `*`/`/`/`%` and below `COLLATE`/unary;
             // see `select 1 || 2 * 3` -> 36 (i.e. `(1 || 2) * 3`).
             Concat => (12, Associativity::Left),
             Plus | Minus => (10, Associativity::Left),
-            Star | Slash | Percent => (11, Associativity::Left),
+            // The JSON arrows chain left-associatively (`a -> 'x' -> 'y'`) and
+            // bind tighter than the comparisons, like the multiplicative level.
+            Star | Slash | Percent | Arrow | ArrowArrow => (11, Associativity::Left),
             DoubleColon => (15, Associativity::Left),
             _ => return None,
         };
@@ -363,6 +424,22 @@ impl<'config> Pratt<SqlLanguage> for SqlParser<'config> {
 }
 
 impl<'config> SqlParser<'config> {
+    /// Parses `FILTER (WHERE <predicate>)` after an aggregate call.
+    fn parse_aggregate_filter<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> &'a GreenNode<'a, SqlLanguage> {
+        use crate::lexer::SqlTokenType::*;
+        let cp = state.checkpoint();
+        state.bump(); // FILTER
+        state.expect(LeftParen).ok();
+        if !state.eat(Where) {
+            state.errors.push(TextError::custom_error("`FILTER` requires a `WHERE` predicate"));
+        }
+        else {
+            PrattParser::parse(state, 0, self);
+        }
+        state.expect(RightParen).ok();
+        state.finish_at(cp, SqlElementType::AggregateFilter)
+    }
+
     /// Parses `OVER (PARTITION BY ... ORDER BY ... [ROWS|RANGE frame])`.
     ///
     /// Each clause becomes its own child node so the builder reads the window
@@ -707,7 +784,7 @@ impl<'config> SqlParser<'config> {
         use crate::lexer::SqlTokenType::*;
         matches!(
             kind,
-            None | Some(Group | Having | Order | Limit | Offset | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except)
+            None | Some(Group | Having | Order | Limit | Offset | For | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except)
         )
     }
 
@@ -749,19 +826,19 @@ impl<'config> SqlParser<'config> {
     /// Tokens that may legitimately follow the last `GROUP BY` item.
     fn is_group_by_terminator(kind: Option<crate::lexer::SqlTokenType>) -> bool {
         use crate::lexer::SqlTokenType::*;
-        matches!(kind, None | Some(Having | Order | Limit | Offset | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except))
+        matches!(kind, None | Some(Having | Order | Limit | Offset | For | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except))
     }
 
     /// Tokens that may legitimately follow the `HAVING` predicate.
     fn is_having_terminator(kind: Option<crate::lexer::SqlTokenType>) -> bool {
         use crate::lexer::SqlTokenType::*;
-        matches!(kind, None | Some(Order | Limit | Offset | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except))
+        matches!(kind, None | Some(Order | Limit | Offset | For | Semicolon | Eof | RightParen | Returning | Union | Intersect | Except))
     }
 
     /// Tokens that may legitimately follow the last `ORDER BY` item.
     fn is_order_by_terminator(kind: Option<crate::lexer::SqlTokenType>) -> bool {
         use crate::lexer::SqlTokenType::*;
-        matches!(kind, None | Some(Limit | Offset | Semicolon | Eof | RightParen | Returning))
+        matches!(kind, None | Some(Limit | Offset | For | Semicolon | Eof | RightParen | Returning))
     }
 
     /// Tokens that may start another statement.
@@ -844,22 +921,16 @@ impl<'config> SqlParser<'config> {
         Ok(())
     }
 
-    /// Parses the non-recursive `WITH name [(col, ...)] AS (query), ...` prefix.
+    /// Parses the `WITH [RECURSIVE] name [(col, ...)] AS (query), ...` prefix.
     ///
-    /// `RECURSIVE` is not a keyword, so it is only treated as the modifier when a
-    /// CTE name follows it. That keeps an ordinary CTE named `recursive` usable
-    /// while `WITH RECURSIVE` is still rejected, because a self-referencing CTE
-    /// cannot be evaluated by the current AST.
+    /// The `RECURSIVE` keyword stays a leaf of the `WithClause` node so the
+    /// builder can flag the clause; a recursive body is the `seed UNION [ALL]
+    /// step` form the CTE definition models with its `recursive_tail`.
     fn parse_with_clause<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(With).ok();
-        if state.peek_kind() == Some(Identifier_)
-            && state.peek_text().is_some_and(|text| text.eq_ignore_ascii_case("RECURSIVE"))
-            && state.peek_non_trivia_kind_at(1) == Some(Identifier_)
-        {
-            return Err(TextError::custom_error("recursive CTEs are not supported"));
-        }
+        state.eat(Recursive);
         loop {
             let cte_cp = state.checkpoint();
             state.expect(Identifier_).ok();
@@ -951,6 +1022,15 @@ impl<'config> SqlParser<'config> {
                 else {
                     break;
                 }
+            }
+
+            // SQL-92 的逗号连接：`FROM a, b` 与 `FROM a CROSS JOIN b` 等价。
+            // `LATERAL` 在 `parse_table_source` 里被消费，因此 `, LATERAL (...)`
+            // 与 `, (...)` 走同一条 Cross 连接路径。
+            while state.eat(Comma) {
+                let join_cp = state.checkpoint();
+                self.parse_table_source(state);
+                state.finish_at(join_cp, SqlElementType::JoinClause);
             }
         }
 
@@ -1130,6 +1210,61 @@ impl<'config> SqlParser<'config> {
             state.finish_at(clause_cp, SqlElementType::LimitClause);
         }
 
+        // `FOR UPDATE` / `FOR SHARE` 行锁子句。引擎没有行级锁：写事务在提交时串行
+        // 化到同一条连接上，因此这里只接受语法并丢弃，不生成第二个 AST 概念。
+        // `OF <table>, ...`、`NOWAIT` 与 `SKIP LOCKED` 是同一种"已在语义上满足"的
+        // 修饰，同样只消费不保留。
+        if state.eat(For) {
+            // `UPDATE` / `SHARE` / `NO KEY UPDATE` / `KEY SHARE`，全部只消费。
+            if state.eat(Update) {
+            }
+            else if at_word(state, "NO") {
+                state.bump();
+                if state.peek_kind() != Some(Key) && !at_word(state, "KEY") {
+                    return Err(TextError::custom_error("`FOR NO` must be followed by `KEY UPDATE` or `KEY SHARE`"));
+                }
+                state.bump();
+                if state.eat(Update) || at_word(state, "SHARE") {
+                    state.bump();
+                }
+                else {
+                    return Err(TextError::custom_error("`FOR NO KEY` must be followed by `UPDATE` or `SHARE`"));
+                }
+            }
+            else if at_word(state, "KEY") || state.peek_kind() == Some(Key) {
+                state.bump();
+                if !at_word(state, "SHARE") {
+                    return Err(TextError::custom_error("`FOR KEY` must be followed by `SHARE`"));
+                }
+                state.bump();
+            }
+            else if at_word(state, "SHARE") {
+                state.bump();
+            }
+            else {
+                return Err(TextError::custom_error("`FOR` must be followed by `UPDATE` or `SHARE`"));
+            }
+            if at_word(state, "OF") {
+                state.bump();
+                while state.peek_kind() == Some(Identifier_) {
+                    state.bump();
+                    if !state.eat(Comma) {
+                        break;
+                    }
+                }
+            }
+            if at_word(state, "NOWAIT") {
+                state.bump();
+            }
+            else if at_word(state, "SKIP") {
+                state.bump();
+                if !at_word(state, "LOCKED") {
+                    return Err(TextError::custom_error("`SKIP` must be followed by `LOCKED`"));
+                }
+                state.bump();
+            }
+        }
+
         Ok(())
     }
 
@@ -1141,6 +1276,11 @@ impl<'config> SqlParser<'config> {
     /// `SELECT` rather than by a second CST node shape.
     fn parse_table_source<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
         use crate::lexer::SqlTokenType::*;
+        // `LATERAL` 只是对派生表的求值顺序提示；网关的派生表按标量子查询语义执行，
+        // 该关键字不改变结果，因此只消费。
+        if at_word(state, "LATERAL") {
+            state.bump();
+        }
         if state.peek_kind() != Some(LeftParen) {
             self.parse_table_name(state);
             return;
@@ -1360,9 +1500,17 @@ impl<'config> SqlParser<'config> {
         state.expect(Delete).ok();
         state.eat(From);
 
-        let table_cp = state.checkpoint();
-        state.expect(Identifier_).ok(); // TableName
-        state.finish_at(table_cp, SqlElementType::TableName);
+        // The target keeps its optional alias (`DELETE FROM t AS x`), and the
+        // `USING` sources are plain aliased table names referenceable from WHERE.
+        self.parse_table_name(state);
+        if state.eat(Using) {
+            loop {
+                self.parse_table_name(state);
+                if !state.eat(Comma) {
+                    break;
+                }
+            }
+        }
 
         if state.eat(Where) {
             PrattParser::parse(state, 0, self);

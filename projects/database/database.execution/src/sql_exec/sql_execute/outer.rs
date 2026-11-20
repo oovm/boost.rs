@@ -29,8 +29,8 @@ pub(crate) fn substitute_outer(expr: SqlCatalogBoundExpression, row: &RowFieldVa
     use SqlCatalogBoundExpression::*;
     match expr {
         OuterColumn(column) => Literal(outer_literal(&column, row)),
-        Column(_) | Literal(_) | Wildcard => expr,
-        Function { name, args, distinct, window } => Function {
+        Column(_) | Literal(_) | Interval { .. } | Wildcard => expr,
+        Function { name, args, distinct, window, filter } => Function {
             name,
             args: args.into_iter().map(|arg| substitute_outer(arg, row)).collect(),
             distinct,
@@ -39,6 +39,7 @@ pub(crate) fn substitute_outer(expr: SqlCatalogBoundExpression, row: &RowFieldVa
                 order_by: substitute_outer_order_by(window.order_by, row),
                 frame: window.frame,
             }),
+            filter: filter.map(|predicate| Box::new(substitute_outer(*predicate, row))),
         },
         Binary { left, operator, right } => {
             Binary { left: Box::new(substitute_outer(*left, row)), operator, right: Box::new(substitute_outer(*right, row)) }

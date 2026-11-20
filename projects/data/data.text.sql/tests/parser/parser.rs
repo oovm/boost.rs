@@ -124,8 +124,7 @@ fn test_sql_builder_savepoint_missing_name_is_rejected() {
 }
 
 /// Builds `sql` and returns its single statement with the source it round-trips to.
-fn build_statement(sql: &str) -> (SqlStatement, String) {
-    let config = SqlLanguage::default();
+fn build_statement(sql: &str) -> (SqlStatement, String) {    let config = SqlLanguage::default();
     let builder = SqlBuilder::new(&config);
     let mut session = ParseSession::<SqlLanguage>::default();
     let result = builder.build(&SourceText::new(sql), &[], &mut session);
@@ -1647,10 +1646,21 @@ fn test_sql_builder_cte() {
     assert!(matches!(with.ctes[1].query.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "a"));
     assert_eq!(source, "WITH a(x,y)AS(SELECT 1,2),b AS(SELECT x FROM a)SELECT*FROM b;");
 
-    // A recursive CTE cannot be evaluated by this AST, so it is rejected instead
-    // of being silently read as a non-recursive one.
-    let reason = rejection_reason("WITH RECURSIVE t AS (SELECT 1) SELECT * FROM t;");
-    assert!(reason.contains("recursive CTEs are not supported"), "unexpected rejection: {reason}");
+    // `WITH RECURSIVE` is a clause-level flag; the body's `seed UNION ALL step`
+    // is split into the definition query and the `recursive_tail`.
+    let sql = "WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM t WHERE n < 10) SELECT n FROM t;";
+    let (statement, _source) = build_statement(sql);
+    let SqlStatement::Select(select) = &statement
+    else {
+        panic!("Expected Select statement, got {statement:?}");
+    };
+    let with = select.with.as_ref().unwrap_or_else(|| panic!("Missing WITH clause"));
+    assert!(with.recursive);
+    assert_eq!(with.ctes[0].columns.iter().map(|column| column.name.as_ref()).collect::<Vec<_>>(), ["n"]);
+    assert!(with.ctes[0].query.from.is_none(), "the seed has no FROM");
+    let tail = with.ctes[0].recursive_tail.as_ref().unwrap_or_else(|| panic!("Missing recursive tail"));
+    assert!(matches!(tail.from.as_ref(), Some(TableSource::Table(table)) if table.name.name.as_ref() == "t"));
+    assert!(tail.expr.is_some(), "the tail keeps its own WHERE");
 }
 
 #[test]
@@ -1999,4 +2009,31 @@ fn test_sql_builder_limit_offset_expressions() {
         matches!(&limit_clause.limit, Some(Expression::Unary { op: UnaryOperator::Minus, .. })),
         "LIMIT should accept unary minus expression"
     );
+}
+
+#[test]
+fn test_sql_builder_for_update_is_accepted() {
+    for clause in ["FOR UPDATE", "FOR UPDATE OF t", "FOR UPDATE NOWAIT", "FOR SHARE SKIP LOCKED", "FOR NO KEY UPDATE", "FOR KEY SHARE"] {
+        let sql = format!("SELECT id FROM t WHERE id = 1 {clause};");
+        let (statement, _) = build_statement(&sql);
+        assert!(matches!(statement, SqlStatement::Select(_)), "{clause}");
+    }
+}
+
+#[test]
+fn test_sql_builder_ilike() {
+    let (statement, source) = build_statement("SELECT id FROM t WHERE name ILIKE 'A%';");
+    let SqlStatement::Select(select) = &statement else { panic!("expected select") };
+    let Some(Expression::Binary { op, .. }) = select.expr.as_ref() else { panic!("expected binary predicate: {:?}", select.expr) };
+    assert_eq!(*op, BinaryOperator::ILike);
+    assert!(source.contains("ILIKE"), "round-trip lost ILIKE: {source}");
+}
+
+#[test]
+fn test_sql_builder_aggregate_filter() {
+    let (statement, source) = build_statement("SELECT COUNT(*) FILTER (WHERE status = 1) FROM t;");
+    let SqlStatement::Select(select) = &statement else { panic!("expected select") };
+    let Some(SelectItem::Expression { expr, .. }) = select.items.first() else { panic!("expected expression item: {:?}", select.items) };
+    let Expression::FunctionCall { filter, .. } = expr else { panic!("expected call: {expr:?}") };
+    assert!(filter.is_some(), "filter missing; source={source}");
 }

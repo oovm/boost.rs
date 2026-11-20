@@ -23,14 +23,14 @@ use database_query::{
         SqlScalarFunction, SqlWindowFunction,
     },
     sql_execute::{
-        RowFieldValues, SqlResult, SqlValue, compare_values, compare_values_with_nulls, decode_row, decode_row_fields, encode_row, eval_binary,
-        eval_cast, eval_cast_for_dialect, eval_expression, eval_in_values, eval_scalar_function, eval_unary, format_number, order_nulls_first,
-        projected_rows_equal, retain_distinct_projected_rows,
+        RowFieldValues, SqlResult, SqlValue, apply_interval_to_datetime, compare_values, compare_values_with_nulls, decode_row, decode_row_fields,
+        encode_row, eval_binary, eval_cast, eval_cast_for_dialect, eval_expression, eval_in_values, eval_scalar_function, eval_unary, format_number,
+        order_nulls_first, projected_rows_equal, retain_distinct_projected_rows, scalar_text,
     },
     sql_planner::{
-        CheckConstraintPlan, ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, ForeignKeyPlan, GeneratedColumnPlan, IndexProbe,
-        InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan, ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan, SqlExecutionPlan,
-        UniqueConstraintPlan, UpdatePlan, UpdateScanPlan, WriteField, WritePlan, check_write_literal, pk_literal_to_rowid,
+        CheckConstraintPlan, ConflictAssignment, ConflictPolicy, DeletePlan, DeleteScanPlan, DeleteUsingPlan, ForeignKeyPlan, GeneratedColumnPlan,
+        IndexProbe, InsertSelectPlan, JoinPlan, JoinSourcePlan, ReadPlan, ReturningProjections, ScalarPlan, ScanPlan, SetOperationPlan,
+        SqlExecutionPlan, UniqueConstraintPlan, UpdatePlan, UpdateScanPlan, WriteField, WritePlan, check_write_literal, pk_literal_to_rowid,
     },
 };
 use database_types::cluster::Namespace;
@@ -74,6 +74,7 @@ pub fn execute_plan(
         SqlExecutionPlan::UpdateScan(update_plan) => execute_update_scan(executor, transaction, update_plan, dialect),
         SqlExecutionPlan::Delete(delete_plan) => execute_delete(executor, transaction, delete_plan, dialect),
         SqlExecutionPlan::DeleteScan(delete_plan) => execute_delete_scan(executor, transaction, delete_plan, dialect),
+        SqlExecutionPlan::DeleteUsing(delete_plan) => execute_delete_using(executor, transaction, delete_plan, dialect),
     }
 }
 
@@ -171,6 +172,9 @@ fn resolve_subqueries(
         SqlExecutionPlan::DeleteScan(plan) => {
             lower_optional(&mut plan.predicate, executor, transaction, dialect)?;
         }
+        SqlExecutionPlan::DeleteUsing(plan) => {
+            lower_optional(&mut plan.predicate, executor, transaction, dialect)?;
+        }
     }
     Ok(())
 }
@@ -247,12 +251,16 @@ fn lower_expression(
         SqlCatalogBoundExpression::Column(_)
         | SqlCatalogBoundExpression::OuterColumn(_)
         | SqlCatalogBoundExpression::Literal(_)
+        | SqlCatalogBoundExpression::Interval { .. }
         | SqlCatalogBoundExpression::Wildcard => expression,
-        SqlCatalogBoundExpression::Function { name, args, distinct, window } => SqlCatalogBoundExpression::Function {
+        SqlCatalogBoundExpression::Function { name, args, distinct, window, filter } => SqlCatalogBoundExpression::Function {
             name,
             args: args.into_iter().map(|arg| lower_expression(arg, executor, transaction, dialect)).collect::<Result<Vec<_>, _>>()?,
             distinct,
             window,
+            filter: filter
+                .map(|predicate| lower_expression(*predicate, executor, transaction, dialect).map(Box::new))
+                .transpose()?,
         },
         SqlCatalogBoundExpression::Binary { left, operator, right } => SqlCatalogBoundExpression::Binary {
             left: Box::new(lower_expression(*left, executor, transaction, dialect)?),
@@ -351,6 +359,8 @@ fn value_to_literal(value: SqlValue) -> SqlBoundLiteral {
         SqlValue::String(value) => SqlBoundLiteral::String(value),
         SqlValue::Bytes(value) => SqlBoundLiteral::Bytes(value),
         SqlValue::Boolean(value) => SqlBoundLiteral::Boolean(value),
+        // 数组结果不会物化成 bound literal 参与后续表达式求值。
+        SqlValue::Array(_) => SqlBoundLiteral::Null,
         SqlValue::Null => SqlBoundLiteral::Null,
     }
 }
@@ -498,6 +508,7 @@ fn truthy(v: &SqlValue) -> bool {
         SqlValue::Number(n) => *n != 0.0,
         SqlValue::String(s) => !s.is_empty(),
         SqlValue::Bytes(bytes) => !bytes.is_empty(),
+        SqlValue::Array(_) => false,
         SqlValue::Null => false,
     }
 }

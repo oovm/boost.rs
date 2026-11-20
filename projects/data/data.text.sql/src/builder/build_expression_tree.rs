@@ -56,6 +56,8 @@ impl<'config> SqlBuilder<'config> {
                     SqlTokenType::Case => return self.build_case_expression(node, source),
                     SqlTokenType::Cast => return self.build_cast_expression(node, source),
                     SqlTokenType::Exists => return self.build_exists_expression(node, source),
+                    SqlTokenType::Extract => return self.build_extract_expression(node, source),
+                    SqlTokenType::Interval => return self.build_interval_expression(node, source),
                     _ => {}
                 }
                 let _ = full_span;
@@ -262,7 +264,7 @@ impl<'config> SqlBuilder<'config> {
                                 if let Some(right) = next_operand {
                                     let span = Range { start: left.span().start, end: right.span().end };
                                     let binary = Expression::Binary { left: Box::new(left), op, right: Box::new(right), span };
-                                    left = if negated_operator && op == BinaryOperator::Like {
+                                    left = if negated_operator && matches!(op, BinaryOperator::Like | BinaryOperator::ILike) {
                                         let span = binary.span().clone();
                                         Expression::Unary { op: UnaryOperator::Not, expr: Box::new(binary), span }
                                     }
@@ -564,11 +566,13 @@ impl<'config> SqlBuilder<'config> {
             | SqlTokenType::Greater
             | SqlTokenType::LessEqual
             | SqlTokenType::GreaterEqual
-            | SqlTokenType::Like => 4,
+            | SqlTokenType::Like
+            | SqlTokenType::Ilike => 4,
             SqlTokenType::Between | SqlTokenType::In | SqlTokenType::Is => 5,
             SqlTokenType::Concat => 12,
             SqlTokenType::Plus | SqlTokenType::Minus => 10,
             SqlTokenType::Star | SqlTokenType::Slash | SqlTokenType::Percent => 11,
+            SqlTokenType::Arrow | SqlTokenType::ArrowArrow => 11,
             _ => 0,
         }
     }
@@ -578,6 +582,7 @@ impl<'config> SqlBuilder<'config> {
         let mut args = Vec::new();
         let mut distinct = false;
         let mut window = None;
+        let mut filter = None;
 
         for child in node.children() {
             match child {
@@ -605,6 +610,38 @@ impl<'config> SqlBuilder<'config> {
                     else if n.green.kind == SqlElementType::WindowSpec {
                         window = Some(self.build_window_spec(n, source)?);
                     }
+                    else if n.green.kind == SqlElementType::AggregateFilter {
+                        // The predicate is the child that follows `WHERE`. A bare
+                        // column (`FILTER (WHERE active)`) stays a plain identifier
+                        // node or leaf instead of an `Expression`, and the leading
+                        // `FILTER` word is itself an identifier token, so only
+                        // children after `WHERE` are candidates.
+                        let mut saw_where = false;
+                        let mut predicate = None;
+                        for child in n.children() {
+                            match child {
+                                RedTree::Leaf(token) if token.kind == SqlTokenType::Where => saw_where = true,
+                                RedTree::Node(expression) if saw_where && expression.green.kind == SqlElementType::Expression => {
+                                    predicate = Some(self.build_expression(expression, source)?);
+                                    break;
+                                }
+                                RedTree::Node(identifier) if saw_where && identifier.green.kind == SqlElementType::Identifier => {
+                                    predicate = Some(Expression::Identifier(self.build_identifier(identifier, source)?));
+                                    break;
+                                }
+                                RedTree::Leaf(token) if saw_where && token.kind == SqlTokenType::Identifier_ => {
+                                    predicate = Some(Expression::Identifier(Identifier {
+                                        name: self.get_text(token.span.clone(), source),
+                                        span: token.span.clone(),
+                                    }));
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        let predicate = predicate.ok_or_else(|| TextError::custom_error("`FILTER` requires a `WHERE` predicate"))?;
+                        filter = Some(Box::new(predicate));
+                    }
                 }
                 // `COUNT(*)` keeps the wildcard as a bare Star leaf. Dropping it
                 // would turn the call into `COUNT()` on the way back to source.
@@ -626,6 +663,7 @@ impl<'config> SqlBuilder<'config> {
             args,
             distinct,
             window,
+            filter,
             span: node.span(),
         })
     }
@@ -790,6 +828,64 @@ impl<'config> SqlBuilder<'config> {
         }
 
         Ok(WindowFrame { unit, start, end, span: node.span() })
+    }
+
+    /// Build an `EXTRACT(field FROM expr)` expression.
+    ///
+    /// The parser keeps the field as a bare identifier leaf before `FROM` and
+    /// the source as the expression node after it; the field is upper-cased so
+    /// consumers can match it without folding again.
+    fn build_extract_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
+        let full_span = node.span();
+        let mut field: Option<Arc<str>> = None;
+        let mut expr: Option<Expression> = None;
+        let mut after_from = false;
+        for child in node.children() {
+            match child {
+                RedTree::Leaf(t) => match t.kind {
+                    SqlTokenType::From => after_from = true,
+                    SqlTokenType::Identifier_ if !after_from && field.is_none() => {
+                        field = Some(Arc::from(self.get_text(t.span.clone(), source).to_uppercase().as_str()));
+                    }
+                    _ => {}
+                },
+                RedTree::Node(n) if after_from && matches!(n.green.kind, SqlElementType::Expression | SqlElementType::Identifier) => {
+                    expr = Some(self.build_expression(n, source)?);
+                }
+                _ => {}
+            }
+        }
+        let field = field.ok_or_else(|| TextError::custom_error("`EXTRACT` requires a time field such as `YEAR` or `MONTH`"))?;
+        let expr = expr.ok_or_else(|| TextError::custom_error("`EXTRACT` requires a `FROM` source expression"))?;
+        Ok(Expression::Extract { field, source: Box::new(expr), span: full_span })
+    }
+
+    /// Build an `INTERVAL 'quantity unit'` literal.
+    ///
+    /// Both spellings the parser accepts are joined into one text: the quoted
+    /// `'1 day'` form and MySQL's separate `30 DAY` tokens.
+    fn build_interval_expression<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<Expression, TextError> {
+        let full_span = node.span();
+        let mut quantity: Option<Arc<str>> = None;
+        let mut unit: Option<Arc<str>> = None;
+        for child in node.children() {
+            if let RedTree::Leaf(t) = child {
+                match t.kind {
+                    SqlTokenType::StringLiteral | SqlTokenType::NumberLiteral if quantity.is_none() => {
+                        let text = self.get_text(t.span.clone(), source);
+                        quantity = Some(Arc::from(text.trim().trim_matches('\'')));
+                    }
+                    SqlTokenType::Identifier_ if quantity.is_some() && unit.is_none() => unit = Some(self.get_text(t.span.clone(), source)),
+                    _ => {}
+                }
+            }
+        }
+        let quantity = quantity.ok_or_else(|| TextError::custom_error("`INTERVAL` requires a quoted string such as `INTERVAL '1 day'`"))?;
+        let text = match unit {
+            Some(unit) => Arc::from(format!("{quantity} {}", unit.to_lowercase()).as_str()),
+            None => quantity,
+        };
+        Ok(Expression::Interval { text, span: full_span })
     }
 
     /// Builds an `[NOT] EXISTS (SELECT ...)` predicate.

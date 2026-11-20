@@ -5301,7 +5301,7 @@
             "end": 5005
         },
         {
-            "kind": "Identifier_",
+            "kind": "Interval",
             "text": "INTERVAL",
             "start": 5006,
             "end": 5014

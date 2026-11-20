@@ -254,7 +254,12 @@ fn required_privilege(plan: &SqlExecutionPlan) -> Option<(database_storage::pgsq
         SqlExecutionPlan::UpdateScan(plan) => Some((PgPrivilege::Update, plan.namespace.as_str())),
         SqlExecutionPlan::Delete(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
         SqlExecutionPlan::DeleteScan(plan) => Some((PgPrivilege::Delete, plan.namespace.as_str())),
-        SqlExecutionPlan::Join(_) | SqlExecutionPlan::Scalar(_) | SqlExecutionPlan::SetOperation(_) | SqlExecutionPlan::InsertSelect(_) => None,
+        // `DELETE ... USING` 跨多张表，与连接一样无法归到单表授权，交由受限角色拒绝。
+        SqlExecutionPlan::Join(_)
+        | SqlExecutionPlan::Scalar(_)
+        | SqlExecutionPlan::SetOperation(_)
+        | SqlExecutionPlan::InsertSelect(_)
+        | SqlExecutionPlan::DeleteUsing(_) => None,
     }
 }
 
@@ -683,7 +688,7 @@ fn run_statement_inner(
                 format!("INSERT 0 {affected}")
             }
             SqlExecutionPlan::Update(_) | SqlExecutionPlan::UpdateScan(_) => format!("UPDATE {affected}"),
-            SqlExecutionPlan::Delete(_) | SqlExecutionPlan::DeleteScan(_) => format!("DELETE {affected}"),
+            SqlExecutionPlan::Delete(_) | SqlExecutionPlan::DeleteScan(_) | SqlExecutionPlan::DeleteUsing(_) => format!("DELETE {affected}"),
             SqlExecutionPlan::Read(_)
             | SqlExecutionPlan::Scan(_)
             | SqlExecutionPlan::Join(_)

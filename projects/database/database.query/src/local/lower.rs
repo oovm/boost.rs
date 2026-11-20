@@ -216,6 +216,10 @@ fn lower_pred_body(expr: &VosExpr, param: Option<&str>, parameters: &[ParameterD
                 "contains" => TextOp::Contains,
                 "startsWith" => TextOp::StartsWith,
                 "endsWith" => TextOp::EndsWith,
+                // SQL 通配模式：`like("a%")` 与 `ilike("A%")` 直接对应 SQL 的
+                // `LIKE` / `ILIKE`，两端共用同一匹配语义。
+                "like" => TextOp::Like,
+                "ilike" => TextOp::ILike,
                 other => return Err(query_error(format!("unsupported predicate method `.{other}`"))),
             };
             if args.len() != 1 {

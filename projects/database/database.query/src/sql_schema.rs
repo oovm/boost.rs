@@ -463,6 +463,7 @@ fn canonical_sql_type(field_type: &SqlFieldType) -> &'static str {
         SqlFieldType::Datetime => "DATETIME",
         SqlFieldType::Uuid => "UUID",
         SqlFieldType::Json => "JSONB",
+        SqlFieldType::Array(_) => "TEXT",
         SqlFieldType::Unknown | SqlFieldType::Optional(_) => "TEXT",
     }
 }

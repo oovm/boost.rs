@@ -75,13 +75,15 @@ impl ToSource for SelectStatement {
 
 /// The `WITH` clause of a query, holding one or more common table expressions.
 ///
-/// Only non-recursive CTEs are represented: every query references tables that
-/// exist before the clause, so there is no self-reference flag to model.
+/// `recursive` is set by `WITH RECURSIVE`; the flag lives on the clause because
+/// the standard makes it apply to every CTE of the clause, not to one name.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WithClause {
     /// The common table expressions in the order they were written.
     pub ctes: Vec<CteDefinition>,
+    /// Whether the clause was written as `WITH RECURSIVE`.
+    pub recursive: bool,
     /// The span of the clause, from `WITH` to the last CTE.
     #[serde(with = "data_text_core::serde_range")]
     pub span: Range<usize>,
@@ -90,6 +92,9 @@ pub struct WithClause {
 impl ToSource for WithClause {
     fn to_source(&self, buffer: &mut SourceBuffer) {
         buffer.push("WITH");
+        if self.recursive {
+            buffer.push("RECURSIVE");
+        }
         for (i, cte) in self.ctes.iter().enumerate() {
             if i > 0 {
                 buffer.push(",");
@@ -107,8 +112,16 @@ pub struct CteDefinition {
     pub name: Identifier,
     /// The optional column names that rename the query output.
     pub columns: Vec<Identifier>,
-    /// The query that produces the rows.
+    /// The query that produces the rows; for a recursive CTE this is the seed
+    /// operand of `seed UNION [ALL] step`.
     pub query: Box<SelectStatement>,
+    /// The recursive step of a `WITH RECURSIVE` CTE: the `UNION`/`UNION ALL`
+    /// operand that may reference the CTE name itself.
+    pub recursive_tail: Option<Box<SelectStatement>>,
+    /// Whether the operator joining the seed and the [`recursive_tail`] was
+    /// `UNION ALL` (keep every row) rather than `UNION` (drop duplicates). Only
+    /// meaningful when a `recursive_tail` is present.
+    pub recursive_union_all: bool,
     /// The span of the definition.
     #[serde(with = "data_text_core::serde_range")]
     pub span: Range<usize>,
@@ -130,6 +143,10 @@ impl ToSource for CteDefinition {
         buffer.push("AS");
         buffer.push("(");
         self.query.to_source(buffer);
+        if let Some(tail) = &self.recursive_tail {
+            buffer.push(if self.recursive_union_all { "UNION ALL" } else { "UNION" });
+            tail.to_source(buffer);
+        }
         buffer.push(")");
     }
 }

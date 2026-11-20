@@ -890,6 +890,10 @@ pub struct SqlBoundAssignment {
 pub struct SqlBoundDelete {
     /// Target table name.
     pub table: String,
+    /// Optional `AS` alias of the target table, used to qualify predicate columns.
+    pub alias: Option<String>,
+    /// Extra row sources of `DELETE ... USING ...`: `(table name, optional alias)`.
+    pub using: Vec<(String, Option<String>)>,
     /// Optional SQL WHERE expression.
     pub predicate: Option<SqlBoundExpression>,
 }
@@ -1004,6 +1008,8 @@ pub enum SqlBoundExpression {
         distinct: bool,
         /// `OVER (...)` clause when the call is a window function.
         window: Option<SqlBoundWindowSpec>,
+        /// `FILTER (WHERE ...)` predicate restricting the rows an aggregate sees.
+        filter: Option<Box<Self>>,
     },
     /// `expr IN (<subquery>)` / `expr NOT IN (<subquery>)`.
     InSubquery {
@@ -1040,6 +1046,11 @@ pub enum SqlBoundExpression {
         /// The target type spelling as written (e.g. `INTEGER`, `TEXT`, `REAL`, `BLOB`).
         target: String,
     },
+    /// `INTERVAL '<数量> <单位>'` — 保留原文文本，与日期时间表达式做加减时由执行层展开。
+    Interval {
+        /// Interval body text as written, e.g. `1 day`.
+        text: String,
+    },
 }
 
 /// SQL aggregate function identity recognized by the gateway.
@@ -1059,6 +1070,8 @@ pub enum SqlAggregateFunction {
     BOOL_AND,
     /// `BOOL_OR(flag)`.
     BOOL_OR,
+    /// `ARRAY_AGG(value)` — collects the group's values into an array.
+    ARRAY_AGG,
 }
 
 impl SqlAggregateFunction {
@@ -1072,6 +1085,7 @@ impl SqlAggregateFunction {
             "MIN" => Some(Self::MIN),
             "BOOL_AND" => Some(Self::BOOL_AND),
             "BOOL_OR" => Some(Self::BOOL_OR),
+            "ARRAY_AGG" => Some(Self::ARRAY_AGG),
             _ => None,
         }
     }
@@ -1085,6 +1099,7 @@ impl SqlAggregateFunction {
             Self::MIN => "MIN",
             Self::BOOL_AND => "BOOL_AND",
             Self::BOOL_OR => "BOOL_OR",
+            Self::ARRAY_AGG => "ARRAY_AGG",
         }
     }
 }
@@ -1189,6 +1204,8 @@ pub enum SqlScalarFunction {
     Least,
     /// `DATE_TRUNC(field, source)` — PostgreSQL-only timestamp truncation.
     DateTrunc,
+    /// `EXTRACT(field FROM source)` — 日期字段提取，绑定后以 `extract(field, source)` 形态携带。
+    Extract,
     /// `ABS(x)`.
     Abs,
     /// `ROUND(x[, digits])`.
@@ -1236,6 +1253,7 @@ impl SqlScalarFunction {
             "GREATEST" => Some(Self::Greatest),
             "LEAST" => Some(Self::Least),
             "DATE_TRUNC" => Some(Self::DateTrunc),
+            "EXTRACT" => Some(Self::Extract),
             "ABS" => Some(Self::Abs),
             "ROUND" => Some(Self::Round),
             // 文本谓词：两种方言各用各的拼写，跨方言调用在求值期报未知函数。
@@ -1290,6 +1308,7 @@ impl SqlScalarFunction {
             Self::Greatest => "GREATEST",
             Self::Least => "LEAST",
             Self::DateTrunc => "DATE_TRUNC",
+            Self::Extract => "EXTRACT",
             Self::Abs => "ABS",
             Self::Round => "ROUND",
             Self::Instr => "INSTR",
@@ -1323,7 +1342,7 @@ impl SqlScalarFunction {
             Self::Nextval | Self::Currval => (1, Some(1)),
             Self::Setval => (2, Some(3)),
             Self::Concat | Self::Coalesce | Self::Greatest | Self::Least => (1, None),
-            Self::NullIf | Self::DateTrunc => (2, Some(2)),
+            Self::NullIf | Self::DateTrunc | Self::Extract => (2, Some(2)),
         }
     }
 }
@@ -1378,8 +1397,14 @@ pub enum SqlBoundBinaryOperator {
     GreaterEqual,
     /// `LIKE`.
     Like,
+    /// `ILIKE` — 大小写不敏感的模式匹配。
+    ILike,
     /// `||` — PostgreSQL 文本拼接；MySQL 方言在 catalog 绑定层显式拒绝。
     Concat,
+    /// `->` — JSON 取值，返回子树的 JSON 文本。
+    JsonGet,
+    /// `->>` — JSON 取文本，标量去引号返回文本。
+    JsonGetText,
 }
 
 /// SQL unary operator retained by the gateway.
@@ -1495,10 +1520,25 @@ pub fn bind_sql(source: &str, dialect: SqlDialect) -> Result<SqlBoundStatement, 
                 predicate: update.selection.as_ref().map(bind_expression).transpose()?,
             }))
         }
-        SqlStatement::Delete(delete) => Ok(SqlBoundStatement::Delete(SqlBoundDelete {
-            table: normalize_identifier(delete.table_name.name.name.as_ref()),
-            predicate: delete.selection.as_ref().map(bind_expression).transpose()?,
-        })),
+        SqlStatement::Delete(delete) => {
+            // 别名与 `USING` 源都原样携带；谓词的限定列在 catalog 绑定层按可见源解析，
+            // 交叉连接语义由 planner 的 DELETE USING 计划负责。
+            Ok(SqlBoundStatement::Delete(SqlBoundDelete {
+                table: normalize_identifier(delete.table_name.name.name.as_ref()),
+                alias: delete.table_name.alias.as_ref().map(|alias| normalize_identifier(alias.name.as_ref())),
+                using: delete
+                    .using_tables
+                    .iter()
+                    .map(|source| {
+                        (
+                            normalize_identifier(source.name.name.as_ref()),
+                            source.alias.as_ref().map(|alias| normalize_identifier(alias.name.as_ref())),
+                        )
+                    })
+                    .collect(),
+                predicate: delete.selection.as_ref().map(bind_expression).transpose()?,
+            }))
+        }
         SqlStatement::SetOperation(set) => Ok(SqlBoundStatement::SetOperation(bind_set_operation(set)?)),
         _ => Err(SqlFrontendError::unsupported("SQL gateway binding accepts SELECT/INSERT/UPDATE/DELETE only")),
     }
@@ -1520,6 +1560,15 @@ fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<V
     }
     let mut ctes: Vec<SqlBoundCte> = Vec::with_capacity(clause.ctes.len());
     for cte in &clause.ctes {
+        // The gateway inlines every CTE at its reference sites, which cannot express
+        // a self-referencing fixed point or a set-operation body. The native VOS
+        // engine materializes those; the gateway rejects them instead of silently
+        // binding only the seed operand.
+        if clause.recursive || cte.recursive_tail.is_some() {
+            return Err(SqlFrontendError::unsupported(
+                "WITH RECURSIVE and set-operation CTE bodies are supported by the native engine, not by the SQL gateway",
+            ));
+        }
         let name = normalize_identifier(cte.name.name.as_ref());
         if ctes.iter().any(|existing| existing.name == name) {
             return Err(bind_error(&format!("SQL common table expression `{name}` is defined more than once")));
@@ -1535,8 +1584,201 @@ fn bind_with_clause(clause: Option<&data_text_sql::ast::WithClause>) -> Result<V
     Ok(ctes)
 }
 
+/// Rewrites a single-row derived table joined with `CROSS JOIN` / `, LATERAL (...)`.
+///
+/// A derived body with no `GROUP BY` / `HAVING` that projects an aggregate yields
+/// exactly one row, so a cross join with it is the same relation as evaluating each
+/// of its output columns as a scalar subquery once per outer row. References of the
+/// form `<alias>.<column>` in the projection, `WHERE`, `GROUP BY`, `HAVING` and
+/// `ORDER BY` are replaced with that subquery; the derived source itself is dropped.
+fn rewrite_single_row_derived_tables(
+    select: &data_text_sql::ast::SelectStatement,
+) -> Result<data_text_sql::ast::SelectStatement, SqlFrontendError> {
+    use data_text_sql::ast::{JoinType, SelectItem, TableSource};
+    if select.joins.is_empty() {
+        return Ok(select.clone());
+    }
+    // (alias, body, output column names)
+    let mut derived: Vec<(String, data_text_sql::ast::SelectStatement, Vec<Option<String>>)> = Vec::new();
+    let mut joins = Vec::with_capacity(select.joins.len());
+    for join in &select.joins {
+        let TableSource::Derived { query, alias: Some(alias), .. } = &join.table
+        else {
+            joins.push(join.clone());
+            continue;
+        };
+        let single_row = matches!(join.join_type, JoinType::Cross | JoinType::Inner)
+            && join.on.is_none()
+            && query.with.is_none()
+            && query.joins.is_empty()
+            && query.group_by.is_none()
+            && query.having.is_none()
+            && matches!(query.from.as_ref(), Some(TableSource::Table(_)))
+            && query.items.iter().any(|item| matches!(item, SelectItem::Expression { expr, .. } if has_aggregate_call(expr)));
+        if !single_row {
+            joins.push(join.clone());
+            continue;
+        }
+        let outputs = query.items.iter().map(select_item_output_name).collect();
+        derived.push((normalize_identifier(alias.name.as_ref()), query.as_ref().clone(), outputs));
+    }
+    if derived.is_empty() {
+        return Ok(select.clone());
+    }
+
+    let mut rewritten = select.clone();
+    rewritten.joins = joins;
+    for item in &mut rewritten.items {
+        if let SelectItem::Expression { expr, .. } = item {
+            *expr = replace_derived_references(expr, &derived)?;
+        }
+    }
+    if let Some(predicate) = &mut rewritten.expr {
+        *predicate = replace_derived_references(predicate, &derived)?;
+    }
+    if let Some(group_by) = &mut rewritten.group_by {
+        for item in &mut group_by.items {
+            if let data_text_sql::ast::GroupByItem::Expression(expression) = item {
+                *expression = replace_derived_references(expression, &derived)?;
+            }
+        }
+    }
+    if let Some(having) = &mut rewritten.having {
+        having.condition = replace_derived_references(&having.condition, &derived)?;
+    }
+    if let Some(order_by) = &mut rewritten.order_by {
+        for item in &mut order_by.items {
+            item.expr = replace_derived_references(&item.expr, &derived)?;
+        }
+    }
+    Ok(rewritten)
+}
+
+/// Output name a derived body publishes for one projection item.
+fn select_item_output_name(item: &data_text_sql::ast::SelectItem) -> Option<String> {
+    use data_text_sql::ast::{Expression, SelectItem};
+    match item {
+        // 任何表达式带别名时都以别名为输出名；派生表引用（`t.total`）按这个
+        // 名字匹配，所以 `count(*) AS total` 必须能取到 `total`。
+        SelectItem::Expression { alias: Some(alias), .. } => Some(normalize_identifier(alias.name.as_ref())),
+        SelectItem::Expression { expr: Expression::Identifier(identifier), alias: None, .. } => {
+            Some(normalize_identifier(identifier.name.rsplit('.').next().unwrap_or(&identifier.name)))
+        }
+        _ => None,
+    }
+}
+
+/// Whether an expression contains an aggregate call at any depth.
+fn has_aggregate_call(expression: &Expression) -> bool {
+    use data_text_sql::ast::Expression;
+    match expression {
+        Expression::FunctionCall { name, args, window, filter, .. } => {
+            window.is_none() && (SqlAggregateFunction::from_name(name.name.as_ref()).is_some() || args.iter().any(has_aggregate_call))
+                || filter.as_deref().is_some_and(has_aggregate_call)
+        }
+        Expression::Binary { left, right, .. } => has_aggregate_call(left) || has_aggregate_call(right),
+        Expression::Unary { expr, .. } => has_aggregate_call(expr),
+        Expression::InList { expr, list, .. } => has_aggregate_call(expr) || list.iter().any(has_aggregate_call),
+        Expression::Between { expr, low, high, .. } => has_aggregate_call(expr) || has_aggregate_call(low) || has_aggregate_call(high),
+        Expression::IsNull { expr, .. } | Expression::IsTruth { expr, .. } => has_aggregate_call(expr),
+        Expression::Cast { expr, .. } => has_aggregate_call(expr),
+        Expression::Case { branches, else_branch, .. } => {
+            branches.iter().any(|(when, then)| has_aggregate_call(when) || has_aggregate_call(then))
+                || else_branch.as_deref().is_some_and(has_aggregate_call)
+        }
+        Expression::Vector { elements, .. } => elements.iter().any(has_aggregate_call),
+        _ => false,
+    }
+}
+
+/// Replaces `<derived alias>.<column>` references with a scalar subquery over that column.
+fn replace_derived_references(
+    expression: &Expression,
+    derived: &[(String, data_text_sql::ast::SelectStatement, Vec<Option<String>>)],
+) -> Result<Expression, SqlFrontendError> {
+    use data_text_sql::ast::Expression;
+    Ok(match expression {
+        Expression::Identifier(identifier) => match identifier.name.split_once('.') {
+            Some((qualifier, column)) => {
+                let qualifier = normalize_identifier(qualifier.trim());
+                let column = normalize_identifier(column.trim());
+                let Some((_, body, outputs)) = derived.iter().find(|(alias, _, _)| *alias == qualifier)
+                else {
+                    return Ok(expression.clone());
+                };
+                let Some(index) = outputs.iter().position(|output| output.as_deref() == Some(column.as_str()))
+                else {
+                    return Ok(expression.clone());
+                };
+                let mut single = body.clone();
+                single.items = vec![body.items[index].clone()];
+                Expression::Subquery { query: Box::new(single), span: identifier.span.clone() }
+            }
+            None => expression.clone(),
+        },
+        Expression::Binary { left, op, right, span } => Expression::Binary {
+            left: Box::new(replace_derived_references(left, derived)?),
+            op: *op,
+            right: Box::new(replace_derived_references(right, derived)?),
+            span: span.clone(),
+        },
+        Expression::Unary { op, expr, span } => {
+            Expression::Unary { op: *op, expr: Box::new(replace_derived_references(expr, derived)?), span: span.clone() }
+        }
+        Expression::FunctionCall { name, args, distinct, window, filter, span } => Expression::FunctionCall {
+            name: name.clone(),
+            args: args.iter().map(|arg| replace_derived_references(arg, derived)).collect::<Result<Vec<_>, _>>()?,
+            distinct: *distinct,
+            window: window.clone(),
+            filter: filter.as_deref().map(|predicate| replace_derived_references(predicate, derived).map(Box::new)).transpose()?,
+            span: span.clone(),
+        },
+        Expression::InList { expr, list, negated, span } => Expression::InList {
+            expr: Box::new(replace_derived_references(expr, derived)?),
+            list: list.iter().map(|value| replace_derived_references(value, derived)).collect::<Result<Vec<_>, _>>()?,
+            negated: *negated,
+            span: span.clone(),
+        },
+        Expression::Between { expr, low, high, negated, span } => Expression::Between {
+            expr: Box::new(replace_derived_references(expr, derived)?),
+            low: Box::new(replace_derived_references(low, derived)?),
+            high: Box::new(replace_derived_references(high, derived)?),
+            negated: *negated,
+            span: span.clone(),
+        },
+        Expression::IsNull { expr, negated, span } => {
+            Expression::IsNull { expr: Box::new(replace_derived_references(expr, derived)?), negated: *negated, span: span.clone() }
+        }
+        Expression::IsTruth { expr, value, negated, span } => Expression::IsTruth {
+            expr: Box::new(replace_derived_references(expr, derived)?),
+            value: *value,
+            negated: *negated,
+            span: span.clone(),
+        },
+        Expression::Case { branches, else_branch, span } => Expression::Case {
+            branches: branches
+                .iter()
+                .map(|(when, then)| {
+                    Ok((Box::new(replace_derived_references(when, derived)?), Box::new(replace_derived_references(then, derived)?)))
+                })
+                .collect::<Result<Vec<_>, SqlFrontendError>>()?,
+            else_branch: else_branch.as_deref().map(|branch| replace_derived_references(branch, derived).map(Box::new)).transpose()?,
+            span: span.clone(),
+        },
+        Expression::Cast { expr, target, span } => {
+            Expression::Cast { expr: Box::new(replace_derived_references(expr, derived)?), target: target.clone(), span: span.clone() }
+        }
+        other => other.clone(),
+    })
+}
+
 /// Binds one `data.text` `SELECT` — shared by top-level statements and `IN (SELECT ...)` subqueries.
 fn bind_select_statement(select: &data_text_sql::ast::SelectStatement) -> Result<SqlBoundSelect, SqlFrontendError> {
+    // 单行派生表（`FROM t, LATERAL (SELECT count(*) AS total FROM x) d`）先改写成
+    // 指向它的标量子查询：全局聚合保证恰好一行，因此交叉连接与「每行求一次标量
+    // 子查询」等价，并且相关引用仍由执行器的外层行替换机制处理。
+    let rewritten = rewrite_single_row_derived_tables(select)?;
+    let select = &rewritten;
     let with = bind_with_clause(select.with.as_ref())?;
     let distinct = match &select.quantifier {
         None | Some(data_text_sql::ast::SelectQuantifier::All { .. }) => false,
@@ -1791,6 +2033,7 @@ fn validate_row_count_expression(expression: &SqlBoundExpression, clause: &str) 
         SqlBoundExpression::ScalarSubquery { .. } | SqlBoundExpression::InSubquery { .. } | SqlBoundExpression::Exists { .. } => {
             Err(SqlFrontendError::unsupported(format!("SQL {clause} does not accept a subquery")))
         }
+        SqlBoundExpression::Interval { .. } => Ok(()),
     }
 }
 
@@ -2028,7 +2271,7 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
                 Ok(in_expr)
             }
         }
-        Expression::FunctionCall { name, args, distinct, window, .. } => {
+        Expression::FunctionCall { name, args, distinct, window, filter, .. } => {
             // Canonical lower-case name: description inference matches the
             // documented spelling, while execution stays case-insensitive.
             // Diagnostics keep the spelling the query used.
@@ -2037,6 +2280,7 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
 
             let bound_args = args.iter().map(bind_expression).collect::<Result<Vec<_>, _>>()?;
             let bound_window = window.as_ref().map(bind_window_spec).transpose()?;
+            let bound_filter = filter.as_ref().map(|predicate| bind_expression(predicate).map(Box::new)).transpose()?;
 
             // 窗口函数只存在于窗口上下文，且不接受 DISTINCT；参数形状按函数逐个校验。
             if let Some(function) = SqlWindowFunction::from_name(&fname) {
@@ -2044,6 +2288,9 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
                 else {
                     return Err(SqlFrontendError::unsupported(format!("{display}() is a window function and requires an OVER (...) clause")));
                 };
+                if bound_filter.is_some() {
+                    return Err(SqlFrontendError::unsupported(format!("{display}() does not accept a FILTER clause")));
+                }
                 if *distinct {
                     return Err(SqlFrontendError::unsupported(format!("{display}() does not accept the DISTINCT quantifier")));
                 }
@@ -2098,7 +2345,7 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
                         bound_args
                     }
                 };
-                return Ok(SqlBoundExpression::Function { name: fname, args, distinct: false, window: bound_window });
+                return Ok(SqlBoundExpression::Function { name: fname, args, distinct: false, window: bound_window, filter: None });
             }
 
             // 聚合函数与标量内建函数是两类；未知名称在绑定期直接拒绝。
@@ -2117,7 +2364,13 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
                 if *distinct && bound_window.is_some() {
                     return Err(SqlFrontendError::unsupported("DISTINCT is not supported in window aggregates"));
                 }
-                return Ok(SqlBoundExpression::Function { name: fname, args: bound_args, distinct: *distinct, window: bound_window });
+                return Ok(SqlBoundExpression::Function {
+                    name: fname,
+                    args: bound_args,
+                    distinct: *distinct,
+                    window: bound_window,
+                    filter: bound_filter,
+                });
             }
             let Some(scalar) = SqlScalarFunction::from_name(&fname)
             else {
@@ -2138,6 +2391,9 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
             if bound_window.is_some() {
                 return Err(SqlFrontendError::unsupported(format!("SQL scalar function {display}() cannot take an OVER (...) clause")));
             }
+            if bound_filter.is_some() {
+                return Err(SqlFrontendError::unsupported(format!("SQL scalar function {display}() cannot take a FILTER clause")));
+            }
             let (minimum, maximum) = scalar.arity();
             let supplied = bound_args.len();
             if supplied < minimum || maximum.is_some_and(|max| supplied > max) {
@@ -2154,7 +2410,7 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
                     ),
                 ));
             }
-            Ok(SqlBoundExpression::Function { name: fname, args: bound_args, distinct: false, window: None })
+            Ok(SqlBoundExpression::Function { name: fname, args: bound_args, distinct: false, window: None, filter: None })
         }
         Expression::InSubquery { expr, query, negated, .. } => Ok(SqlBoundExpression::InSubquery {
             expression: Box::new(bind_expression(expr)?),
@@ -2184,6 +2440,16 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
         Expression::Exists { query, negated, .. } => {
             Ok(SqlBoundExpression::Exists { select: Box::new(bind_select_statement(query)?), negated: *negated })
         }
+        // `EXTRACT(field FROM expr)` 绑定成 `extract(field, expr)` 的双参函数调用：
+        // 字段名由语法层大写归一，作为字符串字面量随参数携带，求值层按字段分发。
+        Expression::Extract { field, source, .. } => Ok(SqlBoundExpression::Function {
+            name: "extract".to_string(),
+            args: vec![SqlBoundExpression::Literal(SqlBoundLiteral::String(field.to_string())), bind_expression(source)?],
+            distinct: false,
+            window: None,
+            filter: None,
+        }),
+        Expression::Interval { text, .. } => Ok(SqlBoundExpression::Interval { text: text.to_string() }),
         Expression::Vector { .. } => Err(SqlFrontendError::unsupported("SQL vector literals are outside the gateway binding subset")),
         Expression::Error { message, .. } => Err(bind_error(message)),
     }
@@ -2266,11 +2532,7 @@ fn quantified_comparison(
         };
         folded = Some(match folded {
             None => comparison,
-            Some(accumulated) => SqlBoundExpression::Binary {
-                left: Box::new(accumulated),
-                operator: combine,
-                right: Box::new(comparison),
-            },
+            Some(accumulated) => SqlBoundExpression::Binary { left: Box::new(accumulated), operator: combine, right: Box::new(comparison) },
         });
     }
     Ok(folded.expect("non-empty array folds into at least one comparison"))
@@ -2354,6 +2616,7 @@ fn find_aggregate_call(expression: &SqlBoundExpression) -> Option<&str> {
         | SqlBoundExpression::Wildcard
         | SqlBoundExpression::InSubquery { .. }
         | SqlBoundExpression::ScalarSubquery { .. }
+        | SqlBoundExpression::Interval { .. }
         | SqlBoundExpression::Exists { .. } => None,
     }
 }
@@ -2573,10 +2836,14 @@ fn bind_binary_operator(operator: BinaryOperator) -> Result<SqlBoundBinaryOperat
         BinaryOperator::LessEqual => SqlBoundBinaryOperator::LessEqual,
         BinaryOperator::GreaterEqual => SqlBoundBinaryOperator::GreaterEqual,
         BinaryOperator::Like => SqlBoundBinaryOperator::Like,
+        BinaryOperator::ILike => SqlBoundBinaryOperator::ILike,
         // `data-text-sql` keeps `||` in the AST. PostgreSQL spells concat with `||`;
         // MySQL's `||` is logical OR, so the MySQL dialect is rejected at the
         // catalog-bind layer before this operator ever reaches evaluation.
         BinaryOperator::Concat => SqlBoundBinaryOperator::Concat,
+        // JSON 取箭头在两种方言下语义一致：`->` 返回子树 JSON 文本，`->>` 返回去引号标量文本。
+        BinaryOperator::JsonGet => SqlBoundBinaryOperator::JsonGet,
+        BinaryOperator::JsonGetText => SqlBoundBinaryOperator::JsonGetText,
     })
 }
 

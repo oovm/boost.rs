@@ -489,5 +489,10 @@ fn cell_text(value: SqlValue) -> Option<String> {
         SqlValue::String(text) => Some(text),
         SqlValue::Boolean(flag) => Some(if flag { "t".to_owned() } else { "f".to_owned() }),
         SqlValue::Bytes(bytes) => Some(format!("\\x{}", bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>())),
+        // 数组只由 `array_agg` 产出，不会出现在被迁移的存储行里；按 PG 文本字面量渲染。
+        SqlValue::Array(values) => Some(format!(
+            "{{{}}}",
+            values.iter().filter_map(|value| cell_text(value.clone())).collect::<Vec<_>>().join(",")
+        )),
     }
 }

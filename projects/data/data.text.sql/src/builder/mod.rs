@@ -184,17 +184,18 @@ impl<'config> SqlBuilder<'config> {
     /// Builds the `WITH` clause of a query.
     fn build_with_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<WithClause, TextError> {
         let mut ctes = Vec::new();
+        let mut recursive = false;
         for child in node.children() {
-            if let RedTree::Node(n) = child {
-                if n.green.kind == SqlElementType::CteDefinition {
-                    ctes.push(self.build_cte_definition(n, source)?);
-                }
+            match child {
+                RedTree::Node(n) if n.green.kind == SqlElementType::CteDefinition => ctes.push(self.build_cte_definition(n, source)?),
+                RedTree::Leaf(t) if t.kind == SqlTokenType::Recursive => recursive = true,
+                _ => {}
             }
         }
         if ctes.is_empty() {
             return Err(TextError::custom_error("`WITH` requires at least one common table expression"));
         }
-        Ok(WithClause { ctes, span: node.span() })
+        Ok(WithClause { ctes, recursive, span: node.span() })
     }
 
     /// Builds one common table expression.
@@ -205,13 +206,30 @@ impl<'config> SqlBuilder<'config> {
         let mut name = None;
         let mut columns = Vec::new();
         let mut query = None;
+        let mut recursive_tail = None;
+        let mut recursive_union_all = false;
         for child in node.children() {
             match child {
                 RedTree::Node(n) if n.green.kind == SqlElementType::SelectStatement => {
                     query = Some(Box::new(self.build_select_statement(n, source)?));
                 }
                 RedTree::Node(n) if n.green.kind == SqlElementType::SetOperationStatement => {
-                    return Err(TextError::custom_error("Set operations in a CTE are not supported"));
+                    // A recursive CTE body is exactly `seed UNION [ALL] step`;
+                    // the seed becomes the definition query and the step the
+                    // `recursive_tail`. Anything else (INTERSECT/EXCEPT, longer
+                    // chains, trailing ORDER BY / LIMIT) stays unsupported.
+                    let set = self.build_set_operation_statement(n, source)?;
+                    if set.operands.len() != 2
+                        || !matches!(set.operators.first(), Some(SetOperator::Union | SetOperator::UnionAll))
+                        || set.order_by.is_some()
+                        || set.limit.is_some()
+                    {
+                        return Err(TextError::custom_error("A recursive CTE body must be `seed UNION [ALL] step` without trailing ORDER BY / LIMIT"));
+                    }
+                    recursive_union_all = matches!(set.operators.first(), Some(SetOperator::UnionAll));
+                    let mut operands = set.operands;
+                    query = Some(operands.remove(0));
+                    recursive_tail = Some(operands.remove(0));
                 }
                 RedTree::Leaf(t) if t.kind == SqlTokenType::Identifier_ => {
                     let identifier = Identifier { name: self.get_text(t.span.clone(), source), span: t.span.clone() };
@@ -229,6 +247,8 @@ impl<'config> SqlBuilder<'config> {
             name: name.ok_or_else(|| TextError::custom_error("Missing common table expression name"))?,
             columns,
             query: query.ok_or_else(|| TextError::custom_error("Missing common table expression query"))?,
+            recursive_tail,
+            recursive_union_all,
             span: node.span(),
         })
     }
@@ -614,18 +634,29 @@ impl<'config> SqlBuilder<'config> {
     /// Builds a `DELETE` statement AST node.
     fn build_delete_statement<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<DeleteStatement, TextError> {
         let mut table_name = None;
+        let mut using_tables = Vec::new();
         let mut selection = None;
         let mut where_found = false;
+        let mut after_using = false;
 
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
                     SqlTokenType::From => {}
+                    SqlTokenType::Using => after_using = true,
                     SqlTokenType::Where => where_found = true,
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
-                    SqlElementType::TableName => table_name = Some(self.build_table_name(n, source)?),
+                    SqlElementType::TableName => {
+                        let table = self.build_table_name(n, source)?;
+                        if after_using {
+                            using_tables.push(table);
+                        }
+                        else {
+                            table_name = Some(table);
+                        }
+                    }
                     SqlElementType::Expression => selection = Some(self.build_expression(n, source)?),
                     SqlElementType::Identifier => selection = Some(Expression::Identifier(self.build_identifier(n, source)?)),
                     _ => {}
@@ -639,6 +670,7 @@ impl<'config> SqlBuilder<'config> {
 
         Ok(DeleteStatement {
             table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in DELETE"))?,
+            using_tables,
             selection,
             span: node.span(),
         })
@@ -1254,18 +1286,40 @@ impl<'config> SqlBuilder<'config> {
     }
 
     fn build_join_clause<'a>(&self, node: RedNode<'a, SqlLanguage>, source: &SourceText) -> Result<JoinClause, TextError> {
-        let mut join_type = JoinType::Inner;
+        // 逗号连接不携带任何 JOIN 关键字，默认按 CROSS 处理。
+        let mut join_type = JoinType::Cross;
+        let mut saw_keyword = false;
         let mut table = None;
         let mut on = None;
 
         for child in node.children() {
             match child {
                 RedTree::Leaf(t) => match t.kind {
-                    SqlTokenType::Inner => join_type = JoinType::Inner,
-                    SqlTokenType::Left => join_type = JoinType::Left,
-                    SqlTokenType::Right => join_type = JoinType::Right,
-                    SqlTokenType::Full => join_type = JoinType::Full,
-                    SqlTokenType::Cross => join_type = JoinType::Cross,
+                    SqlTokenType::Join => {
+                        if !saw_keyword {
+                            join_type = JoinType::Inner;
+                        }
+                    }
+                    SqlTokenType::Inner => {
+                        join_type = JoinType::Inner;
+                        saw_keyword = true;
+                    }
+                    SqlTokenType::Left => {
+                        join_type = JoinType::Left;
+                        saw_keyword = true;
+                    }
+                    SqlTokenType::Right => {
+                        join_type = JoinType::Right;
+                        saw_keyword = true;
+                    }
+                    SqlTokenType::Full => {
+                        join_type = JoinType::Full;
+                        saw_keyword = true;
+                    }
+                    SqlTokenType::Cross => {
+                        join_type = JoinType::Cross;
+                        saw_keyword = true;
+                    }
                     _ => {}
                 },
                 RedTree::Node(n) => match n.green.kind {
@@ -1656,7 +1710,10 @@ impl<'config> SqlBuilder<'config> {
             SqlTokenType::And => Some(BinaryOperator::And),
             SqlTokenType::Or => Some(BinaryOperator::Or),
             SqlTokenType::Like => Some(BinaryOperator::Like),
+            SqlTokenType::Ilike => Some(BinaryOperator::ILike),
             SqlTokenType::Concat => Some(BinaryOperator::Concat),
+            SqlTokenType::Arrow => Some(BinaryOperator::JsonGet),
+            SqlTokenType::ArrowArrow => Some(BinaryOperator::JsonGetText),
             _ => None,
         }
     }

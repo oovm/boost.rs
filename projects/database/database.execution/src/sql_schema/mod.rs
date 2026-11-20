@@ -426,6 +426,7 @@ fn field_type_document(field_type: &SqlFieldType) -> SqlSchemaFieldTypeDocument 
         SqlFieldType::Datetime => SqlSchemaFieldTypeDocument::Datetime,
         SqlFieldType::Uuid => SqlSchemaFieldTypeDocument::Uuid,
         SqlFieldType::Json => SqlSchemaFieldTypeDocument::Json,
+        SqlFieldType::Array(_) => SqlSchemaFieldTypeDocument::Unknown,
         SqlFieldType::Optional(_) | SqlFieldType::Unknown => SqlSchemaFieldTypeDocument::Unknown,
     }
 }

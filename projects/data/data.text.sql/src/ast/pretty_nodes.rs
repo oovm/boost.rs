@@ -297,6 +297,10 @@ impl AsDocument for Expression {
             Expression::Cast { expr, target, .. } => {
                 doc!("CAST", "(", expr.as_document(&()), soft_space, "AS", soft_space, target.as_ref(), ")")
             }
+            Expression::Extract { field, source, .. } => {
+                doc!("EXTRACT", "(", field.as_ref(), soft_space, "FROM", soft_space, source.as_document(&()), ")")
+            }
+            Expression::Interval { text, .. } => doc!("INTERVAL", soft_space, "'", text.as_ref(), "'"),
             Expression::Error { .. } => nil,
             Expression::Vector { elements, .. } => {
                 doc!("[", Document::join(elements.iter().map(|it| it.as_document(&())), doc!(",", soft_space)), "]")
@@ -325,9 +329,11 @@ fn binary_precedence(op: BinaryOperator) -> u8 {
         | BinaryOperator::Greater
         | BinaryOperator::LessEqual
         | BinaryOperator::GreaterEqual
-        | BinaryOperator::Like => 4,
+        | BinaryOperator::Like
+        | BinaryOperator::ILike => 4,
         BinaryOperator::Plus | BinaryOperator::Minus => 10,
         BinaryOperator::Star | BinaryOperator::Slash | BinaryOperator::Percent => 11,
+        BinaryOperator::JsonGet | BinaryOperator::JsonGetText => 11,
         BinaryOperator::Concat => 12,
     }
 }
@@ -370,7 +376,10 @@ impl AsDocument for BinaryOperator {
             BinaryOperator::LessEqual => Document::text("<="),
             BinaryOperator::GreaterEqual => Document::text(">="),
             BinaryOperator::Like => Document::text("LIKE"),
+            BinaryOperator::ILike => Document::text("ILIKE"),
             BinaryOperator::Concat => Document::text("||"),
+            BinaryOperator::JsonGet => Document::text("->"),
+            BinaryOperator::JsonGetText => Document::text("->>"),
         }
     }
 }

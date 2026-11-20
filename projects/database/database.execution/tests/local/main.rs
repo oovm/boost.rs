@@ -10,4 +10,5 @@ mod scalars;
 mod sql;
 mod unique;
 mod value_compare;
+mod vos;
 mod window;

@@ -867,6 +867,8 @@ fn column_type(rows: &[Vec<SqlValue>], index: usize) -> u8 {
             Some(SqlValue::Boolean(_)) => Some(MYSQL_TYPE_TINY),
             Some(SqlValue::String(_)) => Some(MYSQL_TYPE_VAR_STRING),
             Some(SqlValue::Bytes(_)) => Some(MYSQL_TYPE_BLOB),
+            // 数组只出现在 PostgreSQL 面；MySQL 面兜底按文本上报。
+            Some(SqlValue::Array(_)) => Some(MYSQL_TYPE_VAR_STRING),
             Some(SqlValue::Null) | None => None,
         })
         .unwrap_or(MYSQL_TYPE_VAR_STRING)
@@ -894,6 +896,12 @@ fn encode_sql_value(out: &mut Vec<u8>, value: &SqlValue) {
         SqlValue::Bytes(bytes) => {
             encode_length_encoded(out, bytes.len() as u64);
             out.extend_from_slice(bytes);
+        }
+        // 数组只由 PostgreSQL 面产出；MySQL 面用 PostgreSQL 文本数组字面量兜底。
+        SqlValue::Array(values) => {
+            let text = format!("{{{}}}", values.iter().map(|value| format!("{value:?}")).collect::<Vec<_>>().join(","));
+            encode_length_encoded(out, text.len() as u64);
+            out.extend_from_slice(text.as_bytes());
         }
         SqlValue::Boolean(b) => {
             let text = if *b { "1" } else { "0" };

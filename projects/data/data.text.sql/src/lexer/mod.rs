@@ -473,6 +473,10 @@ impl<'config> SqlLexer<'config> {
             "THEN" => SqlTokenType::Then,
             "ELSE" => SqlTokenType::Else,
             "CAST" => SqlTokenType::Cast,
+            "EXTRACT" => SqlTokenType::Extract,
+            "INTERVAL" => SqlTokenType::Interval,
+            "RECURSIVE" => SqlTokenType::Recursive,
+            "USING" => SqlTokenType::Using,
             _ => SqlTokenType::Identifier_,
         };
 
@@ -490,11 +494,11 @@ impl<'config> SqlLexer<'config> {
             (">=", SqlTokenType::GreaterEqual),
             ("<>", SqlTokenType::NotEqual),
             ("!=", SqlTokenType::NotEqual),
-            // SQLite's JSON (`->`, `->>`) and shift (`<<`, `>>`) operators are not
-            // modelled by the AST yet. Tokenize them as explicit errors so they
-            // cannot be silently mis-lexed into comparisons / arithmetic.
-            ("->>", SqlTokenType::Error),
-            ("->", SqlTokenType::Error),
+            // JSON/JSONB extraction (`->`, `->>`) is modelled by the AST; the
+            // shift operators (`<<`, `>>`) are not, so they stay explicit errors
+            // and cannot be silently mis-lexed into comparisons.
+            ("->>", SqlTokenType::ArrowArrow),
+            ("->", SqlTokenType::Arrow),
             ("<<", SqlTokenType::Error),
             (">>", SqlTokenType::Error),
             ("=", SqlTokenType::Equal),

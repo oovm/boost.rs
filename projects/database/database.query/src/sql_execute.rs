@@ -21,7 +21,7 @@ pub use self::{
         compare_values, compare_values_with_nulls, eval_binary, eval_cast, eval_cast_for_dialect, eval_expression, eval_in_values, eval_unary,
         normalize_integer_values, order_nulls_first, projected_rows_equal, retain_distinct_projected_rows, values_equal,
     },
-    scalar::{eval_scalar_function, format_number},
+    scalar::{apply_interval_to_datetime, eval_scalar_function, extract_value, format_number, parse_interval, scalar_text, IntervalOffset},
     values::{
         RowFieldValues, SqlResult, SqlValue, cmp_string, decode_row, decode_row_fields, encode_row, eq_string, expression_needed_field_ids,
         scan_needed_field_ids,
@@ -145,6 +145,8 @@ pub(crate) fn sql_truth(value: &SqlValue) -> Option<bool> {
         SqlValue::Number(value) => Some(*value != 0.0),
         SqlValue::String(value) => Some(!value.is_empty()),
         SqlValue::Bytes(value) => Some(!value.is_empty()),
+        // 数组没有布尔真值语义（PostgreSQL 不允许数组作谓词）。
+        SqlValue::Array(_) => None,
     }
 }
 

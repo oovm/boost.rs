@@ -386,8 +386,10 @@ pub(crate) fn eval_aggregate(
         let value = eval_aggregate(inner, rows, field_types, dialect)?;
         return eval_cast_for_dialect(value, target, false, dialect);
     }
-    let (name, args, distinct) = match expr {
-        SqlCatalogBoundExpression::Function { name, args, distinct, .. } => (name.clone(), args.clone(), *distinct),
+    let (name, args, distinct, filter) = match expr {
+        SqlCatalogBoundExpression::Function { name, args, distinct, filter, .. } => {
+            (name.clone(), args.clone(), *distinct, filter.as_deref())
+        }
         _ => return Err(internal_error(&format!("eval_aggregate: non-Function expression encountered: {expr:?}"))),
     };
 
@@ -400,6 +402,22 @@ pub(crate) fn eval_aggregate(
     if distinct && agg != SqlAggregateFunction::COUNT {
         return Err(internal_error(&format!("DISTINCT quantifier is only supported on COUNT for now ({})", agg.name())));
     }
+
+    // `FILTER (WHERE ...)` 在聚合前裁剪输入行：只有谓词求值为 TRUE 的行参与聚合，
+    // FALSE 与 NULL 都按 PostgreSQL 语义丢弃。窗口聚合复用同一入口，因此窗口帧
+    // 里的 FILTER 也走这条路径。
+    let kept: Vec<&RowFieldValues> = match filter {
+        None => rows.iter().collect(),        Some(predicate) => {
+            let mut kept = Vec::with_capacity(rows.len());
+            for row in rows {
+                if matches!(eval_expression(predicate, row, field_types, dialect)?, SqlValue::Boolean(true)) {
+                    kept.push(row);
+                }
+            }
+            kept
+        }
+    };
+    let rows = &kept;
 
     match agg {
         SqlAggregateFunction::COUNT => {
@@ -414,7 +432,7 @@ pub(crate) fn eval_aggregate(
                 if distinct {
                     // COUNT(DISTINCT col) — count distinct non-NULL values.
                     let mut seen: Vec<SqlValue> = Vec::new();
-                    for row in rows {
+                    for &row in rows.iter() {
                         let v = eval_expression(&args[0], row, field_types, dialect)?;
                         if !matches!(v, SqlValue::Null) && !seen.contains(&v) {
                             seen.push(v);
@@ -425,7 +443,7 @@ pub(crate) fn eval_aggregate(
                 else {
                     // COUNT(col) — count rows where col is not NULL.
                     let mut non_null: usize = 0;
-                    for row in rows {
+                    for &row in rows.iter() {
                         let v = eval_expression(&args[0], row, field_types, dialect)?;
                         if !matches!(v, SqlValue::Null) {
                             non_null += 1;
@@ -442,14 +460,14 @@ pub(crate) fn eval_aggregate(
             let mut float_sum: f64 = 0.0;
             let mut has_float = false;
             let mut has_value = false;
-            for row in rows {
-                match eval_expression(&args[0], row, field_types, dialect)? {
-                    SqlValue::Integer(n) => {
+            for &row in rows.iter() {
+                match eval_expression(&args[0], row, field_types, dialect)?.as_numeric() {
+                    Some(SqlValue::Integer(n)) => {
                         integer_sum += i128::from(n);
                         float_sum += n as f64;
                         has_value = true;
                     }
-                    SqlValue::Number(n) => {
+                    Some(SqlValue::Number(n)) => {
                         has_float = true;
                         float_sum += n;
                         has_value = true;
@@ -470,14 +488,13 @@ pub(crate) fn eval_aggregate(
         SqlAggregateFunction::AVG => {
             let mut sum: f64 = 0.0;
             let mut count: usize = 0;
-            for row in rows {
-                let v = eval_expression(&args[0], row, field_types, dialect)?;
-                match v {
-                    SqlValue::Integer(n) => {
+            for &row in rows.iter() {
+                match eval_expression(&args[0], row, field_types, dialect)?.as_numeric() {
+                    Some(SqlValue::Integer(n)) => {
                         sum += n as f64;
                         count += 1;
                     }
-                    SqlValue::Number(n) => {
+                    Some(SqlValue::Number(n)) => {
                         sum += n;
                         count += 1;
                     }
@@ -489,11 +506,10 @@ pub(crate) fn eval_aggregate(
         SqlAggregateFunction::MAX | SqlAggregateFunction::MIN => {
             let want_greater = agg == SqlAggregateFunction::MAX;
             let mut best: Option<SqlValue> = None;
-            for row in rows {
-                let value = eval_expression(&args[0], row, field_types, dialect)?;
-                if !matches!(value, SqlValue::Integer(_) | SqlValue::Number(_)) {
+            for &row in rows.iter() {
+                let Some(value) = eval_expression(&args[0], row, field_types, dialect)?.as_numeric() else {
                     continue;
-                }
+                };
                 best = Some(match best {
                     Some(current) => {
                         let order = compare_values(Some(&value), Some(&current));
@@ -505,12 +521,20 @@ pub(crate) fn eval_aggregate(
             }
             Ok(best.unwrap_or(SqlValue::Null))
         }
+        SqlAggregateFunction::ARRAY_AGG => {
+            // PostgreSQL：每组按输入顺序收集全部值（含 NULL）；空组返回 NULL 数组。
+            let mut values = Vec::with_capacity(rows.len());
+            for &row in rows.iter() {
+                values.push(eval_expression(&args[0], row, field_types, dialect)?);
+            }
+            if values.is_empty() { Ok(SqlValue::Null) } else { Ok(SqlValue::Array(values)) }
+        }
         SqlAggregateFunction::BOOL_AND | SqlAggregateFunction::BOOL_OR => {
             // PostgreSQL 语义：忽略 `NULL` 实参；`BOOL_AND` 见 `FALSE` 即假，`BOOL_OR`
             // 见 `TRUE` 即真；全 `NULL` 或空组返回 `NULL`。
             let want_true = agg == SqlAggregateFunction::BOOL_OR;
             let mut saw_value = false;
-            for row in rows {
+            for &row in rows.iter() {
                 match eval_expression(&args[0], row, field_types, dialect)? {
                     SqlValue::Boolean(flag) => {
                         saw_value = true;
@@ -556,6 +580,12 @@ pub(crate) fn serialize_group_key(values: &[SqlValue]) -> String {
                 buf.push_str("X:");
                 buf.push_str(&database_query::sql::encode_hex(bytes));
             }
+            // 数组只出现在投影结果里，不会成为 GROUP BY key；为穷尽性保留稳定拼写。
+            SqlValue::Array(values) => {
+                buf.push_str("A:[");
+                buf.push_str(&serialize_group_key(values));
+                buf.push_str("]");
+            }
         }
     }
     buf
@@ -575,6 +605,7 @@ pub(crate) fn eval_having(
     Ok(match expr {
         SqlCatalogBoundExpression::Column(col) => first.and_then(|row| row.value_typed(col.row_id, field_types)).unwrap_or(SqlValue::Null),
         SqlCatalogBoundExpression::Literal(lit) => SqlValue::from_literal(lit),
+        SqlCatalogBoundExpression::Interval { text } => SqlValue::String(text.clone()),
         SqlCatalogBoundExpression::Wildcard => return Err(internal_error("wildcard `*` is only valid as the argument of COUNT")),
         // 分组路径不接受相关子查询，计划期已拒绝，走到这里是内部漏检。
         SqlCatalogBoundExpression::OuterColumn(_) => {
@@ -600,6 +631,28 @@ pub(crate) fn eval_having(
             eval_unary(*operator, inner)?
         }
         SqlCatalogBoundExpression::Binary { left, operator, right } => {
+            // `datetime ± INTERVAL` 在分组路径同样按日历展开，与普通求值保持同一口径。
+            if matches!(operator, SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus) {
+                let interval = match (left.as_ref(), right.as_ref()) {
+                    (base, SqlCatalogBoundExpression::Interval { text }) => Some((base, text.as_str(), *operator == SqlBoundBinaryOperator::Minus)),
+                    (SqlCatalogBoundExpression::Interval { text }, base) if *operator == SqlBoundBinaryOperator::Plus => {
+                        Some((base, text.as_str(), false))
+                    }
+                    _ => None,
+                };
+                if let Some((base, text, negate)) = interval {
+                    let value = eval_having(base, bucket_rows, group_exprs, field_types, dialect)?;
+                    return match value {
+                        SqlValue::Null => Ok(SqlValue::Null),
+                        other => {
+                            let Some(base_text) = scalar_text(&[other], 0) else {
+                                return Err(internal_error("INTERVAL arithmetic needs a date or timestamp operand"));
+                            };
+                            apply_interval_to_datetime(&base_text, text, if negate { -1 } else { 1 })
+                        }
+                    };
+                }
+            }
             let l = eval_having(left, bucket_rows, group_exprs, field_types, dialect)?;
             let r = eval_having(right, bucket_rows, group_exprs, field_types, dialect)?;
             eval_binary(*operator, &l, &r, dialect)?

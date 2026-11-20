@@ -176,6 +176,8 @@ fn mysql_field_type(field_type: &SqlFieldType) -> u8 {
         SqlFieldType::Uuid => MYSQL_TYPE_VAR_STRING,
         // JSON 在 MySQL 面与文本同载荷上报。
         SqlFieldType::Json => MYSQL_TYPE_VAR_STRING,
+        // 数组结果只在 PostgreSQL 面产出；MySQL 面按文本上报。
+        SqlFieldType::Array(_) => MYSQL_TYPE_VAR_STRING,
         SqlFieldType::String | SqlFieldType::Unknown | SqlFieldType::Optional(_) => MYSQL_TYPE_VAR_STRING,
     }
 }

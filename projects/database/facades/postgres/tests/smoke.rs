@@ -44,6 +44,175 @@ fn cell(value: &SqlValue) -> String {
 }
 
 #[test]
+fn zzz_probe_shapes() {
+    let dir = TempDir::new("zzz-probe");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine
+        .execute(
+            r#"CREATE TABLE probe_users (
+                id UUID PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                status SMALLINT NOT NULL DEFAULT 0,
+                balance NUMERIC(18, 6) NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )"#,
+        )
+        .unwrap();
+    for index in 0..3 {
+        engine
+            .execute(&format!(
+                "INSERT INTO probe_users (id, email, status, created_at) VALUES ('00000000-0000-0000-0000-00000000000{index}', 'probe-{index}@example.com', {index}, '2026-11-20 00:00:00+00')"
+            ))
+            .unwrap();
+    }
+
+    for (name, sql) in [
+        ("window", "SELECT email FROM probe_users"),
+        (
+            "on_conflict",
+            "INSERT INTO probe_users (id, email, balance) VALUES ('00000000-0000-0000-0000-000000000001', 'probe-0@example.com', 0) ON CONFLICT (id) DO UPDATE SET balance = probe_users.balance + 1 RETURNING balance",
+        ),
+        (
+            "on_conflict_unique",
+            "INSERT INTO probe_users (id, email, balance) VALUES ('00000000-0000-0000-0000-000000000009', 'probe-0@example.com', 0) ON CONFLICT (email) DO UPDATE SET balance = probe_users.balance + 1 RETURNING id, balance",
+        ),
+        ("lateral", "SELECT u.email, t.total FROM probe_users u, LATERAL (SELECT count(*) AS total FROM probe_users x) t"),
+        ("derived_comma", "SELECT u.email, t.total FROM probe_users u, (SELECT count(*) AS total FROM probe_users x) t"),
+        ("derived_join", "SELECT u.email, t.total FROM probe_users u CROSS JOIN (SELECT count(*) AS total FROM probe_users x) t"),
+        ("array_agg", "SELECT array_agg(id) AS ids FROM probe_users"),
+        ("cte", "WITH picked AS (SELECT id FROM probe_users) SELECT count(*) FROM picked"),
+    ] {
+        match engine.query(sql) {
+            Ok(result) => println!("PROBE {name}: ok rows={:?}", rows_of(&result)),
+            Err(error) => println!("PROBE {name}: FAILED {error}"),
+        }
+    }
+    engine.close().unwrap();
+}
+
+#[test]
+fn gap71_probe() {
+    let dir = TempDir::new("gap71");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, ts TIMESTAMPTZ, meta JSONB, name TEXT)").unwrap();
+    engine
+        .execute(
+            r#"INSERT INTO t (id, ts, meta, name) VALUES (1, '2026-11-20 13:45:30+00', '{"a": {"b": 7}, "list": [10, 20]}', 'alpha')"#,
+        )
+        .unwrap();
+    for (name, sql) in [
+        ("extract_year", "SELECT EXTRACT(YEAR FROM ts) FROM t"),
+        ("extract_epoch", "SELECT EXTRACT(EPOCH FROM ts) FROM t"),
+        ("extract_dow", "SELECT EXTRACT(DOW FROM ts) FROM t"),
+        ("interval_add", "SELECT ts + INTERVAL '1 day' FROM t"),
+        ("interval_sub", "SELECT ts - INTERVAL '2 hours' FROM t"),
+        ("interval_cmp", "SELECT id FROM t WHERE ts > now() - INTERVAL '30 days'"),
+        ("json_arrow", r#"SELECT meta -> 'a' FROM t"#),
+        ("json_arrow_text", r#"SELECT meta ->> 'a' FROM t"#),
+        ("json_index", r#"SELECT meta -> 'list' -> 1 FROM t"#),
+        ("json_nested", r#"SELECT meta -> 'a' ->> 'b' FROM t"#),
+        ("recursive", "WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums ORDER BY n"),
+        ("delete_alias", "DELETE FROM t AS x WHERE x.name = 'alpha'"),
+    ] {
+        match engine.query(sql) {
+            Ok(result) => println!("PROBE {name}: ok rows={:?}", rows_of(&result)),
+            Err(error) => println!("PROBE {name}: FAILED {error}"),
+        }
+    }
+    engine.close().unwrap();
+}
+
+#[test]
+fn single_row_derived_tables_and_unique_conflict_targets() {
+    let dir = TempDir::new("derived-unique");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE u (id UUID PRIMARY KEY, email TEXT NOT NULL UNIQUE, balance NUMERIC(18, 6) NOT NULL DEFAULT 0)").unwrap();
+    for index in 0..3 {
+        engine
+            .execute(&format!("INSERT INTO u (id, email) VALUES ('00000000-0000-0000-0000-00000000000{index}', 'u-{index}@example.com')"))
+            .unwrap();
+    }
+
+    // A single-row aggregate derived table is a scalar subquery, whether it is
+    // reached through `, LATERAL`, `, (...)` or `CROSS JOIN (...)`.
+    for sql in [
+        "SELECT b.email, t.total FROM u b, LATERAL (SELECT count(*) AS total FROM u x) t ORDER BY b.email",
+        "SELECT b.email, t.total FROM u b, (SELECT count(*) AS total FROM u x) t ORDER BY b.email",
+        "SELECT b.email, t.total FROM u b CROSS JOIN (SELECT count(*) AS total FROM u x) t ORDER BY b.email",
+    ] {
+        let rows = engine.query(sql).unwrap_or_else(|error| panic!("`{sql}` failed: {error}"));
+        assert_eq!(
+            rows_of(&rows),
+            vec![
+                vec!["u-0@example.com".to_owned(), "3".to_owned()],
+                vec!["u-1@example.com".to_owned(), "3".to_owned()],
+                vec!["u-2@example.com".to_owned(), "3".to_owned()],
+            ],
+            "`{sql}`"
+        );
+    }
+
+    // The conflict target may be a declared unique column, not only the primary
+    // key; the stored row keeps its own primary key.
+    let rows = engine
+        .query(
+            "INSERT INTO u (id, email, balance) VALUES ('00000000-0000-0000-0000-000000000009', 'u-0@example.com', 0) \
+             ON CONFLICT (email) DO UPDATE SET balance = u.balance + 1 RETURNING id, balance",
+        )
+        .unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["00000000-0000-0000-0000-000000000000".to_owned(), "1".to_owned()]]);
+
+    // A target no unique constraint covers is still refused.
+    let rejected = engine.query(
+        "INSERT INTO u (id, email) VALUES ('00000000-0000-0000-0000-00000000000a', 'u-9@example.com') ON CONFLICT (email, id) DO NOTHING",
+    );
+    assert!(rejected.is_err(), "a target spanning no declared constraint must be rejected");
+
+    engine.close().unwrap();
+}
+
+#[test]
+fn aggregate_filter_restricts_input_rows() {
+    let dir = TempDir::new("agg-filter");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, status BIGINT, amount BIGINT)").unwrap();
+    engine.execute("INSERT INTO t (id, status, amount) VALUES (1, 1, 10), (2, 0, 20), (3, 1, 30), (4, NULL, NULL)").unwrap();
+    let row = engine.query("SELECT COUNT(*) FILTER (WHERE status = 1), SUM(amount) FILTER (WHERE status = 1) FROM t").unwrap();
+    assert_eq!(rows_of(&row), vec![vec!["2".to_owned(), "40".to_owned()]]);
+    let grouped = engine.query("SELECT status, COUNT(*) FILTER (WHERE amount >= 20) FROM t GROUP BY status ORDER BY status").unwrap();
+    assert_eq!(rows_of(&grouped), vec![vec!["0", "1"], vec!["1", "1"], vec!["Null", "0"]]);
+    engine.close().unwrap();
+}
+
+#[test]
+fn for_update_is_accepted_without_row_locks() {
+    let dir = TempDir::new("for-update");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    engine.execute("INSERT INTO t (id, name) VALUES (1, 'a')").unwrap();
+    for clause in ["FOR UPDATE", "FOR UPDATE OF t", "FOR UPDATE NOWAIT", "FOR SHARE SKIP LOCKED", "FOR NO KEY UPDATE"] {
+        let rows = engine.query(&format!("SELECT id FROM t WHERE id = 1 {clause}")).unwrap();
+        assert_eq!(rows_of(&rows), vec![vec!["1".to_owned()]], "clause: {clause}");
+    }
+    engine.close().unwrap();
+}
+
+#[test]
+fn ilike_matches_case_insensitively() {
+    let dir = TempDir::new("ilike");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, name TEXT)").unwrap();
+    engine.execute("INSERT INTO t (id, name) VALUES (1, 'Alpha'), (2, 'beta'), (3, NULL)").unwrap();
+    let rows = engine.query("SELECT id FROM t WHERE name ILIKE 'AL%' ORDER BY id").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["1".to_owned()]]);
+    let rows = engine.query("SELECT id FROM t WHERE name NOT ILIKE 'a%' ORDER BY id").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["2".to_owned()]]);
+    let rows = engine.query("SELECT id FROM t WHERE name ILIKE '_ETA'").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["2".to_owned()]]);
+    engine.close().unwrap();
+}
+
+#[test]
 fn local_engine_statements_and_transactions() {
     let dir = TempDir::new("local");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

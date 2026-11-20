@@ -49,6 +49,8 @@ pub enum Expression {
         distinct: bool,
         /// The `OVER (...)` window specification, absent for plain calls.
         window: Option<WindowSpec>,
+        /// The `FILTER (WHERE ...)` clause of an aggregate call, absent otherwise.
+        filter: Option<Box<Expression>>,
         /// The span of the function call.
         #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]
         span: Range<usize>,
@@ -163,6 +165,27 @@ pub enum Expression {
         #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]
         span: Range<usize>,
     },
+    /// An `EXTRACT(field FROM expr)` expression.
+    Extract {
+        /// The time field to extract (e.g. `YEAR`, `MONTH`, `EPOCH`), upper-cased.
+        field: Arc<str>,
+        /// The source expression (a date/time value or its text form).
+        source: Box<Expression>,
+        /// The span of the whole EXTRACT expression.
+        #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]
+        span: Range<usize>,
+    },
+    /// An `INTERVAL 'quantity unit'` literal.
+    ///
+    /// The value is kept as written (e.g. `1 day`, `2 hours`) because the engine
+    /// has no dedicated interval type; consumers parse the quantity and unit.
+    Interval {
+        /// The interval text without the surrounding quotes.
+        text: Arc<str>,
+        /// The span of the whole INTERVAL literal.
+        #[cfg_attr(feature = "serde", serde(with = "data_text_core::serde_range"))]
+        span: Range<usize>,
+    },
     /// An error occurred during expression parsing or building.
     Error {
         /// The error message.
@@ -193,6 +216,8 @@ impl Expression {
             Expression::Vector { span, .. } => span.clone(),
             Expression::Case { span, .. } => span.clone(),
             Expression::Cast { span, .. } => span.clone(),
+            Expression::Extract { span, .. } => span.clone(),
+            Expression::Interval { span, .. } => span.clone(),
             Expression::Error { span, .. } => span.clone(),
         }
     }
@@ -213,7 +238,7 @@ impl ToSource for Expression {
                 op.to_source(buffer);
                 expr.to_source(buffer);
             }
-            Expression::FunctionCall { name, args, distinct, window, .. } => {
+            Expression::FunctionCall { name, args, distinct, window, filter, .. } => {
                 name.to_source(buffer);
                 buffer.push("(");
                 if *distinct {
@@ -228,6 +253,11 @@ impl ToSource for Expression {
                 buffer.push(")");
                 if let Some(window) = window {
                     window.to_source(buffer);
+                }
+                if let Some(filter) = filter {
+                    buffer.push("FILTER(WHERE");
+                    filter.to_source(buffer);
+                    buffer.push(")");
                 }
             }
             Expression::Vector { elements, .. } => {
@@ -328,6 +358,18 @@ impl ToSource for Expression {
                 buffer.push(target);
                 buffer.push(")");
             }
+            Expression::Extract { field, source, .. } => {
+                buffer.push("EXTRACT(");
+                buffer.push(field);
+                buffer.push(" FROM ");
+                source.to_source(buffer);
+                buffer.push(")");
+            }
+            Expression::Interval { text, .. } => {
+                buffer.push("INTERVAL '");
+                buffer.push(text);
+                buffer.push("'");
+            }
             Expression::Error { message, .. } => {
                 buffer.push("/* EXPR ERROR: ");
                 buffer.push(message);
@@ -358,6 +400,7 @@ pub(crate) fn needs_is_operand_parentheses(expr: &Expression) -> bool {
                     | BinaryOperator::LessEqual
                     | BinaryOperator::GreaterEqual
                     | BinaryOperator::Like
+                    | BinaryOperator::ILike
             )
         }
         _ => false,
@@ -409,8 +452,14 @@ pub enum BinaryOperator {
     GreaterEqual,
     /// Pattern matching (LIKE).
     Like,
+    /// Case-insensitive pattern matching (ILIKE).
+    ILike,
     /// String concatenation (`||`).
     Concat,
+    /// JSON/JSONB value extraction (`->`).
+    JsonGet,
+    /// JSON/JSONB text extraction (`->>`).
+    JsonGetText,
 }
 
 impl ToSource for BinaryOperator {
@@ -430,7 +479,10 @@ impl ToSource for BinaryOperator {
             BinaryOperator::LessEqual => buffer.push("<="),
             BinaryOperator::GreaterEqual => buffer.push(">="),
             BinaryOperator::Like => buffer.push("LIKE"),
+            BinaryOperator::ILike => buffer.push("ILIKE"),
             BinaryOperator::Concat => buffer.push("||"),
+            BinaryOperator::JsonGet => buffer.push("->"),
+            BinaryOperator::JsonGetText => buffer.push("->>"),
         }
     }
 }

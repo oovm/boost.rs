@@ -183,6 +183,8 @@ fn render_parameter(parameters: &[SqlValue], index: usize, style: SqlParameterSt
                 SqlParameterStyle::QuestionMark => format!("CAST('{hex}' AS BLOB)"),
             }
         }
+        // 绑定参数从不携带数组：数组只由 `array_agg` 在结果侧产生。
+        SqlValue::Array(_) => return Err(parameter_error("array parameters are not supported")),
         SqlValue::Null => "NULL".to_string(),
     })
 }

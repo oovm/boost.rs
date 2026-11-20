@@ -1118,6 +1118,7 @@ fn test_stand_in(field_type: Option<SqlFieldType>) -> SqlValue {
         Some(SqlFieldType::Bytes) => SqlValue::Bytes(vec![0]),
         Some(SqlFieldType::String) | Some(SqlFieldType::Unknown) | None => SqlValue::String(String::new()),
         Some(SqlFieldType::Optional(_)) => SqlValue::String(String::new()),
+        Some(SqlFieldType::Array(_)) => SqlValue::Array(Vec::new()),
     }
 }
 
@@ -1482,8 +1483,51 @@ fn pg_oid(field_type: &SqlFieldType) -> u32 {
         SqlFieldType::Uuid => OID_UUID,
         // JSON/JSONB 以文本存储；上报 `jsonb` 让驱动把载荷解析成 JSON 值。
         SqlFieldType::Json => OID_JSONB,
+        // `array_agg` 投影按元素类型上报 PostgreSQL 的数组 OID，驱动据此物化 `Vec<T>`。
+        SqlFieldType::Array(element) => array_oid(&element.inner()),
         SqlFieldType::String | SqlFieldType::Unknown | SqlFieldType::Optional(_) => OID_TEXT,
     }
+}
+
+/// PostgreSQL array OID for an element type.
+fn array_oid(element: &SqlFieldType) -> u32 {
+    match element.inner() {
+        SqlFieldType::Int16 => 1005,
+        SqlFieldType::Int32 => 1007,
+        SqlFieldType::Int64 => 1016,
+        SqlFieldType::Float64 => 1022,
+        SqlFieldType::Bool => 1000,
+        SqlFieldType::Uuid => OID_UUID_ARRAY,
+        SqlFieldType::Json => OID_JSONB_ARRAY,
+        SqlFieldType::Decimal => 1231,
+        SqlFieldType::Date => 1182,
+        SqlFieldType::Datetime => 1185,
+        SqlFieldType::Bytes => 1001,
+        _ => OID_TEXT_ARRAY,
+    }
+}
+
+/// Element OID carried inside the binary array payload.
+fn array_element_oid(array_oid: u32) -> u32 {
+    match array_oid {
+        1005 => OID_INT2,
+        1007 => OID_INT4,
+        1016 => OID_INT8,
+        1022 => OID_FLOAT8,
+        1000 => OID_BOOL,
+        OID_UUID_ARRAY => OID_UUID,
+        OID_JSONB_ARRAY => OID_JSONB,
+        1231 => OID_NUMERIC,
+        1182 => OID_DATE,
+        1185 => OID_TIMESTAMPTZ,
+        1001 => OID_BYTEA,
+        _ => OID_TEXT,
+    }
+}
+
+/// Whether `oid` names one of the PostgreSQL array types the gateway emits.
+fn is_array_oid(oid: u32) -> bool {
+    matches!(oid, 1005 | 1007 | 1016 | 1022 | 1000 | OID_TEXT_ARRAY | OID_VARCHAR_ARRAY | OID_UUID_ARRAY | OID_JSONB_ARRAY | 1231 | 1182 | 1185 | 1001)
 }
 
 /// PostgreSQL RowDescription message ('T') — catalog-derived OIDs and the
@@ -1603,7 +1647,62 @@ fn pg_binary_value(oid: u32, value: &SqlValue) -> Result<Vec<u8>, (String, Strin
             Ok(bytes)
         }
         OID_NUMERIC => numeric_binary_from_text(&text_value(value)?),
+        oid if is_array_oid(oid) => pg_binary_array(oid, value),
         _ => Err(("0A000".to_string(), format!("binary output for type OID {oid} is not supported"))),
+    }
+}
+
+/// PostgreSQL binary array payload: header plus one length-prefixed element each.
+fn pg_binary_array(oid: u32, value: &SqlValue) -> Result<Vec<u8>, (String, String)> {
+    let SqlValue::Array(items) = value
+    else {
+        return Err(("22P02".to_string(), format!("value {value:?} is not an array payload")));
+    };
+    let element_oid = array_element_oid(oid);
+    let mut out = Vec::with_capacity(20 + items.len() * 8);
+    out.extend_from_slice(&1_i32.to_be_bytes()); // ndim
+    out.extend_from_slice(&i32::from(items.iter().any(|item| matches!(item, SqlValue::Null))).to_be_bytes()); // hasnull
+    out.extend_from_slice(&element_oid.to_be_bytes());
+    out.extend_from_slice(&(items.len() as i32).to_be_bytes()); // dim length
+    out.extend_from_slice(&1_i32.to_be_bytes()); // lower bound
+    for item in items {
+        if matches!(item, SqlValue::Null) {
+            out.extend_from_slice(&(-1_i32).to_be_bytes());
+            continue;
+        }
+        let bytes = pg_binary_value(element_oid, item)?;
+        out.extend_from_slice(&(bytes.len() as i32).to_be_bytes());
+        out.extend_from_slice(&bytes);
+    }
+    Ok(out)
+}
+
+/// PostgreSQL array text literal: `{a,b}` with quoting for special elements.
+fn pg_array_text(items: &[SqlValue]) -> String {
+    let mut out = String::from("{");
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&pg_array_element_text(item));
+    }
+    out.push('}');
+    out
+}
+
+fn pg_array_element_text(value: &SqlValue) -> String {
+    if matches!(value, SqlValue::Null) {
+        return "NULL".to_owned();
+    }
+    let text = sql_value_to_pg_text(value);
+    let needs_quotes = text.is_empty()
+        || text.eq_ignore_ascii_case("null")
+        || text.chars().any(|c| matches!(c, '{' | '}' | ',' | '"' | '\\') || c.is_whitespace());
+    if needs_quotes {
+        format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+    else {
+        text
     }
 }
 
@@ -1659,6 +1758,7 @@ fn sql_value_to_pg_text(value: &SqlValue) -> String {
                 "f".into()
             }
         }
+        SqlValue::Array(items) => pg_array_text(items),
         SqlValue::Null => unreachable!(),
     }
 }

@@ -110,6 +110,8 @@ fn expr_has_subquery(expr: &Expr) -> bool {
         Expr::Binary { left, right, .. } => expr_has_subquery(left) || expr_has_subquery(right),
         Expr::Not(inner) => expr_has_subquery(inner),
         Expr::Function { args, .. } => args.iter().any(expr_has_subquery),
+        Expr::Interval { .. } => false,
+        Expr::JsonAccess { left, key, .. } => expr_has_subquery(left) || expr_has_subquery(key),
     }
 }
 
@@ -228,6 +230,11 @@ fn lower_end(slot: &mut Option<String>, candidate: String) {
 /// widens the window to the whole table instead of the whole database, which is
 /// what a bulk load into one table actually touches.
 ///
+/// `exempt` means the caller's unique-key index is warm for every rule-bearing
+/// table, so the duplicate check reads the cache instead of the table and the
+/// whole-table widening is not needed. This is what lets a SQL write narrow
+/// exactly like the equivalent VOS write instead of forcing a wider read.
+///
 /// The union of the windows is a superset of every row the statement can
 /// change, so the executor can still filter inside it and a caller that
 /// publishes only the window differences leaves every other row untouched.
@@ -237,6 +244,7 @@ pub fn write_windows(
     declared: &[database_types::TableUniqueConstraint],
     bound_values: &[Value],
     holds_every_row: bool,
+    exempt: bool,
 ) -> Result<Option<Vec<ReadWindow>>> {
     // Uniqueness checks read the whole table, so both the rules the schema
     // document declares and the ones a host adds must widen the window.
@@ -273,11 +281,12 @@ pub fn write_windows(
                     };
                     windows.push(single_key_window(&storage, &text));
                 }
-                if constraints::has_rules(&rules, &storage) && !holds_every_row {
+                if constraints::has_rules(&rules, &storage) && !holds_every_row && !exempt {
                     // The check compares against every stored row of this table,
                     // so the table must be present even though the write itself
                     // names one key per row. A caller that already holds every
-                    // row (an open transaction) needs no window for it.
+                    // row (an open transaction) or answers the check from a warm
+                    // unique-key index needs no window for it.
                     windows.push(table_window(&storage));
                 }
             }
@@ -289,7 +298,7 @@ pub fn write_windows(
                     return Ok(None);
                 };
                 windows.push(window);
-                if constraints::has_rules(&rules, &storage) && !holds_every_row {
+                if constraints::has_rules(&rules, &storage) && !holds_every_row && !exempt {
                     windows.push(table_window(&storage));
                 }
             }

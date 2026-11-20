@@ -131,7 +131,11 @@ impl data_text_core::TokenType for SqlTokenType {
             | Self::Without
             | Self::With
             | Self::Rowid
-            | Self::Cast => Keyword,
+            | Self::Cast
+            | Self::Extract
+            | Self::Interval
+            | Self::Recursive
+            | Self::Using => Keyword,
             Self::Int
             | Self::Integer
             | Self::Varchar
@@ -157,7 +161,9 @@ impl data_text_core::TokenType for SqlTokenType {
             | Self::Greater
             | Self::LessEqual
             | Self::GreaterEqual
-            | Self::Concat => Operator,
+            | Self::Concat
+            | Self::Arrow
+            | Self::ArrowArrow => Operator,
             Self::LeftParen
             | Self::RightParen
             | Self::LeftBracket
@@ -474,6 +480,14 @@ pub enum SqlTokenType {
     Rowid,
     /// `CAST` keyword.
     Cast,
+    /// `EXTRACT` keyword.
+    Extract,
+    /// `INTERVAL` keyword.
+    Interval,
+    /// `RECURSIVE` keyword.
+    Recursive,
+    /// `USING` keyword.
+    Using,
 
     /// `INT` type.
     Int,
@@ -530,6 +544,10 @@ pub enum SqlTokenType {
     Concat,
     /// Double Colon `::`.
     DoubleColon,
+    /// JSON/JSONB arrow operator `->`.
+    Arrow,
+    /// JSON/JSONB text arrow operator `->>`.
+    ArrowArrow,
     /// Left parenthesis `(`.
     LeftParen,
     /// Right parenthesis `)`.

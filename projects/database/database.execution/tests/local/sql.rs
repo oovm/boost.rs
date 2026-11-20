@@ -1815,10 +1815,13 @@ fn select_rejects_like_operator() {
 }
 
 #[test]
-fn select_rejects_without_from_clause() {
-    // SELECT 1 — this is a literal value projection without FROM
-    let err = prepare_sql("SELECT 1").expect_err("no FROM must reject");
-    assert!(format!("{err}").contains("FROM"));
+fn select_without_from_computes_over_one_empty_row() {
+    // PG semantics: `SELECT 1` computes over exactly one empty row.
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    let outcome = execute_sql("SELECT 1", &[], &contract, &[], &mut records).expect("no FROM is a single-row source");
+    assert_eq!(outcome.rows.len(), 1, "a FROM-less SELECT yields exactly one row");
+    assert_eq!(outcome.rows[0].values().collect::<Vec<_>>(), vec![&Value::I64(1)]);
 }
 
 // ─── WHERE boolean literal and bare column reference ───────────────────
@@ -2941,8 +2944,93 @@ fn aggregate_count_sum_avg_group_by() {
     assert_eq!(outcome.rows[1].get("a"), Some(&Value::F64(20.0)));
 }
 
+#[test]
+fn aggregate_filter_restricts_the_input_rows() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // ada(10, active), linus(30, inactive), grace(20, active)
+    let global = execute_sql(
+        "SELECT COUNT(*) FILTER (WHERE active) AS c, SUM(score) FILTER (WHERE active) AS s FROM Account",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("filtered global aggregates");
+    assert_eq!(global.rows.len(), 1);
+    assert_eq!(global.rows[0].get("c"), Some(&Value::I64(2)));
+    assert_eq!(global.rows[0].get("s"), Some(&Value::I64(30)));
+
+    // t1: only linus(30) passes the filter; t2: grace(20) passes.
+    let grouped = execute_sql(
+        "SELECT tenant, COUNT(*) FILTER (WHERE score >= 20) AS c FROM Account GROUP BY tenant ORDER BY tenant",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("filtered grouped aggregate");
+    assert_eq!(grouped.rows.len(), 2);
+    assert_eq!(grouped.rows[0].get("c"), Some(&Value::I64(1)));
+    assert_eq!(grouped.rows[1].get("c"), Some(&Value::I64(1)));
+
+    // No row survives the filter: the inner aggregate's empty-group result applies.
+    let empty = execute_sql(
+        "SELECT COUNT(*) FILTER (WHERE score > 9000) AS c, SUM(score) FILTER (WHERE score > 9000) AS s FROM Account",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("filtered aggregate over an empty input");
+    assert_eq!(empty.rows[0].get("c"), Some(&Value::I64(0)));
+    assert_eq!(empty.rows[0].get("s"), Some(&Value::Null));
+}
+
+#[test]
+fn array_agg_collects_every_value_of_the_group() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    let outcome = execute_sql("SELECT array_agg(account_id) AS ids FROM Account", &[], &contract, &[], &mut records).expect("array aggregate");
+    assert_eq!(outcome.rows.len(), 1);
+    let Some(Value::List(ids)) = outcome.rows[0].get("ids")
+    else {
+        panic!("array_agg must produce a list, got {:?}", outcome.rows[0].get("ids"));
+    };
+    let mut ids: Vec<i64> = ids
+        .iter()
+        .map(|value| match value {
+            Value::I64(id) => *id,
+            other => panic!("unexpected array element {other:?}"),
+        })
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![1, 2, 3]);
+
+    // Grouping collects one list per group.
+    let grouped = execute_sql(
+        "SELECT tenant, array_agg(score) AS scores FROM Account GROUP BY tenant ORDER BY tenant",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("grouped array aggregate");
+    assert_eq!(grouped.rows.len(), 2);
+    assert!(matches!(grouped.rows[0].get("scores"), Some(Value::List(values)) if values.len() == 2));
+    assert!(matches!(grouped.rows[1].get("scores"), Some(Value::List(values)) if values == &vec![Value::I64(20)]));
+
+    // PostgreSQL returns NULL, not an empty list, when the group has no row.
+    let empty = execute_sql("SELECT array_agg(account_id) AS ids FROM Account WHERE account_id > 100", &[], &contract, &[], &mut records)
+        .expect("array aggregate over an empty input");
+    assert_eq!(empty.rows[0].get("ids"), Some(&Value::Null));
+}
+
 // ─── Empty-input aggregate semantics ───────────────────────────────────
-//
 // Without `GROUP BY` the whole input is one group, so zero input rows still
 // produce exactly one row: counting aggregates report `0` and value
 // aggregates report `NULL`. `GROUP BY` has no group to report, so an empty

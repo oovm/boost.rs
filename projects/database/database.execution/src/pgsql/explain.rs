@@ -142,6 +142,14 @@ fn plan_lines(plan: &SqlExecutionPlan, catalog: &SqlCatalog) -> Vec<String> {
             lines.push("Delete".to_owned());
             lines
         }
+        SqlExecutionPlan::DeleteUsing(delete) => {
+            let mut lines = vec![format!("Nested Loop on {} (cross join)", table_name(catalog, &delete.namespace))];
+            for source in &delete.sources {
+                lines.push(format!("  -> Seq Scan on {}", table_name(catalog, &source.namespace)));
+            }
+            lines.push("Delete".to_owned());
+            lines
+        }
     }
 }
 

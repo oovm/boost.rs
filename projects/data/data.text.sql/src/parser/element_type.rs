@@ -86,6 +86,8 @@ pub enum SqlElementType {
     FunctionCall,
     /// `OVER (...)` window specification of a function call.
     WindowSpec,
+    /// `FILTER (WHERE ...)` clause of an aggregate call.
+    AggregateFilter,
     /// `PARTITION BY` list of a window specification.
     WindowPartition,
     /// `ORDER BY` list of a window specification.
@@ -149,6 +151,7 @@ impl ElementType for SqlElementType {
             | Self::WindowPartition
             | Self::WindowOrderBy
             | Self::WindowFrame
+            | Self::AggregateFilter
             | Self::Subquery => Statement,
         }
     }

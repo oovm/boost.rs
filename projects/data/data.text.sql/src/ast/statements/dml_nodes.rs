@@ -237,8 +237,11 @@ impl ToSource for Assignment {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeleteStatement {
-    /// The table to delete from.
+    /// The table to delete from, with its optional `AS` alias.
     pub table_name: TableName,
+    /// The extra row sources of `DELETE ... USING ...`, referenceable from the
+    /// WHERE predicate like a join.
+    pub using_tables: Vec<TableName>,
     /// The WHERE clause selection expression.
     pub selection: Option<Expression>, // WHERE clause
     /// The span of the DELETE statement.
@@ -251,6 +254,15 @@ impl ToSource for DeleteStatement {
         buffer.push("DELETE");
         buffer.push("FROM");
         self.table_name.to_source(buffer);
+        if !self.using_tables.is_empty() {
+            buffer.push("USING");
+            for (i, table) in self.using_tables.iter().enumerate() {
+                if i > 0 {
+                    buffer.push(",");
+                }
+                table.to_source(buffer);
+            }
+        }
         if let Some(selection) = &self.selection {
             buffer.push("WHERE");
             selection.to_source(buffer);

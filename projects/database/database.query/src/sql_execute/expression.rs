@@ -33,10 +33,18 @@ pub fn eval_expression(
             eval_unary(*operator, inner)?
         }
         SqlCatalogBoundExpression::Binary { left, operator, right } => {
+            // `datetime ± interval` 必须先识别 INTERVAL 侧再求值：它不是普通标量值。
+            if matches!(operator, SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus) {
+                if let Some(value) = eval_interval_arithmetic(left, *operator, right, row, field_types, dialect)? {
+                    return Ok(value);
+                }
+            }
             let l = eval_expression(left, row, field_types, dialect)?;
             let r = eval_expression(right, row, field_types, dialect)?;
             eval_binary(*operator, &l, &r, dialect)?
         }
+        // 单独的 INTERVAL 值按原文文本输出；与日期时间的加减在 Binary 分支展开。
+        SqlCatalogBoundExpression::Interval { text } => SqlValue::String(text.clone()),
         // 窗口函数需要整列上下文，必须由窗口路径批量求值。
         SqlCatalogBoundExpression::Function { window: Some(_), .. } => {
             return Err(internal_error("window function was not evaluated by the window pass"));
@@ -64,6 +72,33 @@ pub fn eval_expression(
             eval_cast_for_dialect(inner, target, matches!(expr.as_ref(), SqlCatalogBoundExpression::Literal(_)), dialect)?
         }
     })
+}
+
+/// `datetime ± INTERVAL '<数量> <单位>'`：一侧是 INTERVAL 时按日历展开求值。
+///
+/// `Ok(None)` 表示两侧都不是 INTERVAL，调用方回到通用二元求值。`INTERVAL + datetime`
+/// 合法；`INTERVAL - datetime` 不是合法 SQL，留给通用路径报错。
+fn eval_interval_arithmetic(
+    left: &SqlCatalogBoundExpression,
+    operator: SqlBoundBinaryOperator,
+    right: &SqlCatalogBoundExpression,
+    row: &RowFieldValues,
+    field_types: &std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
+    dialect: SqlDialect,
+) -> Result<Option<SqlValue>, SqlFrontendError> {
+    let (base, interval, negate) = match (left, right) {
+        (base, SqlCatalogBoundExpression::Interval { text }) => (base, text.as_str(), operator == SqlBoundBinaryOperator::Minus),
+        (SqlCatalogBoundExpression::Interval { text }, base) if operator == SqlBoundBinaryOperator::Plus => (base, text.as_str(), false),
+        _ => return Ok(None),
+    };
+    let base_value = eval_expression(base, row, field_types, dialect)?;
+    if matches!(base_value, SqlValue::Null) {
+        return Ok(Some(SqlValue::Null));
+    }
+    let Some(base_text) = super::scalar::scalar_text(&[base_value], 0) else {
+        return Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "INTERVAL arithmetic needs a date or timestamp operand"));
+    };
+    Ok(Some(super::scalar::apply_interval_to_datetime(&base_text, interval, if negate { -1 } else { 1 })?))
 }
 
 /// PostgreSQL `CAST` / `expr::type` semantics.
@@ -405,6 +440,10 @@ pub fn eval_binary(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue
             _ => Null,
         });
     }
+    if matches!(op, SqlBoundBinaryOperator::JsonGet | SqlBoundBinaryOperator::JsonGetText) {
+        // JSON 取箭头只接受文本/二进制 JSON 与字符串键或整数下标，NULL 已在上方传播。
+        return eval_json_access(op, left, right);
+    }
     Ok(match (left, right) {
         (Integer(a), Integer(b)) => integer_binary(op, *a, *b, dialect)?,
         // 整数与浮点混合比较必须先走精确序关系，否则 2^53 以上的 `i64` 会先被
@@ -429,11 +468,30 @@ pub fn eval_binary(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue
             SqlBoundBinaryOperator::LessEqual => Boolean(!cmp_string(a, b).is_gt()),
             SqlBoundBinaryOperator::GreaterEqual => Boolean(!cmp_string(a, b).is_lt()),
             SqlBoundBinaryOperator::Like => Boolean(like_match(a, b)),
+            SqlBoundBinaryOperator::ILike => Boolean(like_match_ci(a, b)),
             _ => Null,
         },
         // 二进制值按字节序比较。文本没有隐式转成 octets：混合比较返回 NULL，
         // 需要比较时由调用方显式 `CAST`。
         (Bytes(a), Bytes(b)) if is_comparison(op) => comparison_value(op, a.cmp(b)),
+        // `numeric` / `decimal` 列按 canonical 文本解码成 `String`；与数值混合时
+        // 按 PostgreSQL 的数值提升规则重新求值，而不是落进文本比较或 NULL。
+        (String(a), Integer(b)) => match super::values::numeric_text(a) {
+            Some(value) => return eval_binary(op, &value, &Integer(*b), dialect),
+            None => Null,
+        },
+        (String(a), Number(b)) => match super::values::numeric_text(a) {
+            Some(value) => return eval_binary(op, &value, &Number(*b), dialect),
+            None => Null,
+        },
+        (Integer(a), String(b)) => match super::values::numeric_text(b) {
+            Some(value) => return eval_binary(op, &Integer(*a), &value, dialect),
+            None => Null,
+        },
+        (Number(a), String(b)) => match super::values::numeric_text(b) {
+            Some(value) => return eval_binary(op, &Number(*a), &value, dialect),
+            None => Null,
+        },
         (Boolean(a), Boolean(b)) => match op {
             SqlBoundBinaryOperator::Equal => Boolean(a == b),
             SqlBoundBinaryOperator::NotEqual => Boolean(a != b),
@@ -441,6 +499,44 @@ pub fn eval_binary(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue
         },
         _ => Null,
     })
+}
+
+/// JSON 取箭头求值：`->` 返回子树 JSON 文本，`->>` 返回去引号标量文本。
+///
+/// json/jsonb 列在网关里以 JSON 文本存储；字符串键取对象成员，整数下标取数组元素。
+/// 缺键与越界返回 NULL，非法 JSON 或非对象/非数组的取值报类型错误。NULL 侧已在
+/// `eval_binary` 入口传播。
+fn eval_json_access(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue) -> Result<SqlValue, SqlFrontendError> {
+    let type_mismatch = |message: String| SqlFrontendError::new(SqlErrorKind::TypeMismatch, message);
+    let json_text = match left {
+        SqlValue::String(text) => text.clone(),
+        SqlValue::Bytes(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+        other => return Err(type_mismatch(format!("left operand of `->` / `->>` must be JSON text, not {other:?}"))),
+    };
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_text).map_err(|error| type_mismatch(format!("invalid JSON text for `->` / `->>`: {error}")))?;
+    let selected = match right {
+        SqlValue::String(key) => match &parsed {
+            serde_json::Value::Object(map) => map.get(key.as_str()),
+            _ => return Err(type_mismatch(format!("cannot extract string key `{key}` from a non-object JSON value"))),
+        },
+        SqlValue::Integer(index) => match &parsed {
+            serde_json::Value::Array(items) => usize::try_from(*index).ok().and_then(|index| items.get(index)),
+            _ => return Err(type_mismatch("cannot extract integer element from a non-array JSON value".to_string())),
+        },
+        other => return Err(type_mismatch(format!("JSON arrow key must be a string or an integer, not {other:?}"))),
+    };
+    let Some(selected) = selected else {
+        return Ok(SqlValue::Null);
+    };
+    Ok(SqlValue::String(match op {
+        SqlBoundBinaryOperator::JsonGet => selected.to_string(),
+        // `->>` 对标量去引号；对象与数组沿用其 JSON 文本（PostgreSQL 同义）。
+        _ => match selected {
+            serde_json::Value::String(text) => text.clone(),
+            other => other.to_string(),
+        },
+    }))
 }
 
 /// 比较类操作符（`=`/`<>`/`<`/`>`/`<=`/`>=`），其余是算术或逻辑操作符。
@@ -530,10 +626,14 @@ pub(crate) fn integer_binary(op: SqlBoundBinaryOperator, a: i64, b: i64, dialect
         SqlBoundBinaryOperator::Greater => Boolean(a > b),
         SqlBoundBinaryOperator::LessEqual => Boolean(a <= b),
         SqlBoundBinaryOperator::GreaterEqual => Boolean(a >= b),
-        // `Concat` 在 `eval_binary` 入口已按文本处理，不会走到数值分支。
-        SqlBoundBinaryOperator::Like | SqlBoundBinaryOperator::And | SqlBoundBinaryOperator::Or | SqlBoundBinaryOperator::Concat => {
-            SqlValue::Null
-        }
+        // `Concat` 与 JSON 取箭头在 `eval_binary` 入口已按文本处理，不会走到数值分支。
+        SqlBoundBinaryOperator::Like
+        | SqlBoundBinaryOperator::ILike
+        | SqlBoundBinaryOperator::And
+        | SqlBoundBinaryOperator::Or
+        | SqlBoundBinaryOperator::Concat
+        | SqlBoundBinaryOperator::JsonGet
+        | SqlBoundBinaryOperator::JsonGetText => SqlValue::Null,
     })
 }
 
@@ -566,9 +666,13 @@ pub(crate) fn float_binary(op: SqlBoundBinaryOperator, a: f64, b: f64, dialect: 
         SqlBoundBinaryOperator::Greater => Boolean(a > b),
         SqlBoundBinaryOperator::LessEqual => Boolean(a <= b),
         SqlBoundBinaryOperator::GreaterEqual => Boolean(a >= b),
-        SqlBoundBinaryOperator::Like | SqlBoundBinaryOperator::And | SqlBoundBinaryOperator::Or | SqlBoundBinaryOperator::Concat => {
-            SqlValue::Null
-        }
+        SqlBoundBinaryOperator::Like
+        | SqlBoundBinaryOperator::ILike
+        | SqlBoundBinaryOperator::And
+        | SqlBoundBinaryOperator::Or
+        | SqlBoundBinaryOperator::Concat
+        | SqlBoundBinaryOperator::JsonGet
+        | SqlBoundBinaryOperator::JsonGetText => SqlValue::Null,
     })
 }
 
@@ -609,6 +713,14 @@ pub(crate) fn like_match(haystack: &str, pattern: &str) -> bool {
         }
     }
     dp[n][m]
+}
+
+/// `ILIKE`：先按 Unicode 小写折叠两侧，再复用 [`like_match`]。
+///
+/// PostgreSQL 的 `ILIKE` 按 locale 折叠大小写；网关不建模 collation，这里固定用
+/// Unicode 默认小写折叠，保证同一份数据在两个前端（SQL / VOS）下判定一致。
+pub(crate) fn like_match_ci(haystack: &str, pattern: &str) -> bool {
+    like_match(&haystack.to_lowercase(), &pattern.to_lowercase())
 }
 
 /// SQL value equality used by `SELECT DISTINCT`.

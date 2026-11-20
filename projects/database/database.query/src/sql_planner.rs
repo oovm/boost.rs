@@ -51,6 +51,22 @@ pub fn plan_statement_for_dialect(
     }
 }
 
+/// Constant `DEFAULT` of a catalog field as a writable literal.
+///
+/// Returns `None` when the column declares no default or the default is not a
+/// constant this gateway can materialize (`now()`, `nextval(...)`), in which case
+/// the read path keeps its declared-default fallback.
+fn default_literal(field: &crate::catalog_bind::SqlCatalogField) -> Option<SqlBoundLiteral> {
+    let parsed = parse_default_value(field.default.as_deref()?)?;
+    Some(match parsed {
+        DefaultValue::Null => SqlBoundLiteral::Null,
+        DefaultValue::Integer(value) => SqlBoundLiteral::Integer(value),
+        DefaultValue::NumberBits(bits) => SqlBoundLiteral::Number(format!("{}", f64::from_bits(bits))),
+        DefaultValue::String(value) => SqlBoundLiteral::String(value),
+        DefaultValue::Boolean(value) => SqlBoundLiteral::Boolean(value),
+    })
+}
+
 /// Parse the raw `DEFAULT` literal text stored by the DDL parser into a constant
 /// value. Non-constant defaults such as `CURRENT_TIMESTAMP` return `None`.
 fn parse_default_value(text: &str) -> Option<DefaultValue> {
@@ -116,6 +132,10 @@ pub fn plan_select_for_dialect(
                 let star_table = find_table(catalog, star_table.type_id)?;
                 for (index, field) in star_table.fields.iter().enumerate() {
                     reject_unknown_field(field)?;
+                    // 扁平化 CTE 的 `*` 只展开 body 投影出来的列，未投影字段对外层不可见。
+                    if !source.exposes_column(index) {
+                        continue;
+                    }
                     let name = source.visible_column_name(index, field);
                     projection_fields.push((source.row_id(field.field_id), name));
                 }
@@ -307,6 +327,9 @@ fn plan_row_count(clause: Option<&SqlCatalogBoundExpression>, keyword: &str, dia
         ))),
         SqlValue::String(_) => {
             Err(SqlFrontendError::type_mismatch(format!("SQL {keyword} must be an exact non-negative integer, got a text value")))
+        }
+        SqlValue::Array(_) => {
+            Err(SqlFrontendError::type_mismatch(format!("SQL {keyword} must be an exact non-negative integer, got a non-numeric value")))
         }
         SqlValue::Bytes(_) => {
             Err(SqlFrontendError::type_mismatch(format!("SQL {keyword} must be an exact non-negative integer, got a binary value")))
@@ -717,6 +740,7 @@ fn expression_has_subquery(expression: &SqlCatalogBoundExpression) -> bool {
         SqlCatalogBoundExpression::Column(_)
         | SqlCatalogBoundExpression::OuterColumn(_)
         | SqlCatalogBoundExpression::Literal(_)
+        | SqlCatalogBoundExpression::Interval { .. }
         | SqlCatalogBoundExpression::Wildcard => false,
         SqlCatalogBoundExpression::Function { args, .. } => args.iter().any(expression_has_subquery),
         SqlCatalogBoundExpression::Binary { left, right, .. } => expression_has_subquery(left) || expression_has_subquery(right),
@@ -835,6 +859,21 @@ pub fn plan_insert(insert: SqlCatalogBoundInsert, catalog: &SqlCatalog, dialect:
             check_write_literal(&lit, &field_type, &field.field_name, dialect, field.capacity)?;
             write_fields.push(WriteField { field_id: field.field_id, value: lit, field_type, capacity: field.capacity });
         }
+        // PostgreSQL 在写入时把省略列的常量 DEFAULT 物化进行里，而不是留一个缺失字段：
+        // 之后的 `ON CONFLICT DO UPDATE` 读既有行、`RETURNING` 和应用层比较都直接看到
+        // 默认值。非恒定默认（`now()` 等）仍由读取路径按声明缺省回填。
+        for field in &table.fields {
+            if target_fields.iter().any(|target| target.field_id == field.field_id) {
+                continue;
+            }
+            let Some(lit) = default_literal(field)
+            else {
+                continue;
+            };
+            let field_type = field_types.get(&field.field_id).cloned().unwrap_or(crate::catalog_bind::SqlFieldType::Unknown);
+            check_write_literal(&lit, &field_type, &field.name, dialect, field.capacity)?;
+            write_fields.push(WriteField { field_id: field.field_id, value: lit, field_type, capacity: field.capacity });
+        }
         plans.push(WritePlan {
             namespace: namespace.clone(),
             rowid: rowid_bytes,
@@ -872,7 +911,11 @@ fn plan_on_conflict(
         return Ok(Some(ConflictPolicy::DoNothing));
     }
     let pk = primary_key_of(table)?;
-    if conflict.columns.as_slice() != [pk.name.as_str()] {
+    // 冲突目标可以是主键，也可以是任一已声明的 `UNIQUE` 约束的完整列集合。
+    // 只按列名比对：部分列、列序不同或未声明唯一性的列都会落到同一条拒绝上，
+    // 绝不把冲突反应到语句没有点名的约束。
+    let target_matches_pk = conflict.columns.as_slice() == [pk.name.as_str()];
+    if !target_matches_pk && !conflict_target_is_unique(table, &conflict.columns) {
         return Err(SqlFrontendError::unsupported(format!(
             "ON CONFLICT target does not match a unique constraint: {}",
             conflict.columns.join(", ")
@@ -906,6 +949,30 @@ fn plan_on_conflict(
             Ok(Some(ConflictPolicy::DoUpdate { assignments: planned, predicate }))
         }
     }
+}
+
+/// Whether `columns` is exactly the column set of one declared `UNIQUE`
+/// constraint on `table`.
+///
+/// Order does not matter — PostgreSQL matches a conflict target by the index's
+/// column set — but a repeated column, a subset, or a column only covered by a
+/// plain (non-unique) index does not match.
+fn conflict_target_is_unique(table: &crate::SqlCatalogTable, columns: &[String]) -> bool {
+    let mut wanted: Vec<&str> = columns.iter().map(String::as_str).collect();
+    wanted.sort_unstable();
+    let before = wanted.len();
+    wanted.dedup();
+    if wanted.len() != before {
+        return false;
+    }
+    table.unique_constraints.iter().any(|constraint| {
+        let mut names: Vec<&str> = constraint
+            .iter()
+            .filter_map(|field_id| table.fields.iter().find(|field| field.field_id == *field_id).map(|field| field.name.as_str()))
+            .collect();
+        names.sort_unstable();
+        names == wanted
+    })
 }
 
 /// Restricts `ON CONFLICT DO UPDATE SET` values to the numeric expression shapes
@@ -1164,6 +1231,28 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
         table.fields.iter().map(|f| (f.field_id, f.field_type.clone())).collect();
     let unique_constraints = unique_constraints_of(table);
 
+    if !delete.using.is_empty() {
+        // `DELETE ... USING` 是交叉连接：谓词同时引用目标列（槽 0）与 USING 列（后续槽），
+        // 主键下推无法表达跨来源的行值，整个谓词交给执行层逐行判定。
+        let mut using_field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> =
+            table.fields.iter().map(|f| (f.field_id, f.field_type.clone())).collect();
+        let mut sources = Vec::with_capacity(delete.using.len());
+        for source in &delete.using {
+            let using_table = find_table(catalog, source.type_id)?;
+            for field in &using_table.fields {
+                using_field_types.insert(source.row_id(field.field_id), field.field_type.clone());
+            }
+            sources.push(DeleteUsingSourcePlan { namespace: format!("table:{}", using_table.type_id), row_slot: source.row_slot });
+        }
+        return Ok(SqlExecutionPlan::DeleteUsing(DeleteUsingPlan {
+            namespace,
+            sources,
+            predicate: delete.predicate,
+            field_types: using_field_types,
+            unique_constraints,
+        }));
+    }
+
     let Some(predicate) = delete.predicate
     else {
         return Ok(SqlExecutionPlan::DeleteScan(DeleteScanPlan {
@@ -1248,6 +1337,8 @@ pub fn check_write_literal(
     }
     let fits = match field_type.inner() {
         SqlFieldType::Unknown => true,
+        // 数组不是可写入的列类型；真正的数组值只在结果侧出现。
+        SqlFieldType::Array(_) => false,
         SqlFieldType::Int64 | SqlFieldType::Int32 | SqlFieldType::Int16 => match literal {
             SqlBoundLiteral::Null | SqlBoundLiteral::Integer(_) => true,
             SqlBoundLiteral::String(text) => text.parse::<i64>().is_ok(),
@@ -1315,6 +1406,7 @@ fn literal_from_expression(expr: &SqlCatalogBoundExpression) -> Result<SqlBoundL
             col.field_name
         ))),
         SqlCatalogBoundExpression::Wildcard => Err(planner_error("SQL gateway write values must be literals; `*` is not a value")),
+        SqlCatalogBoundExpression::Interval { .. } => Err(planner_error("SQL gateway write values must be literals; INTERVAL is not a write value")),
         SqlCatalogBoundExpression::OuterColumn(_) => Err(planner_error("SQL gateway write values must be simple literals")),
         // 二进制写入值只能来自 wire 层渲染的 `CAST('<hex>' AS BYTEA|BLOB)`：
         // SQL 文本字面量无法承载非 UTF-8 octets，因此这是唯一的二进制入参通道。
@@ -1413,6 +1505,8 @@ pub enum SqlExecutionPlan {
     Delete(DeletePlan),
     /// DELETE — 扫描匹配行后逐行删除。
     DeleteScan(DeleteScanPlan),
+    /// DELETE ... USING — 目标表与 USING 源做交叉连接，谓词命中后删除目标行。
+    DeleteUsing(DeleteUsingPlan),
 }
 
 /// SELECT 精确主键等值执行计划。
@@ -1877,6 +1971,33 @@ pub struct DeleteScanPlan {
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     /// 该表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+}
+
+/// `DELETE ... USING` 执行计划：目标表全扫 × USING 源行的交叉连接，谓词命中后删除目标行。
+///
+/// 谓词里的列引用在 catalog 绑定层已按行槽展开成 `row_id`，因此执行层只需把目标行
+/// 与各 USING 源的行值按同一套键合并；主键下推不适用于该形态，统一走全扫。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteUsingPlan {
+    /// 目标表所属的 namespace。
+    pub namespace: String,
+    /// USING 源，按绑定顺序排列；每个源携带自己的 namespace 与行槽。
+    pub sources: Vec<DeleteUsingSourcePlan>,
+    /// 完整行级过滤条件（目标列 + USING 列）；`None` 表示只要有 USING 行就全删。
+    pub predicate: Option<SqlCatalogBoundExpression>,
+    /// row_id → SqlFieldType 映射（目标表槽 0，USING 源按行槽偏移），execute 层求值用。
+    pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
+    /// 目标表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
+    pub unique_constraints: Vec<UniqueConstraintPlan>,
+}
+
+/// `DELETE ... USING` 计划里的一个 USING 行源。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteUsingSourcePlan {
+    /// 该源所属的 namespace，形如 `table:{type_id}`。
+    pub namespace: String,
+    /// 该源在绑定时占用的行槽；其列行值键为 `field_id + row_slot * ROW_ID_STRIDE`。
+    pub row_slot: u64,
 }
 
 /// 从 WHERE predicate 里提取所有关于 pk 字段的条件。
@@ -2405,7 +2526,7 @@ fn expression_has_aggregate(expr: &SqlCatalogBoundExpression) -> bool {
         // 子查询只依赖自己的结果，对分组恒定：它内部的聚合不属于外层分组。
         SqlCatalogBoundExpression::Exists { .. } | SqlCatalogBoundExpression::ScalarSubquery { .. } => false,
         SqlCatalogBoundExpression::Column(_) | SqlCatalogBoundExpression::OuterColumn(_) => false,
-        SqlCatalogBoundExpression::Literal(_) | SqlCatalogBoundExpression::Wildcard => false,
+        SqlCatalogBoundExpression::Literal(_) | SqlCatalogBoundExpression::Wildcard | SqlCatalogBoundExpression::Interval { .. } => false,
     }
 }
 
@@ -2431,6 +2552,7 @@ fn expression_has_window(expr: &SqlCatalogBoundExpression) -> bool {
         SqlCatalogBoundExpression::Column(_)
         | SqlCatalogBoundExpression::OuterColumn(_)
         | SqlCatalogBoundExpression::Literal(_)
+        | SqlCatalogBoundExpression::Interval { .. }
         | SqlCatalogBoundExpression::Wildcard
         | SqlCatalogBoundExpression::Exists { .. }
         | SqlCatalogBoundExpression::ScalarSubquery { .. } => false,
@@ -2515,6 +2637,7 @@ fn visit_outer_columns(expr: &SqlCatalogBoundExpression, visit: &mut impl FnMut(
             visit_plan_outer_columns(plan, &mut *visit)
         }
         SqlCatalogBoundExpression::Column(_) | SqlCatalogBoundExpression::Literal(_) | SqlCatalogBoundExpression::Wildcard => {}
+        SqlCatalogBoundExpression::Interval { .. } => {}
     }
 }
 
@@ -2577,7 +2700,8 @@ fn visit_plan_outer_columns(plan: &SqlExecutionPlan, visit: &mut impl FnMut(&Sql
         | SqlExecutionPlan::Update(_)
         | SqlExecutionPlan::UpdateScan(_)
         | SqlExecutionPlan::Delete(_)
-        | SqlExecutionPlan::DeleteScan(_) => {}
+        | SqlExecutionPlan::DeleteScan(_)
+        | SqlExecutionPlan::DeleteUsing(_) => {}
     }
 }
 
@@ -2691,6 +2815,8 @@ fn grouped_expression_allowed(
         // 外层列属于某一行外层输入，分组后不再有确定的取值来源。
         SqlCatalogBoundExpression::OuterColumn(_) => false,
         SqlCatalogBoundExpression::Literal(_) => true,
+        // INTERVAL 是常量文本，分组后依旧成立。
+        SqlCatalogBoundExpression::Interval { .. } => true,
         SqlCatalogBoundExpression::Wildcard => false,
         SqlCatalogBoundExpression::Function { name, .. } if SqlAggregateFunction::from_name(name).is_some() => true,
         SqlCatalogBoundExpression::Function { name, args, .. } => {

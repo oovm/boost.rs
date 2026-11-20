@@ -34,10 +34,17 @@ pub enum CmpOp {
 
 /// Which text test a [`Pred::TextTest`] applies.
 ///
-/// Matching compares **Unicode code points**, not bytes and not grapheme
-/// clusters: `"e\u{301}"` does not match `"é"`, `"STRASSE"` does not match
-/// `"straße"`, and no normalization or case folding is applied. An empty needle
-/// matches every text for all three tests.
+/// [`TextOp::Contains`], [`TextOp::StartsWith`] and [`TextOp::EndsWith`] compare
+/// **Unicode code points**, not bytes and not grapheme clusters: `"e\u{301}"`
+/// does not match `"é"`, `"STRASSE"` does not match `"straße"`, and no
+/// normalization or case folding is applied. An empty needle matches every text
+/// for all three tests.
+///
+/// [`TextOp::Like`] and [`TextOp::ILike`] take a SQL pattern instead of a plain
+/// needle: `%` matches any run of code points (including the empty run) and `_`
+/// matches exactly one. Every other code point is compared literally, and
+/// `ILike` applies the same Unicode default lower-case fold that `ILIKE` uses on
+/// the SQL frontend, so both frontends decide the same rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextOp {
     /// The field carries the needle as a contiguous code point run.
@@ -46,6 +53,10 @@ pub enum TextOp {
     StartsWith,
     /// The field ends with the needle.
     EndsWith,
+    /// The field matches a SQL `LIKE` pattern (`%` / `_` wildcards).
+    Like,
+    /// The field matches a SQL `LIKE` pattern, case-insensitively.
+    ILike,
 }
 
 /// Bound value: either a literal baked into the plan at prepare time, or a
@@ -425,6 +436,31 @@ pub enum Expr {
         /// Argument expressions, in call order. Arity is checked at lowering.
         args: Vec<Expr>,
     },
+    /// An `INTERVAL '<quantity> <unit>'` literal.
+    ///
+    /// The engine has no interval value type, so the text is kept verbatim and
+    /// only [`BinaryOp::Add`] / [`BinaryOp::Sub`] against a date/time value
+    /// interpret it, exactly as the SQL gateway does. A bare interval that
+    /// reaches a value context is an error rather than a free-floating string.
+    Interval {
+        /// Interval text without the surrounding quotes (`30 days`, `1 hour`).
+        text: String,
+    },
+    /// A JSON path access over a dynamic (`any`) value: `expr -> key` or
+    /// `expr ->> key`.
+    ///
+    /// The engine stores JSON as native [`Value::Row`] / [`Value::List`] rather
+    /// than a `jsonb` blob, so the access walks those structures directly — no
+    /// text round-trip. `->` keeps the selected value structured; `->>` renders
+    /// a scalar without quotes and an object/array as its JSON text.
+    JsonAccess {
+        /// The dynamic value being indexed.
+        left: Box<Expr>,
+        /// Object key (text) or array index (integer) selecting the member.
+        key: Box<Expr>,
+        /// `true` for `->>` (text form), `false` for `->` (structured form).
+        as_text: bool,
+    },
     /// Scalar subquery `(SELECT ...)` used as a value.
     ///
     /// An uncorrelated subquery is resolved once per projection rather than once
@@ -513,6 +549,10 @@ pub enum ScalarFunction {
     Month,
     /// `DAY(date_or_datetime)`: day of the month (`1`–`31`), as [`Value::I64`].
     Day,
+    /// `EXTRACT(<field> FROM expr)`: an integer date/time field, evaluated with
+    /// the gateway's `extract_value` so both frontends agree. The single
+    /// argument is the source value.
+    Extract(DateExtractField),
     /// `NOW()`: frozen UTC timestamp captured at query start, as [`Value::Timestamp`].
     Now,
     /// `CURRENT_TIMESTAMP`: alias for [`ScalarFunction::Now`].
@@ -521,6 +561,75 @@ pub enum ScalarFunction {
     CurrentDate,
     /// `CURRENT_TIME`: frozen UTC wall-clock time part of the query start timestamp, as [`Value::Time`].
     CurrentTime,
+}
+
+/// The date/time field an [`ScalarFunction::Extract`] reads.
+///
+/// The variants mirror the fields the gateway's `extract_value` accepts, so
+/// `EXTRACT(<field> FROM expr)` lowers onto exactly the field the SQL frontend
+/// computes. `Epoch` counts seconds since `1970-01-01 00:00:00`, `Dow` is the
+/// day of week with Sunday as `0`, `Doy` the day of year, `Week` the ISO week.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DateExtractField {
+    /// Calendar year.
+    Year,
+    /// Calendar month (`1`–`12`).
+    Month,
+    /// Day of month (`1`–`31`).
+    Day,
+    /// Hour (`0`–`23`).
+    Hour,
+    /// Minute (`0`–`59`).
+    Minute,
+    /// Second (`0`–`59`).
+    Second,
+    /// Quarter (`1`–`4`).
+    Quarter,
+    /// Seconds since the Unix epoch.
+    Epoch,
+    /// Day of week, Sunday `0` … Saturday `6`.
+    Dow,
+    /// Day of year (`1`–`366`).
+    Doy,
+    /// ISO week number.
+    Week,
+}
+
+impl DateExtractField {
+    /// The upper-cased field name the shared `extract_value` matches on.
+    pub fn as_field_name(self) -> &'static str {
+        match self {
+            Self::Year => "YEAR",
+            Self::Month => "MONTH",
+            Self::Day => "DAY",
+            Self::Hour => "HOUR",
+            Self::Minute => "MINUTE",
+            Self::Second => "SECOND",
+            Self::Quarter => "QUARTER",
+            Self::Epoch => "EPOCH",
+            Self::Dow => "DOW",
+            Self::Doy => "DOY",
+            Self::Week => "WEEK",
+        }
+    }
+
+    /// Parse an `EXTRACT` field name; `None` for a field outside the subset.
+    pub fn from_field_name(field: &str) -> Option<Self> {
+        Some(match field.to_ascii_uppercase().as_str() {
+            "YEAR" => Self::Year,
+            "MONTH" => Self::Month,
+            "DAY" => Self::Day,
+            "HOUR" => Self::Hour,
+            "MINUTE" => Self::Minute,
+            "SECOND" => Self::Second,
+            "QUARTER" => Self::Quarter,
+            "EPOCH" => Self::Epoch,
+            "DOW" => Self::Dow,
+            "DOY" => Self::Doy,
+            "WEEK" => Self::Week,
+            _ => return None,
+        })
+    }
 }
 
 /// Set operator combining two row pipelines.
@@ -654,6 +763,30 @@ pub enum AggregateField {
         /// Expression to aggregate.
         expr: ProjectExpr,
     },
+    /// `array_agg(expr)` — every value of `expr` in group order, as one
+    /// [`Value::List`]; an empty group yields `NULL`, as in PostgreSQL.
+    ///
+    /// Unlike the numeric aggregates, `NULL` values are kept: the list mirrors
+    /// the group's rows one for one, so a length mismatch never hides a row.
+    ArrayAgg {
+        /// Output column name (from SELECT alias, or `array_agg` if none).
+        name: String,
+        /// Expression whose values are collected.
+        expr: ProjectExpr,
+    },
+    /// `aggregate(...) FILTER (WHERE predicate)` — aggregates only the group
+    /// rows the predicate keeps.
+    ///
+    /// The predicate is applied once to each row of the group before the inner
+    /// aggregate runs, so `COUNT(*) FILTER (...)` counts the surviving rows and
+    /// `SUM(x) FILTER (...)` sums only their `x`. A group with no surviving row
+    /// behaves exactly like the empty group of the inner aggregate.
+    Filtered {
+        /// Aggregate evaluated over the surviving rows.
+        inner: Box<AggregateField>,
+        /// Row predicate that must hold for a row to reach the aggregate.
+        predicate: Pred,
+    },
 }
 
 impl AggregateField {
@@ -665,7 +798,9 @@ impl AggregateField {
             | Self::Sum { name, .. }
             | Self::Avg { name, .. }
             | Self::Min { name, .. }
-            | Self::Max { name, .. } => name,
+            | Self::Max { name, .. }
+            | Self::ArrayAgg { name, .. } => name,
+            Self::Filtered { inner, .. } => inner.name(),
         }
     }
 }
@@ -840,6 +975,12 @@ pub enum QueryOp {
         /// Table name as written by the frontend.
         table: String,
     },
+    /// Yield exactly one row with no columns.
+    ///
+    /// The source of a `SELECT` with no `FROM` clause (and of a recursive CTE's
+    /// seed `SELECT 1`): the projection then computes over that single empty
+    /// row, so a FROM-less statement produces one row rather than none.
+    SingleRow,
     /// Combine the rows of two nested pipelines with a set operator
     /// (`UNION [ALL]` / `INTERSECT` / `EXCEPT`).
     ///
@@ -862,6 +1003,37 @@ pub enum QueryOp {
         /// order, used for the positional alignment. `None` means `*`.
         right_columns: Option<Vec<String>>,
     },
+    /// A `WITH RECURSIVE` relation, materialized to a fixpoint before the rows
+    /// are handed to the enclosing pipeline.
+    ///
+    /// `seed` produces the initial rows; `step` is re-run once per round against
+    /// the rows the previous round added, until it adds none. The step reads the
+    /// working set through [`QueryOp::FixpointInput`], which the executor feeds
+    /// the previous round's rows instead of any stored table. `union_all` keeps
+    /// every produced row (`UNION ALL`); otherwise rows already in the result are
+    /// dropped so the relation behaves like `UNION`. A round cap guards against a
+    /// step that never terminates.
+    RecursiveCte {
+        /// CTE name, used only in diagnostics.
+        name: String,
+        /// Non-recursive seed pipeline.
+        seed: Vec<QueryOp>,
+        /// Recursive step pipeline, reading the working set via
+        /// [`QueryOp::FixpointInput`].
+        step: Vec<QueryOp>,
+        /// `true` for `UNION ALL` (keep duplicates), `false` for `UNION`.
+        union_all: bool,
+        /// Output column names, anchored to the seed's projection so every round
+        /// aligns positionally.
+        columns: Vec<String>,
+    },
+    /// The working set the enclosing [`QueryOp::RecursiveCte`] is feeding this
+    /// round.
+    ///
+    /// The recursive step's self-reference lowers to this operator instead of a
+    /// [`QueryOp::Scan`]: the rows are produced by the fixpoint loop, never read
+    /// from storage. It only appears inside a `RecursiveCte` step.
+    FixpointInput,
     /// Rename every column of the current rows to `<prefix>.<column>`.
     ///
     /// A row source that carries an alias contributes only alias-qualified

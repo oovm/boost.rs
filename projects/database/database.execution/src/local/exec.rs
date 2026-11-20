@@ -13,17 +13,18 @@ use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use database_storage::local::{ReadRows, RowSource};
-use database_types::{Error, Result, Timestamp, Value};
+use database_types::{Date, Error, Result, Time, Timestamp, Value};
 use schema_types::ResolvedContract;
 
 use database_query::local::{
     catalog::{primary_field_name, table_row_key_name, table_type_by_name},
     constraints, lower,
     ops::{
-        AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, Expr, JoinKind, OUTER_ROW_MARKER, Pred, ProjectExpr, ProjectField, QueryOp,
-        QueryRow, ScalarFunction, SetOpKind, TextOp, WindowField, WindowFrame, WindowFrameBound, WindowFrameUnit, WindowFunction,
+        AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, DateExtractField, Expr, JoinKind, OUTER_ROW_MARKER, Pred, ProjectExpr, ProjectField,
+        QueryOp, QueryRow, ScalarFunction, SetOpKind, TextOp, WindowField, WindowFrame, WindowFrameBound, WindowFrameUnit, WindowFunction,
     },
 };
+use database_query::sql_execute::{extract_value, parse_interval, SqlValue};
 
 use super::resolve;
 
@@ -36,6 +37,10 @@ thread_local! {
     /// [`execute_ops_profiled`]. Ordinary pipelines leave it `None` and take no
     /// timers.
     static EXEC_PROFILE: RefCell<Option<ExecProfile>> = const { RefCell::new(None) };
+    /// The working set the running [`QueryOp::RecursiveCte`] feeds the current
+    /// round's [`QueryOp::FixpointInput`]. Installed by the fixpoint loop before
+    /// each step run and cleared after, so an unrelated pipeline never sees it.
+    static FIXPOINT_INPUT: RefCell<Option<std::rc::Rc<Vec<QueryRow>>>> = const { RefCell::new(None) };
 }
 
 /// Where one read pipeline spends its time and how much work it does,
@@ -374,6 +379,22 @@ fn execute_ops_in(
                         profile.decoded_rows += loaded;
                     });
                 }
+            }
+            QueryOp::SingleRow => {
+                // A `SELECT` with no `FROM`: exactly one empty row for the
+                // projection to compute over.
+                rows = vec![QueryRow::new()];
+                current_table = Some(String::new());
+            }
+            QueryOp::FixpointInput => {
+                // The recursive step's self-reference: the working set the
+                // enclosing `RecursiveCte` installed for this round.
+                rows = FIXPOINT_INPUT.with(|cell| cell.borrow().as_ref().map(|rc| rc.as_ref().clone()).unwrap_or_default());
+                current_table = Some(String::new());
+            }
+            QueryOp::RecursiveCte { name, seed, step, union_all, columns } => {
+                rows = execute_recursive_cte(name, seed, step, *union_all, columns, contract, records, bound_values)?;
+                current_table = Some(String::new());
             }
             QueryOp::Qualify { prefix } => {
                 rows = rows.into_iter().map(|row| row.into_iter().map(|(key, value)| (format!("{prefix}.{key}"), value)).collect()).collect();
@@ -912,7 +933,49 @@ fn text_op_name(op: TextOp) -> &'static str {
         TextOp::Contains => "contains",
         TextOp::StartsWith => "startsWith",
         TextOp::EndsWith => "endsWith",
+        TextOp::Like => "like",
+        TextOp::ILike => "ilike",
     }
+}
+
+/// SQL `LIKE` matching over Unicode code points.
+///
+/// `%` matches any run of code points (including the empty run) and `_` matches
+/// exactly one. Every other code point is literal, so no escape sequence is
+/// interpreted. The dynamic program is the same one the SQL frontend uses, so a
+/// pattern selects the same rows whichever frontend lowered it.
+fn like_match(haystack: &str, pattern: &str) -> bool {
+    let haystack: Vec<char> = haystack.chars().collect();
+    let pattern: Vec<char> = pattern.chars().collect();
+    let n = haystack.len();
+    let m = pattern.len();
+
+    // dp[i][j] = haystack[0..i] matches pattern[0..j].
+    let mut dp = vec![vec![false; m + 1]; n + 1];
+    dp[0][0] = true;
+    let mut j = 1;
+    while j <= m && pattern[j - 1] == '%' {
+        dp[0][j] = true;
+        j += 1;
+    }
+    for i in 1..=n {
+        for j in 1..=m {
+            match pattern[j - 1] {
+                '%' => dp[i][j] = dp[i][j - 1] || dp[i - 1][j],
+                '_' => dp[i][j] = dp[i - 1][j - 1],
+                literal => dp[i][j] = dp[i - 1][j - 1] && haystack[i - 1] == literal,
+            }
+        }
+    }
+    dp[n][m]
+}
+
+/// `ILIKE` on the VOS side: Unicode default lower-case fold, then [`like_match`].
+///
+/// The SQL frontend folds the same two strings the same way, so `like` and
+/// `ilike` decide identically in both frontends.
+fn like_match_ci(haystack: &str, pattern: &str) -> bool {
+    like_match(&haystack.to_lowercase(), &pattern.to_lowercase())
 }
 
 pub(crate) fn eval_pred(
@@ -1002,6 +1065,8 @@ fn eval_pred_in(
                     TextOp::Contains => text.contains(needle.as_str()),
                     TextOp::StartsWith => text.starts_with(needle.as_str()),
                     TextOp::EndsWith => text.ends_with(needle.as_str()),
+                    TextOp::Like => like_match(&text, &needle),
+                    TextOp::ILike => like_match_ci(&text, &needle),
                 }),
                 Value::Null => None,
                 other => {
@@ -1429,9 +1494,28 @@ pub(crate) fn eval_expr(
             database_query::local::coerce::eval_cast(&value, target)
         }
         Expr::Binary { op, left, right } => {
+            // `date ± interval` is decided at the expression level: the engine has
+            // no interval value type, so an `INTERVAL` literal only carries meaning
+            // as an operand of `+`/`-` against a date/time. The other operand is
+            // evaluated normally and the interval text drives the shift, matching
+            // the gateway's `apply_interval_to_datetime`.
+            if matches!(op, BinaryOp::Add | BinaryOp::Sub) {
+                if let Some(interval) = interval_operand(left, right) {
+                    let (base, sign) = if matches!(left.as_ref(), Expr::Interval { .. }) { (right, 1) } else { (left, -1) };
+                    let base_value = eval_expr(base, row, table, contract, records, bound_values, outer)?;
+                    return apply_interval(&base_value, interval, sign);
+                }
+            }
             let l = eval_expr(left, row, table, contract, records, bound_values, outer)?;
             let r = eval_expr(right, row, table, contract, records, bound_values, outer)?;
             eval_binary(*op, &l, &r)
+        }
+        // A bare `INTERVAL` that is not an operand of `+`/`-` has no value form.
+        Expr::Interval { .. } => Err(Error::Schema { message: "an INTERVAL literal is only valid as an operand of `+` or `-` on a date/time value".to_string() }),
+        Expr::JsonAccess { left, key, as_text } => {
+            let base = eval_expr(left, row, table, contract, records, bound_values, outer)?;
+            let selector = eval_expr(key, row, table, contract, records, bound_values, outer)?;
+            json_access(&base, &selector, *as_text)
         }
         Expr::Not(inner) => {
             let val = eval_expr(inner, row, table, contract, records, bound_values, outer)?;
@@ -1498,6 +1582,7 @@ fn resolve_scalar_subqueries(expr: &Expr, contract: Option<&ResolvedContract>, r
         }
         Expr::Cast { expr: inner, target } => Expr::Cast { expr: Box::new(resolve(inner)?), target: target.clone() },
         Expr::Binary { op, left, right } => Expr::Binary { op: *op, left: Box::new(resolve(left)?), right: Box::new(resolve(right)?) },
+        Expr::JsonAccess { left, key, as_text } => Expr::JsonAccess { left: Box::new(resolve(left)?), key: Box::new(resolve(key)?), as_text: *as_text },
         Expr::Not(inner) => Expr::Not(Box::new(resolve(inner)?)),
         Expr::Function { function, args } => {
             let mut resolved = Vec::with_capacity(args.len());
@@ -1752,6 +1837,7 @@ fn eval_function(
             Value::Text(joined)
         }
         ScalarFunction::Year | ScalarFunction::Month | ScalarFunction::Day => Value::I64(date_part(function, &values[0])? as i64),
+        ScalarFunction::Extract(field) => extract_field(field, &values[0])?,
         ScalarFunction::Coalesce => coalesce(&values)?,
         // Clock functions read the frozen query-start instant (or live wall
         // clock when executed outside a top-level execute pipeline, e.g.
@@ -1760,6 +1846,180 @@ fn eval_function(
         ScalarFunction::CurrentDate => Value::Date(query_start_timestamp().to_parts().0),
         ScalarFunction::CurrentTime => Value::Time(query_start_timestamp().to_parts().1),
     })
+}
+
+/// `EXTRACT(<field> FROM expr)` over a native `date`/`datetime` value.
+///
+/// The engine stores temporal values as [`Value::Date`] / [`Value::Timestamp`],
+/// so the value is rendered to the gateway's canonical `YYYY-MM-DD [HH:MM:SS]`
+/// text and handed to the shared [`extract_value`]. Both frontends therefore
+/// return the identical integer for the same field, including `EPOCH`, `DOW`,
+/// `DOY` and ISO `WEEK`. A text argument is accepted too, so a date kept as text
+/// extracts the same way.
+fn extract_field(field: DateExtractField, value: &Value) -> Result<Value> {
+    let source = match value {
+        Value::Date(date) => date.to_iso(),
+        Value::Timestamp(timestamp) => {
+            let (date, time) = timestamp.to_parts();
+            format!("{} {}", date.to_iso(), time.to_iso())
+        }
+        Value::Text(text) => text.to_string(),
+        other => {
+            return Err(query_runtime_error(format!("`EXTRACT()` requires a `date` or `datetime` argument, got `{}`", other.kind())));
+        }
+    };
+    match extract_value(field.as_field_name(), &source) {
+        Ok(SqlValue::Integer(number)) => Ok(Value::I64(number)),
+        Ok(other) => Err(query_runtime_error(format!("`EXTRACT()` produced an unexpected value: {other:?}"))),
+        Err(error) => Err(query_runtime_error(error.message)),
+    }
+}
+
+/// Return the interval text when exactly one operand of a `+`/`-` is an
+/// `INTERVAL` literal, so `eval_expr` can route to native interval arithmetic.
+fn interval_operand<'a>(left: &'a Expr, right: &'a Expr) -> Option<&'a str> {
+    match (left, right) {
+        (Expr::Interval { text }, _) | (_, Expr::Interval { text }) => Some(text.as_str()),
+        _ => None,
+    }
+}
+
+/// Shift a native `date`/`datetime` by an `INTERVAL`, with `sign` `+1` for `+`
+/// and `-1` for `-`.
+///
+/// The interval text is decomposed by the shared [`parse_interval`], then applied
+/// with the same calendar rules the gateway uses: months shift the calendar month
+/// (clamping the day to the target month's length), weeks/days and the time units
+/// fold into absolute days and seconds. The result is a [`Value::Timestamp`], as
+/// `date ± interval` is a timestamp in PostgreSQL.
+fn apply_interval(base: &Value, interval: &str, sign: i64) -> Result<Value> {
+    let offset = parse_interval(interval).map_err(|error| query_runtime_error(error.message))?;
+    let (year, month, day, hour, minute, second) = match base {
+        Value::Date(date) => {
+            let (y, m, d) = date.to_ymd();
+            (y, m, d, 0, 0, 0)
+        }
+        Value::Timestamp(timestamp) => {
+            let (date, time) = timestamp.to_parts();
+            let (y, m, d) = date.to_ymd();
+            let (h, mi, s, _) = time.to_hms_nano();
+            (y, m, d, h, mi, s)
+        }
+        other => {
+            return Err(query_runtime_error(format!("INTERVAL arithmetic requires a `date` or `datetime` operand, got `{}`", other.kind())));
+        }
+    };
+
+    // Calendar-month shift, clamping the day to the destination month.
+    let total_months = i64::from(year) * 12 + i64::from(month) - 1 + sign * offset.months;
+    let year = total_months.div_euclid(12) as i32;
+    let month = (total_months.rem_euclid(12) + 1) as u32;
+    let day = day.min(days_in_month(year, month));
+    let mut days = Date::from_ymd(year, month, day).map_err(|e| query_runtime_error(format!("{e:?}")))?.days() as i64 + sign * offset.days;
+    let mut seconds = (i64::from(hour) * 3_600 + i64::from(minute) * 60 + i64::from(second)) + sign * offset.seconds;
+    days += seconds.div_euclid(86_400);
+    seconds = seconds.rem_euclid(86_400);
+    let date = Date::from_days(days as i32).map_err(|e| query_runtime_error(format!("{e:?}")))?;
+    let time = Time::from_hms_nano((seconds / 3_600) as u32, ((seconds % 3_600) / 60) as u32, (seconds % 60) as u32, 0)
+        .map_err(|e| query_runtime_error(format!("{e:?}")))?;
+    Ok(Value::Timestamp(Timestamp::from_parts(date, time).map_err(|e| query_runtime_error(format!("{e:?}")))?))
+}
+
+/// Days in a proleptic-Gregorian month; a leap February has 29.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ => {
+            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                29
+            }
+            else {
+                28
+            }
+        }
+    }
+}
+
+/// JSON path access over a dynamic (`any`) value: `expr -> key` / `expr ->> key`.
+///
+/// The engine stores JSON natively as [`Value::Row`] (object) and [`Value::List`]
+/// (array), so the access walks those structures directly — no text round-trip,
+/// no `jsonb` type. A text selector indexes an object by key; an integer selector
+/// indexes an array by position (negative counts from the end, matching PostgreSQL
+/// arrays are 1-based but the SQL `->` integer is 0-based for JSON arrays). A miss
+/// yields `NULL` rather than an error, as in PostgreSQL. `->` keeps the selected
+/// value structured; `->>` renders a scalar without quotes and an object/array as
+/// its JSON text.
+fn json_access(base: &Value, selector: &Value, as_text: bool) -> Result<Value> {
+    let selected: &Value = match (base, selector) {
+        (Value::Row(object), Value::Text(key)) => object.get(key.as_str()).unwrap_or(&Value::Null),
+        (Value::List(items), Value::I64(index)) => {
+            let position = if *index < 0 { items.len() as i64 + index } else { *index };
+            if position < 0 || position as usize >= items.len() {
+                &Value::Null
+            }
+            else {
+                &items[position as usize]
+            }
+        }
+        (Value::Null, _) | (_, Value::Null) => &Value::Null,
+        (other, _) => {
+            return Err(query_runtime_error(format!("JSON path access (`->`/`->>`) requires an object or array, got `{}`", other.kind())));
+        }
+    };
+    if !as_text {
+        return Ok(selected.clone());
+    }
+    Ok(json_as_text(selected))
+}
+
+/// Render a selected JSON value in text form (`->>`): a string without its quotes,
+/// a scalar via its display form, and an object/array as compact JSON text.
+fn json_as_text(value: &Value) -> Value {
+    match value {
+        Value::Null => Value::Null,
+        Value::Text(text) => Value::Text(text.to_string()),
+        other => Value::Text(json_text(other)),
+    }
+}
+
+/// Compact JSON text for a native value, used by `->>` over an object/array.
+fn json_text(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::I64(n) => n.to_string(),
+        Value::U64(n) => n.to_string(),
+        Value::F64(n) => n.to_string(),
+        Value::Text(text) => {
+            let mut out = String::with_capacity(text.len() + 2);
+            out.push('"');
+            for ch in text.chars() {
+                match ch {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    other => out.push(other),
+                }
+            }
+            out.push('"');
+            out
+        }
+        Value::List(items) => format!("[{}]", items.iter().map(json_text).collect::<Vec<_>>().join(",")),
+        Value::Row(object) => {
+            let pairs = object.iter().map(|(key, value)| format!("{}:{}", json_text_key(key), json_text(value))).collect::<Vec<_>>();
+            format!("{{{}}}", pairs.join(","))
+        }
+        other => format!("{other:?}"),
+    }
+}
+
+/// A JSON object key rendered as a quoted string.
+fn json_text_key(key: &str) -> String {
+    json_text(&Value::Text(key.to_string()))
 }
 
 /// `COALESCE(a, b, …)`: the first non-`NULL` argument, or `NULL` when every
@@ -1876,6 +2136,7 @@ fn function_name(function: ScalarFunction) -> &'static str {
         ScalarFunction::Year => "YEAR",
         ScalarFunction::Month => "MONTH",
         ScalarFunction::Day => "DAY",
+        ScalarFunction::Extract(field) => field.as_field_name(),
         ScalarFunction::Now => "NOW",
         ScalarFunction::CurrentTimestamp => "CURRENT_TIMESTAMP",
         ScalarFunction::CurrentDate => "CURRENT_DATE",
@@ -2234,6 +2495,72 @@ fn execute_set_operation(
     })
 }
 
+/// Run a `WITH RECURSIVE` relation to a fixpoint.
+///
+/// `seed` produces the initial rows; `step` is re-run once per round against the
+/// rows the previous round added (delivered through [`QueryOp::FixpointInput`]),
+/// until it adds none. `union_all` keeps every produced row; otherwise a row
+/// already in the result is dropped, so the relation behaves like `UNION`. The
+/// result's columns are anchored to `columns` (the seed's projection, renamed by
+/// any written column list); the lowering already re-keyed the step's output to
+/// those names, so each round appends rows with matching keys.
+///
+/// A round cap stops a step that never terminates: a recursion is a program, and
+/// an unbounded one is reported rather than hanging the query.
+fn execute_recursive_cte(
+    name: &str,
+    seed_ops: &[QueryOp],
+    step_ops: &[QueryOp],
+    union_all: bool,
+    columns: &[String],
+    contract: Option<&ResolvedContract>,
+    records: &ReadRows<'_>,
+    bound_values: &[Value],
+) -> Result<Vec<QueryRow>> {
+    // The fixpoint loop is the only reader of the working set, so a step that
+    // itself nests a recursive CTE restores the outer working set on the way out.
+    const MAX_RECURSIVE_ROUNDS: usize = 10_000;
+    let mut result = execute_ops_in(seed_ops, contract, records, bound_values, None)?;
+    let mut working = result.clone();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    if !union_all {
+        for row in &result {
+            seen.insert(set_row_key(row, columns));
+        }
+    }
+    let mut rounds = 0usize;
+    while !working.is_empty() {
+        rounds += 1;
+        if rounds > MAX_RECURSIVE_ROUNDS {
+            return Err(query_runtime_error(format!(
+                "recursive CTE `{name}` exceeded {MAX_RECURSIVE_ROUNDS} rounds without reaching a fixpoint"
+            )));
+        }
+        let produced = {
+            FIXPOINT_INPUT.with(|cell| *cell.borrow_mut() = Some(std::rc::Rc::new(std::mem::take(&mut working))));
+            let outcome = execute_ops_in(step_ops, contract, records, bound_values, None);
+            FIXPOINT_INPUT.with(|cell| *cell.borrow_mut() = None);
+            outcome?
+        };
+        let mut next: Vec<QueryRow> = Vec::new();
+        if union_all {
+            next = produced;
+        }
+        else {
+            for row in produced {
+                if seen.insert(set_row_key(&row, columns)) {
+                    next.push(row);
+                }
+            }
+        }
+        for row in &next {
+            result.push(row.clone());
+        }
+        working = next;
+    }
+    Ok(result)
+}
+
 /// Occurrence count of every distinct aligned row on the right operand.
 ///
 /// `INTERSECT ALL` / `EXCEPT ALL` need the right multiplicity, not just the
@@ -2498,6 +2825,31 @@ fn eval_aggregate(
         AggregateField::Max { name, expr } => {
             let value = extreme_value(expr, group_rows, true, contract, records, bound_values, outer)?;
             Ok((name.clone(), value))
+        }
+        AggregateField::ArrayAgg { name, expr } => {
+            // Every row contributes one element, `NULL` included, so the list
+            // always mirrors the group one for one. PostgreSQL returns `NULL`
+            // (not an empty array) when the group has no row.
+            if group_rows.is_empty() {
+                return Ok((name.clone(), Value::Null));
+            }
+            let mut values = Vec::with_capacity(group_rows.len());
+            for row in group_rows {
+                values.push(eval_project_expr(expr, row, contract, records, bound_values, outer)?);
+            }
+            Ok((name.clone(), Value::List(values)))
+        }
+        AggregateField::Filtered { inner, predicate } => {
+            // FILTER restricts the input rows of the inner aggregate. A group
+            // with no surviving row is the inner aggregate's empty group, which
+            // already yields `NULL` / `0` by its own rule.
+            let mut kept: Vec<QueryRow> = Vec::with_capacity(group_rows.len());
+            for row in group_rows {
+                if eval_pred_in(predicate, row, "", contract, records, bound_values, outer)? == Some(true) {
+                    kept.push(row.clone());
+                }
+            }
+            eval_aggregate(inner, &kept, contract, records, bound_values, outer)
         }
     }
 }

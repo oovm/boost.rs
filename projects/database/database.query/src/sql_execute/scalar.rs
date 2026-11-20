@@ -287,6 +287,15 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
             };
             date_trunc_value(&field, &source)?
         }
+        SqlScalarFunction::Extract => {
+            // `EXTRACT(field FROM source)` 在绑定层展开成 `extract(field, source)`：
+            // 第一个实参是大写归一的字段名文本，NULL 源沿用上层的 NULL 传播。
+            let (Some(field), Some(source)) = (scalar_text(args, 0), scalar_text(args, 1))
+            else {
+                return Ok(Null);
+            };
+            extract_value(&field, &source)?
+        }
     })
 }
 
@@ -295,23 +304,11 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
 /// 网关的时间表示是 UTC 文本，截断是纯文本算术；小数秒与时区后缀在秒位之后被丢弃。
 fn date_trunc_value(field: &str, source: &str) -> Result<SqlValue, SqlFrontendError> {
     let invalid = || SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("DATE_TRUNC source `{source}` is not a date or timestamp"));
-    let (date_part, time_part) = match source.split_once([' ', 'T']) {
-        Some((date, time)) => (date, time),
-        None => (source, ""),
-    };
-    let mut dates = date_part.split('-');
-    let (Some(year), Some(month), Some(day)) = (dates.next(), dates.next(), dates.next())
-    else {
+    let Some(parts) = parse_datetime_parts(source) else {
         return Err(invalid());
     };
-    let (Ok(year), Ok(month), Ok(day)) = (year.parse::<u32>(), month.parse::<u32>(), day.parse::<u32>())
-    else {
-        return Err(invalid());
-    };
-    let digits =
-        |text: Option<&str>| -> u32 { text.unwrap_or("0").chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0) };
-    let mut times = time_part.split(':');
-    let (hour, minute, second) = (digits(times.next()), digits(times.next()), digits(times.next()));
+    let DateTimeParts { year, month, day, hour, minute, second } = parts;
+    let (month, day) = (month as i64, day as i64);
     let date = format!("{year:04}-{month:02}-{day:02}");
     Ok(match field.to_ascii_lowercase().as_str() {
         "year" => SqlValue::String(format!("{year:04}-01-01 00:00:00")),
@@ -327,6 +324,159 @@ fn date_trunc_value(field: &str, source: &str) -> Result<SqlValue, SqlFrontendEr
             ));
         }
     })
+}
+
+/// 规范 `YYYY-MM-DD [HH:MM:SS]` 文本解析出的日期时间分量。
+pub(crate) struct DateTimeParts {
+    pub year: i64,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
+    pub second: u32,
+}
+
+/// 把规范日期时间文本解析成 [`DateTimeParts`]；`None` 表示它不是日期或时间戳。
+///
+/// 小数秒与时区后缀在秒位之后被丢弃，与 `DATE_TRUNC` 的既有口径一致；`EXTRACT` 与
+/// INTERVAL 加减共用这一份解析。
+pub(crate) fn parse_datetime_parts(source: &str) -> Option<DateTimeParts> {
+    let (date_part, time_part) = match source.split_once([' ', 'T']) {
+        Some((date, time)) => (date, time),
+        None => (source, ""),
+    };
+    let mut dates = date_part.split('-');
+    let (Some(year), Some(month), Some(day)) = (dates.next(), dates.next(), dates.next()) else { return None };
+    let (Ok(year), Ok(month), Ok(day)) = (year.parse::<u32>(), month.parse::<u32>(), day.parse::<u32>()) else { return None };
+    let digits =
+        |text: Option<&str>| -> u32 { text.unwrap_or("0").chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0) };
+    let mut times = time_part.split(':');
+    let (hour, minute, second) = (digits(times.next()), digits(times.next()), digits(times.next()));
+    Some(DateTimeParts { year: year as i64, month, day, hour, minute, second })
+}
+
+/// `EXTRACT(field FROM source)`：从规范日期时间文本里取整数日期字段。
+///
+/// 网关与原生 VOS 引擎共用这一份实现，两个前端对同一个 `EXTRACT` 得到同一个整数。
+pub fn extract_value(field: &str, source: &str) -> Result<SqlValue, SqlFrontendError> {
+    let invalid = || SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("EXTRACT source `{source}` is not a date or timestamp"));
+    let Some(parts) = parse_datetime_parts(source) else {
+        return Err(invalid());
+    };
+    let days = days_from_civil(parts.year, parts.month, parts.day);
+    let value = match field.to_ascii_uppercase().as_str() {
+        "YEAR" => parts.year,
+        "MONTH" => i64::from(parts.month),
+        "DAY" => i64::from(parts.day),
+        "HOUR" => i64::from(parts.hour),
+        "MINUTE" => i64::from(parts.minute),
+        "SECOND" => i64::from(parts.second),
+        "QUARTER" => (i64::from(parts.month) + 2) / 3,
+        "EPOCH" => days * 86_400 + i64::from(parts.hour) * 3_600 + i64::from(parts.minute) * 60 + i64::from(parts.second),
+        // PostgreSQL 的 `DOW` 以周日为 0；1970-01-01（days=0）是周四。
+        "DOW" => (days + 4).rem_euclid(7),
+        "DOY" => days - days_from_civil(parts.year, 1, 1) + 1,
+        // ISO 周号：周一为 1、周日为 7，`(ordinal - weekday + 10) / 7`。
+        "WEEK" => {
+            let ordinal = days - days_from_civil(parts.year, 1, 1) + 1;
+            let weekday = (days + 3).rem_euclid(7) + 1;
+            (ordinal - weekday + 10).div_euclid(7)
+        }
+        other => {
+            return Err(SqlFrontendError::new(
+                SqlErrorKind::Unsupported,
+                format!("EXTRACT field `{other}` is outside the gateway subset, use YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, EPOCH, DOW, DOY, WEEK or QUARTER"),
+            ));
+        }
+    };
+    Ok(SqlValue::Integer(value))
+}
+
+/// [`civil_from_days`] 的逆运算：公历日期距 1970-01-01 的天数。
+pub(crate) fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let shifted_month = (i64::from(month) + 9) % 12;
+    let day_of_year = (153 * shifted_month + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// 解析后的 `INTERVAL '<数量> <单位>'`：月级、日级与秒级三段偏移。
+pub struct IntervalOffset {
+    pub months: i64,
+    pub days: i64,
+    pub seconds: i64,
+}
+
+/// 解析 INTERVAL 文本：`数量 单位` 成对出现，单位接受单复数拼写。
+///
+/// 网关与原生 VOS 引擎共用这一份解析，两个前端对同一段 INTERVAL 文本得到同一组偏移。
+pub fn parse_interval(text: &str) -> Result<IntervalOffset, SqlFrontendError> {
+    let malformed = || SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not an INTERVAL of the form `<quantity> <unit>`"));
+    let tokens = text.split_whitespace().collect::<Vec<_>>();
+    if tokens.is_empty() || !tokens.len().is_multiple_of(2) {
+        return Err(malformed());
+    }
+    let (mut months, mut days, mut seconds) = (0f64, 0f64, 0f64);
+    let mut index = 0;
+    while index < tokens.len() {
+        let quantity: f64 = tokens[index].parse().map_err(|_| malformed())?;
+        let unit = tokens[index + 1].trim_end_matches(',').to_ascii_lowercase().trim_end_matches('s').to_string();
+        match unit.as_str() {
+            "year" => months += quantity * 12.0,
+            "month" => months += quantity,
+            "week" => days += quantity * 7.0,
+            "day" => days += quantity,
+            "hour" => seconds += quantity * 3_600.0,
+            "minute" => seconds += quantity * 60.0,
+            "second" => seconds += quantity,
+            other => {
+                return Err(SqlFrontendError::new(
+                    SqlErrorKind::Unsupported,
+                    format!("INTERVAL unit `{other}` is outside the gateway subset, use YEAR(S), MONTH(S), WEEK(S), DAY(S), HOUR(S), MINUTE(S) or SECOND(S)"),
+                ));
+            }
+        }
+        index += 2;
+    }
+    // 月级与日级偏移必须是整数；小数只允许出现在秒级，四舍五入到整秒。
+    if months.fract() != 0.0 || days.fract() != 0.0 {
+        return Err(malformed());
+    }
+    Ok(IntervalOffset { months: months as i64, days: days as i64, seconds: seconds.round() as i64 })
+}
+
+/// 日期时间文本与 INTERVAL 的加减，结果仍是规范日期时间文本。
+///
+/// 年/月按日历月平移（日裁剪到目标月最后一天），周/日与时间单位折算成绝对天与秒；
+/// `sign` 在 `+` 时为 `1`、`-` 时为 `-1`。
+pub fn apply_interval_to_datetime(base: &str, interval: &str, sign: i64) -> Result<SqlValue, SqlFrontendError> {
+    let Some(parts) = parse_datetime_parts(base) else {
+        return Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{base}` is not a date or timestamp for INTERVAL arithmetic")));
+    };
+    let offset = parse_interval(interval)?;
+    let total_months = parts.year * 12 + i64::from(parts.month) - 1 + sign * offset.months;
+    let year = total_months.div_euclid(12);
+    let month = (total_months.rem_euclid(12) + 1) as u32;
+    let day = parts.day.min(days_in_month(year, month));
+    let mut days = days_from_civil(year, month, day) + sign * offset.days;
+    let mut seconds = i64::from(parts.hour) * 3_600 + i64::from(parts.minute) * 60 + i64::from(parts.second) + sign * offset.seconds;
+    days += seconds.div_euclid(86_400);
+    seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let (hour, minute, second) = (seconds / 3_600, seconds % 3_600 / 60, seconds % 60);
+    Ok(SqlValue::String(format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")))
+}
+
+/// 公历月的天数，闰年 2 月为 29 天。
+fn days_in_month(year: i64, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ => if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 { 29 } else { 28 },
+    }
 }
 
 /// `SUBSTRING(x, start[, length])`，下标从 1 开始，字符（不是字节）计数。
@@ -371,7 +521,7 @@ pub(crate) fn substring_value(text: &str, start: i64, length: Option<i64>, diale
 }
 
 /// 把第 `index` 个参数取成字符串；NULL 或缺失返回 `None`。
-pub(crate) fn scalar_text(args: &[SqlValue], index: usize) -> Option<String> {
+pub fn scalar_text(args: &[SqlValue], index: usize) -> Option<String> {
     match args.get(index) {
         Some(SqlValue::String(text)) => Some(text.clone()),
         Some(SqlValue::Integer(value)) => Some(value.to_string()),
@@ -380,6 +530,7 @@ pub(crate) fn scalar_text(args: &[SqlValue], index: usize) -> Option<String> {
         // 二进制值是原始 octets，没有无损的文本形式。`LENGTH` 这类对二进制有
         // 明确定义的函数在上层单独判定，不经过本函数。
         Some(SqlValue::Bytes(_)) => None,
+        Some(SqlValue::Array(_)) => None,
         Some(SqlValue::Null) | None => None,
     }
 }
@@ -392,6 +543,7 @@ pub(crate) fn scalar_integer(args: &[SqlValue], index: usize) -> Option<i64> {
         SqlValue::String(text) => text.trim().parse::<i64>().ok(),
         SqlValue::Boolean(value) => Some(i64::from(*value)),
         SqlValue::Bytes(_) => None,
+        SqlValue::Array(_) => None,
         SqlValue::Null => None,
     }
 }

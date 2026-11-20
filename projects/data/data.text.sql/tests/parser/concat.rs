@@ -199,9 +199,18 @@ fn test_concat_and_unsupported_operator_tokens() {
     let kinds: Vec<_> = output.result.unwrap().iter().filter(|token| !token.kind.is_ignored()).map(|token| token.kind).collect();
     assert!(kinds.contains(&SqlTokenType::Concat), "{kinds:?}");
 
+    // The JSON arrows are modelled operators, not error tokens.
+    for (sql, expected) in [("1 -> 2", SqlTokenType::Arrow), ("1 ->> 2", SqlTokenType::ArrowArrow)] {
+        let source = SourceText::new(sql.to_string());
+        let mut cache = ParseSession::<SqlLanguage>::default();
+        let output = lexer.lex(&source, &[], &mut cache);
+        let kinds: Vec<_> = output.result.unwrap().iter().filter(|token| !token.kind.is_ignored()).map(|token| token.kind).collect();
+        assert!(kinds.contains(&expected), "{sql}: {kinds:?}");
+    }
+
     // Unsupported SQLite operators must stay visible as `Error` tokens instead
     // of being decomposed into comparisons / arithmetic.
-    for sql in ["1 | 2", "1 & 2", "1 << 2", "1 >> 2", "1 -> 2", "1 ->> 2"] {
+    for sql in ["1 | 2", "1 & 2", "1 << 2", "1 >> 2"] {
         let source = SourceText::new(sql.to_string());
         let mut cache = ParseSession::<SqlLanguage>::default();
         let output = lexer.lex(&source, &[], &mut cache);

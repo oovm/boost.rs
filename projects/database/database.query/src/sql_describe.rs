@@ -62,9 +62,11 @@ pub fn describe_plan_for_dialect(plan: &SqlExecutionPlan, dialect: SqlDialect) -
             plans.first().map(|plan| describe_returning(&plan.returning, &plan.field_types, dialect)).unwrap_or_default()
         }
         SqlExecutionPlan::InsertSelect(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
-        SqlExecutionPlan::Update(_) | SqlExecutionPlan::UpdateScan(_) | SqlExecutionPlan::Delete(_) | SqlExecutionPlan::DeleteScan(_) => {
-            Vec::new()
-        }
+        SqlExecutionPlan::Update(_)
+        | SqlExecutionPlan::UpdateScan(_)
+        | SqlExecutionPlan::Delete(_)
+        | SqlExecutionPlan::DeleteScan(_)
+        | SqlExecutionPlan::DeleteUsing(_) => Vec::new(),
     }
 }
 
@@ -245,7 +247,14 @@ fn infer_expression_type(
             }
             // `DATE_TRUNC` 返回规范时间文本，与 `DATETIME` 列同一口径。
             "date_trunc" => SqlFieldType::Datetime,
+            // `EXTRACT` 返回整数日期字段。
+            "extract" => SqlFieldType::Int64,
             "bool_and" | "bool_or" => SqlFieldType::Bool,
+            // `array_agg` 产出元素类型为实参声明类型的数组。
+            "array_agg" => {
+                let element = args.first().map(|arg| infer_expression_type(arg, field_types, dialect)).unwrap_or(SqlFieldType::Unknown);
+                SqlFieldType::Array(Box::new(element.inner()))
+            }
             _ => SqlFieldType::String,
         },
         Binary { left, operator, right } => match operator {
@@ -257,11 +266,22 @@ fn infer_expression_type(
             | SqlBoundBinaryOperator::Greater
             | SqlBoundBinaryOperator::LessEqual
             | SqlBoundBinaryOperator::GreaterEqual
-            | SqlBoundBinaryOperator::Like => SqlFieldType::Bool,
+            | SqlBoundBinaryOperator::Like
+            | SqlBoundBinaryOperator::ILike => SqlFieldType::Bool,
             SqlBoundBinaryOperator::Divide | SqlBoundBinaryOperator::Modulo => SqlFieldType::Float64,
             SqlBoundBinaryOperator::Concat => SqlFieldType::String,
+            // JSON 取箭头返回 JSON 文本或去引号标量文本，统一按 `text` 上报。
+            SqlBoundBinaryOperator::JsonGet | SqlBoundBinaryOperator::JsonGetText => SqlFieldType::String,
             SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus | SqlBoundBinaryOperator::Multiply => {
-                merge_numeric(infer_expression_type(left, field_types, dialect), infer_expression_type(right, field_types, dialect))
+                // `datetime ± interval` 的结果仍是日期时间文本，与 `DATETIME` 列同一口径。
+                let interval_arithmetic = matches!(operator, SqlBoundBinaryOperator::Plus | SqlBoundBinaryOperator::Minus)
+                    && (matches!(left.as_ref(), Interval { .. }) || matches!(right.as_ref(), Interval { .. }));
+                if interval_arithmetic {
+                    SqlFieldType::Datetime
+                }
+                else {
+                    merge_numeric(infer_expression_type(left, field_types, dialect), infer_expression_type(right, field_types, dialect))
+                }
             }
         },
         Unary { operator, expression } => match operator {
@@ -285,6 +305,8 @@ fn infer_expression_type(
                 .unwrap_or(SqlFieldType::Unknown)
         }
         Cast { target, .. } => cast_target_to_field_type(target),
+        // 单独的 INTERVAL 值按日期时间口径上报；与日期时间加减的推导在 Binary 分支完成。
+        Interval { .. } => SqlFieldType::Datetime,
     }
 }
 

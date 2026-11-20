@@ -27,6 +27,8 @@ pub enum SqlValue {
     Bytes(Vec<u8>),
     /// 布尔。
     Boolean(bool),
+    /// 数组，只有聚合 `array_agg(...)` 产出这个变体；元素按聚合输入顺序排列。
+    Array(Vec<SqlValue>),
     /// NULL。
     Null,
 }
@@ -58,7 +60,28 @@ pub(crate) fn numeric_literal(text: &str) -> SqlValue {
     }
 }
 
+/// 数值文本（`numeric` / `decimal` 列的 canonical 文本）转成可参与算术的值。
+///
+/// `Decimal` 列按驱动口径解码成 [`SqlValue::String`]，但 PostgreSQL 的 `numeric`
+/// 在表达式里是数值：`balance + 1`、`balance > 100` 都必须按数值而不是按文本比较。
+/// 这里只认完整可解析的十进制文本，其他字符串保持非数值语义。
+pub(crate) fn numeric_text(text: &str) -> Option<SqlValue> {
+    match numeric_literal(text.trim()) {
+        value @ (SqlValue::Integer(_) | SqlValue::Number(_)) => Some(value),
+        _ => None,
+    }
+}
+
 impl SqlValue {
+    /// 把值当作数值参与算术：整数/浮点原样返回，数值文本解析后返回。
+    pub fn as_numeric(&self) -> Option<SqlValue> {
+        match self {
+            SqlValue::Integer(_) | SqlValue::Number(_) => Some(self.clone()),
+            SqlValue::String(text) => numeric_text(text),
+            _ => None,
+        }
+    }
+
     /// 从 KV 层拿到的原始 bytes 推断一个 SqlValue（无类型信息，宽松推断）。
     ///
     /// 如果 bytes 是合法 UTF-8 并且能解析为整数或浮点数，就返回 [`SqlValue::Integer`] /
@@ -144,6 +167,7 @@ impl SqlValue {
             // 因此这里把空 bytes 视为空串，真正缺失的字段由调用方映射为 NULL。
             crate::catalog_bind::SqlFieldType::Unknown => Self::from_row_bytes(bytes),
             crate::catalog_bind::SqlFieldType::Optional(_) => unreachable!("inner() strips Optional"),
+            crate::catalog_bind::SqlFieldType::Array(_) => unreachable!("array columns are not stored by this gateway"),
         }
     }
 
@@ -190,6 +214,11 @@ impl RowFieldValues {
         if let Ok(index) = self.fields.binary_search_by_key(&field_id, |(existing, _)| *existing) {
             self.fields.remove(index);
         }
+    }
+
+    /// 按 key 升序遍历全部字段，供跨行槽拼行时平移键使用。
+    pub fn iter(&self) -> std::slice::Iter<'_, (u64, Vec<u8>)> {
+        self.fields.iter()
     }
 
     /// 按 field_id 取原始 bytes；不存在返回 None。

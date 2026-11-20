@@ -66,6 +66,8 @@ pub enum SqlFieldType {
     Json,
     /// Optional wrapper — inner type + NULL. Box breaks the recursion
     Optional(Box<SqlFieldType>),
+    /// Array of the element type — produced by `array_agg(...)` projections.
+    Array(Box<SqlFieldType>),
     /// Anything the gateway does not recognise stays opaque.
     Unknown,
 }
@@ -422,6 +424,10 @@ pub struct SqlCatalogBoundTable {
     /// Visible column names aligned with the catalog field order when an explicit CTE
     /// column list renamed this occurrence. `None` keeps every catalog field name.
     pub column_names: Option<Vec<String>>,
+    /// Catalog field indices this occurrence exposes, in the CTE body's projection
+    /// order. `None` exposes every catalog field, which is what a base table and a
+    /// `SELECT *` CTE do; `Some` narrows a flattened CTE to its projected subset.
+    pub visible_columns: Option<Vec<usize>>,
 }
 
 impl SqlCatalogBoundTable {
@@ -442,6 +448,11 @@ impl SqlCatalogBoundTable {
     /// `field_id` and row slot untouched.
     pub fn visible_column_name(&self, field_index: usize, field: &SqlCatalogField) -> String {
         self.column_names.as_ref().and_then(|names| names.get(field_index).cloned()).unwrap_or_else(|| field.name.clone())
+    }
+
+    /// Whether this occurrence exposes the catalog field at `field_index` at all.
+    pub fn exposes_column(&self, field_index: usize) -> bool {
+        self.visible_columns.as_ref().is_none_or(|columns| columns.contains(&field_index))
     }
 }
 
@@ -499,6 +510,8 @@ pub enum SqlCatalogBoundExpression {
         distinct: bool,
         /// `OVER (...)` clause when the call is a window function.
         window: Option<SqlCatalogBoundWindowSpec>,
+        /// `FILTER (WHERE ...)` predicate restricting the rows an aggregate sees.
+        filter: Option<Box<Self>>,
     },
     /// A binary SQL expression.
     Binary {
@@ -565,6 +578,11 @@ pub enum SqlCatalogBoundExpression {
         expr: Box<Self>,
         /// The target type spelling as written (e.g. `INTEGER`, `TEXT`, `REAL`, `BLOB`).
         target: String,
+    },
+    /// `INTERVAL '<数量> <单位>'` — 文本原样透传，与日期时间加减时由执行层展开。
+    Interval {
+        /// Interval body text as written, e.g. `1 day`.
+        text: String,
     },
 }
 
@@ -696,6 +714,9 @@ pub struct SqlCatalogBoundUpdate {
 pub struct SqlCatalogBoundDelete {
     /// Target table identity.
     pub table: SqlCatalogBoundTable,
+    /// Extra row sources of `DELETE ... USING ...`, each bound to its own catalog table
+    /// occurrence; the predicate sees them together with the target.
+    pub using: Vec<SqlCatalogBoundTable>,
     /// Resolved optional predicate.
     pub predicate: Option<SqlCatalogBoundExpression>,
 }
@@ -1241,9 +1262,13 @@ fn canonicalize_excluded(expression: SqlBoundExpression) -> SqlBoundExpression {
             Binary { left: Box::new(canonicalize_excluded(*left)), operator, right: Box::new(canonicalize_excluded(*right)) }
         }
         Unary { operator, expression } => Unary { operator, expression: Box::new(canonicalize_excluded(*expression)) },
-        Function { name, args, distinct, window } => {
-            Function { name, args: args.into_iter().map(canonicalize_excluded).collect(), distinct, window }
-        }
+        Function { name, args, distinct, window, filter } => Function {
+            name,
+            args: args.into_iter().map(canonicalize_excluded).collect(),
+            distinct,
+            window,
+            filter: filter.map(|predicate| Box::new(canonicalize_excluded(*predicate))),
+        },
         InSubquery { expression, select, negated } => InSubquery { expression: Box::new(canonicalize_excluded(*expression)), select, negated },
         Exists { select, negated } => Exists { select, negated },
         // 写语句禁止相关子查询，所以这里的子查询不会把外层列当作 `EXCLUDED` 别名，
@@ -1258,6 +1283,7 @@ fn canonicalize_excluded(expression: SqlBoundExpression) -> SqlBoundExpression {
         },
         Cast { expr, target } => Cast { expr: Box::new(canonicalize_excluded(*expr)), target },
         Literal(literal) => Literal(literal),
+        Interval { text } => Interval { text },
         Wildcard => Wildcard,
     }
 }
@@ -1288,11 +1314,22 @@ fn bind_delete(
     catalog: &SqlCatalog,
     variables: &dyn Fn(&str) -> Result<SqlBoundLiteral, SqlFrontendError>,
 ) -> Result<SqlCatalogBoundDelete, SqlFrontendError> {
-    let table = find_table(catalog, &delete.table)?;
-    let source = [table.clone()];
+    let mut table = find_table(catalog, &delete.table)?;
+    // DELETE 的目标表别名与 `USING` 源一起构成谓词的可见作用域：限定列 `x.col`
+    // 按别名（无别名时按表名）解析；`USING` 表占用后续行槽，与 SELECT 连接同一套行值键规则。
+    table.alias = delete.alias.clone();
+    let mut occurrences = std::collections::BTreeMap::from([(table.type_id, 0u64)]);
+    let mut using = Vec::with_capacity(delete.using.len());
+    for (name, alias) in delete.using {
+        let mut source = find_table(catalog, &name)?;
+        source.alias = alias;
+        using.push(assign_row_slot(source, &mut occurrences));
+    }
+    let mut sources = vec![table.clone()];
+    sources.extend(using.iter().cloned());
     let scope = SqlCorrelationScope::write();
-    let predicate = delete.predicate.map(|p| bind_expression(p, &source, &[], &scope, catalog, variables)).transpose()?;
-    Ok(SqlCatalogBoundDelete { table, predicate })
+    let predicate = delete.predicate.map(|p| bind_expression(p, &sources, &[], &scope, catalog, variables)).transpose()?;
+    Ok(SqlCatalogBoundDelete { table, using, predicate })
 }
 
 fn bind_set_operation(
@@ -1619,6 +1656,7 @@ fn bind_expression(
                         args: Vec::new(),
                         distinct: false,
                         window: None,
+                        filter: None,
                     }),
                     None => Err(error),
                 },
@@ -1668,11 +1706,13 @@ fn bind_expression(
             operator,
             expression: Box::new(bind_expression(*expression, sources, ctes, scope, catalog, variables)?),
         }),
-        SqlBoundExpression::Function { name, args, distinct, window } => {
+        SqlBoundExpression::Function { name, args, distinct, window, filter } => {
             let bound_args =
                 args.into_iter().map(|arg| bind_expression(arg, sources, ctes, scope, catalog, variables)).collect::<Result<Vec<_>, _>>()?;
             let window = window.map(|spec| bind_window_spec(spec, sources, ctes, scope, catalog, variables)).transpose()?;
-            Ok(SqlCatalogBoundExpression::Function { name, args: bound_args, distinct, window })
+            let filter =
+                filter.map(|predicate| bind_expression(*predicate, sources, ctes, scope, catalog, variables).map(Box::new)).transpose()?;
+            Ok(SqlCatalogBoundExpression::Function { name, args: bound_args, distinct, window, filter })
         }
         SqlBoundExpression::InSubquery { expression, select, negated } => {
             // 子查询自带 FROM 作用域，直接外层查询的列仍可见一层；外层 `WITH` 定义同样
@@ -1722,6 +1762,7 @@ fn bind_expression(
         SqlBoundExpression::Cast { expr, target } => {
             Ok(SqlCatalogBoundExpression::Cast { expr: Box::new(bind_expression(*expr, sources, ctes, scope, catalog, variables)?), target })
         }
+        SqlBoundExpression::Interval { text } => Ok(SqlCatalogBoundExpression::Interval { text }),
     }
 }
 
@@ -1954,9 +1995,9 @@ fn flatten_body(
     // 行槽已在展开时确定，过滤条件必须绑定在这一份行值上：这样一条带过滤的 CTE
     // 与同一张表的另一次出现共存时，过滤不会落到别的行槽上。过滤使用 body 自己的
     // 列名作用域，显式输出列名只改外层看到的列名。
-    let Some(field_indices) = projected_field_indices(&query.projections, std::slice::from_ref(&table), catalog)?
+    let Some((field_indices, output_names)) = projected_output_columns(&query.projections, std::slice::from_ref(&table), catalog)?
     else {
-        return Err(unsupported_source(subject, "its inner projection must be `*` or every column of the source table"));
+        return Err(unsupported_source(subject, "its inner projection must be `*` or a column reference per output column"));
     };
     let predicate = query
         .predicate
@@ -1974,7 +2015,8 @@ fn flatten_body(
         .transpose()?;
     let mut table = table;
     table.alias = Some(alias.to_string());
-    table.column_names = renamed_column_names(&table, &field_indices, columns, alias, subject, catalog)?;
+    table.visible_columns = Some(field_indices.clone());
+    table.column_names = renamed_column_names(&table, &field_indices, &output_names, columns, alias, subject, catalog)?;
     Ok((table, merge_predicates(inner_predicate, predicate)))
 }
 
@@ -1989,28 +2031,30 @@ fn merge_predicates(left: Option<SqlCatalogBoundExpression>, right: Option<SqlCa
     }
 }
 
-/// The catalog field indices a flattened body's projection exposes, in projection
-/// order, when the projection names exactly every column of its source table.
+/// The catalog field indices a flattened body's projection exposes together with
+/// the output name of each position.
 ///
-/// `*` qualifies and yields the catalog field order; so does one unaliased column
-/// reference per catalog field, in any order. Any other shape returns `None`, which
-/// is what kept the outer query from addressing the source table directly.
-fn projected_field_indices(
+/// `*` exposes every column in catalog order under its catalog name. Otherwise each
+/// projection must be a bare column reference (optionally aliased): expressions the
+/// body would have to evaluate cannot be flattened into a plain table occurrence, so
+/// they return `None`.
+fn projected_output_columns(
     projections: &[SqlBoundProjection],
     source: &[SqlCatalogBoundTable],
     catalog: &SqlCatalog,
-) -> Result<Option<Vec<usize>>, SqlFrontendError> {
+) -> Result<Option<(Vec<usize>, Vec<String>)>, SqlFrontendError> {
     let table = catalog
         .tables
         .iter()
         .find(|candidate| candidate.type_id == source[0].type_id)
         .ok_or_else(|| internal_error("catalog table identity is not published"))?;
     if matches!(projections, [SqlBoundProjection::Star]) {
-        return Ok(Some((0..table.fields.len()).collect()));
+        return Ok(Some(((0..table.fields.len()).collect(), table.fields.iter().map(|field| field.name.clone()).collect())));
     }
-    let mut covered = Vec::with_capacity(projections.len());
+    let mut indices = Vec::with_capacity(projections.len());
+    let mut names = Vec::with_capacity(projections.len());
     for projection in projections {
-        let SqlBoundProjection::Expression { expression, alias: None } = projection
+        let SqlBoundProjection::Expression { expression, alias } = projection
         else {
             return Ok(None);
         };
@@ -2022,41 +2066,41 @@ fn projected_field_indices(
         else {
             return Ok(None);
         };
-        if covered.contains(&column.field_id) {
+        let index = match table.fields.iter().position(|field| field.field_id == column.field_id) {
+            Some(index) => index,
+            None => return Ok(None),
+        };
+        if indices.contains(&index) {
             return Ok(None);
         }
-        covered.push(column.field_id);
+        indices.push(index);
+        names.push(alias.clone().unwrap_or_else(|| column.field_name.clone()));
     }
-    if covered.len() != table.fields.len() || !table.fields.iter().all(|field| covered.contains(&field.field_id)) {
-        return Ok(None);
-    }
-    let indices = table.fields.iter().map(|field| covered.iter().position(|id| *id == field.field_id)).collect::<Option<Vec<_>>>();
-    Ok(indices)
+    Ok(Some((indices, names)))
 }
 
-/// Applies a CTE's explicit output column list to the flattened column scope.
+/// Applies a flattened body's output names and its explicit CTE column list to the
+/// visible column scope.
 ///
-/// The body already exposes every column of its single base table, so the written
-/// names replace the visible names of exactly those columns, positionally. The
-/// result stays aligned with the catalog field order: catalog names, `field_id`s
-/// and the row slot are untouched, only the names this occurrence answers to.
+/// The result stays aligned with the catalog field order: catalog names, `field_id`s
+/// and the row slot are untouched, only the names this occurrence answers to. Fields
+/// the body did not project keep their catalog name behind
+/// [`SqlCatalogBoundTable::visible_columns`], which hides them from the outer query.
 fn renamed_column_names(
     table: &SqlCatalogBoundTable,
     field_indices: &[usize],
+    output_names: &[String],
     columns: &[String],
     alias: &str,
     subject: &str,
     catalog: &SqlCatalog,
 ) -> Result<Option<Vec<String>>, SqlFrontendError> {
-    if columns.is_empty() {
-        return Ok(table.column_names.clone());
-    }
     let catalog_table = catalog
         .tables
         .iter()
         .find(|candidate| candidate.type_id == table.type_id)
         .ok_or_else(|| internal_error("catalog table identity is not published"))?;
-    if columns.len() != field_indices.len() {
+    if !columns.is_empty() && columns.len() != field_indices.len() {
         return Err(unsupported_source(
             subject,
             &format!("the explicit column list of `{alias}` names {} columns but its body outputs {}", columns.len(), field_indices.len()),
@@ -2064,6 +2108,9 @@ fn renamed_column_names(
     }
     let mut names: Vec<String> =
         catalog_table.fields.iter().enumerate().map(|(index, field)| table.visible_column_name(index, field)).collect();
+    for (index, name) in field_indices.iter().zip(output_names) {
+        names[*index] = name.clone();
+    }
     for (column, index) in columns.iter().zip(field_indices) {
         names[*index] = column.clone();
     }
@@ -2078,7 +2125,14 @@ fn find_table(catalog: &SqlCatalog, name: &str) -> Result<SqlCatalogBoundTable, 
     let matches = catalog.tables.iter().filter(|table| table.name == name).collect::<Vec<_>>();
     match matches.as_slice() {
         [] => Err(SqlFrontendError::new(SqlErrorKind::UnknownTable, format!("unknown SQL table: {name}"))),
-        [table] => Ok(SqlCatalogBoundTable { type_id: table.type_id, name: table.name.clone(), alias: None, row_slot: 0, column_names: None }),
+        [table] => Ok(SqlCatalogBoundTable {
+            type_id: table.type_id,
+            name: table.name.clone(),
+            alias: None,
+            row_slot: 0,
+            column_names: None,
+            visible_columns: None,
+        }),
         _ => Err(SqlFrontendError::new(SqlErrorKind::AmbiguousTable, format!("ambiguous SQL table: {name}"))),
     }
 }
@@ -2128,8 +2182,12 @@ fn find_field_in_table(
         .ok_or_else(|| internal_error("catalog table identity is not published"))?;
     // 显式列名把输出列改名后，本 occurrence 的可见作用域整体换名：按基表字段名
     // 解析旧名会读到一个外层看不到的列，因此这里只认这一份可见名。
-    let matches =
-        table.fields.iter().enumerate().filter(|(index, field)| source.visible_column_name(*index, field) == name).collect::<Vec<_>>();
+    let matches = table
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(index, field)| source.exposes_column(*index) && source.visible_column_name(*index, field) == name)
+        .collect::<Vec<_>>();
     match matches.as_slice() {
         [] => Ok(None),
         [(index, field)] => {
@@ -2176,7 +2234,7 @@ pub fn collect_column_ids(expr: &SqlCatalogBoundExpression, out: &mut Vec<u64>) 
                 out.push(col.row_id);
             }
         }
-        SqlCatalogBoundExpression::Function { args, window, .. } => {
+        SqlCatalogBoundExpression::Function { args, window, filter, .. } => {
             for arg in args {
                 collect_column_ids(arg, out);
             }
@@ -2187,6 +2245,9 @@ pub fn collect_column_ids(expr: &SqlCatalogBoundExpression, out: &mut Vec<u64>) 
                 for item in &window.order_by {
                     collect_column_ids(&item.expression, out);
                 }
+            }
+            if let Some(predicate) = filter {
+                collect_column_ids(predicate, out);
             }
         }
         SqlCatalogBoundExpression::Binary { left, right, .. } => {
@@ -2217,7 +2278,7 @@ pub fn collect_column_ids(expr: &SqlCatalogBoundExpression, out: &mut Vec<u64>) 
         }
         // 外层列不在本层的行值里，不能要求本层行携带它的键。
         SqlCatalogBoundExpression::OuterColumn(_) => {}
-        SqlCatalogBoundExpression::Literal(_) | SqlCatalogBoundExpression::Wildcard => {}
+        SqlCatalogBoundExpression::Literal(_) | SqlCatalogBoundExpression::Wildcard | SqlCatalogBoundExpression::Interval { .. } => {}
     }
 }
 

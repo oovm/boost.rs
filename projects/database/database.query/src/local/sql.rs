@@ -16,7 +16,7 @@ use database_types::{Error, Result, Value};
 
 use super::{
     ops::{
-        AggregateField, BinaryOp, BoundValue, CmpOp, ConflictAction, ConflictClause, CountExpr, Expr, JoinKind, OUTER_ROW_MARKER, Pred,
+        AggregateField, BinaryOp, BoundValue, CmpOp, ConflictAction, ConflictClause, CountExpr, DateExtractField, Expr, JoinKind, OUTER_ROW_MARKER, Pred,
         ProjectExpr, ProjectField, QueryOp, ReturningProjection, ScalarFunction, SessionOp, SetOpKind, SortKey, WindowField, WindowFrame,
         WindowFrameBound, WindowFrameUnit, WindowFunction, WindowOrderKey, WindowSpec, WriteAssignment, WriteBinOp, WriteExpr, WriteField,
         WriteOp,
@@ -207,30 +207,47 @@ fn lower_select(select: &SelectStatement, parameters: &[ParameterDescriptor], ct
     let mut scope = ctes.clone();
     extend_cte_scope(&mut scope, select.with.as_ref(), parameters)?;
 
-    let from = select.from.as_ref().ok_or_else(|| sql_error("SELECT requires a FROM clause"))?;
-    let base = row_source(from, parameters, &scope)?;
-
-    // A derived table or a `WITH` name contributes its sub-pipeline verbatim,
-    // followed by a `Qualify` when the statement references it through an alias.
-    // A plain table contributes a `Scan`, qualified under the same rule.
-    let mut ops = match &base {
-        RowSource::Table { table, alias } => {
-            let mut ops = vec![QueryOp::Scan { table: table.clone() }];
-            if alias.is_some() {
-                ops.push(QueryOp::Qualify { prefix: base.reference() });
+    // A `SELECT` with no `FROM` (the seed of a recursive CTE, or a standalone
+    // `SELECT 1`) computes over exactly one empty row, contributed by
+    // `SingleRow`. It has no row source to reference, so it carries no
+    // references and cannot join.
+    let mut references: Vec<String> = Vec::new();
+    let mut aliased = false;
+    let mut ops = match select.from.as_ref() {
+        None => {
+            if !select.joins.is_empty() {
+                return Err(sql_error("a `SELECT` without `FROM` cannot carry a `JOIN`"));
             }
-            ops
+            vec![QueryOp::SingleRow]
         }
-        RowSource::Derived { alias, ops: inner } => {
-            let mut ops = nested_ops(inner);
-            ops.push(QueryOp::Qualify { prefix: alias.clone() });
-            ops
-        }
-        RowSource::Cte { alias, ops: inner, .. } => {
-            let mut ops = nested_ops(inner);
-            if alias.is_some() {
-                ops.push(QueryOp::Qualify { prefix: base.reference() });
-            }
+        Some(from) => {
+            let base = row_source(from, parameters, &scope)?;
+            // A derived table or a `WITH` name contributes its sub-pipeline verbatim,
+            // followed by a `Qualify` when the statement references it through an alias.
+            // A plain table contributes a `Scan`, qualified under the same rule.
+            let ops = match &base {
+                RowSource::Table { table, alias } => {
+                    let mut ops = vec![QueryOp::Scan { table: table.clone() }];
+                    if alias.is_some() {
+                        ops.push(QueryOp::Qualify { prefix: base.reference() });
+                    }
+                    ops
+                }
+                RowSource::Derived { alias, ops: inner } => {
+                    let mut ops = nested_ops(inner);
+                    ops.push(QueryOp::Qualify { prefix: alias.clone() });
+                    ops
+                }
+                RowSource::Cte { alias, ops: inner, .. } => {
+                    let mut ops = nested_ops(inner);
+                    if alias.is_some() {
+                        ops.push(QueryOp::Qualify { prefix: base.reference() });
+                    }
+                    ops
+                }
+            };
+            references.push(base.reference());
+            aliased = base.is_aliased();
             ops
         }
     };
@@ -239,8 +256,6 @@ fn lower_select(select: &SelectStatement, parameters: &[ParameterDescriptor], ct
     // so a table may join itself as long as both occurrences are aliased
     // differently. Two sources sharing one reference stay rejected: nothing in
     // the statement could tell their columns apart.
-    let mut references = vec![base.reference()];
-    let mut aliased = base.is_aliased();
     for join_clause in &select.joins {
         let right = row_source(&join_clause.table, parameters, &scope)?;
         let reference = right.reference();
@@ -354,6 +369,11 @@ fn extend_cte_scope(scope: &mut CteScope, with_clause: Option<&WithClause>, para
         // the statement that writes the clause.
         let mut body = scope.clone();
         body.frames.clear();
+        if with_clause.recursive && cte.recursive_tail.is_some() {
+            let pipeline = lower_recursive_cte(&name, cte, &body, parameters)?;
+            scope.pipelines.insert(name, vec![pipeline]);
+            continue;
+        }
         let (mut ops, _) = lower_select(&cte.query, parameters, &body)?;
         if !cte.columns.is_empty() {
             rename_cte_columns(&name, &mut ops, &cte.columns)?;
@@ -361,6 +381,77 @@ fn extend_cte_scope(scope: &mut CteScope, with_clause: Option<&WithClause>, para
         scope.pipelines.insert(name, ops);
     }
     Ok(())
+}
+
+/// Lower one `WITH RECURSIVE` definition into a [`QueryOp::RecursiveCte`].
+///
+/// The body is the `seed UNION [ALL] step` the parser split into `query` and
+/// `recursive_tail`. The seed is lowered against the enclosing scope (it must
+/// not reference the CTE itself); the step is lowered against the same scope
+/// with the CTE name bound to a [`QueryOp::FixpointInput`] marker, so its
+/// self-reference reads the working set the executor feeds each round instead of
+/// a stored table.
+///
+/// The result's columns are anchored to the seed: a written column list renames
+/// the seed's projection, and the step's output is re-keyed to those names by
+/// position so every round appends rows with the same column names.
+fn lower_recursive_cte(name: &str, cte: &data_text_sql::ast::CteDefinition, body: &CteScope, parameters: &[ParameterDescriptor]) -> Result<QueryOp> {
+    let tail = cte
+        .recursive_tail
+        .as_ref()
+        .ok_or_else(|| sql_error(format!("recursive CTE `{name}` has no step operand")))?;
+
+    // Seed: lowered against the enclosing scope, then renamed by the column list.
+    let (mut seed, _) = lower_select(&cte.query, parameters, body)?;
+    if !cte.columns.is_empty() {
+        rename_cte_columns(name, &mut seed, &cte.columns)?;
+    }
+    let columns = pipeline_output_columns(&seed).ok_or_else(|| {
+        sql_error(format!(
+            "recursive CTE `{name}` needs a seed with an explicit projection (or a written column list); `SELECT *` seeds are not supported"
+        ))
+    })?;
+
+    // Step: lowered against the scope where the CTE name is the fixpoint marker.
+    let mut step_scope = body.clone();
+    step_scope.pipelines.insert(name.to_string(), vec![QueryOp::FixpointInput]);
+    let (mut step, _) = lower_select(tail, parameters, &step_scope)?;
+
+    // Re-key the step's output to the seed's column names by position so the
+    // fixpoint appends rows that line up with the result's columns.
+    let step_columns = pipeline_output_columns(&step).ok_or_else(|| {
+        sql_error(format!(
+            "recursive CTE `{name}` needs a step with an explicit projection; `SELECT *` steps are not supported"
+        ))
+    })?;
+    if step_columns.len() != columns.len() {
+        return Err(sql_error(format!(
+            "recursive CTE `{name}` seed projects {} column(s) but its step projects {}",
+            columns.len(),
+            step_columns.len()
+        )));
+    }
+    if step_columns != columns {
+        let fields = columns
+            .iter()
+            .zip(&step_columns)
+            .map(|(out, src)| ProjectField {
+                name: out.clone(),
+                expr: ProjectExpr::Scalar { path: vec![src.clone()] },
+            })
+            .collect();
+        // Insert the rename just before the step's trailing `Collect`.
+        let insert_at = if matches!(step.last(), Some(QueryOp::Collect)) { step.len() - 1 } else { step.len() };
+        step.insert(insert_at, QueryOp::Project { fields });
+    }
+
+    Ok(QueryOp::RecursiveCte {
+        name: name.to_string(),
+        seed,
+        step,
+        union_all: cte.recursive_union_all,
+        columns,
+    })
 }
 
 /// Rename the leading output columns of one `WITH` body by position.
@@ -560,10 +651,10 @@ fn lower_aggregate(
     let mut aggregates: Vec<AggregateField> = Vec::new();
     for item in &select.items {
         if let SelectItem::Expression { expr, alias, .. } = item
-            && let Expression::FunctionCall { name, args, window: None, .. } = expr
+            && let Expression::FunctionCall { name, args, window: None, filter, .. } = expr
             && is_aggregate_function(name)
         {
-            let agg = lower_aggregate_function(name, args, alias, parameters, quantifier_is_distinct, ctes)?;
+            let agg = lower_aggregate_function(name, args, filter.as_deref(), alias, parameters, quantifier_is_distinct, ctes)?;
             aggregates.push(agg);
         }
     }
@@ -603,6 +694,7 @@ fn lower_group_key(item: &GroupByItem) -> Result<ProjectField> {
 fn lower_aggregate_function(
     name: &Identifier,
     args: &[Expression],
+    filter: Option<&Expression>,
     alias: &Option<Identifier>,
     parameters: &[ParameterDescriptor],
     quantifier_is_distinct: bool,
@@ -610,7 +702,7 @@ fn lower_aggregate_function(
 ) -> Result<AggregateField> {
     let fn_name = name.name.to_string().to_ascii_uppercase();
     let output_name = alias.as_ref().map(|a| a.name.to_string()).unwrap_or_else(|| fn_name.to_ascii_lowercase());
-    match fn_name.as_str() {
+    let inner = match fn_name.as_str() {
         "COUNT" => {
             if args.is_empty() {
                 return Err(sql_error("COUNT() requires an argument (`*` or an expression)"));
@@ -668,8 +760,25 @@ fn lower_aggregate_function(
             let expr = lower_project_expr(&args[0], parameters, ctes)?;
             Ok(AggregateField::Max { name: output_name, expr })
         }
+        "ARRAY_AGG" => {
+            if args.len() != 1 {
+                return Err(sql_error("ARRAY_AGG() requires exactly one argument"));
+            }
+            if quantifier_is_distinct {
+                return Err(sql_error("ARRAY_AGG(DISTINCT ...) is not supported by 本地 MVP"));
+            }
+            let expr = lower_project_expr(&args[0], parameters, ctes)?;
+            Ok(AggregateField::ArrayAgg { name: output_name, expr })
+        }
         other => Err(sql_error(format!("aggregate function `{other}` is not supported by 本地 MVP"))),
-    }
+    }?;
+    // `FILTER (WHERE ...)` 只裁剪进入聚合的行，聚合本身不变；没有 FILTER 时保持原算子。
+    let Some(filter) = filter
+    else {
+        return Ok(inner);
+    };
+    let predicate = lower_predicate(filter, parameters, ctes)?;
+    Ok(AggregateField::Filtered { inner: Box::new(inner), predicate })
 }
 
 // ─── window lowering ─────────────────────────────────────────────────────
@@ -918,6 +1027,8 @@ fn first_window_function(expr: &Expression) -> Option<String> {
         Expression::Binary { left, right, .. } => first_window_function(left).or_else(|| first_window_function(right)),
         Expression::Unary { expr, .. } | Expression::IsNull { expr, .. } | Expression::IsTruth { expr, .. } => first_window_function(expr),
         Expression::Cast { expr, .. } => first_window_function(expr),
+        Expression::Extract { source, .. } => first_window_function(source),
+        Expression::Interval { .. } => None,
         Expression::Vector { elements, .. } => elements.iter().find_map(first_window_function),
         Expression::InList { expr, list, .. } => first_window_function(expr).or_else(|| list.iter().find_map(first_window_function)),
         Expression::Between { expr, low, high, .. } => {
@@ -1000,6 +1111,8 @@ fn expr_has_correlated_subquery(expr: &Expr) -> bool {
         Expr::Cast { expr: inner, .. } | Expr::Not(inner) => expr_has_correlated_subquery(inner),
         Expr::Binary { left, right, .. } => expr_has_correlated_subquery(left) || expr_has_correlated_subquery(right),
         Expr::Function { args, .. } => args.iter().any(expr_has_correlated_subquery),
+        Expr::Interval { .. } => false,
+        Expr::JsonAccess { left, key, .. } => expr_has_correlated_subquery(left) || expr_has_correlated_subquery(key),
     }
 }
 
@@ -1425,6 +1538,17 @@ fn lower_expr(expr: &Expression, parameters: &[ParameterDescriptor], ctes: &CteS
             Ok(Expr::Cast { expr: Box::new(lower_expr(inner, parameters, ctes)?), target: target.to_ascii_uppercase() })
         }
         Expression::Binary { left, op, right, .. } => {
+            // The JSON arrows index a dynamic (`any`) value rather than compute a
+            // scalar, so they lower to their own expression node instead of a
+            // `BinaryOp`. `->` keeps the member structured, `->>` renders it as
+            // text, matching the SQL gateway.
+            if matches!(op, BinaryOperator::JsonGet | BinaryOperator::JsonGetText) {
+                return Ok(Expr::JsonAccess {
+                    left: Box::new(lower_expr(left, parameters, ctes)?),
+                    key: Box::new(lower_expr(right, parameters, ctes)?),
+                    as_text: matches!(op, BinaryOperator::JsonGetText),
+                });
+            }
             let bin_op = match op {
                 BinaryOperator::Plus => BinaryOp::Add,
                 BinaryOperator::Minus => BinaryOp::Sub,
@@ -1462,6 +1586,18 @@ fn lower_expr(expr: &Expression, parameters: &[ParameterDescriptor], ctes: &CteS
             }
             lower_scalar_function(name, args, parameters, ctes)
         }
+        Expression::Extract { field, source, .. } => {
+            let Some(extract_field) = DateExtractField::from_field_name(field) else {
+                return Err(sql_error(format!(
+                    "EXTRACT field `{field}` is outside the supported subset, use YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, EPOCH, DOW, DOY, WEEK or QUARTER"
+                )));
+            };
+            Ok(Expr::Function {
+                function: ScalarFunction::Extract(extract_field),
+                args: vec![lower_expr(source, parameters, ctes)?],
+            })
+        }
+        Expression::Interval { text, .. } => Ok(Expr::Interval { text: text.to_string() }),
         Expression::IsNull { .. }
         | Expression::IsTruth { .. }
         | Expression::InList { .. }
@@ -1783,6 +1919,11 @@ fn reject_excluded_paths(predicate: &Pred) -> Result<()> {
             }
             // A subquery has its own scope, checked when it is lowered.
             Expr::Subquery { .. } => Ok(()),
+            Expr::Interval { .. } => Ok(()),
+            Expr::JsonAccess { left, key, .. } => {
+                check_expr(left)?;
+                check_expr(key)
+            }
         }
     }
     match predicate {
@@ -1924,7 +2065,7 @@ fn output_name(expr: &Expression, alias: &Option<Identifier>) -> String {
 /// Every other call is a scalar function, which flows through [`lower_expr`]
 /// into the projection or aggregate argument instead.
 fn is_aggregate_function(name: &Identifier) -> bool {
-    matches!(name.name.to_ascii_uppercase().as_str(), "COUNT" | "SUM" | "AVG" | "MIN" | "MAX")
+    matches!(name.name.to_ascii_uppercase().as_str(), "COUNT" | "SUM" | "AVG" | "MIN" | "MAX" | "ARRAY_AGG")
 }
 
 /// Output column names of a SELECT list, in projection order.
@@ -2213,6 +2354,8 @@ fn check_reference(expr: &Expression, scope: &CteScope, site: RefSite) -> Result
             check_reference(expr, scope, site)
         }
         Expression::Cast { expr, .. } => check_reference(expr, scope, site),
+        Expression::Extract { source, .. } => check_reference(source, scope, site),
+        Expression::Interval { .. } => Ok(()),
         Expression::FunctionCall { args, window, .. } => {
             for arg in args {
                 check_reference(arg, scope, site)?;
