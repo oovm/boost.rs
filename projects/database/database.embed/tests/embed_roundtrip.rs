@@ -184,6 +184,29 @@ fn rejects_non_yydx_path() {
     let error = EmbedDb::open(dir.join("app.db")).expect_err("must reject non-yydx path");
     assert!(error.to_string().contains("yydx"), "unexpected error: {error}");
 }
+
+/// 剖析入口与 `query` 返回同样的行，并给出可归因的阶段计数。
+#[test]
+fn query_profiled_matches_query_and_reports_stages() {
+    let db = EmbedDb::open_in_memory().unwrap();
+    db.ensure_schema(SCHEMA).unwrap();
+    for seq in 1..=5 {
+        insert(&db, seq, "c-1", seq, &format!("m{seq}"));
+    }
+    insert(&db, 100, "c-2", 1, "other");
+
+    let source = "Message.all().filter(x => x.conversation == $conversation).collect()";
+    let bound = params(&[("conversation", json!("c-1"))]);
+    let plain = db.query(source, &bound).unwrap();
+    let (profiled, profile) = db.query_profiled(source, &bound).unwrap();
+    assert_eq!(profiled, plain, "profiled rows must match the plain path");
+    assert_eq!(profile.emitted_rows, 5);
+    assert!(profile.scanned_rows >= 5, "the filter must walk the table: {}", profile.scanned_rows);
+    assert!(profile.total_ns() > 0, "every stage timing cannot be zero: {profile:?}");
+
+    let missing = db.query_profiled(source, &params(&[])).expect_err("a declared parameter must be bound");
+    assert!(missing.to_string().contains("conversation"), "unexpected error: {missing}");
+}
 /// 多表 schema 的 identity 与 contract 远超一页，落盘必须分块并在重开后重组。
 #[test]
 fn large_schema_survives_reopen() {

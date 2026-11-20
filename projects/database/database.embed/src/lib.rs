@@ -36,6 +36,8 @@ use database_execution::engine::{Connection, QueryRow, catalog::RenameMap};
 use database_types::{Error as DbError, Value, scalar};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
+pub use database_execution::engine::ReadProfile;
+
 /// One live handle registered for a canonical database path.
 ///
 /// `live` keeps the entry observable for exactly as long as its owner holds the
@@ -193,6 +195,31 @@ impl EmbedDb {
         let named = bind(params)?;
         let rows: Vec<QueryRow> = self.conn.query_vos_with_params(source, &named)?;
         Ok(rows.iter().map(row_to_json).collect())
+    }
+
+    /// 执行一条只读 VOS 查询，并附带这次执行的逐阶段剖析数据。
+    ///
+    /// 诊断专用路径：引擎只在这里启动计时器，普通 [`Self::query`] 不付任何
+    /// 计时成本。行数据与 `query` 完全一致；`profile` 给出 bind、元数据读取、
+    /// schema 漂移检查、窗口规划、分页读取与执行（扫描/过滤/投影/排序）各阶段
+    /// 的纳秒数与行计数，宿主据此把慢查询归因到具体阶段。
+    pub fn query_profiled(&self, source: &str, params: &JsonMap<String, JsonValue>) -> Result<(Vec<JsonValue>, ReadProfile)> {
+        let named = bind(params)?;
+        let stmt = self.conn.prepare_vos(source)?;
+        // 声明槽位按 index 升序；把命名参数摆成有序值，走带计时的执行入口。
+        let mut values: Vec<Value> = Vec::with_capacity(stmt.parameters.len());
+        for parameter in &stmt.parameters {
+            let value = named
+                .get(&parameter.name)
+                .ok_or_else(|| EmbedError::UnsupportedJson(format!("缺少参数 `${}`", parameter.name)))?;
+            values.push(value.clone());
+        }
+        if let Some(extra) = named.keys().find(|key| !stmt.parameters.iter().any(|parameter| parameter.name == **key)) {
+            return Err(EmbedError::UnsupportedJson(format!("多余参数 `${extra}`")));
+        }
+        let mut profile = ReadProfile::default();
+        let rows = self.conn.query_prepared_ordered_profiled(&stmt, &values, &mut profile)?;
+        Ok((rows.iter().map(row_to_json).collect(), profile))
     }
 
     /// 执行一条 VOS 写语句（`insert` / `update` / `delete` / 迁移脚本）。
