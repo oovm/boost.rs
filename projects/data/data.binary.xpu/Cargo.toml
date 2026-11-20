@@ -1,0 +1,13 @@
+[package]
+name = "data-binary-xpu"
+version.workspace = true
+authors.workspace = true
+description = ".xpu prepared-binary container shell: fixed header, section directory, bounded ranges and digest verification (`data.binary` domain)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+sha2 = { workspace = true }
+thiserror = { workspace = true }

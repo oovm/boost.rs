@@ -122,6 +122,7 @@ members = [
     "projects/data/data.binary.wasm",
     "projects/data/data.binary.x64",
     "projects/data/data.binary.xclbin",
+    "projects/data/data.binary.xpu",
     "projects/data/data.binary.zip",
     "projects/data/data.checksum",
     "projects/data/data.compression",
@@ -698,6 +699,7 @@ data-binary-spirv = { path = "projects/data/data.binary.spirv" }
 data-binary-tar = { path = "projects/data/data.binary.tar" }
 data-binary-ttf = { path = "projects/data/data.binary.ttf" }
 data-binary-tvm = { path = "projects/data/data.binary.tvm" }
+data-binary-xpu = { path = "projects/data/data.binary.xpu" }
 data-binary-wasm = { path = "projects/data/data.binary.wasm" }
 data-binary-x64 = { path = "projects/data/data.binary.x64" }
 data-binary-xclbin = { path = "projects/data/data.binary.xclbin" }
