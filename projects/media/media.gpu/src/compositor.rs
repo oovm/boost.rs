@@ -70,19 +70,30 @@ pub struct GpuCompositor {
     backend: Dx12Backend,
     kernels: Vec<Kernel>,
     adapter_name: String,
+    /// Whether a software adapter is acceptable; replayed when the device is
+    /// reopened for a new frame shape.
+    allow_software: bool,
 }
 
 impl GpuCompositor {
-    /// Acquire the default D3D12 adapter and emit every operator kernel.
+    /// Acquire a hardware D3D12 adapter and emit every operator kernel.
+    ///
+    /// Software adapters (`WARP` / Microsoft Basic Render Driver) are refused:
+    /// dispatching on them can crash inside the driver. On a host that only
+    /// exposes a software adapter this returns `Err`, and callers should stay
+    /// on the CPU path. Use [`Self::with_fallback_adapter`] to opt in instead.
     pub fn new() -> Result<Self, GpuError> {
-        Self::acquire()
+        Self::acquire(false)
     }
 
-    /// Kept for hosts that explicitly ask for a software adapter. D3D12 has a
-    /// single default device path and WARP is selected by the OS when no
-    /// hardware adapter exists, so this matches [`Self::new`].
+    /// Acquire a D3D12 adapter, explicitly allowing the software fallback
+    /// (`WARP` / Microsoft Basic Render Driver) when no hardware adapter exists.
+    ///
+    /// The software path is best effort: it is slow and, on some hosts, cannot
+    /// dispatch at all. Prefer [`Self::new`] and only fall back when the CPU
+    /// path is unusable.
     pub fn with_fallback_adapter() -> Result<Self, GpuError> {
-        Self::acquire()
+        Self::acquire(true)
     }
 
     /// The adapter name, e.g. for `RenderStats` provenance.
@@ -97,17 +108,22 @@ impl GpuCompositor {
         "D3D12"
     }
 
-    fn acquire() -> Result<Self, GpuError> {
+    fn acquire(allow_software: bool) -> Result<Self, GpuError> {
         if !cfg!(windows) {
             return Err(GpuError::new("DirectX 12 backend requires Windows"));
         }
-        let backend = Dx12Backend::new().map_err(|error| GpuError::new(format!("open D3D12 device: {error}")))?;
+        let backend = Self::open(allow_software)?;
         let adapter_name = crate::probe::default_adapter_name().unwrap_or_else(|| "D3D12 adapter".to_string());
         let kernels = Op::ALL
             .into_iter()
             .map(|op| Kernel::new(&build_program(op)))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { backend, kernels, adapter_name })
+        Ok(Self { backend, kernels, adapter_name, allow_software })
+    }
+
+    fn open(allow_software: bool) -> Result<Dx12Backend, GpuError> {
+        let opened = if allow_software { Dx12Backend::new_allowing_software() } else { Dx12Backend::new() };
+        opened.map_err(|error| GpuError::new(format!("open D3D12 device: {error}")))
     }
 
     /// Paints the whole frame with one solid color (background contract).
@@ -292,7 +308,7 @@ impl GpuCompositor {
         match self.backend.prepare(graph) {
             Ok(()) => Ok(()),
             Err(_) => {
-                self.backend = Dx12Backend::new().map_err(|error| GpuError::new(format!("reopen D3D12 device: {error}")))?;
+                self.backend = Self::open(self.allow_software)?;
                 self.backend
                     .prepare(graph)
                     .map_err(|error| GpuError::new(format!("allocate frame buffers: {error}")))

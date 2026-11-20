@@ -43,7 +43,7 @@ use windows::{
                 Common::{
                     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
                 },
-                CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory4,
+                CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIAdapter1, IDXGIFactory4,
             },
         },
         System::Threading::{CreateEventW, INFINITE, WaitForSingleObject},
@@ -123,6 +123,30 @@ pub struct AdapterInfo {
     pub software: bool,
 }
 
+impl AdapterInfo {
+    /// 是否为软件光栅器（WARP / Microsoft Basic Render Driver）。
+    ///
+    /// 判定同时看 `DXGI_ADAPTER_DESC1.Flags` 的 `SOFTWARE` 位、微软的厂商 ID
+    /// `0x1414`，以及显示名里的 `Basic Render`/`WARP`：CI 上的
+    /// `windows-latest` 只暴露 Microsoft Basic Render Driver，在它上面创建设备
+    /// 或提交计算会直接把进程打成 `STATUS_ACCESS_VIOLATION`。
+    #[must_use]
+    pub fn is_software(&self) -> bool {
+        self.software || classify_software(self.vendor_id, 0, &self.name)
+    }
+}
+
+/// 微软把 WARP 与 Microsoft Basic Render Driver 都挂在厂商 ID `0x1414` 下。
+const MICROSOFT_VENDOR_ID: u32 = 0x1414;
+
+/// 按 `DXGI_ADAPTER_DESC1` 的厂商 ID、`Flags` 与显示名判定软件适配器。
+fn classify_software(vendor_id: u32, flags: u32, name: &str) -> bool {
+    vendor_id == MICROSOFT_VENDOR_ID
+        || flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0
+        || name.contains("Basic Render")
+        || name.contains("WARP")
+}
+
 impl Dx12Backend {
     /// 枚举 DXGI 适配器，用于确认 NPU/MCDM 等计算设备是否对 D3D12 可见。
     pub fn enumerate_adapters() -> Result<Vec<AdapterInfo>> {
@@ -131,14 +155,16 @@ impl Dx12Backend {
             let mut adapters = Vec::new();
             let mut index = 0u32;
             while let Ok(adapter) = factory.EnumAdapters(index) {
-                let description = adapter.GetDesc().map_err(dx_err)?;
+                let adapter: IDXGIAdapter1 = adapter.cast().map_err(dx_err)?;
+                let description = adapter.GetDesc1().map_err(dx_err)?;
                 let name = String::from_utf16_lossy(&description.Description);
+                let name = name.trim_end_matches('\0').to_string();
                 adapters.push(AdapterInfo {
-                    name: name.trim_end_matches('\0').to_string(),
+                    software: classify_software(description.VendorId, description.Flags, &name),
+                    name,
                     vendor_id: description.VendorId,
                     device_id: description.DeviceId,
                     dedicated_memory: description.DedicatedVideoMemory as u64,
-                    software: description.VendorId == 0x1414,
                 });
                 index += 1;
             }
@@ -330,12 +356,30 @@ fn unpremultiply(pixels: &mut [u8]) {
 }
 
 impl Dx12Backend {
-    /// Opens the default DXGI adapter and creates a Direct3D 12 device and queue.
+    /// Opens the first hardware DXGI adapter and creates a Direct3D 12 device
+    /// and queue.
+    ///
+    /// 软件适配器（WARP / Microsoft Basic Render Driver）会被拒绝：CI 的
+    /// `windows-latest` 只有这类适配器，在它上面创建设备或提交计算会让进程
+    /// 直接 `STATUS_ACCESS_VIOLATION`。需要软件适配器的宿主必须显式调用
+    /// [`Self::new_allowing_software`]。
     pub fn new() -> Result<Self> {
+        Self::open(false)
+    }
+
+    /// Opens a Direct3D 12 device, falling back to a software adapter
+    /// (WARP / Microsoft Basic Render Driver) when no hardware adapter exists.
+    ///
+    /// 软件适配器只是尽力而为：提交可能很慢，甚至在驱动内部失败。
+    pub fn new_allowing_software() -> Result<Self> {
+        Self::open(true)
+    }
+
+    fn open(allow_software: bool) -> Result<Self> {
         unsafe {
             enable_debug_layer_if_requested();
             let factory: IDXGIFactory4 = CreateDXGIFactory1().map_err(dx_err)?;
-            let adapter: IDXGIAdapter1 = factory.EnumAdapters(0).map_err(dx_err)?.cast().map_err(dx_err)?;
+            let adapter = Self::pick_adapter(&factory, allow_software)?;
             let mut device: Option<ID3D12Device> = None;
             D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_1, &mut device)
                 .or_else(|_| D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device))
@@ -383,6 +427,38 @@ impl Dx12Backend {
                 last_pipeline_path: "",
                 info_queue,
             })
+        }
+    }
+
+    /// Picks the first hardware adapter, or the first software adapter when
+    /// `allow_software` is set.
+    ///
+    /// 只读 `DXGI_ADAPTER_DESC1`，被跳过的适配器不会创建任何设备，所以探测本身
+    /// 不会触发崩溃路径。
+    fn pick_adapter(factory: &IDXGIFactory4, allow_software: bool) -> Result<IDXGIAdapter1> {
+        unsafe {
+            let mut software = None;
+            let mut index = 0u32;
+            while let Ok(adapter) = factory.EnumAdapters(index) {
+                index += 1;
+                let adapter: IDXGIAdapter1 = adapter.cast().map_err(dx_err)?;
+                let description = adapter.GetDesc1().map_err(dx_err)?;
+                let name = String::from_utf16_lossy(&description.Description);
+                let name = name.trim_end_matches('\0').to_string();
+                if !classify_software(description.VendorId, description.Flags, &name) {
+                    return Ok(adapter);
+                }
+                if software.is_none() {
+                    software = Some((adapter, name));
+                }
+            }
+            match software {
+                Some((_, name)) if !allow_software => {
+                    Err(dx_err_msg(format!("only the software adapter {name} is available; refusing to dispatch on it")))
+                }
+                Some((adapter, _)) => Ok(adapter),
+                None => Err(dx_err_msg("no DXGI adapter is available for Direct3D 12")),
+            }
         }
     }
 

@@ -59,8 +59,8 @@ pub fn probe_gpu_fallback() -> GpuBackendInfo {
 fn adapter_info() -> GpuBackendInfo {
     match hardware_backend_dx12::Dx12Backend::enumerate_adapters() {
         Ok(adapters) if !adapters.is_empty() => {
-            let adapter = adapters.iter().find(|adapter| !adapter.software).unwrap_or(&adapters[0]);
-            let device_type = if adapter.software {
+            let adapter = adapters.iter().find(|adapter| !adapter.is_software()).unwrap_or(&adapters[0]);
+            let device_type = if adapter.is_software() {
                 "software"
             }
             else if adapter.dedicated_memory >= 1 << 30 {
@@ -103,7 +103,7 @@ pub(crate) fn default_adapter_name() -> Option<String> {
     let adapters = hardware_backend_dx12::Dx12Backend::enumerate_adapters().ok()?;
     adapters
         .iter()
-        .find(|adapter| !adapter.software)
+        .find(|adapter| !adapter.is_software())
         .or_else(|| adapters.first())
         .map(|adapter| adapter.name.clone())
 }

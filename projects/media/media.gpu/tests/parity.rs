@@ -24,15 +24,27 @@ fn test_frame(w: u32, h: u32) -> Frame {
     frame
 }
 
-/// Acquire any usable adapter: a real GPU first, the software fallback
-/// (WARP) second. Without either, the test reports and passes — the CPU
+/// Acquire a hardware adapter. A software rasterizer (WARP / Microsoft Basic
+/// Render Driver) is skipped explicitly: CI hosts such as `windows-latest`
+/// only expose one, and dispatching on it crashes instead of returning an
+/// error. Without either adapter the test reports and passes — the CPU
 /// reference is the contract, and the host degrades explicitly.
 fn compositor() -> Option<GpuCompositor> {
-    match GpuCompositor::new().or_else(|_| GpuCompositor::with_fallback_adapter()) {
+    match GpuCompositor::new() {
         Ok(compositor) => Some(compositor),
-        Err(error) => {
-            eprintln!("SKIP gpu parity: no adapter available ({error})");
-            None
+        Err(_) => {
+            let probe = media_gpu::probe_gpu();
+            if probe.device_type.as_deref() == Some("software") {
+                eprintln!("SKIP gpu parity: software adapter ({})", probe.adapter_name.as_deref().unwrap_or("unknown"));
+                return None;
+            }
+            match GpuCompositor::with_fallback_adapter() {
+                Ok(compositor) => Some(compositor),
+                Err(error) => {
+                    eprintln!("SKIP gpu parity: no adapter available ({error})");
+                    None
+                }
+            }
         }
     }
 }
