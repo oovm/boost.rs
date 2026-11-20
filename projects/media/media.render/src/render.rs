@@ -32,6 +32,10 @@ pub struct RenderStats {
     pub out: String,
     pub bytes: u64,
     pub backend: String,
+    /// The compositor that painted the frames: `gpu: <adapter> (<backend>)`,
+    /// `cpu`, or `cpu (degraded: <reason>)` when `auto` found no adapter.
+    /// A CPU fallback is always named, never silent (ADR 0005).
+    pub compositor: String,
     pub audio: bool,
     /// Half-open frame range written, in project frames.
     pub range: [u32; 2],
@@ -165,12 +169,186 @@ pub struct RenderOptions<'a> {
     /// clamped to +/-24 dB and applied before any limiter, so the report names
     /// the measured value, the gain and what the file actually achieved.
     pub loudness_target_lufs: Option<f32>,
+    /// Compositor backend for this run: `auto`, `gpu` or `cpu`. `None` defers
+    /// to the `MEDIA_COMPOSITOR` environment variable, then to `auto`. `gpu`
+    /// fails the run when no adapter exists; `auto` prefers GPU and reports
+    /// the CPU fallback in [`RenderStats::compositor`] (ADR 0005).
+    pub compositor: Option<&'a str>,
 }
 
 impl RenderOptions<'_> {
     fn cancelled(&self) -> bool {
         self.cancel.is_some_and(|poll| poll())
     }
+}
+
+/// The compositor that actually paints frames for one run.
+///
+/// `Cpu` is the reference path and always available. `Gpu` exists only when
+/// the `gpu` feature is compiled in and a wgpu adapter was acquired; every
+/// operator mirrors the CPU reference operation by operation (ADR 0005), so
+/// switching backends is a throughput decision, never a semantic one.
+enum RunCompositor {
+    /// The CPU reference path.
+    Cpu,
+    /// The wgpu compute pipeline.
+    #[cfg(feature = "gpu")]
+    Gpu(media_gpu::GpuCompositor),
+}
+
+impl RunCompositor {
+    /// The provenance string reported in [`RenderStats::compositor`].
+    fn label(&self) -> String {
+        match self {
+            Self::Cpu => "cpu".to_string(),
+            #[cfg(feature = "gpu")]
+            Self::Gpu(compositor) => format!("gpu: {} ({})", compositor.adapter_name(), compositor.backend()),
+        }
+    }
+
+    /// Solid fill, mirroring `Paint::fill`.
+    fn fill(&mut self, frame: &mut Frame, color: Rgba) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "gpu")]
+            Self::Gpu(compositor) => compositor.fill(frame, color.0).map_err(gpu_failure)?,
+            Self::Cpu => frame.fill(color),
+        }
+        Ok(())
+    }
+
+    /// Vertical gradient through evenly spaced stops, mirroring `Paint::v_gradient`.
+    fn v_gradient(&mut self, frame: &mut Frame, stops: &[Rgba]) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "gpu")]
+            Self::Gpu(compositor) => {
+                let bytes: Vec<[u8; 4]> = stops.iter().map(|stop| stop.0).collect();
+                compositor.v_gradient(frame, &bytes).map_err(gpu_failure)?
+            }
+            Self::Cpu => frame.v_gradient(stops),
+        }
+        Ok(())
+    }
+
+    /// Radial center-to-edge gradient, mirroring `Paint::radial`.
+    fn radial(&mut self, frame: &mut Frame, center: Rgba, edge: Rgba) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "gpu")]
+            Self::Gpu(compositor) => compositor.radial(frame, center.0, edge.0).map_err(gpu_failure)?,
+            Self::Cpu => frame.radial(center, edge),
+        }
+        Ok(())
+    }
+
+    /// The authored vignette formula, mirroring `Vignette::apply`.
+    fn vignette(&mut self, frame: &mut Frame, strength: f32) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "gpu")]
+            Self::Gpu(compositor) => compositor.vignette(frame, strength).map_err(gpu_failure)?,
+            Self::Cpu => Vignette::new(strength).apply(frame),
+        }
+        Ok(())
+    }
+
+    /// Camera resample, mirroring `Paint::resample_from`.
+    fn resample(&mut self, dst: &mut Frame, src: &Frame, zoom: f32, focus: [f32; 2], rotate: f32) -> Result<(), Error> {
+        match self {
+            #[cfg(feature = "gpu")]
+            Self::Gpu(compositor) => compositor.resample(dst, src, zoom, focus, rotate).map_err(gpu_failure)?,
+            Self::Cpu => dst.resample_from(src, zoom, focus, rotate),
+        }
+        Ok(())
+    }
+
+    /// Paints a scene background. Starfield dots stay on the CPU reference;
+    /// only the base fill/gradient goes through the selected backend.
+    fn paint_background(&mut self, frame: &mut Frame, bg: &Background, seconds: f32) -> Result<(), Error> {
+        match bg {
+            Background::Solid { color } => self.fill(frame, parse_or(Some(color), Rgba([8, 10, 20, 255]))),
+            Background::VGradient { colors } => {
+                let stops: Vec<Rgba> = colors.iter().filter_map(|c| parse(c)).collect();
+                if stops.is_empty() {
+                    self.fill(frame, Rgba([8, 10, 20, 255]))
+                }
+                else {
+                    self.v_gradient(frame, &stops)
+                }
+            }
+            Background::Radial { center, edge } => {
+                self.radial(frame, parse_or(Some(center), Rgba([12, 18, 38, 255])), parse_or(Some(edge), Rgba([4, 6, 12, 255])))
+            }
+            Background::Starfield { base, stars, tint, drift, twinkle } => {
+                let stops: Vec<Rgba> = base.iter().filter_map(|c| parse(c)).collect();
+                if stops.is_empty() {
+                    self.fill(frame, Rgba([5, 7, 15, 255]))?;
+                }
+                else {
+                    self.v_gradient(frame, &stops)?;
+                }
+                let tint = parse_or(tint.as_deref(), Rgba([180, 205, 255, 255]));
+                frame.starfield(*stars, tint, *drift, *twinkle, seconds);
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Turns a compositor failure into the render's error vocabulary: the frame
+/// was not produced, so the run fails explicitly instead of silently
+/// switching paths mid-film (ADR 0005).
+#[cfg(feature = "gpu")]
+fn gpu_failure(error: media_gpu::GpuError) -> Error {
+    Error::encode(error.to_string())
+}
+
+/// The compositor a run will use plus its provenance label.
+struct CompositorSetup {
+    compositor: RunCompositor,
+    label: String,
+}
+
+/// Resolves the compositor: explicit option > `MEDIA_COMPOSITOR` > `auto`.
+///
+/// `cpu` never touches the backend. `gpu` makes a missing adapter a hard
+/// error. `auto` prefers GPU and names the CPU fallback in the label — a
+/// silent fallback is never acceptable (ADR 0005).
+fn resolve_compositor(request: Option<&str>) -> Result<CompositorSetup, Error> {
+    let preference = match request {
+        Some(value) => value.trim().to_ascii_lowercase(),
+        None => std::env::var("MEDIA_COMPOSITOR").unwrap_or_else(|_| "auto".to_string()).trim().to_ascii_lowercase(),
+    };
+    match preference.as_str() {
+        "cpu" => Ok(CompositorSetup { compositor: RunCompositor::Cpu, label: "cpu".to_string() }),
+        "gpu" | "auto" => match acquire_gpu() {
+            Ok(compositor) => {
+                let label = compositor.label();
+                Ok(CompositorSetup { compositor, label })
+            }
+            Err(reason) if preference == "gpu" => {
+                Err(Error::unsupported(format!("compositor `gpu` requested but unavailable: {reason}")))
+            }
+            Err(reason) => Ok(CompositorSetup {
+                compositor: RunCompositor::Cpu,
+                label: format!("cpu (degraded: {reason})"),
+            }),
+        },
+        other => Err(Error::invalid_input(format!("compositor must be `auto`, `gpu` or `cpu`, got {other:?}"))),
+    }
+}
+
+/// Acquires the GPU pipeline: high-performance adapter first, then the
+/// software fallback (WARP et al.), which is still the wgpu compute path.
+#[cfg(feature = "gpu")]
+fn acquire_gpu() -> Result<RunCompositor, String> {
+    media_gpu::GpuCompositor::new()
+        .or_else(|_| media_gpu::GpuCompositor::with_fallback_adapter())
+        .map(RunCompositor::Gpu)
+        .map_err(|error| error.message)
+}
+
+/// Without the backend compiled in, there is nothing to acquire.
+#[cfg(not(feature = "gpu"))]
+fn acquire_gpu() -> Result<RunCompositor, String> {
+    Err("media-render built without the `gpu` feature".to_string())
 }
 
 /// Removes a partially written artifact unless it was published.
@@ -364,6 +542,11 @@ pub fn render_project_with(
     // only ever sees concrete values and no paint path knows about tokens.
     resolve_design(&mut project)?;
     validate(&project)?;
+    // The compositor is chosen once per run and its identity is reported in
+    // the stats: `gpu` hard-fails without an adapter, `auto` names any CPU
+    // degradation instead of crawling silently (ADR 0005).
+    let compositor_setup = resolve_compositor(options.compositor)?;
+    let mut compositor = compositor_setup.compositor;
     let (w, h, fps) = (project.width, project.height, project.fps);
     let (fonts, font_paths, font_hashes) = resolve_fonts(&project)?;
     let mut fonts = fonts;
@@ -444,7 +627,7 @@ pub fn render_project_with(
         if options.cancelled() {
             return Err(Error::cancelled(format!("render cancelled at frame {f} of {first}..{last}")));
         }
-        paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), &mut pool, f, &mut frame, limits)?;
+        paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), &mut compositor, &mut pool, f, &mut frame, limits)?;
         if let Some(cues) = options.subtitles {
             paint_burned_subtitles(&mut fonts, &mut frame, f, cues);
         }
@@ -474,6 +657,7 @@ pub fn render_project_with(
         out: out.display().to_string(),
         bytes,
         backend: backend_label(has_audio, &audio_codec),
+        compositor: compositor_setup.label,
         audio: has_audio,
         range: [first, last],
         fonts: font_paths,
@@ -550,6 +734,14 @@ pub fn render_project_traced(json: &str, out: &Path, options: &RenderOptions<'_>
                     fps: stats.fps,
                     frames: stats.frames,
                 });
+                // A degraded `auto` is an observable event, not just a label.
+                if let Some(rest) = stats.compositor.strip_prefix("cpu (degraded: ") {
+                    tracer.record(EventKind::Degraded {
+                        from: "gpu".to_string(),
+                        to: "cpu".to_string(),
+                        reason: rest.strip_suffix(')').unwrap_or(rest).to_string(),
+                    });
+                }
                 tracer.record(EventKind::Encoded { frames: stats.frames, bytes: stats.bytes });
                 tracer.record(EventKind::Published { path: stats.out.clone(), bytes: stats.bytes });
                 Ok(stats)
@@ -634,7 +826,8 @@ fn render_frame_value(json: &str, frame: u32) -> Result<(Frame, Vec<String>), Er
     let mut pool = FramePool::new((w as f32 * ss).round() as u32, (h as f32 * ss).round() as u32);
     let mut frame_buffer = Frame::new(w, h);
     let vignette = project.post.vignette.map(Vignette::new);
-    paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), &mut pool, frame, &mut frame_buffer, limits)?;
+    let mut compositor = resolve_compositor(None)?.compositor;
+    paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), &mut compositor, &mut pool, frame, &mut frame_buffer, limits)?;
     Ok((frame_buffer, font_paths))
 }
 
@@ -1376,6 +1569,7 @@ fn paint_frame(
     fonts: &mut Fonts,
     media: &mut MediaLibrary,
     vignette: Option<&Vignette>,
+    compositor: &mut RunCompositor,
     pool: &mut FramePool,
     frame_index: u32,
     out: &mut Frame,
@@ -1408,7 +1602,7 @@ fn paint_frame(
         };
         // The off-screen buffer may be larger than the output so a pushed-in
         // camera still has real pixels to show instead of an upscale.
-        paint_background(target, &scene.background, seconds);
+        compositor.paint_background(target, &scene.background, seconds)?;
         for node in &scene.items {
             // Screen-space nodes are painted after the lens, below.
             if node.space == Space::Screen {
@@ -1421,7 +1615,7 @@ fn paint_frame(
             // own scale cancels out: a 1.62 push samples exactly as many source
             // pixels as the output needs.
             let buffer = scratch.as_ref().expect("global camera renders off-screen");
-            out.resample_from(buffer, global_zoom, global_focus, global_rotate);
+            compositor.resample(out, buffer, global_zoom, global_focus, global_rotate)?;
         }
         else if let Some(camera) = camera {
             let t = if scene.duration > 1 { local as f32 / (scene.duration - 1) as f32 } else { 1.0 };
@@ -1432,11 +1626,11 @@ fn paint_frame(
                 camera.focus_from[1] + (camera.focus_to[1] - camera.focus_from[1]) * eased,
             ];
             let buffer = scratch.as_ref().expect("scene camera renders off-screen");
-            out.resample_from(buffer, zoom, focus, camera.rotate_to * eased);
+            compositor.resample(out, buffer, zoom, focus, camera.rotate_to * eased)?;
         }
         else if let Some(buffer) = scratch.as_ref() {
             // Supersampled world without a camera: a straight box downsample.
-            out.resample_from(buffer, 1.0, [0.5, 0.5], 0.0);
+            compositor.resample(out, buffer, 1.0, [0.5, 0.5], 0.0)?;
         }
         if let Some(buffer) = scratch.take() {
             pool.put(buffer);
@@ -1445,7 +1639,7 @@ fn paint_frame(
     // Corner darkening is an authored look, not a house style: no declaration,
     // no darkening.
     if let Some(vignette) = vignette {
-        vignette.apply(out);
+        compositor.vignette(out, vignette.strength)?;
     }
     // Screen-space nodes skip the lens and the look: they are painted straight
     // onto the output frame, on the same scene-local clock as the world nodes,
@@ -1460,35 +1654,6 @@ fn paint_frame(
         }
     }
     Ok(())
-}
-
-fn paint_background(frame: &mut Frame, bg: &Background, seconds: f32) {
-    match bg {
-        Background::Solid { color } => frame.fill(parse_or(Some(color), Rgba([8, 10, 20, 255]))),
-        Background::VGradient { colors } => {
-            let stops: Vec<Rgba> = colors.iter().filter_map(|c| parse(c)).collect();
-            if stops.is_empty() {
-                frame.fill(Rgba([8, 10, 20, 255]));
-            }
-            else {
-                frame.v_gradient(&stops);
-            }
-        }
-        Background::Radial { center, edge } => {
-            frame.radial(parse_or(Some(center), Rgba([12, 18, 38, 255])), parse_or(Some(edge), Rgba([4, 6, 12, 255])));
-        }
-        Background::Starfield { base, stars, tint, drift, twinkle } => {
-            let stops: Vec<Rgba> = base.iter().filter_map(|c| parse(c)).collect();
-            if stops.is_empty() {
-                frame.fill(Rgba([5, 7, 15, 255]));
-            }
-            else {
-                frame.v_gradient(&stops);
-            }
-            let tint = parse_or(tint.as_deref(), Rgba([180, 205, 255, 255]));
-            frame.starfield(*stars, tint, *drift, *twinkle, seconds);
-        }
-    }
 }
 
 fn px(x: f32, w: u32) -> f32 {
@@ -2394,7 +2559,7 @@ mod tests {
             let mut media = media_codec::MediaLibrary::new();
             let mut pool = super::FramePool::new(320, 180);
             let mut frame = media_image::Frame::new(320, 180);
-            super::paint_frame(&project, &mut fonts, &mut media, None, &mut pool, frame_index, &mut frame, media_codec::DecodeLimits::unbounded()).expect("frame");
+            super::paint_frame(&project, &mut fonts, &mut media, None, &mut super::RunCompositor::Cpu, &mut pool, frame_index, &mut frame, media_codec::DecodeLimits::unbounded()).expect("frame");
             let mut span = (320, 0);
             for y in 0..180 {
                 for x in 0..320 {
@@ -3125,6 +3290,70 @@ mod tests {
         let dark = corner(serde_json::json!({ "vignette": 0.9 }), "vignette-on.mp4");
         assert!(plain > 200, "an undeclared vignette must leave the corner bright: {plain}");
         assert!(dark < plain, "a declared vignette must darken the corner: {dark} vs {plain}");
+    }
+
+    /// The compositor choice is explicit and reported: `cpu` says `cpu`,
+    /// an unknown value fails before any pixel is produced, and `gpu` either
+    /// names the adapter or fails the run — it never silently becomes CPU.
+    #[test]
+    fn compositor_choice_is_reported_and_explicit() {
+        let dir = std::env::temp_dir().join("opencut-media-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let film = serde_json::json!({
+            "width": 64, "height": 64, "fps": 15, "duration_frames": 2,
+            "scenes": [{ "start": 0, "duration": 2,
+                "background": { "kind": "solid", "color": "#101820" }, "items": [] }],
+            "audio": null
+        })
+        .to_string();
+        let options = |name: &'static str| super::RenderOptions { compositor: Some(name), ..Default::default() };
+        let stats = super::render_project_with(&film, &dir.join("compositor-cpu.mp4"), &options("cpu"), &mut |_, _| {})
+            .expect("cpu render");
+        assert_eq!(stats.compositor, "cpu");
+        let error = super::render_project_with(&film, &dir.join("compositor-bogus.mp4"), &options("vulkan"), &mut |_, _| {})
+            .expect_err("an unknown compositor must fail the run");
+        assert!(error.message.contains("compositor must be"), "{error}");
+        match super::render_project_with(&film, &dir.join("compositor-gpu.mp4"), &options("gpu"), &mut |_, _| {}) {
+            Ok(stats) => assert!(stats.compositor.starts_with("gpu: "), "{}", stats.compositor),
+            Err(error) => assert_eq!(error.code(), "unsupported_platform", "{error}"),
+        }
+    }
+
+    /// The GPU path must reproduce the CPU reference frame: the same scene
+    /// painted through `paint_frame` on both backends stays within the
+    /// composed per-operator byte contract (±1 each, ±2 through two).
+    #[test]
+    fn gpu_paints_the_same_frames_as_cpu() {
+        let mut compositor = match super::acquire_gpu() {
+            Ok(compositor) => compositor,
+            Err(_) => return, // no adapter on this host: nothing to compare against
+        };
+        let json = serde_json::json!({
+            "width": 96, "height": 64, "fps": 15, "duration_frames": 2,
+            "scenes": [{ "start": 0, "duration": 2,
+                "background": { "kind": "radial", "center": "#203050", "edge": "#05070f" }, "items": [] }],
+            "audio": null, "post": { "vignette": 0.6 }
+        })
+        .to_string();
+        let mut project: media_scene::Project = serde_json::from_str(&json).unwrap();
+        super::resolve_design(&mut project).unwrap();
+        super::validate(&project).unwrap();
+        let (mut fonts, _, _) = super::resolve_fonts(&project).unwrap();
+        let mut media = media_codec::MediaLibrary::new();
+        let limits = media_codec::DecodeLimits::project_default();
+        let vignette = project.post.vignette.map(media_post::Vignette::new);
+        let mut pool = super::FramePool::new(project.width, project.height);
+        let mut paint = |compositor: &mut super::RunCompositor, out: &mut media_image::Frame| {
+            super::paint_frame(&project, &mut fonts, &mut media, vignette.as_ref(), compositor, &mut pool, 1, out, limits)
+                .expect("paint");
+        };
+        let mut cpu_frame = media_image::Frame::new(project.width, project.height);
+        paint(&mut super::RunCompositor::Cpu, &mut cpu_frame);
+        let mut gpu_frame = media_image::Frame::new(project.width, project.height);
+        paint(&mut compositor, &mut gpu_frame);
+        assert_eq!(cpu_frame.pixels.len(), gpu_frame.pixels.len());
+        let worst = cpu_frame.pixels.iter().zip(&gpu_frame.pixels).map(|(a, b)| (*a as i32 - *b as i32).abs()).max().unwrap_or(0);
+        assert!(worst <= 2, "gpu frame deviates from the cpu reference by {worst} byte levels");
     }
 
     /// Reads back a preview PNG through the same decoder used for imports.

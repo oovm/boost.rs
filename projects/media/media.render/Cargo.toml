@@ -24,13 +24,16 @@ media-dsp = { workspace = true, optional = true }
 media-synthesis = { workspace = true, optional = true }
 media-voice = { workspace = true, optional = true }
 media-post = { workspace = true, optional = true }
+media-gpu = { workspace = true, optional = true }
 media-vector = { workspace = true, optional = true }
 media-voxel = { workspace = true, optional = true }
 media-layout = { workspace = true, optional = true }
 media-harness = { workspace = true, features = ["serde"] }
 
 [features]
-default = ["scene"]
+default = ["scene", "gpu"]
+# GPU 合成后端（ADR 0005）：wgpu/WGSL 复现 CPU 参考算子，CPU 只作显式降级路径。
+gpu = ["dep:media-gpu"]
 scene = ["dep:geometry", "dep:serde_json", "dep:media-scene", "dep:media-motion", "dep:media-raster", "dep:media-text", "media-text/blocks", "dep:media-audio", "dep:media-post", "dep:media-dsp"]
 image-pipeline = ["dep:media-post"]
 sfx-export = ["dep:media-synthesis"]
