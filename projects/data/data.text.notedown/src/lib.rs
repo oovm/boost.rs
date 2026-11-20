@@ -7,11 +7,6 @@ pub mod builder;
 
 pub mod language;
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser functionality for Notedown.
 pub mod parser;
@@ -24,14 +19,8 @@ pub use crate::{
     parser::NoteParser,
 };
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::highlighter::{HighlightKind, Highlighter, NoteHighlighter};
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::NoteLanguageService;
 
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_note_mcp;
 pub use parser::element_type::NoteElementType;
 
 fn build_output(source: &str) -> data_text_core::builder::BuildOutput<NoteLanguage> {

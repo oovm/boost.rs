@@ -1,0 +1,19 @@
+[package]
+name = "language-prolog"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Prolog (LSP, MCP, formatter, highlighter adapters over data-text-prolog)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "prolog"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-prolog = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "io-std"] }

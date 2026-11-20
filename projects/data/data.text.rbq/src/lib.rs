@@ -11,12 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer implementation for RBQ.
 pub mod lexer;
-/// LSP-related functionality (hover, completion, highlighting).
-#[cfg(feature = "lsp")]
-pub mod lsp;
-/// MCP (Model Context Protocol) integration for RBQ.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser implementation for RBQ.
 pub mod parser;
@@ -32,21 +26,9 @@ pub use crate::{
 /// Alias for RbqTokenType to support tests and common usage
 pub type RbqSyntaxKind = RbqTokenType;
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::RbqHighlighter;
 
-/// Formatter implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::formatter::RbqFormatter;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::RbqLanguageService;
 
-/// MCP implementation.
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_rbq_mcp;
 
 /// Parses a string into an RBQ AST.
 pub fn parse(input: &str) -> Result<RbqRoot, data_text_core::TextError> {

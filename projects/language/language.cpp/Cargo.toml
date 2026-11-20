@@ -1,0 +1,15 @@
+[package]
+name = "language-cpp"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Cpp (LSP, MCP, formatter, highlighter adapters over data-text-cpp)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "cpp"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-cpp = { workspace = true }

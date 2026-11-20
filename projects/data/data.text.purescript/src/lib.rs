@@ -7,16 +7,12 @@ pub mod builder;
 
 pub mod language;
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 pub mod parser;
 
 pub use crate::{
     ast::PurescriptRoot, builder::PurescriptBuilder, language::PurescriptLanguage, lexer::PurescriptLexer, parser::PurescriptParser,
 };
 
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::PurescriptHighlighter;
 
 /// MCP service implementation.
 // #[cfg(feature = "mcp")]

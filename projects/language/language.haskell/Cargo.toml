@@ -1,0 +1,21 @@
+[package]
+name = "language-haskell"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Haskell (LSP, MCP, formatter, highlighter adapters over data-text-haskell)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "haskell"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-haskell = { workspace = true }
+futures = { workspace = true }
+language-highlight = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

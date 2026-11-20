@@ -71,6 +71,31 @@ members = [
     "projects/language/language.valkyrie",
     "projects/language/language.visualize",
     "projects/language/language.von",
+    "projects/language/language.cpp",
+    "projects/language/language.dejavu",
+    "projects/language/language.haskell",
+    "projects/language/language.jasmin",
+    "projects/language/language.matlab",
+    "projects/language/language.mojo",
+    "projects/language/language.msil",
+    "projects/language/language.nginx",
+    "projects/language/language.nix",
+    "projects/language/language.notedown",
+    "projects/language/language.objective-c",
+    "projects/language/language.ocaml",
+    "projects/language/language.org-mode",
+    "projects/language/language.pascal",
+    "projects/language/language.perl",
+    "projects/language/language.php",
+    "projects/language/language.powershell",
+    "projects/language/language.prolog",
+    "projects/language/language.protobuf",
+    "projects/language/language.purescript",
+    "projects/language/language.python",
+    "projects/language/language.r",
+    "projects/language/language.raku",
+    "projects/language/language.rbq",
+    "projects/language/language.regex",
     "projects/language/language.fortran",
     "projects/language/language.fsharp",
     "projects/language/language.go",
@@ -568,6 +593,31 @@ language-typescript = { path = "projects/language/language.typescript" }
 language-valkyrie = { path = "projects/language/language.valkyrie" }
 language-visualize = { path = "projects/language/language.visualize" }
 language-von = { path = "projects/language/language.von" }
+language-cpp = { path = "projects/language/language.cpp" }
+language-dejavu = { path = "projects/language/language.dejavu" }
+language-haskell = { path = "projects/language/language.haskell" }
+language-jasmin = { path = "projects/language/language.jasmin" }
+language-matlab = { path = "projects/language/language.matlab" }
+language-mojo = { path = "projects/language/language.mojo" }
+language-msil = { path = "projects/language/language.msil" }
+language-nginx = { path = "projects/language/language.nginx" }
+language-nix = { path = "projects/language/language.nix" }
+language-notedown = { path = "projects/language/language.notedown" }
+language-objective-c = { path = "projects/language/language.objective-c" }
+language-ocaml = { path = "projects/language/language.ocaml" }
+language-org-mode = { path = "projects/language/language.org-mode" }
+language-pascal = { path = "projects/language/language.pascal" }
+language-perl = { path = "projects/language/language.perl" }
+language-php = { path = "projects/language/language.php" }
+language-powershell = { path = "projects/language/language.powershell" }
+language-prolog = { path = "projects/language/language.prolog" }
+language-protobuf = { path = "projects/language/language.protobuf" }
+language-purescript = { path = "projects/language/language.purescript" }
+language-python = { path = "projects/language/language.python" }
+language-r = { path = "projects/language/language.r" }
+language-raku = { path = "projects/language/language.raku" }
+language-rbq = { path = "projects/language/language.rbq" }
+language-regex = { path = "projects/language/language.regex" }
 language-fortran = { path = "projects/language/language.fortran" }
 language-fsharp = { path = "projects/language/language.fsharp" }
 language-go = { path = "projects/language/language.go" }

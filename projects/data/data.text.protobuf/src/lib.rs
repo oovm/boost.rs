@@ -11,12 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer for Protobuf.
 pub mod lexer;
-/// LSP support for Protobuf.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module for Protobuf.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser for Protobuf.
 pub mod parser;
@@ -30,8 +24,6 @@ pub use crate::{
     parser::ProtobufParser,
 };
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::ProtobufLanguageService;
 
 // #[cfg(feature = "mcp")]
 // pub use crate::mcp::serve_protobuf_mcp;

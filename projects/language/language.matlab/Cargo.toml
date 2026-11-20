@@ -1,0 +1,19 @@
+[package]
+name = "language-matlab"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Matlab (LSP, MCP, formatter, highlighter adapters over data-text-matlab)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "matlab"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-matlab = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true, features = ["io-std"] }
+language-server = { workspace = true }
+tokio = { workspace = true }

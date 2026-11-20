@@ -12,30 +12,13 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
 
 pub use crate::{ast::RRoot, builder::RBuilder, language::RLanguage, lexer::RLexer, parser::RParser};
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::RHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::RLanguageService;
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::formatter::RFormatter;
 
-/// MCP service implementation.
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_r_mcp;
 pub use lexer::token_type::RTokenType;
 pub use parser::element_type::RElementType;

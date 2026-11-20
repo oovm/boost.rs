@@ -10,21 +10,12 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
 
 pub use crate::{ast::PythonRoot, builder::PythonBuilder, language::PythonLanguage, lexer::PythonLexer, parser::PythonParser};
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::PythonHighlighter;
 /// Python token type.
 pub use lexer::token_type::PythonTokenType;
 /// Python element type.

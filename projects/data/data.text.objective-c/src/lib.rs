@@ -11,12 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-/// LSP module.
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
@@ -25,11 +19,7 @@ pub use crate::{
     ast::ObjectiveCRoot, builder::ObjectiveCBuilder, language::ObjectiveCLanguage, lexer::ObjectiveCLexer, parser::ObjectiveCParser,
 };
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::highlighter::{HighlightKind, Highlighter, ObjectiveCHighlighter};
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::ObjectiveCLanguageService;
 
 // #[cfg(feature = "mcp")]
 // pub use crate::mcp::serve_objective_c_mcp;

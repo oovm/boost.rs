@@ -1,0 +1,19 @@
+[package]
+name = "language-pascal"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Pascal (LSP, MCP, formatter, highlighter adapters over data-text-pascal)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "pascal"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-pascal = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

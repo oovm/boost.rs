@@ -1,0 +1,19 @@
+[package]
+name = "language-nginx"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Nginx (LSP, MCP, formatter, highlighter adapters over data-text-nginx)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "nginx"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-nginx = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

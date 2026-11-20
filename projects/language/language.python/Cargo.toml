@@ -1,0 +1,20 @@
+[package]
+name = "language-python"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Python (LSP, MCP, formatter, highlighter adapters over data-text-python)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "python"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-python = { workspace = true }
+futures = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

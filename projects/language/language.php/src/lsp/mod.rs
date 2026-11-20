@@ -1,0 +1,77 @@
+#![doc = include_str!("readme.md")]
+pub mod highlighter;
+
+use data_text_php::{language::PhpLanguage, parser::element_type::PhpElementType};
+use core::range::Range;
+use data_text_core::tree::RedNode;
+use {
+    futures::Future,
+    language_hover::{Hover as HoverInfo, HoverProvider},
+    language_server::{DocumentSession, Vfs},
+    language_server::{service::LanguageService, types::Hover},
+};
+/// Hover provider implementation for PHP.
+pub struct PhpHoverProvider;
+impl HoverProvider<PhpLanguage> for PhpHoverProvider {
+    fn hover(&self, node: &RedNode<'_, PhpLanguage>, _range: Range<usize>) -> Option<HoverInfo> {
+        let kind = node.green.kind;
+        let contents = match kind {
+            PhpElementType::ClassDef => "### PHP Class\nA template for objects, containing properties and methods.",
+            PhpElementType::FunctionDef => "### PHP Function\nA block of code that can be repeatedly called.",
+            PhpElementType::NamespaceDef => "### PHP Namespace\nA way of encapsulating items to avoid name collisions.",
+            _ => return None,
+        };
+        Some(HoverInfo { contents: contents.to_string(), range: Some(node.span()) })
+    }
+}
+/// PHP language service.
+///
+/// This struct provides LSP-related functionality for the PHP language.
+pub struct PhpLanguageService<V: Vfs> {
+    vfs: V,
+    workspace: language_server::workspace::WorkspaceManager,
+    hover_provider: PhpHoverProvider,
+}
+impl<V: Vfs> PhpLanguageService<V> {
+    /// Creates a new `PhpLanguageService` with the given virtual file system.
+    pub fn new(vfs: V) -> Self {
+        Self { vfs, workspace: language_server::workspace::WorkspaceManager::default(), hover_provider: PhpHoverProvider }
+    }
+}
+impl<V: DocumentSession + Send + Sync + 'static> LanguageService for PhpLanguageService<V> {
+    type Lang = PhpLanguage;
+    type Vfs = V;
+    fn vfs(&self) -> &Self::Vfs {
+        &self.vfs
+    }
+    fn workspace(&self) -> &language_server::workspace::WorkspaceManager {
+        &self.workspace
+    }
+    fn with_root<R, F>(&self, uri: &str, f: F) -> impl Future<Output = Option<R>> + Send
+    where
+        R: Send,
+        F: FnOnce(RedNode<'_, Self::Lang>) -> R + Send,
+    {
+        let source = self.vfs().request_source(uri);
+        async move {
+            let source = source?;
+            let language = PhpLanguage::default();
+            let parser = data_text_php::parser::PhpParser::new(&language);
+            let lexer = data_text_php::lexer::PhpLexer::new(&language);
+            let mut cache = data_text_core::parser::session::ParseSession::<Self::Lang>::default();
+            let parse_out = data_text_core::parser::parse(&parser, &lexer, &source, &[], &mut cache);
+            let green = parse_out.result.ok()?;
+            Some(f(RedNode::new(green, 0)))
+        }
+    }
+    fn hover(&self, uri: &str, range: Range<usize>) -> impl Future<Output = Option<Hover>> + Send + '_ {
+        let uri = uri.to_string();
+        async move {
+            let hover = self.with_root(&uri, |root| self.hover_provider.hover(&root, range)).await.flatten()?;
+            Some(Hover { contents: hover.contents, range: hover.range })
+        }
+    }
+    fn completion(&self, _uri: &str, _offset: usize) -> impl Future<Output = Vec<language_server::types::CompletionItem>> + Send + '_ {
+        async move { vec![] }
+    }
+}

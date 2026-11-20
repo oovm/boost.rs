@@ -7,11 +7,6 @@ pub mod builder;
 
 pub mod language;
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
@@ -21,12 +16,6 @@ pub use crate::{
     parser::PowerShellParser,
 };
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::highlighter::{HighlightKind, Highlighter, PowerShellHighlighter};
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::PowerShellLanguageService;
 
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_powershell_mcp;
 pub use parser::element_type::PowerShellElementType;
