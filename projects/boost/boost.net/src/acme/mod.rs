@@ -6,6 +6,7 @@
 //! renewal scheduling: those stay with the consuming product.
 
 pub mod client;
+pub mod csr;
 pub mod directory;
 mod error;
 pub mod jws;
