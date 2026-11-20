@@ -1,6 +1,6 @@
 [package]
 name = "language-typescript"
-description = "TypeScript language services: CST token-gap source formatter, LSP and MCP adapters."
+description = "TypeScript language services: CST token-gap source formatter"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,16 +8,11 @@ authors.workspace = true
 publish = false
 
 [features]
-default = ["serde", "io-std"]
-io-std = ["language-mcp/io-std"]
+default = ["serde"]
 serde = ["dep:serde"]
 
 [dependencies]
 data-text-core = { workspace = true }
 data-text-typescript = { workspace = true }
-futures = { workspace = true }
 language-format = { workspace = true }
-language-mcp = { workspace = true }
-language-server = { workspace = true }
 serde = { workspace = true, optional = true }
-tokio = { workspace = true }
