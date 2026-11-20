@@ -1,11 +1,10 @@
-use core::fmt;
 use data_text_core::{Source, Token, TokenType, UniversalElementRole, UniversalTokenRole};
 
 /// Go language token type.
 pub type GoToken = Token<GoTokenType>;
 
 /// Token types for the Go language.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum GoTokenType {
     // Non-terminal nodes
@@ -389,12 +388,6 @@ impl GoTokenType {
                 | Self::Type
                 | Self::Var
         )
-    }
-}
-
-impl fmt::Debug for GoTokenType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 

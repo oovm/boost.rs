@@ -108,8 +108,8 @@ impl<'config> GoBuilder<'config> {
     fn extract_imports(&self, node: RedNode<GoLanguage>, source: &SourceText) -> Vec<ast::Import> {
         let mut imports = vec![];
         for child in node.children() {
-            if let RedTree::Node(n) = child {
-                match n.green.kind {
+            match child {
+                RedTree::Node(n) => match n.green.kind {
                     GoElementType::ImportSpec => {
                         let mut path = String::new();
                         let mut alias = None;
@@ -130,7 +130,15 @@ impl<'config> GoBuilder<'config> {
                         // Handle import ( ... )
                         imports.extend(self.extract_imports(n, source));
                     }
+                },
+                RedTree::Leaf(leaf) if leaf.kind == GoTokenType::StringLiteral => {
+                    imports.push(ast::Import {
+                        path: source.get_text_in(leaf.span).trim_matches('"').to_string(),
+                        alias: None,
+                        span: leaf.span,
+                    });
                 }
+                _ => {}
             }
         }
         imports
@@ -313,9 +321,6 @@ impl<'config> GoBuilder<'config> {
                                     break;
                                 }
                             }
-                            RedTree::Node(n) => {
-                                println!("DEBUG: Identifier node has a Node child: kind={:?}, span={:?}", n.green.kind, n.span());
-                            }
                             _ => {}
                         }
                     }
@@ -323,22 +328,6 @@ impl<'config> GoBuilder<'config> {
                         name = source.get_text_in(node.span()).trim().to_string();
                     }
                     if name.is_empty() {
-                        println!("DEBUG: Final empty identifier node details:");
-                        println!("  Node kind: {:?}", node.green.kind);
-                        println!("  Node span: {:?}", node.span());
-                        println!("  Children count: {}", node.children().count());
-                        for (i, child) in node.children().enumerate() {
-                            match child {
-                                RedTree::Node(n) => println!("    child {}: Node kind={:?}, span={:?}", i, n.green.kind, n.span()),
-                                RedTree::Leaf(l) => println!(
-                                    "    child {}: Leaf kind={:?}, span={:?}, text={:?}",
-                                    i,
-                                    l.kind,
-                                    l.span,
-                                    source.get_text_in(l.span)
-                                ),
-                            }
-                        }
                         return Err(TextError::parse_error(format!("Empty identifier at {:?}", node.span())));
                     }
                     Ok(ast::Expression::Identifier { name, span: node.span() })

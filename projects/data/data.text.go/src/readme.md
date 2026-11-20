@@ -19,7 +19,10 @@ fn main() {
     let code = r#"
 package main
 
+import "fmt"
+
 func main() {
+    fmt.Println("Hello from Boost Go!")
 }
 "#;
     let source = SourceText::new(code);
@@ -33,11 +36,12 @@ func main() {
     let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.diagnostics.is_empty() {
-        println!("Parsing successful!");
-    } else {
-        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
-    }
+    assert!(result.diagnostics.is_empty(), "unexpected diagnostics: {:#?}", result.diagnostics);
+    let root = result.result.expect("parse result");
+    assert_eq!(root.package.as_deref(), Some("main"));
+    assert_eq!(root.imports.len(), 1);
+    assert_eq!(root.declarations.len(), 1);
+    println!("Parsing successful!");
 }
 ```
 

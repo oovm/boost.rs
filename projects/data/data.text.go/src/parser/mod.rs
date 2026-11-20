@@ -97,12 +97,12 @@ impl<'config> GoParser<'config> {
         state.expect(T::Import).ok();
         if state.eat(T::LeftParen) {
             while state.not_at_end() && !state.at(T::RightParen) {
-                state.advance();
+                state.bump();
             }
             state.expect(T::RightParen).ok();
         }
         else {
-            state.advance();
+            state.bump();
         }
         state.finish_at(cp, E::ImportDeclaration);
         Ok(())
@@ -329,7 +329,7 @@ impl<'config> GoParser<'config> {
         let cp = state.checkpoint();
         state.expect(T::Switch).ok();
         while state.not_at_end() && !state.at(T::LeftBrace) {
-            state.advance();
+            state.bump();
         }
         self.parse_block(state)?;
         state.finish_at(cp, E::SwitchStatement);
