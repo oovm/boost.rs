@@ -4878,6 +4878,233 @@ fn ctes_reject_duplicate_names_and_forward_references() {
     );
 }
 
+// ─── recursive CTEs ────────────────────────────────────────────────────
+
+#[test]
+fn recursive_cte_counts_to_a_fixpoint() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    // The classic counter: the written column list names the seed so the step
+    // can read the working set back.
+    let rows = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM n WHERE n < 10) SELECT n FROM n ORDER BY n",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("recursive counter")
+    .rows;
+    assert_eq!(column(&rows, "n"), (1..=10).map(Value::I64).collect::<Vec<_>>());
+
+    // The same relation read with `SELECT *`.
+    let rows = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM n WHERE n < 10) SELECT * FROM n",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("recursive counter star")
+    .rows;
+    assert_eq!(rows.len(), 10);
+}
+
+#[test]
+fn recursive_cte_walks_a_tree_by_joining_the_fixpoint() {
+    let contract = left_join_contract();
+    let mut records = BTreeMap::new();
+    seed_left_join(&contract, &mut records);
+
+    // Transitive-closure walk: each round joins the stored table against the
+    // previous round's rows, so `tree` grows owner by owner. Starting from
+    // project 10 (owner 1) it reaches project 11 (same owner, larger id) but
+    // never project 20, which belongs to owner 2.
+    let rows = execute_sql(
+        "WITH RECURSIVE tree(project_id, owner_id) AS ( \
+         SELECT project_id, owner_id FROM Project WHERE project_id = 10 \
+         UNION ALL \
+         SELECT p.project_id, p.owner_id FROM Project AS p JOIN tree ON p.owner_id = tree.owner_id WHERE p.project_id > tree.project_id \
+         ) SELECT project_id FROM tree ORDER BY project_id",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("recursive tree walk")
+    .rows;
+    assert_eq!(column(&rows, "project_id"), vec![Value::I64(10), Value::I64(11)]);
+}
+
+#[test]
+fn recursive_cte_union_deduplicates_and_union_all_hits_the_round_cap() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    // `UNION` drops rows the result already holds, so the self-reproducing
+    // step terminates on the first round.
+    let rows = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT 1 UNION SELECT n FROM n WHERE n < 3) SELECT n FROM n",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("union dedup fixpoint")
+    .rows;
+    assert_eq!(column(&rows, "n"), vec![Value::I64(1)]);
+
+    // The same step under `UNION ALL` never reaches a fixpoint; the guard
+    // refuses it instead of looping forever.
+    let error = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT 1 UNION ALL SELECT n FROM n WHERE n < 3) SELECT n FROM n",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect_err("non-terminating recursion must fail");
+    assert!(format!("{error}").contains("rounds"), "unexpected error: {error}");
+}
+
+#[test]
+fn probe_tmp_cte_in_subquery_ops() {
+    let stmt = prepare_sql(
+        "WITH scored AS (SELECT account_id FROM Account WHERE score >= 20) \
+         SELECT email FROM Account WHERE account_id IN (SELECT account_id FROM scored) ORDER BY account_id",
+    )
+    .expect("prepare");
+    println!("{:#?}", stmt.ops);
+}
+
+#[test]
+fn recursive_cte_column_list_renames_the_seed_projection() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    // The written column list replaces the seed's own alias, and the step
+    // reads the working set back through the renamed column.
+    let rows = execute_sql(
+        "WITH RECURSIVE r(depth) AS (SELECT 1 AS start UNION ALL SELECT depth + 1 FROM r WHERE depth < 5) SELECT depth FROM r ORDER BY depth",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("renamed recursive seed")
+    .rows;
+    assert_eq!(column(&rows, "depth"), (1..=5).map(Value::I64).collect::<Vec<_>>());
+    assert!(rows[0].get("start").is_none(), "the seed alias must not survive the rename");
+}
+
+#[test]
+fn outer_where_and_limit_apply_to_the_recursive_relation() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    // The fixpoint is a plain relation: the outer statement filters, orders
+    // and truncates it like any other `FROM` source.
+    let rows = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM n WHERE n < 10) SELECT n FROM n WHERE n >= 5 ORDER BY n LIMIT 3",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("filtered recursive relation")
+    .rows;
+    assert_eq!(column(&rows, "n"), vec![Value::I64(5), Value::I64(6), Value::I64(7)]);
+}
+
+#[test]
+fn parameters_bind_inside_the_seed_and_the_step() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    let rows = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT ? UNION ALL SELECT n + 1 FROM n WHERE n < ?) SELECT n FROM n ORDER BY n",
+        &[Value::I64(1), Value::I64(4)],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("parameterized recursion")
+    .rows;
+    assert_eq!(column(&rows, "n"), (1..=4).map(Value::I64).collect::<Vec<_>>());
+}
+
+#[test]
+fn recursive_step_naming_an_undefined_relation_is_rejected() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    // The step may only read the fixpoint name and stored tables; inventing a
+    // relation must fail instead of quietly scanning nothing.
+    let error = execute_sql(
+        "WITH RECURSIVE n(n) AS (SELECT 1 UNION ALL SELECT m + 1 FROM m) SELECT n FROM n",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect_err("the step must not invent a relation");
+    assert!(format!("{error}").contains("unknown table"), "unexpected error: {error}");
+}
+
+#[test]
+fn non_recursive_with_keeps_a_union_body_and_nested_union_is_not_recursion() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+
+    // A plain `WITH` whose body is a two-operand UNION keeps both operands:
+    // the parser splits them the same way a recursive body is split, and
+    // lowering must fold them back instead of dropping the tail.
+    let rows = execute_sql(
+        "WITH x(v) AS (SELECT 1 UNION ALL SELECT 2) SELECT v FROM x ORDER BY v",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("union CTE body")
+    .rows;
+    assert_eq!(column(&rows, "v"), vec![Value::I64(1), Value::I64(2)]);
+
+    // `UNION` deduplicates inside the body too.
+    let rows = execute_sql(
+        "WITH x(v) AS (SELECT 1 UNION SELECT 1) SELECT v FROM x",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("deduplicating union CTE body")
+    .rows;
+    assert_eq!(column(&rows, "v"), vec![Value::I64(1)]);
+
+    // A plain (non-recursive) CTE referenced from inside a subquery resolves
+    // through its pipeline: nothing about the clause is misread as recursion.
+    let rows = execute_sql(
+        "WITH scored AS (SELECT account_id FROM Account WHERE score >= 20) \
+         SELECT email FROM Account WHERE account_id IN (SELECT account_id FROM scored) ORDER BY account_id",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("plain CTE in a subquery")
+    .rows;
+    assert_eq!(
+        column(&rows, "email"),
+        vec![Value::Text("linus@example.test".into()), Value::Text("grace@example.test".into())]
+    );
+
+    // Operands with different column counts fail loudly, as at statement level.
+    let error = prepare_sql("WITH x(v) AS (SELECT 1 UNION ALL SELECT 2, 3) SELECT v FROM x").expect_err("mismatched union operands");
+    assert!(format!("{error}").contains("same number of columns"), "unexpected error: {error}");
+}
+
 #[test]
 fn cte_column_lists_rename_the_leading_output_columns() {
     let contract = contract();
