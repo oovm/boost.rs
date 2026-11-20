@@ -1,15 +1,15 @@
 //! 文档页面渲染（Asgard static renderer）。
-use crate::legion::cmds::error::{LegionError, LegionResult};
+use crate::legion::cmds::error::LegionResult;
 use std::{fs, path::Path};
 
-use crate::asgard::ssg::{generate_static_page, render_awsl_static};
+use language_awsl::ssg::{generate_static_page, render_awsl_static};
 use serde_json::json;
 
 use super::{
     assets::DocAssets,
     discover::collect_md_files,
-    markdown::{DocRenderContext, extract_title, render_markdown_to_html},
-    nav::{self, DocPage, DocSection, build_nav_tree, nav_sections_for_awsl, sanitize_dir_name},
+    markdown::{extract_title, render_markdown_to_html},
+    nav::{DocPage, DocSection, build_nav_tree, nav_sections_for_awsl, sanitize_dir_name},
 };
 
 /// 渲染所有分区并返回合并的组件 CSS。
@@ -64,7 +64,7 @@ pub fn render_sections(sections: &mut [DocSection], doc_output_dir: &Path, asset
             merged_component_css.push_str(&page_shell.css);
             merged_component_css.push('\n');
 
-            let page_result = crate::asgard::codegen::StaticRenderResult {
+            let page_result = language_awsl::codegen::StaticRenderResult {
                 html: fragment_html,
                 css: rendered.css.clone(),
                 scope: rendered.scope.clone(),
@@ -114,7 +114,7 @@ pub fn render_doc_index(sections: &[DocSection], doc_output_dir: &Path, assets: 
     });
     let rendered = render_awsl_static(&assets.layout_awsl, "layout", "layout.awsl", &layout_data)?;
     let fragment_html = rendered.html.replace("<p>LEGION_DOC_SLOT</p>", &body);
-    let page_result = crate::asgard::codegen::StaticRenderResult {
+    let page_result = language_awsl::codegen::StaticRenderResult {
         html: fragment_html,
         css: rendered.css,
         scope: rendered.scope,

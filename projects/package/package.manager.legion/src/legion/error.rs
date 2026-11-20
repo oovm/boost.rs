@@ -112,8 +112,8 @@ impl From<language_valkyrie::compiler::emitter::pipeline::PipelineError> for Leg
     }
 }
 
-impl From<crate::asgard::error::AsgardError> for LegionError {
-    fn from(value: crate::asgard::error::AsgardError) -> Self {
+impl From<language_awsl::AwslError> for LegionError {
+    fn from(value: language_awsl::AwslError) -> Self {
         Self::msg(value.to_string())
     }
 }

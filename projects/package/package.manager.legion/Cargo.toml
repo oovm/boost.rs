@@ -1,6 +1,6 @@
 [package]
 name = "package-manager-legion"
-description = "Valkyrie 产品工具链：Legion 工程编排、Asgard 交付、执行清单与 OVM 调用"
+description = "Valkyrie 产品工具链：Legion 工程编排、workspace 规划、执行清单与 OVM 调用"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -34,6 +34,7 @@ data-text-awsl = { workspace = true }
 data-text-core = { workspace = true }
 data-text-valkyrie = { workspace = true }
 data-text-von = { workspace = true }
+language-awsl = { workspace = true }
 sha2 = { workspace = true }
 package-cache = { workspace = true }
 package-manager = { workspace = true }

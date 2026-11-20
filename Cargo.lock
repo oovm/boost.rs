@@ -6045,6 +6045,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "package-manager-asgard"
+version = "0.1.0"
+dependencies = [
+ "boost-fs",
+ "boost-harness",
+ "compiler-analysis",
+ "compiler-emitter",
+ "compiler-target",
+ "compiler-types",
+ "data-binary-dex",
+ "data-binary-host",
+ "data-binary-jvm",
+ "data-binary-mach-o",
+ "data-binary-odin",
+ "data-binary-pe",
+ "data-binary-wasm",
+ "data-binary-x64",
+ "data-binary-zip",
+ "data-encoding",
+ "data-text-awsl",
+ "data-text-core",
+ "data-text-valkyrie",
+ "data-text-von",
+ "document-formats",
+ "document-ir",
+ "interpreter-vm-ovm",
+ "language-awsl",
+ "language-format",
+ "language-highlight",
+ "language-valkyrie",
+ "package-cache",
+ "package-manager",
+ "package-manager-legion",
+ "package-publish",
+ "package-registry",
+ "package-resolve",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "package-manager-legion"
 version = "0.1.0"
 dependencies = [

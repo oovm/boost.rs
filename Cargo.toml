@@ -358,6 +358,7 @@ members = [
     "projects/ml/ml.types",
     "projects/package/package.cache",
     "projects/package/package.manager",
+    "projects/package/package.manager.asgard",
     "projects/package/package.manager.legion",
     "projects/package/package.publish",
     "projects/package/package.registry",
@@ -620,6 +621,7 @@ ml-types = { path = "projects/ml/ml.types" }
 
 package-cache = { path = "projects/package/package.cache" }
 package-manager = { path = "projects/package/package.manager" }
+package-manager-asgard = { path = "projects/package/package.manager.asgard" }
 package-manager-legion = { path = "projects/package/package.manager.legion" }
 package-publish = { path = "projects/package/package.publish" }
 package-registry = { path = "projects/package/package.registry" }

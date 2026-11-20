@@ -1,0 +1,50 @@
+[package]
+name = "package-manager-asgard"
+description = "Asgard 交付工具链：AWSL + Valkyrie 复合语言的构建、SSG、图表岛、部署与发布"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/package/package.manager.asgard"
+publish = false
+
+[dependencies]
+boost-harness = { workspace = true }
+compiler-analysis = { workspace = true }
+compiler-emitter = { workspace = true }
+compiler-types = { workspace = true }
+compiler-target = { workspace = true }
+data-binary-dex = { workspace = true }
+data-binary-host = { workspace = true }
+data-binary-jvm = { workspace = true }
+data-binary-mach-o = { workspace = true }
+data-binary-odin = { workspace = true }
+data-binary-pe = { workspace = true }
+data-binary-wasm = { workspace = true }
+data-binary-x64 = { workspace = true }
+data-binary-zip = { workspace = true }
+data-encoding = { workspace = true }
+data-text-awsl = { workspace = true }
+data-text-core = { workspace = true }
+data-text-valkyrie = { workspace = true }
+data-text-von = { workspace = true }
+document-formats = { workspace = true }
+document-ir = { workspace = true }
+interpreter-vm-ovm = { workspace = true }
+language-awsl = { workspace = true }
+language-format = { workspace = true, features = ["serde"] }
+language-highlight = { workspace = true }
+language-valkyrie = { workspace = true }
+package-cache = { workspace = true }
+package-manager = { workspace = true }
+package-manager-legion = { workspace = true }
+package-publish = { workspace = true }
+package-registry = { workspace = true }
+package-resolve = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+boost-fs = { workspace = true }
