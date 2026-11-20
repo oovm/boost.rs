@@ -41,26 +41,16 @@ This module is designed to be a fast and reliable lexer for V, supporting its mo
 ## Usage Example
 
 ```rust
-use data_text_vlang::lexer::VLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_vlang::{VLangBuilder, VLangLanguage};
 
-fn main() {
-    let v_source = r#"
-        module main
-        import os
-
-        pub fn main() {
-            name := 'Boost'
-            println('Hello, $name!')
-        }
-    "#;
-
-    let mut lexer = VLexer::new();
-    let tokens = lexer.tokenize(v_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = VLangLanguage::new();
+let builder = VLangBuilder::new(&language);
+let mut session = ParseSession::<VLangLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

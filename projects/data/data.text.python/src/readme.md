@@ -11,7 +11,8 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing a Python function with type hints and decorators:
 
 ```rust
-use data_text_python::{PythonParser, SourceText, PythonLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_python::{PythonBuilder, PythonLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -26,18 +27,19 @@ fn main() {
     "#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = PythonLanguage::new();
-    let parser = PythonParser::new(&config);
+    // 2. Initialize builder
+    let language = PythonLanguage::new();
+    let builder = PythonBuilder::new(&language);
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<PythonLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -50,15 +52,38 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse the entire module when small changes occur:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_python::{PythonBuilder, PythonLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = PythonLanguage::new();
+let builder = PythonBuilder::new(&language);
+let mut session = ParseSession::<PythonLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics
 `data-text-python` provides rich error contexts specifically tailored for Python developers, handling indentation errors and modern syntax requirements:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_python::{PythonBuilder, PythonLanguage};
+
+let language = PythonLanguage::new();
+let builder = PythonBuilder::new(&language);
+let mut session = ParseSession::<PythonLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 

@@ -12,23 +12,15 @@ Stylus language support for the `data.text` framework.
 ## Usage
 
 ```rust
-use data_text_stylus::{StylusLanguage, StylusLexer, StylusParser, StylusBuilder};
-use data_text_core::{Lexer, Parser, Builder, Source, SourceText};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_stylus::{StylusBuilder, StylusLanguage};
 
-// Create a source text
-let source = Source::new(SourceText::from("body { color: red; }".to_string()));
-
-// Lex the source
-let lexer = StylusLexer;
-let lex_output = lexer.lex(source.text());
-
-// Parse the tokens
-let parser = StylusParser;
-let parse_output = parser.parse(&mut lex_output.into_session());
-
-// Build the syntax tree
-let builder = StylusBuilder;
-let green_tree = builder.build(&mut Default::default(), &Default::default());
+let language = StylusLanguage::new();
+let builder = StylusBuilder::new(&language);
+let mut session = ParseSession::<StylusLanguage>::new(32);
+let source = SourceText::new("body { color: red; }");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Implementation Status

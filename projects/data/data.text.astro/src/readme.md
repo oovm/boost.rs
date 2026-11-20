@@ -16,7 +16,7 @@ data-text-svelte = { path = "..." }
 The following is a standard workflow for parsing Svelte components, supporting template, script, and style blocks:
 
 ```rust
-use data_text_svelte::{SvelteParser, SvelteLanguage};
+use data_text_astro::{SvelteParser, SvelteLanguage};
 use data_text_core::{SourceText, parser::Parser, ParseSession};
 
 fn main() {
@@ -55,7 +55,7 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Svelte components are often edited in IDEs. `data-text-svelte` supports sub-millisecond incremental updates for a fluid editing experience:
 ```rust
-# use data_text_svelte::{SvelteParser, SvelteLanguage};
+# use data_text_astro::{SvelteParser, SvelteLanguage};
 # use data_text_core::{SourceText, parser::Parser, ParseSession};
 # let config = SvelteLanguage::default();
 # let parser = SvelteParser::new(&config);

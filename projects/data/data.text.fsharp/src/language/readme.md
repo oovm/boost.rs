@@ -22,6 +22,8 @@ let config = FSharpLanguage::new()
 Fine-tune specific language features:
 
 ```rust
+use data_text_fsharp::FSharpLanguage;
+
 let config = FSharpLanguage::new()
     .with_computation_expressions(true)
     .with_type_providers(false)

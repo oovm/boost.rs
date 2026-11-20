@@ -18,37 +18,16 @@ data-text-vue = { path = "..." }
 The following is a standard workflow for parsing Vue Single File Components (SFCs), supporting template, script, and style blocks:
 
 ```rust
-use data_text_vue::{VueParser, SourceText, VueLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_vue::{VueBuilder, VueLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        <template>
-          <div>{{ greeting }}</div>
-        </template>
-
-        <script setup>
-        const greeting = 'Hello from Boost!'
-        </script>
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = VueLanguage::new();
-    let parser = VueParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = VueLanguage::default();
+let builder = VueBuilder::new();
+let mut session = ParseSession::<VueLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -60,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Vue SFCs are often edited in IDEs. `data-text-vue` supports sub-millisecond incremental updates for a fluid editing experience:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_vue::{VueBuilder, VueLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = VueLanguage::default();
+let builder = VueBuilder::new();
+let mut session = ParseSession::<VueLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Error Recovery

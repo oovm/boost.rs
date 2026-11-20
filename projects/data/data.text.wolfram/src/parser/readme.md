@@ -26,26 +26,16 @@ The parser is responsible for understanding the hierarchical and operator-heavy 
 ## Usage Example
 
 ```rust
-use data_text_wolfram::parser::WolframParser;
-use data_text_wolfram::lexer::WolframLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_wolfram::{WolframBuilder, WolframLanguage};
 
-fn main() {
-    let source = "f[x] + g[y] * z";
-    let lexer = WolframLexer::new();
-    let tokens = lexer.tokenize(source);
-    
-    let parser = WolframParser::new();
-    let result = parser.parse(tokens);
-    
-    match result {
-        Ok(ast) => println!("Parsed AST with {} top-level expressions", ast.expressions.len()),
-        Err(diagnostics) => {
-            for diag in diagnostics {
-                println!("Error: {}", diag.message);
-            }
-        }
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = WolframLanguage::new();
+let builder = WolframBuilder::new(&language);
+let mut session = ParseSession::<WolframLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Design Principles

@@ -18,7 +18,8 @@ data-text-html = { path = "..." }
 The following is a standard workflow for parsing a modern HTML5 document with attributes and nested elements:
 
 ```rust
-use data_text_html::{HtmlParser, SourceText, HtmlLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_html::{HtmlBuilder, HtmlLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -40,18 +41,19 @@ fn main() {
     "#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = HtmlLanguage::new();
-    let parser = HtmlParser::new(&config);
+    // 2. Initialize builder
+    let language = HtmlLanguage::new();
+    let builder = HtmlBuilder::new(language);
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<HtmlLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -64,15 +66,38 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse a massive HTML document when small changes occur:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_html::{HtmlBuilder, HtmlLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = HtmlLanguage::new();
+let builder = HtmlBuilder::new(language);
+let mut session = ParseSession::<HtmlLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics
 `data-text-html` provides rich error contexts specifically tailored for web developers, handling complex scenarios like unclosed tags or malformed attribute syntax:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_html::{HtmlBuilder, HtmlLanguage};
+
+let language = HtmlLanguage::new();
+let builder = HtmlBuilder::new(language);
+let mut session = ParseSession::<HtmlLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 

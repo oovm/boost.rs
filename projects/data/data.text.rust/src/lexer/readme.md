@@ -50,14 +50,16 @@ The main lexer implementation, providing the following features:
 The lexer is typically used through `RustLexer` during Rust source code parsing:
 
 ```rust
-use data_text_rust::{RustLexer, RustLanguage};
-use data_text_core::source::StringSource;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_rust::{RustBuilder, RustLanguage};
 
-let language = RustLanguage::default();
-let lexer = RustLexer::new(&language);
-let source = StringSource::new("fn main() { let x = 42; }");
-
-// Lexical analysis will be performed automatically during parsing
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = RustLanguage::new();
+let builder = RustBuilder::new(&language);
+let mut session = ParseSession::<RustLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Rust Language Feature Support

@@ -25,15 +25,14 @@ The lexer produces tokens for:
 ## 🔧 Usage
 
 ```rust
-use data_text_asciidoc::{language::AsciidocLanguage, lexer::AsciidocLexer};
-use data_text_core::source::StringSource;
+use data_text_core::{Parser, SourceText, parser::ParseSession};
+use data_text_asciidoc::{AsciidocLanguage, AsciidocParser};
 
+// 词法分析由解析器内部驱动，用户通常通过 Parser 入口使用
 let language = AsciidocLanguage::default();
-let lexer = AsciidocLexer::new(&language);
-let source = StringSource::new("# Hello World\n\nThis is AsciiDoc");
-
-let output = lexer.lex_internal(&source);
-for token in output.tokens {
-    println!("{:?}", token);
-}
+let parser = AsciidocParser::new(&language);
+let mut session = ParseSession::<AsciidocLanguage>::new(32);
+let source = SourceText::new("= Hello World\n\nThis is AsciiDoc");
+let result = parser.parse(&source, &[], &mut session);
+let _ = result;
 ```

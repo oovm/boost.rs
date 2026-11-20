@@ -18,7 +18,8 @@ data-text-scheme = { path = "..." }
 The following is a standard workflow for parsing Scheme scripts, supporting various R7RS and traditional Lisp constructs:
 
 ```rust
-use data_text_scheme::{SchemeParser, SourceText, SchemeLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_racket::{RacketLanguage, builder::Builder as RacketBuilder};
 
 fn main() {
     // 1. Prepare source code
@@ -31,21 +32,19 @@ fn main() {
     "#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = SchemeLanguage::new();
-    let parser = SchemeParser::new(&config);
+    // 2. Initialize builder
+    let language = RacketLanguage::default();
+    let builder = RacketBuilder;
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<RacketLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -58,8 +57,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Scheme scripts can be part of larger systems. `data-text-scheme` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_racket::{RacketLanguage, builder::Builder as RacketBuilder};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = RacketLanguage::default();
+let builder = RacketBuilder;
+let mut session = ParseSession::<RacketLanguage>::new(32);
+{
+    let source = SourceText::new("(define x 1)");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("(define x 2)");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Error Recovery

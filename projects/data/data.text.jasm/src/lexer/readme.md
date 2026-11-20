@@ -44,27 +44,16 @@ The primary objective of this module is to provide a fast and reliable tokenizer
 ## Usage Example
 
 ```rust
-use data_text_jasm::lexer::JasmLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_jasm::{JasmBuilder, JasmLanguage};
 
-fn main() {
-    let jasm_source = r#"
-        public class HelloWorld {
-            public static method main : ([Ljava/lang/String;)V {
-                getstatic java/lang/System.out : Ljava/io/PrintStream;
-                ldc "Hello, Jasm!"
-                invokevirtual java/io/PrintStream.println : (Ljava/lang/String;)V
-                return
-            }
-        }
-    "#;
-
-    let mut lexer = JasmLexer::new();
-    let tokens = lexer.tokenize(jasm_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = JasmLanguage::new();
+let builder = JasmBuilder::new(&language);
+let mut session = ParseSession::<JasmLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

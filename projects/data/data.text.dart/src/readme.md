@@ -16,17 +16,18 @@ Welcome to the internal implementation of the Dart parser. This module provides 
 ### Basic Parsing
 
 ```rust
-use data_text_dart::{DartParser, SourceText, DartLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_dart::{DartLanguage, builder::DartBuilder};
 
 fn parse_dart_code(code: &str) {
     let source = SourceText::new(code);
-    let config = DartLanguage::new();
-    let parser = DartParser::new(&config);
-    let result = parser.parse(&source);
+    let language = DartLanguage::new();
+    let builder = DartBuilder::new(&language);
+    let mut session = ParseSession::<DartLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
-    if result.is_success() {
-        let root = result.root();
-        println!("AST Root: {:?}", root);
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     }
 }
 ```
@@ -34,23 +35,22 @@ fn parse_dart_code(code: &str) {
 ### Incremental Parsing
 
 ```rust
-use data_text_dart::{DartParser, SourceText, DartLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_dart::{DartLanguage, builder::DartBuilder};
 
-fn incremental_update(old_code: &str, new_code: &str) {
-    let config = DartLanguage::new();
-    let mut parser = DartParser::new(&config);
-    
-    // Initial parse
-    let initial_source = SourceText::new(old_code);
-    let _ = parser.parse(&initial_source);
-    
-    // Incremental update
-    let updated_source = SourceText::new(new_code);
-    let result = parser.parse(&updated_source);
-    
-    if result.is_success() {
-        println!("Incremental parse completed successfully.");
-    }
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = DartLanguage::new();
+let builder = DartBuilder::new(&language);
+let mut session = ParseSession::<DartLanguage>::new(32);
+{
+    let source = SourceText::new("var a = 1;");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("var a = 2;");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
 }
 ```
 
@@ -59,8 +59,15 @@ fn incremental_update(old_code: &str, new_code: &str) {
 The parser provides detailed diagnostics for syntax errors, including error ranges and helpful messages.
 
 ```rust
-let result = parser.parse(&source);
-for diagnostic in result.diagnostics() {
-    println!("Error at {:?}: {}", diagnostic.range(), diagnostic.message());
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_dart::{DartLanguage, builder::DartBuilder};
+
+let language = DartLanguage::new();
+let builder = DartBuilder::new(&language);
+let mut session = ParseSession::<DartLanguage>::new(32);
+let source = SourceText::new("var a = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```

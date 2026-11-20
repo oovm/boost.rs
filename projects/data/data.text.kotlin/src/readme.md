@@ -18,45 +18,16 @@ data-text-kotlin = { path = "..." }
 The following is a standard workflow for parsing modern Kotlin with data classes, coroutines, and lambdas:
 
 ```rust
-use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
-use data_text_core::parser::DefaultParseCache;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        package com.example.app
-
-        import kotlinx.coroutines.*
-
-        data class User(val id: String, val name: String)
-
-        class Repository {
-            private val users = mutableListOf<User>()
-
-            suspend fun addUser(user: User) = withContext(Dispatchers.IO) {
-                users.add(user)
-                println("User ${user.name} added!")
-            }
-        }
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let parser = KotlinParser;
-    let mut cache = DefaultParseCache::default();
-
-    // 3. Execute parsing
-    let result = parser.parse(&source, &[], &mut cache);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = KotlinLanguage::new();
+let builder = KotlinBuilder::new(&language);
+let mut session = ParseSession::<KotlinLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -68,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Kotlin projects (especially Android or KMP projects) can be massive. `data-text-kotlin` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.parse(&new_source, &edits, &mut cache);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = KotlinLanguage::new();
+let builder = KotlinBuilder::new(&language);
+let mut session = ParseSession::<KotlinLanguage>::new(32);
+{
+    let source = SourceText::new("val a = 1");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("val a = 2");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. KMP and Multiplatform Support
@@ -80,10 +66,11 @@ The parser correctly handles Kotlin Multiplatform (KMP) specific syntax like `ex
 ### 1. Analyzing Kotlin Data Classes
 
 ```rust
-use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
-use data_text_core::parser::DefaultParseCache;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
 
-fn analyze_data_classes() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         data class Person(
             val id: String,
@@ -94,16 +81,21 @@ fn analyze_data_classes() {
             fun fullName() = name
         }
     "#;
-    
     let source = SourceText::new(code);
-    let parser = KotlinParser;
-    let mut cache = DefaultParseCache::default();
-    let result = parser.parse(&source, &[], &mut cache);
-    
-    if result.is_success() {
-        println!("Data class analysis:");
-        println!("- Parsed successfully with {} nodes", result.node_count());
-        // Here you would extract data class properties and methods
+
+    // 2. Initialize builder
+    let language = KotlinLanguage::new();
+    let builder = KotlinBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<KotlinLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -111,10 +103,11 @@ fn analyze_data_classes() {
 ### 2. Analyzing Coroutine Functions
 
 ```rust
-use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
-use data_text_core::parser::DefaultParseCache;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
 
-fn analyze_coroutines() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         class ApiService {
             private val client = HttpClient()
@@ -130,16 +123,21 @@ fn analyze_coroutines() {
             }
         }
     "#;
-    
     let source = SourceText::new(code);
-    let parser = KotlinParser;
-    let mut cache = DefaultParseCache::default();
-    let result = parser.parse(&source, &[], &mut cache);
-    
-    if result.is_success() {
-        println!("Coroutine analysis:");
-        println!("- Suspend function detected");
-        // Here you would extract coroutine-specific information
+
+    // 2. Initialize builder
+    let language = KotlinLanguage::new();
+    let builder = KotlinBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<KotlinLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -147,10 +145,11 @@ fn analyze_coroutines() {
 ### 3. Analyzing Extension Functions
 
 ```rust
-use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
-use data_text_core::parser::DefaultParseCache;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
 
-fn analyze_extension_functions() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         fun String.capitalizeWords(): String {
             return split(" ")
@@ -163,17 +162,21 @@ fn analyze_extension_functions() {
                 .sum()
         }
     "#;
-    
     let source = SourceText::new(code);
-    let parser = KotlinParser;
-    let mut cache = DefaultParseCache::default();
-    let result = parser.parse(&source, &[], &mut cache);
-    
-    if result.is_success() {
-        println!("Extension function analysis:");
-        println!("- String extension: capitalizeWords");
-        println!("- List<Int> extension: sumEven");
-        // Here you would extract extension function details
+
+    // 2. Initialize builder
+    let language = KotlinLanguage::new();
+    let builder = KotlinBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<KotlinLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -181,10 +184,11 @@ fn analyze_extension_functions() {
 ### 4. Analyzing Sealed Classes and When Expressions
 
 ```rust
-use data_text_kotlin::{KotlinParser, SourceText, Kotlin};
-use data_text_core::parser::DefaultParseCache;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
 
-fn analyze_sealed_classes() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         sealed class Result<T> {
             data class Success<T>(val data: T) : Result<T>()
@@ -198,17 +202,21 @@ fn analyze_sealed_classes() {
             }
         }
     "#;
-    
     let source = SourceText::new(code);
-    let parser = KotlinParser;
-    let mut cache = DefaultParseCache::default();
-    let result = parser.parse(&source, &[], &mut cache);
-    
-    if result.is_success() {
-        println!("Sealed class analysis:");
-        println!("- Sealed class Result with 2 subclasses");
-        println!("- When expression with pattern matching");
-        // Here you would extract sealed class hierarchy
+
+    // 2. Initialize builder
+    let language = KotlinLanguage::new();
+    let builder = KotlinBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<KotlinLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -249,14 +257,13 @@ fn analyze_sealed_classes() {
 ### Customizing Parser Behavior
 
 ```rust
-use data_text_kotlin::{KotlinParser, Kotlin};
+use data_text_kotlin::{KotlinBuilder, KotlinLanguage};
 
 fn configure_parser() {
-    let language = Kotlin;
-    let parser = KotlinParser;
-    
-    println!("Parser configured for Kotlin language");
-    println!("Language name: {}", Kotlin::NAME);
+    let language = KotlinLanguage::new();
+    let builder = KotlinBuilder::new(&language);
+
+    println!("Builder configured for Kotlin language");
 }
 ```
 

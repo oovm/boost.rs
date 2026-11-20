@@ -36,34 +36,15 @@ The Vala AST is the central data structure used by the compiler and associated t
 ## Usage Example
 
 ```rust
-use data_text_vala::ast::*;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_vala::{ValaBuilder, ValaLanguage};
 
-fn main() {
-    // Manually constructing a simple AST for a Vala class
-    let class_def = Class {
-        name: "HelloWorld".to_string(),
-        base_types: vec!["Object".to_string()],
-        members: vec![
-            ClassMember::Method(Method {
-                name: "main".to_string(),
-                is_public: true,
-                is_static: true,
-                return_type: Type::Void,
-                params: vec![
-                    Param { name: "args".to_string(), ty: Type::Array(Box::new(Type::String)) }
-                ],
-                body: Some(Block {
-                    statements: vec![
-                        Statement::Expression(Expression::Call(CallExpr {
-                            target: Box::new(Expression::Identifier("stdout.printf".to_string())),
-                            arguments: vec![Expression::StringLiteral("Hello, World!\n".to_string())],
-                        }))
-                    ],
-                }),
-            })
-        ],
-    };
-}
+let language = ValaLanguage::new();
+let builder = ValaBuilder::new(&language);
+let mut session = ParseSession::<ValaLanguage>::new(32);
+let source = SourceText::new("class Hello : Object { }");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Design Principles

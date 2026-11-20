@@ -15,22 +15,15 @@ This module defines the Abstract Syntax Tree (AST) structure for Less code.
 ## Usage
 
 ```rust
-use data_text_less::{LessRoot, LessNode, RuleSet, Declaration, Selector, Value};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_less::{LessBuilder, LessLanguage};
 
-// Create a simple Less AST
-let ast = LessRoot {
-    nodes: vec![
-        LessNode::RuleSet(RuleSet {
-            selectors: vec![Selector::Element("div".to_string())],
-            declarations: vec![Declaration {
-                property: "color".to_string(),
-                value: Value::Keyword("red".to_string()),
-                span: 0..15,
-            }],
-            span: 0..15,
-        }),
-    ],
-};
+let language = LessLanguage::new();
+let builder = LessBuilder::new(language);
+let mut session = ParseSession::<LessLanguage>::new(32);
+let source = SourceText::new("div { color: red; }");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Features

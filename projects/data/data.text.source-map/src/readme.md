@@ -18,24 +18,24 @@ use data_text_source_map::{SourceMap, SourceMapBuilder};
 // Create a source map builder
 let mut builder = SourceMapBuilder::new();
 
-// Add mappings
-builder.add_mapping(
-    1, 0,     // Generated line and column
-    Some((0, 0)), // Original line and column
-    Some("source.rs"), // Source file
-    Some("function"), // Name
-);
+// Register sources and names
+let source_index = builder.add_source("source.rs");
+let name_index = builder.add_name("function");
+
+// Add a mapping: generated position -> original position
+builder.add_mapping(1, 0, Some(source_index), Some(0), Some(0), Some(name_index));
 
 // Build the source map
 let source_map = builder.build();
 
 // Serialize to JSON
-let json = source_map.to_json();
+let json = source_map.to_json().unwrap();
 println!("{}", json);
 
 // Parse from JSON
-let parsed_map = SourceMap::from_json(&json).unwrap();
-println!("Parsed {} mappings", parsed_map.mappings.len());
+let parsed_map = SourceMap::parse(json.clone()).unwrap();
+let mappings = parsed_map.parse_mappings().unwrap();
+println!("Parsed {} mappings", mappings.len());
 ```
 
 ## Performance

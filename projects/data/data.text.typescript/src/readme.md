@@ -72,9 +72,16 @@ use data_text_typescript::{TypeScriptBuilder, TypeScriptLanguage};
 let language = TypeScriptLanguage::standard();
 let builder = TypeScriptBuilder::new(&language);
 let mut session = ParseSession::<TypeScriptLanguage>::new(32);
-let old_result = builder.build(&SourceText::new("const a = 1;"), &[], &mut session);
-let new_result = builder.build(&SourceText::new("const a = 2;"), &[], &mut session);
-let _ = (old_result, new_result);
+{
+    let source = SourceText::new("const a = 1;");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("const a = 2;");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics
@@ -86,7 +93,8 @@ use data_text_typescript::{TypeScriptBuilder, TypeScriptLanguage};
 let language = TypeScriptLanguage::standard();
 let builder = TypeScriptBuilder::new(&language);
 let mut session = ParseSession::<TypeScriptLanguage>::new(32);
-let result = builder.build(&SourceText::new("const x: = ;"), &[], &mut session);
+let source = SourceText::new("const x: = ;");
+let result = builder.build(&source, &[], &mut session);
 for diagnostic in result.diagnostics {
     println!("{diagnostic:?}");
 }

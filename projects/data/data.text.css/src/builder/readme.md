@@ -13,23 +13,21 @@ The `CssBuilder` struct implements the `Builder` trait from `data_text_core` and
 ## Usage
 
 ```rust
+use data_text_core::{Builder, SourceText, parser::ParseSession};
 use data_text_css::{CssBuilder, CssLanguage};
-use data_text_core::{SourceText, TextEdit};
 
 // Create a new builder with default configuration
-let config = CssLanguage::default();
-let builder = CssBuilder::new(config);
+let builder = CssBuilder::new(CssLanguage::default());
 
 // Build AST from source text
-let source = SourceText::new("div { color: red; }".to_string());
-let edits: Vec<TextEdit> = vec![];
-let mut cache = data_text_core::builder::DefaultBuilderCache::default();
+let source = SourceText::new("div { color: red; }");
+let mut session = ParseSession::<CssLanguage>::new(32);
 
-let result = builder.build(&source, &edits, &mut cache);
+let result = builder.build(&source, &[], &mut session);
 
 match result.result {
-    Ok(ast) => println!("AST built successfully: {:?}", ast),
-    Err(error) => println!("Error building AST: {:?}", error),
+    Ok(ast) => println!("AST built successfully: {ast:?}"),
+    Err(error) => println!("Error building AST: {error:?}"),
 }
 ```
 

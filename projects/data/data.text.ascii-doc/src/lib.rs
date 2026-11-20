@@ -9,7 +9,6 @@ pub mod builder;
 pub mod language;
 /// Lexer for AsciiDoc.
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
 /// Parser for AsciiDoc.
 pub mod parser;
 

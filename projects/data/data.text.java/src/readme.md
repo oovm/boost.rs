@@ -11,7 +11,8 @@ This guide helps you integrate `data-text-java` into your project and perform co
 The following is a standard workflow for parsing a Java class with modern features like Records and Annotations:
 
 ```rust
-use data_text_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -32,18 +33,19 @@ fn main() {
     "#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = JavaLanguage::new();
-    let parser = JavaParser::new(&config);
+    // 2. Initialize builder
+    let language = JavaLanguage::new();
+    let builder = JavaBuilder::new(&language);
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<JavaLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -56,15 +58,38 @@ After a successful parse, use the built-in visitor pattern or manually traverse 
 ### 2. Incremental Parsing
 Optimize performance by only re-parsing changed sections:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = JavaLanguage::new();
+let builder = JavaBuilder::new(&language);
+let mut session = ParseSession::<JavaLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics & Error Recovery
 `data-text-java` provides detailed error contexts tailored for Java developers:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
+
+let language = JavaLanguage::new();
+let builder = JavaBuilder::new(&language);
+let mut session = ParseSession::<JavaLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -73,9 +98,11 @@ for diag in result.diagnostics() {
 ### 1. Extracting Class Information
 
 ```rust
-use data_text_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
 
-fn analyze_class_structure() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         public class Calculator {
             private int result;
@@ -91,16 +118,21 @@ fn analyze_class_structure() {
             }
         }
     "#;
-    
     let source = SourceText::new(code);
-    let config = JavaLanguage::new();
-    let parser = JavaParser::new(&config);
-    let result = parser.parse(&source);
-    
-    if result.is_success() {
-        println!("Class structure analysis:");
-        println!("- File contains {} nodes", result.node_count());
-        // Here you would implement AST traversal to extract class details
+
+    // 2. Initialize builder
+    let language = JavaLanguage::new();
+    let builder = JavaBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<JavaLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -108,9 +140,11 @@ fn analyze_class_structure() {
 ### 2. Analyzing Method Signatures
 
 ```rust
-use data_text_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
 
-fn analyze_method_signatures() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         public interface Repository {
             User findById(long id);
@@ -119,16 +153,21 @@ fn analyze_method_signatures() {
             void delete(long id);
         }
     "#;
-    
     let source = SourceText::new(code);
-    let config = JavaLanguage::new();
-    let parser = JavaParser::new(&config);
-    let result = parser.parse(&source);
-    
-    if result.is_success() {
-        println!("Method signature analysis:");
-        println!("- Interface parsed successfully");
-        // Here you would extract and analyze method signatures
+
+    // 2. Initialize builder
+    let language = JavaLanguage::new();
+    let builder = JavaBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<JavaLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -136,9 +175,11 @@ fn analyze_method_signatures() {
 ### 3. Detecting Code Smells
 
 ```rust
-use data_text_java::{JavaParser, SourceText, JavaLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
 
-fn detect_code_smells() {
+fn main() {
+    // 1. Prepare source code
     let code = r#"
         public class DataProcessor {
             public void processData(List<String> data) {
@@ -149,16 +190,21 @@ fn detect_code_smells() {
             }
         }
     "#;
-    
     let source = SourceText::new(code);
-    let config = JavaLanguage::new();
-    let parser = JavaParser::new(&config);
-    let result = parser.parse(&source);
-    
-    if result.is_success() {
-        println!("Code smell detection:");
-        println!("- Potential issues: traditional for loop could be replaced with for-each");
-        // Here you would implement more sophisticated code smell detection
+
+    // 2. Initialize builder
+    let language = JavaLanguage::new();
+    let builder = JavaBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<JavaLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```

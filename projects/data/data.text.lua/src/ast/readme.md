@@ -19,11 +19,13 @@ This module defines the high-fidelity, strongly-typed AST for Lua. Built on the 
 
 You can traverse the tree using the `TypedNode` traits:
 ```rust
-let root = result.typed_root::<LuaRoot>();
-for stmt in root.statements() {
-    match stmt {
-        Statement::Local(l) => println!("Found local: {:?}", l.names()),
-        _ => {}
-    }
-}
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_lua::{LuaBuilder, LuaLanguage};
+
+let language = LuaLanguage::new();
+let builder = LuaBuilder::new(&language);
+let mut session = ParseSession::<LuaLanguage>::new(32);
+let source = SourceText::new("local x = 42");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```

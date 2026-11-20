@@ -22,45 +22,16 @@ data-text-csharp = { path = "..." }
 The following is a standard workflow for parsing modern C# with records, LINQ, and primary constructors:
 
 ```rust
-use data_text_csharp::{CsharpParser, SourceText, CsharpLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_csharp::{CSharpBuilder, CSharpLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        using System;
-        using System.Linq;
-
-        namespace Boost.Core;
-
-        public record User(string Id, string Name);
-
-        public class UserService(ILogger logger) {
-            private readonly List<User> _users = [];
-
-            public async Task<User?> GetUserAsync(string id) {
-                logger.LogInformation("Getting user {Id}", id);
-                return _users.FirstOrDefault(u => u.Id == id);
-            }
-        }
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = CsharpLanguage::new();
-    let parser = CsharpParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = CSharpLanguage::new();
+let builder = CSharpBuilder::new(&language);
+let mut session = ParseSession::<CSharpLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -72,8 +43,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 C# solutions can contain thousands of files. `data-text-csharp` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_csharp::{CSharpBuilder, CSharpLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = CSharpLanguage::new();
+let builder = CSharpBuilder::new(&language);
+let mut session = ParseSession::<CSharpLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Roslyn Compatibility

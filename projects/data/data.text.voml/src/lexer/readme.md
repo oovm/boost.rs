@@ -38,26 +38,16 @@ This module is designed to handle the specific lexical requirements of VOML, a l
 ## Usage Example
 
 ```rust
-use data_text_voml::lexer::VomlLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_voml::{VomlBuilder, VomlLanguage};
 
-fn main() {
-    let voml_source = r#"
-        module Config
-        
-        object Database {
-            host: string = "localhost"
-            port: int = 5432
-            enabled: bool = true
-        }
-    "#;
-
-    let mut lexer = VomlLexer::new();
-    let tokens = lexer.tokenize(voml_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = VomlLanguage::new();
+let builder = VomlBuilder::new(&language);
+let mut session = ParseSession::<VomlLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

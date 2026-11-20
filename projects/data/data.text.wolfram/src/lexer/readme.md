@@ -36,22 +36,16 @@ The primary goal of this module is to accurately tokenize Wolfram Language expre
 ## Usage Example
 
 ```rust
-use data_text_wolfram::lexer::WolframLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_wolfram::{WolframBuilder, WolframLanguage};
 
-fn main() {
-    let wolfram_source = r#"
-        Plot[Sin[x], {x, 0, 2 Pi}]
-        data = {1, 2, 3, 4, 5}
-        Total[data] (* Calculate sum *)
-    "#;
-
-    let mut lexer = WolframLexer::new();
-    let tokens = lexer.tokenize(wolfram_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = WolframLanguage::new();
+let builder = WolframBuilder::new(&language);
+let mut session = ParseSession::<WolframLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

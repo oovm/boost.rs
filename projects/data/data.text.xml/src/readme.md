@@ -18,7 +18,8 @@ data-text-xml = { path = "..." }
 The following is a standard workflow for parsing an XML document:
 
 ```rust
-use data_text_xml::{XmlParser, SourceText, XmlLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_xml::{builder::XmlBuilder, XmlLanguage};
 
 fn main() {
     // 1. Prepare source code
@@ -33,18 +34,19 @@ fn main() {
     "#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = XmlLanguage::new();
-    let parser = XmlParser::new(&config);
+    // 2. Initialize builder
+    let language = XmlLanguage::new();
+    let builder = XmlBuilder::new();
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<XmlLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -57,15 +59,38 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse massive XML data exports or documents when small changes occur:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_xml::{builder::XmlBuilder, XmlLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = XmlLanguage::new();
+let builder = XmlBuilder::new();
+let mut session = ParseSession::<XmlLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics
 `data-text-xml` provides precise error feedback for malformed XML, such as unclosed tags, attribute quoting issues, or namespace prefix errors:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_xml::{builder::XmlBuilder, XmlLanguage};
+
+let language = XmlLanguage::new();
+let builder = XmlBuilder::new();
+let mut session = ParseSession::<XmlLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 

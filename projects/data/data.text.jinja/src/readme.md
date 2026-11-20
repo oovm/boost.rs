@@ -13,15 +13,16 @@ High-performance incremental Jinja2 parser for the `data.text` family with flexi
 ## Usage
 
 ```rust
-use data_text_jinja::{JinjaLexer, JinjaParser, JinjaBuilder};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_jinja::{JinjaBuilder, JinjaLanguage};
 
-let source = "Hello, {{ name }}!";
-let lexer = JinjaLexer::new();
-let tokens = lexer.tokenize(source);
-let parser = JinjaParser::new();
-let ast = parser.parse(tokens);
-let builder = JinjaBuilder::new();
-let root = builder.build(ast);
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = JinjaLanguage::new();
+let builder = JinjaBuilder::new(&language);
+let mut session = ParseSession::<JinjaLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Syntax Support

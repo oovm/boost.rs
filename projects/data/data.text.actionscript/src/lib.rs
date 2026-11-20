@@ -13,9 +13,6 @@ pub mod lexer;
 /// Parser for ActionScript.
 pub mod parser;
 
-#[cfg(feature = "lsp")]
-#[cfg(feature = "mcp")]
-
 // Re-export main types
 pub use crate::{
     ast::ActionScriptRoot,

@@ -1,7 +1,6 @@
 #![doc = include_str!("readme.md")]
 #![feature(new_range_api)]
 #![warn(missing_docs)]
-#![doc = include_str!("readme.md")]
 
 /// AST module.
 pub mod ast;

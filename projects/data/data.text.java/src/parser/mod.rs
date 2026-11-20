@@ -36,7 +36,8 @@ pub(crate) type State<'a, S> = ParserState<'a, JavaLanguage, S>;
 ///
 /// # Example
 /// ```rust
-/// use data_text_java::{JavaLanguage, JavaParser, SourceText};
+/// use data_text_core::{Parser, SourceText, parser::ParseSession};
+/// use data_text_java::{JavaLanguage, JavaParser};
 ///
 /// let code = r#"
 /// public class Example {
@@ -47,11 +48,12 @@ pub(crate) type State<'a, S> = ParserState<'a, JavaLanguage, S>;
 /// "#;
 ///
 /// let source = SourceText::new(code);
-/// let config = JavaLanguage::new();
-/// let parser = JavaParser::new(&config);
-/// let result = parser.parse(&source);
+/// let language = JavaLanguage::new();
+/// let parser = JavaParser::new(&language);
+/// let mut session = ParseSession::<JavaLanguage>::new(32);
+/// let result = parser.parse(&source, &[], &mut session);
 ///
-/// assert!(result.is_success());
+/// assert!(result.diagnostics.is_empty());
 /// ```
 pub struct JavaParser<'config> {
     /// Parser configuration containing language-specific settings
@@ -130,17 +132,17 @@ impl<'config> Parser<JavaLanguage> for JavaParser<'config> {
     ///
     /// # Example
     /// ```rust
-    /// use data_text_core::parser::DefaultParseCache;
-    /// use data_text_java::{JavaLanguage, JavaParser, SourceText};
+    /// use data_text_core::{Parser, SourceText, parser::ParseSession};
+    /// use data_text_java::{JavaLanguage, JavaParser};
     ///
     /// let code = "public class Example { }";
     /// let source = SourceText::new(code);
-    /// let config = JavaLanguage::new();
-    /// let parser = JavaParser::new(&config);
-    /// let mut cache = DefaultParseCache::default();
+    /// let language = JavaLanguage::new();
+    /// let parser = JavaParser::new(&language);
+    /// let mut session = ParseSession::<JavaLanguage>::new(32);
     ///
-    /// let result = parser.parse(&source, &[], &mut cache);
-    /// println!("Parse success: {}", result.is_success());
+    /// let result = parser.parse(&source, &[], &mut session);
+    /// println!("Parse diagnostics: {}", result.diagnostics.len());
     /// ```
     fn parse<'a, S: Source + ?Sized>(
         &self,

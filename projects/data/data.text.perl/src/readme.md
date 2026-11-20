@@ -16,17 +16,27 @@ Welcome to the internal implementation of the Perl parser. This module provides 
 ### Basic Parsing
 
 ```rust
-use data_text_perl::{PerlParser, SourceText, PerlLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_perl::{PerlBuilder, PerlLanguage};
 
-fn parse_perl_code(code: &str) {
+fn main() {
+    // 1. Prepare source code
+    let code = "let x = 1;";
     let source = SourceText::new(code);
-    let config = PerlLanguage::new();
-    let parser = PerlParser::new(&config);
-    let result = parser.parse(&source);
 
-    if result.is_success() {
-        let root = result.root();
-        println!("AST Root: {:?}", root);
+    // 2. Initialize builder
+    let language = PerlLanguage::new();
+    let builder = PerlBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<PerlLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -34,22 +44,27 @@ fn parse_perl_code(code: &str) {
 ### Incremental Parsing
 
 ```rust
-use data_text_perl::{PerlParser, SourceText, PerlLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_perl::{PerlBuilder, PerlLanguage};
 
-fn incremental_update(old_code: &str, new_code: &str) {
-    let config = PerlLanguage::new();
-    let mut parser = PerlParser::new(&config);
-    
-    // Initial parse
-    let initial_source = SourceText::new(old_code);
-    let _ = parser.parse(&initial_source);
-    
-    // Incremental update
-    let updated_source = SourceText::new(new_code);
-    let result = parser.parse(&updated_source);
-    
-    if result.is_success() {
-        println!("Incremental parse completed successfully.");
+fn main() {
+    // 1. Prepare source code
+    let code = "let x = 1;";
+    let source = SourceText::new(code);
+
+    // 2. Initialize builder
+    let language = PerlLanguage::new();
+    let builder = PerlBuilder::new(&language);
+
+    // 3. Execute parsing
+    let mut session = ParseSession::<PerlLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
+
+    // 4. Handle results
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
+    } else {
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -59,8 +74,15 @@ fn incremental_update(old_code: &str, new_code: &str) {
 The parser provides detailed diagnostics for syntax errors, including error ranges and helpful messages.
 
 ```rust
-let result = parser.parse(&source);
-for diagnostic in result.diagnostics() {
-    println!("Error at {:?}: {}", diagnostic.range(), diagnostic.message());
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_perl::{PerlBuilder, PerlLanguage};
+
+let language = PerlLanguage::new();
+let builder = PerlBuilder::new(&language);
+let mut session = ParseSession::<PerlLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```

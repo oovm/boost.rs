@@ -31,7 +31,7 @@ const VLQ_BASE_MASK: u8 = 0b011111;
 /// assert_eq!(vlq_encode(1), "C");
 /// assert_eq!(vlq_encode(-1), "D");
 /// assert_eq!(vlq_encode(16), "gB");
-/// assert_eq!(vlq_encode(12345), "uBtC");
+/// assert_eq!(vlq_encode(12345), "yjY");
 /// ```
 pub fn vlq_encode(value: i32) -> String {
     let mut result = String::new();

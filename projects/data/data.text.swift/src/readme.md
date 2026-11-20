@@ -18,46 +18,16 @@ data-text-swift = { path = "..." }
 The following is a standard workflow for parsing modern Swift with property wrappers, generics, and concurrency:
 
 ```rust
-use data_text_swift::{SwiftParser, SourceText, SwiftLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_swift::{SwiftBuilder, SwiftLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        import Foundation
-
-        @propertyWrapper
-        struct Clamped<T: Comparable> {
-            var wrappedValue: T
-            let range: ClosedRange<T>
-        }
-
-        actor UserManager {
-            @Clamped(range: 0...100)
-            var userScore: Int = 50
-
-            func updateScore(to newValue: Int) async {
-                userScore = newValue
-            }
-        }
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = SwiftLanguage::new();
-    let parser = SwiftParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = SwiftLanguage::new();
+let builder = SwiftBuilder::new(&language);
+let mut session = ParseSession::<SwiftLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -69,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Swift projects (especially those using SwiftUI) can be very complex. `data-text-swift` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_swift::{SwiftBuilder, SwiftLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = SwiftLanguage::new();
+let builder = SwiftBuilder::new(&language);
+let mut session = ParseSession::<SwiftLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. SwiftUI and DSL Handling

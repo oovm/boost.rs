@@ -11,7 +11,7 @@
 /// # Examples
 ///
 /// ```rust
-/// use language_dejavu::formatter::DejavuFormatter;
+/// use language_dejavu::DejavuFormatter;
 ///
 /// let formatter = DejavuFormatter::new();
 /// // Formatting functionality would be used here
@@ -28,7 +28,7 @@ impl DejavuFormatter {
     /// # Examples
     ///
     /// ```rust
-    /// use language_dejavu::formatter::DejavuFormatter;
+    /// use language_dejavu::DejavuFormatter;
     ///
     /// let formatter = DejavuFormatter::new();
     /// ```
@@ -52,7 +52,7 @@ impl DejavuFormatter {
     /// # Examples
     ///
     /// ```rust
-    /// use language_dejavu::formatter::DejavuFormatter;
+    /// use language_dejavu::DejavuFormatter;
     ///
     /// let formatter = DejavuFormatter::new();
     /// let formatted = formatter.format("namespace Test { micro main() { let x = 42 } }");

@@ -15,6 +15,7 @@ This module defines the Abstract Syntax Tree (AST) structure for CSS code.
 ## Usage
 
 ```rust
+use core::range::Range;
 use data_text_css::{CssRoot, CssNode, RuleSet, Declaration, Selector, Value};
 
 // Create a simple CSS AST
@@ -25,12 +26,13 @@ let ast = CssRoot {
             declarations: vec![Declaration {
                 property: "color".to_string(),
                 value: Value::Keyword("red".to_string()),
-                span: 0..15,
+                span: Range { start: 0, end: 15 },
             }],
-            span: 0..15,
+            span: Range { start: 0, end: 15 },
         }),
     ],
 };
+let _ = ast;
 ```
 
 ## Features

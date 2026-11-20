@@ -43,24 +43,16 @@ The primary objective of this module is to provide a fast and accurate tokenizer
 ## Usage Example
 
 ```rust
-use data_text_groovy::lexer::GroovyLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_groovy::{GroovyBuilder, GroovyLanguage};
 
-fn main() {
-    let groovy_source = r#"
-        def name = "Boost"
-        println "Hello, ${name}!"
-        
-        def list = [1, 2, 3]
-        list.each { println it }
-    "#;
-
-    let mut lexer = GroovyLexer::new();
-    let tokens = lexer.tokenize(groovy_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = GroovyLanguage::new();
+let builder = GroovyBuilder::new(&language);
+let mut session = ParseSession::<GroovyLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

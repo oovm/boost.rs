@@ -43,43 +43,15 @@ The Java AST is the central data structure used by the compiler, static analysis
 ## Usage Example
 
 ```rust
-use data_text_java::ast::*;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
 
-fn main() {
-    // Manually constructing a simple AST for a Java class
-    let java_ast = JavaRoot {
-        package: Some(PackageDeclaration { name: "com.example".to_string() }),
-        imports: vec![],
-        types: vec![
-            TypeDeclaration::Class(ClassDeclaration {
-                modifiers: vec![Modifier::Public],
-                name: "Main".to_string(),
-                members: vec![
-                    ClassMember::Method(MethodDeclaration {
-                        modifiers: vec![Modifier::Public, Modifier::Static],
-                        return_type: Type::Void,
-                        name: "main".to_string(),
-                        params: vec![
-                            Parameter {
-                                ty: Type::Array(Box::new(Type::Reference("String".to_string()))),
-                                name: "args".to_string(),
-                            }
-                        ],
-                        body: Some(Block {
-                            statements: vec![
-                                Statement::Expression(Expression::MethodCall(MethodCall {
-                                    target: Some(Box::new(Expression::Identifier("System.out".to_string()))),
-                                    name: "println".to_string(),
-                                    arguments: vec![Expression::StringLiteral("Hello, Java!".to_string())],
-                                }))
-                            ],
-                        }),
-                    })
-                ],
-            })
-        ],
-    };
-}
+let language = JavaLanguage::new();
+let builder = JavaBuilder::new(&language);
+let mut session = ParseSession::<JavaLanguage>::new(32);
+let source = SourceText::new("class Hello { }");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Design Principles

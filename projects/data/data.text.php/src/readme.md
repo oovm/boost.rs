@@ -18,50 +18,16 @@ data-text-php = { path = "..." }
 The following is a standard workflow for parsing modern PHP with attributes, enums, and promoted properties:
 
 ```rust
-use data_text_php::{PhpParser, SourceText, PhpLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_php::{PhpBuilder, PhpLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        <?php
-
-        namespace App\Core;
-
-        #[Attribute]
-        enum Status: string {
-            case Active = 'active';
-            case Inactive = 'inactive';
-        }
-
-        class User {
-            public function __construct(
-                public readonly string $username,
-                private Status $status = Status::Active,
-            ) {}
-
-            public function greet(): string {
-                return "Hello, {$this->username}!";
-            }
-        }
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = PhpLanguage::new();
-    let parser = PhpParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = PhpLanguage::new();
+let builder = PhpBuilder::new(&language);
+let mut session = ParseSession::<PhpLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -73,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 PHP projects (especially those using frameworks like Laravel or Symfony) can contain thousands of files. `data-text-php` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_php::{PhpBuilder, PhpLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = PhpLanguage::new();
+let builder = PhpBuilder::new(&language);
+let mut session = ParseSession::<PhpLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Mixed Content Handling

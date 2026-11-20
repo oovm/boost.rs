@@ -18,39 +18,16 @@ data-text-scala = { path = "..." }
 The following is a standard workflow for parsing Scala source files, supporting Scala 2 and Scala 3 syntax:
 
 ```rust
-use data_text_scala::{ScalaParser, SourceText, ScalaLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_scala::{ScalaBuilder, ScalaLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        package com.example
-
-        import scala.util.Random
-
-        object Dice {
-            def roll(): Int = {
-                Random.nextInt(6) + 1
-            }
-        }
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = ScalaLanguage::new();
-    let parser = ScalaParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = ScalaLanguage::new();
+let builder = ScalaBuilder::new(&language);
+let mut session = ParseSession::<ScalaLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -62,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Scala projects can be large. `data-text-scala` supports sub-millisecond incremental updates for efficient IDE feedback:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_scala::{ScalaBuilder, ScalaLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = ScalaLanguage::new();
+let builder = ScalaBuilder::new(&language);
+let mut session = ParseSession::<ScalaLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Error Recovery

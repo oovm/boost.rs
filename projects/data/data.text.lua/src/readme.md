@@ -18,41 +18,16 @@ data-text-lua = { path = "..." }
 The following is a standard workflow for parsing Lua scripts, including support for tables, functions, and control flow:
 
 ```rust
-use data_text_lua::{LuaParser, SourceText, LuaLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_lua::{LuaBuilder, LuaLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        local function greet(name)
-            local message = "Hello, " .. name
-            print(message)
-        end
-
-        local user = {
-            name = "Boost",
-            age = 1
-        }
-
-        greet(user.name)
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = LuaLanguage::new();
-    let parser = LuaParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = LuaLanguage::new();
+let builder = LuaBuilder::new(&language);
+let mut session = ParseSession::<LuaLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -64,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Lua scripts can grow large in game development. `data-text-lua` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_lua::{LuaBuilder, LuaLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = LuaLanguage::new();
+let builder = LuaBuilder::new(&language);
+let mut session = ParseSession::<LuaLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Error Recovery

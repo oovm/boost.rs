@@ -35,25 +35,16 @@ The primary goal of this module is to provide a robust and efficient way to toke
 ## Usage Example
 
 ```rust
-use data_text_vhdl::lexer::VhdlLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_vhdl::{VhdlBuilder, VhdlLanguage};
 
-fn main() {
-    let vhdl_source = r#"
-        entity counter is
-            port (
-                clk : in std_logic;
-                count : out std_logic_vector(3 downto 0)
-            );
-        end entity;
-    "#;
-
-    let mut lexer = VhdlLexer::new();
-    let tokens = lexer.tokenize(vhdl_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = VhdlLanguage::new();
+let builder = VhdlBuilder::new(&language);
+let mut session = ParseSession::<VhdlLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

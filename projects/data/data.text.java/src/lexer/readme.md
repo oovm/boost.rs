@@ -42,26 +42,16 @@ This module is designed to provide a foundational tokenizer for Java development
 ## Usage Example
 
 ```rust
-use data_text_java::lexer::JavaLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_java::{JavaBuilder, JavaLanguage};
 
-fn main() {
-    let java_source = r#"
-        package com.example;
-
-        public class Main {
-            public static void main(String[] args) {
-                System.out.println("Hello, Java!");
-            }
-        }
-    "#;
-
-    let mut lexer = JavaLexer::new();
-    let tokens = lexer.tokenize(java_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = JavaLanguage::new();
+let builder = JavaBuilder::new(&language);
+let mut session = ParseSession::<JavaLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

@@ -18,42 +18,16 @@ data-text-ruby = { path = "..." }
 The following is a standard workflow for parsing Ruby code, including support for classes, methods, and blocks:
 
 ```rust
-use data_text_ruby::{RubyParser, SourceText, RubyLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_ruby::{RubyBuilder, RubyLanguage};
 
-fn main() {
-    // 1. Prepare source code
-    let code = r#"
-        class Greeter
-          def initialize(name)
-            @name = name
-          end
-
-          def greet
-            puts "Hello, #{@name}!"
-          end
-        end
-
-        greeter = Greeter.new("Boost")
-        greeter.greet
-    "#;
-    let source = SourceText::new(code);
-
-    // 2. Initialize parser
-    let config = RubyLanguage::new();
-    let parser = RubyParser::new(&config);
-
-    // 3. Execute parsing
-    let result = parser.parse(&source);
-
-    // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
-    } else {
-        eprintln!("Errors found during parsing.");
-        for diag in result.diagnostics() {
-            println!("[{}:{}] {}", diag.line, diag.column, diag.message);
-        }
-    }
+let language = RubyLanguage::new();
+let builder = RubyBuilder::new(&language);
+let mut session = ParseSession::<RubyLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
@@ -65,8 +39,23 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 Ruby codebases (especially Rails apps) can be massive. `data-text-ruby` supports sub-millisecond incremental updates:
 ```rust
-// Re-parse only the modified section
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_ruby::{RubyBuilder, RubyLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = RubyLanguage::new();
+let builder = RubyBuilder::new(&language);
+let mut session = ParseSession::<RubyLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. DSL and Metaprogramming

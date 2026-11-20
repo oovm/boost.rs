@@ -11,33 +11,32 @@ This guide helps you integrate `data-text-go` into your project and perform comm
 The following is a standard workflow for parsing a Go file:
 
 ```rust
-use data_text_go::{GoParser, SourceText, GoLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_go::{GoBuilder, GoLanguage};
 
 fn main() {
     // 1. Prepare source code
     let code = r#"
-        package main
-        
-        import "fmt"
-        
-        func main() {
-            fmt.Println("Hello from Boost Go!")
-        }
-    "#;
+package main
+
+func main() {
+}
+"#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = GoLanguage::new();
-    let parser = GoParser::new(&config);
+    // 2. Initialize builder
+    let language = GoLanguage::new();
+    let builder = GoBuilder::new(&language);
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<GoLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -50,15 +49,38 @@ After a successful parse, use the built-in visitor pattern or manually traverse 
 ### 2. Incremental Parsing
 Optimize performance by only re-parsing changed sections:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_go::{GoBuilder, GoLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = GoLanguage::new();
+let builder = GoBuilder::new(&language);
+let mut session = ParseSession::<GoLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics & Error Recovery
 `data-text-go` provides detailed error contexts tailored for Go developers:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_go::{GoBuilder, GoLanguage};
+
+let language = GoLanguage::new();
+let builder = GoBuilder::new(&language);
+let mut session = ParseSession::<GoLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 

@@ -1,30 +1,30 @@
-# 🌐 Elixir Language Integration
+# 🌐 Elm Language Integration
 
-This module defines the `ElixirLanguage` struct, which serves as the central configuration point for the Elixir parser within the `data.text` framework.
+This module defines the `ElmLanguage` struct, which serves as the central configuration point for the Elm parser within the `data.text` framework.
 
 ## 🛠️ Language Configuration
 
-The `ElixirLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the `data.text` family.
+The `ElmLanguage` struct implements the `Language` trait, providing metadata and type definitions required by the `data.text` family.
 
 ```rust
-pub struct ElixirLanguage {
-    // Future configuration options (e.g., Elixir version, compiler options)
+pub struct ElmLanguage {
+    // Future configuration options (e.g., Elm version, compiler options)
 }
 ```
 
 ## 🧩 Integration
 
-`ElixirLanguage` links together the lexer and parser components:
+`ElmLanguage` links together the lexer and parser components:
 
-- **TokenType**: `ElixirTokenType`
-- **ElementType**: `ElixirElementType`
+- **TokenType**: `ElmTokenType`
+- **ElementType**: `ElmElementType`
 - **TypedRoot**: `()` (Future work will include typed root support)
 
 ## 🚀 Usage
 
 ```rust
-use data_text_elixir::ElixirLanguage;
+use data_text_elm::ElmLanguage;
 
-let config = ElixirLanguage::new();
-// Pass this config to ElixirParser::new(&config)
+let config = ElmLanguage::new();
+// Pass this config to ElmParser::new(&config)
 ```

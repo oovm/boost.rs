@@ -40,26 +40,16 @@ This module is designed to provide a high-performance tokenizer for Vala, suppor
 ## Usage Example
 
 ```rust
-use data_text_vala::lexer::ValaLexer;
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_vala::{ValaBuilder, ValaLanguage};
 
-fn main() {
-    let vala_source = r#"
-        using GLib;
-
-        public class HelloWorld : Object {
-            public static void main(string[] args) {
-                stdout.printf("Hello, World!\n");
-            }
-        }
-    "#;
-
-    let mut lexer = ValaLexer::new();
-    let tokens = lexer.tokenize(vala_source);
-
-    for token in tokens {
-        println!("{:?}: '{}' at {:?}", token.token_type, token.lexeme, token.span);
-    }
-}
+// 词法分析由解析器内部驱动，用户通常通过 Builder 入口使用
+let language = ValaLanguage::new();
+let builder = ValaBuilder::new(&language);
+let mut session = ParseSession::<ValaLanguage>::new(32);
+let source = SourceText::new("let x = 1;");
+let result = builder.build(&source, &[], &mut session);
+let _ = result;
 ```
 
 ## Error Handling

@@ -11,10 +11,11 @@ This guide is designed to help you quickly get started with developing and integ
 The following is a standard workflow for parsing an R script:
 
 ```rust
-use data_text_r::{RParser, SourceText, RLanguage};
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_r::{RBuilder, RLanguage};
 
 fn main() {
-    // 1. Prepare R source code
+    // 1. Prepare source code
     let code = r#"
         # Calculate summary statistics
         calculate_stats <- function(data) {
@@ -29,18 +30,19 @@ fn main() {
     "#;
     let source = SourceText::new(code);
 
-    // 2. Initialize parser
-    let config = RLanguage::new();
-    let parser = RParser::new(&config);
+    // 2. Initialize builder
+    let language = RLanguage::new();
+    let builder = RBuilder::new(&language);
 
     // 3. Execute parsing
-    let result = parser.parse(&source);
+    let mut session = ParseSession::<RLanguage>::new(32);
+    let result = builder.build(&source, &[], &mut session);
 
     // 4. Handle results
-    if result.is_success() {
-        println!("Parsing successful! AST node count: {}", result.node_count());
+    if result.diagnostics.is_empty() {
+        println!("Parsing successful!");
     } else {
-        eprintln!("Errors found during parsing.");
+        eprintln!("Errors found during parsing: {:#?}", result.diagnostics);
     }
 }
 ```
@@ -53,15 +55,38 @@ After a successful parse, you can use the built-in visitor pattern or manually t
 ### 2. Incremental Parsing
 No need to re-parse the entire script when small changes occur:
 ```rust
-// Assuming you have an old parse result 'old_result' and new source text 'new_source'
-let new_result = parser.reparse(&new_source, &old_result);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_r::{RBuilder, RLanguage};
+
+// 复用 `ParseSession` 携带旧树：第二次 build 只重解析变化区域
+let language = RLanguage::new();
+let builder = RBuilder::new(&language);
+let mut session = ParseSession::<RLanguage>::new(32);
+{
+    let source = SourceText::new("a");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
+{
+    let source = SourceText::new("b");
+    let result = builder.build(&source, &[], &mut session);
+    println!("{}", result.diagnostics.len());
+}
 ```
 
 ### 3. Diagnostics
 `data-text-r` provides rich error contexts specifically tailored for R developers, handling complex scenarios like unmatched brackets or malformed formula syntax:
 ```rust
-for diag in result.diagnostics() {
-    println!("[{}:{}] {}", diag.line, diag.column, diag.message);
+use data_text_core::{Builder, SourceText, parser::ParseSession};
+use data_text_r::{RBuilder, RLanguage};
+
+let language = RLanguage::new();
+let builder = RBuilder::new(&language);
+let mut session = ParseSession::<RLanguage>::new(32);
+let source = SourceText::new("x = = ;");
+let result = builder.build(&source, &[], &mut session);
+for diagnostic in result.diagnostics {
+    println!("{diagnostic:?}");
 }
 ```
 
