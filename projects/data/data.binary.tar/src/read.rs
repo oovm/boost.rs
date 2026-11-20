@@ -8,7 +8,7 @@ use boost_source::{
         ByteSource, ByteWindow, ContentIdentity, MemorySource, ReadError, ReadOutcome, ReadResult, SourceCapabilities, content_digest_of,
     },
 };
-use data_binary_core::{BudgetError, BudgetTracker, ByteExtent};
+use data_binary_core::{Budget, BudgetError, BudgetTracker, ByteExtent};
 use data_compression::StreamChunk;
 
 use crate::{
@@ -67,6 +67,8 @@ pub enum TarIndexError {
         /// Offset of the PAX payload.
         offset: u64,
     },
+    /// A budget reservation failed.
+    Budget(BudgetError),
     /// Bytes needed for indexing are not available.
     NeedRange {
         /// Missing interval.
@@ -97,6 +99,7 @@ impl fmt::Display for TarIndexError {
                 write!(f, "tar metadata at offset {offset} is not followed by a member")
             }
             Self::InvalidPaxRecord { offset } => write!(f, "tar PAX record at offset {offset} is malformed"),
+            Self::Budget(error) => write!(f, "tar index budget error: {error}"),
             Self::NeedRange { range, reason } => {
                 write!(f, "tar range {}..{} is unavailable: {reason}", range.start, range.start + range.len)
             }
@@ -148,6 +151,16 @@ impl From<BudgetError> for TarReadError {
 
 /// Indexes tar headers without materializing member payloads.
 pub fn index_tar<S: ByteSource>(source: &S) -> Result<TarArchive, TarIndexError> {
+    let mut ledger = BudgetTracker::new(Budget { max_container_members: u64::MAX, ..Budget::default() });
+    index_tar_budgeted(source, &mut ledger)
+}
+
+/// Indexes tar headers while charging every member to the ledger.
+///
+/// The ledger's `max_container_members` bounds the entry count, so a header
+/// storm fails with [`TarIndexError::Budget`] instead of filling memory with
+/// entries. Header blocks themselves are not charged to the read budget.
+pub fn index_tar_budgeted<S: ByteSource>(source: &S, ledger: &mut BudgetTracker) -> Result<TarArchive, TarIndexError> {
     let length = source.length().ok_or(TarIndexError::UnknownLength)?;
     let mut entries = Vec::new();
     let mut offset = 0u64;
@@ -205,6 +218,7 @@ pub fn index_tar<S: ByteSource>(source: &S) -> Result<TarArchive, TarIndexError>
         }
         let data_range = ByteExtent::new_allowing_empty(data_offset, size)
             .map_err(|error| TarIndexError::InvalidHeaderField { offset, field: error_field(error) })?;
+        ledger.reserve_container_member().map_err(TarIndexError::Budget)?;
         entries.push(TarEntry {
             path,
             link_name,
