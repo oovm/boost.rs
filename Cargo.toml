@@ -71,6 +71,16 @@ members = [
     "projects/language/language.valkyrie",
     "projects/language/language.visualize",
     "projects/language/language.von",
+    "projects/language/language.astro",
+    "projects/language/language.clojure",
+    "projects/language/language.dart",
+    "projects/language/language.handlebars",
+    "projects/language/language.jasm",
+    "projects/language/language.nim",
+    "projects/language/language.racket",
+    "projects/language/language.vue",
+    "projects/language/language.yaml",
+    "projects/language/language.css",
     "projects/database/database",
     "projects/database/database.client",
     "projects/database/database.cluster",
@@ -504,6 +514,16 @@ language-typescript = { path = "projects/language/language.typescript" }
 language-valkyrie = { path = "projects/language/language.valkyrie" }
 language-visualize = { path = "projects/language/language.visualize" }
 language-von = { path = "projects/language/language.von" }
+language-astro = { path = "projects/language/language.astro" }
+language-clojure = { path = "projects/language/language.clojure" }
+language-dart = { path = "projects/language/language.dart" }
+language-handlebars = { path = "projects/language/language.handlebars" }
+language-jasm = { path = "projects/language/language.jasm" }
+language-nim = { path = "projects/language/language.nim" }
+language-racket = { path = "projects/language/language.racket" }
+language-vue = { path = "projects/language/language.vue" }
+language-yaml = { path = "projects/language/language.yaml" }
+language-css = { path = "projects/language/language.css" }
 # 内部库
 crawler-browser = { path = "projects/crawler/crawler.browser" }
 crawler-extract = { path = "projects/crawler/crawler.extract" }

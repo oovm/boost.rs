@@ -1,0 +1,19 @@
+[package]
+name = "language-css"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Css (LSP, MCP, formatter, highlighter adapters over data-text-css)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "css"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-css = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

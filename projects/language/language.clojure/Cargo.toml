@@ -1,0 +1,15 @@
+[package]
+name = "language-clojure"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Clojure (LSP, MCP, formatter, highlighter adapters over data-text-clojure)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "clojure"]
+
+[dependencies]
+data-text-clojure = { workspace = true }
+data-text-core = { workspace = true }

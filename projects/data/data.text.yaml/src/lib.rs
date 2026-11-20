@@ -11,22 +11,12 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight", feature = "mcp"))]
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
 
 pub use crate::{builder::YamlBuilder, language::YamlLanguage, lexer::YamlLexer, parser::YamlParser};
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::YamlHighlighter;
 
 /// Parses a YAML string.
 pub fn parse(yaml: &str) -> Result<crate::ast::YamlRoot, String> {
@@ -47,13 +37,6 @@ pub use crate::language::from_str;
 #[cfg(feature = "serde")]
 pub use crate::language::to_string;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::YamlLanguageService;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub use crate::lsp::formatter::YamlFormatter;
 
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_yaml_mcp;
 pub use lexer::token_type::YamlTokenType;
 pub use parser::element_type::YamlElementType;

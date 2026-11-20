@@ -15,12 +15,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
@@ -32,16 +26,7 @@ pub use crate::{
     parser::NimParser,
 };
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::NimHighlighter;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::NimLanguageService;
 
-/// MCP service implementation.
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_nim_mcp;
 pub use lexer::token_type::NimTokenType;
 pub use parser::element_type::NimElementType;

@@ -1354,12 +1354,6 @@ name = "data-text-astro"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1440,12 +1434,6 @@ name = "data-text-clojure"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1559,15 +1547,8 @@ name = "data-text-css"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1632,12 +1613,6 @@ name = "data-text-dart"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1930,15 +1905,8 @@ name = "data-text-handlebars"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2044,15 +2012,8 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-pretty",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -2403,17 +2364,9 @@ dependencies = [
 name = "data-text-nim"
 version = "0.1.0"
 dependencies = [
- "dashmap",
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -3270,11 +3223,6 @@ name = "data-text-vue"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "serde",
 ]
 
@@ -3368,15 +3316,8 @@ name = "data-text-yaml"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -5155,6 +5096,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "language-astro"
+version = "0.1.0"
+dependencies = [
+ "data-text-astro",
+ "data-text-core",
+]
+
+[[package]]
 name = "language-awsl"
 version = "0.0.22"
 dependencies = [
@@ -5167,6 +5116,37 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "language-clojure"
+version = "0.1.0"
+dependencies = [
+ "data-text-clojure",
+ "data-text-core",
+]
+
+[[package]]
+name = "language-css"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-css",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-dart"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dart",
+ "futures",
+ "language-server",
+ "serde",
 ]
 
 [[package]]
@@ -5187,6 +5167,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-handlebars"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-handlebars",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
 name = "language-highlight"
 version = "0.1.0"
 dependencies = [
@@ -5199,6 +5192,21 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "serde",
+]
+
+[[package]]
+name = "language-jasm"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-jasm",
+ "data-text-pretty",
+ "futures",
+ "language-highlight",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
 ]
 
 [[package]]
@@ -5232,6 +5240,27 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "serde",
+]
+
+[[package]]
+name = "language-nim"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "data-text-nim",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-racket"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-racket",
 ]
 
 [[package]]
@@ -5369,6 +5398,26 @@ dependencies = [
  "data-text-von",
  "language-format",
  "serde",
+]
+
+[[package]]
+name = "language-vue"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-vue",
+ "serde",
+]
+
+[[package]]
+name = "language-yaml"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-yaml",
+ "language-mcp",
+ "language-server",
+ "tokio",
 ]
 
 [[package]]

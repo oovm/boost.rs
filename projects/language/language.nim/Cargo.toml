@@ -1,0 +1,20 @@
+[package]
+name = "language-nim"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Nim (LSP, MCP, formatter, highlighter adapters over data-text-nim)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "nim"]
+
+[dependencies]
+dashmap = { workspace = true }
+data-text-core = { workspace = true }
+data-text-nim = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

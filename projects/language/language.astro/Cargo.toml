@@ -1,0 +1,15 @@
+[package]
+name = "language-astro"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Astro (LSP, MCP, formatter, highlighter adapters over data-text-astro)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "astro"]
+
+[dependencies]
+data-text-astro = { workspace = true }
+data-text-core = { workspace = true }

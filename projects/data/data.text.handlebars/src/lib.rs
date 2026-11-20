@@ -6,15 +6,10 @@ pub mod ast;
 /// AST Builder
 pub mod builder;
 
-mod language;
-mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
+pub mod language;
+pub mod lexer;
 
-mod parser;
+pub mod parser;
 
 pub use crate::{
     ast::HandlebarsRoot,
