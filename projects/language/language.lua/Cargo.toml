@@ -1,0 +1,20 @@
+[package]
+name = "language-lua"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Lua (LSP, MCP, formatter, highlighter adapters over data-text-lua)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "lua"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-lua = { workspace = true }
+futures = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

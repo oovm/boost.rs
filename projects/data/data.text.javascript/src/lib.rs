@@ -3,11 +3,6 @@
 #![feature(portable_simd)]
 #![feature(new_range_api)]
 
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 pub mod ast;
 pub mod language;

@@ -71,6 +71,31 @@ members = [
     "projects/language/language.valkyrie",
     "projects/language/language.visualize",
     "projects/language/language.von",
+    "projects/language/language.fortran",
+    "projects/language/language.fsharp",
+    "projects/language/language.go",
+    "projects/language/language.graphql",
+    "projects/language/language.groovy",
+    "projects/language/language.gsgl",
+    "projects/language/language.hlsl",
+    "projects/language/language.html",
+    "projects/language/language.idl",
+    "projects/language/language.ini",
+    "projects/language/language.j",
+    "projects/language/language.java",
+    "projects/language/language.javadoc",
+    "projects/language/language.javascript",
+    "projects/language/language.jinja",
+    "projects/language/language.json",
+    "projects/language/language.julia",
+    "projects/language/language.koka",
+    "projects/language/language.kotlin",
+    "projects/language/language.lean",
+    "projects/language/language.less",
+    "projects/language/language.liquid",
+    "projects/language/language.llvm-ir",
+    "projects/language/language.lua",
+    "projects/language/language.markdown",
 
 
 
@@ -543,6 +568,31 @@ language-typescript = { path = "projects/language/language.typescript" }
 language-valkyrie = { path = "projects/language/language.valkyrie" }
 language-visualize = { path = "projects/language/language.visualize" }
 language-von = { path = "projects/language/language.von" }
+language-fortran = { path = "projects/language/language.fortran" }
+language-fsharp = { path = "projects/language/language.fsharp" }
+language-go = { path = "projects/language/language.go" }
+language-graphql = { path = "projects/language/language.graphql" }
+language-groovy = { path = "projects/language/language.groovy" }
+language-gsgl = { path = "projects/language/language.gsgl" }
+language-hlsl = { path = "projects/language/language.hlsl" }
+language-html = { path = "projects/language/language.html" }
+language-idl = { path = "projects/language/language.idl" }
+language-ini = { path = "projects/language/language.ini" }
+language-j = { path = "projects/language/language.j" }
+language-java = { path = "projects/language/language.java" }
+language-javadoc = { path = "projects/language/language.javadoc" }
+language-javascript = { path = "projects/language/language.javascript" }
+language-jinja = { path = "projects/language/language.jinja" }
+language-json = { path = "projects/language/language.json" }
+language-julia = { path = "projects/language/language.julia" }
+language-koka = { path = "projects/language/language.koka" }
+language-kotlin = { path = "projects/language/language.kotlin" }
+language-lean = { path = "projects/language/language.lean" }
+language-less = { path = "projects/language/language.less" }
+language-liquid = { path = "projects/language/language.liquid" }
+language-llvm-ir = { path = "projects/language/language.llvm-ir" }
+language-lua = { path = "projects/language/language.lua" }
+language-markdown = { path = "projects/language/language.markdown" }
 
 
 

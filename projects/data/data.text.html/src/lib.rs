@@ -13,12 +13,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module for HTML tokenization.
 pub mod lexer;
-/// LSP module for HTML language service features.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module for HTML syntax analysis.
 pub mod parser;
@@ -27,12 +21,6 @@ pub mod query;
 
 pub use crate::{ast::HtmlDocument, builder::HtmlBuilder, language::HtmlLanguage, lexer::HtmlLexer, parser::HtmlParser};
 
-/// Re-export of the HTML highlighter.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::HtmlHighlighter;
 
-/// Re-export of the HTML language service.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::HtmlLanguageService;
 pub use lexer::token_type::HtmlTokenType;
 pub use parser::element_type::HtmlElementType;

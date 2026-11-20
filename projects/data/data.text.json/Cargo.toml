@@ -15,16 +15,8 @@ data-text-core = { workspace = true }
 data-text-pretty = { workspace = true }
 language-macro = { workspace = true }
 triomphe = { workspace = true }
-language-highlight = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
-language-server = { workspace = true, optional = true }
-language-hover = { workspace = true, optional = true }
-language-navigation = { workspace = true, optional = true }
-language-mcp = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 language-testing = { workspace = true }
@@ -33,8 +25,6 @@ serde_json = { workspace = true }
 [features]
 default = ["serde"]
 serde = ["dep:serde", "data-text-core/serde", "dep:serde_json"]
-lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
-mcp = ["lsp", "language-mcp/io-std", "dep:tokio"]
 
 [package.metadata.docs.rs]
 all-features = true

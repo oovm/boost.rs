@@ -1,0 +1,19 @@
+[package]
+name = "language-javadoc"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Javadoc (LSP, MCP, formatter, highlighter adapters over data-text-javadoc)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "javadoc"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-javadoc = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true, features = ["io-std"] }
+language-server = { workspace = true }
+tokio = { workspace = true }

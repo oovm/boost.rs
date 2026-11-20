@@ -12,25 +12,13 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
 
 pub use crate::{ast::IdlRoot, builder::IdlBuilder, language::IdlLanguage, lexer::IdlLexer, parser::IdlParser};
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::IdlHighlighter;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::IdlLanguageService;
 pub use lexer::token_type::IdlTokenType;
 pub use parser::element_type::IdlElementType;
 

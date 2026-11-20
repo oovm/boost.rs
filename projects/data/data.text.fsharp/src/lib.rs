@@ -13,9 +13,6 @@ pub mod builder;
 pub mod language;
 /// Lexer implementation for F#.
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-/// LSP module
-pub mod lsp;
 /// Parser module
 pub mod parser;
 
@@ -42,6 +39,3 @@ pub fn parse(source: &str) -> Result<FSharpRoot, data_text_core::TextError> {
     output.result
 }
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::FsharpLanguageService;

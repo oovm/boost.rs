@@ -1,0 +1,17 @@
+[package]
+name = "language-jinja"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Jinja (LSP, MCP, formatter, highlighter adapters over data-text-jinja)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "jinja"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-jinja = { workspace = true }
+language-highlight = { workspace = true }
+language-server = { workspace = true }

@@ -7,12 +7,9 @@ pub mod ast;
 /// Builder module.
 pub mod builder;
 /// Language module.
-mod language;
+pub mod language;
 /// Lexer module.
-mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
+pub mod lexer;
 /// Parser module.
 pub mod parser;
 

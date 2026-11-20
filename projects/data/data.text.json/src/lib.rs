@@ -15,12 +15,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
@@ -33,9 +27,6 @@ pub use crate::{
     parser::JsonParser,
 };
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::JsonHighlighter;
 
 #[cfg(feature = "serde")]
 pub use crate::language::to_string;
@@ -56,14 +47,8 @@ pub fn parse(json: &str) -> Result<crate::ast::JsonValueNode, String> {
 
 pub use language_macro::json;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::JsonLanguageService;
 // pretty-print is always available through `data-text-pretty`
 // pub use crate::lsp::formatter::JsonFormatter;
 
-/// MCP service implementation.
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_json_mcp;
 pub use lexer::token_type::JsonTokenType;
 pub use parser::element_type::JsonElementType;

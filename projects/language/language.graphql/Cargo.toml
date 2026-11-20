@@ -1,0 +1,17 @@
+[package]
+name = "language-graphql"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Graphql (LSP, MCP, formatter, highlighter adapters over data-text-graphql)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "graphql"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-graphql = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

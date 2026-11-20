@@ -12,9 +12,6 @@ pub mod language;
 pub use crate::language::GraphQLLanguage;
 /// Lexer module for GraphQL.
 pub mod lexer;
-/// LSP module for GraphQL.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser module for GraphQL.
 pub mod parser;
 pub use lexer::token_type::GraphQLTokenType;

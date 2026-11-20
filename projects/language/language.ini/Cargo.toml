@@ -1,0 +1,21 @@
+[package]
+name = "language-ini"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Ini (LSP, MCP, formatter, highlighter adapters over data-text-ini)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "ini"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-ini = { workspace = true }
+futures = { workspace = true }
+language-highlight = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

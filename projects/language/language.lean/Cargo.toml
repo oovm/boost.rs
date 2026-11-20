@@ -1,0 +1,19 @@
+[package]
+name = "language-lean"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Lean (LSP, MCP, formatter, highlighter adapters over data-text-lean)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "lean"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-lean = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

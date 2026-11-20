@@ -13,14 +13,7 @@ keywords = ["parser", "go", "golang", "syntax-analysis"]
 [dependencies]
 data-text-core = { workspace = true }
 data-text-pretty = { workspace = true }
-language-highlight = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
-language-server = { workspace = true, optional = true }
-language-hover = { workspace = true, optional = true }
-language-mcp = { workspace = true, optional = true, features = ["io-std"] }
 serde = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 language-testing = { workspace = true }
@@ -28,8 +21,6 @@ language-testing = { workspace = true }
 [features]
 default = ["serde"]
 serde = ["dep:serde", "data-text-core/serde"]
-lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
-mcp = ["lsp", "language-mcp/io-std"]
 
 [package.metadata.docs.rs]
 all-features = true

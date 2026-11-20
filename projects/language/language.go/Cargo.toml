@@ -1,0 +1,20 @@
+[package]
+name = "language-go"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Go (LSP, MCP, formatter, highlighter adapters over data-text-go)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "go"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-go = { workspace = true }
+data-text-pretty = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true, features = ["io-std"] }
+language-server = { workspace = true }
+tokio = { workspace = true }

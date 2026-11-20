@@ -12,12 +12,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-/// MCP module.
-#[cfg(feature = "mcp")]
-pub mod mcp;
 
 /// Parser module.
 pub mod parser;
@@ -38,12 +32,6 @@ pub fn parse_hlsl(source: &str) -> Result<HlslRoot, String> {
     builder.build(&text, &[], &mut cache).result.map_err(|error| error.to_string())
 }
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::HlslHighlighter;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::HlslLanguageService;
 pub use lexer::token_type::HlslTokenType;
 pub use parser::element_type::HlslElementType;

@@ -1,0 +1,21 @@
+[package]
+name = "language-javascript"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Javascript (LSP, MCP, formatter, highlighter adapters over data-text-javascript)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "javascript"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-javascript = { workspace = true }
+data-text-pretty = { workspace = true }
+futures = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

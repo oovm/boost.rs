@@ -1,0 +1,19 @@
+[package]
+name = "language-less"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Less (LSP, MCP, formatter, highlighter adapters over data-text-less)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "less"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-less = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

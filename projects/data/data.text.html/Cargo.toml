@@ -13,14 +13,7 @@ keywords = ["parser", "html", "web", "markup"]
 [dependencies]
 data-text-core = { workspace = true }
 data-text-css-selector = { workspace = true }
-language-highlight = { workspace = true, optional = true }
-language-format = { workspace = true, optional = true }
-language-server = { workspace = true, optional = true }
-language-mcp = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-language-hover = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
 
 [lib]
 path = "src/lib.rs"
@@ -31,8 +24,6 @@ language-testing = { workspace = true }
 [features]
 default = ["serde"]
 serde = ["dep:serde", "data-text-core/serde"]
-lsp = ["dep:language-server", "dep:language-hover", "language-highlight", "language-format", "dep:futures"]
-mcp = ["lsp", "language-mcp/io-std", "dep:tokio"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -1,0 +1,21 @@
+[package]
+name = "language-idl"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Idl (LSP, MCP, formatter, highlighter adapters over data-text-idl)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "idl"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-idl = { workspace = true }
+futures = { workspace = true }
+language-highlight = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }
