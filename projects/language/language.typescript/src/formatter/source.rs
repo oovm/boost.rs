@@ -2,7 +2,7 @@
 
 use core::range::Range;
 use data_text_core::{Lexer, ParseSession, SourceText};
-use data_text_formatter::{TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
+use language_format::gap::{TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
 
 use super::FormatOptions;
 use data_text_typescript::{
@@ -46,36 +46,36 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
             source.get(right.span.clone()).ok_or_else(|| data_text_core::TextError::format_error("right token span is outside source"))?;
         let mut constraint = conservative_constraint(left_text, gap, right_text);
         if left_text == ">" && is_jsx_attribute_gap(&significant, index, source) {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         if right_text.starts_with(['\'', '"', '`']) && left_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         if right_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         if left_text == "=" && is_jsx_attribute_gap(&significant, index, source) {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         if right_text.starts_with(['\'', '"', '`'])
             && significant.get(index.wrapping_sub(1)).and_then(|token| source.get(token.span.clone())) == Some("=")
             && is_jsx_attribute_gap(&significant, index, source)
         {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         // `?` is ambiguous in a token pair. In `name?: Type` and `name?()` it
         // binds to the member or parameter name, while in
         // `condition ? value : fallback` it is a ternary operator.
         if right_text == "?" {
             constraint = if optional_marker[index + 1] {
-                data_text_formatter::GapConstraint::NoSpace
+                language_format::gap::GapConstraint::NoSpace
             }
             else {
-                data_text_formatter::GapConstraint::RequiredSpace
+                language_format::gap::GapConstraint::RequiredSpace
             };
         }
         if left_text == "?" && matches!(right_text, "(" | "<") && optional_marker[index] {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         if right_text == ":" {
             let mut ternary = false;
@@ -99,18 +99,18 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                     }
                 }
             }
-            constraint = if ternary { data_text_formatter::GapConstraint::RequiredSpace } else { data_text_formatter::GapConstraint::NoSpace };
+            constraint = if ternary { language_format::gap::GapConstraint::RequiredSpace } else { language_format::gap::GapConstraint::NoSpace };
         }
         if right_text == "<" || right_text == ">" {
             let next = significant.get(index + 2).and_then(|token| source.get(token.span.clone()));
             if right_text == "<" && next == Some("/") {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
             else if right_text == "<" && looks_like_type_arguments(&significant, index + 1, source) {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
             else if right_text == ">" && is_type_argument_close(&significant, index + 1, source) {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
             else if right_text == ">"
                 && significant
@@ -118,10 +118,10 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                     .and_then(|token| source.get(token.span.clone()))
                     .is_some_and(|text| text == "<" || text == "/")
             {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
             else if left_text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']')) {
-                constraint = data_text_formatter::GapConstraint::RequiredSpace;
+                constraint = language_format::gap::GapConstraint::RequiredSpace;
             }
         }
 
@@ -136,13 +136,13 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                         || text.chars().last().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$' | ')' | ']'))
                 });
             if !right_text.is_empty() && comparison && right_text != "/" && !matches!(right_text, ";" | "," | ")" | "]" | "." | "?") {
-                constraint = data_text_formatter::GapConstraint::RequiredSpace;
+                constraint = language_format::gap::GapConstraint::RequiredSpace;
             }
             if generic_angle && left_text == ">" && right_text == "{" {
-                constraint = data_text_formatter::GapConstraint::RequiredSpace;
+                constraint = language_format::gap::GapConstraint::RequiredSpace;
             }
             else if generic_angle && (left_text == "<" || matches!(right_text, "(" | ")" | "," | ";" | ">" | ">>" | "[")) {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
         }
         // `<<`, `>>` and `>>>` are shifts everywhere except where `>>` closes
@@ -150,18 +150,18 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         if matches!(right_text, "<<" | ">>" | ">>>") {
             let type_close = matches!(right_text, ">>" | ">>>") && is_type_argument_close(&significant, index + 1, source);
             constraint =
-                if type_close { data_text_formatter::GapConstraint::NoSpace } else { data_text_formatter::GapConstraint::RequiredSpace };
+                if type_close { language_format::gap::GapConstraint::NoSpace } else { language_format::gap::GapConstraint::RequiredSpace };
         }
         // Shift assignment is one operator, but the lexer emits `>>>=` as
         // `>>>` + `=`, so that compound gap stays closed. A `>>>` that closes
         // nested type arguments still separates from the assignment.
         if left_text == ">>>" && right_text == "=" && !is_type_argument_close(&significant, index, source) {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         // `!` is the logical not operator here, so a regex literal after it binds
         // tight: `!/^\d+$/.test(value)`, not `! /^\d+$/.test(value)`.
         if right.kind == TypeScriptTokenType::RegexLiteral && matches!(left_text, "!" | "~") {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         if matches!(left_text, "+" | "-") {
             let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
@@ -215,7 +215,7 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                 ),
             };
             if prefix_operand {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
         }
         // `++`/`--` spacing is fully handled by `needs_space`: a prefix `++`
@@ -227,7 +227,7 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
             || (left_text == "]" && right_text == "of")
             || (left_text == ")" && right_text.chars().next().is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '$')))
         {
-            constraint = data_text_formatter::GapConstraint::RequiredSpace;
+            constraint = language_format::gap::GapConstraint::RequiredSpace;
         }
         // A reserved word used as a property or member name is not a keyword, so
         // `obj.catch(arg)` and `class A { delete(arg) { … } }` must not gain a
@@ -238,27 +238,27 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
             let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
             let property = matches!(previous, Some("." | "?."));
             if property || is_member_name_position(&significant, index, source) {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
         }
         // Generator markers stay attached to their keyword: `function*`,
         // `yield*` and `async*`.
         if right_text == "*" && matches!(left_text, "function" | "yield" | "async") {
-            constraint = data_text_formatter::GapConstraint::NoSpace;
+            constraint = language_format::gap::GapConstraint::NoSpace;
         }
         // A member call named `of` stays attached, while the `for … of`
         // keyword keeps its space before a parenthesized iterable.
         if right_text == "(" && left_text == "of" {
             let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
             if matches!(previous, Some("." | "?.")) {
-                constraint = data_text_formatter::GapConstraint::NoSpace;
+                constraint = language_format::gap::GapConstraint::NoSpace;
             }
         }
         // `readonly` is a type operator in `readonly [a, b]`, not a member name.
         if matches!(right_text, "[" | "{" | "(") && left_text == "readonly" {
             let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
             if !matches!(previous, Some("." | "?.")) {
-                constraint = data_text_formatter::GapConstraint::RequiredSpace;
+                constraint = language_format::gap::GapConstraint::RequiredSpace;
             }
         }
         // A statement body that starts with `(` after a control-flow header
@@ -276,7 +276,7 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                                 .and_then(|before| significant.get(before))
                                 .and_then(|token| source.get(token.span.clone()));
                             if matches!(keyword, Some("if" | "for" | "while" | "switch" | "catch" | "with")) {
-                                constraint = data_text_formatter::GapConstraint::RequiredSpace;
+                                constraint = language_format::gap::GapConstraint::RequiredSpace;
                             }
                             break;
                         }
@@ -290,7 +290,7 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
         if left_text == "/" && right_text.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic()) {
             let previous = index.checked_sub(1).and_then(|previous| significant.get(previous)).and_then(|token| source.get(token.span.clone()));
             if previous != Some("<") {
-                constraint = data_text_formatter::GapConstraint::RequiredSpace;
+                constraint = language_format::gap::GapConstraint::RequiredSpace;
             }
         }
         if gap.contains('\n')
@@ -300,7 +300,7 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
             || right_text.starts_with("/*")
             || (source.starts_with("#!") && left.span.start < source.find('\n').unwrap_or(source.len()))
         {
-            constraint = data_text_formatter::GapConstraint::Preserve;
+            constraint = language_format::gap::GapConstraint::Preserve;
         }
         gaps.push((TokenGap { left: left_text, source: gap, right: right_text, span }, constraint));
     }

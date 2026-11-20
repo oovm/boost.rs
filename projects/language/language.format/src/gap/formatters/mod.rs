@@ -1,6 +1,6 @@
 use data_text_core::Range;
 
-use crate::{config::GapConstraint, errors::FormatResult};
+use crate::gap::{config::GapConstraint, errors::FormatResult};
 
 /// A source edit produced by a formatter gap decision.
 #[derive(Debug, Clone, PartialEq, Eq)]

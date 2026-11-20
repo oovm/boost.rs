@@ -6,4 +6,4 @@ Public module: `language_valkyrie::formatter` (CST rules live in private `format
 - [`FormatError`](error.rs) — formatting failure message
 - [`format_source`](engine.rs) — `source` in, formatted `String` out
 
-Pipeline: lossless `ValkyrieLexer` → token-gap rules via `data_text_formatter` → `apply_edits`.
+Pipeline: lossless `ValkyrieLexer` → token-gap rules via `language_format::gap` → `apply_edits`.

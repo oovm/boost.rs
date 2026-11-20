@@ -32,7 +32,6 @@ compiler-types = { workspace = true }
 interpreter-vm-ovm = { workspace = true }
 data-text-awsl = { workspace = true }
 data-text-core = { workspace = true }
-data-text-formatter = { workspace = true }
 language-format = { workspace = true, features = ["serde"] }
 language-highlight = { workspace = true }
 data-text-valkyrie = { workspace = true }

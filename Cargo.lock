@@ -1826,13 +1826,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "data-text-formatter"
-version = "0.1.0"
-dependencies = [
- "data-text-core",
-]
-
-[[package]]
 name = "data-text-fortran"
 version = "0.1.0"
 dependencies = [
@@ -5169,7 +5162,6 @@ dependencies = [
  "data-binary-zip",
  "data-text-awsl",
  "data-text-core",
- "data-text-formatter",
  "language-format",
  "language-valkyrie",
  "serde",
@@ -5314,8 +5306,8 @@ name = "language-typescript"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "data-text-formatter",
  "data-text-typescript",
+ "language-format",
  "serde",
 ]
 
@@ -5342,7 +5334,6 @@ dependencies = [
  "data-binary-zip",
  "data-text-awsl",
  "data-text-core",
- "data-text-formatter",
  "data-text-valkyrie",
  "data-text-von",
  "document-formats",
@@ -5375,7 +5366,6 @@ name = "language-von"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "data-text-formatter",
  "data-text-von",
  "language-format",
  "serde",

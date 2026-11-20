@@ -1,6 +1,6 @@
 //! AWSL markup token-gap adapter (lossless scan until parser lands).
 
-use data_text_formatter::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
+use language_format::gap::{GapConstraint, TokenGap, apply_edits, conservative_constraint, edits_for_gaps};
 
 use super::FormatOptions;
 

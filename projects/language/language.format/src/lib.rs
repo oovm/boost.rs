@@ -12,4 +12,5 @@
 
 pub mod contract;
 pub mod formatter;
+pub mod gap;
 pub mod printer;

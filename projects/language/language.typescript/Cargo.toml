@@ -13,6 +13,6 @@ serde = ["dep:serde"]
 
 [dependencies]
 data-text-core = { workspace = true }
-data-text-formatter = { workspace = true }
 data-text-typescript = { workspace = true }
+language-format = { workspace = true }
 serde = { workspace = true, optional = true }

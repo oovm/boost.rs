@@ -10,7 +10,6 @@ compiler-emitter = { workspace = true }
 data-binary-zip = { workspace = true }
 data-text-awsl = { workspace = true }
 data-text-core = { workspace = true }
-data-text-formatter = { workspace = true }
 language-format = { workspace = true }
 language-valkyrie = { workspace = true }
 serde = { workspace = true }
