@@ -3,8 +3,6 @@
 
 /// lsp module.
 pub mod lsp;
-/// mcp module.
-pub mod mcp;
 /// formatter module.
 pub mod formatter;
 /// highlighter module.

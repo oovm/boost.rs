@@ -7,10 +7,12 @@
 //   3. `language.*` manifests must not reuse another language's `data-text-*`
 //      implementation; only the shared basics and the crate's own data crate
 //      are allowed.
+//   4. `language.*/src/mcp` is a protocol adapter: it must reuse the same
+//      language service as `src/lsp`, not carry its own semantics or stay empty.
 //
 // Run from the repository root.
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -113,6 +115,17 @@ for (const languageCrate of languageCrates) {
   }
 }
 
+// ---- Gate 4: mcp is a protocol adapter over the lsp service --------------
+for (const file of tracked) {
+  if (!/^projects\/language\/language\.[^/]+\/src\/mcp\/mod\.rs$/.test(file) || !existsSync(resolve(root, file))) {
+    continue
+  }
+  const content = readFileSync(resolve(root, file), 'utf8')
+  if (!/\bcrate::lsp\b|\bsuper::lsp\b/.test(content)) {
+    report(file, 1, 'mcp module must reuse the language service from `crate::lsp` instead of owning semantics')
+  }
+}
+
 if (failures.length > 0) {
   console.error('language boundary violations:')
   for (const failure of failures) {
@@ -123,5 +136,6 @@ if (failures.length > 0) {
 
 console.log(
   `checked ${languageCrates.size} language crates and ${dataCrates.size} data crates: ` +
-    'no service modules on the data side, no reversed or cross-language dependencies',
+    'no service modules on the data side, no reversed or cross-language dependencies, ' +
+    'every mcp adapter reuses its lsp service',
 )

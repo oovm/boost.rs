@@ -2,13 +2,13 @@
 name = "language-racket"
 version.workspace = true
 authors.workspace = true
-description = "Language services for Racket (LSP, MCP, formatter, highlighter adapters over data-text-racket)."
+description = "Language services for Racket (LSP, formatter, highlighter adapters over data-text-racket)."
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
 categories = ["development-tools"]
-keywords = ["lsp", "mcp", "racket"]
+keywords = ["lsp", "racket"]
 
 [dependencies]
 data-text-core = { workspace = true }
