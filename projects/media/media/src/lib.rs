@@ -16,6 +16,8 @@ pub use media_canvas as canvas;
 pub use media_codec as codec;
 #[cfg(feature = "dsp")]
 pub use media_dsp as dsp;
+#[cfg(feature = "gpu")]
+pub use media_gpu as gpu;
 #[cfg(feature = "image")]
 pub use media_image as image;
 #[cfg(feature = "layout")]
