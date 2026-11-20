@@ -120,6 +120,22 @@ impl JsonRpcNotification {
     }
 }
 
+#[cfg(feature = "serde")]
+fn uri_of(args: &JsonValueNode) -> Result<&str, String> {
+    args.get("uri").and_then(|v| v.as_str()).ok_or_else(|| "Missing uri".to_string())
+}
+
+#[cfg(feature = "serde")]
+fn offset_of(args: &JsonValueNode) -> Result<usize, String> {
+    args.get("offset").and_then(|v| v.as_u64()).ok_or_else(|| "Missing offset".to_string()).map(|offset| offset as usize)
+}
+
+/// Projects a language-service result to protocol JSON without reshaping it.
+#[cfg(feature = "serde")]
+fn to_json<T: serde::Serialize>(value: T) -> Result<JsonValueNode, String> {
+    serde_json::to_value(value).map_err(|e| e.to_string())
+}
+
 /// A generic MCP server that wraps a `data.text` language service.
 ///
 /// The `McpServer` provides an interface for LLMs to interact with `data.text`
@@ -322,49 +338,54 @@ where
     /// - `diagnostics`: Returns a list of errors and warnings for the specified file.
     /// - `completion`: Provides code completion suggestions for the current cursor position.
     /// - `symbols`: Lists all document symbols (classes, functions, etc.) in a file.
-    /// - `semantic_search`: Performs a vector-based search over the indexed codebase.
+    /// - `set_file_content`: Writes the given content into the service VFS.
+    /// - `search` / `semantic_search`: Performs a vector-based search over the indexed codebase.
     pub async fn handle_tool_call(&self, name: &str, args: JsonValueNode) -> Result<JsonValueNode, String> {
         match name {
             "hover" => {
-                let uri = args.get("uri").and_then(|v| v.as_str()).ok_or("Missing uri")?;
-                let offset = args.get("offset").and_then(|v| v.as_u64()).ok_or("Missing offset")? as usize;
+                let uri = uri_of(&args)?;
+                let offset = offset_of(&args)?;
 
                 let hover = self.service.hover(uri, Range { start: offset, end: offset }).await;
                 Ok(json!(hover.map(|h| h.contents).unwrap_or_default()))
             }
             "symbols" => {
-                let uri = args.get("uri").and_then(|v| v.as_str()).ok_or("Missing uri")?;
-                let _symbols = self.service.document_symbols(uri).await;
-                // symbols is Vec<DocumentSymbol>, need proper conversion.
-                // For now just returning empty array as placeholder if conversion is complex
-                Ok(json!([]))
+                let uri = uri_of(&args)?;
+                to_json(self.service.document_symbols(uri).await)
             }
             "definition" => {
-                let uri = args.get("uri").and_then(|v| v.as_str()).ok_or("Missing uri")?;
-                let offset = args.get("offset").and_then(|v| v.as_u64()).ok_or("Missing offset")? as usize;
+                let uri = uri_of(&args)?;
+                let offset = offset_of(&args)?;
 
-                let _locs = self.service.definition(uri, Range { start: offset, end: offset }).await;
-                Ok(json!([]))
+                to_json(self.service.definition(uri, Range { start: offset, end: offset }).await)
             }
             "references" => {
-                let uri = args.get("uri").and_then(|v| v.as_str()).ok_or("Missing uri")?;
-                let offset = args.get("offset").and_then(|v| v.as_u64()).ok_or("Missing offset")? as usize;
+                let uri = uri_of(&args)?;
+                let offset = offset_of(&args)?;
 
-                let _locs = self.service.references(uri, Range { start: offset, end: offset }).await;
-                Ok(json!([]))
+                to_json(self.service.references(uri, Range { start: offset, end: offset }).await)
             }
             "diagnostics" => {
-                let uri = args.get("uri").and_then(|v| v.as_str()).ok_or("Missing uri")?;
-                let _diagnostics = self.service.diagnostics(uri).await;
-                Ok(json!([]))
+                let uri = uri_of(&args)?;
+                to_json(self.service.diagnostics(uri).await)
             }
             "completion" => {
-                let uri = args.get("uri").and_then(|v| v.as_str()).ok_or("Missing uri")?;
-                let offset = args.get("offset").and_then(|v| v.as_u64()).ok_or("Missing offset")? as usize;
-                let _items = self.service.completion(uri, offset).await;
-                Ok(json!([]))
+                let uri = uri_of(&args)?;
+                let offset = offset_of(&args)?;
+                to_json(self.service.completion(uri, offset).await)
             }
-            "semantic_search" => {
+            "set_file_content" => {
+                let uri = uri_of(&args)?;
+                let content = args.get("content").and_then(|v| v.as_str()).ok_or("Missing content")?;
+                if self.service.source_for_uri(uri).is_some() {
+                    self.service.did_change(uri, content).await;
+                }
+                else {
+                    self.service.did_open(uri, content).await;
+                }
+                Ok(json!({ "uri": uri, "bytes": content.len() }))
+            }
+            "search" | "semantic_search" => {
                 let searcher = self.searcher.as_ref().ok_or("Semantic search is not enabled")?;
                 let query = args.get("query").and_then(|v| v.as_str()).ok_or("Missing query")?;
                 let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
