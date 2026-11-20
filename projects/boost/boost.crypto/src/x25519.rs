@@ -97,14 +97,20 @@ fn conditional_swap(swap: u64, left: &mut Fe, right: &mut Fe) {
 }
 
 /// GF(2^255-19) 元素，5×51 位肢体，小端。
+///
+/// 同时供 `ed25519` 的 Edwards 坐标使用；只暴露域运算，不暴露肢体表示。
 #[derive(Clone, Copy)]
-struct Fe([u64; 5]);
+pub(crate) struct Fe([u64; 5]);
 
 impl Fe {
-    const ZERO: Self = Self([0, 0, 0, 0, 0]);
-    const ONE: Self = Self([1, 0, 0, 0, 0]);
+    pub(crate) const ZERO: Self = Self([0, 0, 0, 0, 0]);
+    pub(crate) const ONE: Self = Self([1, 0, 0, 0, 0]);
 
-    fn from_bytes(bytes: &[u8; KEY_LEN]) -> Self {
+    pub(crate) fn from_small(value: u64) -> Self {
+        Self([value, 0, 0, 0, 0])
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8; KEY_LEN]) -> Self {
         let load = |offset: usize| -> u64 {
             let mut chunk = [0u8; 8];
             chunk.copy_from_slice(&bytes[offset..offset + 8]);
@@ -113,7 +119,7 @@ impl Fe {
         Self([load(0) & MASK, (load(6) >> 3) & MASK, (load(12) >> 6) & MASK, (load(19) >> 1) & MASK, (load(24) >> 12) & MASK])
     }
 
-    fn to_bytes(self) -> [u8; KEY_LEN] {
+    pub(crate) fn to_bytes(self) -> [u8; KEY_LEN] {
         let limbs = self.canonical();
         let mut out = [0u8; KEY_LEN];
         let mut accumulator = 0u128;
@@ -172,7 +178,7 @@ impl Fe {
         out
     }
 
-    fn add(self, other: &Self) -> Self {
+    pub(crate) fn add(self, other: &Self) -> Self {
         let mut out = [0u64; 5];
         for index in 0..5 {
             out[index] = self.0[index] + other.0[index];
@@ -180,7 +186,7 @@ impl Fe {
         Self(out)
     }
 
-    fn sub(self, other: &Self) -> Self {
+    pub(crate) fn sub(self, other: &Self) -> Self {
         // 加 4p 保证不借位；超出 51 位的部分由后续乘法进位处理。
         const P: [u64; 5] = [0x7ffffffffffed, 0x7ffffffffffff, 0x7ffffffffffff, 0x7ffffffffffff, 0x7ffffffffffff];
         let mut out = [0u64; 5];
@@ -190,7 +196,7 @@ impl Fe {
         Self(out)
     }
 
-    fn mul(self, other: &Self) -> Self {
+    pub(crate) fn mul(self, other: &Self) -> Self {
         let mut products = [0u128; 5];
         for (left, left_limb) in self.0.iter().enumerate() {
             for (right, right_limb) in other.0.iter().enumerate() {
@@ -215,7 +221,7 @@ impl Fe {
         Self::from_wide(products)
     }
 
-    fn square(self) -> Self {
+    pub(crate) fn square(self) -> Self {
         self.mul(&self)
     }
 
@@ -235,7 +241,7 @@ impl Fe {
     }
 
     /// 乘法逆元 `x^(p-2)`（Fermat）。
-    fn invert(self) -> Self {
+    pub(crate) fn invert(self) -> Self {
         // p - 2 = 2^255 - 21，小端字节：0xeb 后接 30 个 0xff，最后 0x7f。
         let mut exponent = [0xffu8; KEY_LEN];
         exponent[0] = 0xeb;
@@ -250,6 +256,29 @@ impl Fe {
             base = base.square();
         }
         result
+    }
+
+    /// 加法逆元 `-self mod p`。
+    pub(crate) fn neg(self) -> Self {
+        Self::ZERO.sub(&self)
+    }
+
+    /// 以 32 字节小端指数做变时幂运算，只用于公开数据的验签。
+    pub(crate) fn pow_bytes(self, exponent: &[u8; KEY_LEN]) -> Self {
+        let mut result = Self::ONE;
+        let mut base = self;
+        for position in 0..255 {
+            if (exponent[position / 8] >> (position % 8)) & 1 == 1 {
+                result = result.mul(&base);
+            }
+            base = base.square();
+        }
+        result
+    }
+
+    /// 规范编码的最低位，用于压缩点的符号位。
+    pub(crate) fn is_odd(self) -> bool {
+        self.to_bytes()[0] & 1 == 1
     }
 }
 

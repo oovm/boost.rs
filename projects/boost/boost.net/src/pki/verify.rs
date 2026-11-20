@@ -101,8 +101,12 @@ pub fn verify_signature(cert: &Certificate<'_>, issuer: &PublicKey) -> Result<()
             };
             result.map_err(|_| VerifyError::BadSignature)
         }
+        (PublicKey::Ed25519(key), SignatureAlgorithm::Ed25519) => {
+            boost_crypto::ed25519::verify(key, &cert.tbs, cert.signature).map_err(|_| VerifyError::BadSignature)
+        }
         (PublicKey::Ec { .. }, _) => Err(VerifyError::AlgorithmMismatch),
         (PublicKey::Rsa { .. }, _) => Err(VerifyError::AlgorithmMismatch),
+        (PublicKey::Ed25519(_), _) => Err(VerifyError::AlgorithmMismatch),
     }
 }
 

@@ -44,6 +44,8 @@ pub enum PublicKey {
         /// Public exponent.
         exponent: u64,
     },
+    /// An Ed25519 public key, the raw 32-byte point encoding.
+    Ed25519(Vec<u8>),
 }
 
 impl PublicKey {
@@ -80,6 +82,14 @@ impl PublicKey {
             let exponent = rsa_reader.expect_u64()?;
             Ok(Self::Rsa { modulus: modulus.to_vec(), exponent })
         }
+        else if oid.dotted() == "1.3.101.112" {
+            // Ed25519 has no algorithm parameters and carries the raw point in the bit string.
+            let bit = body.expect_bitstring()?;
+            if bit.unused_bits != 0 || bit.bytes.len() != 32 {
+                return Err(DerError::new(DerErrorKind::MalformedContent, spki.offset));
+            }
+            Ok(Self::Ed25519(bit.bytes.to_vec()))
+        }
         else {
             Err(DerError::new(DerErrorKind::MalformedContent, algorithm.offset))
         }
@@ -108,6 +118,10 @@ impl PublicKey {
                 });
                 outer.write_bitstring(&rsa.finish(), 0);
             }
+            PublicKey::Ed25519(key) => {
+                outer.sequence(|algorithm| algorithm.write_oid(&ed25519_oid()));
+                outer.write_bitstring(key, 0);
+            }
         });
         writer.finish()
     }
@@ -116,7 +130,12 @@ impl PublicKey {
     pub const fn ec_curve(&self) -> Option<EcCurve> {
         match self {
             Self::Ec { curve, .. } => Some(*curve),
-            Self::Rsa { .. } => None,
+            Self::Rsa { .. } | Self::Ed25519(_) => None,
         }
     }
+}
+
+/// The Ed25519 `AlgorithmIdentifier` OID.
+fn ed25519_oid() -> Oid {
+    Oid::from_dotted("1.3.101.112").expect("the Ed25519 OID is a valid arc list")
 }

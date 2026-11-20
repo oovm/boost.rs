@@ -16,6 +16,7 @@ use std::{
 
 use boost_crypto::{
     ecdsa::{p256, p384},
+    ed25519,
     hash::sha256,
     mac::hmac_sha256,
     rsa,
@@ -48,6 +49,7 @@ const SIG_RSA_PSS_SHA256: u16 = 0x0804;
 const SIG_RSA_PSS_SHA384: u16 = 0x0805;
 const SIG_RSA_PKCS1_SHA256: u16 = 0x0401;
 const SIG_RSA_PKCS1_SHA384: u16 = 0x0501;
+const SIG_ED25519: u16 = 0x0807;
 
 const HT_SERVER_HELLO: u8 = 2;
 const HT_ENCRYPTED_EXTENSIONS: u8 = 8;
@@ -73,6 +75,51 @@ pub struct ClientConfig<'a> {
     pub timeout: Duration,
 }
 
+/// The ephemeral X25519 key pair of one handshake.
+///
+/// A [`ClientHelloHook`] receives this view so it can derive a shared secret
+/// against a static peer key before the ClientHello leaves the machine.
+#[derive(Clone, Copy)]
+pub struct EphemeralKey<'a> {
+    pair: &'a KeyPair,
+}
+
+impl EphemeralKey<'_> {
+    /// The public key the ClientHello carries in `key_share`.
+    pub fn public(&self) -> &[u8; 32] {
+        self.pair.public()
+    }
+
+    /// ECDH against a peer public key.
+    pub fn shared(&self, peer: &[u8; 32]) -> TlsResult<[u8; 32]> {
+        self.pair.shared(peer)
+    }
+}
+
+/// A hook that rewrites the completed ClientHello before it is sent.
+pub trait ClientHelloHook {
+    /// `hello` is the whole handshake message including its four-byte header,
+    /// and `random` is the client random it already carries.
+    fn rewrite(&self, hello: &mut Vec<u8>, random: &[u8; 32], key: EphemeralKey<'_>) -> Result<(), String>;
+}
+
+/// A replacement for the default chain and hostname validation.
+pub trait CertificatePolicy {
+    /// Return `Ok(())` only when the presented chain is acceptable for `hostname`.
+    fn verify(&self, chain: &[Certificate<'_>], hostname: &str) -> Result<(), String>;
+}
+
+/// Per-connection deviations from the default handshake.
+#[derive(Default)]
+pub struct HandshakeOptions<'a> {
+    /// ALPN protocols to offer; the default is `http/1.1`.
+    pub alpn: Option<&'a [&'a str]>,
+    /// ClientHello rewriter applied after the message is built.
+    pub hello: Option<&'a dyn ClientHelloHook>,
+    /// Replacement for certificate chain validation.
+    pub policy: Option<&'a dyn CertificatePolicy>,
+}
+
 /// A connected TLS 1.3 client carrying application traffic.
 pub struct TlsClient<S> {
     wire: Wire<S>,
@@ -86,19 +133,29 @@ pub struct TlsClient<S> {
 }
 
 impl TlsClient<TcpStream> {
-    /// Dial `address` and perform the full handshake.
+    /// Dial `address` and perform the full handshake with the default options.
     pub fn connect<A: ToSocketAddrs>(config: &ClientConfig<'_>, address: A) -> TlsResult<Self> {
+        Self::connect_with(config, &HandshakeOptions::default(), address)
+    }
+
+    /// Dial `address` and perform the full handshake with explicit options.
+    pub fn connect_with<A: ToSocketAddrs>(config: &ClientConfig<'_>, options: &HandshakeOptions<'_>, address: A) -> TlsResult<Self> {
         let stream = TcpStream::connect(address).map_err(TlsError::Io)?;
         stream.set_read_timeout(Some(config.timeout)).map_err(TlsError::Io)?;
         stream.set_write_timeout(Some(config.timeout)).map_err(TlsError::Io)?;
         stream.set_nodelay(true).map_err(TlsError::Io)?;
-        Self::handshake(config, stream)
+        Self::handshake_with(config, options, stream)
     }
 }
 
 impl<S: Read + Write> TlsClient<S> {
     /// Perform the full handshake over an already connected stream.
     pub fn handshake(config: &ClientConfig<'_>, stream: S) -> TlsResult<Self> {
+        Self::handshake_with(config, &HandshakeOptions::default(), stream)
+    }
+
+    /// Perform the full handshake, applying the given per-connection options.
+    pub fn handshake_with(config: &ClientConfig<'_>, options: &HandshakeOptions<'_>, stream: S) -> TlsResult<Self> {
         let mut wire = Wire::new(stream);
         let keypair = KeyPair::generate()?;
         let mut transcript = Vec::new();
@@ -107,7 +164,10 @@ impl<S: Read + Write> TlsClient<S> {
         let mut cookie: Option<Vec<u8>> = None;
         let mut server_share: Option<[u8; 32]> = None;
         for attempt in 0..2 {
-            let client_hello = build_client_hello(config.hostname, keypair.public(), cookie.as_deref())?;
+            let (mut client_hello, client_random) = build_client_hello(config.hostname, keypair.public(), cookie.as_deref(), options.alpn)?;
+            if let Some(hook) = options.hello {
+                hook.rewrite(&mut client_hello, &client_random, EphemeralKey { pair: &keypair }).map_err(TlsError::Protocol)?;
+            }
             transcript.extend_from_slice(&client_hello);
             // The initial record carries the legacy 0x0301 version per RFC 8446 §5.1.
             wire.write_record_version(0x16, 0x03, 0x01, &client_hello)?;
@@ -182,13 +242,17 @@ impl<S: Read + Write> TlsClient<S> {
         if parsed.is_empty() {
             return Err(TlsError::Certificate("empty certificate message".to_string()));
         }
-        let intermediates: Vec<&Certificate<'_>> = parsed[1..].iter().collect();
-        let now = DateTime::now_utc();
-        verify_chain(&parsed[0], &intermediates, config.anchors, &now).map_err(|error| TlsError::Certificate(error.to_string()))?;
-        if !matches_dns(&parsed[0], config.hostname) {
-            return Err(TlsError::Certificate(format!("{} is not valid for {}", config.hostname, parsed[0].subject)));
+        match options.policy {
+            Some(policy) => policy.verify(&parsed, config.hostname).map_err(TlsError::Certificate)?,
+            None => {
+                let intermediates: Vec<&Certificate<'_>> = parsed[1..].iter().collect();
+                let now = DateTime::now_utc();
+                verify_chain(&parsed[0], &intermediates, config.anchors, &now).map_err(|error| TlsError::Certificate(error.to_string()))?;
+                if !matches_dns(&parsed[0], config.hostname) {
+                    return Err(TlsError::Certificate(format!("{} is not valid for {}", config.hostname, parsed[0].subject)));
+                }
+            }
         }
-
         verify_certificate_verify(verify_scheme, &parsed[0].public_key, &cv_transcript_hash, &verify_signature)?;
 
         let server_finished = server_finished.ok_or_else(|| TlsError::Protocol("no server Finished".to_string()))?;
@@ -438,7 +502,7 @@ fn extension(out: &mut Vec<u8>, kind: u16, body: &[u8]) {
     out.extend_from_slice(body);
 }
 
-fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]>) -> TlsResult<Vec<u8>> {
+fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]>, alpn: Option<&[&str]>) -> TlsResult<(Vec<u8>, [u8; 32])> {
     let mut random = [0u8; 32];
     let mut session_id = [0u8; 32];
     let mut entropy = Secure::system();
@@ -456,13 +520,23 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
         extension(&mut extensions, EXT_SERVER_NAME, &sni);
     }
     extension(&mut extensions, EXT_SUPPORTED_GROUPS, &[0, 6, 0, 29, 0, 23, 0, 24]);
-    extension(&mut extensions, EXT_SIGNATURE_ALGORITHMS, &[0, 12, 4, 3, 5, 3, 8, 4, 8, 5, 4, 1, 5, 1]);
+    extension(&mut extensions, EXT_SIGNATURE_ALGORITHMS, &[0, 14, 4, 3, 5, 3, 8, 4, 8, 5, 4, 1, 5, 1, 8, 7]);
     {
-        let mut alpn = Vec::new();
-        alpn.extend_from_slice(&[0, 9]);
-        alpn.push(8);
-        alpn.extend_from_slice(b"http/1.1");
-        extension(&mut extensions, EXT_ALPN, &alpn);
+        let mut protocols = Vec::new();
+        for protocol in alpn.unwrap_or(&["http/1.1"]) {
+            if protocol.len() > u8::MAX as usize {
+                return Err(TlsError::Unsupported(format!("ALPN protocol name of {} bytes", protocol.len())));
+            }
+            protocols.push(protocol.len() as u8);
+            protocols.extend_from_slice(protocol.as_bytes());
+        }
+        if protocols.len() > u16::MAX as usize {
+            return Err(TlsError::Unsupported("ALPN protocol list is too long".to_string()));
+        }
+        let mut body = Vec::with_capacity(2 + protocols.len());
+        body.extend_from_slice(&(protocols.len() as u16).to_be_bytes());
+        body.extend_from_slice(&protocols);
+        extension(&mut extensions, EXT_ALPN, &body);
     }
     if let Some(cookie) = cookie {
         let mut body = Vec::new();
@@ -498,7 +572,7 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
     message.push(1);
     message.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
     message.extend_from_slice(&body);
-    Ok(message)
+    Ok((message, random))
 }
 
 /// The key share and HelloRetryRequest cookie extracted from a ServerHello.
@@ -618,6 +692,9 @@ fn verify_certificate_verify(scheme: u16, key: &PublicKey, transcript_hash: &[u8
             let verifying = p384::VerifyingKey::from_sec1_bytes(point).map_err(|_| TlsError::Certificate("bad leaf key".to_string()))?;
             verifying.verify_der(&content, signature).map_err(|_| TlsError::Certificate("CertificateVerify signature invalid".to_string()))
         }
+        (SIG_ED25519, PublicKey::Ed25519(key)) => {
+            ed25519::verify(key, &content, signature).map_err(|_| TlsError::Certificate("CertificateVerify signature invalid".to_string()))
+        }
         (SIG_RSA_PKCS1_SHA256 | SIG_RSA_PSS_SHA256 | SIG_RSA_PKCS1_SHA384 | SIG_RSA_PSS_SHA384, PublicKey::Rsa { modulus, exponent }) => {
             let key =
                 rsa::PublicKey::from_spki_der(&spki_der(modulus, exponent)).map_err(|_| TlsError::Certificate("bad RSA key".to_string()))?;
@@ -664,7 +741,7 @@ mod tests {
 
     #[test]
     fn client_hello_is_a_well_formed_handshake_message() {
-        let hello = build_client_hello("example.com", &[7u8; 32], None).expect("hello");
+        let hello = build_client_hello("example.com", &[7u8; 32], None, None).expect("hello").0;
         assert_eq!(hello[0], 1);
         let length = u32::from_be_bytes([0, hello[1], hello[2], hello[3]]) as usize;
         assert_eq!(length, hello.len() - 4);

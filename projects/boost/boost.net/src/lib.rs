@@ -7,6 +7,8 @@ extern crate alloc;
 pub mod http;
 #[cfg(feature = "tls")]
 pub mod pki;
+#[cfg(feature = "tls")]
+pub mod reality;
 pub mod tls;
 #[cfg(feature = "std")]
 pub mod ws;

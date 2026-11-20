@@ -17,6 +17,8 @@ pub enum SignatureAlgorithm {
     RsaPssSha256,
     /// RSA PSS with SHA-384 and full-length salt.
     RsaPssSha384,
+    /// Ed25519 (RFC 8032); the digest is internal, so there is no separate hash step.
+    Ed25519,
 }
 
 impl SignatureAlgorithm {
@@ -28,14 +30,16 @@ impl SignatureAlgorithm {
             Self::RsaSha256 => oids::sha256_with_rsa(),
             Self::RsaSha384 => oids::sha384_with_rsa(),
             Self::RsaPssSha256 | Self::RsaPssSha384 => oids::rsa_pss(),
+            Self::Ed25519 => Oid::from_dotted("1.3.101.112").expect("the Ed25519 OID is a valid arc list"),
         }
     }
 
-    /// The digest size this algorithm hashes to.
+    /// The digest size this algorithm hashes to; Ed25519 hashes internally and reports zero.
     pub const fn digest_len(self) -> usize {
         match self {
             Self::EcdsaSha256 | Self::RsaSha256 | Self::RsaPssSha256 => 32,
             Self::EcdsaSha384 | Self::RsaSha384 | Self::RsaPssSha384 => 48,
+            Self::Ed25519 => 0,
         }
     }
 
@@ -63,6 +67,7 @@ impl SignatureAlgorithm {
                 }
                 if hash == "2.16.840.1.101.3.4.2.2" { Ok(Self::RsaPssSha384) } else { Ok(Self::RsaPssSha256) }
             }
+            "1.3.101.112" => Ok(Self::Ed25519),
             _ => Err(DerError::new(DerErrorKind::MalformedContent, element.offset)),
         }
     }
@@ -76,6 +81,7 @@ impl SignatureAlgorithm {
                 Self::EcdsaSha256 | Self::EcdsaSha384 | Self::RsaSha256 | Self::RsaSha384 => outer.write_null(),
                 Self::RsaPssSha256 => write_pss_params(outer, &oids::sha256(), 32),
                 Self::RsaPssSha384 => write_pss_params(outer, &oids::sha384(), 48),
+                Self::Ed25519 => {}
             }
         });
         writer.finish()

@@ -5,7 +5,7 @@
 
 use crate::{
     CryptoError, Result,
-    hash::{sha1, sha256, sha384},
+    hash::{sha1, sha256, sha384, sha512},
 };
 
 /// SHA-1 的分组长度（HMAC 的 ipad/opad 长度）。
@@ -23,6 +23,11 @@ const SHA384_BLOCK: usize = 128;
 /// SHA-384 的摘要长度。
 const SHA384_LEN: usize = 48;
 
+/// SHA-512 的分组长度。
+const SHA512_BLOCK: usize = 128;
+/// SHA-512 的摘要长度。
+const SHA512_LEN: usize = 64;
+
 /// 计算 HMAC-SHA1（20 字节）。
 ///
 /// 只为需要它的既有协议而提供（如部分云厂商的对象存储签名），新设计优先用 SHA-256。
@@ -38,6 +43,11 @@ pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; 32]> {
 /// 计算 HMAC-SHA384（48 字节）。
 pub fn hmac_sha384(key: &[u8], data: &[u8]) -> Result<[u8; 48]> {
     Ok(hmac::<{ SHA384_BLOCK }, { SHA384_LEN }>(key, data, sha384))
+}
+
+/// 计算 HMAC-SHA512（64 字节）。
+pub fn hmac_sha512(key: &[u8], data: &[u8]) -> Result<[u8; 64]> {
+    Ok(hmac::<{ SHA512_BLOCK }, { SHA512_LEN }>(key, data, sha512))
 }
 
 /// HMAC 本身对任意长度 key 都有定义，内部实现不产生失败。

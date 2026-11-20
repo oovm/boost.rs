@@ -13,6 +13,7 @@
 
 pub mod aead;
 pub mod ecdsa;
+pub mod ed25519;
 pub mod encoding;
 pub mod hash;
 pub mod kdf;
