@@ -98,8 +98,10 @@ pub fn execute_ops(
                 outcome.affected +=
                     update_rows(table, assignments, predicate.as_ref(), contract, declared, records, bound_values, placement, index)?;
             }
-            WriteOp::Delete { table, predicate } => {
-                outcome.affected += delete_rows(table, predicate.as_ref(), contract, records, bound_values, index)?;
+            WriteOp::Delete { table, predicate, returning } => {
+                let (affected, rows) = delete_rows(table, predicate.as_ref(), returning.as_ref(), contract, records, bound_values, index)?;
+                outcome.affected += affected;
+                outcome.rows.extend(rows);
             }
         }
     }
@@ -684,13 +686,26 @@ fn update_rows(
 fn delete_rows(
     table: &str,
     predicate: Option<&Pred>,
+    returning: Option<&ReturningProjection>,
     contract: &ResolvedContract,
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     index: Option<&constraints::WriteIndex<'_>>,
-) -> Result<usize> {
+) -> Result<(usize, Vec<QueryRow>)> {
     let (entry, storage) = resolve_table(contract, table)?;
     let pk_field = catalog::primary_field_name(entry)?.to_string();
+    // `Star` maps to no field list so `project_returned` hands back the whole
+    // doomed row, mirroring the INSERT path.
+    let returning_fields = match returning {
+        None | Some(ReturningProjection::Star) => None,
+        Some(ReturningProjection::Fields(fields)) => {
+            for field in fields {
+                validate_returning(entry, table, &field.expr)?;
+            }
+            Some(fields.as_slice())
+        }
+    };
+    let has_returning = returning.is_some();
     let predicate =
         predicate.map(|predicate| exec::resolve_subquery_predicates(predicate, None, &ReadRows::owned(records), bound_values)).transpose()?;
     let predicate = predicate.as_ref();
@@ -707,6 +722,7 @@ fn delete_rows(
         }
     }
     let mut removed = 0;
+    let mut returned = Vec::new();
     for (key, row) in &doomed {
         // A deleted row's keys must leave the shared index, or a later insert
         // of the same value would collide with a ghost entry.
@@ -718,7 +734,12 @@ fn delete_rows(
         }
         if remove_row(records, key) {
             removed += 1;
+            // `RETURNING` reads the row's own stored fields, so it projects
+            // from the doomed copy taken before the removal.
+            if has_returning {
+                returned.push(project_returned(returning_fields, row, table, contract, records, bound_values)?);
+            }
         }
     }
-    Ok(removed)
+    Ok((removed, returned))
 }

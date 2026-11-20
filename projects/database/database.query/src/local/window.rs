@@ -302,7 +302,7 @@ pub fn write_windows(
                     windows.push(table_window(&storage));
                 }
             }
-            WriteOp::Delete { table, predicate: Some(predicate) } => {
+            WriteOp::Delete { table, predicate: Some(predicate), .. } => {
                 let entry = table_type_by_name(contract, table)?;
                 let storage = table_row_key_name(contract, table)?;
                 let Some(window) = predicate_window(predicate, entry, &storage, bound_values)?

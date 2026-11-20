@@ -816,26 +816,31 @@ pub(crate) fn execute_delete(
     }
 
     // 事务内 DELETE 也要捕获 pre-image 供 OCC 校验；有 remaining_predicate 时还必须
-    // 先 Get 拿到行评估，不通过就不删。索引条目要从被删的行上摘除，所以同样需要它。
-    let pre_image = if transaction.is_some() || plan.remaining_predicate.is_some() || indexes.is_active() {
+    // 先 Get 拿到行评估，不通过就不删。索引条目要从被删的行上摘除，所以同样需要它；
+    // RETURNING 也需要整行解码后才能对删除前的行求值。
+    let mut deleted_row: Option<RowFieldValues> = None;
+    let pre_image = if transaction.is_some() || plan.remaining_predicate.is_some() || indexes.is_active() || plan.returning.is_some() {
         let get_cmd = KeyValueCommand { namespace: namespace.clone(), key: plan.rowid.clone(), action: KeyValueAction::Get };
         let batch_result = read_batch(executor, transaction, &[get_cmd])?;
         let existing_bytes = match batch_result.into_iter().next() {
             Some(database_query::cluster_kv::KeyValueResult::Get(Some(b))) => b,
             // 行已不存在 — 也是 0 影响行
-            _ => return Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: 0 }),
+            _ => return returning_result(&plan.returning, &plan.field_types, Vec::new(), 0, dialect),
         };
         if let Some(ref predicate) = plan.remaining_predicate {
             let needed_ids = expression_needed_field_ids(&[], &[], Some(predicate));
             let row = decode_row_fields(&existing_bytes, &needed_ids)?;
             let v = eval_expression(predicate, &row, &plan.field_types, dialect)?;
             if !truthy(&v) {
-                return Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: 0 });
+                return returning_result(&plan.returning, &plan.field_types, Vec::new(), 0, dialect);
             }
         }
-        if indexes.is_active() {
+        if indexes.is_active() || plan.returning.is_some() {
             let row = decode_row(&existing_bytes)?;
-            indexes.remember_remove(Some(&row), &plan.rowid);
+            if indexes.is_active() {
+                indexes.remember_remove(Some(&row), &plan.rowid);
+            }
+            deleted_row = Some(row);
         }
         Some(existing_bytes)
     }
@@ -847,7 +852,8 @@ pub(crate) fn execute_delete(
     let command = KeyValueCommand { namespace, key: plan.rowid.clone(), action: KeyValueAction::Delete };
     // 事务内 DELETE 同样交给 OCC：pre-image 已被并发事务改写时 COMMIT 被拒绝。
     let written = commit_row_write(executor, transaction, command, CommitCondition::ValueEquals(pre_image), &index_commands, "delete")?;
-    Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: u64::from(written) })
+    let deleted = if written { deleted_row.into_iter().collect() } else { Vec::new() };
+    returning_result(&plan.returning, &plan.field_types, deleted, u64::from(written), dialect)
 }
 
 /// 一条语句扫描加谓词求值后命中的一行：最终写入命令与扫描时看到的 pre-image。
@@ -1021,6 +1027,7 @@ pub(crate) fn execute_delete_scan(
         indexes.backfill(&stored)?;
     }
     let mut changes = Vec::with_capacity(scanned.len());
+    let mut deleted: Vec<RowFieldValues> = Vec::new();
     let predicate_ids = plan.predicate.as_ref().map(|predicate| expression_needed_field_ids(&[], &[], Some(predicate)));
     for (rowid, pre_image) in scanned {
         if let (Some(predicate), Some(ids)) = (&plan.predicate, &predicate_ids) {
@@ -1030,9 +1037,14 @@ pub(crate) fn execute_delete_scan(
                 continue;
             }
         }
-        if indexes.is_active() {
+        if indexes.is_active() || plan.returning.is_some() {
             let row = decode_row(&pre_image)?;
-            indexes.remember_remove(Some(&row), &rowid);
+            if indexes.is_active() {
+                indexes.remember_remove(Some(&row), &rowid);
+            }
+            if plan.returning.is_some() {
+                deleted.push(row);
+            }
         }
         changes.push(StatementChange {
             command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Delete },
@@ -1041,7 +1053,7 @@ pub(crate) fn execute_delete_scan(
     }
     let index_commands = indexes.take_commands();
     let affected = apply_statement_changes(executor, transaction, changes, index_commands, &namespace, "delete_scan")?;
-    Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
+    returning_result(&plan.returning, &plan.field_types, deleted, affected, dialect)
 }
 
 /// `DELETE ... USING`：目标表全扫 × USING 源行做交叉连接，谓词命中后删除目标行。
@@ -1087,6 +1099,7 @@ pub(crate) fn execute_delete_using(
         indexes.backfill(&stored)?;
     }
     let mut changes = Vec::new();
+    let mut deleted: Vec<RowFieldValues> = Vec::new();
     for (rowid, pre_image) in scanned {
         let row = decode_row(&pre_image)?;
         let matched = if combinations.is_empty() {
@@ -1108,6 +1121,9 @@ pub(crate) fn execute_delete_using(
         if indexes.is_active() {
             indexes.remember_remove(Some(&row), &rowid);
         }
+        if plan.returning.is_some() {
+            deleted.push(row);
+        }
         changes.push(StatementChange {
             command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Delete },
             pre_image,
@@ -1115,7 +1131,7 @@ pub(crate) fn execute_delete_using(
     }
     let index_commands = indexes.take_commands();
     let affected = apply_statement_changes(executor, transaction, changes, index_commands, &namespace, "delete_using")?;
-    Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
+    returning_result(&plan.returning, &plan.field_types, deleted, affected, dialect)
 }
 
 pub(crate) fn write_plan_to_row(plan: &WritePlan) -> Result<RowFieldValues, SqlFrontendError> {

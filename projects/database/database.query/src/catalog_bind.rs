@@ -719,6 +719,11 @@ pub struct SqlCatalogBoundDelete {
     pub using: Vec<SqlCatalogBoundTable>,
     /// Resolved optional predicate.
     pub predicate: Option<SqlCatalogBoundExpression>,
+    /// `RETURNING` projections over the deleted rows, when one was written.
+    ///
+    /// Like PostgreSQL they may only reference the target table (through its
+    /// alias); `USING` columns are deliberately not in scope.
+    pub returning: Option<Vec<SqlCatalogBoundProjection>>,
 }
 
 /// One operand of a catalog-bound SQL set operation.
@@ -1329,7 +1334,20 @@ fn bind_delete(
     sources.extend(using.iter().cloned());
     let scope = SqlCorrelationScope::write();
     let predicate = delete.predicate.map(|p| bind_expression(p, &sources, &[], &scope, catalog, variables)).transpose()?;
-    Ok(SqlCatalogBoundDelete { table, using, predicate })
+    // `RETURNING` 只看见目标表（含其别名），与 PostgreSQL 口径一致；
+    // `USING` 列若出现在 RETURNING 里会在此处显式绑定失败。
+    let target_source = [table.clone()];
+    let returning = match delete.returning {
+        None => None,
+        Some(projections) => {
+            let mut bound = Vec::new();
+            for projection in projections {
+                bound.extend(bind_projection(projection, &target_source, &[], &scope, catalog, variables)?);
+            }
+            Some(bound)
+        }
+    };
+    Ok(SqlCatalogBoundDelete { table, using, predicate, returning })
 }
 
 fn bind_set_operation(

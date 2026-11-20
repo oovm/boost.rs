@@ -244,6 +244,8 @@ pub struct DeleteStatement {
     pub using_tables: Vec<TableName>,
     /// The WHERE clause selection expression.
     pub selection: Option<Expression>, // WHERE clause
+    /// The `RETURNING` clause, projected over each deleted row.
+    pub returning: Option<ReturningClause>,
     /// The span of the DELETE statement.
     #[serde(with = "data_text_core::serde_range")]
     pub span: Range<usize>,
@@ -266,6 +268,9 @@ impl ToSource for DeleteStatement {
         if let Some(selection) = &self.selection {
             buffer.push("WHERE");
             selection.to_source(buffer);
+        }
+        if let Some(returning) = &self.returning {
+            returning.to_source(buffer);
         }
     }
 }

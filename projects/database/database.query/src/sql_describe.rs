@@ -62,11 +62,12 @@ pub fn describe_plan_for_dialect(plan: &SqlExecutionPlan, dialect: SqlDialect) -
             plans.first().map(|plan| describe_returning(&plan.returning, &plan.field_types, dialect)).unwrap_or_default()
         }
         SqlExecutionPlan::InsertSelect(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
-        SqlExecutionPlan::Update(_)
-        | SqlExecutionPlan::UpdateScan(_)
-        | SqlExecutionPlan::Delete(_)
-        | SqlExecutionPlan::DeleteScan(_)
-        | SqlExecutionPlan::DeleteUsing(_) => Vec::new(),
+        SqlExecutionPlan::Update(_) | SqlExecutionPlan::UpdateScan(_) => Vec::new(),
+        // `DELETE ... RETURNING` 有结果集，列形状与 INSERT 同口径由 returning 投影定义；
+        // 无 RETURNING 时 describe_returning 返回空，保持写语句原本无列的形态。
+        SqlExecutionPlan::Delete(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
+        SqlExecutionPlan::DeleteScan(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
+        SqlExecutionPlan::DeleteUsing(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
     }
 }
 

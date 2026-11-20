@@ -46,7 +46,7 @@ pub fn plan_statement_for_dialect(
         SqlCatalogBoundStatement::Select(select) => plan_select_for_dialect(select, catalog, dialect),
         SqlCatalogBoundStatement::Insert(insert) => plan_insert(insert, catalog, dialect),
         SqlCatalogBoundStatement::Update(update) => plan_update(update, catalog, dialect),
-        SqlCatalogBoundStatement::Delete(delete) => plan_delete(delete, catalog),
+        SqlCatalogBoundStatement::Delete(delete) => plan_delete(delete, catalog, dialect),
         SqlCatalogBoundStatement::SetOperation(set) => plan_set_operation(set, catalog, dialect),
     }
 }
@@ -1021,7 +1021,7 @@ pub(crate) fn plan_returning(
         return Ok(None);
     };
     if dialect != SqlDialect::Postgres {
-        return Err(SqlFrontendError::syntax("INSERT ... RETURNING is only supported by the PostgreSQL dialect"));
+        return Err(SqlFrontendError::syntax("`RETURNING` is only supported by the PostgreSQL dialect"));
     }
     let mut planned = Vec::new();
     for projection in projections {
@@ -1223,13 +1223,15 @@ pub fn plan_update(update: SqlCatalogBoundUpdate, catalog: &SqlCatalog, dialect:
 }
 
 /// 计划一个 DELETE。`pk = literal` 走单点路径；其他 WHERE 都退化为范围扫描逐行删除。
-pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Result<SqlExecutionPlan, SqlFrontendError> {
+pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog, dialect: SqlDialect) -> Result<SqlExecutionPlan, SqlFrontendError> {
     let table = find_table(catalog, delete.table.type_id)?;
     let namespace = format!("table:{}", table.type_id);
     let pk_field = primary_key_of(table)?;
     let field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType> =
         table.fields.iter().map(|f| (f.field_id, f.field_type.clone())).collect();
     let unique_constraints = unique_constraints_of(table);
+    // `RETURNING` 只对目标表求值；绑定期已把可见列限定到目标（含别名）。
+    let returning = plan_returning(delete.returning, table, dialect)?;
 
     if !delete.using.is_empty() {
         // `DELETE ... USING` 是交叉连接：谓词同时引用目标列（槽 0）与 USING 列（后续槽），
@@ -1250,6 +1252,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
             predicate: delete.predicate,
             field_types: using_field_types,
             unique_constraints,
+            returning,
         }));
     }
 
@@ -1263,6 +1266,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
             predicate: None,
             field_types,
             unique_constraints,
+            returning,
         }));
     };
 
@@ -1276,6 +1280,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
             remaining_predicate: remaining,
             field_types,
             unique_constraints,
+            returning,
         }));
     }
     let (rowid_after, rowid_before) = pk_scan_bounds(is_integer_primary_key(pk_field), lower, upper);
@@ -1287,6 +1292,7 @@ pub fn plan_delete(delete: SqlCatalogBoundDelete, catalog: &SqlCatalog) -> Resul
         predicate: remaining,
         field_types,
         unique_constraints,
+        returning,
     }))
 }
 
@@ -1925,6 +1931,8 @@ pub struct DeletePlan {
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     /// 该表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// `RETURNING` 投影，`None` 表示语句不返回结果集。
+    pub returning: Option<ReturningProjections>,
 }
 
 /// 多行 UPDATE 执行计划：扫描 rowid 区间，逐行评估完整 WHERE 后改写。
@@ -1971,6 +1979,8 @@ pub struct DeleteScanPlan {
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     /// 该表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// `RETURNING` 投影，`None` 表示语句不返回结果集。
+    pub returning: Option<ReturningProjections>,
 }
 
 /// `DELETE ... USING` 执行计划：目标表全扫 × USING 源行的交叉连接，谓词命中后删除目标行。
@@ -1989,6 +1999,8 @@ pub struct DeleteUsingPlan {
     pub field_types: std::collections::BTreeMap<u64, crate::catalog_bind::SqlFieldType>,
     /// 目标表声明的 `UNIQUE` 约束，执行层据此摘除对应的二级索引条目。
     pub unique_constraints: Vec<UniqueConstraintPlan>,
+    /// `RETURNING` 投影（只引用目标表槽 0 的列），`None` 表示语句不返回结果集。
+    pub returning: Option<ReturningProjections>,
 }
 
 /// `DELETE ... USING` 计划里的一个 USING 行源。

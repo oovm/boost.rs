@@ -636,6 +636,7 @@ impl<'config> SqlBuilder<'config> {
         let mut table_name = None;
         let mut using_tables = Vec::new();
         let mut selection = None;
+        let mut returning = None;
         let mut where_found = false;
         let mut after_using = false;
 
@@ -659,6 +660,7 @@ impl<'config> SqlBuilder<'config> {
                     }
                     SqlElementType::Expression => selection = Some(self.build_expression(n, source)?),
                     SqlElementType::Identifier => selection = Some(Expression::Identifier(self.build_identifier(n, source)?)),
+                    SqlElementType::ReturningClause => returning = Some(self.build_returning_clause(n, source)?),
                     _ => {}
                 },
             }
@@ -672,6 +674,7 @@ impl<'config> SqlBuilder<'config> {
             table_name: table_name.ok_or_else(|| TextError::custom_error("Missing table name in DELETE"))?,
             using_tables,
             selection,
+            returning,
             span: node.span(),
         })
     }

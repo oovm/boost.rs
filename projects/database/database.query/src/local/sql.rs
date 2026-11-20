@@ -9,7 +9,7 @@ use std::{cell::Cell, collections::BTreeMap, rc::Rc};
 use data_text_sql::ast::{
     Assignment, BinaryOperator, DeleteStatement, Expression, GroupByClause, GroupByItem, Identifier, InsertSource, InsertStatement, JoinClause,
     JoinType, LimitClause, Literal, OnConflictAction, OrderByItem, SelectItem, SelectStatement, SetOperationStatement, SetOperator, SqlRoot,
-    SqlStatement, TableName, TableSource, TransactionAction, UnaryOperator, UpdateStatement, WindowFrame as AstWindowFrame,
+    SqlStatement, TableName, TableSource, TransactionAction, UnaryOperator, UpdateStatement, ReturningClause, WindowFrame as AstWindowFrame,
     WindowFrameBound as AstWindowFrameBound, WindowFrameUnit as AstWindowFrameUnit, WindowOrderItem, WindowSpec as AstWindowSpec, WithClause,
 };
 use database_types::{Error, Result, Value};
@@ -377,6 +377,23 @@ fn extend_cte_scope(scope: &mut CteScope, with_clause: Option<&WithClause>, para
         let (mut ops, _) = lower_select(&cte.query, parameters, &body)?;
         if !cte.columns.is_empty() {
             rename_cte_columns(&name, &mut ops, &cte.columns)?;
+        }
+        // The builder splits a two-operand `UNION` CTE body into `query` plus
+        // `recursive_tail` whether or not the clause is recursive. A plain
+        // `WITH` must fold both operands back into one set-operation pipeline
+        // instead of silently dropping the tail.
+        if let Some(tail) = &cte.recursive_tail {
+            let (right, _) = lower_select(tail, parameters, &body)?;
+            let columns = pipeline_output_columns(&ops);
+            let right_columns = pipeline_output_columns(&right);
+            if let (Some(left), Some(right)) = (&columns, &right_columns)
+                && left.len() != right.len()
+            {
+                let operator = if cte.recursive_union_all { SetOperator::UnionAll } else { SetOperator::Union };
+                return Err(set_operation_column_mismatch(operator, left.len(), right.len()));
+            }
+            let kind = if cte.recursive_union_all { SetOpKind::UnionAll } else { SetOpKind::Union };
+            ops = vec![QueryOp::SetOperation { kind, left: ops, right, columns, right_columns }, QueryOp::Collect];
         }
         scope.pipelines.insert(name, ops);
     }
@@ -1240,7 +1257,13 @@ fn lower_projection(items: &[SelectItem], parameters: &[ParameterDescriptor], ct
         // the bare trailing column of an unqualified row source.
         let field_expr = match expr {
             Expression::Identifier(identifier) => {
-                if let Some(clock) = try_lower_clock_register(identifier) {
+                // A rewritten placeholder (`__yydb_param_<index>`) is a bound
+                // value, never a column: `SELECT ?` projects the parameter,
+                // matching the predicate path.
+                if identifier.name.starts_with(PARAM_PREFIX) {
+                    ProjectExpr::Computed(Box::new(Expr::Bound(name_to_slot(&identifier.name, parameters)?)))
+                }
+                else if let Some(clock) = try_lower_clock_register(identifier) {
                     ProjectExpr::Computed(Box::new(clock))
                 }
                 else {
@@ -1783,7 +1806,7 @@ fn reject_excluded(name: &str) -> Result<()> {
 
 fn lower_insert(insert: &InsertStatement, parameters: &[ParameterDescriptor]) -> Result<WriteOp> {
     let conflict = lower_conflict(insert, parameters)?;
-    let returning = lower_returning(insert, parameters)?;
+    let returning = lower_returning(insert.returning.as_ref(), parameters)?;
     match &insert.source {
         InsertSource::Select(select) => lower_insert_select(insert, select, conflict, returning, parameters),
         InsertSource::Values => lower_insert_values(insert, conflict, returning, parameters),
@@ -1804,8 +1827,8 @@ fn lower_insert(insert: &InsertStatement, parameters: &[ParameterDescriptor]) ->
 /// scalar expression shapes it accepts stay identical for reads and writes.
 /// Aggregate functions are rejected instead of being skipped, because a
 /// `RETURNING COUNT(*)` would otherwise hand back an empty row.
-fn lower_returning(insert: &InsertStatement, parameters: &[ParameterDescriptor]) -> Result<Option<ReturningProjection>> {
-    let Some(clause) = &insert.returning
+fn lower_returning(clause: Option<&ReturningClause>, parameters: &[ParameterDescriptor]) -> Result<Option<ReturningProjection>> {
+    let Some(clause) = clause
     else {
         return Ok(None);
     };
@@ -2134,7 +2157,42 @@ fn lower_update(update: &UpdateStatement, parameters: &[ParameterDescriptor]) ->
 
 fn lower_delete(delete: &DeleteStatement, parameters: &[ParameterDescriptor]) -> Result<WriteOp> {
     let predicate = delete.selection.as_ref().map(|expr| lower_predicate(expr, parameters, &CteScope::new())).transpose()?;
-    Ok(WriteOp::Delete { table: table_name(&delete.table_name), predicate })
+    let mut returning = lower_returning(delete.returning.as_ref(), parameters)?;
+    // `RETURNING x.id` names the column through the DELETE target alias. The
+    // executor resolves bare column paths of the scanned row, so a leading
+    // qualifier equal to the alias (or the table name when unaliased) is
+    // dropped here; deeper qualified expressions keep the executor's explicit
+    // rejection.
+    if let Some(projection) = &mut returning {
+        let qualifier = delete.table_name.alias.as_ref().map_or_else(|| table_name(&delete.table_name), |alias| alias.name.to_string());
+        strip_returning_qualifier(projection, &qualifier);
+    }
+    Ok(WriteOp::Delete { table: table_name(&delete.table_name), predicate, returning })
+}
+
+/// Drop a leading `qualifier.` from simple RETURNING column paths.
+fn strip_returning_qualifier(projection: &mut ReturningProjection, qualifier: &str) {
+    let ReturningProjection::Fields(fields) = projection else {
+        return;
+    };
+    for field in fields {
+        match &mut field.expr {
+            ProjectExpr::Scalar { path } => {
+                if path.len() == 2 && path[0] == qualifier {
+                    path.remove(0);
+                }
+            }
+            ProjectExpr::Computed(expr) => {
+                if let Expr::Column { path } = expr.as_mut()
+                    && path.len() == 2
+                    && path[0] == qualifier
+                {
+                    path.remove(0);
+                }
+            }
+            ProjectExpr::Nested { .. } => {}
+        }
+    }
 }
 
 fn table_name(table: &TableName) -> String {

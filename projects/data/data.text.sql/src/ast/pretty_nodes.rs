@@ -804,6 +804,11 @@ impl AsDocument for DeleteStatement {
             parts.push(selection.as_document(&()));
         }
 
+        if let Some(returning) = &self.returning {
+            parts.push(line);
+            parts.push(returning.as_document(&()));
+        }
+
         Document::group(Document::Concat(parts))
     }
 }

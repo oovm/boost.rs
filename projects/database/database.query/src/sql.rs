@@ -896,6 +896,8 @@ pub struct SqlBoundDelete {
     pub using: Vec<(String, Option<String>)>,
     /// Optional SQL WHERE expression.
     pub predicate: Option<SqlBoundExpression>,
+    /// `RETURNING` projection list over the deleted rows, when one was written.
+    pub returning: Option<Vec<SqlBoundProjection>>,
 }
 
 /// SQL set operator retained by the gateway binder.
@@ -1537,6 +1539,10 @@ pub fn bind_sql(source: &str, dialect: SqlDialect) -> Result<SqlBoundStatement, 
                     })
                     .collect(),
                 predicate: delete.selection.as_ref().map(bind_expression).transpose()?,
+                returning: match &delete.returning {
+                    None => None,
+                    Some(clause) => Some(clause.items.iter().map(bind_projection).collect::<Result<Vec<_>, _>>()?),
+                },
             }))
         }
         SqlStatement::SetOperation(set) => Ok(SqlBoundStatement::SetOperation(bind_set_operation(set)?)),

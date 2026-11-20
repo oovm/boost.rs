@@ -172,6 +172,37 @@ fn single_row_derived_tables_and_unique_conflict_targets() {
 }
 
 #[test]
+fn delete_alias_and_returning_end_to_end() {
+    let dir = TempDir::new("delete-alias-returning");
+    let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
+    engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, name TEXT, amount BIGINT)").unwrap();
+    engine.execute("INSERT INTO t (id, name, amount) VALUES (1, 'alpha', 10), (2, 'beta', 20), (3, 'gamma', 30)").unwrap();
+
+    // Alias-qualified WHERE and RETURNING on the range-scan path; the column
+    // labels follow PostgreSQL and drop the alias prefix.
+    let rows = engine.query("DELETE FROM t AS x WHERE x.amount >= 20 RETURNING x.id, x.name").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["2".to_owned(), "beta".to_owned()], vec!["3".to_owned(), "gamma".to_owned()]]);
+
+    // `DELETE FROM t alias` without `AS`, the primary-key point path and `RETURNING *`.
+    let rows = engine.query("DELETE FROM t y WHERE y.id = 1 RETURNING *").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["1".to_owned(), "alpha".to_owned(), "10".to_owned()]]);
+    let left = engine.query("SELECT count(*) FROM t").unwrap();
+    assert_eq!(rows_of(&left), vec![vec!["0".to_owned()]]);
+
+    // USING sources keep their own aliases in WHERE; RETURNING still only sees
+    // the target table.
+    engine.execute("CREATE TABLE log (ref BIGINT)").unwrap();
+    engine.execute("INSERT INTO log (ref) VALUES (5), (6)").unwrap();
+    engine.execute("INSERT INTO t (id, name, amount) VALUES (5, 'five', 50), (7, 'seven', 70)").unwrap();
+    let rows = engine.query("DELETE FROM t AS d USING log l WHERE d.id = l.ref RETURNING d.name").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["five".to_owned()]]);
+    let left = engine.query("SELECT id FROM t ORDER BY id").unwrap();
+    assert_eq!(rows_of(&left), vec![vec!["7".to_owned()]]);
+
+    engine.close().unwrap();
+}
+
+#[test]
 fn aggregate_filter_restricts_input_rows() {
     let dir = TempDir::new("agg-filter");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();

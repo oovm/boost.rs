@@ -1261,6 +1261,8 @@ pub enum WriteOp {
         table: String,
         /// Row filter; `None` selects every row.
         predicate: Option<Pred>,
+        /// Optional `RETURNING` projection evaluated over each deleted row.
+        returning: Option<ReturningProjection>,
     },
 }
 

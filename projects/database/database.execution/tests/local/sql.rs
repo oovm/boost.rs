@@ -147,6 +147,62 @@ fn delete_without_where_clears_the_table() {
 }
 
 #[test]
+fn delete_alias_qualified_where_and_returning() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // The PG shape resolves the target alias in both WHERE and RETURNING.
+    let outcome = execute_sql(
+        "DELETE FROM Account AS a WHERE a.tenant = 't1' AND a.score >= 20 RETURNING a.account_id, a.email",
+        &[],
+        &contract,
+        &[],
+        &mut records,
+    )
+    .expect("aliased delete with returning");
+    assert_eq!(outcome.affected, 1);
+    assert_eq!(outcome.rows.len(), 1);
+    assert_eq!(outcome.rows[0].get("a.account_id"), Some(&Value::I64(2)));
+    assert_eq!(outcome.rows[0].get("a.email"), Some(&Value::Text("linus@example.test".into())));
+
+    let remaining = execute_sql("SELECT account_id FROM Account ORDER BY account_id", &[], &contract, &[], &mut records).expect("read").rows;
+    assert_eq!(ids(&remaining), vec![1, 3]);
+}
+
+#[test]
+fn delete_bare_alias_without_as_with_returning_star() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // `DELETE FROM t alias` (no `AS`) works, and `RETURNING *` hands back the
+    // whole doomed row under its stored column names.
+    let outcome =
+        execute_sql("DELETE FROM Account acc WHERE acc.tenant = 't2' RETURNING *", &[], &contract, &[], &mut records).expect("bare alias delete");
+    assert_eq!(outcome.affected, 1);
+    assert_eq!(outcome.rows.len(), 1);
+    assert_eq!(outcome.rows[0].get("account_id"), Some(&Value::I64(3)));
+    assert_eq!(outcome.rows[0].get("email"), Some(&Value::Text("grace@example.test".into())));
+
+    let remaining = execute_sql("SELECT account_id FROM Account ORDER BY account_id", &[], &contract, &[], &mut records).expect("read").rows;
+    assert_eq!(ids(&remaining), vec![1, 2]);
+}
+
+#[test]
+fn delete_returning_rejects_foreign_alias_qualifier() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // A RETURNING qualifier that is neither the target alias nor the table
+    // name must fail loudly instead of silently returning NULL.
+    let error = execute_sql("DELETE FROM Account AS a WHERE a.tenant = 't2' RETURNING z.account_id", &[], &contract, &[], &mut records)
+        .expect_err("foreign alias in RETURNING");
+    assert!(matches!(error, Error::Schema { .. }));
+}
+
+#[test]
 fn update_rejects_primary_key_reassignment() {
     let contract = contract();
     let mut records = BTreeMap::new();

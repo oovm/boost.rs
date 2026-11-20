@@ -1498,7 +1498,18 @@ impl<'config> SqlParser<'config> {
         use crate::lexer::SqlTokenType::*;
         let cp = state.checkpoint();
         state.expect(Delete).ok();
-        state.eat(From);
+
+        // `FROM` is mandatory. An identifier written before it is the MySQL
+        // multi-table form (`DELETE a, b FROM ...`), which this grammar rejects
+        // explicitly rather than mis-binding the first alias as the target.
+        if !state.eat(From) {
+            if state.peek_kind() == Some(Identifier_) {
+                return Err(TextError::custom_error(
+                    "multi-table `DELETE <table> FROM ...` is not supported: only single-table `DELETE FROM <table> [AS alias] [USING ...]` is",
+                ));
+            }
+            return Err(TextError::custom_error("`DELETE` requires `FROM`"));
+        }
 
         // The target keeps its optional alias (`DELETE FROM t AS x`), and the
         // `USING` sources are plain aliased table names referenceable from WHERE.
@@ -1519,6 +1530,7 @@ impl<'config> SqlParser<'config> {
             }
         }
 
+        self.parse_returning_clause(state);
         state.eat(Semicolon);
         state.finish_at(cp, SqlElementType::DeleteStatement);
         Ok(())

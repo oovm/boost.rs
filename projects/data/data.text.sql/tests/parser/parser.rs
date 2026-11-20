@@ -1422,6 +1422,47 @@ fn test_sql_builder_update_delete() {
 }
 
 #[test]
+fn test_sql_builder_delete_alias_returning() {
+    let config = SqlLanguage::default();
+    let builder = SqlBuilder::new(&config);
+    let mut session = ParseSession::<SqlLanguage>::default();
+
+    // PG shape: `DELETE FROM t AS alias WHERE alias.col ... RETURNING alias.col`.
+    let source = SourceText::new("DELETE FROM users AS u WHERE u.id = 1 RETURNING u.id, name;");
+    let result = builder.build(&source, &[], &mut session);
+    assert!(result.result.is_ok());
+    let root = result.result.unwrap();
+    let SqlStatement::Delete(delete) = &root.statements[0]
+    else {
+        panic!("Expected Delete statement");
+    };
+    assert_eq!(delete.table_name.name.name.as_ref(), "users");
+    assert_eq!(delete.table_name.alias.as_ref().map(|alias| alias.name.as_ref()), Some("u"));
+    assert!(delete.selection.is_some());
+    let returning = delete.returning.as_ref().expect("DELETE RETURNING clause");
+    assert_eq!(returning.items.len(), 2);
+
+    // Alias without `AS`, plus a `USING` source carrying its own alias.
+    let source = SourceText::new("DELETE FROM users u USING sessions s WHERE u.id = s.user_id;");
+    let result = builder.build(&source, &[], &mut session);
+    assert!(result.result.is_ok());
+    let root = result.result.unwrap();
+    let SqlStatement::Delete(delete) = &root.statements[0]
+    else {
+        panic!("Expected Delete statement");
+    };
+    assert_eq!(delete.table_name.alias.as_ref().map(|alias| alias.name.as_ref()), Some("u"));
+    assert_eq!(delete.using_tables.len(), 1);
+    assert_eq!(delete.using_tables[0].name.name.as_ref(), "sessions");
+    assert_eq!(delete.using_tables[0].alias.as_ref().map(|alias| alias.name.as_ref()), Some("s"));
+
+    // The MySQL multi-table shape is rejected explicitly, not mis-bound.
+    let source = SourceText::new("DELETE u FROM users AS u JOIN sessions s ON s.user_id = u.id;");
+    let result = builder.build(&source, &[], &mut session);
+    assert!(result.result.is_err(), "multi-table DELETE must not be accepted: {:?}", result.result);
+}
+
+#[test]
 fn test_sql_builder_drop_alter() {
     let config = SqlLanguage::default();
     let builder = SqlBuilder::new(&config);
