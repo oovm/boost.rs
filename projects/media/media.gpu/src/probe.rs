@@ -5,7 +5,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompositorKind {
-    /// The wgpu backend.
+    /// The D3D12 backend.
     Gpu,
     /// The CPU reference path.
     Cpu,
@@ -19,7 +19,7 @@ pub enum GpuStatus {
     Available,
     /// No adapter exists (or acquisition failed).
     Unavailable,
-    /// The backend was built without the `gpu` feature.
+    /// The backend was built without the `dx12` feature.
     Disabled,
 }
 
@@ -32,80 +32,109 @@ pub struct GpuBackendInfo {
     pub preferred: CompositorKind,
     /// Adapter name, when available.
     pub adapter_name: Option<String>,
-    /// wgpu backend (Vulkan/Dx12/...), when available.
+    /// Graphics backend (`D3D12`), when available.
     pub backend: Option<String>,
-    /// Device type (DiscreteGpu/...), when available.
+    /// Device type (discrete/integrated/software), when available.
     pub device_type: Option<String>,
     /// Human-readable probe result.
     pub message: String,
 }
 
-/// Probe for a high-performance adapter.
+/// Probe for a hardware D3D12 adapter.
 #[must_use]
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "dx12", windows))]
 pub fn probe_gpu() -> GpuBackendInfo {
-    request_adapter_info(false)
+    adapter_info()
 }
 
-/// Probe the fallback adapter (software rasterizers such as WARP). This is
-/// what parity tests use on machines without a real GPU.
+/// D3D12 has one device path; WARP is chosen by the OS when no hardware
+/// adapter is present, so the fallback probe is the same query.
 #[must_use]
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "dx12", windows))]
 pub fn probe_gpu_fallback() -> GpuBackendInfo {
-    request_adapter_info(true)
+    adapter_info()
 }
 
-#[cfg(feature = "gpu")]
-fn request_adapter_info(force_fallback: bool) -> GpuBackendInfo {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::PRIMARY,
-        ..Default::default()
-    });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        compatible_surface: None,
-        force_fallback_adapter: force_fallback,
-    }));
-    match adapter {
-        Ok(adapter) => {
-            let info = adapter.get_info();
+#[cfg(all(feature = "dx12", windows))]
+fn adapter_info() -> GpuBackendInfo {
+    match hardware_backend_dx12::Dx12Backend::enumerate_adapters() {
+        Ok(adapters) if !adapters.is_empty() => {
+            let adapter = adapters.iter().find(|adapter| !adapter.software).unwrap_or(&adapters[0]);
+            let device_type = if adapter.software {
+                "software"
+            }
+            else if adapter.dedicated_memory >= 1 << 30 {
+                "discrete"
+            }
+            else {
+                "integrated"
+            };
             GpuBackendInfo {
                 status: GpuStatus::Available,
                 preferred: CompositorKind::Gpu,
-                adapter_name: Some(info.name),
-                backend: Some(format!("{:?}", info.backend)),
-                device_type: Some(format!("{:?}", info.device_type)),
-                message: "wgpu adapter available".into(),
+                adapter_name: Some(adapter.name.clone()),
+                backend: Some("D3D12".into()),
+                device_type: Some(device_type.into()),
+                message: "D3D12 adapter available".into(),
             }
         }
+        Ok(_) => GpuBackendInfo {
+            status: GpuStatus::Unavailable,
+            preferred: CompositorKind::Cpu,
+            adapter_name: None,
+            backend: None,
+            device_type: None,
+            message: "no D3D12 adapter".into(),
+        },
         Err(error) => GpuBackendInfo {
             status: GpuStatus::Unavailable,
             preferred: CompositorKind::Cpu,
             adapter_name: None,
             backend: None,
             device_type: None,
-            message: format!("no wgpu adapter: {error}"),
+            message: format!("enumerate D3D12 adapters: {error}"),
         },
     }
 }
 
-/// Probe without the backend compiled in: always [`GpuStatus::Disabled`].
+/// The largest hardware adapter name, used for provenance labels.
+#[cfg(all(feature = "dx12", windows))]
+pub(crate) fn default_adapter_name() -> Option<String> {
+    let adapters = hardware_backend_dx12::Dx12Backend::enumerate_adapters().ok()?;
+    adapters
+        .iter()
+        .find(|adapter| !adapter.software)
+        .or_else(|| adapters.first())
+        .map(|adapter| adapter.name.clone())
+}
+
+#[cfg(not(all(feature = "dx12", windows)))]
+pub(crate) fn default_adapter_name() -> Option<String> {
+    None
+}
+
+/// Probe without the backend compiled in (or off Windows): not available.
 #[must_use]
-#[cfg(not(feature = "gpu"))]
+#[cfg(not(all(feature = "dx12", windows)))]
 pub fn probe_gpu() -> GpuBackendInfo {
     GpuBackendInfo {
-        status: GpuStatus::Disabled,
+        status: if cfg!(feature = "dx12") { GpuStatus::Unavailable } else { GpuStatus::Disabled },
         preferred: CompositorKind::Cpu,
         adapter_name: None,
         backend: None,
         device_type: None,
-        message: "media-gpu built without `gpu` feature".into(),
+        message: if cfg!(feature = "dx12") {
+            "D3D12 backend requires Windows".into()
+        }
+        else {
+            "media-gpu built without `dx12` feature".into()
+        },
     }
 }
 
 /// The fallback probe without the backend compiled in.
 #[must_use]
-#[cfg(not(feature = "gpu"))]
+#[cfg(not(all(feature = "dx12", windows)))]
 pub fn probe_gpu_fallback() -> GpuBackendInfo {
     probe_gpu()
 }

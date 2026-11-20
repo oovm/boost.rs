@@ -1,6 +1,6 @@
 [package]
 name = "media-gpu"
-description = "GPU compositor backend: wgpu/WGSL frame operators that reproduce the CPU reference on packed RGBA8 display bytes"
+description = "GPU compositor backend: D3D12 compute operators that reproduce the CPU reference on packed RGBA8 display bytes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,12 +10,27 @@ publish.workspace = true
 [dependencies]
 media-image = { workspace = true }
 serde = { workspace = true }
-wgpu = { workspace = true, optional = true }
-pollster = { workspace = true, optional = true }
+serde_json = { workspace = true }
+hardware-backend-dx12 = { workspace = true, optional = true }
+hardware-ir = { workspace = true, optional = true }
+hardware-program = { workspace = true, optional = true }
+hardware-scheduler = { workspace = true, optional = true }
+hardware-types = { workspace = true, optional = true }
 
 [features]
-default = ["gpu"]
-gpu = ["dep:wgpu", "dep:pollster"]
+default = ["dx12"]
+# The production path: UCF kernels emitted to DXBC and dispatched by the
+# in-tree D3D12 backend (合同 14 §1.2).
+dx12 = [
+    "dep:hardware-backend-dx12",
+    "dep:hardware-ir",
+    "dep:hardware-program",
+    "dep:hardware-scheduler",
+    "dep:hardware-types",
+]
+# Historical feature name kept for hosts that enable it explicitly; it now
+# selects the same D3D12 path.
+gpu = ["dx12"]
 
 [dev-dependencies]
 geometry = { workspace = true }

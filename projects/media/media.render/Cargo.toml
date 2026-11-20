@@ -32,7 +32,7 @@ media-harness = { workspace = true, features = ["serde"] }
 
 [features]
 default = ["scene", "gpu"]
-# GPU 合成后端（ADR 0005）：wgpu/WGSL 复现 CPU 参考算子，CPU 只作显式降级路径。
+# GPU 合成后端（ADR 0005）：D3D12 计算算子复现 CPU 参考，CPU 只作显式降级路径。
 gpu = ["dep:media-gpu"]
 scene = ["dep:geometry", "dep:serde_json", "dep:media-scene", "dep:media-motion", "dep:media-raster", "dep:media-text", "media-text/blocks", "dep:media-audio", "dep:media-post", "dep:media-dsp"]
 image-pipeline = ["dep:media-post"]

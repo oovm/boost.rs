@@ -1,33 +1,74 @@
-//! Compute-shader frame compositor.
+//! Direct3D 12 compute-shader frame compositor.
 //!
 //! Every operator mirrors the CPU reference operation by operation:
 //!
 //! - [`GpuCompositor::resample`] mirrors `media.raster::Paint::resample_from`
 //!   (bilinear `Frame::sample`, 1..3-tap box, truncating byte cast, alpha 255).
 //! - [`GpuCompositor::vignette`] mirrors `media.post::Vignette::apply`
-//!   (`smoothstep(0.25, 0.95, d·√2)`乘暗, rounding cast, alpha passthrough).
+//!   (`smoothstep(0.25, 0.95, d·√2)` 乘暗, rounding cast, alpha passthrough).
 //! - [`GpuCompositor::fill`] / [`GpuCompositor::v_gradient`] /
 //!   [`GpuCompositor::radial`] mirror the background painters in
 //!   `media.raster::Paint` (`Rgba::lerp` with clamped `t` and rounding cast).
 //!
 //! Sin/cos, zoom clamping, tap counts and step sizes are computed on the CPU
-//! and passed in, so the shader only runs the per-pixel arithmetic in the
-//! same order as the reference loops.
+//! and passed in, so the kernel only runs the per-pixel arithmetic in the same
+//! order as the reference loops.
+//!
+//! The kernel is a UCF [`Program`](hardware_program::Program) emitted to DXBC
+//! by `hardware.emitter` and dispatched through `hardware.backend.dx12`; the
+//! production path contains no third-party GPU runtime (合同 14 §1.2).
 
-use media_image::Frame;
+use std::collections::BTreeMap;
 use std::fmt;
-#[cfg(feature = "gpu")]
-use wgpu::util::DeviceExt as _;
 
-/// Operator selector compiled into the shader.
-const OP_RESAMPLE: u32 = 0;
-const OP_VIGNETTE: u32 = 1;
-const OP_FILL: u32 = 2;
-const OP_V_GRADIENT: u32 = 3;
-const OP_RADIAL: u32 = 4;
+use hardware_backend_dx12::Dx12Backend;
+use hardware_ir::{
+    Access, Domain, Graph, Objective, ParamValue, Priority, ResourceGraph, ResourceId, ResourceKind, ResourceNode, ShaderId, TaskGraph, TaskId,
+    TaskKind, TaskNode,
+};
+use hardware_program::{BinOp, FunctionBuilder, Program, ProgramBuilder, Rounding, ScalarTy, Ty, UnOp, ValueId, program_hash};
+use hardware_scheduler::Backend as _;
+use hardware_types::Dispatch;
+use media_image::Frame;
 
-/// Compute workgroup edge in pixels (8×8 invocations).
-const WORKGROUP: u32 = 8;
+/// Operator selector, matching the shader id used for the kernel.
+#[derive(Debug, Clone, Copy)]
+enum Op {
+    Resample,
+    Vignette,
+    Fill,
+    VGradient,
+    Radial,
+}
+
+impl Op {
+    fn index(self) -> usize {
+        match self {
+            Self::Resample => 0,
+            Self::Vignette => 1,
+            Self::Fill => 2,
+            Self::VGradient => 3,
+            Self::Radial => 4,
+        }
+    }
+
+    fn shader(self) -> u64 {
+        self.index() as u64
+    }
+}
+
+/// Compute workgroup size in invocations (the emitter maps `GlobalId` to
+/// `SV_DispatchThreadID.x`, one pixel per invocation).
+const WORKGROUP: u32 = 64;
+/// `SV_DispatchThreadID.x` covers 65535 groups of 64 threads; larger frames
+/// are walked in tiles with a uniform pixel offset.
+const MAX_THREADS: usize = 65_535 * WORKGROUP as usize;
+
+/// Resource ids shared by every kernel.
+const SRC: u64 = 0;
+const STOPS: u64 = 1;
+const DST: u64 = 2;
+const SCRATCH: u64 = 3;
 
 /// A GPU compositor failure: no adapter, device loss or a failed readback.
 #[derive(Debug, Clone)]
@@ -50,122 +91,40 @@ impl fmt::Display for GpuError {
 
 impl std::error::Error for GpuError {}
 
-/// The uniform block shared with WGSL. Field order is the shader contract;
-/// every member is a 4-byte scalar so the layout has no padding holes.
-#[derive(Clone, Copy)]
-struct Params {
-    width: u32,
-    height: u32,
-    src_width: u32,
-    src_height: u32,
-    op: u32,
-    taps: u32,
-    stop_count: u32,
-    zoom: f32,
-    focus_x: f32,
-    focus_y: f32,
-    /// Resample: tap step in source pixels. Gradient: `(h-1).max(1)` row
-    /// denominator. Both are per-op scalars reused through one slot.
-    step: f32,
-    sin: f32,
-    cos: f32,
-    strength: f32,
-    segments: f32,
-    color: u32,
-    center_color: u32,
-    edge_color: u32,
-    /// Pixel offset of the current dispatch tile (grid-stride over the
-    /// adapter's `max_compute_workgroups_per_dimension`).
-    tile_x: u32,
-    tile_y: u32,
+/// One emitted kernel plus the serialized body the backend expects.
+struct Kernel {
+    hash: u64,
+    body: String,
 }
 
-impl Params {
-    fn op(op: u32, width: u32, height: u32) -> Self {
-        Self {
-            width,
-            height,
-            src_width: width,
-            src_height: height,
-            op,
-            taps: 1,
-            stop_count: 0,
-            zoom: 1.0,
-            focus_x: 0.5,
-            focus_y: 0.5,
-            step: 1.0,
-            sin: 0.0,
-            cos: 1.0,
-            strength: 0.0,
-            segments: 0.0,
-            color: 0,
-            center_color: 0,
-            edge_color: 0,
-            tile_x: 0,
-            tile_y: 0,
-        }
-    }
-
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(20 * 4);
-        for word in [
-            self.width.to_le_bytes(),
-            self.height.to_le_bytes(),
-            self.src_width.to_le_bytes(),
-            self.src_height.to_le_bytes(),
-            self.op.to_le_bytes(),
-            self.taps.to_le_bytes(),
-            self.stop_count.to_le_bytes(),
-            self.zoom.to_le_bytes(),
-            self.focus_x.to_le_bytes(),
-            self.focus_y.to_le_bytes(),
-            self.step.to_le_bytes(),
-            self.sin.to_le_bytes(),
-            self.cos.to_le_bytes(),
-            self.strength.to_le_bytes(),
-            self.segments.to_le_bytes(),
-            self.color.to_le_bytes(),
-            self.center_color.to_le_bytes(),
-            self.edge_color.to_le_bytes(),
-            self.tile_x.to_le_bytes(),
-            self.tile_y.to_le_bytes(),
-        ] {
-            out.extend_from_slice(&word);
-        }
-        out
+impl Kernel {
+    fn new(program: &Program) -> Result<Self, GpuError> {
+        let body = serde_json::to_string(program).map_err(|error| GpuError::new(format!("serialize kernel: {error}")))?;
+        Ok(Self { hash: program_hash(program), body })
     }
 }
 
-/// Packs display bytes into the shader's `u32` lane order (little-endian).
-fn pack_rgba(c: [u8; 4]) -> u32 {
-    u32::from(c[0]) | (u32::from(c[1]) << 8) | (u32::from(c[2]) << 16) | (u32::from(c[3]) << 24)
-}
-
-/// The wgpu compositor: one device, one compute pipeline, per-call buffers.
+/// The Direct3D 12 compositor: one device, one emitted kernel per operator.
 ///
 /// Holds no frame state — frames enter and leave as [`media_image::Frame`]
 /// values, so the CPU path and the GPU path share the same storage type.
-#[cfg(feature = "gpu")]
 pub struct GpuCompositor {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    pipeline: wgpu::ComputePipeline,
-    bind_layout: wgpu::BindGroupLayout,
+    backend: Dx12Backend,
+    kernels: Vec<Kernel>,
     adapter_name: String,
-    backend: String,
 }
 
-#[cfg(feature = "gpu")]
 impl GpuCompositor {
-    /// Acquire a high-performance adapter and build the pipeline.
+    /// Acquire the default D3D12 adapter and emit every operator kernel.
     pub fn new() -> Result<Self, GpuError> {
-        Self::acquire(false)
+        Self::acquire()
     }
 
-    /// Acquire the fallback adapter (software rasterizers such as WARP).
-    /// Used by parity tests on machines without a real GPU.
+    /// Kept for hosts that explicitly ask for a software adapter. D3D12 has a
+    /// single default device path and WARP is selected by the OS when no
+    /// hardware adapter exists, so this matches [`Self::new`].
     pub fn with_fallback_adapter() -> Result<Self, GpuError> {
-        Self::acquire(true)
+        Self::acquire()
     }
 
     /// The adapter name, e.g. for `RenderStats` provenance.
@@ -174,109 +133,33 @@ impl GpuCompositor {
         &self.adapter_name
     }
 
-    /// The wgpu backend (`Vulkan`, `Dx12`, ...), e.g. for provenance.
+    /// The backend label (`D3D12`), e.g. for provenance.
     #[must_use]
     pub fn backend(&self) -> &str {
-        &self.backend
+        "D3D12"
     }
 
-    fn acquire(force_fallback: bool) -> Result<Self, GpuError> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: force_fallback,
-        }))
-        .map_err(|e| GpuError::new(format!("no wgpu adapter: {e}")))?;
-        let info = adapter.get_info();
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("media-gpu-device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
-            memory_hints: wgpu::MemoryHints::default(),
-            trace: wgpu::Trace::Off,
-        }))
-        .map_err(|e| GpuError::new(format!("request_device failed: {e}")))?;
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("media-gpu-composite"),
-            source: wgpu::ShaderSource::Wgsl(FRAME_OPS_WGSL.into()),
-        });
-        let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("media-gpu-bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("media-gpu-pl"),
-            bind_group_layouts: &[&bind_layout],
-            push_constant_ranges: &[],
-        });
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("media-gpu-pipeline"),
-            layout: Some(&layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-        Ok(Self {
-            device,
-            queue,
-            pipeline,
-            bind_layout,
-            adapter_name: info.name,
-            backend: format!("{:?}", info.backend),
-        })
+    fn acquire() -> Result<Self, GpuError> {
+        if !cfg!(windows) {
+            return Err(GpuError::new("DirectX 12 backend requires Windows"));
+        }
+        let backend = Dx12Backend::new().map_err(|error| GpuError::new(format!("open D3D12 device: {error}")))?;
+        let adapter_name = crate::probe::default_adapter_name().unwrap_or_else(|| "D3D12 adapter".to_string());
+        let kernels = [Op::Resample, Op::Vignette, Op::Fill, Op::VGradient, Op::Radial]
+            .into_iter()
+            .map(|op| Kernel::new(&build_program(op)))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { backend, kernels, adapter_name })
     }
 
     /// Paints the whole frame with one solid color (background contract).
     pub fn fill(&mut self, frame: &mut Frame, color: [u8; 4]) -> Result<(), GpuError> {
-        let mut params = Params::op(OP_FILL, frame.width, frame.height);
-        params.color = pack_rgba(color);
-        frame.pixels = self.run(&params, &[], &[])?;
+        let mut params = vec![0.0; 4];
+        for (slot, channel) in color.iter().enumerate() {
+            params[slot] = f32::from(*channel);
+        }
+        let pixels = self.run(Op::Fill, frame.width, frame.height, None, &[], &params)?;
+        frame.pixels = pixels;
         Ok(())
     }
 
@@ -291,21 +174,23 @@ impl GpuCompositor {
         if stops.len() == 1 {
             return self.fill(frame, stops[0]);
         }
-        let mut params = Params::op(OP_V_GRADIENT, frame.width, frame.height);
-        params.stop_count = stops.len() as u32;
-        params.segments = (stops.len() - 1) as f32;
-        params.step = (frame.height.saturating_sub(1)).max(1) as f32;
-        let packed: Vec<u32> = stops.iter().map(|stop| pack_rgba(*stop)).collect();
-        frame.pixels = self.run(&params, &[], &packed)?;
+        let params = vec![stops.len() as f32, (stops.len() - 1) as f32, frame.height.saturating_sub(1).max(1) as f32];
+        let pixels = self.run(Op::VGradient, frame.width, frame.height, None, stops, &params)?;
+        frame.pixels = pixels;
         Ok(())
     }
 
     /// Radial gradient center→edge (background contract).
     pub fn radial(&mut self, frame: &mut Frame, center: [u8; 4], edge: [u8; 4]) -> Result<(), GpuError> {
-        let mut params = Params::op(OP_RADIAL, frame.width, frame.height);
-        params.center_color = pack_rgba(center);
-        params.edge_color = pack_rgba(edge);
-        frame.pixels = self.run(&params, &[], &[])?;
+        let mut params = vec![0.0; 8];
+        for (slot, channel) in center.iter().enumerate() {
+            params[slot] = f32::from(*channel);
+        }
+        for (slot, channel) in edge.iter().enumerate() {
+            params[4 + slot] = f32::from(*channel);
+        }
+        let pixels = self.run(Op::Radial, frame.width, frame.height, None, &[], &params)?;
+        frame.pixels = pixels;
         Ok(())
     }
 
@@ -316,12 +201,8 @@ impl GpuCompositor {
         if strength <= 0.0 {
             return Ok(());
         }
-        let mut params = Params::op(OP_VIGNETTE, frame.width, frame.height);
-        params.strength = strength;
-        let source = std::mem::take(&mut frame.pixels);
-        let out = self.run(&params, &source, &[]);
-        frame.pixels = source;
-        frame.pixels = out?;
+        let pixels = self.run(Op::Vignette, frame.width, frame.height, Some(frame), &[], &[strength])?;
+        frame.pixels = pixels;
         Ok(())
     }
 
@@ -329,326 +210,621 @@ impl GpuCompositor {
     /// rotation into `dst`, reproducing `Paint::resample_from` — including
     /// the truncating byte cast and the constant opaque alpha.
     pub fn resample(&mut self, dst: &mut Frame, src: &Frame, zoom: f32, focus: [f32; 2], rotate_deg: f32) -> Result<(), GpuError> {
-        // The CPU reference clamps zoom, derives the tap count from the
-        // shrink ratio and precomputes sin/cos; do the same so the shader
-        // only runs the per-pixel arithmetic.
         let zoom = zoom.max(0.05);
         let angle = rotate_deg.to_radians();
         let (sin, cos) = angle.sin_cos();
         let ratio = src.width as f32 / (dst.width as f32 * zoom);
         let taps = (ratio.ceil() as u32).clamp(1, 3);
         let step = ratio / taps as f32;
-        let mut params = Params::op(OP_RESAMPLE, dst.width, dst.height);
-        params.src_width = src.width;
-        params.src_height = src.height;
-        params.taps = taps;
-        params.zoom = zoom;
-        params.focus_x = focus[0];
-        params.focus_y = focus[1];
-        params.step = step;
-        params.sin = sin;
-        params.cos = cos;
-        dst.pixels = self.run(&params, &src.pixels, &[])?;
+        let params = vec![
+            src.width as f32,
+            src.height as f32,
+            zoom,
+            focus[0],
+            focus[1],
+            taps as f32,
+            step,
+            sin,
+            cos,
+        ];
+        let pixels = self.run(Op::Resample, dst.width, dst.height, Some(src), &[], &params)?;
+        dst.pixels = pixels;
         Ok(())
     }
 
     /// Runs one operator over the whole output frame and returns its pixels.
-    ///
-    /// Dispatch is tiled to respect `max_compute_workgroups_per_dimension`;
-    /// the shader walks the rest with a grid-stride loop.
-    fn run(&self, params: &Params, src_pixels: &[u8], stops: &[u32]) -> Result<Vec<u8>, GpuError> {
-        let out_len = (params.width * params.height * 4) as usize;
-        let src_buf = self.storage_buffer(src_pixels, "media-gpu-src", wgpu::BufferUsages::STORAGE);
-        let dst_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("media-gpu-dst"),
-            size: (out_len.max(4)) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let stop_words: Vec<u8> = stops.iter().flat_map(|w| w.to_le_bytes()).collect();
-        let stop_buf = self.storage_buffer(&stop_words, "media-gpu-stops", wgpu::BufferUsages::STORAGE);
+    fn run(&mut self, op: Op, width: u32, height: u32, src: Option<&Frame>, stops: &[[u8; 4]], params: &[f32]) -> Result<Vec<u8>, GpuError> {
+        let total = (width as usize) * (height as usize);
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+        let dst_bytes = total * 4;
+        let scratch_elems = total.min(MAX_THREADS);
+        let source_bytes = src.map(|frame| frame.pixels.len()).unwrap_or(0);
+        let stop_bytes = stops.len() * 4;
 
-        let max_wg = self.device.limits().max_compute_workgroups_per_dimension.max(1);
-        let tiles_x = params.width.div_ceil(WORKGROUP).max(1);
-        let tiles_y = params.height.div_ceil(WORKGROUP).max(1);
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("media-gpu-encode") });
-        let mut tile = *params;
-        let mut by = 0;
-        while by < tiles_y {
-            let ny = max_wg.min(tiles_y - by);
-            let mut bx = 0;
-            while bx < tiles_x {
-                let nx = max_wg.min(tiles_x - bx);
-                tile.tile_x = bx * WORKGROUP;
-                tile.tile_y = by * WORKGROUP;
-                let uniform = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("media-gpu-params"),
-                    contents: &tile.to_bytes(),
-                    usage: wgpu::BufferUsages::UNIFORM,
-                });
-                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("media-gpu-bg"),
-                    layout: &self.bind_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() },
-                        wgpu::BindGroupEntry { binding: 1, resource: src_buf.as_entire_binding() },
-                        wgpu::BindGroupEntry { binding: 2, resource: dst_buf.as_entire_binding() },
-                        wgpu::BindGroupEntry { binding: 3, resource: stop_buf.as_entire_binding() },
-                    ],
-                });
-                {
-                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("media-gpu-pass"),
-                        timestamp_writes: None,
-                    });
-                    pass.set_pipeline(&self.pipeline);
-                    pass.set_bind_group(0, &bind_group, &[]);
-                    pass.dispatch_workgroups(nx, ny, 1);
-                }
-                bx += nx;
-            }
-            by += ny;
+        let mut nodes = Vec::new();
+        if src.is_some() {
+            nodes.push(resource(SRC, source_bytes));
+        }
+        if !stops.is_empty() {
+            nodes.push(resource(STOPS, stop_bytes));
+        }
+        nodes.push(resource(DST, dst_bytes));
+        nodes.push(resource(SCRATCH, scratch_elems * 4));
+
+        let base = Graph {
+            resources: ResourceGraph { nodes },
+            tasks: TaskGraph { nodes: Vec::new(), edges: Vec::new() },
+        };
+        self.prepare(&base)?;
+
+        if let Some(frame) = src {
+            self.backend
+                .write_f32(ResourceId(SRC), &words(&frame.pixels))
+                .map_err(|error| GpuError::new(format!("upload source frame: {error}")))?;
+        }
+        if !stops.is_empty() {
+            let packed: Vec<u8> = stops.iter().flat_map(|stop| *stop).collect();
+            self.backend
+                .write_f32(ResourceId(STOPS), &words(&packed))
+                .map_err(|error| GpuError::new(format!("upload gradient stops: {error}")))?;
         }
 
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("media-gpu-readback"),
-            size: (out_len.max(4)) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        encoder.copy_buffer_to_buffer(&dst_buf, 0, &staging, 0, out_len as u64);
-        self.queue.submit(Some(encoder.finish()));
+        let kernel = &self.kernels[op.index()];
+        let mut offset = 0usize;
+        while offset < total {
+            let chunk = (total - offset).min(MAX_THREADS);
+            let mut values = Vec::with_capacity(3 + params.len());
+            values.push(width as f32);
+            values.push(height as f32);
+            values.push(offset as f32);
+            values.extend_from_slice(params);
 
-        let slice = staging.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-        self.device.poll(wgpu::PollType::wait()).map_err(|e| GpuError::new(format!("readback poll failed: {e}")))?;
-        rx.recv().map_err(|e| GpuError::new(format!("readback channel closed: {e}")))?
-            .map_err(|e| GpuError::new(format!("readback map failed: {e}")))?;
-        let view = slice.get_mapped_range();
-        let out = view[..out_len].to_vec();
-        drop(view);
-        staging.unmap();
+            let mut task_params = BTreeMap::new();
+            task_params.insert(
+                "program".to_string(),
+                ParamValue::Program { version: 1, hash: kernel.hash, body: kernel.body.clone() },
+            );
+            task_params.insert("output".to_string(), ParamValue::I64(SCRATCH as i64));
+            if src.is_some() {
+                task_params.insert(format!("buffer_{SRC}"), ParamValue::I64(SRC as i64));
+            }
+            if !stops.is_empty() {
+                task_params.insert(format!("buffer_{STOPS}"), ParamValue::I64(STOPS as i64));
+            }
+            task_params.insert(format!("buffer_{DST}"), ParamValue::I64(DST as i64));
+            for (slot, value) in values.iter().enumerate() {
+                task_params.insert(format!("uniform_{slot}"), ParamValue::F64(f64::from(*value)));
+            }
+
+            let graph = Graph {
+                resources: ResourceGraph { nodes: base.resources.nodes.clone() },
+                tasks: TaskGraph {
+                    nodes: vec![TaskNode {
+                        id: TaskId(offset as u64),
+                        kind: TaskKind::Dispatch,
+                        shader: ShaderId(op.shader()),
+                        params: task_params,
+                        // `Explicit` counts threads; the backend groups them in 64s.
+                        dispatch: Dispatch::Explicit { x: chunk as u32, y: 1, z: 1 },
+                        objective: Objective::MaxThroughput,
+                        priority: Priority::Batch,
+                    }],
+                    edges: Vec::new(),
+                },
+            };
+            self.backend
+                .run_prepared(&graph)
+                .map_err(|error| GpuError::new(format!("dispatch {}: {error}", op.index())))?;
+            offset += chunk;
+        }
+
+        let mut out = self
+            .backend
+            .read_u8(ResourceId(DST))
+            .map_err(|error| GpuError::new(format!("read back frame: {error}")))?;
+        out.truncate(dst_bytes);
         Ok(out)
     }
 
-    /// A storage buffer holding `bytes`, padded to the shader's word size.
-    /// Zero-length inputs get a four-byte dummy so the binding is always
-    /// valid (operators that read nothing still bind the slot).
-    fn storage_buffer(&self, bytes: &[u8], label: &str, usage: wgpu::BufferUsages) -> wgpu::Buffer {
-        let mut padded = bytes.to_vec();
-        while padded.len() % 4 != 0 || padded.is_empty() {
-            padded.push(0);
-        }
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(label),
-            contents: &padded,
-            usage,
-        })
-    }
-}
-
-/// The compositor without the backend compiled in: every acquisition fails,
-/// so hosts fall back to the CPU path explicitly.
-#[cfg(not(feature = "gpu"))]
-pub struct GpuCompositor;
-
-#[cfg(not(feature = "gpu"))]
-impl GpuCompositor {
-    pub fn new() -> Result<Self, GpuError> {
-        Err(GpuError::new("media-gpu built without `gpu` feature"))
-    }
-    pub fn with_fallback_adapter() -> Result<Self, GpuError> {
-        Self::new()
-    }
-    pub fn adapter_name(&self) -> &str {
-        "none"
-    }
-    pub fn backend(&self) -> &str {
-        "none"
-    }
-    pub fn fill(&mut self, _frame: &mut Frame, _color: [u8; 4]) -> Result<(), GpuError> {
-        Err(GpuError::new("media-gpu built without `gpu` feature"))
-    }
-    pub fn v_gradient(&mut self, _frame: &mut Frame, _stops: &[[u8; 4]]) -> Result<(), GpuError> {
-        Err(GpuError::new("media-gpu built without `gpu` feature"))
-    }
-    pub fn radial(&mut self, _frame: &mut Frame, _center: [u8; 4], _edge: [u8; 4]) -> Result<(), GpuError> {
-        Err(GpuError::new("media-gpu built without `gpu` feature"))
-    }
-    pub fn vignette(&mut self, _frame: &mut Frame, _strength: f32) -> Result<(), GpuError> {
-        Err(GpuError::new("media-gpu built without `gpu` feature"))
-    }
-    pub fn resample(&mut self, _dst: &mut Frame, _src: &Frame, _zoom: f32, _focus: [f32; 2], _rotate_deg: f32) -> Result<(), GpuError> {
-        Err(GpuError::new("media-gpu built without `gpu` feature"))
-    }
-}
-
-/// WGSL for the five display-space operators. The byte order, the loop order
-/// and the cast rules mirror the CPU reference exactly; see the module docs.
-#[cfg(feature = "gpu")]
-const FRAME_OPS_WGSL: &str = r#"
-struct Params {
-    width: u32,
-    height: u32,
-    src_width: u32,
-    src_height: u32,
-    op: u32,
-    taps: u32,
-    stop_count: u32,
-    zoom: f32,
-    focus_x: f32,
-    focus_y: f32,
-    step: f32,
-    sin: f32,
-    cos: f32,
-    strength: f32,
-    segments: f32,
-    color: u32,
-    center_color: u32,
-    edge_color: u32,
-    tile_x: u32,
-    tile_y: u32,
-};
-
-@group(0) @binding(0) var<uniform> p: Params;
-@group(0) @binding(1) var<storage, read> src: array<u32>;
-@group(0) @binding(2) var<storage, read_write> dst: array<u32>;
-@group(0) @binding(3) var<storage, read> stops: array<u32>;
-
-fn ch(v: u32, i: u32) -> f32 {
-    return f32((v >> (8u * i)) & 0xFFu);
-}
-
-fn mk(r: u32, g: u32, b: u32, a: u32) -> u32 {
-    return r | (g << 8u) | (b << 16u) | (a << 24u);
-}
-
-// Truncating byte cast, as the resample reference writes `texel[k] as u8`.
-fn to8_t(v: f32) -> u32 {
-    return u32(clamp(v, 0.0, 255.0));
-}
-
-// Rounding byte cast, as `Rgba::lerp` and the vignette write it.
-fn to8_r(v: f32) -> u32 {
-    return u32(clamp(round(v), 0.0, 255.0));
-}
-
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
-    let t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
-
-// Bilinear sample of the source frame in fractional pixel coordinates,
-// channels as display bytes 0..255 (no normalization), same order as
-// `media_image::Frame::sample`.
-fn sample(x_in: f32, y_in: f32) -> vec4<f32> {
-    let wm = f32(max(p.src_width - 1u, 0u));
-    let hm = f32(max(p.src_height - 1u, 0u));
-    let x = clamp(x_in, 0.0, wm);
-    let y = clamp(y_in, 0.0, hm);
-    let x0f = floor(x);
-    let y0f = floor(y);
-    let fx = x - x0f;
-    let fy = y - y0f;
-    let x0 = u32(x0f);
-    let y0 = u32(y0f);
-    let x1 = min(x0 + 1u, max(p.src_width - 1u, 0u));
-    let y1 = min(y0 + 1u, max(p.src_height - 1u, 0u));
-    let sw = p.src_width;
-    let c00 = src[y0 * sw + x0];
-    let c10 = src[y0 * sw + x1];
-    let c01 = src[y1 * sw + x0];
-    let c11 = src[y1 * sw + x1];
-    let top0 = vec4<f32>(ch(c00, 0u), ch(c00, 1u), ch(c00, 2u), ch(c00, 3u));
-    let top1 = vec4<f32>(ch(c10, 0u), ch(c10, 1u), ch(c10, 2u), ch(c10, 3u));
-    let bot0 = vec4<f32>(ch(c01, 0u), ch(c01, 1u), ch(c01, 2u), ch(c01, 3u));
-    let bot1 = vec4<f32>(ch(c11, 0u), ch(c11, 1u), ch(c11, 2u), ch(c11, 3u));
-    let top = top0 + (top1 - top0) * fx;
-    let bottom = bot0 + (bot1 - bot0) * fx;
-    return top + (bottom - top) * fy;
-}
-
-// `Rgba::lerp`: clamp t, mix every channel, rounding cast.
-fn lerp_color(a: u32, b: u32, t_in: f32) -> u32 {
-    let t = clamp(t_in, 0.0, 1.0);
-    let r = to8_r(ch(a, 0u) + (ch(b, 0u) - ch(a, 0u)) * t);
-    let g = to8_r(ch(a, 1u) + (ch(b, 1u) - ch(a, 1u)) * t);
-    let bb = to8_r(ch(a, 2u) + (ch(b, 2u) - ch(a, 2u)) * t);
-    let aa = to8_r(ch(a, 3u) + (ch(b, 3u) - ch(a, 3u)) * t);
-    return mk(r, g, bb, aa);
-}
-
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let x = gid.x + p.tile_x;
-    let y = gid.y + p.tile_y;
-    if (x >= p.width || y >= p.height) {
-        return;
-    }
-    let i = y * p.width + x;
-    switch p.op {
-        case 0u: { // resample
-            let w = f32(p.width);
-            let h = f32(p.height);
-            let v = (f32(y) + 0.5) / h - 0.5;
-            let u = (f32(x) + 0.5) / w - 0.5;
-            let zu = u / p.zoom;
-            let zv = v / p.zoom;
-            let ru = zu * p.cos + zv * p.sin;
-            let rv = -zu * p.sin + zv * p.cos;
-            let sx = (p.focus_x + ru) * f32(p.src_width) - 0.5;
-            let sy = (p.focus_y + rv) * f32(p.src_height) - 0.5;
-            var t: vec4<f32>;
-            if (p.taps == 1u) {
-                t = sample(sx, sy);
-            } else {
-                let half = (f32(p.taps) - 1.0) / 2.0;
-                var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-                for (var ty: u32 = 0u; ty < p.taps; ty = ty + 1u) {
-                    for (var tx: u32 = 0u; tx < p.taps; tx = tx + 1u) {
-                        acc = acc + sample(sx + (f32(tx) - half) * p.step, sy + (f32(ty) - half) * p.step);
-                    }
-                }
-                t = acc / f32(p.taps * p.taps);
+    /// Allocates the frame buffers, recreating the device when the frame shape
+    /// changes (the D3D12 backend pins buffer sizes per resource id).
+    fn prepare(&mut self, graph: &Graph) -> Result<(), GpuError> {
+        match self.backend.prepare(graph) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                self.backend = Dx12Backend::new().map_err(|error| GpuError::new(format!("reopen D3D12 device: {error}")))?;
+                self.backend
+                    .prepare(graph)
+                    .map_err(|error| GpuError::new(format!("allocate frame buffers: {error}")))
             }
-            dst[i] = mk(to8_t(t.r), to8_t(t.g), to8_t(t.b), 255u);
         }
-        case 1u: { // vignette
-            let u = (f32(x) + 0.5) / f32(p.width);
-            let v = (f32(y) + 0.5) / f32(p.height);
-            let du = u - 0.5;
-            let dv = v - 0.5;
-            let d = sqrt(du * du + dv * dv) * 1.4142135623730951;
-            let edge = smoothstep(0.25, 0.95, d);
-            let factor = 1.0 - p.strength * edge;
-            let px = src[i];
-            let r = to8_r(ch(px, 0u) * factor);
-            let g = to8_r(ch(px, 1u) * factor);
-            let b = to8_r(ch(px, 2u) * factor);
-            dst[i] = mk(r, g, b, (px >> 24u) & 0xFFu);
-        }
-        case 2u: { // fill
-            dst[i] = p.color;
-        }
-        case 3u: { // v_gradient
-            let t = (f32(y) / p.step) * p.segments;
-            let seg = min(u32(t), p.stop_count - 2u);
-            let local = t - f32(seg);
-            dst[i] = lerp_color(stops[seg], stops[seg + 1u], local);
-        }
-        case 4u: { // radial
-            let cx = f32(p.width) / 2.0;
-            let cy = f32(p.height) / 2.0;
-            let max_r = sqrt(cx * cx + cy * cy);
-            let dx = f32(x) - cx;
-            let dy = f32(y) - cy;
-            let t = sqrt(dx * dx + dy * dy) / max_r;
-            dst[i] = lerp_color(p.center_color, p.edge_color, t);
-        }
-        default: {}
     }
 }
-"#;
+
+/// A device buffer for one resource id.
+fn resource(id: u64, bytes: usize) -> ResourceNode {
+    ResourceNode {
+        id: ResourceId(id),
+        kind: ResourceKind::Buffer,
+        domain: Domain::Vram,
+        access: Access::ReadWrite,
+        byte_size: Some(bytes as u64),
+    }
+}
+
+/// Reinterprets packed little-endian bytes as the `f32` lanes `write_f32`
+/// uploads. The kernel reads them back as `u32` words, so the bit pattern is
+/// preserved exactly.
+fn words(bytes: &[u8]) -> Vec<f32> {
+    bytes.chunks_exact(4).map(|chunk| f32::from_bits(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))).collect()
+}
+
+fn u32_ty() -> Ty {
+    Ty::Scalar(ScalarTy::U32)
+}
+
+/// The uniform slots every kernel shares.
+const U_WIDTH: u32 = 0;
+const U_HEIGHT: u32 = 1;
+const U_TILE: u32 = 2;
+
+/// Expression helpers over the UCF program builder.
+///
+/// Every method performs exactly one builder call; callers sequence operands
+/// into locals because the builder takes `&mut self`.
+trait Emit {
+    fn c_f32(&mut self, value: f32) -> ValueId;
+    fn c_u32(&mut self, value: u32) -> ValueId;
+    fn uniform_f32(&mut self, slot: u32) -> ValueId;
+    fn uniform_u32(&mut self, slot: u32) -> ValueId;
+    fn bin(&mut self, op: BinOp, lhs: ValueId, rhs: ValueId) -> ValueId;
+    fn un(&mut self, op: UnOp, arg: ValueId, ty: Ty) -> ValueId;
+    fn add(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn sub(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn mul(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn div(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn lt(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn eq(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn select(&mut self, cond: ValueId, then_: ValueId, else_: ValueId) -> ValueId;
+    fn min_u32(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn max_f32(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn min_f32(&mut self, a: ValueId, b: ValueId) -> ValueId;
+    fn to_f32(&mut self, value: ValueId) -> ValueId;
+    fn to_u32_trunc(&mut self, value: ValueId) -> ValueId;
+    fn to_u32_round(&mut self, value: ValueId) -> ValueId;
+    fn channel_u32(&mut self, word: ValueId, index: u32) -> ValueId;
+    fn channel_f32(&mut self, word: ValueId, index: u32) -> ValueId;
+    fn pack(&mut self, r: ValueId, g: ValueId, b: ValueId, a: ValueId) -> ValueId;
+    fn to8_trunc(&mut self, value: ValueId) -> ValueId;
+    fn to8_round(&mut self, value: ValueId) -> ValueId;
+    fn lerp_word(&mut self, a: ValueId, b: ValueId, t: ValueId) -> ValueId;
+}
+
+impl Emit for FunctionBuilder {
+    fn c_f32(&mut self, value: f32) -> ValueId {
+        self.emit_const_f32(value).expect("open block")
+    }
+    fn c_u32(&mut self, value: u32) -> ValueId {
+        self.emit_const_u32(value).expect("open block")
+    }
+    fn uniform_f32(&mut self, slot: u32) -> ValueId {
+        self.emit_load_uniform(slot, Ty::f32()).expect("open block")
+    }
+    fn uniform_u32(&mut self, slot: u32) -> ValueId {
+        let value = self.uniform_f32(slot);
+        self.to_u32_trunc(value)
+    }
+    fn bin(&mut self, op: BinOp, lhs: ValueId, rhs: ValueId) -> ValueId {
+        self.emit_binary(op, lhs, rhs).expect("matching types")
+    }
+    fn un(&mut self, op: UnOp, arg: ValueId, ty: Ty) -> ValueId {
+        self.emit_unary(op, arg, ty).expect("matching types")
+    }
+    fn add(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Add, a, b)
+    }
+    fn sub(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Sub, a, b)
+    }
+    fn mul(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Mul, a, b)
+    }
+    fn div(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Div, a, b)
+    }
+    fn lt(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Lt, a, b)
+    }
+    fn eq(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Eq, a, b)
+    }
+    fn select(&mut self, cond: ValueId, then_: ValueId, else_: ValueId) -> ValueId {
+        self.emit_select(cond, then_, else_).expect("matching types")
+    }
+    fn min_u32(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        let cond = self.lt(a, b);
+        self.select(cond, a, b)
+    }
+    fn max_f32(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Max, a, b)
+    }
+    fn min_f32(&mut self, a: ValueId, b: ValueId) -> ValueId {
+        self.bin(BinOp::Min, a, b)
+    }
+    fn to_f32(&mut self, value: ValueId) -> ValueId {
+        self.un(UnOp::U32ToF32, value, Ty::f32())
+    }
+    fn to_u32_trunc(&mut self, value: ValueId) -> ValueId {
+        self.un(UnOp::F32ToU32(Rounding::Trunc), value, u32_ty())
+    }
+    fn to_u32_round(&mut self, value: ValueId) -> ValueId {
+        self.un(UnOp::F32ToU32(Rounding::Round), value, u32_ty())
+    }
+    fn channel_u32(&mut self, word: ValueId, index: u32) -> ValueId {
+        let shifted = if index == 0 {
+            word
+        }
+        else {
+            let shift = self.c_u32(index * 8);
+            self.bin(BinOp::Shr, word, shift)
+        };
+        let mask = self.c_u32(0xFF);
+        self.bin(BinOp::And, shifted, mask)
+    }
+    fn channel_f32(&mut self, word: ValueId, index: u32) -> ValueId {
+        let value = self.channel_u32(word, index);
+        self.to_f32(value)
+    }
+    fn pack(&mut self, r: ValueId, g: ValueId, b: ValueId, a: ValueId) -> ValueId {
+        let shift = self.c_u32(8);
+        let g = self.bin(BinOp::Shl, g, shift);
+        let shift = self.c_u32(16);
+        let b = self.bin(BinOp::Shl, b, shift);
+        let shift = self.c_u32(24);
+        let a = self.bin(BinOp::Shl, a, shift);
+        let rg = self.bin(BinOp::Or, r, g);
+        let ba = self.bin(BinOp::Or, b, a);
+        self.bin(BinOp::Or, rg, ba)
+    }
+    fn to8_trunc(&mut self, value: ValueId) -> ValueId {
+        let lo = self.c_f32(0.0);
+        let hi = self.c_f32(255.0);
+        let above = self.max_f32(value, lo);
+        let clamped = self.min_f32(above, hi);
+        self.to_u32_trunc(clamped)
+    }
+    fn to8_round(&mut self, value: ValueId) -> ValueId {
+        let lo = self.c_f32(0.0);
+        let hi = self.c_f32(255.0);
+        let above = self.max_f32(value, lo);
+        let clamped = self.min_f32(above, hi);
+        self.to_u32_round(clamped)
+    }
+    fn lerp_word(&mut self, a: ValueId, b: ValueId, t: ValueId) -> ValueId {
+        let lo = self.c_f32(0.0);
+        let hi = self.c_f32(1.0);
+        let below = self.max_f32(t, lo);
+        let t = self.min_f32(below, hi);
+        let mut channels: [ValueId; 4] = [a; 4];
+        for (index, channel) in channels.iter_mut().enumerate() {
+            let ca = self.channel_f32(a, index as u32);
+            let cb = self.channel_f32(b, index as u32);
+            let delta = self.sub(cb, ca);
+            let offset = self.mul(delta, t);
+            let mixed = self.add(ca, offset);
+            let byte = self.to8_round(mixed);
+            *channel = byte;
+        }
+        self.pack(channels[0], channels[1], channels[2], channels[3])
+    }
+}
+
+/// Bilinear sample of the source frame in fractional pixel coordinates,
+/// channels as display floats 0..255, same order as `media_image::Frame::sample`.
+fn sample(f: &mut FunctionBuilder, sx: ValueId, sy: ValueId, sw: ValueId, sh: ValueId) -> [ValueId; 3] {
+    let zero = f.c_f32(0.0);
+    let one = f.c_u32(1);
+    let wm = f.sub(sw, one);
+    let hm = f.sub(sh, one);
+    let wm_f = f.to_f32(wm);
+    let hm_f = f.to_f32(hm);
+    let above = f.max_f32(sx, zero);
+    let x = f.min_f32(above, wm_f);
+    let above = f.max_f32(sy, zero);
+    let y = f.min_f32(above, hm_f);
+    let x0 = f.to_u32_trunc(x);
+    let y0 = f.to_u32_trunc(y);
+    let x0_f = f.to_f32(x0);
+    let y0_f = f.to_f32(y0);
+    let fx = f.sub(x, x0_f);
+    let fy = f.sub(y, y0_f);
+    let x0p1 = f.add(x0, one);
+    let y0p1 = f.add(y0, one);
+    let x1 = f.min_u32(x0p1, wm);
+    let y1 = f.min_u32(y0p1, hm);
+    let row0 = f.mul(y0, sw);
+    let row1 = f.mul(y1, sw);
+    let i00 = f.add(row0, x0);
+    let i10 = f.add(row0, x1);
+    let i01 = f.add(row1, x0);
+    let i11 = f.add(row1, x1);
+    let c00 = f.emit_load_buffer(SRC as u32, i00, u32_ty()).expect("load");
+    let c10 = f.emit_load_buffer(SRC as u32, i10, u32_ty()).expect("load");
+    let c01 = f.emit_load_buffer(SRC as u32, i01, u32_ty()).expect("load");
+    let c11 = f.emit_load_buffer(SRC as u32, i11, u32_ty()).expect("load");
+    let mut out: [ValueId; 3] = [c00; 3];
+    for (index, channel) in out.iter_mut().enumerate() {
+        let p00 = f.channel_f32(c00, index as u32);
+        let p10 = f.channel_f32(c10, index as u32);
+        let p01 = f.channel_f32(c01, index as u32);
+        let p11 = f.channel_f32(c11, index as u32);
+        let d10 = f.sub(p10, p00);
+        let w10 = f.mul(d10, fx);
+        let top = f.add(p00, w10);
+        let d11 = f.sub(p11, p01);
+        let w11 = f.mul(d11, fx);
+        let bottom = f.add(p01, w11);
+        let dv = f.sub(bottom, top);
+        let wv = f.mul(dv, fy);
+        *channel = f.add(top, wv);
+    }
+    out
+}
+
+/// Builds one operator kernel.
+fn build_program(op: Op) -> Program {
+    let mut f = FunctionBuilder::new("composite");
+    let gid = f.emit_global_id().expect("global id");
+    let tile = f.uniform_u32(U_TILE);
+    let index = f.add(gid, tile);
+    let width_u = f.uniform_u32(U_WIDTH);
+    let height_u = f.uniform_u32(U_HEIGHT);
+    let total = f.mul(width_u, height_u);
+    let inside = f.lt(index, total);
+    let body = f.create_block();
+    let exit = f.create_block();
+    f.conditional_branch(inside, body, exit).expect("branch");
+
+    f.switch_to(body).expect("body");
+    let x = f.bin(BinOp::Mod, index, width_u);
+    let y = f.bin(BinOp::Div, index, width_u);
+    let value = emit_operator(&mut f, op, index, x, y, width_u, height_u);
+    f.emit_store_buffer(DST as u32, index, value).expect("store");
+    // The DXBC emitter only supports scalar `f32` returns; the return lane is
+    // the dispatch's scratch UAV and is not read back.
+    let zero = f.c_f32(0.0);
+    f.return_value(zero).expect("return");
+
+    f.switch_to(exit).expect("exit");
+    let zero = f.c_f32(0.0);
+    f.return_value(zero).expect("return");
+
+    ProgramBuilder::new().entry(f).expect("entry").finish().expect("valid kernel")
+}
+
+fn emit_operator(f: &mut FunctionBuilder, op: Op, index: ValueId, x: ValueId, y: ValueId, width_u: ValueId, height_u: ValueId) -> ValueId {
+    match op {
+        Op::Fill => {
+            let r = f.uniform_u32(3);
+            let g = f.uniform_u32(4);
+            let b = f.uniform_u32(5);
+            let a = f.uniform_u32(6);
+            f.pack(r, g, b, a)
+        }
+        Op::VGradient => {
+            let y_f = f.to_f32(y);
+            let stops = f.uniform_u32(3);
+            let segments = f.uniform_f32(4);
+            let step = f.uniform_f32(5);
+            let scaled = f.div(y_f, step);
+            let t = f.mul(scaled, segments);
+            let raw = f.to_u32_trunc(t);
+            let two = f.c_u32(2);
+            let max_seg = f.sub(stops, two);
+            let seg = f.min_u32(raw, max_seg);
+            let seg_f = f.to_f32(seg);
+            let local = f.sub(t, seg_f);
+            let one = f.c_u32(1);
+            let next = f.add(seg, one);
+            let a = f.emit_load_buffer(STOPS as u32, seg, u32_ty()).expect("stop");
+            let b = f.emit_load_buffer(STOPS as u32, next, u32_ty()).expect("stop");
+            f.lerp_word(a, b, local)
+        }
+        Op::Radial => {
+            let x_f = f.to_f32(x);
+            let y_f = f.to_f32(y);
+            let width_f = f.to_f32(width_u);
+            let height_f = f.to_f32(height_u);
+            let two = f.c_f32(2.0);
+            let cx = f.div(width_f, two);
+            let cy = f.div(height_f, two);
+            let cx2 = f.mul(cx, cx);
+            let cy2 = f.mul(cy, cy);
+            let sum = f.add(cx2, cy2);
+            let max_r = f.un(UnOp::Sqrt, sum, Ty::f32());
+            let dx = f.sub(x_f, cx);
+            let dy = f.sub(y_f, cy);
+            let dx2 = f.mul(dx, dx);
+            let dy2 = f.mul(dy, dy);
+            let sum = f.add(dx2, dy2);
+            let dist = f.un(UnOp::Sqrt, sum, Ty::f32());
+            let t = f.div(dist, max_r);
+            let mut center: [ValueId; 4] = [width_u; 4];
+            let mut edge: [ValueId; 4] = [height_u; 4];
+            for (slot, channel) in center.iter_mut().enumerate() {
+                let value = f.uniform_u32(3 + slot as u32);
+                *channel = value;
+            }
+            for (slot, channel) in edge.iter_mut().enumerate() {
+                let value = f.uniform_u32(7 + slot as u32);
+                *channel = value;
+            }
+            let center = f.pack(center[0], center[1], center[2], center[3]);
+            let edge = f.pack(edge[0], edge[1], edge[2], edge[3]);
+            f.lerp_word(center, edge, t)
+        }
+        Op::Vignette => {
+            let word = f.emit_load_buffer(SRC as u32, index, u32_ty()).expect("load");
+            let x_f = f.to_f32(x);
+            let y_f = f.to_f32(y);
+            let half = f.c_f32(0.5);
+            let width_f = f.to_f32(width_u);
+            let height_f = f.to_f32(height_u);
+            let shifted = f.add(x_f, half);
+            let u = f.div(shifted, width_f);
+            let shifted = f.add(y_f, half);
+            let v = f.div(shifted, height_f);
+            let du = f.sub(u, half);
+            let dv = f.sub(v, half);
+            let du2 = f.mul(du, du);
+            let dv2 = f.mul(dv, dv);
+            let sum = f.add(du2, dv2);
+            let root = f.un(UnOp::Sqrt, sum, Ty::f32());
+            let root2 = f.c_f32(std::f32::consts::SQRT_2);
+            let dist = f.mul(root, root2);
+            let lo = f.c_f32(0.25);
+            let span = f.c_f32(0.7);
+            let over = f.sub(dist, lo);
+            let raw = f.div(over, span);
+            let zero = f.c_f32(0.0);
+            let one = f.c_f32(1.0);
+            let above = f.max_f32(raw, zero);
+            let t = f.min_f32(above, one);
+            let three = f.c_f32(3.0);
+            let two = f.c_f32(2.0);
+            let t2 = f.mul(t, t);
+            let tt = f.mul(two, t);
+            let inner = f.sub(three, tt);
+            let edge = f.mul(t2, inner);
+            let strength = f.uniform_f32(3);
+            let dark = f.mul(strength, edge);
+            let factor = f.sub(one, dark);
+            let r0 = f.channel_f32(word, 0);
+            let r1 = f.mul(r0, factor);
+            let r = f.to8_round(r1);
+            let g0 = f.channel_f32(word, 1);
+            let g1 = f.mul(g0, factor);
+            let g = f.to8_round(g1);
+            let b0 = f.channel_f32(word, 2);
+            let b1 = f.mul(b0, factor);
+            let b = f.to8_round(b1);
+            let a = f.channel_u32(word, 3);
+            f.pack(r, g, b, a)
+        }
+        Op::Resample => {
+            let src_w = f.uniform_u32(3);
+            let src_h = f.uniform_u32(4);
+            let zoom = f.uniform_f32(5);
+            let focus_x = f.uniform_f32(6);
+            let focus_y = f.uniform_f32(7);
+            let taps = f.uniform_u32(8);
+            let step = f.uniform_f32(9);
+            let sin = f.uniform_f32(10);
+            let cos = f.uniform_f32(11);
+            let x_f = f.to_f32(x);
+            let y_f = f.to_f32(y);
+            let half = f.c_f32(0.5);
+            let width_f = f.to_f32(width_u);
+            let height_f = f.to_f32(height_u);
+            let shifted = f.add(x_f, half);
+            let u0 = f.div(shifted, width_f);
+            let u = f.sub(u0, half);
+            let shifted = f.add(y_f, half);
+            let v0 = f.div(shifted, height_f);
+            let v = f.sub(v0, half);
+            let zu = f.div(u, zoom);
+            let zv = f.div(v, zoom);
+            let zu_cos = f.mul(zu, cos);
+            let zv_sin = f.mul(zv, sin);
+            let ru = f.add(zu_cos, zv_sin);
+            let neg_sin = f.un(UnOp::Neg, sin, Ty::f32());
+            let zu_neg = f.mul(zu, neg_sin);
+            let zv_cos = f.mul(zv, cos);
+            let rv = f.add(zu_neg, zv_cos);
+            let src_w_f = f.to_f32(src_w);
+            let src_h_f = f.to_f32(src_h);
+            let fx = f.add(focus_x, ru);
+            let fx = f.mul(fx, src_w_f);
+            let sx = f.sub(fx, half);
+            let fx = f.add(focus_y, rv);
+            let fx = f.mul(fx, src_h_f);
+            let sy = f.sub(fx, half);
+
+            let single = sample(f, sx, sy, src_w, src_h);
+            let zero_acc = f.c_f32(0.0);
+
+            let half_step = f.mul(step, half);
+            let neg_half = f.un(UnOp::Neg, half_step, Ty::f32());
+            let offsets2 = [
+                (neg_half, neg_half),
+                (half_step, neg_half),
+                (neg_half, half_step),
+                (half_step, half_step),
+            ];
+            let mut acc2: [ValueId; 3] = [zero_acc; 3];
+            for (dx, dy) in offsets2 {
+                let tx = f.add(sx, dx);
+                let ty = f.add(sy, dy);
+                let tap = sample(f, tx, ty, src_w, src_h);
+                for (channel, value) in acc2.iter_mut().enumerate() {
+                    let sum = f.add(*value, tap[channel]);
+                    *value = sum;
+                }
+            }
+            let four = f.c_f32(4.0);
+            let mut pair: [ValueId; 3] = [zero_acc; 3];
+            for (channel, value) in pair.iter_mut().enumerate() {
+                let avg = f.div(acc2[channel], four);
+                *value = avg;
+            }
+
+            let neg_step = f.un(UnOp::Neg, step, Ty::f32());
+            let zero = f.c_f32(0.0);
+            let offsets3 = [
+                (neg_step, neg_step),
+                (zero, neg_step),
+                (step, neg_step),
+                (neg_step, zero),
+                (zero, zero),
+                (step, zero),
+                (neg_step, step),
+                (zero, step),
+                (step, step),
+            ];
+            let mut acc3: [ValueId; 3] = [zero_acc; 3];
+            for (dx, dy) in offsets3 {
+                let tx = f.add(sx, dx);
+                let ty = f.add(sy, dy);
+                let tap = sample(f, tx, ty, src_w, src_h);
+                for (channel, value) in acc3.iter_mut().enumerate() {
+                    let sum = f.add(*value, tap[channel]);
+                    *value = sum;
+                }
+            }
+            let nine = f.c_f32(9.0);
+            let mut triple: [ValueId; 3] = [zero_acc; 3];
+            for (channel, value) in triple.iter_mut().enumerate() {
+                let avg = f.div(acc3[channel], nine);
+                *value = avg;
+            }
+
+            let one_u = f.c_u32(1);
+            let two_u = f.c_u32(2);
+            let is_one = f.eq(taps, one_u);
+            let is_two = f.eq(taps, two_u);
+            let mut channels: [ValueId; 3] = [zero_acc; 3];
+            for (channel, value) in channels.iter_mut().enumerate() {
+                let two_or_three = f.select(is_two, pair[channel], triple[channel]);
+                let chosen = f.select(is_one, single[channel], two_or_three);
+                *value = chosen;
+            }
+            let r = f.to8_trunc(channels[0]);
+            let g = f.to8_trunc(channels[1]);
+            let b = f.to8_trunc(channels[2]);
+            let a = f.c_u32(255);
+            f.pack(r, g, b, a)
+        }
+    }
+}
