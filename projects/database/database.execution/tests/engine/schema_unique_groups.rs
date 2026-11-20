@@ -37,9 +37,9 @@ fn grouped_unique_attributes_become_one_multi_column_rule() {
 #[test]
 fn a_malformed_unique_group_fails_instead_of_degrading_to_a_single_column_rule() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.ensure_schema("table T { @@id: i64, [unique(a-b)] x: i64 }").unwrap();
-    let error = conn.execution_catalog().expect_err("a malformed group name must not be accepted");
+    let error = conn.ensure_schema("table T { @@id: i64, [unique(a-b)] x: i64 }").expect_err("a malformed group name must not be accepted");
     assert!(error.to_string().contains("invalid unique group name"), "{error}");
+    assert!(conn.schema().unwrap().is_none(), "the rejected document must not become database truth");
 }
 
 const PARTIAL_SCHEMA: &str = "\
@@ -90,8 +90,7 @@ fn a_malformed_unique_predicate_fails_instead_of_degrading_to_a_whole_table_rule
         "table T { @@id: i64, [unique(ux where status like 'a%')] x: i64, status: utf8 }",
     ] {
         let conn = Connection::open_in_memory().unwrap();
-        conn.ensure_schema(document).unwrap();
-        let error = conn.execution_catalog().expect_err("a malformed predicate must not be accepted");
+        let error = conn.ensure_schema(document).expect_err("a malformed predicate must not be accepted");
         assert!(error.to_string().contains("malformed unique attribute"), "{error}");
     }
 }
@@ -99,15 +98,15 @@ fn a_malformed_unique_predicate_fails_instead_of_degrading_to_a_whole_table_rule
 #[test]
 fn a_predicate_literal_that_mismatches_the_column_type_is_rejected() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.ensure_schema("table T { @@id: i64, [unique(ux where status = 1)] status: utf8 }").unwrap();
-    let error = conn.execution_catalog().expect_err("an integer literal cannot guard a text column");
+    let error = conn.ensure_schema("table T { @@id: i64, [unique(ux where status = 1)] status: utf8 }")
+        .expect_err("an integer literal cannot guard a text column");
     assert!(error.to_string().contains("does not match the declared type"), "{error}");
 }
 
 #[test]
 fn a_predicate_may_only_reference_columns_of_the_same_table() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.ensure_schema("table T { @@id: i64, [unique(ux where other = 1)] x: i64 }").unwrap();
-    let error = conn.execution_catalog().expect_err("the predicate column must exist on the table");
+    let error = conn.ensure_schema("table T { @@id: i64, [unique(ux where other = 1)] x: i64 }")
+        .expect_err("the predicate column must exist on the table");
     assert!(error.to_string().contains("references unknown column"), "{error}");
 }

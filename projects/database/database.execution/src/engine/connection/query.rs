@@ -13,10 +13,19 @@ use crate::engine::{
     bytes::{ObjectStoreResolver, Placement},
 };
 use database_formats::yy::row::{ObjectResolver, with_object_resolver};
-use database_query::local::{Dialect, PreparedStatement, QueryRow, fingerprint as fp, prepare as prepare_source};
+use database_query::local::{Dialect, PreparedStatement, QueryKind, QueryRow, fingerprint as fp, prepare as prepare_source};
 use database_types::Value;
 
 use super::{Backend, Connection};
+
+/// Result of [`Connection::execute_plan`], dispatched by the plan's kind.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlanOutcome {
+    /// A read pipeline emitted these rows.
+    Rows(Vec<QueryRow>),
+    /// A write program changed this many rows.
+    Affected(usize),
+}
 
 /// Cap for the per-connection statement caches. A workload that mints a fresh
 /// source per statement must not grow them without bound, so an overflow drops
@@ -618,7 +627,14 @@ impl Connection {
     #[doc(hidden)]
     pub fn execute_sql_write(&self, source: &str, values: &[Value]) -> Result<usize> {
         let stmt = self.prepare_sql(source)?;
-        let values = database_query::local::bind_ordered(&stmt, values)?;
+        self.execute_prepared_write(&stmt, values)
+    }
+
+    /// Shared write tail of [`Self::execute_sql_write`] and [`Self::execute_plan`]:
+    /// everything after prepare, with `values` bound positionally against the
+    /// plan's declared parameters.
+    fn execute_prepared_write(&self, stmt: &PreparedStatement, values: &[Value]) -> Result<usize> {
+        let values = database_query::local::bind_ordered(stmt, values)?;
         self.guard_session_alive()?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut affected = 0;
@@ -666,6 +682,23 @@ impl Connection {
             },
         )?;
         Ok(affected)
+    }
+
+    /// Execute a caller-supplied plan directly, bypassing both text frontends.
+    ///
+    /// The plan may be a cached [`Self::prepare_vos`] / [`Self::prepare_sql`]
+    /// result or a hand-built [`PreparedStatement`]; `values` bind
+    /// positionally against the plan's declared parameters (empty when the
+    /// plan embeds its values). Reads run the same narrowed-window path as
+    /// prepared queries, writes the same transaction-narrowing path as SQL
+    /// DML, and both still check schema drift against the fingerprint and
+    /// revision captured on the plan.
+    pub fn execute_plan(&self, stmt: &PreparedStatement, values: &[Value]) -> Result<PlanOutcome> {
+        match stmt.query_kind {
+            QueryKind::Read => Ok(PlanOutcome::Rows(self.query_prepared_ordered(stmt, values)?)),
+            QueryKind::Write => Ok(PlanOutcome::Affected(self.execute_prepared_write(stmt, values)?)),
+            QueryKind::Session => Err(Error::Unsupported("execute_plan does not run session statements")),
+        }
     }
 }
 

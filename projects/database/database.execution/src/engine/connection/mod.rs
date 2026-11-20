@@ -31,7 +31,8 @@ mod state;
 mod transaction;
 mod udf;
 
-pub use query::{ClockQuality, ClockSource, ReadProfile};
+pub use query::{ClockQuality, ClockSource, PlanOutcome, ReadProfile};
+pub use schema_api::CatalogDefinition;
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct State {

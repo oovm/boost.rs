@@ -157,11 +157,8 @@ impl Connection {
         let manifest = schema_vos::allocate_initial_manifest(&projection);
         let bound = schema_vos::bind(&projection, &manifest)?;
         let history = schema_vos::evolve(&schema_vos::empty_history(), bound)?;
-        state.resolved_contract = Some(std::sync::Arc::new(schema_vos::resolve_contract(&history.snapshot)?));
-        state.identity_history = Some(history);
-        state.schema = Some(SchemaVersion { version, document: document.to_owned() });
-        self.write_state(&state)?;
-        Ok(())
+        let contract = schema_vos::resolve_contract(&history.snapshot)?;
+        self.install_catalog_unlocked(&mut state, CatalogDefinition::new(contract, history, version, Some(document.to_owned())))
     }
 
     /// Evolve the persisted schema to the next version (`current + 1`).
@@ -185,14 +182,67 @@ impl Connection {
         let evolved = schema_vos::evolve(history, bound)?;
         let resolved_contract = schema_vos::resolve_contract(&evolved.snapshot)?;
         let remapped = schema::remap_unique_constraints(&state.unique_constraints, renames)?;
-        let mut catalog = schema::execution_catalog_from_resolved_contract(&resolved_contract)?;
-        catalog.apply_declared_unique_constraints(&remapped)?;
-        state.schema = Some(SchemaVersion { version, document: document.to_owned() });
-        state.identity_history = Some(evolved);
-        state.resolved_contract = Some(std::sync::Arc::new(resolved_contract));
         state.unique_constraints = remapped;
-        self.write_state(&state)?;
+        self.install_catalog_unlocked(&mut state, CatalogDefinition::new(resolved_contract, evolved, version, Some(document.to_owned())))
+    }
+
+    /// Publish a host-supplied catalog as the database truth.
+    ///
+    /// This is the text-free entry point: the resolved contract and its
+    /// identity ledger arrive already built, so hosts (tooling, replication,
+    /// catalogs derived from another dialect) never have to produce VOS
+    /// source. The contract is validated and lowered against the persisted
+    /// declared uniqueness rules before anything is written, so an unusable
+    /// catalog fails without touching state. When `document` is absent, the
+    /// stored schema text keeps its previous value and only the version
+    /// changes; a first publication without text stores an empty document,
+    /// which [`Self::ensure_schema`] later adopts when a VOS document rebinds
+    /// to the same identities.
+    pub fn install_catalog(&self, definition: CatalogDefinition) -> Result<()> {
+        let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let mut state = self.read_state()?;
+        self.install_catalog_unlocked(&mut state, definition)
+    }
+
+    /// Shared publication tail of [`Self::install_catalog`], [`Self::ensure_schema`]
+    /// and [`Self::migrate_schema`]. The caller must hold the operation lock.
+    fn install_catalog_unlocked(&self, state: &mut super::State, definition: CatalogDefinition) -> Result<()> {
+        let mut catalog = schema::execution_catalog_from_resolved_contract(&definition.contract)?;
+        catalog.apply_declared_unique_constraints(&state.unique_constraints)?;
+        let document = definition
+            .document
+            .or_else(|| state.schema.as_ref().map(|schema| schema.document.clone()))
+            .unwrap_or_default();
+        state.resolved_contract = Some(std::sync::Arc::new(definition.contract));
+        state.identity_history = Some(definition.identity);
+        state.schema = Some(SchemaVersion { version: definition.version, document });
+        self.write_state(state)?;
         Ok(())
+    }
+}
+
+/// A complete catalog publication for [`Connection::install_catalog`].
+///
+/// Carries the resolved contract the executor binds against, the durable
+/// identity ledger that survives restarts, the schema version to publish and
+/// the optional source document kept for fingerprints and diagnostics.
+#[derive(Debug, Clone)]
+pub struct CatalogDefinition {
+    contract: schema_types::ResolvedContract,
+    identity: schema_types::IdentityHistory,
+    version: u32,
+    document: Option<String>,
+}
+
+impl CatalogDefinition {
+    /// Builds a publication from its parts.
+    pub fn new(
+        contract: schema_types::ResolvedContract,
+        identity: schema_types::IdentityHistory,
+        version: u32,
+        document: Option<String>,
+    ) -> Self {
+        Self { contract, identity, version, document }
     }
 }
 
