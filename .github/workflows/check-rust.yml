@@ -142,3 +142,14 @@ jobs:
             echo "the default build must not depend on wasm-bindgen" >&2
             exit 1
           fi
+
+  d3d12-parity:
+    runs-on: windows-latest
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - name: GPU/CPU parity for the D3D12 compositor
+        run: cargo test -p media-gpu --test parity
