@@ -194,6 +194,7 @@ mod sys {
     type Nfds = u32;
 
     #[repr(C)]
+    #[derive(Clone, Copy)]
     #[cfg(target_os = "linux")]
     struct Termios {
         c_iflag: u32,
@@ -207,6 +208,7 @@ mod sys {
     }
 
     #[repr(C)]
+    #[derive(Clone, Copy)]
     #[cfg(target_os = "macos")]
     struct Termios {
         c_iflag: u64,
@@ -263,7 +265,7 @@ mod sys {
     }
 
     pub fn disable_echo() -> Result<SavedMode, TerminalError> {
-        let mut saved = core::mem::zeroed::<Termios>();
+        let mut saved = unsafe { core::mem::zeroed::<Termios>() };
         if unsafe { tcgetattr(STDIN_FD, &mut saved) } != OK {
             return Err(TerminalError::EchoUnavailable);
         }
