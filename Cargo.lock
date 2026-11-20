@@ -5292,8 +5292,12 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-typescript",
+ "futures",
  "language-format",
+ "language-mcp",
+ "language-server",
  "serde",
+ "tokio",
 ]
 
 [[package]]
