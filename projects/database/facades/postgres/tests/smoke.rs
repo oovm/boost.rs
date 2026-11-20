@@ -44,7 +44,7 @@ fn cell(value: &SqlValue) -> String {
 }
 
 #[test]
-fn zzz_probe_shapes() {
+fn cte_and_array_agg_read_shapes() {
     let dir = TempDir::new("zzz-probe");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
     engine
@@ -66,32 +66,21 @@ fn zzz_probe_shapes() {
             .unwrap();
     }
 
-    for (name, sql) in [
-        ("window", "SELECT email FROM probe_users"),
-        (
-            "on_conflict",
-            "INSERT INTO probe_users (id, email, balance) VALUES ('00000000-0000-0000-0000-000000000001', 'probe-0@example.com', 0) ON CONFLICT (id) DO UPDATE SET balance = probe_users.balance + 1 RETURNING balance",
-        ),
-        (
-            "on_conflict_unique",
-            "INSERT INTO probe_users (id, email, balance) VALUES ('00000000-0000-0000-0000-000000000009', 'probe-0@example.com', 0) ON CONFLICT (email) DO UPDATE SET balance = probe_users.balance + 1 RETURNING id, balance",
-        ),
-        ("lateral", "SELECT u.email, t.total FROM probe_users u, LATERAL (SELECT count(*) AS total FROM probe_users x) t"),
-        ("derived_comma", "SELECT u.email, t.total FROM probe_users u, (SELECT count(*) AS total FROM probe_users x) t"),
-        ("derived_join", "SELECT u.email, t.total FROM probe_users u CROSS JOIN (SELECT count(*) AS total FROM probe_users x) t"),
-        ("array_agg", "SELECT array_agg(id) AS ids FROM probe_users"),
-        ("cte", "WITH picked AS (SELECT id FROM probe_users) SELECT count(*) FROM picked"),
-    ] {
-        match engine.query(sql) {
-            Ok(result) => println!("PROBE {name}: ok rows={:?}", rows_of(&result)),
-            Err(error) => println!("PROBE {name}: FAILED {error}"),
-        }
-    }
+    let rows = engine.query("SELECT array_agg(id) AS ids FROM probe_users").unwrap();
+    let ids = rows_of(&rows);
+    assert_eq!(ids.len(), 1, "one aggregate row");
+    assert_eq!(
+        ids[0][0],
+        r#"Array([String("00000000-0000-0000-0000-000000000000"), String("00000000-0000-0000-0000-000000000001"), String("00000000-0000-0000-0000-000000000002")])"#,
+        "array_agg keeps insertion order"
+    );
+    let rows = engine.query("WITH picked AS (SELECT id FROM probe_users) SELECT count(*) FROM picked").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["3".to_owned()]], "a non-recursive CTE binds at each reference");
     engine.close().unwrap();
 }
 
 #[test]
-fn gap71_probe() {
+fn extract_interval_and_jsonb_operators() {
     let dir = TempDir::new("gap71");
     let engine = PostgreSQL::open(dir.options("smoke")).unwrap();
     engine.execute("CREATE TABLE t (id BIGINT PRIMARY KEY, ts TIMESTAMPTZ, meta JSONB, name TEXT)").unwrap();
@@ -100,25 +89,27 @@ fn gap71_probe() {
             r#"INSERT INTO t (id, ts, meta, name) VALUES (1, '2026-11-20 13:45:30+00', '{"a": {"b": 7}, "list": [10, 20]}', 'alpha')"#,
         )
         .unwrap();
-    for (name, sql) in [
-        ("extract_year", "SELECT EXTRACT(YEAR FROM ts) FROM t"),
-        ("extract_epoch", "SELECT EXTRACT(EPOCH FROM ts) FROM t"),
-        ("extract_dow", "SELECT EXTRACT(DOW FROM ts) FROM t"),
-        ("interval_add", "SELECT ts + INTERVAL '1 day' FROM t"),
-        ("interval_sub", "SELECT ts - INTERVAL '2 hours' FROM t"),
-        ("interval_cmp", "SELECT id FROM t WHERE ts > now() - INTERVAL '30 days'"),
-        ("json_arrow", r#"SELECT meta -> 'a' FROM t"#),
-        ("json_arrow_text", r#"SELECT meta ->> 'a' FROM t"#),
-        ("json_index", r#"SELECT meta -> 'list' -> 1 FROM t"#),
-        ("json_nested", r#"SELECT meta -> 'a' ->> 'b' FROM t"#),
-        ("recursive", "WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums ORDER BY n"),
-        ("delete_alias", "DELETE FROM t AS x WHERE x.name = 'alpha'"),
+    for (sql, expected) in [
+        ("SELECT EXTRACT(YEAR FROM ts) FROM t", "2026"),
+        ("SELECT EXTRACT(EPOCH FROM ts) FROM t", "1795182330"),
+        ("SELECT EXTRACT(DOW FROM ts) FROM t", "5"),
+        ("SELECT ts + INTERVAL '1 day' FROM t", "2026-11-21 13:45:30"),
+        ("SELECT ts - INTERVAL '2 hours' FROM t", "2026-11-20 11:45:30"),
+        (r#"SELECT meta -> 'a' FROM t"#, r#"{"b":7}"#),
+        (r#"SELECT meta ->> 'a' FROM t"#, r#"{"b":7}"#),
+        (r#"SELECT meta -> 'list' -> 1 FROM t"#, "20"),
+        (r#"SELECT meta -> 'a' ->> 'b' FROM t"#, "7"),
     ] {
-        match engine.query(sql) {
-            Ok(result) => println!("PROBE {name}: ok rows={:?}", rows_of(&result)),
-            Err(error) => println!("PROBE {name}: FAILED {error}"),
-        }
+        let rows = engine.query(sql).unwrap_or_else(|error| panic!("{sql}: {error}"));
+        assert_eq!(rows_of(&rows), vec![vec![expected.to_owned()]], "{sql}");
     }
+    let rows = engine.query("SELECT id FROM t WHERE ts > now() - INTERVAL '30 days'").unwrap();
+    assert_eq!(rows_of(&rows), vec![vec!["1".to_owned()]], "an INTERVAL predicate bounds a timestamp comparison");
+    // The gateway inlines CTEs at each reference and cannot materialize a fixed
+    // point; recursion runs only on the native engine (see tests/local/sql.rs).
+    let rejected = engine.query("WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 5) SELECT n FROM nums ORDER BY n");
+    assert!(rejected.is_err(), "the gateway must reject a recursive CTE");
+    assert!(format!("{}", rejected.unwrap_err()).contains("recursive fixed point"), "the rejection names the inlining gap");
     engine.close().unwrap();
 }
 
