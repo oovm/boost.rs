@@ -9,7 +9,7 @@
 pub mod batch;
 /// `bytes` placement at the inline boundary and object-reference row decoding.
 pub mod bytes;
-/// VOS catalog publication and contract resolution.
+/// Language-neutral lowering of a resolved contract into execution handles.
 pub mod catalog;
 /// Durable connection handle and statement surface.
 pub mod connection;
@@ -19,6 +19,8 @@ pub mod durable;
 pub mod journal;
 /// Unified `<hash-prefix>/<chunk_hash>.blob` CAS + hot/cold tiering.
 pub mod objects;
+/// VOS schema-document boundary: parsing, identity binding, contract resolution.
+pub(crate) mod schema_vos;
 /// UDF traits (`ScalarUdf`) and registry types (`UdfRegistry`, ...).
 pub mod udf;
 

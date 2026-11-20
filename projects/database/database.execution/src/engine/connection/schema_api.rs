@@ -1,4 +1,4 @@
-use crate::engine::{Error, Result, SchemaVersion, catalog as schema, kv::retention as ttl};
+use crate::engine::{Error, Result, SchemaVersion, catalog as schema, kv::retention as ttl, schema_vos};
 
 use super::Connection;
 
@@ -126,12 +126,12 @@ impl Connection {
     /// Persist the database-truth VOS schema on first use, then require an exact
     /// document match on later calls.
     ///
-    /// The initial version is [`schema::initial_version`] (`1`, or
-    /// `// @yydb-schema-version: <n>` in leading comments). To change the schema
-    /// document after persistence, call [`Self::migrate_schema`].
+    /// The initial version is `1`, or `// @yydb-schema-version: <n>` in leading
+    /// comments. To change the schema document after persistence, call
+    /// [`Self::migrate_schema`].
     pub fn ensure_schema(&self, document: &str) -> Result<()> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
-        let projection = schema::project_schema(document)?;
+        let projection = schema_vos::project_schema(document)?;
         let mut state = self.read_state()?;
         if let Some(current) = &state.schema {
             if current.document != document {
@@ -144,11 +144,11 @@ impl Connection {
             }
             return Ok(());
         }
-        let version = schema::initial_version(document);
-        let manifest = schema::allocate_initial_manifest(&projection);
-        let bound = schema::bind(&projection, &manifest)?;
-        let history = schema::evolve(&schema::empty_history(), bound)?;
-        state.resolved_contract = Some(std::sync::Arc::new(schema::resolve_contract(&history.snapshot)?));
+        let version = schema_vos::initial_version(document);
+        let manifest = schema_vos::allocate_initial_manifest(&projection);
+        let bound = schema_vos::bind(&projection, &manifest)?;
+        let history = schema_vos::evolve(&schema_vos::empty_history(), bound)?;
+        state.resolved_contract = Some(std::sync::Arc::new(schema_vos::resolve_contract(&history.snapshot)?));
         state.identity_history = Some(history);
         state.schema = Some(SchemaVersion { version, document: document.to_owned() });
         self.write_state(&state)?;
@@ -162,19 +162,19 @@ impl Connection {
     /// `// @yydb-schema-version: <n>`, `n` must equal the new version.
     pub fn migrate_schema(&self, document: &str, renames: &schema::RenameMap) -> Result<()> {
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
-        let projection = schema::project_schema(document)?;
+        let projection = schema_vos::project_schema(document)?;
         let mut state = self.read_state()?;
         let current = state.schema.as_ref().ok_or_else(|| Error::Schema { message: "schema migration requires an existing schema".into() })?;
         let version = current.version + 1;
-        schema::validate_migration_version(document, version)?;
+        schema_vos::validate_migration_version(document, version)?;
         let history = state
             .identity_history
             .as_ref()
             .ok_or_else(|| Error::Schema { message: "initialize the identity ledger with ensure_schema before migration".into() })?;
-        let manifest = schema::migration_manifest(history, &projection, renames)?;
-        let bound = schema::bind(&projection, &manifest)?;
-        let evolved = schema::evolve(history, bound)?;
-        let resolved_contract = schema::resolve_contract(&evolved.snapshot)?;
+        let manifest = schema_vos::migration_manifest(history, &projection, renames)?;
+        let bound = schema_vos::bind(&projection, &manifest)?;
+        let evolved = schema_vos::evolve(history, bound)?;
+        let resolved_contract = schema_vos::resolve_contract(&evolved.snapshot)?;
         let remapped = schema::remap_unique_constraints(&state.unique_constraints, renames)?;
         let mut catalog = schema::execution_catalog_from_resolved_contract(&resolved_contract)?;
         catalog.apply_declared_unique_constraints(&remapped)?;
@@ -207,10 +207,10 @@ fn join_schema_documents(documents: &[&str]) -> String {
 /// rewriting any state.
 fn rebind_identities(state: &super::State, projection: &schema_types::SchemaProjection) -> Result<schema_input_vos::ResolvedContract> {
     let history = state.identity_history.as_ref().ok_or(Error::Corrupt("catalog identity ledger does not match schema"))?;
-    let manifest = schema::manifest_from_snapshot(&history.snapshot);
-    let bound = schema::bind(projection, &manifest).map_err(|_| Error::Corrupt("catalog identity ledger does not match schema"))?;
+    let manifest = schema_vos::manifest_from_snapshot(&history.snapshot);
+    let bound = schema_vos::bind(projection, &manifest).map_err(|_| Error::Corrupt("catalog identity ledger does not match schema"))?;
     if bound != history.snapshot {
         return Err(Error::Corrupt("catalog identity ledger does not match schema"));
     }
-    schema::resolve_contract(&bound)
+    schema_vos::resolve_contract(&bound)
 }
