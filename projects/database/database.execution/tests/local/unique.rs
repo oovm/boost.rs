@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::local::{execute, execute_write_with_constraints};
+use database_execution::local::execute;
+
+use crate::support::execute_write_with_constraints;
 use database_query::local::resolved_contract_from_document;
 use database_types::{Error, TableUniqueConstraint, UniqueConstraint, Value};
 use schema_types::ResolvedContract;

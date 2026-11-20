@@ -79,6 +79,34 @@ pub enum MessageType {
     ExecutePrepared,
     /// ExecutePrepared 回复（body：JSON 行，形状同 KvGetOk 值）。
     ExecutePreparedOk,
+    /// 打开显式事务。
+    TxnBegin,
+    /// 事务已打开。
+    TxnBeginOk,
+    /// 提交显式事务。
+    TxnCommit,
+    /// 事务已提交。
+    TxnCommitOk,
+    /// 回滚显式事务。
+    TxnRollback,
+    /// 事务已回滚。
+    TxnRollbackOk,
+    /// 建立保存点（body：保存点名）。
+    TxnSavepoint,
+    /// 保存点已建立。
+    TxnSavepointOk,
+    /// 回滚到保存点（body：保存点名）。
+    TxnRollbackTo,
+    /// 已回滚到保存点。
+    TxnRollbackToOk,
+    /// 释放保存点（body：保存点名）。
+    TxnRelease,
+    /// 保存点已释放。
+    TxnReleaseOk,
+    /// 运行时性能快照请求（含卡点与阶段耗时）。
+    PerfReport,
+    /// 性能快照回复（body：JSON）。
+    PerfReportOk,
     /// 错误回复。
     Error,
     /// 未识别类型（仍按帧发出，便于对端回 Error）。
@@ -113,6 +141,20 @@ impl MessageType {
             22 => Self::PrepareOk,
             23 => Self::ExecutePrepared,
             24 => Self::ExecutePreparedOk,
+            25 => Self::TxnBegin,
+            26 => Self::TxnBeginOk,
+            27 => Self::TxnCommit,
+            28 => Self::TxnCommitOk,
+            29 => Self::TxnRollback,
+            30 => Self::TxnRollbackOk,
+            31 => Self::TxnSavepoint,
+            32 => Self::TxnSavepointOk,
+            33 => Self::TxnRollbackTo,
+            34 => Self::TxnRollbackToOk,
+            35 => Self::TxnRelease,
+            36 => Self::TxnReleaseOk,
+            37 => Self::PerfReport,
+            38 => Self::PerfReportOk,
             255 => Self::Error,
             other => Self::Unknown(other),
         }
@@ -145,6 +187,20 @@ impl MessageType {
             Self::PrepareOk => 22,
             Self::ExecutePrepared => 23,
             Self::ExecutePreparedOk => 24,
+            Self::TxnBegin => 25,
+            Self::TxnBeginOk => 26,
+            Self::TxnCommit => 27,
+            Self::TxnCommitOk => 28,
+            Self::TxnRollback => 29,
+            Self::TxnRollbackOk => 30,
+            Self::TxnSavepoint => 31,
+            Self::TxnSavepointOk => 32,
+            Self::TxnRollbackTo => 33,
+            Self::TxnRollbackToOk => 34,
+            Self::TxnRelease => 35,
+            Self::TxnReleaseOk => 36,
+            Self::PerfReport => 37,
+            Self::PerfReportOk => 38,
             Self::Error => 255,
             Self::Unknown(code) => code,
         }
@@ -171,6 +227,13 @@ pub fn response_type(request: MessageType) -> Option<MessageType> {
         MessageType::Authenticate => Some(MessageType::AuthenticateOk),
         MessageType::Prepare => Some(MessageType::PrepareOk),
         MessageType::ExecutePrepared => Some(MessageType::ExecutePreparedOk),
+        MessageType::TxnBegin => Some(MessageType::TxnBeginOk),
+        MessageType::TxnCommit => Some(MessageType::TxnCommitOk),
+        MessageType::TxnRollback => Some(MessageType::TxnRollbackOk),
+        MessageType::TxnSavepoint => Some(MessageType::TxnSavepointOk),
+        MessageType::TxnRollbackTo => Some(MessageType::TxnRollbackToOk),
+        MessageType::TxnRelease => Some(MessageType::TxnReleaseOk),
+        MessageType::PerfReport => Some(MessageType::PerfReportOk),
         _ => None,
     }
 }
@@ -849,6 +912,272 @@ pub fn decode_error(body: &[u8]) -> Result<WireError> {
     Ok(WireError { code, message, operation, retryable, params })
 }
 
+// ─── 带标签的值 JSON（客户端与服务端共用） ────────────────────────────────
+
+/// 把运行时值编码成可逆 JSON。
+///
+/// 标量沿用 JSON 原生形状（`null` / 布尔 / 数字 / 字符串），其余类型用单键标签
+/// 对象表达：`{"$bytes":"<hex>"}`、`{"$uuid":"…"}`、`{"$decimal":["<unscaled>",p,s]}`、
+/// `{"$timestamp":micros}`、`{"$date":days}`、`{"$time":nanos}`、`{"$u64":"…"}`、
+/// `{"$f64":"…"}`（仅非有限值）、`{"$list":[…]}`、`{"$row":{…}}`。
+pub fn value_to_json(value: &Value) -> Result<serde_json::Value> {
+    use serde_json::{Value as Json, json};
+    Ok(match value {
+        Value::Null => Json::Null,
+        Value::Bool(value) => Json::Bool(*value),
+        Value::I64(value) => Json::from(*value),
+        Value::U64(value) => match i64::try_from(*value) {
+            Ok(value) => Json::from(value),
+            Err(_) => json!({ "$u64": value.to_string() }),
+        },
+        Value::F64(value) => match serde_json::Number::from_f64(*value) {
+            Some(number) => Json::Number(number),
+            None => json!({ "$f64": value.to_string() }),
+        },
+        Value::Text(value) => Json::String(value.clone()),
+        Value::Bytes(bytes) => json!({ "$bytes": hex_encode(bytes) }),
+        Value::Uuid(value) => json!({ "$uuid": value.to_string() }),
+        Value::Date(value) => json!({ "$date": value.days() }),
+        Value::Time(value) => json!({ "$time": value.nanos() }),
+        Value::Timestamp(value) => json!({ "$timestamp": value.unix_micros() }),
+        Value::Decimal(value) => json!({ "$decimal": [value.unscaled().to_string(), value.precision(), value.scale()] }),
+        Value::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(value_to_json(item)?);
+            }
+            json!({ "$list": out })
+        }
+        Value::Row(fields) => {
+            let mut out = serde_json::Map::with_capacity(fields.len());
+            for (key, value) in fields {
+                out.insert(key.clone(), value_to_json(value)?);
+            }
+            json!({ "$row": Json::Object(out) })
+        }
+        other => {
+            return Err(Error::Protocol { message: format!("value kind `{}` has no wire JSON encoding", other.kind()) });
+        }
+    })
+}
+
+/// [`value_to_json`] 的逆变换；未带标签的对象解成 [`Value::Row`]，数组解成列表。
+pub fn json_to_value(value: &serde_json::Value) -> Result<Value> {
+    use serde_json::Value as Json;
+    match value {
+        Json::Null => Ok(Value::Null),
+        Json::Bool(value) => Ok(Value::Bool(*value)),
+        Json::Number(number) => {
+            if let Some(value) = number.as_i64() {
+                Ok(Value::I64(value))
+            }
+            else if let Some(value) = number.as_u64() {
+                Ok(Value::U64(value))
+            }
+            else if let Some(value) = number.as_f64() {
+                Ok(Value::F64(value))
+            }
+            else {
+                Err(Error::Corrupt("wire value has an unrepresentable JSON number"))
+            }
+        }
+        Json::String(value) => Ok(Value::Text(value.clone())),
+        Json::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(json_to_value(item)?);
+            }
+            Ok(Value::List(out))
+        }
+        Json::Object(fields) => {
+            if let Some((tag, payload)) = single_tag(fields) {
+                return tagged_to_value(tag, payload);
+            }
+            let mut out = std::collections::BTreeMap::new();
+            for (key, value) in fields {
+                out.insert(key.clone(), json_to_value(value)?);
+            }
+            Ok(Value::Row(out))
+        }
+    }
+}
+
+fn single_tag(fields: &serde_json::Map<String, serde_json::Value>) -> Option<(&str, &serde_json::Value)> {
+    if fields.len() != 1 {
+        return None;
+    }
+    let (tag, payload) = fields.iter().next()?;
+    tag.strip_prefix('$').map(|tag| (tag, payload))
+}
+
+fn tagged_to_value(tag: &str, payload: &serde_json::Value) -> Result<Value> {
+    let message = |detail: String| Error::Protocol { message: format!("wire value `${{{tag}}}`: {detail}") };
+    match tag {
+        "u64" => payload
+            .as_str()
+            .and_then(|text| text.parse::<u64>().ok())
+            .map(Value::U64)
+            .ok_or_else(|| message("expected a u64 string".to_owned())),
+        "f64" => payload
+            .as_str()
+            .and_then(|text| text.parse::<f64>().ok())
+            .map(Value::F64)
+            .ok_or_else(|| message("expected an f64 string".to_owned())),
+        "bytes" => payload
+            .as_str()
+            .and_then(hex_decode)
+            .map(Value::Bytes)
+            .ok_or_else(|| message("expected lowercase hex".to_owned())),
+        "uuid" => payload
+            .as_str()
+            .and_then(|text| uuid::Uuid::parse_str(text).ok())
+            .map(Value::Uuid)
+            .ok_or_else(|| message("expected a uuid string".to_owned())),
+        "date" => payload
+            .as_i64()
+            .and_then(|days| i32::try_from(days).ok())
+            .and_then(|days| database_types::Date::from_days(days).ok())
+            .map(Value::Date)
+            .ok_or_else(|| message("expected epoch days".to_owned())),
+        "time" => payload
+            .as_i64()
+            .and_then(|nanos| database_types::Time::from_nanos(nanos).ok())
+            .map(Value::Time)
+            .ok_or_else(|| message("expected nanoseconds".to_owned())),
+        "timestamp" => payload
+            .as_i64()
+            .and_then(|micros| database_types::Timestamp::from_unix_micros(micros).ok())
+            .map(Value::Timestamp)
+            .ok_or_else(|| message("expected unix micros".to_owned())),
+        "decimal" => {
+            let parts = payload.as_array().filter(|parts| parts.len() == 3).ok_or_else(|| message("expected [unscaled, precision, scale]".to_owned()))?;
+            let unscaled = json_scalar_text(&parts[0]).and_then(|text| text.parse::<i128>().ok());
+            let precision = parts[1].as_u64().and_then(|value| u8::try_from(value).ok());
+            let scale = parts[2].as_u64().and_then(|value| u8::try_from(value).ok());
+            match (unscaled, precision, scale) {
+                (Some(unscaled), Some(precision), Some(scale)) => {
+                    database_types::Decimal::new(unscaled, precision, scale).map(Value::Decimal).map_err(|error| message(error.to_string()))
+                }
+                _ => Err(message("expected [unscaled, precision, scale]".to_owned())),
+            }
+        }
+        "list" => {
+            let items = payload.as_array().ok_or_else(|| message("expected an array".to_owned()))?;
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(json_to_value(item)?);
+            }
+            Ok(Value::List(out))
+        }
+        "row" => match json_to_value(payload)? {
+            Value::Row(fields) => Ok(Value::Row(fields)),
+            _ => Err(message("expected an object".to_owned())),
+        },
+        _ => Err(Error::Protocol { message: format!("unknown wire value tag `${tag}`") }),
+    }
+}
+
+fn json_scalar_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX_DIGITS[(byte >> 4) as usize] as char);
+        out.push(HEX_DIGITS[(byte & 0xf) as usize] as char);
+    }
+    out
+}
+
+fn hex_decode(text: &str) -> Option<Vec<u8>> {
+    if text.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let digit = |byte: u8| -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity(text.len() / 2);
+    for pair in bytes.chunks_exact(2) {
+        out.push((digit(pair[0])? << 4) | digit(pair[1])?);
+    }
+    Some(out)
+}
+
+/// 把具名参数编码成 `ExecutePrepared` 的 JSON body。
+pub fn encode_params(params: &std::collections::BTreeMap<String, Value>) -> Result<String> {
+    let mut out = serde_json::Map::with_capacity(params.len());
+    for (key, value) in params {
+        out.insert(key.clone(), value_to_json(value)?);
+    }
+    serde_json::to_string(&serde_json::Value::Object(out)).map_err(|_| Error::Corrupt("wire params JSON encoding failed"))
+}
+
+/// 解码 [`encode_params`] 产出的 JSON。
+pub fn decode_params(text: &str) -> Result<std::collections::BTreeMap<String, Value>> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(text).map_err(|_| Error::QueryBind { parameter: String::new(), message: "params must be valid JSON".to_owned() })?;
+    let object = parsed
+        .as_object()
+        .ok_or_else(|| Error::QueryBind { parameter: String::new(), message: "params must be a JSON object".to_owned() })?;
+    let mut out = std::collections::BTreeMap::new();
+    for (key, value) in object {
+        out.insert(key.clone(), json_to_value(value)?);
+    }
+    Ok(out)
+}
+
+/// 把查询行编码成 `ExecutePreparedOk` / `PerfReportOk` 的 JSON body。
+pub fn encode_rows(rows: &[std::collections::BTreeMap<String, Value>]) -> Result<String> {
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(value_to_json(&Value::Row(row.clone()))?);
+    }
+    serde_json::to_string(&serde_json::Value::Array(out)).map_err(|_| Error::Corrupt("wire rows JSON encoding failed"))
+}
+
+/// 解码 [`encode_rows`] 产出的 JSON。
+pub fn decode_rows(text: &str) -> Result<Vec<std::collections::BTreeMap<String, Value>>> {
+    let parsed: serde_json::Value = serde_json::from_str(text).map_err(|_| Error::Corrupt("wire rows body is not valid JSON"))?;
+    let items = parsed.as_array().ok_or_else(|| Error::Corrupt("wire rows body must be an array"))?;
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        match json_to_value(item)? {
+            Value::Row(fields) => out.push(fields),
+            _ => return Err(Error::Corrupt("wire row must be a JSON object")),
+        }
+    }
+    Ok(out)
+}
+
+// ─── 事务帧 ────────────────────────────────────────────────────────────────
+
+/// 编码保存点名（`TxnSavepoint` / `TxnRollbackTo` / `TxnRelease` 的 body）。
+pub fn encode_savepoint_name(name: &str) -> Vec<u8> {
+    let mut body = Vec::new();
+    push_bytes(&mut body, name.as_bytes());
+    body
+}
+
+/// 解码保存点名。
+pub fn decode_savepoint_name(body: &[u8]) -> Result<String> {
+    let mut offset = 0;
+    let len = read_u32(body, &mut offset)?;
+    let bytes = read_bytes(body, &mut offset, len)?;
+    std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("savepoint name is not utf-8")).map(|name| name.to_owned())
+}
+
 /// 把 `host:port` / `[::1]:port` 拆成主机与端口。
 pub fn split_bind(bind: &str) -> Result<(String, u16)> {
     let bind = bind.trim();
@@ -881,6 +1210,13 @@ mod tests {
             MessageType::Authenticate,
             MessageType::Prepare,
             MessageType::ExecutePrepared,
+            MessageType::TxnBegin,
+            MessageType::TxnCommit,
+            MessageType::TxnRollback,
+            MessageType::TxnSavepoint,
+            MessageType::TxnRollbackTo,
+            MessageType::TxnRelease,
+            MessageType::PerfReport,
         ];
         for request in requests {
             let response = response_type(request).unwrap_or_else(|| panic!("{request:?} must have a response type"));
@@ -902,5 +1238,69 @@ mod tests {
         let body = encode_authenticate_ok("session-token-42");
         assert_eq!(decode_authenticate_ok(&body).expect("decode"), "session-token-42");
         assert!(decode_authenticate_ok(&[1, 0, 0]).is_err());
+    }
+
+    #[test]
+    fn typed_values_roundtrip_through_json() {
+        let uuid = uuid::Uuid::nil();
+        let decimal = database_types::Decimal::new(-123_456, 20, 6).expect("decimal");
+        let timestamp = database_types::Timestamp::from_unix_micros(1_700_000_000_123_456).expect("timestamp");
+        let date = database_types::Date::from_days(19_000).expect("date");
+        let time = database_types::Time::from_nanos(3_600_000_000_001).expect("time");
+        let values = vec![
+            Value::Null,
+            Value::Bool(true),
+            Value::I64(-7),
+            Value::U64(u64::MAX),
+            Value::F64(1.5),
+            Value::F64(f64::NAN),
+            Value::Text("文本".to_owned()),
+            Value::Bytes(vec![0, 1, 255]),
+            Value::Uuid(uuid),
+            Value::Decimal(decimal),
+            Value::Timestamp(timestamp),
+            Value::Date(date),
+            Value::Time(time),
+            Value::List(vec![Value::I64(1), Value::Text("a".to_owned())]),
+            Value::Row(std::collections::BTreeMap::from([("k".to_owned(), Value::Bool(false))])),
+        ];
+        for value in values {
+            let encoded = value_to_json(&value).expect("encode");
+            let decoded = json_to_value(&encoded).expect("decode");
+            match (&value, &decoded) {
+                (Value::F64(left), Value::F64(right)) if left.is_nan() => assert!(right.is_nan()),
+                _ => assert_eq!(decoded, value),
+            }
+        }
+    }
+
+    #[test]
+    fn params_and_rows_roundtrip_with_named_columns() {
+        let params = std::collections::BTreeMap::from([
+            ("id".to_owned(), Value::Uuid(uuid::Uuid::nil())),
+            ("amount".to_owned(), Value::Decimal(database_types::Decimal::new(1_000, 20, 2).expect("decimal"))),
+            ("note".to_owned(), Value::Text("ok".to_owned())),
+        ]);
+        let encoded = encode_params(&params).expect("encode params");
+        assert_eq!(decode_params(&encoded).expect("decode params"), params);
+
+        let rows = vec![std::collections::BTreeMap::from([
+            ("id".to_owned(), Value::Uuid(uuid::Uuid::nil())),
+            ("count".to_owned(), Value::I64(3)),
+        ])];
+        let encoded = encode_rows(&rows).expect("encode rows");
+        assert_eq!(decode_rows(&encoded).expect("decode rows"), rows);
+    }
+
+    #[test]
+    fn untagged_objects_decode_as_rows_and_arrays_as_lists() {
+        let row = json_to_value(&serde_json::json!({"a": 1, "b": [true, null]})).expect("decode");
+        let Value::Row(fields) = row
+        else {
+            panic!("plain object must decode as a row");
+        };
+        assert_eq!(fields["a"], Value::I64(1));
+        assert_eq!(fields["b"], Value::List(vec![Value::Bool(true), Value::Null]));
+        assert!(json_to_value(&serde_json::json!({"$nope": 1})).is_err());
     }
 }

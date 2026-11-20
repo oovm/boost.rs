@@ -41,6 +41,18 @@ fn rewriting_a_row_with_its_own_value_is_not_a_conflict() {
 }
 
 #[test]
+fn an_insert_that_overwrites_a_row_frees_the_value_it_leaves() {
+    let conn = connection();
+    conn.execute_vos_write(r#"User.insert({ id: 1, email: "a@x.test", name: "one" })"#).unwrap();
+    // Rewriting the whole row through insert must retract the unique value it
+    // leaves behind, exactly like an update does.
+    conn.execute_vos_write(r#"User.insert({ id: 1, email: "b@x.test", name: "one" })"#).unwrap();
+    conn.execute_vos_write(r#"User.insert({ id: 2, email: "a@x.test", name: "two" })"#).unwrap();
+    let rows = conn.query_vos("User.all().collect()").unwrap();
+    assert_eq!(rows.len(), 2);
+}
+
+#[test]
 fn update_frees_the_old_value_and_blocks_a_taken_one() {
     let conn = connection();
     conn.execute_vos_write(r#"User.insert({ id: 1, email: "a@x.test", name: "one" })"#).unwrap();

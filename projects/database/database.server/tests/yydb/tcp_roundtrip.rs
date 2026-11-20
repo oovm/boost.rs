@@ -7,7 +7,9 @@ use std::{
 
 use database_client::yy::{Client, Error};
 use database_execution::engine::{Connection, Value};
-use database_protocol_yy::{read_frame, write_frame};
+use database_protocol_yy::{
+    decode_prepare_ok, encode_execute_prepared, encode_prepare, read_frame, write_frame, Frame, MessageType,
+};
 use database_server::yydb::{SessionState, dispatch};
 
 #[test]
@@ -50,6 +52,25 @@ fn remote_error_keeps_stable_code() {
         }
         other => panic!("expected remote structured error, got {other:?}"),
     }
+}
+
+#[test]
+fn prepared_vos_write_through_dispatch_actually_writes() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Note { @@id: i64, body: utf8 }").unwrap();
+    let state = SessionState::for_test(7);
+
+    let prepare = Frame::new(MessageType::Prepare, 1, encode_prepare(r#"Note::insert({ id: 1, body: "hi" })"#));
+    let prepared = dispatch(&conn, &state, &prepare);
+    assert!(matches!(prepared.msg_type, MessageType::PrepareOk), "prepare failed: {:?}", prepared.msg_type);
+    let statement_id = decode_prepare_ok(&prepared.body).unwrap();
+
+    let execute = Frame::new(MessageType::ExecutePrepared, 2, encode_execute_prepared(&statement_id, None));
+    let executed = dispatch(&conn, &state, &execute);
+    assert!(matches!(executed.msg_type, MessageType::ExecutePreparedOk), "execute failed: {:?}", executed.msg_type);
+
+    let rows = conn.query_vos("Note.first(x => x.id == 1)").unwrap();
+    assert_eq!(rows.len(), 1, "a prepared VOS insert must persist its row");
 }
 
 #[test]

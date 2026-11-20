@@ -2683,6 +2683,7 @@ dependencies = [
  "database-udf",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -5642,6 +5643,7 @@ version = "0.1.0"
 dependencies = [
  "geometry",
  "hardware-backend-dx12",
+ "hardware-emitter",
  "hardware-ir",
  "hardware-program",
  "hardware-scheduler",

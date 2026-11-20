@@ -5,9 +5,9 @@
 use std::{collections::BTreeMap, sync::Mutex};
 
 use database_protocol_yy::{
-    Frame, MessageType, decode_authenticate, decode_execute_prepared, decode_kv_get, decode_kv_put, decode_micro_register, decode_prepare,
-    decode_scalar_call, decode_schema_ensure, encode_authenticate_ok, encode_execute_prepared_ok, encode_kv_get_ok, encode_prepare_ok,
-    encode_scalar_call_ok, encode_schema_ok, error_frame,
+    Frame, MessageType, decode_authenticate, decode_execute_prepared, decode_kv_get, decode_kv_put, decode_micro_register, decode_params,
+    decode_prepare, decode_savepoint_name, decode_scalar_call, decode_schema_ensure, encode_authenticate_ok, encode_execute_prepared_ok,
+    encode_kv_get_ok, encode_prepare_ok, encode_rows, encode_scalar_call_ok, encode_schema_ok, error_frame,
 };
 use database_query::local::{PreparedStatement, QueryKind, SessionOp};
 use database_types::{Error, Result};
@@ -93,15 +93,7 @@ pub fn is_authenticated(state: &SessionState) -> bool {
 /// Parse ExecutePrepared params JSON into a named-param map.
 /// Returns Err(Error) for malformed JSON / wrong types.
 fn parse_params_json(json: &str) -> Result<BTreeMap<String, database_types::Value>> {
-    let parsed: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| Error::QueryBind { parameter: String::new(), message: format!("invalid params JSON: {e}") })?;
-    let obj =
-        parsed.as_object().ok_or_else(|| Error::QueryBind { parameter: String::new(), message: "params must be a JSON object".to_owned() })?;
-    let mut m = BTreeMap::new();
-    for (k, v) in obj {
-        m.insert(k.clone(), json_to_value(v)?);
-    }
-    Ok(m)
+    decode_params(json)
 }
 
 // ─── Dispatch ────────────────────────────────────────────────────────────
@@ -291,15 +283,58 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
                     }
                     Ok(Vec::new())
                 })(),
+                // Prepared writes must not enter the read pipeline: a VOS write
+                // plan carries no read ops and would silently affect zero rows.
+                QueryKind::Write => backend.execute_prepared(&plan.statement, &named_params),
                 _ => backend.query_prepared(&plan.statement, &named_params),
             };
             let rows = match rows_result {
                 Ok(r) => r,
                 Err(error) => return error_frame(id, &error),
             };
-            let json_rows = rows_to_json(&rows);
-            Frame::new(MessageType::ExecutePreparedOk, id, encode_execute_prepared_ok(&json_rows))
+            match encode_rows(&rows) {
+                Ok(json_rows) => Frame::new(MessageType::ExecutePreparedOk, id, encode_execute_prepared_ok(&json_rows)),
+                Err(error) => error_frame(id, &error),
+            }
         }
+        // ── Transaction boundary ─────────────────────────────────────────
+        MessageType::TxnBegin => match backend.begin() {
+            Ok(()) => Frame::new(MessageType::TxnBeginOk, id, Vec::new()),
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::TxnCommit => match backend.commit() {
+            Ok(()) => Frame::new(MessageType::TxnCommitOk, id, Vec::new()),
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::TxnRollback => match backend.rollback() {
+            Ok(()) => Frame::new(MessageType::TxnRollbackOk, id, Vec::new()),
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::TxnSavepoint => match decode_savepoint_name(&request.body) {
+            Ok(name) => match backend.savepoint(&name) {
+                Ok(()) => Frame::new(MessageType::TxnSavepointOk, id, Vec::new()),
+                Err(error) => error_frame(id, &error),
+            },
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::TxnRollbackTo => match decode_savepoint_name(&request.body) {
+            Ok(name) => match backend.rollback_to_savepoint(&name) {
+                Ok(()) => Frame::new(MessageType::TxnRollbackToOk, id, Vec::new()),
+                Err(error) => error_frame(id, &error),
+            },
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::TxnRelease => match decode_savepoint_name(&request.body) {
+            Ok(name) => match backend.release_savepoint(&name) {
+                Ok(()) => Frame::new(MessageType::TxnReleaseOk, id, Vec::new()),
+                Err(error) => error_frame(id, &error),
+            },
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::PerfReport => match backend.perf_report() {
+            Ok(report) => Frame::new(MessageType::PerfReportOk, id, report.into_bytes()),
+            Err(error) => error_frame(id, &error),
+        },
         // ── server→client messages / handshake-only frames we never dispatch here ──
         MessageType::HelloOk
         | MessageType::AuthenticateOk
@@ -314,6 +349,13 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
         | MessageType::ScalarCallOk
         | MessageType::PrepareOk
         | MessageType::ExecutePreparedOk
+        | MessageType::TxnBeginOk
+        | MessageType::TxnCommitOk
+        | MessageType::TxnRollbackOk
+        | MessageType::TxnSavepointOk
+        | MessageType::TxnRollbackToOk
+        | MessageType::TxnReleaseOk
+        | MessageType::PerfReportOk
         | MessageType::Error => error_frame(id, &Error::Protocol { message: "unexpected client message type".to_owned() }),
         // Hello / Authenticate are handled by dispatch() before auth check — reaching here means
         // they somehow slipped through; reject defensively.
@@ -333,6 +375,12 @@ fn required_permission(msg: MessageType) -> Permission {
     match msg {
         MessageType::KvPut => Permission::Write,
         MessageType::SchemaEnsure => Permission::Schema,
+        MessageType::TxnBegin
+        | MessageType::TxnCommit
+        | MessageType::TxnRollback
+        | MessageType::TxnSavepoint
+        | MessageType::TxnRollbackTo
+        | MessageType::TxnRelease => Permission::Write,
         _ => Permission::Read,
     }
 }
@@ -341,73 +389,4 @@ fn required_permission(msg: MessageType) -> Permission {
 pub fn is_loopback_host(host: &str) -> bool {
     let host = host.trim().trim_start_matches('[').trim_end_matches(']');
     matches!(host.to_ascii_lowercase().as_str(), "127.0.0.1" | "::1" | "localhost" | "0:0:0:0:0:0:0:1")
-}
-
-/// Convert a `serde_json::Value` (from the on-wire params object) to a
-/// `database_types::Value`. Only the wire-safe scalar subset is supported.
-fn json_to_value(v: &serde_json::Value) -> Result<database_types::Value> {
-    use database_types::Value;
-    match v {
-        serde_json::Value::Null => Ok(Value::Null),
-        serde_json::Value::Bool(b) => Ok(Value::Bool(*b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::I64(i))
-            }
-            else if let Some(f) = n.as_f64() {
-                Ok(Value::F64(f))
-            }
-            else {
-                Err(Error::QueryBind { parameter: String::new(), message: format!("unsupported JSON number: {n}") })
-            }
-        }
-        serde_json::Value::String(s) => Ok(Value::Text(s.clone())),
-        _ => Err(Error::QueryBind { parameter: String::new(), message: format!("unsupported JSON value type for parameter: {v:?}") }),
-    }
-}
-
-/// Serialize query rows to compact JSON. Each row becomes `{ field: value, … }`.
-fn rows_to_json(rows: &[std::collections::BTreeMap<String, database_types::Value>]) -> String {
-    use database_types::Value;
-    let mut out = String::from("[");
-    for (i, row) in rows.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push('{');
-        for (j, (k, v)) in row.iter().enumerate() {
-            if j > 0 {
-                out.push(',');
-            }
-            out.push_str(&format!("\"{}\":", escape_json(k)));
-            match v {
-                Value::Null => out.push_str("null"),
-                Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-                Value::I64(n) => out.push_str(&n.to_string()),
-                Value::U64(n) => out.push_str(&n.to_string()),
-                Value::F64(n) => out.push_str(&n.to_string()),
-                Value::Text(s) => out.push_str(&format!("\"{}\"", escape_json(s))),
-                _ => out.push_str("null"), // complex types not serialized on wire
-            }
-        }
-        out.push('}');
-    }
-    out.push(']');
-    out
-}
-
-fn escape_json(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
 }

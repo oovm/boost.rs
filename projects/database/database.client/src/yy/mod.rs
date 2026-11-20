@@ -21,8 +21,9 @@ pub use database_types::{Error, Result, SchemaVersion, Value};
 pub use database_udf::HostMicroDefinition;
 
 use database_protocol_yy::{
-    Frame, MessageType, decode_error, decode_kv_get_ok, decode_scalar_call_ok, decode_schema_get_ok, encode_kv_get, encode_kv_put,
-    encode_micro_register, encode_scalar_call, encode_schema_ensure, read_frame, split_bind, write_frame,
+    Frame, MessageType, decode_error, decode_execute_prepared_ok, decode_kv_get_ok, decode_prepare_ok, decode_rows, decode_scalar_call_ok,
+    decode_schema_get_ok, encode_authenticate, encode_execute_prepared, encode_kv_get, encode_kv_put, encode_micro_register, encode_params,
+    encode_prepare, encode_savepoint_name, encode_scalar_call, encode_schema_ensure, read_frame, split_bind, write_frame,
 };
 
 /// Handle to a remote YYDB server started with `yydb serve`.
@@ -43,6 +44,22 @@ impl Client {
         let client = Self { endpoint, stream: Mutex::new(stream), next_id: AtomicU32::new(1) };
         let _ = client.hello()?;
         Ok(client)
+    }
+
+    /// Connect and authenticate with a bootstrap token in the same handshake.
+    ///
+    /// Equivalent to [`Self::connect`] followed by [`Self::authenticate`].
+    pub fn connect_with_token(endpoint: impl Into<String>, token: &str) -> Result<Self> {
+        let client = Self::connect(endpoint)?;
+        client.authenticate(token)?;
+        Ok(client)
+    }
+
+    /// Attach a session to this connection with a bootstrap token.
+    pub fn authenticate(&self, token: &str) -> Result<()> {
+        let response = self.round_trip(MessageType::Authenticate, encode_authenticate(token))?;
+        expect_type(&response, MessageType::AuthenticateOk)?;
+        Ok(())
     }
 
     /// Configured endpoint string (`host:port`).
@@ -102,6 +119,73 @@ impl Client {
         let response = self.round_trip(MessageType::ScalarCall, encode_scalar_call(name, version, args)?)?;
         expect_type(&response, MessageType::ScalarCallOk)?;
         decode_scalar_call_ok(&response.body)
+    }
+
+    /// Compile a VOS source into a reusable server-side plan.
+    pub fn prepare(&self, source: &str) -> Result<String> {
+        let response = self.round_trip(MessageType::Prepare, encode_prepare(source))?;
+        expect_type(&response, MessageType::PrepareOk)?;
+        decode_prepare_ok(&response.body)
+    }
+
+    /// Execute a prepared statement with named parameters.
+    pub fn execute_prepared(
+        &self,
+        statement_id: &str,
+        params: &std::collections::BTreeMap<String, Value>,
+    ) -> Result<Vec<std::collections::BTreeMap<String, Value>>> {
+        let encoded = if params.is_empty() { None } else { Some(encode_params(params)?) };
+        let response = self.round_trip(MessageType::ExecutePrepared, encode_execute_prepared(statement_id, encoded.as_deref()))?;
+        expect_type(&response, MessageType::ExecutePreparedOk)?;
+        decode_rows(&decode_execute_prepared_ok(&response.body)?)
+    }
+
+    /// Prepare and execute in one call.
+    pub fn query(&self, source: &str, params: &std::collections::BTreeMap<String, Value>) -> Result<Vec<std::collections::BTreeMap<String, Value>>> {
+        let statement_id = self.prepare(source)?;
+        self.execute_prepared(&statement_id, params)
+    }
+
+    /// Open an explicit transaction on this connection.
+    pub fn begin(&self) -> Result<()> {
+        self.expect_ok(MessageType::TxnBegin, Vec::new(), MessageType::TxnBeginOk)
+    }
+
+    /// Commit the explicit transaction.
+    pub fn commit(&self) -> Result<()> {
+        self.expect_ok(MessageType::TxnCommit, Vec::new(), MessageType::TxnCommitOk)
+    }
+
+    /// Roll the explicit transaction back.
+    pub fn rollback(&self) -> Result<()> {
+        self.expect_ok(MessageType::TxnRollback, Vec::new(), MessageType::TxnRollbackOk)
+    }
+
+    /// Create a named savepoint inside the open transaction.
+    pub fn savepoint(&self, name: &str) -> Result<()> {
+        self.expect_ok(MessageType::TxnSavepoint, encode_savepoint_name(name), MessageType::TxnSavepointOk)
+    }
+
+    /// Roll back to a named savepoint without ending the transaction.
+    pub fn rollback_to_savepoint(&self, name: &str) -> Result<()> {
+        self.expect_ok(MessageType::TxnRollbackTo, encode_savepoint_name(name), MessageType::TxnRollbackToOk)
+    }
+
+    /// Release a named savepoint.
+    pub fn release_savepoint(&self, name: &str) -> Result<()> {
+        self.expect_ok(MessageType::TxnRelease, encode_savepoint_name(name), MessageType::TxnReleaseOk)
+    }
+
+    /// Fetch a runtime performance snapshot (JSON) from the remote node.
+    pub fn perf_report(&self) -> Result<String> {
+        let response = self.round_trip(MessageType::PerfReport, Vec::new())?;
+        expect_type(&response, MessageType::PerfReportOk)?;
+        Ok(String::from_utf8_lossy(&response.body).into_owned())
+    }
+
+    fn expect_ok(&self, request: MessageType, body: Vec<u8>, expected: MessageType) -> Result<()> {
+        let response = self.round_trip(request, body)?;
+        expect_type(&response, expected)
     }
 
     fn hello(&self) -> Result<String> {

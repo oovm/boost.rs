@@ -2152,7 +2152,7 @@ fn lower_update(update: &UpdateStatement, parameters: &[ParameterDescriptor]) ->
             .push(WriteAssignment { field: assignment.column.name.to_string(), value: lower_write_expr(&assignment.value, parameters)? });
     }
     let predicate = update.selection.as_ref().map(|expr| lower_predicate(expr, parameters, &CteScope::new())).transpose()?;
-    Ok(WriteOp::Update { table: table_name(&update.table_name), assignments, predicate })
+    Ok(WriteOp::Update { table: table_name(&update.table_name), assignments, predicate, require_match: false })
 }
 
 fn lower_delete(delete: &DeleteStatement, parameters: &[ParameterDescriptor]) -> Result<WriteOp> {

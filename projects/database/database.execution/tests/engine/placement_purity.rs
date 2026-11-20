@@ -6,15 +6,12 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::{
-    engine::{
-        Connection,
-        bytes::{Placement, object_reference},
-    },
-    local::point_write_keys_parsed,
+use database_execution::engine::{
+    Connection,
+    bytes::{Placement, object_reference},
 };
 use database_formats::yy::yydx::blob_chunk_hash;
-use database_query::local::resolved_contract_from_document;
+use database_query::local::{point_write_keys, resolved_contract_from_document};
 use database_types::{INLINE_BYTES_MAX, ObjectKind, Value};
 
 const SCHEMA: &str = "table Blob { @@id: i64, body: bytes }";
@@ -39,7 +36,7 @@ fn expected_reference(payload: &[u8]) -> database_types::ObjectRef {
 }
 
 fn parse_program(source: &str) -> schema_input_vos::syntax::VosProgram {
-    database_execution::local::parse_write_program(source).unwrap()
+    schema_input_vos::parse_program(source).expect("fixture parses")
 }
 
 #[test]
@@ -53,8 +50,16 @@ fn planning_derives_the_committed_reference_without_writing() {
 
     // 规划两次：键一致，且对象始终没有被写入。
     for _ in 0..2 {
-        let keys =
-            point_write_keys_parsed(&program, &contract, &[], None, &[Value::Bytes(payload.clone())], true, &Placement::Preview).unwrap();
+        let keys = point_write_keys(
+            &program,
+            &contract,
+            &[],
+            None,
+            &[Value::Bytes(payload.clone())],
+            true,
+            &mut |value| Placement::Preview.place(value),
+        )
+        .unwrap();
         assert!(keys.is_some(), "a keyed insert plans to a point write");
         let error = conn.get_object(&object).expect_err("planning must not write the object");
         assert!(format!("{error:?}").contains("not found") || format!("{error:?}").contains("ObjectNotFound"), "unexpected: {error:?}");
@@ -82,7 +87,15 @@ fn failed_planning_leaves_no_object_behind() {
     let source = r#"Blob.insert({ id: 1, ghost: __yydb_param_0 })"#;
     let program = parse_program(source);
     let contract = resolved_contract_from_document(SCHEMA).unwrap();
-    let keys = point_write_keys_parsed(&program, &contract, &[], None, &[Value::Bytes(payload.clone())], true, &Placement::Preview);
+    let keys = point_write_keys(
+        &program,
+        &contract,
+        &[],
+        None,
+        &[Value::Bytes(payload.clone())],
+        true,
+        &mut |value| Placement::Preview.place(value),
+    );
     assert!(keys.is_err() || keys.unwrap().is_none(), "an unknown field cannot plan as a point write");
     let object = expected_reference(&payload);
     assert!(conn.get_object(&object).is_err(), "a failed plan leaves no object");

@@ -290,11 +290,32 @@ impl Connection {
                 if self.is_single_file_yydb() {
                     windows.push(RecordWindow { start: EMBEDDED_OBJECT_PREFIX.to_owned(), end: Some(format!("{EMBEDDED_OBJECT_PREFIX}g")) });
                 }
-                let (snapshot, rows) = {
+                let (mut snapshot, rows) = {
                     let mut database = database.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     database.snapshot_windows_with_rows(&windows)?
                 };
+                // 借用行只在 `rows` 里，而 spill 拼装要求头和块同处 `records`：
+                // 先把窗口行补进快照，`state_with_window` 里的拼装才能把超大行
+                // 还原成整行，否则借用的页里只剩下一个 spill 头。
+                let mut spilled = false;
+                for row in rows.iter() {
+                    if spill::is_spill_header(row?.bytes) {
+                        spilled = true;
+                    }
+                }
+                if spilled {
+                    for row in rows.iter() {
+                        let row = row?;
+                        snapshot.records.insert(row.key.to_owned(), row.bytes.to_vec());
+                    }
+                }
                 let mut state = snapshot::state_with_window(metadata, snapshot)?;
+                if spilled {
+                    if self.is_single_file_yydb() {
+                        self.objects.take_embedded_records(&mut state.records)?;
+                    }
+                    return Ok((state, None));
+                }
                 if self.is_single_file_yydb() {
                     for row in rows.iter() {
                         let row = row?;

@@ -14,8 +14,8 @@ use database_types::{Error, Result, Value};
 
 use super::{
     ops::{
-        AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, DateExtractField, Expr, Pred, ProjectExpr, ProjectField, QueryOp, ScalarFunction,
-        SortKey, TextOp,
+        AggregateField, BinaryOp, BoundValue, CmpOp, CountExpr, DateExtractField, Expr, JoinKind, Pred, ProjectExpr, ProjectField, QueryOp,
+        ScalarFunction, SortKey, TextOp,
     },
     params::ParameterDescriptor,
 };
@@ -49,6 +49,9 @@ fn lower_exec_expr(expr: &VosExpr, bindings: &[(String, VosExpr)], parameters: &
     if let Some(ops) = lower_boundary(&expr, parameters)? {
         return Ok(ops);
     }
+    if let Some(ops) = lower_terminal_aggregate(&expr, parameters)? {
+        return Ok(ops);
+    }
     let pipeline = split_collect(&expr)?;
     let mut ops = lower_pipeline(&pipeline, parameters)?;
     ops.push(QueryOp::Collect);
@@ -56,11 +59,13 @@ fn lower_exec_expr(expr: &VosExpr, bindings: &[(String, VosExpr)], parameters: &
 }
 
 /// Table-level execution boundaries: `Type.get(id)`, `Type.first(pred)`,
-/// `Type.any(pred)` and `Type.count(pred)`.
+/// `Type.any(pred)`, `Type.count(pred)` and the whole-table aggregates
+/// `Type.sum(x => x.field)` / `avg` / `min` / `max` / `array_agg`.
 ///
 /// Each lowers to the pipeline that yields its result rows: `get` is a
 /// primary-key point lookup, `first` a filtered one-row take, `count` a
-/// whole-table count row and `any` that count projected to a boolean.
+/// whole-table count row, `any` that count projected to a boolean, and the
+/// aggregates a single global aggregate row named after the method.
 fn lower_boundary(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<Option<Vec<QueryOp>>> {
     let VosExpr::Call { callee, args, .. } = expr else {
         return Ok(None);
@@ -73,6 +78,12 @@ fn lower_boundary(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<
         return Ok(None);
     };
     let count_field = || AggregateField::Count { name: "count".to_string(), expr: None };
+    // `get` has its own exact-arity check below; the remaining boundaries take
+    // at most one predicate. Silently dropping a second predicate would run a
+    // different query than the author wrote.
+    if matches!(name.as_str(), "first" | "any" | "count") && args.len() > 1 {
+        return Err(query_error(format!("`{name}` takes at most one predicate")));
+    }
     match name.as_str() {
         "get" => {
             let Some(arg) = args.first() else {
@@ -118,7 +129,96 @@ fn lower_boundary(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<
             ops.push(QueryOp::Aggregate { group_keys: vec![], aggregates: vec![count_field()] });
             Ok(Some(ops))
         }
+        "sum" | "avg" | "min" | "max" | "array_agg" => {
+            let field = terminal_aggregate(name, args, parameters)?;
+            Ok(Some(vec![
+                QueryOp::Scan { table: table.clone() },
+                QueryOp::Aggregate { group_keys: vec![], aggregates: vec![field] },
+            ]))
+        }
         _ => Ok(None),
+    }
+}
+
+/// Aggregates lowering accepts on a whole pipeline, e.g.
+/// `Account.all().filter(...).sum(a => a.score)`.
+fn is_aggregate_method(name: &str) -> bool {
+    matches!(name, "sum" | "avg" | "min" | "max" | "array_agg" | "count")
+}
+
+/// Lower a terminal aggregate whose receiver is a pipeline rather than a bare
+/// table name.
+///
+/// The receiver lowers exactly like any other read pipeline (minus the final
+/// `.collect()`), and the aggregate folds the rows it produces into one row.
+fn lower_terminal_aggregate(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<Option<Vec<QueryOp>>> {
+    let VosExpr::Call { callee, args, .. } = expr else {
+        return Ok(None);
+    };
+    let VosExpr::Member { object, name, .. } = callee.as_ref() else {
+        return Ok(None);
+    };
+    if !is_aggregate_method(name) {
+        return Ok(None);
+    }
+    // Table-level spellings are execution boundaries handled above.
+    if matches!(object.as_ref(), VosExpr::Name { .. }) {
+        return Ok(None);
+    }
+    let mut ops = lower_pipeline(object, parameters)?;
+    ops.push(QueryOp::Aggregate { group_keys: vec![], aggregates: vec![terminal_aggregate(name, args, parameters)?] });
+    Ok(Some(ops))
+}
+
+/// Build the aggregate a terminal method names.
+///
+/// `count` counts rows (optionally only those its predicate keeps); the other
+/// methods fold one value lambda, with an optional second predicate serving as
+/// SQL's `FILTER (WHERE ...)`.
+fn terminal_aggregate(method: &str, args: &[VosExpr], parameters: &[ParameterDescriptor]) -> Result<AggregateField> {
+    if method == "count" {
+        let filter = aggregate_filter(args, method, parameters)?;
+        let inner = AggregateField::Count { name: method.to_string(), expr: None };
+        return Ok(match filter {
+            Some(predicate) => AggregateField::Filtered { inner: Box::new(inner), predicate },
+            None => inner,
+        });
+    }
+    let Some(first) = args.first() else {
+        return Err(query_error(format!("`.{method}` requires a value lambda, e.g. `.{method}(x => x.amount)`")));
+    };
+    let VosExpr::Lambda(lambda) = first else {
+        return Err(query_error(format!("`.{method}` requires a value lambda, e.g. `.{method}(x => x.amount)`")));
+    };
+    let param = lambda.params.first().map(String::as_str);
+    let expr = lower_project_expr(lambda.body.as_ref(), param, parameters)?;
+    let filter = aggregate_filter(&args[1..], method, parameters)?;
+    Ok(aggregate_field(method, method.to_string(), expr, filter))
+}
+
+/// Optional `.method(predicate)` filter of a terminal aggregate.
+fn aggregate_filter(args: &[VosExpr], method: &str, parameters: &[ParameterDescriptor]) -> Result<Option<Pred>> {
+    match args {
+        [] => Ok(None),
+        [one] => Ok(Some(lower_predicate(one, parameters)?)),
+        _ => Err(query_error(format!("`.{method}` takes at most one filter predicate"))),
+    }
+}
+
+/// Assemble an aggregate field from its method name and already-lowered parts.
+fn aggregate_field(method: &str, name: String, expr: ProjectExpr, filter: Option<Pred>) -> AggregateField {
+    let inner = match method {
+        "sum" => AggregateField::Sum { name, expr },
+        "avg" => AggregateField::Avg { name, expr },
+        "min" => AggregateField::Min { name, expr },
+        "max" => AggregateField::Max { name, expr },
+        "array_agg" => AggregateField::ArrayAgg { name, expr },
+        "count" => AggregateField::Count { name, expr: Some(expr) },
+        other => unreachable!("`{other}` is not an aggregate method"),
+    };
+    match filter {
+        Some(predicate) => AggregateField::Filtered { inner: Box::new(inner), predicate },
+        None => inner,
     }
 }
 
@@ -163,6 +263,15 @@ fn split_collect(expr: &VosExpr) -> Result<VosExpr> {
     }
 }
 
+/// Pipeline state the method list threads through lowering.
+///
+/// `.group_by(...)` parks its keys here so the projection that follows turns
+/// into one [`QueryOp::Aggregate`] instead of a per-row projection.
+#[derive(Default)]
+struct PipelineState {
+    group_keys: Option<Vec<ProjectField>>,
+}
+
 fn lower_pipeline(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<Vec<QueryOp>> {
     let mut methods: Vec<(&str, &[VosExpr])> = Vec::new();
     let mut cur = expr;
@@ -181,8 +290,14 @@ fn lower_pipeline(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<
             }
             VosExpr::Name { name, .. } => {
                 let mut ops = vec![QueryOp::Scan { table: name.clone() }];
+                let mut state = PipelineState::default();
                 for (method, args) in methods.into_iter().rev() {
-                    push_method(&mut ops, method, args, parameters)?;
+                    push_method(&mut ops, &mut state, method, args, parameters)?;
+                }
+                // `.group_by(...)` with no projection still means one row per
+                // distinct key: the group keys are the whole output.
+                if let Some(group_keys) = state.group_keys.take() {
+                    ops.push(QueryOp::Aggregate { group_keys, aggregates: vec![] });
                 }
                 return Ok(ops);
             }
@@ -191,7 +306,13 @@ fn lower_pipeline(expr: &VosExpr, parameters: &[ParameterDescriptor]) -> Result<
     }
 }
 
-fn push_method(ops: &mut Vec<QueryOp>, method: &str, args: &[VosExpr], parameters: &[ParameterDescriptor]) -> Result<()> {
+fn push_method(ops: &mut Vec<QueryOp>, state: &mut PipelineState, method: &str, args: &[VosExpr], parameters: &[ParameterDescriptor]) -> Result<()> {
+    // The projection is what turns parked group keys into an aggregate, so it
+    // is the only method allowed to follow `.group_by`. Anything else would
+    // silently apply to the input rows instead of the groups.
+    if state.group_keys.is_some() && method != "map" {
+        return Err(query_error(format!("`.{method}` after `.group_by` is not supported; project the groups first")));
+    }
     match method {
         "all" => Ok(()),
         "filter" | "where" => {
@@ -199,8 +320,44 @@ fn push_method(ops: &mut Vec<QueryOp>, method: &str, args: &[VosExpr], parameter
             ops.push(QueryOp::Filter { predicate: lower_predicate(pred_expr, parameters)? });
             Ok(())
         }
+        "group_by" => {
+            if args.is_empty() {
+                return Err(query_error("`.group_by` requires at least one key"));
+            }
+            let mut keys = Vec::with_capacity(args.len());
+            for arg in args {
+                let VosExpr::Lambda(lambda) = arg else {
+                    return Err(query_error("each `.group_by` key must be a lambda"));
+                };
+                let param = lambda.params.first().map(String::as_str);
+                let path = lower_rel_path(lambda.body.as_ref(), param)?;
+                if path.is_empty() {
+                    return Err(query_error("a `.group_by` key must read a field, not the row itself"));
+                }
+                // Qualified paths keep join sides apart (`a.id` vs `b.id`); a
+                // plain field keeps its bare name.
+                let name = path.join(".");
+                keys.push(ProjectField { name, expr: ProjectExpr::Scalar { path } });
+            }
+            state.group_keys = Some(keys);
+            Ok(())
+        }
+        "join" | "left_join" | "right_join" | "full_join" => lower_join(ops, method, args, parameters),
         "map" => {
             let proj = args.first().ok_or_else(|| query_error("`.map` requires a projection"))?;
+            if let Some(group_keys) = state.group_keys.take() {
+                let (aggregates, fields) = lower_grouped_projection(proj, &group_keys, parameters)?;
+                ops.push(QueryOp::Aggregate { group_keys, aggregates });
+                ops.push(QueryOp::Project { fields });
+                return Ok(());
+            }
+            // A projection that only lists aggregates is a global aggregate
+            // over every row the pipeline produced.
+            if let Some((aggregates, fields)) = lower_global_aggregate_projection(proj, parameters)? {
+                ops.push(QueryOp::Aggregate { group_keys: vec![], aggregates });
+                ops.push(QueryOp::Project { fields });
+                return Ok(());
+            }
             // `x.*` keeps every public field: the pipeline already carries
             // them, so the identity projection pushes no operator.
             if let Some(fields) = lower_projection(proj, parameters)? {
@@ -228,6 +385,247 @@ fn push_method(ops: &mut Vec<QueryOp>, method: &str, args: &[VosExpr], parameter
         }
         "insert" | "update" | "delete" => Err(query_error(format!("write method `.{method}` is not supported by the read pipeline executor"))),
         other => Err(query_error(format!("unsupported pipeline method `.{other}`"))),
+    }
+}
+
+/// Lower `.join(right, (left, right) => ...)` and its outer-join variants.
+///
+/// The left pipeline keeps its own column names, so `(a, p) => a.id == p.id`
+/// reads the left row by plain field name and finds the joined columns under
+/// the second parameter's prefix (`p.id`). Naming both sides this way keeps a
+/// projection readable: `x.email` and `x.p.amount`.
+fn lower_join(ops: &mut Vec<QueryOp>, method: &str, args: &[VosExpr], parameters: &[ParameterDescriptor]) -> Result<()> {
+    if args.len() != 2 {
+        return Err(query_error(format!("`.{method}` takes a right-hand pipeline and an `on` predicate")));
+    }
+    let VosExpr::Lambda(on) = &args[1] else {
+        return Err(query_error(format!("`.{method}` requires an `on` lambda such as `(a, o) => a.id == o.account_id`")));
+    };
+    if on.params.len() != 2 {
+        return Err(query_error(format!("`.{method}` `on` must bind both sides as `(left, right) => ...`")));
+    }
+    let left = on.params[0].as_str();
+    let right = on.params[1].as_str();
+    if left == right {
+        return Err(query_error(format!("`.{method}` `on` must name the two sides differently")));
+    }
+    let mut right_ops = lower_pipeline(&args[0], parameters)?;
+    right_ops.push(QueryOp::Collect);
+    let predicate = lower_join_pred(on.body.as_ref(), left, right, parameters)?;
+    let kind = match method {
+        "join" => JoinKind::Inner,
+        "left_join" => JoinKind::Left,
+        "right_join" => JoinKind::Right,
+        _ => JoinKind::Full,
+    };
+    ops.push(QueryOp::JoinSubquery { kind, right: right_ops, right_alias: right.to_string(), on: predicate });
+    Ok(())
+}
+
+/// Field path in a join predicate.
+///
+/// A path rooted at the left parameter reads the left row and keeps its plain
+/// field names; a path rooted at the right parameter keeps that name as the
+/// column prefix, matching how [`QueryOp::JoinSubquery`] merges the joined
+/// rows.
+fn join_side_path(expr: &VosExpr, left: &str, right: &str) -> Option<Vec<String>> {
+    match expr {
+        VosExpr::Member { object, name, .. } => {
+            let mut path = join_side_path(object, left, right)?;
+            path.push(name.clone());
+            Some(path)
+        }
+        VosExpr::Name { name, .. } if name == left => Some(Vec::new()),
+        VosExpr::Name { name, .. } if name == right => Some(vec![right.to_string()]),
+        _ => None,
+    }
+}
+
+/// Join predicate lowering: the same two-valued comparisons as a filter, with
+/// the joined side's columns kept under their lambda prefix.
+fn lower_join_pred(expr: &VosExpr, left: &str, right: &str, parameters: &[ParameterDescriptor]) -> Result<Pred> {
+    match expr {
+        VosExpr::Literal(VosLiteral::Bool(true)) => Ok(Pred::True),
+        VosExpr::Literal(VosLiteral::Bool(false)) => Ok(Pred::False),
+        VosExpr::Unary { op: VosUnaryOp::Not, expr, .. } => Ok(Pred::Not(Box::new(lower_join_pred(expr, left, right, parameters)?))),
+        VosExpr::Binary { op: VosBinaryOp::And, left: lhs, right: rhs, .. } => Ok(Pred::And(
+            Box::new(lower_join_pred(lhs, left, right, parameters)?),
+            Box::new(lower_join_pred(rhs, left, right, parameters)?),
+        )),
+        VosExpr::Binary { op: VosBinaryOp::Or, left: lhs, right: rhs, .. } => Ok(Pred::Or(
+            Box::new(lower_join_pred(lhs, left, right, parameters)?),
+            Box::new(lower_join_pred(rhs, left, right, parameters)?),
+        )),
+        VosExpr::Binary { op, left: lhs, right: rhs, .. } => {
+            let cmp = match op {
+                VosBinaryOp::Eq => CmpOp::Eq,
+                VosBinaryOp::Ne => CmpOp::Ne,
+                VosBinaryOp::Lt => CmpOp::Lt,
+                VosBinaryOp::Le => CmpOp::Le,
+                VosBinaryOp::Gt => CmpOp::Gt,
+                VosBinaryOp::Ge => CmpOp::Ge,
+                _ => return Err(query_error("unsupported comparison in a join predicate")),
+            };
+            match (join_side_path(lhs, left, right), join_side_path(rhs, left, right)) {
+                (Some(left_path), Some(right_path)) if !left_path.is_empty() && !right_path.is_empty() => {
+                    Ok(Pred::FieldCmpField { left_path, op: cmp, right_path })
+                }
+                (Some(path), _) if !path.is_empty() => Ok(Pred::FieldCmp { path, op: cmp, value: lower_bound_value(rhs.as_ref(), parameters)? }),
+                (_, Some(_)) => Err(query_error("a join predicate cannot compare a value against a joined field; put the field on the left")),
+                _ => {
+                    let expr = lower_value_expr(lhs.as_ref(), None, parameters)?;
+                    let value = lower_bound_value(rhs.as_ref(), parameters)?;
+                    Ok(Pred::ExprCmp { expr: Box::new(expr), op: cmp, value })
+                }
+            }
+        }
+        VosExpr::Call { callee, args, .. } => {
+            let VosExpr::Member { object, name, .. } = callee.as_ref()
+            else {
+                return Err(query_error("unsupported call shape in a join predicate"));
+            };
+            let op = match name.as_str() {
+                "contains" => TextOp::Contains,
+                "startsWith" => TextOp::StartsWith,
+                "endsWith" => TextOp::EndsWith,
+                "like" => TextOp::Like,
+                "ilike" => TextOp::ILike,
+                other => return Err(query_error(format!("unsupported join predicate method `.{other}`"))),
+            };
+            if args.len() != 1 {
+                return Err(query_error(format!("`.{name}()` requires exactly one text argument")));
+            }
+            let Some(path) = join_side_path(object, left, right).filter(|path| !path.is_empty()) else {
+                return Err(query_error(format!("`.{name}()` in a join predicate must read a joined field")));
+            };
+            let value = match &args[0] {
+                VosExpr::Literal(VosLiteral::String(text)) => BoundValue::Literal(Value::Text(text.clone())),
+                VosExpr::Name { name, .. } => name_to_slot(name, parameters)?,
+                _ => return Err(query_error(format!("`.{name}()` requires a text literal or parameter as its argument"))),
+            };
+            Ok(Pred::TextTest { path, op, value })
+        }
+        other => {
+            let Some(path) = join_side_path(other, left, right).filter(|path| !path.is_empty()) else {
+                return Err(query_error("unsupported join predicate shape"));
+            };
+            Ok(Pred::FieldBool { path, value: BoundValue::Literal(Value::Bool(true)) })
+        }
+    }
+}
+
+/// Lower the projection of a `.group_by(...).map(...)`.
+///
+/// Aggregate calls become [`AggregateField`]s; every other field must name one
+/// of the group keys, mirroring SQL's `GROUP BY` rule. The emitted
+/// [`QueryOp::Project`] renames the aggregate row's columns to the author's
+/// projection names.
+fn lower_grouped_projection(
+    expr: &VosExpr,
+    group_keys: &[ProjectField],
+    parameters: &[ParameterDescriptor],
+) -> Result<(Vec<AggregateField>, Vec<ProjectField>)> {
+    let (body, param) = projection_body(expr);
+    let VosExpr::StructProj { items, .. } = body else {
+        return Err(query_error("a grouped projection must list its fields, e.g. `x => x.{ key, total: x.amount.sum() }`"));
+    };
+    let mut aggregates = Vec::new();
+    let mut fields = Vec::new();
+    for item in items {
+        let VosProjItem::Field(init) = item else {
+            return Err(query_error("`*` cannot expand inside a grouped projection; list the fields explicitly"));
+        };
+        let path = match &init.value {
+            None => vec![init.name.clone()],
+            Some(value) => {
+                if let Some(aggregate) = lower_aggregate_value(value, &init.name, param, parameters)? {
+                    aggregates.push(aggregate);
+                    fields.push(ProjectField { name: init.name.clone(), expr: ProjectExpr::Scalar { path: vec![init.name.clone()] } });
+                    continue;
+                }
+                lower_rel_path(value, param)?
+            }
+        };
+        let Some(key) = group_keys.iter().find(|key| matches!(&key.expr, ProjectExpr::Scalar { path: key_path } if *key_path == path))
+        else {
+            return Err(query_error(format!("projection field `{}` is neither a group key nor an aggregate", init.name)));
+        };
+        fields.push(ProjectField { name: init.name.clone(), expr: ProjectExpr::Scalar { path: vec![key.name.clone()] } });
+    }
+    Ok((aggregates, fields))
+}
+
+/// Recognise a projection whose fields are all aggregates, so a `.map` with no
+/// `.group_by` folds every row into one.
+fn lower_global_aggregate_projection(
+    expr: &VosExpr,
+    parameters: &[ParameterDescriptor],
+) -> Result<Option<(Vec<AggregateField>, Vec<ProjectField>)>> {
+    let (body, _) = projection_body(expr);
+    let VosExpr::StructProj { items, .. } = body else {
+        return Ok(None);
+    };
+    let any_aggregate = items.iter().any(|item| match item {
+        VosProjItem::Field(init) => init.value.as_ref().is_some_and(is_aggregate_call),
+        VosProjItem::Star { .. } => false,
+    });
+    if !any_aggregate {
+        return Ok(None);
+    }
+    let (aggregates, fields) = lower_grouped_projection(expr, &[], parameters)?;
+    Ok(Some((aggregates, fields)))
+}
+
+/// Whether an expression is spelled as an aggregate call (`x.amount.sum()`,
+/// `count()`), without lowering it.
+fn is_aggregate_call(expr: &VosExpr) -> bool {
+    let VosExpr::Call { callee, .. } = expr else {
+        return false;
+    };
+    match callee.as_ref() {
+        VosExpr::Member { name, .. } => is_aggregate_method(name),
+        VosExpr::Name { name, .. } => name == "count",
+        _ => false,
+    }
+}
+
+/// Lower one aggregate expression to its [`AggregateField`]; `None` when the
+/// expression is not an aggregate call.
+///
+/// Method style folds a field (`x.amount.sum()`), free `count()` counts rows,
+/// and a trailing lambda on either is the `FILTER (WHERE ...)` predicate.
+fn lower_aggregate_value(
+    expr: &VosExpr,
+    output_name: &str,
+    param: Option<&str>,
+    parameters: &[ParameterDescriptor],
+) -> Result<Option<AggregateField>> {
+    let VosExpr::Call { callee, args, .. } = expr else {
+        return Ok(None);
+    };
+    match callee.as_ref() {
+        VosExpr::Member { object, name, .. } if is_aggregate_method(name) => {
+            let value = lower_project_expr(object, param, parameters)?;
+            let filter = aggregate_filter(args, name, parameters)?;
+            Ok(Some(aggregate_field(name, output_name.to_string(), value, filter)))
+        }
+        VosExpr::Name { name, .. } if name == "count" => {
+            let filter = aggregate_filter(args, "count", parameters)?;
+            let inner = AggregateField::Count { name: output_name.to_string(), expr: None };
+            Ok(Some(match filter {
+                Some(predicate) => AggregateField::Filtered { inner: Box::new(inner), predicate },
+                None => inner,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Split a `.map` argument into its projected body and lambda parameter.
+fn projection_body(expr: &VosExpr) -> (&VosExpr, Option<&str>) {
+    match expr {
+        VosExpr::Lambda(lambda) => (lambda.body.as_ref(), lambda.params.first().map(String::as_str)),
+        other => (other, None),
     }
 }
 
@@ -642,5 +1040,37 @@ fn bound_count(expr: Option<&VosExpr>, method: &str, parameters: &[ParameterDesc
         // A rewritten parameter Identifier `__yydb_param_N`.
         VosExpr::Name { name, .. } => name_to_slot(name, parameters),
         _ => Err(query_error(format!("`.{method}` count must be an integer literal or parameter"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn first_expression(source: &str) -> VosExpr {
+        let program = data_text_vos::parse_program(source).expect("fixture parses");
+        if let Some(expr) = program.result {
+            return expr;
+        }
+        match program.statements.into_iter().next().expect("one statement") {
+            VosStmt::Expr(expr) => expr,
+            other => panic!("expected an expression statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn first_rejects_a_second_predicate_instead_of_ignoring_it() {
+        let expr = first_expression("User.first(x => x.id == 1, x => x.id == 2)");
+        let err = lower_boundary(&expr, &[]).expect_err("two predicates must be rejected");
+        match err {
+            Error::Schema { message } => assert!(message.contains("at most one predicate"), "unexpected message: {message}"),
+            other => panic!("expected a schema error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn count_accepts_zero_or_one_predicate() {
+        assert!(lower_boundary(&first_expression("User.count()"), &[]).expect("bare count lowers").is_some());
+        assert!(lower_boundary(&first_expression("User.count(x => x.id == 1)"), &[]).expect("filtered count lowers").is_some());
     }
 }

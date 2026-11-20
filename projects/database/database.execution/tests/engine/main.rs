@@ -4,6 +4,7 @@ mod catalog_independent;
 mod connection_close;
 mod placement_purity;
 mod prepared_schema_invalidation;
+mod prepared_write;
 mod profiles;
 mod scan;
 mod schema_files;

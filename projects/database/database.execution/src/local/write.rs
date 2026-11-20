@@ -94,12 +94,24 @@ pub fn execute_ops(
                 outcome.affected += inserted.len();
                 outcome.rows.extend(inserted);
             }
-            WriteOp::Update { table, assignments, predicate } => {
-                outcome.affected +=
-                    update_rows(table, assignments, predicate.as_ref(), contract, declared, records, bound_values, placement, index)?;
+            WriteOp::Update { table, assignments, predicate, require_match } => {
+                let affected = update_rows(
+                    table,
+                    assignments,
+                    predicate.as_ref(),
+                    *require_match,
+                    contract,
+                    declared,
+                    records,
+                    bound_values,
+                    placement,
+                    index,
+                )?;
+                outcome.affected += affected;
             }
             WriteOp::Delete { table, predicate, returning } => {
-                let (affected, rows) = delete_rows(table, predicate.as_ref(), returning.as_ref(), contract, records, bound_values, index)?;
+                let (affected, rows) =
+                    delete_rows(table, predicate.as_ref(), returning.as_ref(), contract, declared, records, bound_values, index)?;
                 outcome.affected += affected;
                 outcome.rows.extend(rows);
             }
@@ -378,6 +390,29 @@ fn insert_rows(
                     written.push(project_returned(returning, &updated, table, contract, records, bound_values)?);
                     continue;
                 }
+                ConflictAction::Replace => {
+                    // Unconditional upsert: the conflicting row is replaced as a
+                    // whole. Retracting its old unique keys first lets an
+                    // unchanged unique column satisfy its own rule.
+                    let matched = working[position].row.clone();
+                    let matched_pk = matched
+                        .get(&pk_field)
+                        .ok_or_else(|| write_error(format!("conflicting `{table}` row has no primary key field `{pk_field}`")))?;
+                    let matched_pk_text = constraints::value_text(matched_pk)?;
+                    match index {
+                        Some(ctx) => {
+                            ctx.index.enforce(ctx, records, declared, &storage, &pk_field, &matched_pk_text, Some(&matched), &row)?
+                        }
+                        None => {
+                            let known: Vec<QueryRow> = working.iter().map(|candidate| candidate.row.clone()).collect();
+                            constraints::check_against_rows(&known, declared, &storage, &pk_field, &matched_pk_text, &row)?;
+                        }
+                    }
+                    upsert_row(&mut pending, &storage, &matched_pk_text, &row)?;
+                    working[position].row = row.clone();
+                    written.push(project_returned(returning, &row, table, contract, records, bound_values)?);
+                    continue;
+                }
             }
         }
 
@@ -633,6 +668,7 @@ fn update_rows(
     table: &str,
     assignments: &[WriteAssignment],
     predicate: Option<&Pred>,
+    require_match: bool,
     contract: &ResolvedContract,
     declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
@@ -670,6 +706,19 @@ fn update_rows(
         }
     }
 
+    if require_match && replacements.is_empty() {
+        // Only VOS keyed updates set this flag, and their authors have always
+        // seen the missing primary key named in the error.
+        let key = match predicate {
+            Some(Pred::FieldCmp { value: BoundValue::Literal(value), .. }) => constraints::value_text(value).ok(),
+            _ => None,
+        };
+        let message = match key {
+            Some(key) => format!("update target `{table}` primary key `{key}` does not exist"),
+            None => format!("update on `{table}` matched no row"),
+        };
+        return Err(write_error(message));
+    }
     for (key, old, row) in &replacements {
         let pk = row.get(&pk_field).ok_or_else(|| write_error(format!("updated `{table}` row lost primary key field `{pk_field}`")))?;
         let pk_text = constraints::value_text(pk)?;
@@ -688,6 +737,7 @@ fn delete_rows(
     predicate: Option<&Pred>,
     returning: Option<&ReturningProjection>,
     contract: &ResolvedContract,
+    declared: &[TableUniqueConstraint],
     records: &mut BTreeMap<String, Vec<u8>>,
     bound_values: &[Value],
     index: Option<&constraints::WriteIndex<'_>>,
@@ -730,7 +780,7 @@ fn delete_rows(
             && let Some(pk) = row.get(&pk_field)
             && let Ok(pk_text) = constraints::value_text(pk)
         {
-            ctx.index.retract(ctx, &[], &storage, &pk_text, row);
+            ctx.index.retract(ctx, declared, &storage, &pk_text, row);
         }
         if remove_row(records, key) {
             removed += 1;

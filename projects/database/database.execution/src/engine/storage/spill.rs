@@ -50,6 +50,11 @@ pub(crate) fn is_spill_key(key: &str) -> bool {
     key.starts_with(SPILL_PREFIX)
 }
 
+/// Whether `value` is the short header a spilled record keeps in its cell.
+pub(crate) fn is_spill_header(value: &[u8]) -> bool {
+    header_len(value).is_some()
+}
+
 /// Number of chunk records `len` original bytes occupy.
 pub(crate) fn chunk_count(len: usize) -> usize {
     if len <= SPILL_INLINE_MAX {

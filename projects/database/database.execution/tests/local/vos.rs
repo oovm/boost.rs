@@ -12,6 +12,12 @@ table Account {
     email: utf8,
     score: i64,
 }
+
+table Payment {
+    @@payment_id: i64,
+    account_id: i64,
+    amount: i64,
+}
 "#;
 
 fn seeded() -> (schema_types::ResolvedContract, BTreeMap<String, Vec<u8>>) {
@@ -26,6 +32,16 @@ fn seeded() -> (schema_types::ResolvedContract, BTreeMap<String, Vec<u8>>) {
             &mut records,
         )
         .expect("seed row");
+    }
+    for (payment_id, account_id, amount) in [(10, 1, 5), (11, 1, 7), (12, 2, 3)] {
+        execute_sql(
+            &format!("INSERT INTO Payment (payment_id, account_id, amount) VALUES ({payment_id}, {account_id}, {amount})"),
+            &[],
+            &contract,
+            &[],
+            &mut records,
+        )
+        .expect("seed payment");
     }
     (contract, records)
 }
@@ -192,4 +208,123 @@ fn unsupported_surface_is_rejected_not_guessed() {
     assert!(prepare("Account.all().limit(1).collect()").is_err(), "undocumented methods must fail closed");
     assert!(prepare("Account.count().collect()").is_err(), "a boundary is not a collect pipeline");
     let _ = (&contract, &records);
+}
+
+fn single(rows: Vec<BTreeMap<String, Value>>, column: &str) -> Value {
+    match &rows[..] {
+        [row] => row.get(column).cloned().unwrap_or(Value::Null),
+        other => panic!("expected exactly one row, got {}", other.len()),
+    }
+}
+
+#[test]
+fn whole_table_aggregates_match_their_sql_counterparts() {
+    let (contract, records) = seeded();
+    assert!(matches!(single(run("Payment.sum(p => p.amount)", &contract, &records), "sum"), Value::I64(15)));
+    assert!(
+        matches!(single(run("Payment.avg(p => p.amount)", &contract, &records), "avg"), Value::F64(avg) if (avg - 5.0).abs() < 1e-9),
+        "AVG always yields a finite float"
+    );
+    assert!(matches!(single(run("Payment.min(p => p.amount)", &contract, &records), "min"), Value::I64(3)));
+    assert!(matches!(single(run("Payment.max(p => p.amount)", &contract, &records), "max"), Value::I64(7)));
+    // The same aggregates close a pipeline rather than a bare table.
+    assert!(matches!(
+        single(run("Payment.all().filter(p => p.account_id == 1).sum(p => p.amount)", &contract, &records), "sum"),
+        Value::I64(12)
+    ));
+}
+
+#[test]
+fn aggregate_filters_match_sql_filter_where() {
+    let (contract, records) = seeded();
+    // `FILTER (WHERE ...)` trims the rows that reach the aggregate.
+    assert!(matches!(single(run("Payment.sum(p => p.amount, p => p.account_id == 1)", &contract, &records), "sum"), Value::I64(12)));
+    assert!(matches!(single(run("Payment.count(p => p.account_id == 2)", &contract, &records), "count"), Value::I64(1)));
+    assert!(matches!(single(run("Payment.all().count()", &contract, &records), "count"), Value::I64(3)));
+    // A projection made only of aggregates folds every row into one.
+    let rows = run(
+        "Payment.all().map(p => p.{ n: count(), total: p.amount.sum(), big: p.amount.sum(q => q.amount > 4) }).collect()",
+        &contract,
+        &records,
+    );
+    assert!(matches!(single(rows.clone(), "n"), Value::I64(3)));
+    assert!(matches!(single(rows.clone(), "total"), Value::I64(15)));
+    assert!(matches!(single(rows, "big"), Value::I64(12)), "the filter keeps only the two payments above four");
+}
+
+#[test]
+fn grouped_aggregates_match_sql_group_by() {
+    let (contract, records) = seeded();
+    let rows = run(
+        "Payment.all().group_by(p => p.account_id).map(p => p.{ account_id, total: p.amount.sum(), n: count() }).sort_by(p => p.account_id).collect()",
+        &contract,
+        &records,
+    );
+    assert_eq!(rows.len(), 2, "one row per distinct account");
+    assert!(matches!(rows[0].get("account_id"), Some(Value::I64(1))));
+    assert!(matches!(rows[0].get("total"), Some(Value::I64(12))));
+    assert!(matches!(rows[0].get("n"), Some(Value::I64(2))));
+    assert!(matches!(rows[1].get("account_id"), Some(Value::I64(2))));
+    assert!(matches!(rows[1].get("total"), Some(Value::I64(3))));
+    assert!(matches!(rows[1].get("n"), Some(Value::I64(1))));
+}
+
+#[test]
+fn array_agg_keeps_group_order() {
+    let (contract, records) = seeded();
+    let rows = run("Payment.all().sort_by(p => p.amount).array_agg(p => p.amount)", &contract, &records);
+    assert!(matches!(
+        single(rows, "array_agg"),
+        Value::List(values) if values == vec![Value::I64(3), Value::I64(5), Value::I64(7)]
+    ));
+}
+
+#[test]
+fn join_addresses_both_sides_by_their_lambda_names() {
+    let (contract, records) = seeded();
+    let rows = run(
+        "Account.join(Payment.all(), (a, pay) => a.account_id == pay.account_id).map(x => x.{ id: x.a.account_id, email: x.a.email, amount: x.pay.amount }).sort_by(x => x.amount).collect()",
+        &contract,
+        &records,
+    );
+    assert_eq!(rows.len(), 3);
+    let amounts: Vec<i64> = rows
+        .iter()
+        .map(|row| match row.get("amount") {
+            Some(Value::I64(amount)) => *amount,
+            other => panic!("unexpected amount {other:?}"),
+        })
+        .collect();
+    assert_eq!(amounts, vec![3, 5, 7]);
+    assert!(matches!(rows[0].get("email"), Some(Value::Text(email)) if email == "Linus@Example.Test"));
+}
+
+#[test]
+fn left_join_pads_unmatched_rows_with_null() {
+    let (contract, records) = seeded();
+    let rows = run(
+        "Account.left_join(Payment.all(), (a, pay) => a.account_id == pay.account_id).map(x => x.{ id: x.a.account_id, amount: x.pay.amount }).sort_by(x => x.id).collect()",
+        &contract,
+        &records,
+    );
+    assert_eq!(rows.len(), 4, "grace has no payment and still appears");
+    assert!(matches!(rows[3].get("amount"), Some(Value::Null)));
+}
+
+#[test]
+fn grouped_and_join_surface_fails_closed() {
+    // A grouped projection may only name group keys and aggregates.
+    assert!(
+        prepare("Payment.all().group_by(p => p.account_id).map(p => p.{ amount: p.amount }).collect()").is_err(),
+        "a non-aggregate field must be a group key"
+    );
+    // Nothing may run between `.group_by` and the projection that consumes it.
+    assert!(
+        prepare("Payment.all().group_by(p => p.account_id).filter(p => p.amount > 0).map(p => p.{ account_id }).collect()").is_err(),
+        "a filter after group_by would silently filter input rows"
+    );
+    // Joins must bind both sides so every path is unambiguous.
+    assert!(prepare("Account.join(Payment.all(), a => a.account_id == 1).map(x => x.*).collect()").is_err());
+    // Aggregates still take at most one filter predicate.
+    assert!(prepare("Payment.sum(p => p.amount, p => p.amount > 0, p => p.amount > 1)").is_err());
 }

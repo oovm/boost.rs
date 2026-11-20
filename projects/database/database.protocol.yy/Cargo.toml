@@ -13,3 +13,4 @@ database-types = { workspace = true }
 database-udf = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }

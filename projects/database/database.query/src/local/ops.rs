@@ -1190,6 +1190,13 @@ pub enum ConflictAction {
         /// false the row is left untouched and the incoming row is dropped.
         predicate: Option<Pred>,
     },
+    /// Replace the conflicting stored row with the incoming row as a whole.
+    ///
+    /// This is the primitive behind an unconditional upsert (`INSERT` that
+    /// overwrites an existing primary key): the old row's unique keys are
+    /// retracted before the incoming row is checked and published, so an
+    /// unchanged unique column does not conflict with itself.
+    Replace,
 }
 
 /// `INSERT … ON CONFLICT (columns) …` clause.
@@ -1266,6 +1273,9 @@ pub enum WriteOp {
         assignments: Vec<WriteAssignment>,
         /// Row filter; `None` selects every row.
         predicate: Option<Pred>,
+        /// When true, matching no row is an error instead of a successful
+        /// zero-row update. VOS keyed updates rely on this; SQL leaves it off.
+        require_match: bool,
     },
     /// Remove every row matching `predicate` (`None` means every row).
     Delete {

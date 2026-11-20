@@ -1,8 +1,68 @@
 use std::collections::BTreeMap;
 
-use database_execution::local::{execute_write, execute_write_with_params, point_write_keys};
-use database_query::local::{ReadWindow, bind_vos_write, prepare_sql, resolved_contract_from_document, write_windows};
-use database_types::{TableUniqueConstraint, UniqueConstraint, Value};
+use database_execution::engine::bytes::Placement;
+use database_execution::local::execute_ops;
+use database_query::local::{
+    ReadWindow, bind_vos_write, constraints, lower_write_program, point_write_key, prepare_sql, resolved_contract_from_document,
+    write_windows,
+};
+use database_types::{Error, Result, TableUniqueConstraint, UniqueConstraint, Value};
+
+fn parse_write_program(source: &str) -> Result<schema_input_vos::syntax::VosProgram> {
+    schema_input_vos::parse_program(source).map_err(|diagnostics| Error::Schema { message: diagnostics })
+}
+
+fn execute_write(
+    source: &str,
+    contract: &schema_types::ResolvedContract,
+    document: Option<&str>,
+    records: &mut BTreeMap<String, Vec<u8>>,
+) -> Result<()> {
+    execute_write_with_params(source, contract, &[], document, records, &[])
+}
+
+fn execute_write_with_params(
+    source: &str,
+    contract: &schema_types::ResolvedContract,
+    declared: &[TableUniqueConstraint],
+    document: Option<&str>,
+    records: &mut BTreeMap<String, Vec<u8>>,
+    params: &[Value],
+) -> Result<()> {
+    let program = parse_write_program(source)?;
+    let mut place = |value| Ok(value);
+    let ops = lower_write_program(&program, contract, document, params, &mut place)?;
+    let merged = constraints::merge(constraints::from_contract(contract)?, declared);
+    execute_ops(&ops, contract, &merged, records, params, &Placement::Inline, None)?;
+    Ok(())
+}
+
+fn point_write_keys(
+    source: &str,
+    contract: &schema_types::ResolvedContract,
+    declared: &[TableUniqueConstraint],
+    document: Option<&str>,
+    params: &[Value],
+    holds_every_row: bool,
+) -> Result<Option<Vec<String>>> {
+    let program = parse_write_program(source)?;
+    let mut place = |value| Ok(value);
+    let merged = constraints::merge(constraints::from_contract(contract)?, declared);
+    let Ok(ops) = lower_write_program(&program, contract, document, params, &mut place)
+    else {
+        return Ok(None);
+    };
+    let mut keys = Vec::with_capacity(ops.len());
+    for op in &ops {
+        let Some(key) = point_write_key(op, contract, &merged, holds_every_row)? else {
+            return Ok(None);
+        };
+        keys.push(key);
+    }
+    keys.sort();
+    keys.dedup();
+    Ok(Some(keys))
+}
 
 const BLOG_SCHEMA: &str = r#"
 table User {
@@ -186,6 +246,40 @@ fn a_macro_program_binds_parameters_and_patches_an_updated_row() {
     execute_write("seed_docs()", &contract, Some(KEYED_WITH_MACRO), &mut records).expect("seed");
     execute_write_with_params(&plan.source, &contract, &[], Some(KEYED_WITH_MACRO), &mut records, &plan.values).expect("execute");
     assert_eq!(stored_title(&contract, &records, 1), "patched twice", "the parameter patch must win over the macro patch");
+}
+
+#[test]
+fn an_insert_on_an_existing_primary_key_overwrites_the_row() {
+    let contract = keyed_contract();
+    let mut records = BTreeMap::new();
+    execute_write(r#"Coded::insert({ name: "a", code: "A" })"#, &contract, Some(KEYED_SCHEMA), &mut records).expect("first insert");
+    execute_write(r#"Coded::insert({ name: "a", code: "B" })"#, &contract, Some(KEYED_SCHEMA), &mut records)
+        .expect("an insert that rewrites its own row must not conflict with itself");
+    assert_eq!(records.len(), 1, "the primary key still names one record");
+    let rows = database_execution::local::execute("Coded.all().collect()", Some(&contract), &records).expect("read back");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("code"), Some(&Value::Text("B".into())), "the second insert must replace the whole row");
+}
+
+#[test]
+fn a_keyed_update_on_a_missing_row_reports_the_missing_key() {
+    let contract = keyed_contract();
+    let mut records = BTreeMap::new();
+    let error = execute_write(r#"Doc::update({ doc_id: 7, title: "patched" })"#, &contract, Some(KEYED_SCHEMA), &mut records)
+        .expect_err("a keyed update must name its primary key");
+    assert_eq!(error.code(), "database.schema.invalid");
+    assert_eq!(error.to_string(), "VOS schema: update target `Doc` primary key `7` does not exist");
+    assert!(records.is_empty(), "a failed update must not publish a row");
+}
+
+#[test]
+fn a_keyed_delete_on_a_missing_row_changes_nothing() {
+    let contract = keyed_contract();
+    let mut records = BTreeMap::new();
+    execute_write(r#"Doc::insert({ doc_id: 1, title: "one" })"#, &contract, Some(KEYED_SCHEMA), &mut records).expect("seed");
+    execute_write(r#"Doc::delete({ doc_id: 2 })"#, &contract, Some(KEYED_SCHEMA), &mut records).expect("a missing delete target is a no-op");
+    assert_eq!(records.len(), 1);
+    assert_eq!(stored_title(&contract, &records, 1), "one");
 }
 
 fn bind_error(source: &str, named: &BTreeMap<String, Value>, document: Option<&str>) -> database_types::Error {

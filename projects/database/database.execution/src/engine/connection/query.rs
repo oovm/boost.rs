@@ -478,8 +478,18 @@ impl Connection {
     /// the row, at or below it stay inline. Mutations follow the same
     /// transaction rules as [`Self::execute_vos_write`].
     pub fn execute_vos_write_with_params(&self, source: &str, named: &BTreeMap<String, Value>) -> Result<()> {
+        self.execute_vos_write_params_counted(source, named).map(|_| ())
+    }
+
+    /// Same write as [`Self::execute_vos_write_with_params`], returning how many
+    /// write statements actually ran.
+    ///
+    /// The prepared-write entry point needs that count for its affected result,
+    /// while the plain surface keeps its `Result<()>` signature.
+    fn execute_vos_write_params_counted(&self, source: &str, named: &BTreeMap<String, Value>) -> Result<usize> {
         self.guard_session_alive()?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let affected = std::cell::Cell::new(0usize);
         self.mutate_narrowed_write_unlocked(
             |metadata, holds_every_row| {
                 let contract = resolved_contract(metadata)?;
@@ -510,14 +520,15 @@ impl Connection {
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 let keys = self
                     .with_row_resolver(|| {
-                        crate::local::point_write_keys_parsed(
+                        let mut place = |value| self.planning_placement().place(value);
+                        database_query::local::point_write_keys(
                             &plan.program,
                             contract,
                             &metadata.unique_constraints,
                             schema_document,
                             &plan.values,
                             exempt,
-                            &self.planning_placement(),
+                            &mut place,
                         )
                     })
                     .map(|keys| keys.map(Self::key_windows))?;
@@ -534,20 +545,27 @@ impl Connection {
                 let values = &plan.values;
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 let placement = self.placement();
-                self.with_row_resolver(|| {
-                    crate::local::execute_write_parsed_indexed(
+                let merged = database_query::local::constraints::merge(
+                    database_query::local::constraints::from_contract(&contract)?,
+                    constraints,
+                );
+                let count = self.with_row_resolver(|| {
+                    let mut place = |value| placement.place(value);
+                    let ops = database_query::local::lower_write_program(
                         &plan.program,
                         &contract,
-                        constraints,
                         schema_document,
-                        records,
                         values,
-                        Some(&index),
-                        &placement,
-                    )
-                })
+                        &mut place,
+                    )?;
+                    let outcome = crate::local::execute_ops(&ops, &contract, &merged, records, values, &placement, Some(&index))?;
+                    Ok::<usize, database_types::Error>(outcome.affected)
+                })?;
+                affected.set(count);
+                Ok(())
             },
-        )
+        )?;
+        Ok(affected.get())
     }
 
     /// Execute a SQL write statement (INSERT / UPDATE / DELETE) with positional
@@ -566,8 +584,25 @@ impl Connection {
     /// Shared write tail of [`Self::execute_sql_write`] and [`Self::execute_plan`]:
     /// everything after prepare, with `values` bound positionally against the
     /// plan's declared parameters.
+    ///
+    /// A VOS write program carries no lowered `write_ops` — `prepare` classifies
+    /// it as a write and leaves the operator tree empty — so it cannot run
+    /// through the SQL write executor. Those plans are routed back through the
+    /// VOS frontend by source text instead of silently reporting zero rows.
     fn execute_prepared_write(&self, stmt: &PreparedStatement, values: &[Value]) -> Result<usize> {
         let values = database_query::local::bind_ordered(stmt, values)?;
+        if stmt.dialect == Dialect::Vos && stmt.write_ops.is_empty() && stmt.query_kind == QueryKind::Write {
+            // The VOS executor binds by name, so rebuild the named map from the
+            // declaration list and the positional slots `bind_ordered` just
+            // validated. Its own entry point takes the operation lock, which
+            // this function has not taken yet.
+            let named = stmt
+                .parameters
+                .iter()
+                .map(|parameter| (parameter.name.clone(), values[parameter.index as usize].clone()))
+                .collect::<BTreeMap<String, Value>>();
+            return self.execute_vos_write_params_counted(&stmt.source, &named);
+        }
         self.guard_session_alive()?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut affected = 0;

@@ -2,10 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::local::{execute, execute_write_with_params};
+use database_execution::local::execute;
 use database_query::local::{bind_vos_write, resolved_contract_from_document};
 use database_types::Value;
 use schema_types::ResolvedContract;
+
+use crate::support::execute_write_with_params;
 
 const CONTAINER_SCHEMA: &str = r#"
 table Owner {

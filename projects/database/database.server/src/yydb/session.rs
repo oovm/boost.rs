@@ -7,7 +7,7 @@
 
 use std::{collections::BTreeMap, net::TcpStream};
 
-use database_execution::engine::Connection;
+use database_execution::engine::{Connection, PlanOutcome};
 use database_query::local::{PreparedStatement, QueryRow};
 use database_types::{Error, Result, SchemaVersion, Value};
 use database_udf::HostMicroDefinition;
@@ -55,6 +55,13 @@ pub trait ServeBackend: Send {
         Err(Error::Unsupported("this backend does not serve prepared statements"))
     }
 
+    /// 执行已预编译的写语句(INSERT / UPDATE / DELETE 或 VOS 写程序)。
+    ///
+    /// 与 [`Self::query_prepared`] 分开,避免把写计划送进只驱动读管线的路径。
+    fn execute_prepared(&self, statement: &PreparedStatement, params: &BTreeMap<String, Value>) -> Result<Vec<QueryRow>> {
+        Err(Error::Unsupported("this backend does not serve prepared writes"))
+    }
+
     /// 打开显式事务。
     fn begin(&self) -> Result<()> {
         Err(Error::Unsupported("this backend does not serve transactions"))
@@ -88,6 +95,11 @@ pub trait ServeBackend: Send {
     /// 把连接的传输层交给后端,供 `MicroHostInvoke` 反向调用宿主微函数。
     fn attach_transport(&self, stream: &TcpStream) -> Result<()> {
         Ok(())
+    }
+
+    /// 运行时性能快照(JSON),供 `PerfReport` 持续改进路径采集卡点。
+    fn perf_report(&self) -> Result<String> {
+        Err(Error::Unsupported("this backend does not serve perf reports"))
     }
 }
 
@@ -138,6 +150,14 @@ impl ServeBackend for Connection {
 
     fn query_prepared(&self, statement: &PreparedStatement, params: &BTreeMap<String, Value>) -> Result<Vec<QueryRow>> {
         Connection::query_prepared(self, statement, params)
+    }
+
+    fn execute_prepared(&self, statement: &PreparedStatement, params: &BTreeMap<String, Value>) -> Result<Vec<QueryRow>> {
+        let values = database_query::local::bind_named(statement, params)?;
+        match Connection::execute_plan(self, statement, &values)? {
+            PlanOutcome::Affected(_) => Ok(Vec::new()),
+            PlanOutcome::Rows(rows) => Ok(rows),
+        }
     }
 
     fn begin(&self) -> Result<()> {

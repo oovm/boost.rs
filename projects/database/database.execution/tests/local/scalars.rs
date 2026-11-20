@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use database_execution::local::{execute, execute_write};
+use database_execution::local::execute;
+
+use crate::support::execute_write;
 use database_query::local::resolved_contract_from_document;
 use database_types::{Date, Decimal, Error, Time, Timestamp, Value};
 use schema_types::ResolvedContract;

@@ -25,6 +25,8 @@ pub mod params;
 mod sql;
 mod window;
 #[doc(hidden)]
+pub mod write_lower;
+#[doc(hidden)]
 pub mod write_plan;
 
 pub use catalog::{resolved_contract_from_document, validate_contract_types};
@@ -40,3 +42,4 @@ pub use params::{
 #[doc(hidden)]
 pub use params::{Dialect, prepare_sql};
 pub use window::{ReadWindow, read_window, write_windows};
+pub use write_lower::{lower_write_program, point_write_key, point_write_keys};
