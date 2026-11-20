@@ -123,23 +123,32 @@ impl Connection {
         self.migrate_schema(&joined, renames)
     }
 
-    /// Persist the database-truth VOS schema on first use, then require an exact
-    /// document match on later calls.
+    /// Persist the database-truth VOS schema on first use, then verify later
+    /// calls structurally against the durable catalog.
     ///
     /// The initial version is `1`, or `// @yydb-schema-version: <n>` in leading
-    /// comments. To change the schema document after persistence, call
-    /// [`Self::migrate_schema`].
+    /// comments. Once a schema is persisted, a document that rebinds to the
+    /// same durable identities is accepted even when its formatting differs —
+    /// the stored text then adopts the new spelling. A document that changes
+    /// meaning must go through [`Self::migrate_schema`] to advance the version.
     pub fn ensure_schema(&self, document: &str) -> Result<()> {
-        let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
         let projection = schema_vos::project_schema(document)?;
+        let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
         let mut state = self.read_state()?;
         if let Some(current) = &state.schema {
-            if current.document != document {
-                return Err(Error::Schema { message: "schema document changed -- call migrate_schema to advance the version".into() });
-            }
             let resolved = rebind_identities(&state, &projection)?;
+            let mut dirty = false;
             if state.resolved_contract.is_none() {
                 state.resolved_contract = Some(std::sync::Arc::new(resolved));
+                dirty = true;
+            }
+            if current.document != document {
+                // Same durable identities, different spelling: adopt the new text so
+                // stored-document fingerprints match what callers keep passing in.
+                state.schema = Some(SchemaVersion { version: current.version, document: document.to_owned() });
+                dirty = true;
+            }
+            if dirty {
                 self.write_state(&state)?;
             }
             return Ok(());
@@ -161,8 +170,8 @@ impl Connection {
     /// or by mappings in `renames`. When the document carries
     /// `// @yydb-schema-version: <n>`, `n` must equal the new version.
     pub fn migrate_schema(&self, document: &str, renames: &schema::RenameMap) -> Result<()> {
-        let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
         let projection = schema_vos::project_schema(document)?;
+        let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
         let mut state = self.read_state()?;
         let current = state.schema.as_ref().ok_or_else(|| Error::Schema { message: "schema migration requires an existing schema".into() })?;
         let version = current.version + 1;
@@ -202,15 +211,20 @@ fn join_schema_documents(documents: &[&str]) -> String {
 
 /// Reproject a document against persisted identities and verify the ledger.
 ///
-/// Returns the resolved contract for the persisted snapshot. When the document
-/// no longer matches the durable ledger this fails structurally without
-/// rewriting any state.
+/// Returns the resolved contract for the persisted snapshot. A document that
+/// no longer rebinds to the durable identities fails with [`Error::Schema`]
+/// without rewriting any state; a database whose identity ledger is missing
+/// stays a corruption error, because no caller document can explain it away.
 fn rebind_identities(state: &super::State, projection: &schema_types::SchemaProjection) -> Result<schema_input_vos::ResolvedContract> {
     let history = state.identity_history.as_ref().ok_or(Error::Corrupt("catalog identity ledger does not match schema"))?;
     let manifest = schema_vos::manifest_from_snapshot(&history.snapshot);
-    let bound = schema_vos::bind(projection, &manifest).map_err(|_| Error::Corrupt("catalog identity ledger does not match schema"))?;
+    let bound = schema_vos::bind(projection, &manifest).map_err(|_| schema_mismatch())?;
     if bound != history.snapshot {
-        return Err(Error::Corrupt("catalog identity ledger does not match schema"));
+        return Err(schema_mismatch());
     }
     schema_vos::resolve_contract(&bound)
+}
+
+fn schema_mismatch() -> Error {
+    Error::Schema { message: "schema document does not match the durable catalog -- call migrate_schema to advance the version".into() }
 }
