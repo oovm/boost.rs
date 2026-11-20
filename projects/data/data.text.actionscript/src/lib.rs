@@ -9,21 +9,14 @@ mod builder;
 mod language;
 /// Lexer for ActionScript.
 pub mod lexer;
-/// Language Server Protocol (LSP) and editor integration for ActionScript.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 
 /// Parser for ActionScript.
 pub mod parser;
 
 #[cfg(feature = "lsp")]
 #[cfg(feature = "mcp")]
-/// Model Context Protocol (MCP) support for ActionScript.
-pub mod mcp;
 
 // Re-export main types
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub use crate::lsp::formatter::ActionScriptFormatter;
 pub use crate::{
     ast::ActionScriptRoot,
     builder::ActionScriptBuilder,
@@ -32,11 +25,5 @@ pub use crate::{
     parser::{ActionScriptElementType, ActionScriptParser},
 };
 
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::ActionScriptHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::ActionScriptLanguageService;
 
-#[cfg(feature = "mcp")]
-pub use crate::mcp::serve_actionscript_mcp;

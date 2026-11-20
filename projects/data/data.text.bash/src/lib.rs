@@ -11,8 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 

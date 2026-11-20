@@ -1,0 +1,15 @@
+[package]
+name = "language-dot"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Dot (LSP, MCP, formatter, highlighter adapters over data-text-dot)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "dot"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-dot = { workspace = true }

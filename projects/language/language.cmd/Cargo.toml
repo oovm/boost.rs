@@ -1,0 +1,17 @@
+[package]
+name = "language-cmd"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Cmd (LSP, MCP, formatter, highlighter adapters over data-text-cmd)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "cmd"]
+
+[dependencies]
+data-text-cmd = { workspace = true }
+data-text-core = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

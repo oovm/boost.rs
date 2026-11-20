@@ -8,10 +8,8 @@ pub mod ast;
 pub mod builder;
 /// Language configuration for Dockerfile.
 pub mod language;
-mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-mod parser;
+pub mod lexer;
+pub mod parser;
 
 pub use crate::{
     ast::DockerfileRoot,

@@ -10,9 +10,6 @@ pub mod builder;
 pub mod language;
 /// Erlang lexer module.
 pub mod lexer;
-/// Erlang LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Erlang parser module.
 pub mod parser;
 

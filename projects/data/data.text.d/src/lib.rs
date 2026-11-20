@@ -11,9 +11,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 
@@ -23,15 +20,7 @@ pub mod parser;
 
 pub use crate::{ast::DRoot, builder::DBuilder, language::DLanguage, lexer::DLexer, parser::DParser};
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::DHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::DLanguageService;
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::formatter::DFormatter;
 
 // MCP service implementation.
 // #[cfg(feature = "mcp")]

@@ -13,9 +13,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 // /// MCP module.
 // #[cfg(feature = "mcp")]
 // pub mod mcp;
@@ -30,8 +27,6 @@ pub use crate::{
     parser::DsvParser,
 };
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::DsvLanguageService;
 
 #[cfg(feature = "serde")]
 pub use crate::language::from_value;

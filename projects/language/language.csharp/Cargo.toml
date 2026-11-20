@@ -1,0 +1,17 @@
+[package]
+name = "language-csharp"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Csharp (LSP, MCP, formatter, highlighter adapters over data-text-csharp)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "csharp"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-csharp = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

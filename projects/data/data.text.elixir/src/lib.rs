@@ -5,10 +5,8 @@
 /// AST module.
 pub mod ast;
 pub mod builder;
-mod language;
-mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
+pub mod language;
+pub mod lexer;
 pub mod parser;
 
 pub use crate::{

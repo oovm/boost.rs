@@ -12,9 +12,6 @@ pub mod builder;
 pub mod language;
 /// Lexer implementation for C#.
 pub mod lexer;
-/// LSP-related functionality (hover, completion, highlighting) for C#.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser implementation for C#.
 pub mod parser;
 
@@ -43,6 +40,3 @@ pub fn parse(source: &str) -> Result<CSharpRoot, data_text_core::TextError> {
 
 pub use parser::element_type::CSharpElementType;
 
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::CSharpLanguageService;

@@ -71,6 +71,35 @@ members = [
     "projects/language/language.valkyrie",
     "projects/language/language.visualize",
     "projects/language/language.von",
+
+
+
+
+    "projects/language/language.actionscript",
+    "projects/language/language.ada",
+    "projects/language/language.apl",
+    "projects/language/language.ascii-doc",
+    "projects/language/language.bash",
+    "projects/language/language.bat",
+    "projects/language/language.c",
+    "projects/language/language.cmd",
+    "projects/language/language.cobol",
+    "projects/language/language.coq",
+    "projects/language/language.crystal",
+    "projects/language/language.csharp",
+    "projects/language/language.csv",
+    "projects/language/language.d",
+    "projects/language/language.delphi",
+    "projects/language/language.dhall",
+    "projects/language/language.django",
+    "projects/language/language.dockerfile",
+    "projects/language/language.dot",
+    "projects/language/language.dsv",
+    "projects/language/language.ejs",
+    "projects/language/language.elixir",
+    "projects/language/language.elm",
+    "projects/language/language.erlang",
+    "projects/language/language.rust",
     "projects/language/language.astro",
     "projects/language/language.clojure",
     "projects/language/language.dart",
@@ -514,6 +543,35 @@ language-typescript = { path = "projects/language/language.typescript" }
 language-valkyrie = { path = "projects/language/language.valkyrie" }
 language-visualize = { path = "projects/language/language.visualize" }
 language-von = { path = "projects/language/language.von" }
+
+
+
+
+language-actionscript = { path = "projects/language/language.actionscript" }
+language-ada = { path = "projects/language/language.ada" }
+language-apl = { path = "projects/language/language.apl" }
+language-ascii-doc = { path = "projects/language/language.ascii-doc" }
+language-bash = { path = "projects/language/language.bash" }
+language-bat = { path = "projects/language/language.bat" }
+language-c = { path = "projects/language/language.c" }
+language-cmd = { path = "projects/language/language.cmd" }
+language-cobol = { path = "projects/language/language.cobol" }
+language-coq = { path = "projects/language/language.coq" }
+language-crystal = { path = "projects/language/language.crystal" }
+language-csharp = { path = "projects/language/language.csharp" }
+language-csv = { path = "projects/language/language.csv" }
+language-d = { path = "projects/language/language.d" }
+language-delphi = { path = "projects/language/language.delphi" }
+language-dhall = { path = "projects/language/language.dhall" }
+language-django = { path = "projects/language/language.django" }
+language-dockerfile = { path = "projects/language/language.dockerfile" }
+language-dot = { path = "projects/language/language.dot" }
+language-dsv = { path = "projects/language/language.dsv" }
+language-ejs = { path = "projects/language/language.ejs" }
+language-elixir = { path = "projects/language/language.elixir" }
+language-elm = { path = "projects/language/language.elm" }
+language-erlang = { path = "projects/language/language.erlang" }
+language-rust = { path = "projects/language/language.rust" }
 language-astro = { path = "projects/language/language.astro" }
 language-clojure = { path = "projects/language/language.clojure" }
 language-dart = { path = "projects/language/language.dart" }

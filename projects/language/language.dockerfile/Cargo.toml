@@ -1,0 +1,17 @@
+[package]
+name = "language-dockerfile"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Dockerfile (LSP, MCP, formatter, highlighter adapters over data-text-dockerfile)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "dockerfile"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-dockerfile = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

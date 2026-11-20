@@ -1,0 +1,17 @@
+[package]
+name = "language-crystal"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Crystal (LSP, MCP, formatter, highlighter adapters over data-text-crystal)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "crystal"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-crystal = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

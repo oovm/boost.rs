@@ -1,0 +1,17 @@
+[package]
+name = "language-csv"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Csv (LSP, MCP, formatter, highlighter adapters over data-text-csv)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "csv"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-csv = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

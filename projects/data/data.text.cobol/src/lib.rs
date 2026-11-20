@@ -15,9 +15,6 @@ pub use language::CobolLanguage;
 /// Token type module.
 pub mod lexer;
 pub use lexer::{CobolLexer, token_type::CobolTokenType};
-/// LSP module.
-#[cfg(feature = "lsp")]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 pub use parser::{CobolParser, element_type::CobolElementType};

@@ -1,0 +1,17 @@
+[package]
+name = "language-bat"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Bat (LSP, MCP, formatter, highlighter adapters over data-text-bat)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "bat"]
+
+[dependencies]
+data-text-bat = { workspace = true }
+data-text-core = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

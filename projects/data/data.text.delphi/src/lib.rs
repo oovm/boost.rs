@@ -5,10 +5,8 @@
 pub mod ast;
 mod builder;
 
-mod language;
-mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
+pub mod language;
+pub mod lexer;
 /// Delphi parser implementation.
 pub mod parser;
 
@@ -21,5 +19,3 @@ pub use crate::{
     parser::element_type::DelphiElementType,
 };
 
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub use crate::lsp::{formatter::DelphiFormatter, highlighter::DelphiHighlighter};

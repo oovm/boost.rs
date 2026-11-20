@@ -3,14 +3,10 @@
 #![warn(missing_docs)]
 
 pub mod ast;
-mod language;
-mod lexer;
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
-mod parser;
+pub mod language;
+pub mod lexer;
+pub mod parser;
 
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::DjangoHighlighter;
 pub use crate::{
     ast::DjangoRoot,
     language::DjangoLanguage,

@@ -10,9 +10,6 @@ pub mod builder;
 pub mod language;
 /// Lexer for Elm.
 pub mod lexer;
-/// LSP support for Elm.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser for Elm.
 pub mod parser;
 

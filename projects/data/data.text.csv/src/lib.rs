@@ -15,9 +15,6 @@ pub use language::CsvLanguage;
 /// Lexer module.
 pub mod lexer;
 pub use lexer::CsvLexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 /// Parser module.
 pub mod parser;
 

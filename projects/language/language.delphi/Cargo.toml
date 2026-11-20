@@ -1,0 +1,17 @@
+[package]
+name = "language-delphi"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Delphi (LSP, MCP, formatter, highlighter adapters over data-text-delphi)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "delphi"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-delphi = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }

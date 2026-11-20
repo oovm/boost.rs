@@ -12,9 +12,6 @@ pub mod builder;
 pub mod language;
 /// Lexer module.
 pub mod lexer;
-/// LSP module.
-#[cfg(any(feature = "lsp", feature = "language-highlight"))]
-pub mod lsp;
 
 /// Parser module.
 pub mod parser;
@@ -32,15 +29,7 @@ pub fn parse(dhall: &str) -> Result<crate::ast::DHallRoot, String> {
     result.result.map_err(|e| format!("{:?}", e))
 }
 
-/// Highlighter implementation.
-#[cfg(feature = "language-highlight")]
-pub use crate::lsp::highlighter::DHallHighlighter;
 
-#[cfg(feature = "lsp")]
-pub use crate::lsp::DHallLanguageService;
-/// LSP implementation.
-#[cfg(feature = "lsp")]
-pub use crate::lsp::formatter::DHallFormatter;
 
 pub use lexer::token_type::DHallTokenType;
 pub use parser::element_type::DHallElementType;

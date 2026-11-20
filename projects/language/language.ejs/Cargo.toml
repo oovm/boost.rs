@@ -1,0 +1,21 @@
+[package]
+name = "language-ejs"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Ejs (LSP, MCP, formatter, highlighter adapters over data-text-ejs)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "ejs"]
+
+[dependencies]
+data-text-core = { workspace = true }
+data-text-ejs = { workspace = true }
+data-text-pretty = { workspace = true }
+futures = { workspace = true }
+language-highlight = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

@@ -6,12 +6,10 @@
 pub mod ast;
 /// Builder for the AsciiDoc AST.
 pub mod builder;
-mod language;
+pub mod language;
 /// Lexer for AsciiDoc.
 pub mod lexer;
 #[cfg(any(feature = "lsp", feature = "language-highlight"))]
-/// LSP and IDE support for AsciiDoc.
-pub mod lsp;
 /// Parser for AsciiDoc.
 pub mod parser;
 

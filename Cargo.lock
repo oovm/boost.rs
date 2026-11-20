@@ -1273,15 +1273,8 @@ name = "data-text-actionscript"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1289,15 +1282,8 @@ name = "data-text-ada"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1305,15 +1291,8 @@ name = "data-text-apl"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1321,12 +1300,6 @@ name = "data-text-ascii-doc"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1381,12 +1354,6 @@ name = "data-text-bash"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1396,12 +1363,6 @@ name = "data-text-bat"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1411,12 +1372,6 @@ name = "data-text-c"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1443,12 +1398,6 @@ name = "data-text-cmd"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1458,15 +1407,8 @@ name = "data-text-cobol"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1474,15 +1416,8 @@ name = "data-text-coq"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1517,12 +1452,6 @@ name = "data-text-crystal"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1532,12 +1461,6 @@ name = "data-text-csharp"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1567,12 +1490,6 @@ version = "0.1.0"
 dependencies = [
  "data-text-core",
  "data-text-dsv",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1582,12 +1499,6 @@ name = "data-text-d"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1644,12 +1555,6 @@ name = "data-text-delphi"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1659,12 +1564,6 @@ name = "data-text-dhall"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1674,12 +1573,6 @@ name = "data-text-django"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1689,12 +1582,6 @@ name = "data-text-dockerfile"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1704,12 +1591,6 @@ name = "data-text-dot"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1719,12 +1600,6 @@ name = "data-text-dsv"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1736,15 +1611,8 @@ dependencies = [
  "data-text-core",
  "data-text-pretty",
  "data-text-typescript",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
 ]
 
 [[package]]
@@ -1752,12 +1620,6 @@ name = "data-text-elixir"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1767,12 +1629,6 @@ name = "data-text-elm"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -1782,12 +1638,6 @@ name = "data-text-erlang"
 version = "0.1.0"
 dependencies = [
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-server",
  "language-testing",
  "serde",
 ]
@@ -2733,18 +2583,9 @@ dependencies = [
 name = "data-text-rust"
 version = "0.1.0"
 dependencies = [
- "dashmap",
  "data-text-core",
- "futures",
- "language-format",
- "language-highlight",
- "language-hover",
- "language-mcp",
- "language-navigation",
- "language-server",
  "language-testing",
  "serde",
- "tokio",
  "unicode-ident",
 ]
 
@@ -5096,6 +4937,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
+name = "language-actionscript"
+version = "0.1.0"
+dependencies = [
+ "data-text-actionscript",
+ "data-text-core",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-ada"
+version = "0.1.0"
+dependencies = [
+ "data-text-ada",
+ "data-text-core",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-apl"
+version = "0.1.0"
+dependencies = [
+ "data-text-apl",
+ "data-text-core",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-ascii-doc"
+version = "0.1.0"
+dependencies = [
+ "data-text-ascii-doc",
+ "data-text-core",
+ "futures",
+ "language-server",
+]
+
+[[package]]
 name = "language-astro"
 version = "0.1.0"
 dependencies = [
@@ -5119,11 +5009,94 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-bash"
+version = "0.1.0"
+dependencies = [
+ "data-text-bash",
+ "data-text-core",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-bat"
+version = "0.1.0"
+dependencies = [
+ "data-text-bat",
+ "data-text-core",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-c"
+version = "0.1.0"
+dependencies = [
+ "data-text-c",
+ "data-text-core",
+ "futures",
+ "language-server",
+]
+
+[[package]]
 name = "language-clojure"
 version = "0.1.0"
 dependencies = [
  "data-text-clojure",
  "data-text-core",
+]
+
+[[package]]
+name = "language-cmd"
+version = "0.1.0"
+dependencies = [
+ "data-text-cmd",
+ "data-text-core",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-cobol"
+version = "0.1.0"
+dependencies = [
+ "data-text-cobol",
+ "data-text-core",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-coq"
+version = "0.1.0"
+dependencies = [
+ "data-text-coq",
+ "data-text-core",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-crystal"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-crystal",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-csharp"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-csharp",
+ "futures",
+ "language-server",
 ]
 
 [[package]]
@@ -5139,6 +5112,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "language-csv"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-csv",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-d"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-d",
+ "futures",
+ "language-server",
+]
+
+[[package]]
 name = "language-dart"
 version = "0.1.0"
 dependencies = [
@@ -5147,6 +5140,109 @@ dependencies = [
  "futures",
  "language-server",
  "serde",
+]
+
+[[package]]
+name = "language-delphi"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-delphi",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-dhall"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dhall",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-django"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-django",
+ "futures",
+ "language-highlight",
+ "language-server",
+]
+
+[[package]]
+name = "language-dockerfile"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dockerfile",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-dot"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dot",
+]
+
+[[package]]
+name = "language-dsv"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-dsv",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-ejs"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-ejs",
+ "data-text-pretty",
+ "futures",
+ "language-highlight",
+ "language-mcp",
+ "language-server",
+ "tokio",
+]
+
+[[package]]
+name = "language-elixir"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-elixir",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-elm"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-elm",
+ "futures",
+ "language-server",
+]
+
+[[package]]
+name = "language-erlang"
+version = "0.1.0"
+dependencies = [
+ "data-text-core",
+ "data-text-erlang",
+ "futures",
+ "language-server",
 ]
 
 [[package]]
@@ -5272,6 +5368,20 @@ dependencies = [
  "data-text-core",
  "language-highlight",
  "unicode-width 0.1.0",
+]
+
+[[package]]
+name = "language-rust"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "data-text-core",
+ "data-text-rust",
+ "futures",
+ "language-hover",
+ "language-mcp",
+ "language-server",
+ "tokio",
 ]
 
 [[package]]

@@ -1,0 +1,20 @@
+[package]
+name = "language-coq"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Coq (LSP, MCP, formatter, highlighter adapters over data-text-coq)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "coq"]
+
+[dependencies]
+data-text-coq = { workspace = true }
+data-text-core = { workspace = true }
+futures = { workspace = true }
+language-hover = { workspace = true }
+language-mcp = { workspace = true }
+language-server = { workspace = true }
+tokio = { workspace = true }

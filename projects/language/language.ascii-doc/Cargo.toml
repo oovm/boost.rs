@@ -1,0 +1,17 @@
+[package]
+name = "language-ascii-doc"
+version.workspace = true
+authors.workspace = true
+description = "Language services for Ascii Doc (LSP, MCP, formatter, highlighter adapters over data-text-ascii-doc)."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["development-tools"]
+keywords = ["lsp", "mcp", "ascii-doc"]
+
+[dependencies]
+data-text-ascii-doc = { workspace = true }
+data-text-core = { workspace = true }
+futures = { workspace = true }
+language-server = { workspace = true }
