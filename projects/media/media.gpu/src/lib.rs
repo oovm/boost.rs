@@ -12,10 +12,19 @@
 //!
 //! The `dx12` feature gates the backend itself: without it [`probe`] reports
 //! [`GpuStatus::Disabled`] and [`GpuCompositor::new`] fails, leaving hosts to
-//! the CPU path.
+//! the CPU path. The `wgsl` feature instead emits every kernel as WGSL with a
+//! binding manifest ([`shader_bundles`]), for Web/WASM hosts that cannot use
+//! D3D12.
 
+#[cfg(feature = "wgsl")]
+mod bundle;
+#[cfg(feature = "dx12")]
 mod compositor;
+mod kernels;
 mod probe;
 
+#[cfg(feature = "wgsl")]
+pub use bundle::{BundleError, FRAME_ELEMENTS, STOP_ELEMENTS, ShaderBundle, ShaderManifest, shader_bundles};
+#[cfg(feature = "dx12")]
 pub use compositor::{GpuCompositor, GpuError};
 pub use probe::{CompositorKind, GpuBackendInfo, GpuStatus, probe_gpu, probe_gpu_fallback};

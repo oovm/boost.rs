@@ -108,7 +108,7 @@ pub(crate) fn default_adapter_name() -> Option<String> {
         .map(|adapter| adapter.name.clone())
 }
 
-#[cfg(not(all(feature = "dx12", windows)))]
+#[cfg(all(feature = "dx12", not(windows)))]
 pub(crate) fn default_adapter_name() -> Option<String> {
     None
 }

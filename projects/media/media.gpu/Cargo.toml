@@ -8,10 +8,11 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
-media-image = { workspace = true }
+media-image = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 hardware-backend-dx12 = { workspace = true, optional = true }
+hardware-emitter = { workspace = true, optional = true }
 hardware-ir = { workspace = true, optional = true }
 hardware-program = { workspace = true, optional = true }
 hardware-scheduler = { workspace = true, optional = true }
@@ -27,10 +28,14 @@ dx12 = [
     "dep:hardware-program",
     "dep:hardware-scheduler",
     "dep:hardware-types",
+    "dep:media-image",
 ]
 # Historical feature name kept for hosts that enable it explicitly; it now
 # selects the same D3D12 path.
 gpu = ["dx12"]
+# Build-time WGSL emission: the same UCF kernels emitted through the text ABI
+# plus the binding manifest, for Web/WASM hosts. No GPU or D3D12 needed.
+wgsl = ["dep:hardware-emitter", "dep:hardware-program"]
 
 [dev-dependencies]
 geometry = { workspace = true }
