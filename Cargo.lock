@@ -1085,6 +1085,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-dxo"
+version = "0.1.0"
+dependencies = [
+ "data-compression",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "data-binary-epub"
 version = "0.1.0"
 dependencies = [
@@ -1210,6 +1219,14 @@ dependencies = [
 [[package]]
 name = "data-binary-xclbin"
 version = "0.1.0"
+
+[[package]]
+name = "data-binary-xpu"
+version = "0.1.0"
+dependencies = [
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "data-binary-zip"

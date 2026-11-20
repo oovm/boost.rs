@@ -1,0 +1,18 @@
+[package]
+name = "data-binary-dxo"
+version.workspace = true
+authors.workspace = true
+description = ".dxo portable asset container: fixed shells, canonical index, chunked volumes and digest verification (`data.binary` domain)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+data-compression = { workspace = true, features = ["deflate"] }
+
+[[bin]]
+name = "dxo-idx2dxo"
+path = "src/bin/dxo-idx2dxo.rs"
