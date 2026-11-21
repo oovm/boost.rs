@@ -90,10 +90,9 @@ pub fn is_authenticated(state: &SessionState) -> bool {
     state.session.lock().expect("session auth poisoned").is_some()
 }
 
-/// Parse ExecutePrepared params JSON into a named-param map.
-/// Returns Err(Error) for malformed JSON / wrong types.
-fn parse_params_json(json: &str) -> Result<BTreeMap<String, database_types::Value>> {
-    decode_params(json)
+/// 解码 ExecutePrepared 的原生参数体为具名参数表。
+fn parse_params(body: &[u8]) -> Result<BTreeMap<String, database_types::Value>> {
+    decode_params(body)
 }
 
 // ─── Dispatch ────────────────────────────────────────────────────────────
@@ -218,7 +217,7 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
             Frame::new(MessageType::PrepareOk, id, encode_prepare_ok(&sid))
         }
         MessageType::ExecutePrepared => {
-            let (sid, params_json) = match decode_execute_prepared(&request.body) {
+            let (sid, params_body) = match decode_execute_prepared(&request.body) {
                 Ok(v) => v,
                 Err(error) => return error_frame(id, &error),
             };
@@ -257,8 +256,8 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
                 }
             }
 
-            let named_params = match params_json {
-                Some(json) => match parse_params_json(&json) {
+            let named_params = match params_body {
+                Some(body) => match parse_params(&body) {
                     Ok(m) => m,
                     Err(error) => return error_frame(id, &error),
                 },
@@ -293,7 +292,7 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
                 Err(error) => return error_frame(id, &error),
             };
             match encode_rows(&rows) {
-                Ok(json_rows) => Frame::new(MessageType::ExecutePreparedOk, id, encode_execute_prepared_ok(&json_rows)),
+                Ok(rows_body) => Frame::new(MessageType::ExecutePreparedOk, id, encode_execute_prepared_ok(&rows_body)),
                 Err(error) => error_frame(id, &error),
             }
         }

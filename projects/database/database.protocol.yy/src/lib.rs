@@ -831,50 +831,40 @@ pub fn decode_prepare_ok(body: &[u8]) -> Result<String> {
     std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("prepare ok statement_id is not utf-8")).map(|s| s.to_owned())
 }
 
-/// 编码 `ExecutePrepared` 请求 body：statement_id + 可选 JSON 参数。
-///
-/// 语句无参数时 `params_json` 可为 `None` 或空串。
-pub fn encode_execute_prepared(statement_id: &str, params_json: Option<&str>) -> Vec<u8> {
+/// 编码 `ExecutePrepared` 请求 body：statement_id + 可选原生类型化参数。
+pub fn encode_execute_prepared(statement_id: &str, params: Option<&[u8]>) -> Vec<u8> {
     let mut body = Vec::new();
     push_bytes(&mut body, statement_id.as_bytes());
-    match params_json {
-        Some(p) if !p.is_empty() => push_bytes(&mut body, p.as_bytes()),
+    match params {
+        Some(p) if !p.is_empty() => push_bytes(&mut body, p),
         _ => push_u32(&mut body, 0),
     }
     body
 }
 
-/// 解码 `ExecutePrepared` 请求 body → (statement_id, 可选 JSON 参数)。
-pub fn decode_execute_prepared(body: &[u8]) -> Result<(String, Option<String>)> {
+/// 解码 `ExecutePrepared` 请求 body → (statement_id, 可选原生参数体)。
+pub fn decode_execute_prepared(body: &[u8]) -> Result<(String, Option<Vec<u8>>)> {
     let mut offset = 0;
     let id_len = read_u32(body, &mut offset)?;
     let id_bytes = read_bytes(body, &mut offset, id_len)?;
     let statement_id = std::str::from_utf8(id_bytes).map_err(|_| Error::Corrupt("execute prepared statement_id is not utf-8"))?.to_owned();
     let params_len = read_u32(body, &mut offset)?;
-    let params = if params_len > 0 {
-        let bytes = read_bytes(body, &mut offset, params_len)?;
-        let text = std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("execute prepared params is not utf-8"))?.to_owned();
-        Some(text)
-    }
-    else {
-        None
-    };
+    let params = if params_len > 0 { Some(read_bytes(body, &mut offset, params_len)?.to_vec()) } else { None };
     Ok((statement_id, params))
 }
 
-/// 编码 `ExecutePreparedOk` 回复 body —— 原始 JSON 行。
-pub fn encode_execute_prepared_ok(rows_json: &str) -> Vec<u8> {
+/// 编码 `ExecutePreparedOk` 回复 body —— 原生类型化行集。
+pub fn encode_execute_prepared_ok(rows: &[u8]) -> Vec<u8> {
     let mut body = Vec::new();
-    push_bytes(&mut body, rows_json.as_bytes());
+    push_bytes(&mut body, rows);
     body
 }
 
 /// 解码 `ExecutePreparedOk` 回复 body。
-pub fn decode_execute_prepared_ok(body: &[u8]) -> Result<String> {
+pub fn decode_execute_prepared_ok(body: &[u8]) -> Result<Vec<u8>> {
     let mut offset = 0;
     let len = read_u32(body, &mut offset)?;
-    let bytes = read_bytes(body, &mut offset, len)?;
-    std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("execute prepared ok rows is not utf-8")).map(|s| s.to_owned())
+    Ok(read_bytes(body, &mut offset, len)?.to_vec())
 }
 
 /// 结构化的 `Error` 帧 body：错误码加可读消息。
@@ -912,253 +902,317 @@ pub fn decode_error(body: &[u8]) -> Result<WireError> {
     Ok(WireError { code, message, operation, retryable, params })
 }
 
-// ─── 带标签的值 JSON（客户端与服务端共用） ────────────────────────────────
+// ─── 原生类型化值编码（客户端与服务端共用） ────────────────────────────────
+//
+// 线协议不承载 JSON：VOS 没有 json 类型，动态列就是 `any`，在运行时是原生
+// `Value::Row` / `Value::List`。所以参数与行直接走与行记录同一套类型标签的
+// 二进制编码，不做文本中转，也不做十六进制/字符串化的标量伪装。
 
-/// 把运行时值编码成可逆 JSON。
+const TAG_NULL: u8 = 0;
+const TAG_BOOL: u8 = 1;
+const TAG_I64: u8 = 2;
+const TAG_U64: u8 = 3;
+const TAG_F64: u8 = 4;
+const TAG_TEXT: u8 = 5;
+const TAG_BYTES: u8 = 6;
+const TAG_UUID: u8 = 7;
+const TAG_DATE: u8 = 8;
+const TAG_TIME: u8 = 9;
+const TAG_TIMESTAMP: u8 = 10;
+const TAG_DECIMAL: u8 = 11;
+const TAG_LIST: u8 = 12;
+const TAG_ROW: u8 = 13;
+const TAG_VECTOR: u8 = 14;
+
+/// 值嵌套深度的硬上限；超限 fail-closed，避免恶意载荷打穿栈。
+const MAX_WIRE_VALUE_DEPTH: u8 = 64;
+
+/// 把单个运行时值编码成原生类型化字节。
 ///
-/// 标量沿用 JSON 原生形状（`null` / 布尔 / 数字 / 字符串），其余类型用单键标签
-/// 对象表达：`{"$bytes":"<hex>"}`、`{"$uuid":"…"}`、`{"$decimal":["<unscaled>",p,s]}`、
-/// `{"$timestamp":micros}`、`{"$date":days}`、`{"$time":nanos}`、`{"$u64":"…"}`、
-/// `{"$f64":"…"}`（仅非有限值）、`{"$list":[…]}`、`{"$row":{…}}`。
-pub fn value_to_json(value: &Value) -> Result<serde_json::Value> {
-    use serde_json::{Value as Json, json};
-    Ok(match value {
-        Value::Null => Json::Null,
-        Value::Bool(value) => Json::Bool(*value),
-        Value::I64(value) => Json::from(*value),
-        Value::U64(value) => match i64::try_from(*value) {
-            Ok(value) => Json::from(value),
-            Err(_) => json!({ "$u64": value.to_string() }),
-        },
-        Value::F64(value) => match serde_json::Number::from_f64(*value) {
-            Some(number) => Json::Number(number),
-            None => json!({ "$f64": value.to_string() }),
-        },
-        Value::Text(value) => Json::String(value.clone()),
-        Value::Bytes(bytes) => json!({ "$bytes": hex_encode(bytes) }),
-        Value::Uuid(value) => json!({ "$uuid": value.to_string() }),
-        Value::Date(value) => json!({ "$date": value.days() }),
-        Value::Time(value) => json!({ "$time": value.nanos() }),
-        Value::Timestamp(value) => json!({ "$timestamp": value.unix_micros() }),
-        Value::Decimal(value) => json!({ "$decimal": [value.unscaled().to_string(), value.precision(), value.scale()] }),
+/// 覆盖 `any` 能装下的全部形态：标量、`List`、嵌套 `Row`、`Vector`。
+/// `Object` / `File` 是宿主本地 CAS 句柄，不可跨进程搬运，编码即拒绝；
+/// 读路径在编码前已经通过对象解析把引用换成了内联值。
+pub fn encode_value(value: &Value) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    encode_value_into(&mut body, value, 0)?;
+    Ok(body)
+}
+
+/// [`encode_value`] 的逆变换。
+pub fn decode_value(body: &[u8]) -> Result<Value> {
+    let mut offset = 0;
+    let value = decode_value_at(body, &mut offset, 0)?;
+    if offset != body.len() {
+        return Err(Error::Corrupt("wire value has trailing bytes"));
+    }
+    Ok(value)
+}
+
+fn encode_value_into(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
+    match value {
+        Value::Null => out.push(TAG_NULL),
+        Value::Bool(flag) => {
+            out.push(TAG_BOOL);
+            out.push(u8::from(*flag));
+        }
+        Value::I64(integer) => {
+            out.push(TAG_I64);
+            out.extend_from_slice(&integer.to_le_bytes());
+        }
+        Value::U64(integer) => {
+            out.push(TAG_U64);
+            out.extend_from_slice(&integer.to_le_bytes());
+        }
+        Value::F64(number) => {
+            out.push(TAG_F64);
+            out.extend_from_slice(&number.to_bits().to_le_bytes());
+        }
+        Value::Text(text) => {
+            out.push(TAG_TEXT);
+            push_bytes(out, text.as_bytes());
+        }
+        Value::Bytes(bytes) => {
+            out.push(TAG_BYTES);
+            push_bytes(out, bytes);
+        }
+        Value::Uuid(id) => {
+            out.push(TAG_UUID);
+            out.extend_from_slice(id.as_bytes());
+        }
+        Value::Date(date) => {
+            out.push(TAG_DATE);
+            out.extend_from_slice(&date.days().to_le_bytes());
+        }
+        Value::Time(time) => {
+            out.push(TAG_TIME);
+            out.extend_from_slice(&time.nanos().to_le_bytes());
+        }
+        Value::Timestamp(timestamp) => {
+            out.push(TAG_TIMESTAMP);
+            out.extend_from_slice(&timestamp.unix_micros().to_le_bytes());
+        }
+        Value::Decimal(decimal) => {
+            out.push(TAG_DECIMAL);
+            out.extend_from_slice(&decimal.unscaled().to_le_bytes());
+            out.push(decimal.precision());
+            out.push(decimal.scale());
+        }
         Value::List(items) => {
-            let mut out = Vec::with_capacity(items.len());
+            out.push(TAG_LIST);
+            let nested = next_depth(depth)?;
+            let count = u32::try_from(items.len()).map_err(|_| Error::Unsupported("wire list has more than 4294967295 elements"))?;
+            push_u32(out, count);
             for item in items {
-                out.push(value_to_json(item)?);
+                encode_value_into(out, item, nested)?;
             }
-            json!({ "$list": out })
         }
         Value::Row(fields) => {
-            let mut out = serde_json::Map::with_capacity(fields.len());
-            for (key, value) in fields {
-                out.insert(key.clone(), value_to_json(value)?);
+            out.push(TAG_ROW);
+            encode_row_fields(out, fields, next_depth(depth)?)?;
+        }
+        Value::Vector(vector) => {
+            out.push(TAG_VECTOR);
+            let count =
+                u32::try_from(vector.data.len()).map_err(|_| Error::Unsupported("wire vector has more than 4294967295 components"))?;
+            out.extend_from_slice(&vector.dim.to_le_bytes());
+            push_u32(out, count);
+            for component in vector.data.iter() {
+                out.extend_from_slice(&component.to_le_bytes());
             }
-            json!({ "$row": Json::Object(out) })
+        }
+        Value::Object(_) | Value::File(_) => {
+            return Err(Error::Unsupported("wire values must be resolved: object and file descriptors are host-local CAS handles"));
         }
         other => {
-            return Err(Error::Protocol { message: format!("value kind `{}` has no wire JSON encoding", other.kind()) });
-        }
-    })
-}
-
-/// [`value_to_json`] 的逆变换；未带标签的对象解成 [`Value::Row`]，数组解成列表。
-pub fn json_to_value(value: &serde_json::Value) -> Result<Value> {
-    use serde_json::Value as Json;
-    match value {
-        Json::Null => Ok(Value::Null),
-        Json::Bool(value) => Ok(Value::Bool(*value)),
-        Json::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                Ok(Value::I64(value))
-            }
-            else if let Some(value) = number.as_u64() {
-                Ok(Value::U64(value))
-            }
-            else if let Some(value) = number.as_f64() {
-                Ok(Value::F64(value))
-            }
-            else {
-                Err(Error::Corrupt("wire value has an unrepresentable JSON number"))
-            }
-        }
-        Json::String(value) => Ok(Value::Text(value.clone())),
-        Json::Array(items) => {
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                out.push(json_to_value(item)?);
-            }
-            Ok(Value::List(out))
-        }
-        Json::Object(fields) => {
-            if let Some((tag, payload)) = single_tag(fields) {
-                return tagged_to_value(tag, payload);
-            }
-            let mut out = std::collections::BTreeMap::new();
-            for (key, value) in fields {
-                out.insert(key.clone(), json_to_value(value)?);
-            }
-            Ok(Value::Row(out))
+            return Err(Error::Protocol { message: format!("value kind `{}` has no portable wire encoding", other.kind()) });
         }
     }
+    Ok(())
 }
 
-fn single_tag(fields: &serde_json::Map<String, serde_json::Value>) -> Option<(&str, &serde_json::Value)> {
-    if fields.len() != 1 {
-        return None;
-    }
-    let (tag, payload) = fields.iter().next()?;
-    tag.strip_prefix('$').map(|tag| (tag, payload))
-}
-
-fn tagged_to_value(tag: &str, payload: &serde_json::Value) -> Result<Value> {
-    let message = |detail: String| Error::Protocol { message: format!("wire value `${{{tag}}}`: {detail}") };
+fn decode_value_at(body: &[u8], offset: &mut usize, depth: u8) -> Result<Value> {
+    let tag = read_u8(body, offset)?;
     match tag {
-        "u64" => payload
-            .as_str()
-            .and_then(|text| text.parse::<u64>().ok())
-            .map(Value::U64)
-            .ok_or_else(|| message("expected a u64 string".to_owned())),
-        "f64" => payload
-            .as_str()
-            .and_then(|text| text.parse::<f64>().ok())
-            .map(Value::F64)
-            .ok_or_else(|| message("expected an f64 string".to_owned())),
-        "bytes" => payload
-            .as_str()
-            .and_then(hex_decode)
-            .map(Value::Bytes)
-            .ok_or_else(|| message("expected lowercase hex".to_owned())),
-        "uuid" => payload
-            .as_str()
-            .and_then(|text| uuid::Uuid::parse_str(text).ok())
-            .map(Value::Uuid)
-            .ok_or_else(|| message("expected a uuid string".to_owned())),
-        "date" => payload
-            .as_i64()
-            .and_then(|days| i32::try_from(days).ok())
-            .and_then(|days| database_types::Date::from_days(days).ok())
-            .map(Value::Date)
-            .ok_or_else(|| message("expected epoch days".to_owned())),
-        "time" => payload
-            .as_i64()
-            .and_then(|nanos| database_types::Time::from_nanos(nanos).ok())
-            .map(Value::Time)
-            .ok_or_else(|| message("expected nanoseconds".to_owned())),
-        "timestamp" => payload
-            .as_i64()
-            .and_then(|micros| database_types::Timestamp::from_unix_micros(micros).ok())
+        TAG_NULL => Ok(Value::Null),
+        TAG_BOOL => Ok(Value::Bool(read_u8(body, offset)? != 0)),
+        TAG_I64 => Ok(Value::I64(read_i64(body, offset)?)),
+        TAG_U64 => Ok(Value::U64(read_u64(body, offset)?)),
+        TAG_F64 => Ok(Value::F64(f64::from_bits(read_u64(body, offset)?))),
+        TAG_TEXT => {
+            let len = read_u32(body, offset)?;
+            let bytes = read_bytes(body, offset, len)?;
+            let text = std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("wire text value is not utf-8"))?;
+            Ok(Value::Text(text.to_owned()))
+        }
+        TAG_BYTES => {
+            let len = read_u32(body, offset)?;
+            Ok(Value::Bytes(read_bytes(body, offset, len)?.to_vec()))
+        }
+        TAG_UUID => {
+            if *offset + 16 > body.len() {
+                return Err(Error::Corrupt("wire uuid value truncated"));
+            }
+            let mut bytes = [0_u8; 16];
+            bytes.copy_from_slice(&body[*offset..*offset + 16]);
+            *offset += 16;
+            Ok(Value::Uuid(uuid::Uuid::from_bytes(bytes)))
+        }
+        TAG_DATE => database_types::Date::from_days(read_i32(body, offset)?).map(Value::Date).map_err(|_| Error::Corrupt("wire date is out of range")),
+        TAG_TIME => {
+            database_types::Time::from_nanos(read_i64(body, offset)?).map(Value::Time).map_err(|_| Error::Corrupt("wire time is out of range"))
+        }
+        TAG_TIMESTAMP => database_types::Timestamp::from_unix_micros(read_i64(body, offset)?)
             .map(Value::Timestamp)
-            .ok_or_else(|| message("expected unix micros".to_owned())),
-        "decimal" => {
-            let parts = payload.as_array().filter(|parts| parts.len() == 3).ok_or_else(|| message("expected [unscaled, precision, scale]".to_owned()))?;
-            let unscaled = json_scalar_text(&parts[0]).and_then(|text| text.parse::<i128>().ok());
-            let precision = parts[1].as_u64().and_then(|value| u8::try_from(value).ok());
-            let scale = parts[2].as_u64().and_then(|value| u8::try_from(value).ok());
-            match (unscaled, precision, scale) {
-                (Some(unscaled), Some(precision), Some(scale)) => {
-                    database_types::Decimal::new(unscaled, precision, scale).map(Value::Decimal).map_err(|error| message(error.to_string()))
-                }
-                _ => Err(message("expected [unscaled, precision, scale]".to_owned())),
+            .map_err(|_| Error::Corrupt("wire timestamp is out of range")),
+        TAG_DECIMAL => {
+            let unscaled = read_i128(body, offset)?;
+            let precision = read_u8(body, offset)?;
+            let scale = read_u8(body, offset)?;
+            database_types::Decimal::new(unscaled, precision, scale)
+                .map(Value::Decimal)
+                .map_err(|_| Error::Corrupt("wire decimal is out of range"))
+        }
+        TAG_LIST => {
+            let nested = next_depth(depth)?;
+            let count = read_u32(body, offset)? as usize;
+            if count > body.len() - *offset {
+                return Err(Error::Corrupt("wire list count exceeds the remaining body"));
             }
-        }
-        "list" => {
-            let items = payload.as_array().ok_or_else(|| message("expected an array".to_owned()))?;
-            let mut out = Vec::with_capacity(items.len());
-            for item in items {
-                out.push(json_to_value(item)?);
+            let mut items = Vec::with_capacity(count);
+            for _ in 0..count {
+                items.push(decode_value_at(body, offset, nested)?);
             }
-            Ok(Value::List(out))
+            Ok(Value::List(items))
         }
-        "row" => match json_to_value(payload)? {
-            Value::Row(fields) => Ok(Value::Row(fields)),
-            _ => Err(message("expected an object".to_owned())),
-        },
-        _ => Err(Error::Protocol { message: format!("unknown wire value tag `${tag}`") }),
-    }
-}
-
-fn json_scalar_text(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::String(text) => Some(text.clone()),
-        serde_json::Value::Number(number) => Some(number.to_string()),
-        _ => None,
-    }
-}
-
-const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(HEX_DIGITS[(byte >> 4) as usize] as char);
-        out.push(HEX_DIGITS[(byte & 0xf) as usize] as char);
-    }
-    out
-}
-
-fn hex_decode(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 {
-        return None;
-    }
-    let bytes = text.as_bytes();
-    let digit = |byte: u8| -> Option<u8> {
-        match byte {
-            b'0'..=b'9' => Some(byte - b'0'),
-            b'a'..=b'f' => Some(byte - b'a' + 10),
-            _ => None,
+        TAG_ROW => {
+            let nested = next_depth(depth)?;
+            Ok(Value::Row(read_row_fields(body, offset, nested)?))
         }
-    };
-    let mut out = Vec::with_capacity(text.len() / 2);
-    for pair in bytes.chunks_exact(2) {
-        out.push((digit(pair[0])? << 4) | digit(pair[1])?);
+        TAG_VECTOR => {
+            let dim = read_u32(body, offset)?;
+            let count = read_u32(body, offset)? as usize;
+            if count != dim as usize {
+                return Err(Error::Corrupt("wire vector dimension does not match its component count"));
+            }
+            let mut data = Vec::with_capacity(count);
+            for _ in 0..count {
+                data.push(read_f32(body, offset)?);
+            }
+            Ok(Value::Vector(database_types::Vector { dim, data: data.into() }))
+        }
+        _ => Err(Error::Corrupt("wire value has an unknown type tag")),
     }
-    Some(out)
 }
 
-/// 把具名参数编码成 `ExecutePrepared` 的 JSON body。
-pub fn encode_params(params: &std::collections::BTreeMap<String, Value>) -> Result<String> {
-    let mut out = serde_json::Map::with_capacity(params.len());
-    for (key, value) in params {
-        out.insert(key.clone(), value_to_json(value)?);
-    }
-    serde_json::to_string(&serde_json::Value::Object(out)).map_err(|_| Error::Corrupt("wire params JSON encoding failed"))
+fn next_depth(depth: u8) -> Result<u8> {
+    depth.checked_add(1).filter(|nested| *nested <= MAX_WIRE_VALUE_DEPTH).ok_or(Error::Corrupt("wire value nests deeper than the supported depth"))
 }
 
-/// 解码 [`encode_params`] 产出的 JSON。
-pub fn decode_params(text: &str) -> Result<std::collections::BTreeMap<String, Value>> {
-    let parsed: serde_json::Value =
-        serde_json::from_str(text).map_err(|_| Error::QueryBind { parameter: String::new(), message: "params must be valid JSON".to_owned() })?;
-    let object = parsed
-        .as_object()
-        .ok_or_else(|| Error::QueryBind { parameter: String::new(), message: "params must be a JSON object".to_owned() })?;
-    let mut out = std::collections::BTreeMap::new();
-    for (key, value) in object {
-        out.insert(key.clone(), json_to_value(value)?);
+fn encode_row_fields(out: &mut Vec<u8>, fields: &std::collections::BTreeMap<String, Value>, depth: u8) -> Result<()> {
+    let count = u32::try_from(fields.len()).map_err(|_| Error::Unsupported("wire row has more than 4294967295 fields"))?;
+    push_u32(out, count);
+    for (key, value) in fields {
+        push_bytes(out, key.as_bytes());
+        encode_value_into(out, value, depth)?;
     }
-    Ok(out)
+    Ok(())
 }
 
-/// 把查询行编码成 `ExecutePreparedOk` / `PerfReportOk` 的 JSON body。
-pub fn encode_rows(rows: &[std::collections::BTreeMap<String, Value>]) -> Result<String> {
-    let mut out = Vec::with_capacity(rows.len());
+fn read_row_fields(body: &[u8], offset: &mut usize, depth: u8) -> Result<std::collections::BTreeMap<String, Value>> {
+    let count = read_u32(body, offset)? as usize;
+    if count > body.len() - *offset {
+        return Err(Error::Corrupt("wire row field count exceeds the remaining body"));
+    }
+    let mut fields = std::collections::BTreeMap::new();
+    for _ in 0..count {
+        let key_len = read_u32(body, offset)?;
+        let key = read_bytes(body, offset, key_len)?;
+        let key = std::str::from_utf8(key).map_err(|_| Error::Corrupt("wire row field name is not utf-8"))?.to_owned();
+        fields.insert(key, decode_value_at(body, offset, depth)?);
+    }
+    Ok(fields)
+}
+
+fn read_u8(body: &[u8], offset: &mut usize) -> Result<u8> {
+    if *offset >= body.len() {
+        return Err(Error::Corrupt("wire body truncated u8"));
+    }
+    let value = body[*offset];
+    *offset += 1;
+    Ok(value)
+}
+
+fn read_i32(body: &[u8], offset: &mut usize) -> Result<i32> {
+    Ok(read_u32(body, offset)? as i32)
+}
+
+fn read_i64(body: &[u8], offset: &mut usize) -> Result<i64> {
+    Ok(read_u64(body, offset)? as i64)
+}
+
+fn read_i128(body: &[u8], offset: &mut usize) -> Result<i128> {
+    if *offset + 16 > body.len() {
+        return Err(Error::Corrupt("wire body truncated i128"));
+    }
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&body[*offset..*offset + 16]);
+    *offset += 16;
+    Ok(i128::from_le_bytes(bytes))
+}
+
+fn read_f32(body: &[u8], offset: &mut usize) -> Result<f32> {
+    if *offset + 4 > body.len() {
+        return Err(Error::Corrupt("wire body truncated f32"));
+    }
+    let mut bytes = [0_u8; 4];
+    bytes.copy_from_slice(&body[*offset..*offset + 4]);
+    *offset += 4;
+    Ok(f32::from_le_bytes(bytes))
+}
+
+/// 把具名参数编码成 `ExecutePrepared` 的 body。
+pub fn encode_params(params: &std::collections::BTreeMap<String, Value>) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    encode_row_fields(&mut body, params, 0)?;
+    Ok(body)
+}
+
+/// 解码 [`encode_params`] 产出的 body。
+pub fn decode_params(body: &[u8]) -> Result<std::collections::BTreeMap<String, Value>> {
+    let mut offset = 0;
+    let params = read_row_fields(body, &mut offset, 0)?;
+    if offset != body.len() {
+        return Err(Error::Corrupt("wire params have trailing bytes"));
+    }
+    Ok(params)
+}
+
+/// 把查询行编码成 `ExecutePreparedOk` 的 body。
+pub fn encode_rows(rows: &[std::collections::BTreeMap<String, Value>]) -> Result<Vec<u8>> {
+    let mut body = Vec::new();
+    let count = u32::try_from(rows.len()).map_err(|_| Error::Unsupported("wire row set has more than 4294967295 rows"))?;
+    push_u32(&mut body, count);
     for row in rows {
-        out.push(value_to_json(&Value::Row(row.clone()))?);
+        encode_row_fields(&mut body, row, 0)?;
     }
-    serde_json::to_string(&serde_json::Value::Array(out)).map_err(|_| Error::Corrupt("wire rows JSON encoding failed"))
+    Ok(body)
 }
 
-/// 解码 [`encode_rows`] 产出的 JSON。
-pub fn decode_rows(text: &str) -> Result<Vec<std::collections::BTreeMap<String, Value>>> {
-    let parsed: serde_json::Value = serde_json::from_str(text).map_err(|_| Error::Corrupt("wire rows body is not valid JSON"))?;
-    let items = parsed.as_array().ok_or_else(|| Error::Corrupt("wire rows body must be an array"))?;
-    let mut out = Vec::with_capacity(items.len());
-    for item in items {
-        match json_to_value(item)? {
-            Value::Row(fields) => out.push(fields),
-            _ => return Err(Error::Corrupt("wire row must be a JSON object")),
-        }
+/// 解码 [`encode_rows`] 产出的 body。
+pub fn decode_rows(body: &[u8]) -> Result<Vec<std::collections::BTreeMap<String, Value>>> {
+    let mut offset = 0;
+    let count = read_u32(body, &mut offset)? as usize;
+    if count > body.len() - offset {
+        return Err(Error::Corrupt("wire row count exceeds the remaining body"));
     }
-    Ok(out)
+    let mut rows = Vec::with_capacity(count);
+    for _ in 0..count {
+        rows.push(read_row_fields(body, &mut offset, 0)?);
+    }
+    if offset != body.len() {
+        return Err(Error::Corrupt("wire rows have trailing bytes"));
+    }
+    Ok(rows)
 }
 
 // ─── 事务帧 ────────────────────────────────────────────────────────────────
@@ -1241,7 +1295,7 @@ mod tests {
     }
 
     #[test]
-    fn typed_values_roundtrip_through_json() {
+    fn typed_values_roundtrip_natively() {
         let uuid = uuid::Uuid::nil();
         let decimal = database_types::Decimal::new(-123_456, 20, 6).expect("decimal");
         let timestamp = database_types::Timestamp::from_unix_micros(1_700_000_000_123_456).expect("timestamp");
@@ -1265,8 +1319,8 @@ mod tests {
             Value::Row(std::collections::BTreeMap::from([("k".to_owned(), Value::Bool(false))])),
         ];
         for value in values {
-            let encoded = value_to_json(&value).expect("encode");
-            let decoded = json_to_value(&encoded).expect("decode");
+            let encoded = encode_value(&value).expect("encode");
+            let decoded = decode_value(&encoded).expect("decode");
             match (&value, &decoded) {
                 (Value::F64(left), Value::F64(right)) if left.is_nan() => assert!(right.is_nan()),
                 _ => assert_eq!(decoded, value),
@@ -1293,14 +1347,10 @@ mod tests {
     }
 
     #[test]
-    fn untagged_objects_decode_as_rows_and_arrays_as_lists() {
-        let row = json_to_value(&serde_json::json!({"a": 1, "b": [true, null]})).expect("decode");
-        let Value::Row(fields) = row
-        else {
-            panic!("plain object must decode as a row");
-        };
-        assert_eq!(fields["a"], Value::I64(1));
-        assert_eq!(fields["b"], Value::List(vec![Value::Bool(true), Value::Null]));
-        assert!(json_to_value(&serde_json::json!({"$nope": 1})).is_err());
+    fn wire_values_reject_trailing_bytes_and_unknown_tags() {
+        let mut encoded = encode_value(&Value::I64(7)).expect("encode");
+        encoded.push(0);
+        assert!(decode_value(&encoded).is_err());
+        assert!(decode_value(&[0xff]).is_err());
     }
 }
