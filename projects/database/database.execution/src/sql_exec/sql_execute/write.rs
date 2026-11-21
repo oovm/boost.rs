@@ -161,10 +161,25 @@ pub(crate) fn upsert_row(
                 format!("concurrent write to row in {} prevented the conflict update", plan.namespace),
             ));
         }
-        // MySQL 对「命中并改写」报 2（插入报 1），驱动据此区分两种结果。
-        return returning_result(&plan.returning, &plan.field_types, vec![row], 2, dialect);
+        // MySQL 的 affected rows：新插入 1、命中并实际改写 2、命中但写回同值
+        // 0（协商 `CLIENT_FOUND_ROWS` 时按命中计 1）。驱动据此区分三种结果。
+        let affected_rows = if dialect == SqlDialect::Mysql && same_row_values(&existing_row, &row) {
+            u64::from(crate::sql_exec::found_rows_enabled())
+        }
+        else {
+            2
+        };
+        return returning_result(&plan.returning, &plan.field_types, vec![row], affected_rows, dialect);
     }
     Err(SqlFrontendError::new(SqlErrorKind::Conflict, format!("concurrent write to row in {} prevented the conflict update", plan.namespace)))
+}
+
+/// 两行的字段值是否逐列相同。
+///
+/// MySQL 用「命中但没有改变任何值」来区分 affected rows 的 0/1 与 2，因此比较只看
+/// 列值与顺序，不比较单元格的编码格式。
+fn same_row_values(left: &RowFieldValues, right: &RowFieldValues) -> bool {
+    left.iter().count() == right.iter().count() && left.iter().zip(right.iter()).all(|(left, right)| left.0 == right.0 && left.2 == right.2)
 }
 
 /// 把一条行写入与它的索引命令放进同一个提交边界。
@@ -313,7 +328,7 @@ pub(crate) fn execute_multi_insert(
             let namespace = Namespace(first.namespace.clone());
             let needs_preimage = plans.iter().any(|plan| plan.conflict.is_some());
             let preimages = load_insert_preimages(executor, Some(handle), plans, &namespace, needs_preimage)?;
-            let (order, folded) = fold_insert_plans(plans, &preimages, dialect)?;
+            let FoldedInsert { order, rows: folded, .. } = fold_insert_plans(plans, &preimages, dialect)?;
             let stored = scan_rows(executor, Some(handle), &namespace, &[], None, None, 0, "unique_check")?;
             ensure_unique_rows(&first.unique_constraints, &order, &folded, &stored, &first.field_types)?;
         }
@@ -339,6 +354,17 @@ pub(crate) struct BatchedRow {
     condition: CommitCondition,
 }
 
+/// 整条多行写入语句的折叠结果。
+struct FoldedInsert {
+    /// 行在语句中首次出现的顺序。
+    order: Vec<Vec<u8>>,
+    /// 每个主键折叠后的最终行值与提交条件。
+    rows: BTreeMap<Vec<u8>, BatchedRow>,
+    /// MySQL 口径的 affected rows：新插入 1、改写 2、未改变 0（协商
+    /// `CLIENT_FOUND_ROWS` 时 1），按语句里的每个输入行累加。
+    affected_rows: u64,
+}
+
 /// 非事务多行 INSERT 的原子发布：按语句顺序把每行折叠成最终值与 OCC 条件，整批交给
 /// `KeyValueExecutor::commit_batch` 的单分片 durable 原子边界。
 ///
@@ -361,7 +387,7 @@ pub(crate) fn execute_multi_insert_atomic(
         // 冲突策略需要先看到基存 pre-image 才能决定跳过还是改写；无策略的行交给提交边界的
         // OCC 条件复核，不做多余预读。
         let preimages = load_insert_preimages(executor, None, plans, &namespace, needs_preimage)?;
-        let (order, folded) = fold_insert_plans(plans, &preimages, dialect)?;
+        let FoldedInsert { order, rows: folded, affected_rows } = fold_insert_plans(plans, &preimages, dialect)?;
 
         // 基存快照同时服务唯一性复核与索引回填。
         let stored = if first.unique_constraints.is_empty() {
@@ -413,7 +439,9 @@ pub(crate) fn execute_multi_insert_atomic(
                         entry.applied.then(|| entry.current.clone().expect("applied entry carries a row"))
                     })
                     .collect();
-                let affected = written.len() as u64;
+                // MySQL 的 affected rows 由折叠阶段按输入行累加；其它方言按实际
+                // 写入的行数计，保持既有口径。
+                let affected = if dialect == SqlDialect::Mysql { affected_rows } else { written.len() as u64 };
                 return returning_result(&first.returning, &first.field_types, written, affected, dialect);
             }
             Err(database_types::cluster::Error::CasConflict { .. }) if needs_preimage && attempt == 0 => continue,
@@ -479,10 +507,13 @@ fn fold_insert_plans(
     plans: &[WritePlan],
     preimages: &BTreeMap<Vec<u8>, Option<Vec<u8>>>,
     dialect: SqlDialect,
-) -> Result<(Vec<Vec<u8>>, BTreeMap<Vec<u8>, BatchedRow>), SqlFrontendError> {
+) -> Result<FoldedInsert, SqlFrontendError> {
     let namespace = plans.first().map(|plan| plan.namespace.clone()).unwrap_or_default();
     let mut order: Vec<Vec<u8>> = Vec::new();
     let mut folded: BTreeMap<Vec<u8>, BatchedRow> = BTreeMap::new();
+    // MySQL 的 affected rows 按输入行而非最终行累加：同一主键在语句里出现两次时，
+    // 第一次插入计 1，第二次改写再计 2。
+    let mut affected_rows = 0u64;
     for plan in plans {
         match &plan.conflict {
             None => {
@@ -497,6 +528,7 @@ fn fold_insert_plans(
                 apply_generated(&plan.generated, &plan.field_types, &mut current, dialect)?;
                 folded
                     .insert(plan.rowid.clone(), BatchedRow { current: Some(current), applied: true, condition: CommitCondition::PutIfAbsent });
+                affected_rows += 1;
             }
             Some(ConflictPolicy::DoNothing) => {
                 if folded.contains_key(&plan.rowid) {
@@ -512,6 +544,9 @@ fn fold_insert_plans(
                     }
                 };
                 order.push(plan.rowid.clone());
+                if applied {
+                    affected_rows += 1;
+                }
                 folded.insert(plan.rowid.clone(), BatchedRow { current, applied, condition: CommitCondition::PutIfAbsent });
             }
             Some(ConflictPolicy::DoUpdate { assignments, predicate }) => {
@@ -535,9 +570,12 @@ fn fold_insert_plans(
                         apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
                         entry.current = Some(row);
                         entry.applied = true;
+                        affected_rows += 1;
                     }
                     Some(existing_row) => {
                         if let Some(updated) = conflict_updated_row(existing_row, plan, assignments, predicate.as_ref(), dialect)? {
+                            affected_rows +=
+                                if same_row_values(existing_row, &updated) { u64::from(crate::sql_exec::found_rows_enabled()) } else { 2 };
                             entry.current = Some(updated);
                             entry.applied = true;
                         }
@@ -546,7 +584,7 @@ fn fold_insert_plans(
             }
         }
     }
-    Ok((order, folded))
+    Ok(FoldedInsert { order, rows: folded, affected_rows })
 }
 
 /// Rejects `UNIQUE` conflicts among the folded statement rows and the stored
@@ -1550,7 +1588,7 @@ mod tests {
     fn later_statement_row_duplicating_a_unique_value_is_rejected() {
         let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())], unique: true }];
         let plans = vec![insert_plan(b"first", "same@example.com", &constraints), insert_plan(b"second", "same@example.com", &constraints)];
-        let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
+        let FoldedInsert { order, rows: folded, .. } = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
         let field_types = BTreeMap::from([(1, SqlFieldType::String)]);
         let error = ensure_unique_rows(&constraints, &order, &folded, &[], &field_types).expect_err("the later row must clash");
         assert_eq!(error.kind, SqlErrorKind::DuplicateKey);
@@ -1560,7 +1598,7 @@ mod tests {
     fn distinct_unique_values_pass_the_statement_check() {
         let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())], unique: true }];
         let plans = vec![insert_plan(b"first", "a@example.com", &constraints), insert_plan(b"second", "b@example.com", &constraints)];
-        let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
+        let FoldedInsert { order, rows: folded, .. } = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
         let field_types = BTreeMap::from([(1, SqlFieldType::String)]);
         ensure_unique_rows(&constraints, &order, &folded, &[], &field_types).expect("distinct values must pass");
     }

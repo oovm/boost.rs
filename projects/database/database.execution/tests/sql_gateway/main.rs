@@ -11,7 +11,11 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use database_cluster::topology::ShardMap;
-use database_execution::{cluster::LocalExecutor, sql_exec::execute_plan, sql_schema::SqlSchemaRegistry};
+use database_execution::{
+    cluster::LocalExecutor,
+    sql_exec::{execute_plan, with_found_rows},
+    sql_schema::SqlSchemaRegistry,
+};
 use database_query::{
     SqlCatalogBoundStatement, SqlResult, SqlValue, bind_sql_catalog, parse_ddl, plan_statement_for_dialect,
     sql::{SqlDialect, SqlFrontendError},
@@ -325,6 +329,64 @@ fn inline_unique_and_on_duplicate_key_update_follow_mysql_semantics() {
     // 没有冲突策略时，列级 UNIQUE 仍按 1062 拒绝。
     let error = gateway.sql("INSERT INTO ups (id, uk, v, pad) VALUES (3, 10, 4, 'd')").expect_err("duplicate unique must fail");
     assert_eq!(error.kind, database_query::SqlErrorKind::DuplicateKey);
+}
+
+/// `ON DUPLICATE KEY UPDATE` 的 affected rows 遵循 MySQL 口径：新插入 1、
+/// 命中并实际改写 2、命中但写回同值 0；协商 `CLIENT_FOUND_ROWS` 后「未变」
+/// 按命中计 1，实际改写仍是 2，新插入仍是 1。
+#[test]
+fn on_duplicate_key_update_reports_mysql_affected_rows() {
+    let gateway = Gateway::new("upsert-count");
+    gateway.expect_sql("CREATE TABLE cnt (id INT NOT NULL PRIMARY KEY, v INT)");
+
+    // 新插入 = 1。
+    assert_eq!(gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 10) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows, 1);
+    // 命中并实际改写 = 2。
+    assert_eq!(gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 20) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows, 2);
+    // 命中但写回同值 = 0。
+    assert_eq!(gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 20) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows, 0);
+
+    // 协商 `CLIENT_FOUND_ROWS`：未变按命中计 1，实际改写仍是 2，新插入仍是 1。
+    assert_eq!(
+        with_found_rows(true, || {
+            gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 20) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows
+        }),
+        1
+    );
+    assert_eq!(
+        with_found_rows(true, || {
+            gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 21) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows
+        }),
+        2
+    );
+    assert_eq!(
+        with_found_rows(true, || {
+            gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (2, 21) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows
+        }),
+        1
+    );
+
+    // 作用域退出后恢复默认的改变行数口径。
+    assert_eq!(gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 21) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows, 0);
+}
+
+/// 多行 `INSERT ... ON DUPLICATE KEY UPDATE` 走一次原子提交，affected rows 按
+/// 每个输入行累加：改写 2、未变 0、新插入 1。
+#[test]
+fn multi_row_on_duplicate_key_update_sums_mysql_affected_rows() {
+    let gateway = Gateway::new("upsert-count-multi");
+    gateway.expect_sql("CREATE TABLE cnt (id INT NOT NULL PRIMARY KEY, v INT)");
+    gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 10), (2, 20)");
+
+    // 行 1 命中改写（2）+ 行 2 命中未变（0）+ 行 3 新插入（1）。
+    let result = gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 11), (2, 20), (3, 30) ON DUPLICATE KEY UPDATE v = VALUES(v)");
+    assert_eq!(result.affected_rows, 3);
+    assert_eq!(
+        with_found_rows(true, || {
+            gateway.expect_sql("INSERT INTO cnt (id, v) VALUES (1, 12), (2, 20), (3, 30) ON DUPLICATE KEY UPDATE v = VALUES(v)").affected_rows
+        }),
+        4
+    );
 }
 
 /// `INSERT ... SELECT` 把源查询的每一行写入目标表。

@@ -191,3 +191,30 @@ fn found_rows_capability_switches_the_ok_packet_to_matched_rows() {
     // 两条都命中，只有一条真正改变。
     assert_eq!(wire.affected_rows("UPDATE stock SET qty = 5 WHERE id > 0"), 2);
 }
+
+/// 未协商 `CLIENT_FOUND_ROWS`：`ON DUPLICATE KEY UPDATE` 的 OK 包按 MySQL 口径
+/// 计——新插入 1、实际改写 2、写回同值 0。
+#[test]
+fn on_duplicate_key_update_reports_mysql_affected_rows_by_default() {
+    let runtime = Runtime::start("upsert-changed");
+    let mut wire = runtime.connect();
+    wire.handshake(CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
+
+    assert_eq!(wire.affected_rows("CREATE TABLE ups (id INT NOT NULL PRIMARY KEY, v INT)"), 0);
+    assert_eq!(wire.affected_rows("INSERT INTO ups (id, v) VALUES (1, 10) ON DUPLICATE KEY UPDATE v = VALUES(v)"), 1);
+    assert_eq!(wire.affected_rows("INSERT INTO ups (id, v) VALUES (1, 20) ON DUPLICATE KEY UPDATE v = VALUES(v)"), 2);
+    assert_eq!(wire.affected_rows("INSERT INTO ups (id, v) VALUES (1, 20) ON DUPLICATE KEY UPDATE v = VALUES(v)"), 0);
+}
+
+/// 协商 `CLIENT_FOUND_ROWS`：命中但未改变的行按命中计 1，实际改写仍是 2。
+#[test]
+fn on_duplicate_key_update_honours_found_rows_capability() {
+    let runtime = Runtime::start("upsert-found-rows");
+    let mut wire = runtime.connect();
+    wire.handshake(CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_FOUND_ROWS);
+
+    assert_eq!(wire.affected_rows("CREATE TABLE ups (id INT NOT NULL PRIMARY KEY, v INT)"), 0);
+    assert_eq!(wire.affected_rows("INSERT INTO ups (id, v) VALUES (1, 10) ON DUPLICATE KEY UPDATE v = VALUES(v)"), 1);
+    assert_eq!(wire.affected_rows("INSERT INTO ups (id, v) VALUES (1, 10) ON DUPLICATE KEY UPDATE v = VALUES(v)"), 1);
+    assert_eq!(wire.affected_rows("INSERT INTO ups (id, v) VALUES (1, 20) ON DUPLICATE KEY UPDATE v = VALUES(v)"), 2);
+}
