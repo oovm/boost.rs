@@ -2,9 +2,9 @@
 //!
 //! The object model, parser, stream filters and writer live in
 //! `data-binary-pdf`. This crate adds the operations a product exposes:
-//! inspection, merge, split, page arrangement, page deletion and rotation,
-//! metadata and bookmark edits, form filling, stamping, one-page creation, and
-//! text and image extraction.
+//! inspection, merge, split, page arrangement, page deletion, rotation and
+//! cropping, metadata and bookmark edits, form filling, stamping, one-page
+//! creation, and text and image extraction.
 //!
 //! Every malformed input becomes a [`ServiceError`]; no entry point panics.
 
@@ -29,7 +29,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Result, argument, exists_error, read_error, write_error};
 use crate::object::{Dict, PdfObject, encode_text};
 use crate::parse::{PdfDocument, decode_text_string, parse_document, resolve_object};
-use crate::writer::{PdfWriter, copy_info, copy_info_fields, copy_object, copy_page, copy_page_with_rotation};
+use crate::writer::{
+    PdfWriter, copy_info, copy_info_fields, copy_object, copy_page, copy_page_with_rotation, media_box_object,
+};
 
 pub use crate::error::ServiceError;
 
@@ -335,6 +337,20 @@ pub struct RotatePagesReport {
     pub bytes: usize,
 }
 
+/// Result of [`set_page_boxes`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetPageBoxesReport {
+    /// Output path.
+    pub path: String,
+    /// Pages written to the output.
+    pub pages: usize,
+    /// Pages that received the new `/CropBox`.
+    pub cropped: usize,
+    /// Output size in bytes.
+    pub bytes: usize,
+}
+
 /// `/Info` fields accepted by [`set_metadata`].
 ///
 /// A missing field keeps its source value, while an empty string removes it.
@@ -624,15 +640,6 @@ pub fn delete_pages(input: &Path, pages: &str, out: &Path, overwrite: bool) -> R
     })
 }
 
-/// Expands a 1-based range list into the selected page numbers.
-fn selected_pages(ranges: &str, page_count: usize) -> Result<BTreeSet<usize>> {
-    let mut selected = BTreeSet::new();
-    for (start, end) in parse_ranges(ranges, page_count)? {
-        selected.extend(start..=end);
-    }
-    Ok(selected)
-}
-
 /// Adds the requested clockwise rotation to the pages selected by a 1-based
 /// range list such as `1,3-5`.
 ///
@@ -672,6 +679,84 @@ pub fn rotate_pages(input: &Path, pages: &str, degrees: i32, out: &Path, overwri
         rotated,
         bytes: bytes.len(),
     })
+}
+
+/// Writes `crop` as `/CropBox` on the pages selected by a 1-based range list
+/// such as `1-3`.
+///
+/// The box corners are `[llx, lly, urx, ury]` in points and must satisfy
+/// `urx > llx`, `ury > lly` and stay inside the page's `/MediaBox`. Only
+/// `/CropBox` changes; `/MediaBox` and every other page entry are copied
+/// unchanged. The output file is replaced only when `overwrite` is true.
+pub fn set_page_boxes(input: &Path, pages: &str, crop: [f64; 4], out: &Path, overwrite: bool) -> Result<SetPageBoxesReport> {
+    let document = load_document(input)?;
+    let selected = selected_pages(pages, document.pages.len())?;
+    validate_crop_box(crop, &document, &selected)?;
+    if out.exists() && !overwrite {
+        return Err(exists_error(format!("{} already exists", out.display())));
+    }
+
+    let mut writer = PdfWriter::new();
+    let mut map = BTreeMap::new();
+    let mut written = Vec::with_capacity(document.pages.len());
+    let mut cropped = 0;
+    for (index, page) in document.pages.iter().enumerate() {
+        let number = copy_page(&mut writer, &document, &mut map, page)?;
+        if selected.contains(&(index + 1)) {
+            if let Some(PdfObject::Dictionary(dict)) = writer.get_mut(number) {
+                dict.insert("CropBox".to_string(), media_box_object(crop));
+            }
+            cropped += 1;
+        }
+        written.push(number);
+    }
+    let info = copy_info(&mut writer, &document, &mut map, None)?;
+    let bytes = finish_document(&mut writer, &written, info)?;
+    write_file(out, &bytes, overwrite)?;
+    Ok(SetPageBoxesReport {
+        path: out.display().to_string(),
+        pages: written.len(),
+        cropped,
+        bytes: bytes.len(),
+    })
+}
+
+/// Expands a 1-based range list into the selected page numbers.
+fn selected_pages(ranges: &str, page_count: usize) -> Result<BTreeSet<usize>> {
+    let mut selected = BTreeSet::new();
+    for (start, end) in parse_ranges(ranges, page_count)? {
+        selected.extend(start..=end);
+    }
+    Ok(selected)
+}
+
+/// The largest gap tolerated when a crop box corner is compared with a
+/// media box corner.
+const BOX_EPSILON: f64 = 1e-6;
+
+/// Validates that `crop` is a non-empty box inside every selected page.
+fn validate_crop_box(crop: [f64; 4], document: &PdfDocument, selected: &BTreeSet<usize>) -> Result<()> {
+    if !crop.iter().all(|value| value.is_finite()) {
+        return Err(argument("crop box corners must be finite numbers"));
+    }
+    let [llx, lly, urx, ury] = crop;
+    if urx - llx <= BOX_EPSILON || ury - lly <= BOX_EPSILON {
+        return Err(argument(format!("crop box [{llx} {lly} {urx} {ury}] needs urx > llx and ury > lly")));
+    }
+    for number in selected {
+        let media = document.pages[number - 1].media_box;
+        if llx < media[0] - BOX_EPSILON
+            || lly < media[1] - BOX_EPSILON
+            || urx > media[2] + BOX_EPSILON
+            || ury > media[3] + BOX_EPSILON
+        {
+            return Err(argument(format!(
+                "crop box [{llx} {lly} {urx} {ury}] is outside the media box [{} {} {} {}] of page {number}",
+                media[0], media[1], media[2], media[3]
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Copies every page into a new PDF while rewriting its information
@@ -1382,6 +1467,18 @@ mod tests {
         }
     }
 
+    fn crop_values(document: &PdfDocument, index: usize) -> Option<Vec<f64>> {
+        let array = document.pages[index].own.get("CropBox")?.as_array()?;
+        array
+            .iter()
+            .map(|item| match item {
+                PdfObject::Integer(value) => Some(*value as f64),
+                PdfObject::Real(value) => Some(*value),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn delete_pages_keeps_only_the_unselected_pages() {
         let workspace = Workspace::new();
@@ -1456,6 +1553,45 @@ mod tests {
         for degrees in [0, 45, -90, 360] {
             let error = rotate_pages(&source, "1", degrees, &out, true).expect_err("unsupported rotation");
             assert_eq!(error.code(), "session/argument-invalid", "{degrees}");
+        }
+    }
+
+    #[test]
+    fn set_page_boxes_writes_crop_box_and_keeps_media_box() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One", "Two"]);
+        let out = workspace.path("cropped.pdf");
+
+        let report = set_page_boxes(&source, "1", [10.0, 20.0, 300.0, 400.0], &out, false).expect("set page boxes");
+        assert_eq!(report.pages, 2);
+        assert_eq!(report.cropped, 1);
+        assert!(report.bytes > 0);
+
+        let document = parse_document(&fs::read(&out).expect("read output")).expect("parse output");
+        assert_eq!(crop_values(&document, 0), Some(vec![10.0, 20.0, 300.0, 400.0]));
+        assert!(crop_values(&document, 1).is_none());
+        assert_eq!(document.pages[0].media_box, [0.0, 0.0, 612.0, 792.0]);
+        let sizes = inspect(&out).expect("inspect cropped").page_sizes;
+        assert_eq!(sizes[0].width_pt, 612.0);
+        assert_eq!(sizes[0].height_pt, 792.0);
+    }
+
+    #[test]
+    fn set_page_boxes_rejects_invalid_and_out_of_bounds_boxes() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One"]);
+        let out = workspace.path("out.pdf");
+
+        let cases = [
+            [300.0, 20.0, 10.0, 400.0],
+            [10.0, 20.0, 10.0, 400.0],
+            [0.0, 0.0, 700.0, 400.0],
+            [-10.0, 0.0, 300.0, 400.0],
+            [f64::NAN, 0.0, 300.0, 400.0],
+        ];
+        for crop in cases {
+            let error = set_page_boxes(&source, "1", crop, &out, true).expect_err("invalid crop box");
+            assert_eq!(error.code(), "session/argument-invalid", "{crop:?}");
         }
     }
 }
