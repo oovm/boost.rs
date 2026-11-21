@@ -218,8 +218,8 @@ fn a_structure_value_uses_a_closed_positional_layout() {
     let dynamic = encode_row(&row).expect("encode dynamic record");
     assert!(!closed.windows(b"zip".len()).any(|window| window == b"zip"), "member name leaked into the closed record");
     assert!(!closed.windows(b"country".len()).any(|window| window == b"country"), "member name leaked into the closed record");
-    assert_eq!(closed.len(), 63, "closed structure record is 63 persisted bytes");
-    assert_eq!(dynamic.len(), 55, "the dynamic name-tagged record is 55 persisted bytes");
+    assert_eq!(closed.len(), 71, "closed structure record is 71 persisted bytes");
+    assert_eq!(dynamic.len(), 63, "the dynamic name-tagged record is 63 persisted bytes");
     assert_eq!(decode_row_with_directory(&closed, &directory).expect("decode closed structure"), row);
 }
 

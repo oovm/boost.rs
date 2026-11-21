@@ -32,7 +32,7 @@ mod transaction;
 mod udf;
 
 pub use query::{ClockQuality, ClockSource, PlanOutcome, ReadProfile};
-pub use schema_api::CatalogDefinition;
+pub use schema_api::{CatalogDefinition, MigrationMode};
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct State {
@@ -41,6 +41,8 @@ pub(crate) struct State {
     pub(crate) resolved_contract: Option<std::sync::Arc<schema_types::ResolvedContract>>,
     pub(crate) records: BTreeMap<String, Vec<u8>>,
     pub(crate) unique_constraints: Vec<database_types::TableUniqueConstraint>,
+    /// Layouts of earlier catalog revisions retained by a deferred migration.
+    pub(crate) layout_history: BTreeMap<u32, database_formats::yy::row::RowSchemaDirectory>,
 }
 
 /// Record keys one open transaction wrote, plus whether that set is exact.
@@ -130,6 +132,12 @@ pub struct Connection {
     /// statements, raw record writes, rollbacks, schema changes) invalidates it,
     /// so a stale entry can never hide a duplicate.
     pub(crate) unique_index: std::sync::Arc<database_query::local::constraints::UniqueIndex>,
+    /// Retained row-layout revisions shared by every session of this database.
+    ///
+    /// A deferred migration publishes a new revision without rewriting existing
+    /// rows; reads must therefore resolve older revisions from this registry.
+    pub(crate) layout_history:
+        std::sync::Arc<Mutex<BTreeMap<u32, database_formats::yy::row::RowSchemaDirectory>>>,
     pub(crate) udfs: Mutex<UdfSubsystem>,
     pub(crate) objects: std::sync::Arc<ObjectStore>,
     pub(crate) closed: std::sync::Arc<AtomicBool>,
@@ -171,6 +179,7 @@ impl Connection {
             prepared_cache: Mutex::new(HashMap::new()),
             bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
+            layout_history: std::sync::Arc::new(Mutex::new(BTreeMap::new())),
             backend: std::sync::Arc::new(Backend::File { path: path.clone(), database: Mutex::new(database) }),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::new(if is_yydx_main_path(&path) {
@@ -185,6 +194,7 @@ impl Connection {
         // `Database::open` already replays a leftover WAL, so opening only reads
         // the reserved metadata and the lease window instead of every record.
         connection.reconcile_leases_on_open()?;
+        connection.sync_layout_history()?;
         Ok(connection)
     }
 
@@ -200,6 +210,7 @@ impl Connection {
             prepared_cache: Mutex::new(HashMap::new()),
             bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::new(database_query::local::constraints::UniqueIndex::new()),
+            layout_history: std::sync::Arc::new(Mutex::new(BTreeMap::new())),
             backend: std::sync::Arc::new(Backend::Memory { state: Mutex::new(State::default()) }),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::new(ObjectStore::open_ephemeral()),
@@ -226,6 +237,7 @@ impl Connection {
             prepared_cache: Mutex::new(HashMap::new()),
             bound_write_cache: Mutex::new(HashMap::new()),
             unique_index: std::sync::Arc::clone(&self.unique_index),
+            layout_history: std::sync::Arc::clone(&self.layout_history),
             udfs: Mutex::new(UdfSubsystem::default()),
             objects: std::sync::Arc::clone(&self.objects),
             closed: std::sync::Arc::clone(&self.closed),

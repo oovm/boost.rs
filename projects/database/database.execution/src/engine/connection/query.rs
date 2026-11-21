@@ -97,7 +97,13 @@ impl Connection {
     /// Placement is no longer a callback: the write entries take an explicit
     /// [`Placement`] so planning stays pure and only execution writes.
     fn with_row_context<T>(&self, contract: &schema_types::ResolvedContract, body: impl FnOnce() -> Result<T>) -> Result<T> {
-        let directory = crate::engine::catalog::row_schema_directory(contract)?;
+        let mut directory = crate::engine::catalog::row_schema_directory(contract)?;
+        {
+            let history = self.layout_history.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            for historical in history.values() {
+                directory = directory.with_retained(historical);
+            }
+        }
         let directory = Arc::new(directory);
         with_row_schema(Some(directory), || with_object_resolver(Some(self.object_resolver()), body))
     }

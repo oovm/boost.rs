@@ -19,6 +19,7 @@ const META_SCHEMA: &str = "__yydb/meta/schema";
 const META_IDENTITY: &str = "__yydb/meta/identity";
 const META_CONTRACT: &str = "__yydb/meta/contract";
 const META_UNIQUE: &str = "__yydb/meta/unique";
+const META_LAYOUTS: &str = "__yydb/meta/layouts";
 const META_PREFIX: &str = "__yydb/meta/";
 
 /// Typed metadata rows are chunked because each stored value must fit one leaf
@@ -31,7 +32,7 @@ const META_CHUNK_BYTES: usize = 2048;
 /// map. Every other metadata row (commit/checkpoint sequence, fencing counter,
 /// future reserved rows) round-trips through `State.records` so counters stay
 /// durable across reopen.
-const TYPED_META_PREFIXES: [&str; 4] = [META_SCHEMA, META_IDENTITY, META_CONTRACT, META_UNIQUE];
+const TYPED_META_PREFIXES: [&str; 5] = [META_SCHEMA, META_IDENTITY, META_CONTRACT, META_UNIQUE, META_LAYOUTS];
 
 fn is_typed_meta_key(key: &[u8]) -> bool {
     TYPED_META_PREFIXES.iter().any(|prefix| {
@@ -127,6 +128,7 @@ pub(crate) fn state_from_snapshot(snapshot: &Snapshot, cache: &ContractCache) ->
     );
     let resolved_contract = cache.contract(basis, assemble_chunked(&snapshot.metadata, META_CONTRACT))?;
     let unique_constraints = decode_unique_constraints(assemble_chunked(&snapshot.metadata, META_UNIQUE))?;
+    let layout_history = decode_layouts(assemble_chunked(&snapshot.metadata, META_LAYOUTS))?;
     let mut records: BTreeMap<String, Vec<u8>> =
         snapshot.records.iter().filter(|(key, _)| !key.starts_with(META_PREFIX)).map(|(key, value)| (key.clone(), value.clone())).collect();
     for (key, value) in &snapshot.metadata {
@@ -137,7 +139,7 @@ pub(crate) fn state_from_snapshot(snapshot: &Snapshot, cache: &ContractCache) ->
         records.insert(key, value.clone());
     }
     spill::assemble(&mut records)?;
-    Ok(State { schema, identity_history, resolved_contract, records, unique_constraints })
+    Ok(State { schema, identity_history, resolved_contract, records, unique_constraints, layout_history })
 }
 
 /// Merge the rows of a window snapshot onto already-decoded metadata.
@@ -181,6 +183,9 @@ fn typed_metadata(state: &State) -> Result<BTreeMap<Vec<u8>, Vec<u8>>> {
     metadata.extend(chunk_rows(META_SCHEMA, encode_schema(&state.schema)?));
     metadata.extend(chunk_rows(META_IDENTITY, encode_identity(&state.identity_history)?));
     metadata.extend(chunk_rows(META_CONTRACT, encode_contract(&state.resolved_contract)?));
+    if !state.layout_history.is_empty() {
+        metadata.extend(chunk_rows(META_LAYOUTS, encode_layouts(&state.layout_history)?));
+    }
     if !state.unique_constraints.is_empty() {
         metadata.extend(chunk_rows(META_UNIQUE, encode_unique_constraints(&state.unique_constraints)?));
     }
@@ -493,4 +498,21 @@ fn decode_unique_constraints(bytes: Option<Vec<u8>>) -> Result<Vec<database_type
         }
         _ => Err(Error::Corrupt("unknown unique constraint meta marker")),
     }
+}
+
+/// Encode retained row-layout revisions for deferred migrations.
+fn encode_layouts(layouts: &BTreeMap<u32, database_formats::yy::row::RowSchemaDirectory>) -> Result<Vec<u8>> {
+    serde_json::to_vec(layouts).map_err(|_| Error::Corrupt("row layout registry serialization failed"))
+}
+
+/// Decode retained row-layout revisions.
+fn decode_layouts(bytes: Option<Vec<u8>>) -> Result<BTreeMap<u32, database_formats::yy::row::RowSchemaDirectory>> {
+    let Some(bytes) = bytes
+    else {
+        return Ok(BTreeMap::new());
+    };
+    if bytes.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    serde_json::from_slice(&bytes).map_err(|_| Error::Corrupt("row layout registry meta is invalid JSON"))
 }

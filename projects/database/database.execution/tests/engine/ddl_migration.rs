@@ -1,7 +1,7 @@
 //! YYDB-DDL-02 回归：rename 后按新目录重建唯一规则，并保留既有行。
 
 use database_execution::engine::{
-    Connection,
+    Connection, MigrationMode,
     catalog::{FieldPath, RenameMap},
 };
 
@@ -140,3 +140,79 @@ fn a_published_optional_field_survives_reopening_with_old_rows() {
     conn.close();
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn a_deferred_migration_reads_old_rows_and_compaction_upgrades_them() {
+    let path = std::env::temp_dir().join(format!("ddl-deferred-{}.yydx", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.ensure_schema("table Note { @@id: i64, name: utf8 }").unwrap();
+        conn.execute_vos_write(r#"Note.insert({ id: 1, name: "first" })"#).unwrap();
+        conn.execute_vos_write(r#"Note.insert({ id: 2, name: "second" })"#).unwrap();
+        conn.migrate_schema_with_mode(
+            "table Note { @@id: i64, name: utf8, memo: utf8? }",
+            &RenameMap::default(),
+            MigrationMode::Deferred,
+        )
+        .unwrap();
+        // Old rows still name the previous revision and must stay readable.
+        assert_eq!(conn.query_vos("Note.all().collect()").unwrap().len(), 2);
+        assert_eq!(conn.compact_schemas(16).unwrap(), 2);
+        conn.close();
+    }
+    let conn = Connection::open(&path).unwrap();
+    assert_eq!(conn.query_vos("Note.all().collect()").unwrap().len(), 2, "compacted rows survive reopening");
+    conn.close();
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_metadata_only_rename_keeps_rows_without_rewriting_their_layout() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Sku { @@id: i64, sku: utf8 }").unwrap();
+    conn.execute_vos_write(r#"Sku.insert({ id: 1, sku: "A" })"#).unwrap();
+
+    conn.migrate_schema_with_mode(
+        "table Sku { @@id: i64, code: utf8 }",
+        &rename_field("Sku", "sku", "code"),
+        MigrationMode::MetadataOnly,
+    )
+    .unwrap();
+
+    let rows = conn.query_vos(r#"Sku.all().filter(s => s.code == "A").collect()"#).unwrap();
+    assert_eq!(rows.len(), 1, "the row resolves the renamed column through its durable identity: {rows:?}");
+}
+
+#[test]
+fn a_metadata_only_change_that_alters_the_layout_is_rejected() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Note { @@id: i64, name: utf8 }").unwrap();
+    let error = conn
+        .migrate_schema_with_mode(
+            "table Note { @@id: i64, name: utf8, memo: utf8? }",
+            &RenameMap::default(),
+            MigrationMode::MetadataOnly,
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), "database.schema.invalid", "{error}");
+    assert_eq!(conn.schema_version().unwrap(), Some(1));
+}
+
+#[test]
+fn reordering_declared_fields_is_a_metadata_only_change() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Pair { @@id: i64, left: i64, right: i64 }").unwrap();
+    conn.execute_vos_write(r#"Pair.insert({ id: 1, left: 11, right: 22 })"#).unwrap();
+
+    conn.migrate_schema_with_mode(
+        "table Pair { @@id: i64, right: i64, left: i64 }",
+        &RenameMap::default(),
+        MigrationMode::MetadataOnly,
+    )
+    .unwrap();
+
+    let rows = conn.query_vos("Pair.all().collect()").unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+}
+

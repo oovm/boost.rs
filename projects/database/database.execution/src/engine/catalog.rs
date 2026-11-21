@@ -12,7 +12,9 @@
 use std::collections::BTreeMap;
 
 use crate::program::{FieldHandle, LayoutField, RecordLayout, RecordLayoutError, Type};
-use database_formats::yy::row::{NamedFieldLayout, NamedValueLayout, NamedVariantLayout, RowSchemaDirectory, ValueLayout};
+use database_formats::yy::row::{
+    NamedFieldLayout, NamedValueLayout, NamedVariantLayout, RowSchemaDirectory, TableLayout, ValueLayout,
+};
 use database_types::{Error, Result, UniqueConstraint};
 
 /// A type-qualified field path used by [`RenameMap`].
@@ -540,17 +542,20 @@ pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result
     }
     let mut columns = BTreeMap::new();
     let mut column_ids = BTreeMap::new();
+    let mut tables = BTreeMap::new();
     for item in &contract.types {
         if item.kind != schema_types::TypeContractKind::Table {
             continue;
         }
+        let table_name = item.canonical_path.last().cloned().unwrap_or_default();
+        let layout = TableLayout::new(table_name, named_fields(&item.fields, contract, 0));
         for field in &item.fields {
-            let layout = value_layout(&field.canonical_type, contract, 0);
-            if matches!(layout, ValueLayout::Dynamic) {
+            let value_layout = value_layout(&field.canonical_type, contract, 0);
+            if matches!(value_layout, ValueLayout::Dynamic) {
                 continue;
             }
             if let Some(existing) = columns.get(&field.canonical_name)
-                && existing != &layout
+                && existing != &value_layout
             {
                 // The in-memory row map is name-keyed, so two different named
                 // layouts for one column name cannot be encoded unambiguously.
@@ -562,11 +567,17 @@ pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result
                     ),
                 });
             }
-            columns.insert(field.canonical_name.clone(), layout);
-            column_ids.insert(field.canonical_name.clone(), field.field_id);
+            columns.insert(field.canonical_name.clone(), value_layout);
         }
+        tables.insert(item.type_id, layout);
     }
-    Ok(RowSchemaDirectory::revisioned(row_schema_revision(contract), columns, column_ids, named))
+    Ok(RowSchemaDirectory::revisioned_with_tables(
+        row_schema_revision(contract),
+        columns,
+        column_ids,
+        named,
+        tables,
+    ))
 }
 
 /// Structural revision of one contract's row layout.

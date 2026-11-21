@@ -166,7 +166,22 @@ impl Connection {
     /// Existing type and field identities are preserved by exact name matching
     /// or by mappings in `renames`. When the document carries
     /// `// @yydb-schema-version: <n>`, `n` must equal the new version.
+    ///
+    /// This is the rewriting entry point: every affected stored row is
+    /// re-encoded under the new layout revision before the catalog publishes.
+    /// Callers that can defer that work use
+    /// [`Self::migrate_schema_with_mode`] instead.
     pub fn migrate_schema(&self, document: &str, renames: &schema::RenameMap) -> Result<()> {
+        self.migrate_schema_with_mode(document, renames, MigrationMode::Rewrite)
+    }
+
+    /// Evolve the persisted schema under an explicit migration mode.
+    ///
+    /// The mode belongs to the DDL statement, never to a column declaration:
+    /// the same schema document can be applied immediately on one deployment
+    /// and deferred on another. See [`MigrationMode`] for the guarantees of
+    /// each mode.
+    pub fn migrate_schema_with_mode(&self, document: &str, renames: &schema::RenameMap, mode: MigrationMode) -> Result<()> {
         let projection = schema_vos::project_schema(document)?;
         let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
         let mut state = self.read_state()?;
@@ -188,11 +203,99 @@ impl Connection {
         let previous = state.resolved_contract.clone();
         if let Some(previous) = previous.as_deref() {
             validate_retained_field_types(previous, &resolved_contract, renames)?;
-            rewrite_renamed_rows(&mut state, previous, &resolved_contract, renames)?;
+            let old_directory = schema::row_schema_directory(previous)?;
+            let new_directory = schema::row_schema_directory(&resolved_contract)?;
+            let revision_changed = old_directory.revision() != new_directory.revision();
+            match mode {
+                MigrationMode::MetadataOnly => {
+                    if revision_changed {
+                        return Err(Error::Schema {
+                            message: "this schema change changes stored row layouts; use Rewrite, Deferred or RebuildOnly"
+                                .into(),
+                        });
+                    }
+                }
+                MigrationMode::Rewrite => {
+                    if revision_changed {
+                        rewrite_rows_for_revision(&mut state, previous, &resolved_contract, renames)?;
+                    }
+                    else {
+                        rewrite_renamed_keys(&mut state, previous, &resolved_contract)?;
+                    }
+                    state.layout_history.clear();
+                }
+                MigrationMode::Deferred => {
+                    if revision_changed {
+                        state.layout_history.insert(old_directory.revision(), old_directory);
+                    }
+                }
+                MigrationMode::RebuildOnly => {
+                    state.layout_history.clear();
+                }
+            }
         }
         let remapped = schema::remap_unique_constraints(&state.unique_constraints, renames)?;
         state.unique_constraints = remapped;
-        self.install_catalog_unlocked(&mut state, CatalogDefinition::new(resolved_contract, evolved, version, Some(document.to_owned())))
+        self.install_catalog_unlocked(&mut state, CatalogDefinition::new(resolved_contract, evolved, version, Some(document.to_owned())))?;
+        self.sync_layout_history()?;
+        Ok(())
+    }
+
+    /// Upgrade up to `budget` rows left behind by a deferred migration.
+    ///
+    /// Reads never mutate a record, so a deferred change keeps old rows on the
+    /// previous layout revision until a write touches them or the host asks for
+    /// compaction. Returns the number of rows re-encoded by this call.
+    pub fn compact_schemas(&self, budget: usize) -> Result<usize> {
+        use database_formats::yy::row::{decode_row_for_table, encode_row_for_table, row_layout_revision};
+        let _guard = self.operation_lock.lock().unwrap_or_else(|p| p.into_inner());
+        let mut state = self.read_state()?;
+        let Some(contract) = state.resolved_contract.clone()
+        else {
+            return Ok(0);
+        };
+        let current = schema::row_schema_directory(&contract)?;
+        let mut directory = current.clone();
+        for historical in state.layout_history.values() {
+            directory = directory.with_retained(historical);
+        }
+        let mut upgraded = 0usize;
+        let keys: Vec<String> = state
+            .records
+            .keys()
+            .filter(|key| key.starts_with("__yydb/v0/row/"))
+            .cloned()
+            .collect();
+        for key in keys {
+            if upgraded >= budget {
+                break;
+            }
+            let Some(table) = key.strip_prefix("__yydb/v0/row/").and_then(|rest| rest.split('/').next())
+            else {
+                continue;
+            };
+            if current.table_id(table).is_none() {
+                continue;
+            }
+            let bytes = state.records.get(&key).expect("collected key");
+            if row_layout_revision(bytes)? == current.revision() {
+                continue;
+            }
+            let row = decode_row_for_table(&directory, table, bytes)?;
+            let bytes = encode_row_for_table(&current, table, &row)?;
+            state.records.insert(key, bytes);
+            upgraded += 1;
+        }
+        if upgraded > 0 {
+            self.write_state(&state)?;
+        }
+        // Retained revisions are only useful while some row still names them.
+        if !state.layout_history.is_empty() && !has_older_rows(&state, current.revision())? {
+            state.layout_history.clear();
+            self.write_state(&state)?;
+        }
+        self.sync_layout_history()?;
+        Ok(upgraded)
     }
 
     /// Publish a host-supplied catalog as the database truth.
@@ -302,20 +405,40 @@ fn validate_retained_field_types(
     Ok(())
 }
 
-/// Rewrites stored row records so renamed columns and tables keep their data.
+/// How a DDL schema change treats rows written under the previous layout.
 ///
-/// A stored row carries its column names, and a renamed table owns a different
-/// record-key prefix, so publishing the new catalog alone would leave every old
-/// row addressing the previous names. Both rewrites are prepared in memory and
-/// only applied after every record decoded and re-encoded successfully, so a
-/// failure leaves the rows exactly as they were.
-fn rewrite_renamed_rows(
+/// The mode is an argument of the change statement, not a property of a column
+/// or type declaration: the same target schema can be applied immediately in
+/// one deployment and deferred in another.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationMode {
+    /// Publish only a name/order change that leaves the stored layout revision
+    /// untouched. A change that alters the revision is rejected.
+    MetadataOnly,
+    /// Re-encode every affected row before the catalog becomes visible.
+    Rewrite,
+    /// Publish immediately and retain the previous layout revision so old rows
+    /// stay readable; writes upgrade rows and [`Connection::compact_schemas`]
+    /// finishes the rest.
+    Deferred,
+    /// Publish the new catalog and refuse to decode rows from older revisions;
+    /// the host is expected to rebuild the data from its source of truth.
+    RebuildOnly,
+}
+
+/// Rewrites every stored row of the tables whose layout revision changed.
+///
+/// Rows are decoded with the previous revision and directory, renamed through
+/// the explicit rename map, filtered to fields the new declaration still owns,
+/// then encoded with the new revision. The rewrite is prepared in memory and
+/// applied only after every row succeeds, so a failure leaves state untouched.
+fn rewrite_rows_for_revision(
     state: &mut super::State,
     previous: &schema_types::ResolvedContract,
     next: &schema_types::ResolvedContract,
     renames: &schema::RenameMap,
 ) -> Result<()> {
-    use database_formats::yy::row::{decode_row_with_directory, encode_row_with_directory, table_prefix};
+    use database_formats::yy::row::{decode_row_for_table, encode_row_for_table, table_prefix};
     use schema_types::TypeContractKind;
 
     let old_directory = schema::row_schema_directory(previous)?;
@@ -337,35 +460,85 @@ fn rewrite_renamed_rows(
                 field_renames.insert(field.canonical_name.clone(), target.to_owned());
             }
         }
-        if old_table == new_table && field_renames.is_empty() {
-            continue;
-        }
+        let next_fields: std::collections::BTreeSet<&str> = next_type.fields.iter().map(|field| field.canonical_name.as_str()).collect();
         let prefix = table_prefix(&old_table);
         let next_prefix = table_prefix(&new_table);
         for (key, value) in state.records.range(prefix.clone()..).take_while(|(key, _)| key.starts_with(&prefix)) {
-            let mut row = decode_row_with_directory(value, &old_directory)?;
-            if !field_renames.is_empty() {
-                let mut renamed = std::collections::BTreeMap::new();
-                for (name, value) in std::mem::take(&mut row) {
-                    let name = field_renames.get(&name).cloned().unwrap_or(name);
-                    renamed.insert(name, value);
+            let row = decode_row_for_table(&old_directory, &old_table, value)?;
+            let mut next_row = std::collections::BTreeMap::new();
+            for (name, value) in row {
+                let name = field_renames.get(&name).cloned().unwrap_or(name);
+                if next_fields.contains(name.as_str()) {
+                    next_row.insert(name, value);
                 }
-                row = renamed;
             }
+            let bytes = encode_row_for_table(&new_directory, &new_table, &next_row)?;
             // `prefix` is a whole record-key segment, so its remainder is the
             // encoded primary key and moves to the new table unchanged.
             let next_key = format!("{next_prefix}{}", &key[prefix.len()..]);
-            rewritten.push((key.clone(), next_key, row));
+            rewritten.push((key.clone(), next_key, bytes));
         }
     }
-    for (old_key, next_key, row) in rewritten {
-        let bytes = encode_row_with_directory(&row, &new_directory)?;
+    for (old_key, next_key, bytes) in rewritten {
         if old_key != next_key {
             state.records.remove(&old_key);
         }
         state.records.insert(next_key, bytes);
     }
     Ok(())
+}
+
+/// Moves rows to a renamed table without touching column bytes.
+///
+/// The stored layout revision is unchanged, and column identities are durable,
+/// so only the record-key prefix needs to follow the table rename.
+fn rewrite_renamed_keys(
+    state: &mut super::State,
+    previous: &schema_types::ResolvedContract,
+    next: &schema_types::ResolvedContract,
+) -> Result<()> {
+    use database_formats::yy::row::table_prefix;
+    use schema_types::TypeContractKind;
+
+    let mut moves = Vec::new();
+    for previous_type in previous.types.iter().filter(|item| item.kind == TypeContractKind::Table) {
+        let Some(next_type) = next.types.iter().find(|item| item.type_id == previous_type.type_id && item.kind == TypeContractKind::Table)
+        else {
+            continue;
+        };
+        let previous_name = previous_type.canonical_path.last().map(String::as_str).unwrap_or_default();
+        let next_name = next_type.canonical_path.last().map(String::as_str).unwrap_or_default();
+        let old_table = database_query::local::catalog::table_row_key_name(previous, previous_name)?;
+        let new_table = database_query::local::catalog::table_row_key_name(next, next_name)?;
+        if old_table == new_table {
+            continue;
+        }
+        let prefix = table_prefix(&old_table);
+        let next_prefix = table_prefix(&new_table);
+        for key in state.records.range(prefix.clone()..).take_while(|(key, _)| key.starts_with(&prefix)).map(|(key, _)| key.clone()).collect::<Vec<_>>() {
+            moves.push((key.clone(), format!("{next_prefix}{}", &key[prefix.len()..])));
+        }
+    }
+    for (old_key, next_key) in moves {
+        if let Some(bytes) = state.records.remove(&old_key) {
+            state.records.insert(next_key, bytes);
+        }
+    }
+    Ok(())
+}
+
+/// Whether any stored row still names a layout revision other than `current`.
+fn has_older_rows(state: &super::State, current: u32) -> Result<bool> {
+    use database_formats::yy::row::row_layout_revision;
+    for (key, bytes) in &state.records {
+        if !key.starts_with("__yydb/v0/row/") {
+            continue;
+        }
+        if row_layout_revision(bytes)? != current {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Joins schema documents into one source text.

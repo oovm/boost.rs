@@ -19,6 +19,7 @@ use std::{cell::RefCell, collections::BTreeMap, sync::Arc};
 use database_types::{
     Date, Decimal, Error, FileDescriptor, FileManifestRef, HashAlgo, ObjectKind, ObjectRef, Result, Time, Timestamp, Value, Vector,
 };
+use serde::{Deserialize, Serialize};
 
 /// Record-map key prefix that owns table rows.
 ///
@@ -89,7 +90,7 @@ pub fn with_object_resolver<T>(resolver: Option<SharedResolver>, body: impl FnOn
 /// element. `Named` refers to a [`RowSchemaDirectory`] entry by durable schema
 /// identity, so a `class`, `structure` or `unite` column never has to repeat its
 /// name or per-instance member names in the record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValueLayout {
     /// Self-describing value with no named declaration.
     Dynamic,
@@ -100,7 +101,7 @@ pub enum ValueLayout {
 }
 
 /// Layout of one named `class`, `structure` or `unite` declaration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NamedValueLayout {
     /// Named domain value embedded as a record with member names.
     ///
@@ -147,7 +148,7 @@ impl NamedValueLayout {
 /// The durable `field_id` is the physical identity inside a stored record; the
 /// display name is resolved through the directory, so renaming a member never
 /// rewrites stored bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NamedFieldLayout {
     /// Durable field identity.
     pub field_id: u64,
@@ -158,7 +159,7 @@ pub struct NamedFieldLayout {
 }
 
 /// One variant of a named `unite` layout.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NamedVariantLayout {
     /// Stable discriminant (source-order index in the declaration).
     pub discriminant: i64,
@@ -166,18 +167,53 @@ pub struct NamedVariantLayout {
     pub fields: Vec<NamedFieldLayout>,
 }
 
+/// Column identities of one table inside one published revision.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableLayout {
+    /// Current display name of the table.
+    pub name: String,
+    /// Display name to durable field identity.
+    pub by_name: BTreeMap<String, u64>,
+    /// Durable field identity to its declaration.
+    pub by_id: BTreeMap<u64, NamedFieldLayout>,
+}
+
+impl TableLayout {
+    /// Builds one table layout from its display name and declared fields.
+    pub fn new(name: impl Into<String>, fields: impl IntoIterator<Item = NamedFieldLayout>) -> Self {
+        let mut by_name = BTreeMap::new();
+        let mut by_id = BTreeMap::new();
+        for field in fields {
+            by_name.insert(field.name.clone(), field.field_id);
+            by_id.insert(field.field_id, field);
+        }
+        Self { name: name.into(), by_name, by_id }
+    }
+
+    /// Durable identity of one column name.
+    pub fn field_id(&self, name: &str) -> Option<u64> {
+        self.by_name.get(name).copied()
+    }
+
+    /// Declaration of one durable identity.
+    pub fn field(&self, field_id: u64) -> Option<&NamedFieldLayout> {
+        self.by_id.get(&field_id)
+    }
+}
+
 /// Layout facts that belong to one published catalog revision.
 ///
 /// A row record names the revision it was written under. Reads select the
 /// matching layout from the directory, which is what lets a deferred migration
 /// keep old rows readable while new rows use the current declaration.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RevisionLayout {
     revision: u32,
     columns: BTreeMap<String, ValueLayout>,
     column_ids: BTreeMap<String, u64>,
     fields: BTreeMap<u64, NamedFieldLayout>,
     named: BTreeMap<u64, NamedValueLayout>,
+    tables: BTreeMap<u64, TableLayout>,
 }
 
 impl RevisionLayout {
@@ -195,7 +231,23 @@ impl RevisionLayout {
                 columns.get(name).map(|ty| (*field_id, NamedFieldLayout { field_id: *field_id, name: name.clone(), ty: ty.clone() }))
             })
             .collect();
-        Self { revision, columns, column_ids, fields, named }
+        Self { revision, columns, column_ids, fields, named, tables: BTreeMap::new() }
+    }
+
+    /// Attaches per-table column identities to this revision.
+    pub fn with_tables(mut self, tables: BTreeMap<u64, TableLayout>) -> Self {
+        self.tables = tables;
+        self
+    }
+
+    /// Column identities of one table.
+    pub fn table(&self, table_id: u64) -> Option<&TableLayout> {
+        self.tables.get(&table_id)
+    }
+
+    /// Durable identity of one table name in this revision.
+    pub fn table_id(&self, name: &str) -> Option<u64> {
+        self.tables.iter().find(|(_, table)| table.name == name).map(|(table_id, _)| *table_id)
     }
 
     /// Revision this layout was published under.
@@ -230,7 +282,7 @@ impl RevisionLayout {
 /// migration decode rows written before the change without rewriting them.
 /// Named layouts are keyed by durable schema identity, which every stored
 /// `class`, `unite` and `structure` value carries.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RowSchemaDirectory {
     current: RevisionLayout,
     history: BTreeMap<u32, RevisionLayout>,
@@ -252,7 +304,19 @@ impl RowSchemaDirectory {
         column_ids: BTreeMap<String, u64>,
         named: BTreeMap<u64, NamedValueLayout>,
     ) -> Self {
-        Self { current: RevisionLayout::new(revision, columns, column_ids, named), history: BTreeMap::new() }
+        Self::revisioned_with_tables(revision, columns, column_ids, named, BTreeMap::new())
+    }
+
+    /// Builds a directory for one published revision with per-table identities.
+    pub fn revisioned_with_tables(
+        revision: u32,
+        columns: BTreeMap<String, ValueLayout>,
+        column_ids: BTreeMap<String, u64>,
+        named: BTreeMap<u64, NamedValueLayout>,
+        tables: BTreeMap<u64, TableLayout>,
+    ) -> Self {
+        let current = RevisionLayout::new(revision, columns, column_ids, named).with_tables(tables);
+        Self { current, history: BTreeMap::new() }
     }
 
     /// Retains one earlier revision for deferred reads.
@@ -264,6 +328,15 @@ impl RowSchemaDirectory {
         named: BTreeMap<u64, NamedValueLayout>,
     ) -> Self {
         self.history.insert(revision, RevisionLayout::new(revision, columns, column_ids, named));
+        self
+    }
+
+    /// Retains every revision another directory already describes.
+    pub fn with_retained(mut self, other: &RowSchemaDirectory) -> Self {
+        self.history.insert(other.current.revision(), other.current.clone());
+        for (revision, layout) in &other.history {
+            self.history.entry(*revision).or_insert_with(|| layout.clone());
+        }
         self
     }
 
@@ -280,6 +353,11 @@ impl RowSchemaDirectory {
     /// Durable identity of one table column in the current revision.
     pub fn column_id(&self, name: &str) -> Option<u64> {
         self.current.column_id(name)
+    }
+
+    /// Durable identity of one table name in the current revision.
+    pub fn table_id(&self, name: &str) -> Option<u64> {
+        self.current.table_id(name)
     }
 
     /// Layout of one named declaration in the current revision.
@@ -299,6 +377,25 @@ type SharedDirectory = Arc<RowSchemaDirectory>;
 thread_local! {
     /// Named-value directory installed for the duration of one statement.
     static ROW_SCHEMA: RefCell<Option<SharedDirectory>> = const { RefCell::new(None) };
+    /// Durable table identity of the row currently being encoded or decoded.
+    static ROW_TABLE: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Runs `body` with one durable table identity installed for the row codec.
+///
+/// Top-level column names are only unique inside a table; the stored record
+/// therefore carries the table identity so a statement that spans several
+/// tables cannot bind a column to another table's `FieldId`.
+pub fn with_row_table<T>(table_id: Option<u64>, body: impl FnOnce() -> T) -> T {
+    let previous = ROW_TABLE.with(|slot| slot.replace(table_id));
+    struct TableGuard(Option<u64>);
+    impl Drop for TableGuard {
+        fn drop(&mut self) {
+            ROW_TABLE.with(|slot| slot.replace(self.0));
+        }
+    }
+    let _guard = TableGuard(previous);
+    body()
 }
 
 struct SchemaGuard(Option<SharedDirectory>);
@@ -334,6 +431,38 @@ pub fn encode_row_with_directory(row: &BTreeMap<String, Value>, directory: &RowS
     with_row_schema(Some(Arc::new(directory.clone())), || encode_row(row))
 }
 
+/// Encode one row of `table` with an explicit directory.
+///
+/// The table name resolves to a durable identity in the directory; a name the
+/// directory does not declare falls back to a name-keyed record.
+pub fn encode_row_for_table(directory: &RowSchemaDirectory, table: &str, row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
+    let table_id = directory.table_id(table);
+    with_row_schema(Some(Arc::new(directory.clone())), || with_row_table(table_id, || encode_row(row)))
+}
+
+/// Encode one row of `table` with the ambient directory, falling back to a
+/// name-keyed record when no directory is installed.
+pub fn encode_current_row_for_table(table: &str, row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
+    match current_row_schema() {
+        Some(directory) => encode_row_for_table(&directory, table, row),
+        None => encode_row(row),
+    }
+}
+
+/// Decode one row of `table` with the ambient directory.
+pub fn decode_current_row_for_table(table: &str, bytes: &[u8]) -> Result<BTreeMap<String, Value>> {
+    match current_row_schema() {
+        Some(directory) => decode_row_for_table(&directory, table, bytes),
+        None => decode_row(bytes),
+    }
+}
+
+/// Decode one row of `table` with an explicit directory.
+pub fn decode_row_for_table(directory: &RowSchemaDirectory, table: &str, bytes: &[u8]) -> Result<BTreeMap<String, Value>> {
+    let table_id = directory.table_id(table);
+    with_row_schema(Some(Arc::new(directory.clone())), || with_row_table(table_id, || decode_row(bytes)))
+}
+
 /// Decode one row with an explicit directory, without touching the ambient one.
 pub fn decode_row_with_directory(bytes: &[u8], directory: &RowSchemaDirectory) -> Result<BTreeMap<String, Value>> {
     with_row_schema(Some(Arc::new(directory.clone())), || decode_row(bytes))
@@ -357,6 +486,27 @@ pub fn row_key(table: &str, pk: &str) -> String {
 /// Record-key prefix every row of `table` shares.
 pub fn table_prefix(table: &str) -> String {
     format!("{ROW_PREFIX}{table}/")
+}
+
+/// Layout revision one stored row was written under.
+///
+/// Reads that only need to know whether a row already matches the current
+/// layout can inspect the header without decoding any value.
+pub fn row_layout_revision(bytes: &[u8]) -> Result<u32> {
+    match bytes.first() {
+        Some(version) if *version == ROW_CODEC_VERSION => {}
+        Some(_) => {
+            return Err(Error::Unsupported(
+                "row record uses a retired row encoding: rebuild the database from source data to use the current \
+                 binary row format",
+            ));
+        }
+        None => return Err(Error::Corrupt("row record is empty")),
+    }
+    let mut cursor = RowCursor::new(bytes);
+    cursor.take(1)?;
+    cursor.u8()?;
+    cursor.u32()
 }
 
 /// One stored row record's out-of-line references.
@@ -390,10 +540,28 @@ pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
     let column_count = u16::try_from(row.len()).map_err(|_| Error::Unsupported("query row has more than 65535 columns"))?;
     let directory = current_row_schema();
     let directory = directory.as_deref();
+    let installed_table = ROW_TABLE.with(std::cell::Cell::get);
+    let table_id = match installed_table {
+        Some(table_id) => {
+            let directory = directory
+                .ok_or_else(|| Error::Unsupported("encoding a field-id keyed row needs the schema directory installed"))?;
+            if directory.current.table(table_id).is_none() {
+                return Err(Error::Schema { message: format!("row encoding names table id `{table_id}`, which the directory does not declare") });
+            }
+            Some(table_id)
+        }
+        None => directory.and_then(|directory| {
+            (directory.current.tables.len() == 1).then(|| *directory.current.tables.keys().next().expect("one table"))
+        }),
+    };
     let named = directory.and_then(|directory| {
         let mut identities = Vec::with_capacity(row.len());
         for name in row.keys() {
-            identities.push((*directory.current.column_ids.get(name)?, name));
+            let field_id = match table_id {
+                Some(table_id) => directory.current.table(table_id)?.field_id(name)?,
+                None => *directory.current.column_ids.get(name)?,
+            };
+            identities.push((field_id, name));
         }
         identities.sort_by_key(|(field_id, _)| *field_id);
         Some(identities)
@@ -403,6 +571,7 @@ pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
     out.push(ROW_CODEC_VERSION);
     out.push(if named.is_some() { ROW_FLAG_FIELD_IDS } else { 0 });
     out.extend_from_slice(&revision.to_le_bytes());
+    out.extend_from_slice(&table_id.unwrap_or(0).to_le_bytes());
     out.extend_from_slice(&column_count.to_le_bytes());
     let bitmap_len = row.len().div_ceil(8);
     let bitmap_start = out.len() + if named.is_some() { row.len() * 8 } else { row.iter().map(|(name, _)| 4 + name.len()).sum() };
@@ -431,7 +600,7 @@ pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
                 if matches!(value, Value::Null) {
                     continue;
                 }
-                encode_value(&mut out, value, column_layout(directory, name), directory, 0)?;
+                encode_value(&mut out, value, table_column_layout(directory, table_id, name), directory, 0)?;
             }
         }
         None => {
@@ -444,7 +613,7 @@ pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
                 if matches!(value, Value::Null) {
                     continue;
                 }
-                encode_value(&mut out, value, column_layout(directory, name), directory, 0)?;
+                encode_value(&mut out, value, table_column_layout(directory, table_id, name), directory, 0)?;
             }
         }
     }
@@ -458,6 +627,15 @@ pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
 /// closed instead of returning a half-decoded row.
 pub fn decode_row(bytes: &[u8]) -> Result<BTreeMap<String, Value>> {
     parse_row(bytes, &mut None, true)
+}
+
+/// Tagged bytes of `names` inside one stored row of `table`, in `names` order.
+///
+/// Installs the table's durable identity so a statement that spans several
+/// tables cannot bind a column name to another table's field identity.
+pub fn select_stored_for_table<'a>(table: &str, bytes: &'a [u8], names: &[&str], selected: &mut [Option<&'a [u8]>]) -> Result<()> {
+    let table_id = current_row_schema().and_then(|directory| directory.table_id(table));
+    with_row_table(table_id, || select_stored(bytes, names, selected))
 }
 
 /// Tagged bytes of `names` inside one in-memory row, in `names` order.
@@ -531,6 +709,7 @@ pub fn select_stored<'a>(bytes: &'a [u8], names: &[&str], selected: &mut [Option
         return Err(Error::Corrupt("row record header flags are unknown"));
     }
     let revision = cursor.u32()?;
+    let table_id = cursor.u64()?;
     let field_keyed = flags & ROW_FLAG_FIELD_IDS != 0;
     let layout = if field_keyed {
         Some(
@@ -543,7 +722,14 @@ pub fn select_stored<'a>(bytes: &'a [u8], names: &[&str], selected: &mut [Option
     else {
         None
     };
-    let wanted: Vec<Option<u64>> = names.iter().map(|name| layout.and_then(|layout| layout.column_id(name))).collect();
+    let table = layout.and_then(|layout| layout.table(table_id));
+    let wanted: Vec<Option<u64>> = names
+        .iter()
+        .map(|name| match table {
+            Some(table) => table.field_id(name),
+            None => layout.and_then(|layout| layout.column_id(name)),
+        })
+        .collect();
     let column_count = cursor.u16()? as usize;
     let bitmap = cursor.take(column_count.div_ceil(8))?;
     // Two cursors over one record: one reads the identity/name table, the other
@@ -787,6 +973,21 @@ fn column_layout<'a>(directory: Option<&'a RowSchemaDirectory>, name: &str) -> O
         Some(ValueLayout::Dynamic) | None => None,
         Some(layout) => Some(layout),
     }
+}
+
+/// Layout of one column inside a specific table, falling back to the statement
+/// directory when the record is not bound to a durable table identity.
+fn table_column_layout<'a>(
+    directory: Option<&'a RowSchemaDirectory>,
+    table_id: Option<u64>,
+    name: &str,
+) -> Option<&'a ValueLayout> {
+    if let (Some(directory), Some(table_id)) = (directory, table_id)
+        && let Some(table) = directory.current.table(table_id)
+    {
+        return table.field(table.by_name.get(name).copied()?).map(|field| &field.ty).filter(|layout| !matches!(layout, ValueLayout::Dynamic));
+    }
+    column_layout(directory, name)
 }
 
 /// Resolves the named declaration a layout points at.
@@ -1056,6 +1257,7 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
         return Err(Error::Corrupt("row record header flags are unknown"));
     }
     let revision = header.u32()?;
+    let table_id = header.u64()?;
     let column_count = header.u16()? as usize;
     let field_keyed = flags & ROW_FLAG_FIELD_IDS != 0;
     let revision_layout = if field_keyed {
@@ -1068,6 +1270,15 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
     }
     else {
         directory.map(|directory| &directory.current)
+    };
+    let table_layout = match (table_id, revision_layout) {
+        (0, _) => None,
+        (_, Some(layout)) => Some(
+            layout
+                .table(table_id)
+                .ok_or_else(|| Error::Corrupt("row record names a table id the directory does not declare"))?,
+        ),
+        (_, None) => None,
     };
     let bitmap_len = column_count.div_ceil(8);
     // Keep the bitmap as a slice of the record and walk the identity table twice:
@@ -1090,8 +1301,11 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
         let name = if field_keyed {
             let field_id = keys.u64()?;
             let declared = revision_layout.ok_or_else(|| Error::Corrupt("row record names a field without a directory"))?;
-            declared
-                .field(field_id)
+            let field = match table_layout {
+                Some(table) => table.field(field_id),
+                None => declared.field(field_id),
+            };
+            field
                 .ok_or_else(|| Error::Corrupt("row record names a field id the directory does not declare"))?
                 .name
                 .clone()

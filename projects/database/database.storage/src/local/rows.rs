@@ -8,7 +8,9 @@
 
 use std::collections::BTreeMap;
 
-use database_formats::yy::row::{decode_row, encode_row, row_key, select_stored, table_prefix};
+use database_formats::yy::row::{
+    decode_current_row_for_table, encode_current_row_for_table, row_key, select_stored_for_table, table_prefix,
+};
 use database_types::{Error, Result, Value};
 
 use super::snapshot::RowSource;
@@ -49,7 +51,7 @@ impl<'a> ReadRows<'a> {
         let key = row_key(table, pk);
         match self.source {
             Some(source) => match source.row_at(&key) {
-                Some(record) => decode_row(record?.bytes),
+                Some(record) => decode_current_row_for_table(table, record?.bytes),
                 None => Err(missing_row(table, pk)),
             },
             None => load_row(self.records, table, pk),
@@ -65,11 +67,11 @@ impl<'a> ReadRows<'a> {
         let key = row_key(table, pk);
         match self.source {
             Some(source) => match source.row_at(&key) {
-                Some(record) => Ok(Some(decode_row(record?.bytes)?)),
+                Some(record) => Ok(Some(decode_current_row_for_table(table, record?.bytes)?)),
                 None => Ok(None),
             },
             None => match self.records.get(&key) {
-                Some(bytes) => Ok(Some(decode_row(bytes)?)),
+                Some(bytes) => Ok(Some(decode_current_row_for_table(table, bytes)?)),
                 None => Ok(None),
             },
         }
@@ -84,7 +86,7 @@ fn load_table_borrowed(source: &dyn RowSource, table: &str) -> Result<Vec<Row>> 
     let prefix = table_prefix(table);
     let mut rows = Vec::new();
     for record in source.rows_with_prefix(&prefix) {
-        rows.push(decode_row(record?.bytes)?);
+        rows.push(decode_current_row_for_table(table, record?.bytes)?);
     }
     Ok(rows)
 }
@@ -99,7 +101,7 @@ pub fn load_table(records: &BTreeMap<String, Vec<u8>>, table: &str) -> Result<Ve
         if !key.starts_with(&prefix) {
             break;
         }
-        rows.push(decode_row(bytes)?);
+        rows.push(decode_current_row_for_table(table, bytes)?);
     }
     Ok(rows)
 }
@@ -115,7 +117,7 @@ pub fn load_table_entries(records: &BTreeMap<String, Vec<u8>>, table: &str) -> R
         if !key.starts_with(&prefix) {
             break;
         }
-        out.push((key.clone(), decode_row(bytes)?));
+        out.push((key.clone(), decode_current_row_for_table(table, bytes)?));
     }
     Ok(out)
 }
@@ -146,7 +148,7 @@ where
             break;
         }
         selected.iter_mut().for_each(|slot| *slot = None);
-        select_stored(bytes, names, &mut selected)?;
+        select_stored_for_table(table, bytes, names, &mut selected)?;
         visit(key, &selected)?;
     }
     Ok(())
@@ -154,7 +156,7 @@ where
 
 /// Upsert one logical row keyed by `pk`.
 pub fn upsert_row(records: &mut BTreeMap<String, Vec<u8>>, table: &str, pk: &str, row: &Row) -> Result<()> {
-    records.insert(row_key(table, pk), encode_row(row)?);
+    records.insert(row_key(table, pk), encode_current_row_for_table(table, row)?);
     Ok(())
 }
 
@@ -162,7 +164,7 @@ pub fn upsert_row(records: &mut BTreeMap<String, Vec<u8>>, table: &str, pk: &str
 pub fn load_row(records: &BTreeMap<String, Vec<u8>>, table: &str, pk: &str) -> Result<Row> {
     let key = row_key(table, pk);
     let bytes = records.get(&key).ok_or_else(|| missing_row(table, pk))?;
-    decode_row(bytes)
+    decode_current_row_for_table(table, bytes)
 }
 
 /// Load one row by primary key, `None` when absent.
@@ -173,7 +175,7 @@ pub fn load_row(records: &BTreeMap<String, Vec<u8>>, table: &str, pk: &str) -> R
 pub fn load_row_optional(records: &BTreeMap<String, Vec<u8>>, table: &str, pk: &str) -> Result<Option<Row>> {
     let key = row_key(table, pk);
     match records.get(&key) {
-        Some(bytes) => Ok(Some(decode_row(bytes)?)),
+        Some(bytes) => Ok(Some(decode_current_row_for_table(table, bytes)?)),
         None => Ok(None),
     }
 }

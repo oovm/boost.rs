@@ -13,6 +13,6 @@ blake3 = { workspace = true }
 database-protocol-mongo = { workspace = true }
 database-types = { workspace = true }
 schema-types = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 uuid = { workspace = true }

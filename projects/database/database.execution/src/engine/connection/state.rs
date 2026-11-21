@@ -21,6 +21,17 @@ fn spill_window() -> RecordWindow {
 }
 
 impl Connection {
+    /// Load the durable layout registry into the connection-wide cache.
+    ///
+    /// Deferred migrations keep earlier row layouts outside the record tree;
+    /// sessions share this cache so a read can decode rows written before the
+    /// current revision without touching the durable image per statement.
+    pub(crate) fn sync_layout_history(&self) -> Result<()> {
+        let history = self.read_state()?.layout_history;
+        *self.layout_history.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = history;
+        Ok(())
+    }
+
     /// Reconcile expired leases without materializing the whole record tree.
     ///
     /// Opening a database does not need every row. Leases live under one reserved
