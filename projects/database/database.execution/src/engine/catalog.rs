@@ -675,3 +675,79 @@ impl Fnv1a {
         self.0
     }
 }
+
+#[cfg(test)]
+mod row_schema_tests {
+    use super::*;
+
+    fn resolve(document: &str) -> schema_types::ResolvedContract {
+        let projection = crate::engine::schema_vos::project_schema(document).expect("project schema");
+        let manifest = crate::engine::schema_vos::allocate_initial_manifest(&projection);
+        let bound = crate::engine::schema_vos::bind(&projection, &manifest).expect("bind manifest");
+        let history = crate::engine::schema_vos::evolve(&crate::engine::schema_vos::empty_history(), bound).expect("evolve");
+        crate::engine::schema_vos::resolve_contract(&history.snapshot).expect("resolve contract")
+    }
+
+    fn declaration<'a>(
+        directory: &'a RowSchemaDirectory,
+        contract: &schema_types::ResolvedContract,
+        name: &str,
+    ) -> &'a NamedValueLayout {
+        let item = contract
+            .types
+            .iter()
+            .find(|entry| entry.canonical_path.last().map(String::as_str) == Some(name))
+            .unwrap_or_else(|| panic!("`{name}` must resolve"));
+        directory.named(item.type_id).unwrap_or_else(|| panic!("`{name}` must have a layout"))
+    }
+
+    fn unite_revision(document: &str) -> u32 {
+        let contract = resolve(document);
+        match declaration(&row_schema_directory(&contract).expect("directory"), &contract, "Contact") {
+            NamedValueLayout::Unite { revision, .. } => *revision,
+            other => panic!("expected a union layout, got {other:?}"),
+        }
+    }
+
+    fn structure_revision(document: &str) -> u32 {
+        let contract = resolve(document);
+        match declaration(&row_schema_directory(&contract).expect("directory"), &contract, "Address") {
+            NamedValueLayout::Structure { revision, .. } => *revision,
+            other => panic!("expected a structure layout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_unite_rename_keeps_the_layout_revision_and_a_reorder_changes_it() {
+        let base = unite_revision("unite Contact { Email { address: utf8 }, Sms { number: utf8 }, None }");
+        let renamed = unite_revision("unite Contact { Postal { address: utf8 }, Sms { number: utf8 }, None }");
+        let reordered = unite_revision("unite Contact { Sms { number: utf8 }, Email { address: utf8 }, None }");
+        let widened = unite_revision("unite Contact { Email { address: utf8, label: utf8? }, Sms { number: utf8 }, None }");
+        assert_eq!(base, renamed, "renaming a variant keeps its source-order discriminant and revision");
+        assert_ne!(base, reordered, "reordering variants shifts discriminants, so stale bytes must reject");
+        assert_ne!(base, widened, "changing a payload shape changes the layout revision");
+    }
+
+    #[test]
+    fn a_structure_revision_tracks_member_order_and_shape() {
+        let base = structure_revision("structure Address { zip: utf8, country: utf8? }");
+        let reordered = structure_revision("structure Address { country: utf8?, zip: utf8 }");
+        let widened = structure_revision("structure Address { zip: utf8, country: utf8?, district: utf8? }");
+        assert_ne!(base, reordered, "positional layouts bind to declaration order");
+        assert_ne!(base, widened, "adding a member changes the positional layout");
+    }
+
+    #[test]
+    fn unite_discriminants_follow_declaration_order() {
+        let contract = resolve("unite Contact { Email { address: utf8 }, Sms { number: utf8 }, None }");
+        let directory = row_schema_directory(&contract).expect("directory");
+        let NamedValueLayout::Unite { variants, .. } = declaration(&directory, &contract, "Contact")
+        else {
+            panic!("expected a union layout");
+        };
+        assert_eq!(
+            variants.iter().map(|variant| (variant.discriminant, variant.fields.len())).collect::<Vec<_>>(),
+            [(0, 1), (1, 1), (2, 0)]
+        );
+    }
+}
