@@ -35,6 +35,9 @@ use database_protocol_yy::{
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+/// 首次发布 schema 时使用的目录 revision；后续迁移由服务端发布更高 revision。
+const SCHEMA_INITIAL_VERSION: u32 = 1;
+
 /// A result row keyed by column name.
 pub type Row = BTreeMap<String, Value>;
 
@@ -208,7 +211,15 @@ impl Client {
     /// primitive; the same schema is then visible to prepared statements and
     /// [`Self::table`] projections.
     pub fn ensure_schema(&self, document: &str) -> Result<()> {
-        let response = self.round_trip(MessageType::SchemaEnsure, encode_schema_ensure(0, document))?;
+        self.ensure_schema_version(SCHEMA_INITIAL_VERSION, document)
+    }
+
+    /// Ensure the remote schema at an explicit published revision.
+    ///
+    /// 目录只在空目录接受任意 revision,已发布目录要求 revision 与文档都一致;
+    /// 迁移必须由服务端的目录变更入口发布新 revision,不能靠本方法强行覆盖。
+    pub fn ensure_schema_version(&self, version: u32, document: &str) -> Result<()> {
+        let response = self.round_trip(MessageType::SchemaEnsure, encode_schema_ensure(version, document))?;
         expect_type(&response, MessageType::SchemaEnsureOk)?;
         Ok(())
     }
