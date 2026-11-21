@@ -181,6 +181,13 @@ impl Connection {
         let bound = schema_vos::bind(&projection, &manifest)?;
         let evolved = schema_vos::evolve(history, bound)?;
         let resolved_contract = schema_vos::resolve_contract(&evolved.snapshot)?;
+        // Renames keep durable identities, so the stored rows still carry the
+        // previous column and table names. Rewrite them under the new catalog
+        // before it is published; nothing changes if any record fails.
+        let previous = state.resolved_contract.clone();
+        if let Some(previous) = previous.as_deref() {
+            rewrite_renamed_rows(&mut state, previous, &resolved_contract, renames)?;
+        }
         let remapped = schema::remap_unique_constraints(&state.unique_constraints, renames)?;
         state.unique_constraints = remapped;
         self.install_catalog_unlocked(&mut state, CatalogDefinition::new(resolved_contract, evolved, version, Some(document.to_owned())))
@@ -216,6 +223,9 @@ impl Connection {
         state.resolved_contract = Some(std::sync::Arc::new(definition.contract));
         state.identity_history = Some(definition.identity);
         state.schema = Some(SchemaVersion { version: definition.version, document });
+        // Every rule derived from the old catalog is now stale, including a warm
+        // unique-key index whose column names may have just been renamed.
+        self.unique_index.invalidate_all();
         self.write_state(state)?;
         Ok(())
     }
@@ -248,6 +258,72 @@ impl CatalogDefinition {
 
 fn schema_document(state: &super::State) -> Option<String> {
     state.schema.as_ref().map(|schema| schema.document.clone())
+}
+
+/// Rewrites stored row records so renamed columns and tables keep their data.
+///
+/// A stored row carries its column names, and a renamed table owns a different
+/// record-key prefix, so publishing the new catalog alone would leave every old
+/// row addressing the previous names. Both rewrites are prepared in memory and
+/// only applied after every record decoded and re-encoded successfully, so a
+/// failure leaves the rows exactly as they were.
+fn rewrite_renamed_rows(
+    state: &mut super::State,
+    previous: &schema_types::ResolvedContract,
+    next: &schema_types::ResolvedContract,
+    renames: &schema::RenameMap,
+) -> Result<()> {
+    use database_formats::yy::row::{decode_row_with_directory, encode_row_with_directory, table_prefix};
+    use schema_types::TypeContractKind;
+
+    let old_directory = schema::row_schema_directory(previous)?;
+    let new_directory = schema::row_schema_directory(next)?;
+    let mut rewritten = Vec::new();
+    for previous_type in previous.types.iter().filter(|item| item.kind == TypeContractKind::Table) {
+        let Some(next_type) = next.types.iter().find(|item| item.type_id == previous_type.type_id && item.kind == TypeContractKind::Table)
+        else {
+            continue;
+        };
+        let previous_name = previous_type.canonical_path.last().map(String::as_str).unwrap_or_default();
+        let next_name = next_type.canonical_path.last().map(String::as_str).unwrap_or_default();
+        let old_table = database_query::local::catalog::table_row_key_name(previous, previous_name)?;
+        let new_table = database_query::local::catalog::table_row_key_name(next, next_name)?;
+        let mut field_renames = std::collections::BTreeMap::new();
+        for field in &previous_type.fields {
+            let target = renames.field_target(previous_name, &field.canonical_name).unwrap_or(field.canonical_name.as_str());
+            if target != field.canonical_name {
+                field_renames.insert(field.canonical_name.clone(), target.to_owned());
+            }
+        }
+        if old_table == new_table && field_renames.is_empty() {
+            continue;
+        }
+        let prefix = table_prefix(&old_table);
+        let next_prefix = table_prefix(&new_table);
+        for (key, value) in state.records.range(prefix.clone()..).take_while(|(key, _)| key.starts_with(&prefix)) {
+            let mut row = decode_row_with_directory(value, &old_directory)?;
+            if !field_renames.is_empty() {
+                let mut renamed = std::collections::BTreeMap::new();
+                for (name, value) in std::mem::take(&mut row) {
+                    let name = field_renames.get(&name).cloned().unwrap_or(name);
+                    renamed.insert(name, value);
+                }
+                row = renamed;
+            }
+            // `prefix` is a whole record-key segment, so its remainder is the
+            // encoded primary key and moves to the new table unchanged.
+            let next_key = format!("{next_prefix}{}", &key[prefix.len()..]);
+            rewritten.push((key.clone(), next_key, row));
+        }
+    }
+    for (old_key, next_key, row) in rewritten {
+        let bytes = encode_row_with_directory(&row, &new_directory)?;
+        if old_key != next_key {
+            state.records.remove(&old_key);
+        }
+        state.records.insert(next_key, bytes);
+    }
+    Ok(())
 }
 
 /// Joins schema documents into one source text.

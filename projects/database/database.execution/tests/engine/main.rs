@@ -3,6 +3,7 @@
 mod catalog_independent;
 mod class_value;
 mod connection_close;
+mod ddl_migration;
 mod enum_flags;
 mod placement_purity;
 mod prepared_schema_invalidation;
