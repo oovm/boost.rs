@@ -3064,6 +3064,7 @@ dependencies = [
  "data-binary-doc",
  "data-binary-docx",
  "data-binary-epub",
+ "data-binary-zip",
  "data-compression",
  "data-text-core",
  "data-text-html",
