@@ -1,0 +1,18 @@
+[package]
+name = "data-binary-pdf"
+version.workspace = true
+authors.workspace = true
+description = "PDF object model, parser, stream filters and writer."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing"]
+keywords = ["binary", "pdf", "document", "parser"]
+
+[dependencies]
+data-compression = { workspace = true, features = ["deflate"] }
+serde = { workspace = true, features = ["derive"] }
+
+[package.metadata.docs.rs]
+all-features = true

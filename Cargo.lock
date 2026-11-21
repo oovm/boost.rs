@@ -1053,6 +1053,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-pdf"
+version = "0.1.0"
+dependencies = [
+ "data-compression",
+ "serde",
+]
+
+[[package]]
 name = "data-binary-pe"
 version = "0.1.0"
 dependencies = [
@@ -3190,6 +3198,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "document-pdf"
+version = "0.1.0"
+dependencies = [
+ "boost-fs",
+ "data-binary-pdf",
+ "media-codec",
+ "serde",
+]
+
+[[package]]
 name = "document-presentation"
 version = "0.1.0"
 dependencies = [
@@ -3202,6 +3220,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+]
+
+[[package]]
+name = "document-presentation-pdf"
+version = "0.1.0"
+dependencies = [
+ "document-compose",
+ "document-presentation",
+ "document-renderer-pdf",
 ]
 
 [[package]]
