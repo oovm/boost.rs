@@ -16,13 +16,13 @@ use super::{
     wire::{FrameError, StartupParameterError, StartupParameters, decode_message, decode_startup, encode_message},
 };
 use database_execution::pgsql::{
-    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession, dispatch_statement,
+    ABORTED_BLOCK, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession, dispatch_statement, normalized_session_syntax,
     pg_sqlstate, run_statement, statement_error,
 };
 use database_protocol_pgsql::auth::ScramServer;
 use database_query::{
     DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalogBoundStatement, SqlColumn, SqlDialect, SqlFieldType, SqlParameterStyle,
-    SqlSessionCommand, SqlValue, analyze_meta_query, bind_sql_catalog, describe_bound_insert, describe_plan, detect_session_reset_statement,
+    SqlSessionCommand, SqlValue, analyze_meta_query, bind_sql_catalog, describe_bound_insert, describe_plan, parse_session_command,
     encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, nulled_sql_parameters, pg_server_version, plan_statement_for_dialect,
     rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
 };
@@ -376,14 +376,9 @@ fn run_session_command(
                             message: format!("unrecognized configuration parameter \"{name}\""),
                         });
                     }
-                    // The default table is the RESET value, and `search_path` is the
-                    // only parameter the session actually overrides.
-                    if name.trim().eq_ignore_ascii_case("search_path") {
-                        session.reset_parameters();
-                    }
-                    else if name.trim().eq_ignore_ascii_case("statement_timeout") {
-                        session.set_statement_timeout("0");
-                    }
+                    // The default table is the RESET value; a parameter the
+                    // session overrode returns to it.
+                    session.reset_parameter(name);
                 }
             }
             Ok(if name.is_none() { "RESET ALL" } else { "RESET" })
@@ -570,6 +565,163 @@ fn handle_single_statement(
     }
 }
 
+/// Session commands the extended protocol executes itself.
+///
+/// `SET` / `SHOW` / `RESET` / `DISCARD` mutate session state and belong to the
+/// protocol surface; transaction control, savepoints and `SET NAMES` keep their
+/// existing extended-protocol path, so they are not claimed here.
+fn extended_session_command(sql: &str) -> Option<SqlSessionCommand> {
+    let normalized = normalized_session_syntax(sql);
+    let command = parse_session_command(normalized.as_deref().unwrap_or(sql)).ok().flatten()?;
+    matches!(
+        command,
+        SqlSessionCommand::SetVariable { .. }
+            | SqlSessionCommand::ShowParameter { .. }
+            | SqlSessionCommand::ResetVariables { .. }
+            | SqlSessionCommand::Discard(_)
+    )
+    .then_some(command)
+}
+
+/// One described `SHOW <parameter>` result column.
+///
+/// PostgreSQL reports the parameter name as the column label and `text` as the
+/// type, on both the simple and the extended path.
+fn show_column(name: &str) -> SqlColumn {
+    SqlColumn { name: name.to_string(), field_type: SqlFieldType::String, field_id: None }
+}
+
+/// Applies one `SET <name> = <value>` to the session.
+///
+/// `search_path` is the only parameter the gateway interprets; every other known
+/// parameter keeps the written value for the session, and an unknown name reports
+/// `42704`.
+fn apply_set_variable(session: &mut TransactionSession, name: &str, value: &SqlBoundExpression) -> Result<(), (String, String)> {
+    let needle = name.trim().to_ascii_lowercase();
+    if needle == "search_path" {
+        return match value {
+            SqlBoundExpression::Literal(SqlBoundLiteral::String(path)) => {
+                session.set_search_path(path.clone());
+                Ok(())
+            }
+            // `SET search_path TO public` writes an unquoted identifier, which is
+            // the spelling clients use most; it means the same schema list.
+            SqlBoundExpression::Identifier(path) => {
+                session.set_search_path(path.clone());
+                Ok(())
+            }
+            other => {
+                // The engine rejects any non-string value with `22023
+                // invalid_parameter_value` and echoes the value it saw, so the
+                // error codes and text stay comparable.
+                let rendered = match other {
+                    SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
+                    SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
+                    SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(flag)) => flag.to_string(),
+                    SqlBoundExpression::Identifier(name) => name.clone(),
+                    SqlBoundExpression::Literal(SqlBoundLiteral::Null) => "NULL".to_string(),
+                    SqlBoundExpression::Literal(SqlBoundLiteral::Bytes(_)) => "\\x".to_string(),
+                    _ => String::new(),
+                };
+                Err(("22023".to_string(), format!("invalid value for parameter \"search_path\": \"{rendered}\"")))
+            }
+        };
+    }
+    if needle == "statement_timeout" {
+        let rendered = match value {
+            SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
+            SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
+            SqlBoundExpression::Literal(SqlBoundLiteral::String(text)) => text.clone(),
+            SqlBoundExpression::Identifier(text) => text.clone(),
+            _ => String::new(),
+        };
+        if session.set_statement_timeout(&rendered) {
+            return Ok(());
+        }
+        return Err(("22023".to_string(), format!("invalid value for parameter \"statement_timeout\": \"{rendered}\"")));
+    }
+    if pg_parameter(name).is_none() {
+        return Err(("42704".to_string(), format!("unrecognized configuration parameter \"{name}\"")));
+    }
+    // PostgreSQL keeps the written value for the session; storing it is what
+    // makes `SHOW <name>` and `current_setting('<name>')` report it back.
+    let rendered = match value {
+        SqlBoundExpression::Literal(SqlBoundLiteral::String(text)) => text.clone(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(flag)) => flag.to_string(),
+        SqlBoundExpression::Identifier(text) => text.clone(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Null) => "NULL".to_string(),
+        _ => String::new(),
+    };
+    session.set_parameter(name, rendered);
+    Ok(())
+}
+
+/// Value of one `SHOW <parameter>`.
+///
+/// The session knows the mutable parameters; `server_version` stays with the
+/// server crate's banner, so it resolves through the same lookup.
+fn show_parameter(session: &TransactionSession, name: &str) -> Result<String, (String, String)> {
+    session
+        .parameter(name)
+        .or_else(|| pg_parameter(name).map(str::to_string))
+        .ok_or_else(|| ("42704".to_string(), format!("unrecognized configuration parameter \"{name}\"")))
+}
+
+/// Applies one session command on the extended protocol.
+///
+/// `SHOW` is the only variant that produces a row; the caller owns the
+/// `DataRow` framing because it also owns the portal's result formats.
+fn apply_extended_session_command(
+    command: &SqlSessionCommand,
+    session: &mut TransactionSession,
+    extended: &mut ExtendedSession,
+) -> Result<SessionCommandOutcome, SessionCommandError> {
+    if session.is_aborted() {
+        return Err(SessionCommandError::Failed { code: "25P02".to_string(), message: ABORTED_BLOCK.to_string() });
+    }
+    match command {
+        SqlSessionCommand::SetVariable { name, value, .. } => match apply_set_variable(session, name, value) {
+            Ok(()) => Ok(SessionCommandOutcome::Command("SET")),
+            Err((code, message)) => Err(SessionCommandError::Failed { code, message }),
+        },
+        SqlSessionCommand::ShowParameter { name, .. } => match show_parameter(session, name) {
+            Ok(value) => Ok(SessionCommandOutcome::Row { name: name.clone(), value }),
+            Err((code, message)) => Err(SessionCommandError::Failed { code, message }),
+        },
+        SqlSessionCommand::ShowVariables { .. } => Err(SessionCommandError::Failed {
+            code: "42601".to_string(),
+            message: "SHOW VARIABLES is MySQL syntax, PostgreSQL uses SHOW <parameter>".to_string(),
+        }),
+        SqlSessionCommand::Pragma { .. } => {
+            Err(SessionCommandError::Failed { code: "42601".to_string(), message: "PRAGMA is not PostgreSQL syntax".to_string() })
+        }
+        command @ (SqlSessionCommand::ResetVariables { .. } | SqlSessionCommand::Discard(_)) => {
+            run_session_command(command, session, extended).map(SessionCommandOutcome::Command)
+        }
+        SqlSessionCommand::Savepoint(_) | SqlSessionCommand::SetNames { .. } | SqlSessionCommand::Transaction(_) => {
+            Err(SessionCommandError::Failed {
+                code: "0A000".to_string(),
+                message: "session command is not available on the extended protocol".to_string(),
+            })
+        }
+    }
+}
+
+/// Outcome of one extended-protocol session command.
+enum SessionCommandOutcome {
+    /// Completed with a command tag and no rows.
+    Command(&'static str),
+    /// `SHOW` answered one row of text.
+    Row {
+        /// Column label, the parameter name as written.
+        name: String,
+        /// Parameter value.
+        value: String,
+    },
+}
+
 /// Wire-side session commands: `SET` / `SHOW`, `RESET`, `DISCARD` and
 /// savepoints. They mutate session GUCs and prepared-statement caches, which
 /// belong to the protocol surface, so dispatch hands them back unapplied.
@@ -620,63 +772,27 @@ fn handle_session_command(
             if session.is_aborted() {
                 return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
-            let needle = name.trim().to_ascii_lowercase();
-            match needle.as_str() {
-                "search_path" => match value {
-                    SqlBoundExpression::Literal(SqlBoundLiteral::String(path)) => {
-                        session.set_search_path(path);
-                    }
-                    other => {
-                        session.fail();
-                        // The engine rejects any non-string value with
-                        // `22023 invalid_parameter_value` and echoes the value
-                        // it saw, so the error codes and text stay comparable.
-                        let rendered = match &other {
-                            SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
-                            SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
-                            SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(flag)) => flag.to_string(),
-                            SqlBoundExpression::Identifier(name) => name.clone(),
-                            SqlBoundExpression::Literal(SqlBoundLiteral::Null) => "NULL".to_string(),
-                            SqlBoundExpression::Literal(SqlBoundLiteral::Bytes(_)) => "\\x".to_string(),
-                            _ => String::new(),
-                        };
-                        return write_error_response(stream, "22023", &format!("invalid value for parameter \"search_path\": \"{rendered}\""));
-                    }
-                },
-                _ => {
-                    if pg_parameter(&name).is_none() {
-                        session.fail();
-                        return write_error_response(stream, "42704", &format!("unrecognized configuration parameter \"{name}\""));
-                    }
-                    // 其他 PG_PARAMETERS 已知参数接受为 no-op（gateway 不模拟写入）
+            match apply_set_variable(session, &name, &value) {
+                Ok(()) => write_command_complete(stream, "SET"),
+                Err((code, message)) => {
+                    session.fail();
+                    write_error_response(stream, &code, &message)
                 }
             }
-            write_command_complete(stream, "SET")
         }
         SqlSessionCommand::ShowParameter { name, .. } => {
             if session.is_aborted() {
                 return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
-            let needle = name.trim().to_ascii_lowercase();
-            let value: Option<String> = match needle.as_str() {
-                "search_path" => Some(session.search_path().to_string()),
-                "statement_timeout" => Some(session.statement_timeout_text().to_string()),
-                _ => pg_parameter(&name).map(|s| s.to_string()),
-            };
-            match value {
-                Some(value) => {
-                    write_row_description(stream, &[SqlColumn { name: name.clone(), field_type: SqlFieldType::String, field_id: None }], &[0])?;
-                    write_data_row(
-                        stream,
-                        &[SqlValue::String(value)],
-                        &[SqlColumn { name: name.clone(), field_type: SqlFieldType::String, field_id: None }],
-                        &[0],
-                    )?;
+            match show_parameter(session, &name) {
+                Ok(value) => {
+                    write_row_description(stream, &[show_column(&name)], &[0])?;
+                    write_data_row(stream, &[SqlValue::String(value)], &[show_column(&name)], &[0])?;
                     write_command_complete(stream, "SHOW")
                 }
-                None => {
+                Err((code, message)) => {
                     session.fail();
-                    write_error_response(stream, "42704", &format!("unrecognized configuration parameter \"{name}\""))
+                    write_error_response(stream, &code, &message)
                 }
             }
         }
@@ -810,14 +926,20 @@ fn handle_parse(stream: &mut impl Write, payload: &[u8], extended: &mut Extended
         };
         parameter_oids.push(oid);
     }
-    // The extended protocol recognises the same session utility statements as
-    // SimpleQuery through the one shared lexical pre-filter, so a `RESET` /
-    // `DISCARD` Parse is stored as a session command instead of being deferred
-    // to the catalog binder, which would reject it as a syntax error.
-    let session_command = detect_session_reset_statement(sql);
+    // The extended protocol recognises the same session commands as SimpleQuery
+    // through the one shared parser, so a `SET` / `SHOW` / `RESET` / `DISCARD`
+    // Parse is stored as a session command instead of being deferred to the
+    // catalog binder, which would reject it as an unsupported statement.
+    let session_command = extended_session_command(sql);
+    let description = match &session_command {
+        // `SHOW <parameter>` reports one `text` column named after the parameter.
+        Some(SqlSessionCommand::ShowParameter { name, .. }) => Some(vec![show_column(name)]),
+        Some(_) => Some(Vec::new()),
+        None => None,
+    };
     extended
         .statements
-        .insert(name.to_string(), PreparedStatement { sql: sql.to_string(), parameter_oids, description: None, session_command });
+        .insert(name.to_string(), PreparedStatement { sql: sql.to_string(), parameter_oids, description, session_command });
     write_message(stream, b'1', &[])?;
     Ok(ExtendedStep::Continue)
 }
@@ -1189,13 +1311,20 @@ fn handle_execute(
     else {
         return extended_protocol_error(stream, "08P01", "malformed PostgreSQL Execute row limit");
     };
-    // Session utility statements run the same shared side effects as SimpleQuery
-    // and answer with a lone CommandComplete: no DataRow, no RowDescription.
+    // Session commands run the same shared side effects as SimpleQuery and
+    // answer with `CommandComplete`; `SHOW` additionally emits its one text row.
     let session_command = extended.portals.get(name).and_then(|portal| portal.session_command.clone());
     if let Some(command) = session_command {
-        return match run_session_command(&command, session, extended) {
-            Ok(tag) => {
+        let formats = extended.portals.get(name).map(|portal| resolve_formats(&portal.result_formats, 1)).unwrap_or_else(|| vec![0]);
+        return match apply_extended_session_command(&command, session, extended) {
+            Ok(SessionCommandOutcome::Command(tag)) => {
                 write_command_complete(stream, tag)?;
+                Ok(ExtendedStep::Continue)
+            }
+            Ok(SessionCommandOutcome::Row { name, value }) => {
+                let column = show_column(&name);
+                write_data_row(stream, &[SqlValue::String(value)], &[column], &formats)?;
+                write_command_complete(stream, "SHOW")?;
                 Ok(ExtendedStep::Continue)
             }
             Err(SessionCommandError::Rejected { code, message }) => {
@@ -1303,20 +1432,61 @@ fn prepare_portal(portal: &mut Portal, session: &mut TransactionSession, runtime
     portal.outcome = Some(run_statement(&sql, runtime, session));
 }
 
+/// Decodes the text form of `bytea`: `\x` hexadecimal or the escape format.
+///
+/// PostgreSQL accepts both spellings for a text-format parameter or literal, so
+/// the gateway decodes them instead of refusing the parameter. A malformed
+/// spelling reports `22P02` with the input it saw, which is what a client needs
+/// to locate the offending bind.
+fn parse_bytea_text(bytes: &[u8]) -> Result<Vec<u8>, (String, String)> {
+    let invalid = || ("22P02".to_string(), format!("invalid input syntax for type bytea: \"{}\"", String::from_utf8_lossy(bytes)));
+    if let Some(hex) = bytes.strip_prefix(b"\\x").or_else(|| bytes.strip_prefix(b"\\X")) {
+        let hex = std::str::from_utf8(hex).map_err(|_| invalid())?;
+        let digits: Vec<u8> = hex.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect();
+        if digits.len() % 2 != 0 {
+            return Err(invalid());
+        }
+        let mut out = Vec::with_capacity(digits.len() / 2);
+        for pair in digits.chunks(2) {
+            let high = (pair[0] as char).to_digit(16).ok_or_else(invalid)? as u8;
+            let low = (pair[1] as char).to_digit(16).ok_or_else(invalid)? as u8;
+            out.push(high << 4 | low);
+        }
+        return Ok(out);
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'\\' {
+            out.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        if bytes.get(index + 1) == Some(&b'\\') {
+            out.push(b'\\');
+            index += 2;
+            continue;
+        }
+        let octal = bytes.get(index + 1..index + 4).ok_or_else(invalid)?;
+        if !octal.iter().all(|digit| (b'0'..=b'7').contains(digit)) {
+            return Err(invalid());
+        }
+        out.push((octal[0] - b'0') * 64 + (octal[1] - b'0') * 8 + (octal[2] - b'0'));
+        index += 4;
+    }
+    Ok(out)
+}
+
 /// Decodes one text-format parameter by its declared type OID.
 ///
 /// The wire `Bind` path and the direct local session share this decode, so a
 /// `$1` bound locally and the same value sent over the wire produce one
 /// `SqlValue`.
 pub fn parameter_value(oid: u32, bytes: &[u8]) -> Result<SqlValue, (String, String)> {
-    // `bytea` 的文本形态是转义或十六进制拼写，不是原始 octets。网关不把这段
-    // 拼写当成文本收下，否则转义字符本身会被当作载荷写进列里。二进制格式或
-    // `CAST('<hex>' AS BYTEA)` 才是无损通道。
+    // `bytea` 的文本形态是转义或十六进制拼写，不是原始 octets。网关按 PostgreSQL
+    // 的 `byteain` 规则解码这两种拼写，而不是把转义字符本身当作载荷写进列里。
     if oid == OID_BYTEA {
-        return Err((
-            "0A000".to_string(),
-            "text-format bytea parameters are not supported, send the binary format or a hexadecimal CAST".to_string(),
-        ));
+        return parse_bytea_text(bytes).map(SqlValue::Bytes);
     }
     let text = std::str::from_utf8(bytes).map_err(|_| ("22021".to_string(), "parameter is not valid UTF-8".to_string()))?;
     match oid {
@@ -1459,33 +1629,16 @@ fn take_u32(payload: &[u8], cursor: &mut usize) -> Option<u32> {
     Some(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
-/// Emulated PostgreSQL configuration parameters exposed through `SHOW <name>`.
-const PG_PARAMETERS: &[(&str, &str)] = &[
-    ("application_name", ""),
-    ("client_encoding", "UTF8"),
-    ("client_min_messages", "notice"),
-    ("datestyle", "ISO, MDY"),
-    ("default_transaction_isolation", "read committed"),
-    ("extra_float_digits", "3"),
-    ("integer_datetimes", "on"),
-    ("intervalstyle", "postgres"),
-    ("server_encoding", "UTF8"),
-    ("search_path", DEFAULT_SEARCH_PATH),
-    ("statement_timeout", "0"),
-    ("standard_conforming_strings", "on"),
-    ("timezone", "UTC"),
-    ("transaction_isolation", "read committed"),
-    ("transaction_read_only", "off"),
-    ("default_transaction_read_only", "off"),
-];
-
-/// Case-insensitive lookup in [`PG_PARAMETERS`].
+/// Case-insensitive lookup of one reported parameter.
+///
+/// The default table lives in `database.execution::pgsql` so `SHOW`,
+/// `current_setting()` and the session GUC state all read one source.
+/// `server_version` stays here because the server crate owns the banner.
 fn pg_parameter(name: &str) -> Option<&'static str> {
-    let needle = name.trim().to_ascii_lowercase();
-    if needle == "server_version" {
+    if name.trim().eq_ignore_ascii_case("server_version") {
         return Some(pg_server_version());
     }
-    PG_PARAMETERS.iter().find(|(key, _)| *key == needle).map(|(_, value)| *value)
+    database_execution::pgsql::default_parameter(name)
 }
 
 /// PostgreSQL type OID for a described gateway field type.
