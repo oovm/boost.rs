@@ -24,6 +24,8 @@ members = [
     "projects/boost/boost.math",
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
+    "projects/boost/boost.check",
+    "projects/boost/boost.session",
     "projects/boost/boost.text",
     "projects/boost/boost.language",
     "projects/boost/boost.harness.macro",
@@ -392,6 +394,7 @@ members = [
     "projects/data/data.text.xpath",
     "projects/data/data.text.yaml",
     "projects/data/data.text.zig",
+    "projects/data/data.format.sexpr",
     "projects/data/data.safetensors",
     "projects/dl/dl.autograd",
     "projects/dl/dl.autotune",
@@ -407,6 +410,7 @@ members = [
     "projects/document/document",
     "projects/document/document.compose",
     "projects/document/document.convert",
+    "projects/document/document.drawing",
     "projects/document/document.diagnostic",
     "projects/document/document.fonts",
     "projects/document/document.formats",
@@ -433,6 +437,7 @@ members = [
     "projects/document/document.types",
     "projects/geometry/geometry",
     "projects/geometry/geometry.motion",
+    "projects/geometry/geometry.planar",
     "projects/geometry/geometry.types",
     "projects/hardware/bindings/hardware.wasm",
     "projects/hardware/hardware",
@@ -532,6 +537,7 @@ members = [
     "projects/science/science.jit",
     "projects/science/science.ndarray",
     "projects/science/science.numeric",
+    "projects/science/science.mesh",
     "projects/science/science.relation",
     "projects/science/science.relation.compile",
     "projects/science/science.relation.graph",
@@ -595,6 +601,8 @@ boost-math = { path = "projects/boost/boost.math" }
 boost-net = { path = "projects/boost/boost.net" }
 boost-random = { path = "projects/boost/boost.random" }
 boost-source = { path = "projects/boost/boost-source" }
+boost-check = { path = "projects/boost/boost.check" }
+boost-session = { path = "projects/boost/boost.session" }
 boost-terminal = { path = "projects/boost/boost-terminal" }
 # commander 能力树
 commander-core = { path = "projects/commander/commander.core" }
@@ -813,9 +821,11 @@ document-spreadsheet-formula = { path = "projects/document/document.spreadsheet.
 document-style = { path = "projects/document/document.style" }
 document-text = { path = "projects/document/document.text" }
 document-types = { path = "projects/document/document.types" }
+document-drawing = { path = "projects/document/document.drawing" }
 
 geometry = { path = "projects/geometry/geometry" }
 geometry-motion = { path = "projects/geometry/geometry.motion" }
+geometry-planar = { path = "projects/geometry/geometry.planar" }
 geometry-types = { path = "projects/geometry/geometry.types" }
 
 hardware = { path = "projects/hardware/hardware" }
@@ -967,6 +977,7 @@ im-rc = "15.1.0"
 indexmap = { version = "2.13.0", features = ["serde"] }
 num = "0.4.3"
 data-checksum = { path = "projects/data/data.checksum" }
+data-format-sexpr = { path = "projects/data/data.format.sexpr" }
 data-compression = { path = "projects/data/data.compression" }
 data-encoding = { path = "projects/data/data.encoding" }
 data-text-abc = { path = "projects/data/data.text.abc" }
@@ -1139,6 +1150,7 @@ science-graph = { path = "projects/science/science.graph" }
 science-harness = { path = "projects/science/science.harness" }
 science-ir = { path = "projects/science/science.ir" }
 science-jit = { path = "projects/science/science.jit" }
+science-mesh = { path = "projects/science/science.mesh" }
 science-ndarray = { path = "projects/science/science.ndarray" }
 science-numeric = { path = "projects/science/science.numeric" }
 science-relation = { path = "projects/science/science.relation" }

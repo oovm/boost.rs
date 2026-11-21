@@ -1,0 +1,7 @@
+[package]
+name = "science-mesh"
+version.workspace = true
+authors.workspace = true
+description = "Unstructured mesh with fields and deterministic legacy VTK and CSV writers"
+license.workspace = true
+edition.workspace = true

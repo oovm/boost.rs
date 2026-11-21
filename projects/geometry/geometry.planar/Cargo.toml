@@ -1,0 +1,7 @@
+[package]
+name = "geometry-planar"
+version.workspace = true
+authors.workspace = true
+description = "Planar geometry in f64: points, rectangles, segment predicates, polygons, bounds, and arcs"
+license.workspace = true
+edition.workspace = true

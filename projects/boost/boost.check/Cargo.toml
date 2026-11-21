@@ -1,0 +1,13 @@
+[package]
+name = "boost-check"
+version.workspace = true
+authors.workspace = true
+description = "Shared check primitives: severities, issues, deterministic reports, and capability matrices"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

@@ -1,0 +1,11 @@
+[package]
+name = "boost-session"
+version.workspace = true
+authors.workspace = true
+description = "Document session skeleton: versioned metadata, bounded undo/redo, handle registry, and atomic save"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+boost-fs = { workspace = true }
+serde = { workspace = true }

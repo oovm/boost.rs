@@ -270,6 +270,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "boost-check"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "boost-collection"
 version = "0.1.0"
 dependencies = [
@@ -386,6 +394,14 @@ version = "0.1.0"
 dependencies = [
  "boost-math",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "boost-session"
+version = "0.1.0"
+dependencies = [
+ "boost-fs",
+ "serde",
 ]
 
 [[package]]
@@ -1163,6 +1179,10 @@ dependencies = [
 
 [[package]]
 name = "data-encoding"
+version = "0.1.0"
+
+[[package]]
+name = "data-format-sexpr"
 version = "0.1.0"
 
 [[package]]
@@ -3067,6 +3087,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "document-drawing"
+version = "0.1.0"
+dependencies = [
+ "boost-fs",
+ "document-presentation",
+ "document-renderer-pdf",
+ "plotter-scene",
+ "plotter-types",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3602,6 +3633,10 @@ dependencies = [
  "geometry-types",
  "serde",
 ]
+
+[[package]]
+name = "geometry-planar"
+version = "0.1.0"
 
 [[package]]
 name = "geometry-types"
@@ -7085,6 +7120,10 @@ dependencies = [
 
 [[package]]
 name = "science-jit"
+version = "0.1.0"
+
+[[package]]
+name = "science-mesh"
 version = "0.1.0"
 
 [[package]]

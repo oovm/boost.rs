@@ -1,0 +1,7 @@
+[package]
+name = "data-format-sexpr"
+version.workspace = true
+authors.workspace = true
+description = "S-expression reader and writer over atoms, literals, and nested lists"
+license.workspace = true
+edition.workspace = true
