@@ -2526,9 +2526,11 @@ name = "database-cluster"
 version = "0.1.0"
 dependencies = [
  "boost-fs",
+ "data-encoding",
  "data-text-vos",
  "database-formats",
  "database-types",
+ "rustls",
  "schema-input-vos",
  "schema-types",
  "serde",
