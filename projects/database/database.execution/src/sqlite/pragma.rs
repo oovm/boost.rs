@@ -41,7 +41,7 @@ pub fn integrity_check(ctx: &mut StmtContext<'_>, argument: &str) -> ExecResult 
     }
     let mut problems = Vec::new();
     let pages = ctx.writer.pages();
-    let limits = TableLimits::default();
+    let limits = TableLimits::query();
     match validate_database(pages) {
         Ok(_) => {
             let objects = match ctx.writer.schema_objects(limits) {

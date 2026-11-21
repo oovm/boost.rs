@@ -576,7 +576,7 @@ fn system_rows(exec: &ExecContext<'_>, system: SystemTable, name: &str) -> Resul
         SystemTable::Sequence => {
             let present = exec
                 .writer
-                .schema_objects(TableLimits::default())
+                .schema_objects(TableLimits::query())
                 .map_err(storage_error)?
                 .iter()
                 .any(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(name));

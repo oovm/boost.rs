@@ -38,7 +38,7 @@ impl<'e> ExecContext<'e> {
             });
         }
         let mut rows = Vec::new();
-        for row in self.writer.table_rows(table, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("create-index"))? {
+        for row in self.writer.table_rows(table, TableLimits::query()).map_err(|error| storage_failure(error).in_statement("create-index"))? {
             rows.push(decode_row(&row.payload, def, row.rowid)?);
         }
         for right in 1..rows.len() {

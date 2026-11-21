@@ -2173,7 +2173,7 @@ impl LazyTableScan {
             leaf: VecDeque::new(),
             visited: vec![false; page_count + 1],
             visited_pages: 0,
-            limits: TableLimits::default(),
+            limits: TableLimits::query(),
             total_payload: 0,
             total_rows: 0,
             last_rowid: None,
@@ -2575,7 +2575,7 @@ impl<'e> ExecContext<'e> {
         let master_labels = || vec!["type".to_string(), "name".to_string(), "tbl_name".to_string(), "rootpage".to_string(), "sql".to_string()];
         match system {
             SystemTable::Master => {
-                let objects = self.writer.schema_objects_with_rowids(TableLimits::default()).map_err(storage_error)?;
+                let objects = self.writer.schema_objects_with_rowids(TableLimits::query()).map_err(storage_error)?;
                 let mut rows = Vec::with_capacity(objects.len());
                 for (rowid, object) in objects {
                     let kind = match object.kind {
@@ -2636,14 +2636,14 @@ impl<'e> ExecContext<'e> {
             SystemTable::Sequence => {
                 let present = self
                     .writer
-                    .schema_objects(TableLimits::default())
+                    .schema_objects(TableLimits::query())
                     .map_err(storage_error)?
                     .iter()
                     .any(|object| object.kind == SchemaObjectKind::Table && object.name.eq_ignore_ascii_case(name));
                 if !present {
                     return Err(SqlError::new("unknown-table", format!("no such table: {name}")).in_statement("select"));
                 }
-                let stored = self.writer.table_rows("sqlite_sequence", TableLimits::default()).map_err(storage_error)?;
+                let stored = self.writer.table_rows("sqlite_sequence", TableLimits::query()).map_err(storage_error)?;
                 let mut rows = Vec::with_capacity(stored.len());
                 for row in &stored {
                     let mut cells = decode_cells(&row.payload)?;
@@ -3366,7 +3366,7 @@ impl<'e> ExecContext<'e> {
         ctx: &EvalContext,
     ) -> Result<usize, SqlError> {
         let stored =
-            self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
+            self.writer.table_rows(&def.name, TableLimits::query()).map_err(|error| storage_failure(error).in_statement("select"))?;
         let mut values: Vec<Cell> = Vec::with_capacity(def.columns.len() + 1);
         let mut count = 0usize;
         for row in &stored {
@@ -4029,7 +4029,7 @@ impl<'e> ExecContext<'e> {
     /// 游标因此始终读到打开时刻的一致状态。返回 `None` 表示语句不满足条件,
     /// 调用方走既有的物化路径。
     pub fn open_lazy_scan(&self, plan: LazyPlan, parameters: &[Cell]) -> Result<Option<LazyCursor>, SqlError> {
-        let objects = match self.writer.schema_objects_with_rowids(TableLimits::default()) {
+        let objects = match self.writer.schema_objects_with_rowids(TableLimits::query()) {
             Ok(objects) => objects,
             Err(_) => return Ok(None),
         };
@@ -4292,7 +4292,7 @@ impl<'e> ExecContext<'e> {
         if dense {
             let stored = self
                 .writer
-                .table_range(table, rowids[0], rowids[rowids.len() - 1], TableLimits::default())
+                .table_range(table, rowids[0], rowids[rowids.len() - 1], TableLimits::query())
                 .map_err(|error| storage_failure(error).in_statement("select"))?;
             let wanted: HashSet<i64> = rowids.iter().copied().collect();
             return Ok(stored.into_iter().filter(|row| wanted.contains(&row.rowid)).collect());
@@ -4410,7 +4410,7 @@ impl<'e> ExecContext<'e> {
             if def.without_rowid {
                 let stored = self
                     .writer
-                    .without_rowid_rows(&def.name, TableLimits::default())
+                    .without_rowid_rows(&def.name, TableLimits::query())
                     .map_err(|error| storage_failure(error).in_statement("select"))?;
                 let decoded = stored.iter().map(|payload| def.decode_without_rowid(payload)).collect::<Result<Vec<Vec<Cell>>, SqlError>>()?;
                 return Ok((SourceColumns::Table(def), Rc::new(decoded)));
@@ -4433,7 +4433,7 @@ impl<'e> ExecContext<'e> {
                     }
                 }
                 let stored =
-                    self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
+                    self.writer.table_rows(&def.name, TableLimits::query()).map_err(|error| storage_failure(error).in_statement("select"))?;
                 let decoded = Rc::new(decode_stored_rows(&stored, def, keep)?);
                 let wider = {
                     let scans = self.state.statement_scans.borrow();
@@ -4473,13 +4473,13 @@ impl<'e> ExecContext<'e> {
                 // sort downstream just confirms it over this small prefix.
                 Some(ScanHint::Head(max_rows)) => self
                     .writer
-                    .table_head(&def.name, *max_rows, TableLimits::default())
+                    .table_head(&def.name, *max_rows, TableLimits::query())
                     .map_err(|error| storage_failure(error).in_statement("select"))?,
                 // `WHERE <rowid> >= a` / `<= b`: read the interval that the
                 // predicate can still keep; the missing side stays unbounded.
                 Some(ScanHint::Range { lower, upper }) => self
                     .writer
-                    .table_range(&def.name, lower.unwrap_or(i64::MIN), upper.unwrap_or(i64::MAX), TableLimits::default())
+                    .table_range(&def.name, lower.unwrap_or(i64::MIN), upper.unwrap_or(i64::MAX), TableLimits::query())
                     .map_err(|error| storage_failure(error).in_statement("select"))?,
                 // Handled before the branch: the b-tree is never read.
                 Some(ScanHint::Empty) => Vec::new(),
@@ -4530,7 +4530,7 @@ impl<'e> ExecContext<'e> {
         if let Some(position) = engine.catalog.table_lookup.get(&key).copied() {
             let def = &engine.catalog.tables[position];
             let stored =
-                engine.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement("select"))?;
+                engine.writer.table_rows(&def.name, TableLimits::query()).map_err(|error| storage_failure(error).in_statement("select"))?;
             return Ok((SourceColumns::Table(def), Rc::new(decode_stored_rows(&stored, def, None)?)));
         }
         Err(SqlError::new("unknown-table", format!("no such table: {qualifier}.{}", table.name)).in_statement("select"))

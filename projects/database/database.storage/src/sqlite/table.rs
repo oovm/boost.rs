@@ -23,6 +23,18 @@ impl Default for TableLimits {
     }
 }
 
+impl TableLimits {
+    /// Limits for a statement executed over an image already held in memory.
+    ///
+    /// The SQL engine keeps the whole image in memory, so the image itself
+    /// bounds how many rows a scan can produce; a fixed row cap would reject
+    /// legitimate large results. Page and payload guards stay in force, which
+    /// keeps the scan bounded by image size rather than by row count.
+    pub fn query() -> Self {
+        Self { max_rows: usize::MAX, ..Self::default() }
+    }
+}
+
 /// An assembled SQLite table leaf record, before record decoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableRow {

@@ -40,13 +40,13 @@ pub fn check_reserved_object_name(name: &str, statement: &'static str) -> Result
 /// Replays the stored `CREATE TABLE` / `CREATE INDEX` text of every
 /// schema row into the in-memory catalog without touching storage.
 pub fn load_catalog(writer: &SqliteWriter, catalog: &mut SqliteCatalog) -> Result<(), SqlError> {
-    let objects = writer.schema_objects(TableLimits::default()).map_err(storage_error)?;
+    let objects = writer.schema_objects(TableLimits::query()).map_err(storage_error)?;
     catalog.load_schema(&objects)
 }
 
 /// Reads the live schema rows with a statement-tagged storage error.
 pub fn schema_objects(writer: &SqliteWriter, statement: &'static str) -> Result<Vec<SchemaObject>, SqlError> {
-    writer.schema_objects(TableLimits::default()).map_err(|error| storage_failure(error).in_statement(statement))
+    writer.schema_objects(TableLimits::query()).map_err(|error| storage_failure(error).in_statement(statement))
 }
 
 /// Rebuilds the lowercase name to position map after a table is removed.
@@ -584,7 +584,7 @@ pub fn run_alter_table(writer: &mut SqliteWriter, catalog: &mut SqliteCatalog, t
             // SQLite only refuses when an existing row would read back
             // NULL; on an empty table the same definition is accepted.
             let has_rows = !writer
-                .table_rows(&def.name, TableLimits::default())
+                .table_rows(&def.name, TableLimits::query())
                 .map_err(|error| storage_failure(error).in_statement("alter-table"))?
                 .is_empty();
             if column.not_null && matches!(column.default_value, None | Some(WriteValue::Null)) && has_rows {

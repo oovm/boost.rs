@@ -983,7 +983,7 @@ impl<'e> ExecContext<'e> {
             // the identity the update / delete planners sort by.
             let stored = self
                 .writer
-                .without_rowid_rows(&def.name, TableLimits::default())
+                .without_rowid_rows(&def.name, TableLimits::query())
                 .map_err(|error| storage_failure(error).in_statement(statement))?;
             let mut rows = Vec::with_capacity(stored.len());
             for (position, payload) in stored.iter().enumerate() {
@@ -992,7 +992,7 @@ impl<'e> ExecContext<'e> {
             return Ok(rows);
         }
         let stored =
-            self.writer.table_rows(&def.name, TableLimits::default()).map_err(|error| storage_failure(error).in_statement(statement))?;
+            self.writer.table_rows(&def.name, TableLimits::query()).map_err(|error| storage_failure(error).in_statement(statement))?;
         let mut rows = Vec::with_capacity(stored.len());
         for row in &stored {
             rows.push((row.rowid, decode_row(&row.payload, def, row.rowid)?));
@@ -1033,7 +1033,7 @@ impl<'e> ExecContext<'e> {
             }
             else {
                 self.writer
-                    .table_range(&def.name, start, end, TableLimits::default())
+                    .table_range(&def.name, start, end, TableLimits::query())
                     .map_err(|error| storage_failure(error).in_statement(statement))?
             };
             for row in &stored {

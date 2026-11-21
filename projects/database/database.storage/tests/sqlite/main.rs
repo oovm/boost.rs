@@ -31,3 +31,16 @@ fn writer_round_trip_smoke() {
     let schema = writer.schema_objects(TableLimits::default()).expect("read schema");
     assert!(schema.iter().any(|object| object.kind == SchemaObjectKind::Table && object.name == "items"));
 }
+
+#[test]
+fn query_limits_do_not_cap_rows_but_keep_scan_guards() {
+    // The SQL engine executes over an image it already holds in memory, so the
+    // image bounds a scan; a fixed row cap would reject legitimate large
+    // results. Page and payload guards stay in force.
+    let query = TableLimits::query();
+    let default = TableLimits::default();
+    assert_eq!(query.max_rows, usize::MAX);
+    assert_eq!(query.max_pages, default.max_pages);
+    assert_eq!(query.max_payload_bytes, default.max_payload_bytes);
+    assert_eq!(query.max_total_payload_bytes, default.max_total_payload_bytes);
+}
