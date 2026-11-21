@@ -2,7 +2,10 @@
 
 use std::sync::Mutex;
 
-use database_execution::cluster::{KeyValueExecutor, redis::RedisExecutor, redis::collections::handle_set};
+use database_execution::cluster::{
+    KeyValueExecutor,
+    redis::{RedisExecutor, collections::handle_set},
+};
 use database_protocol_redis::{codec::Reply, resp::Request};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::cluster_kv::redis::{RedisShard, namespace};
@@ -179,4 +182,3 @@ fn srem_of_absent_members_keeps_the_set_revision() {
     assert_ne!(revision(&executor, b"tags"), before, "a real removal writes a new record");
     let _ = std::fs::remove_dir_all(&data_dir);
 }
-

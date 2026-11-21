@@ -10,11 +10,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use database_execution::mysql::{
-    MysqlPrepareOutcome, MysqlPreparedRegistry, MysqlPreparedStatement, MysqlSqlRuntime, MysqlStatementSink, TransactionSession,
-    dispatch_query, execute_prepared, prepare_statement,
+use database_execution::{
+    mysql::{
+        MysqlPrepareOutcome, MysqlPreparedRegistry, MysqlPreparedStatement, MysqlSqlRuntime, MysqlStatementSink, TransactionSession,
+        dispatch_query, execute_prepared, prepare_statement,
+    },
+    sql_exec::with_found_rows,
 };
-use database_execution::sql_exec::with_found_rows;
 use database_protocol_mysql::{
     LenencError, MAX_PACKET_PAYLOAD, MYSQL_TYPE_BLOB, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME, MYSQL_TYPE_DECIMAL, MYSQL_TYPE_DOUBLE,
     MYSQL_TYPE_FLOAT, MYSQL_TYPE_INT24, MYSQL_TYPE_LONG, MYSQL_TYPE_LONG_BLOB, MYSQL_TYPE_LONGLONG, MYSQL_TYPE_MEDIUM_BLOB,
@@ -288,12 +290,7 @@ fn parse_handshake_response(payload: &[u8]) -> Result<HandshakeResponse, &'stati
         let _ = take_nul_bytes(payload, &mut cursor)?;
     }
     let username = String::from_utf8(username.to_vec()).map_err(|_| "username is not UTF-8")?;
-    Ok(HandshakeResponse {
-        username,
-        empty_password: auth_response.is_empty(),
-        database,
-        found_rows: capabilities & CLIENT_FOUND_ROWS != 0,
-    })
+    Ok(HandshakeResponse { username, empty_password: auth_response.is_empty(), database, found_rows: capabilities & CLIENT_FOUND_ROWS != 0 })
 }
 
 fn take_nul_bytes<'a>(payload: &'a [u8], cursor: &mut usize) -> Result<&'a [u8], &'static str> {

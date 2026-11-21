@@ -63,7 +63,8 @@ impl Runtime {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
         let address = listener.local_addr().expect("listener address").to_string();
         let worker = thread::spawn(move || {
-            let Ok((stream, _)) = listener.accept() else {
+            let Ok((stream, _)) = listener.accept()
+            else {
                 return;
             };
             let _ = serve_connection(stream, Some(runtime));
@@ -174,8 +175,6 @@ fn update_ok_packet_reports_changed_rows_by_default() {
     assert_eq!(wire.affected_rows("INSERT INTO stock (id, qty) VALUES (1, 5)"), 1);
     assert_eq!(wire.affected_rows("UPDATE stock SET qty = 5 WHERE id = 1"), 0);
     assert_eq!(wire.affected_rows("UPDATE stock SET qty = 6 WHERE id = 1"), 1);
-
-
 }
 
 /// 协商 `CLIENT_FOUND_ROWS`：同一语句的 OK 包改成命中行数。
@@ -191,6 +190,4 @@ fn found_rows_capability_switches_the_ok_packet_to_matched_rows() {
     assert_eq!(wire.affected_rows("UPDATE stock SET qty = 5 WHERE id = 1"), 1);
     // 两条都命中，只有一条真正改变。
     assert_eq!(wire.affected_rows("UPDATE stock SET qty = 5 WHERE id > 0"), 2);
-
-
 }

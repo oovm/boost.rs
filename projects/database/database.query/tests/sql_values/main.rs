@@ -5,8 +5,7 @@
 //! 当成非数值而返回 NULL。
 
 use database_formats::yy::row::encode_tagged;
-use database_query::catalog_bind::SqlFieldType;
-use database_query::{RowFieldValues, SqlValue};
+use database_query::{RowFieldValues, SqlValue, catalog_bind::SqlFieldType};
 use database_types::{Decimal, Value};
 
 const AMOUNT: u64 = 7;
