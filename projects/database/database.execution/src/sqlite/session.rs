@@ -15,22 +15,41 @@
 //! 决定何时调用,不重实现落盘机制。
 
 use std::{
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
+    time::SystemTime,
 };
 
 use database_query::sqlite::{
     SqlError,
     frontend::{Statement, TransactionAction, parameter_slots},
+    storage_failure,
     value::Cell,
 };
-use database_storage::sqlite::PublishMode;
+use database_storage::sqlite::{PublishMode, SqliteWriter, journal};
 use database_udf::{HostMicroDefinition, HostRuntimeAdapter};
 
 use crate::sqlite::{
     cursor::{CursorBatch, CursorOpen, CursorTable},
     engine::{Engine, ExecResult},
 };
+
+/// 只读文件连接观察到的主文件版本。
+///
+/// 写连接用「同目录临时文件 + 原子改名」发布新镜像,因此 `(长度, 修改时间)`
+/// 变化就代表出现了一份新的已提交镜像;两者不变时无需重新读取文件。
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileStamp {
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+/// 读取主文件当前版本;文件暂时不可读时返回 `None`(下次语句再试)。
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let metadata = fs::metadata(path).ok()?;
+    Some(FileStamp { len: metadata.len(), modified: metadata.modified().ok() })
+}
 
 /// 一个 SQLite 连接的会话状态:引擎句柄、文件归属、脏镜像标记、
 /// 关闭标记、发布模式与游标表。
@@ -47,6 +66,9 @@ pub struct SqliteSession {
     closed: bool,
     /// 提交时存储层的发布模式;公开的日志模式选项映射由门面持有。
     publish_mode: PublishMode,
+    /// 只读文件连接最近一次装载的主文件版本;`None` 表示不参与刷新
+    /// (内存、字节镜像或读写连接)。
+    read_stamp: Option<FileStamp>,
     /// 本会话打开的结果游标表,以句柄为键,代数标记随事务结束前进。
     cursors: CursorTable,
 }
@@ -55,9 +77,11 @@ impl SqliteSession {
     /// 以装配完成的引擎与会话归属建立连接级会话。
     ///
     /// 引擎的构造(读文件、回放热日志、取写锁)是资源组装,留在门面或
-    /// 存储层入口;本构造器只接管之后的会话状态。
+    /// 存储层入口;本构造器只接管之后的会话状态。只读文件连接在这里
+    /// 记下打开时的文件版本,之后每条语句前据此判断是否需要重新装载。
     pub fn new(engine: Engine, filename: Option<PathBuf>, read_only: bool, publish_mode: PublishMode) -> Self {
-        Self { engine, filename, read_only, dirty: false, closed: false, publish_mode, cursors: CursorTable::new() }
+        let read_stamp = if read_only { filename.as_deref().and_then(file_stamp) } else { None };
+        Self { engine, filename, read_only, dirty: false, closed: false, publish_mode, read_stamp, cursors: CursorTable::new() }
     }
 
     /// 按本会话的宿主函数表解析一段脚本。
@@ -76,6 +100,7 @@ impl SqliteSession {
     /// 执行一条已解析语句:只读拒绝、参数检查、执行、代数前进与提交边界。
     pub fn run(&mut self, statement: &Statement, parameters: &[Cell]) -> Result<ExecResult, SqlError> {
         self.guard_open()?;
+        self.refresh_read_view()?;
         let is_write = statement.writes();
         self.guard_write(is_write)?;
         let required = parameter_slots(statement).last().map(|(index, _)| index + 1).unwrap_or(0);
@@ -109,6 +134,7 @@ impl SqliteSession {
     /// 当前事务代数,事务结束后读取以 `cursor-expired` 拒绝。
     pub fn open_cursor(&mut self, statement: &Statement, parameters: &[Cell]) -> Result<CursorOpen, SqlError> {
         self.guard_open()?;
+        self.refresh_read_view()?;
         let is_write = statement.writes();
         self.guard_write(is_write)?;
         let required = parameter_slots(statement).last().map(|(index, _)| index + 1).unwrap_or(0);
@@ -233,6 +259,37 @@ impl SqliteSession {
     /// 会话是否已关闭。
     pub fn is_closed(&self) -> bool {
         self.closed
+    }
+
+    /// 只读文件连接在每条语句前重新装载已提交的主文件镜像。
+    ///
+    /// 写连接提交时用同目录临时文件原子改名发布,所以主文件的
+    /// `(长度, 修改时间)` 变化就代表一份新的已提交镜像。文件版本没变时
+    /// 只做一次 `stat`,不重新读盘;显式事务打开期间保持打开时的快照,
+    /// 与 SQLite 读事务的可见性一致。只读会话不会写文件,写连接、内存与
+    /// 字节镜像连接不参与刷新。
+    fn refresh_read_view(&mut self) -> Result<(), SqlError> {
+        if !self.read_only || self.engine.in_transaction() {
+            return Ok(());
+        }
+        let Some(path) = self.filename.clone()
+        else {
+            return Ok(());
+        };
+        let Some(stamp) = file_stamp(&path)
+        else {
+            // 文件暂时不可读(例如发布改名的窗口):保留下一条语句重试的机会。
+            return Ok(());
+        };
+        if self.read_stamp == Some(stamp) {
+            return Ok(());
+        }
+        let truncate = self.publish_mode == PublishMode::JournalTruncate;
+        let pages = journal::recover(&path, true, truncate, true).map_err(storage_failure)?;
+        let writer = SqliteWriter::from_pages(pages).map_err(storage_failure)?;
+        self.engine.reload_image(writer)?;
+        self.read_stamp = Some(stamp);
+        Ok(())
     }
 
     /// 只读会话拒绝任何会写镜像的语句,在执行前拒绝。

@@ -134,6 +134,21 @@ impl Engine {
         Ok(engine)
     }
 
+    /// 用一份新的已提交镜像替换底层页集合,保留连接级会话状态。
+    ///
+    /// 只供只读文件连接在别的事务提交后刷新读视图使用:宿主函数、`PRAGMA`
+    /// 与外键开关、`last_insert_rowid` 和附加库都属于连接,不随文件内容变化;
+    /// 目录与语句级索引缓存属于镜像,必须按新镜像重建,否则旧探针会返回
+    /// 已提交镜像里不存在的 rowid。
+    pub fn reload_image(&mut self, writer: SqliteWriter) -> Result<(), SqlError> {
+        self.writer = writer;
+        txn::reload_catalog(&self.writer, &mut self.catalog)?;
+        self.exec_state = SqliteExecState::default();
+        self.pending_indexes = false;
+        self.pending_without_rowid = false;
+        Ok(())
+    }
+
     /// Executes exactly one statement.
     pub fn execute_one(&mut self, statement: &str) -> Result<ExecResult, SqlError> {
         let statements = self.parse(statement)?;
@@ -648,7 +663,7 @@ impl Engine {
         };
         let user_version = self.writer.user_version();
         let application_id = self.writer.application_id();
-        let limits = TableLimits::default();
+        let limits = TableLimits::query();
         let objects = self.writer.schema_objects(limits).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
         let writer = SqliteWriter::create_with_encoding(page_size, encoding).map_err(|error| storage_failure(error).in_statement("vacuum"))?;
         let mut fresh = Engine::from_writer(writer)?;
@@ -693,7 +708,7 @@ impl Engine {
                     .create_table_with_primary_key_sql("sqlite_sequence", &columns, &[], Some("CREATE TABLE sqlite_sequence(name,seq)"))
                     .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
             }
-            let limits = TableLimits::default();
+            let limits = TableLimits::query();
             for row in self.writer.table_rows("sqlite_sequence", limits).map_err(|error| storage_failure(error).in_statement("vacuum"))? {
                 let values = decode_record(&row.payload, encoding, RecordLimits { max_columns: 1024, max_payload_bytes: 16 * 1024 * 1024 })
                     .map_err(|error| storage_failure(error).in_statement("vacuum"))?;
