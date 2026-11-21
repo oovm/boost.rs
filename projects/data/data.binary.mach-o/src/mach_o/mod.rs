@@ -1,6 +1,12 @@
-//! Mach-O 可执行文件构建（aarch64）。
+//! Mach-O 可执行文件构建（aarch64）与读取。
+
+mod read;
 
 use crate::error::Result;
+
+pub use read::{
+    MachHeader, MachOEndian, MachOImage, MachOParseError, MachSection, MachSegment, macho_magic, parse_macho, parse_macho_header,
+};
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;
 const CPU_TYPE_ARM64: i32 = 0x0100_000C;
@@ -58,17 +64,20 @@ impl MachOImageBuilder {
         out.extend_from_slice(&2u32.to_le_bytes()); // ncmds
         out.extend_from_slice(&(cmds_size as u32).to_le_bytes());
         out.extend_from_slice(&0x200085u32.to_le_bytes()); // flags
+        out.extend_from_slice(&0u32.to_le_bytes()); // reserved
 
         // LC_SEGMENT_64 __TEXT
         out.extend_from_slice(&LC_SEGMENT_64.to_le_bytes());
         out.extend_from_slice(&(seg_cmd_size as u32).to_le_bytes());
         out.extend_from_slice(b"__TEXT\0\0\0\0\0\0\0\0\0\0");
-        out.extend_from_slice(&page.to_le_bytes());
-        out.extend_from_slice(&text_size.to_le_bytes());
-        out.extend_from_slice(&text_off.to_le_bytes());
-        out.extend_from_slice(&(VM_PROT_READ | VM_PROT_EXECUTE).to_le_bytes());
-        out.extend_from_slice(&text_size.to_le_bytes());
-        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&page.to_le_bytes()); // vmaddr
+        out.extend_from_slice(&text_size.to_le_bytes()); // vmsize
+        out.extend_from_slice(&text_off.to_le_bytes()); // fileoff
+        out.extend_from_slice(&text_size.to_le_bytes()); // filesize
+        out.extend_from_slice(&(VM_PROT_READ | VM_PROT_EXECUTE).to_le_bytes()); // maxprot
+        out.extend_from_slice(&(VM_PROT_READ | VM_PROT_EXECUTE).to_le_bytes()); // initprot
+        out.extend_from_slice(&0u32.to_le_bytes()); // nsects
+        out.extend_from_slice(&0u32.to_le_bytes()); // flags
 
         // LC_MAIN
         out.extend_from_slice(&LC_MAIN.to_le_bytes());
