@@ -30,7 +30,7 @@ pub use jpeg::encode_nv12;
 pub use mp4::{AudioParams as Mp4AudioParams, Muxer as Mp4Muxer, VIDEO_TIMESCALE as MP4_VIDEO_TIMESCALE, VideoParams as Mp4VideoParams};
 #[cfg(feature = "obj")]
 pub use obj::{to_obj_string, write_obj};
-pub use png::write_png;
+pub use png::{encode_png, write_png};
 pub use texture::{decode_bc1, decode_bc7};
 #[cfg(feature = "svg")]
 pub use svg::{to_svg_string, write_svg};

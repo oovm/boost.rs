@@ -40,8 +40,8 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&crc32(&body).to_be_bytes());
 }
 
-/// Encodes RGBA8 pixels as a PNG file and writes it to `path`.
-pub fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -> Result<(), Error> {
+/// Encodes RGBA8 pixels as PNG bytes.
+pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>, Error> {
     if width == 0 || height == 0 {
         return Err(Error::invalid("png: zero dimension"));
     }
@@ -80,7 +80,12 @@ pub fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -
     chunk(&mut out, b"IHDR", &ihdr);
     chunk(&mut out, b"IDAT", &zlib);
     chunk(&mut out, b"IEND", &[]);
+    Ok(out)
+}
 
-    std::fs::write(path, out)?;
+/// Encodes RGBA8 pixels as a PNG file and writes it to `path`.
+pub fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -> Result<(), Error> {
+    let bytes = encode_png(width, height, rgba)?;
+    std::fs::write(path, bytes)?;
     Ok(())
 }
