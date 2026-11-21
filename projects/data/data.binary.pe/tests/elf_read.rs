@@ -218,6 +218,7 @@ fn section(name: &str, address: u64, offset: u64, size: u64) -> ElfSection {
 fn machine_values_map_to_architectures() {
     assert_eq!(architecture(3), ElfArchitecture::X86);
     assert_eq!(architecture(62), ElfArchitecture::X64);
+    assert_eq!(architecture(40), ElfArchitecture::Arm);
     assert_eq!(architecture(183), ElfArchitecture::Arm64);
     assert_eq!(architecture(999), ElfArchitecture::Unknown);
     assert_eq!(ElfArchitecture::Arm64.as_str(), "arm64");

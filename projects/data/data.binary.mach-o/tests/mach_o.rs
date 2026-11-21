@@ -163,6 +163,7 @@ fn rejects_fat_and_truncated_input() {
 fn cpu_types_map_to_architectures() {
     assert_eq!(architecture(7), MachArchitecture::X86);
     assert_eq!(architecture(0x0100_0007), MachArchitecture::X64);
+    assert_eq!(architecture(0x0000_000c), MachArchitecture::Arm);
     assert_eq!(architecture(0x0100_000c), MachArchitecture::Arm64);
     assert_eq!(architecture(42), MachArchitecture::Unknown);
     assert_eq!(MachArchitecture::X64.as_str(), "x64");
