@@ -345,6 +345,15 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &Frame) -> Result<()> {
     Ok(())
 }
 
+fn read_u16(buf: &[u8], offset: &mut usize) -> Result<u16> {
+    if *offset + 2 > buf.len() {
+        return Err(Error::Corrupt("wire body truncated u16"));
+    }
+    let value = u16::from_le_bytes([buf[*offset], buf[*offset + 1]]);
+    *offset += 2;
+    Ok(value)
+}
+
 fn read_u32(buf: &[u8], offset: &mut usize) -> Result<u32> {
     if *offset + 4 > buf.len() {
         return Err(Error::Corrupt("wire body truncated u32"));
@@ -1215,6 +1224,506 @@ pub fn decode_rows(body: &[u8]) -> Result<Vec<std::collections::BTreeMap<String,
     Ok(rows)
 }
 
+// ─── 具名类型值的线投影 ────────────────────────────────────────────────────
+//
+// 存储行格式的标签（`TAG_UNITE = 0x11`、`TAG_STRUCTURE = 0x12`）属于持久层，
+// 不能出现在客户端可见的帧里。线投影使用自己的一组标签和独立的版本字节，
+// 把具名 `structure` / `unite` 表达成客户端能按名读取的投影；版本、标签、
+// revision 或载荷不符都返回 `database.protocol`，不伪装成存储损坏。
+//
+// 事务帧本身只带命令；行帧（`ExecutePreparedOk`）用 `encode_named_rows` 生成
+// 投影 body，错误帧用 `encode_error_body` 生成结构化诊断。二者都不经过存储
+// 行格式。
+
+/// 具名类型值线投影的版本字节。
+///
+/// 与存储行格式的 `ROW_CODEC_VERSION` 无关：线投影可以独立演进，未知版本按
+/// 协议错误拒绝。
+pub const NAMED_VALUE_WIRE_VERSION: u8 = 1;
+
+/// 线投影里的封闭 `structure` 标签。刻意避开存储格式的 `0x12`。
+const WIRE_TAG_NAMED_STRUCTURE: u8 = 0x20;
+/// 线投影里的 `unite` 标签。刻意避开存储格式的 `0x11`。
+const WIRE_TAG_NAMED_UNITE: u8 = 0x21;
+
+/// 线投影中的一个值的布局。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WireValueLayout {
+    /// 自描述值，没有具名声明。
+    Dynamic,
+    /// 列表，元素按内层布局投影。
+    List(Box<WireValueLayout>),
+    /// 具名声明，按持久 schema 身份引用。
+    Named(u64),
+}
+
+/// 线投影中的一个具名声明。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WireNamedLayout {
+    /// 封闭字段记录：线投影同时携带 schema 身份、revision 和字段名。
+    Structure {
+        /// 持久 schema 身份。
+        schema_id: u64,
+        /// 布局 revision；未知 revision 按协议错误拒绝。
+        revision: u32,
+        /// 声明顺序的字段。
+        fields: Vec<WireNamedField>,
+    },
+    /// 带稳定判别值的联合：线投影携带 schema 身份、revision、判别值和载荷。
+    Unite {
+        /// 持久 schema 身份。
+        schema_id: u64,
+        /// 布局 revision；声明顺序变化必须换 revision。
+        revision: u32,
+        /// 声明顺序的变体。
+        variants: Vec<WireNamedVariant>,
+    },
+}
+
+/// 线投影的一个具名字段。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireNamedField {
+    /// 字段名。
+    pub name: String,
+    /// 字段值的布局。
+    pub ty: WireValueLayout,
+}
+
+/// 线投影的一个联合变体。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireNamedVariant {
+    /// 稳定判别值（声明源序索引）。
+    pub discriminant: i64,
+    /// 该变体的封闭载荷字段。
+    pub fields: Vec<WireNamedField>,
+}
+
+/// 线投影使用的目录：列布局按列名索引，具名声明按 schema 身份索引。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WireNamedDirectory {
+    columns: std::collections::BTreeMap<String, WireValueLayout>,
+    declarations: std::collections::BTreeMap<u64, WireNamedLayout>,
+}
+
+impl WireNamedDirectory {
+    /// 用列布局和具名声明构造目录。
+    pub fn new(
+        columns: std::collections::BTreeMap<String, WireValueLayout>,
+        declarations: std::collections::BTreeMap<u64, WireNamedLayout>,
+    ) -> Self {
+        Self { columns, declarations }
+    }
+
+    /// 某一列的布局；`None` 表示按自描述值投影。
+    pub fn column(&self, name: &str) -> Option<&WireValueLayout> {
+        self.columns.get(name)
+    }
+
+    /// 某一 schema 身份的具名声明。
+    pub fn declaration(&self, schema_id: u64) -> Option<&WireNamedLayout> {
+        self.declarations.get(&schema_id)
+    }
+}
+
+/// 把单个具名值投影成线字节（含版本字节）。
+pub fn encode_named_value(value: &Value, directory: &WireNamedDirectory) -> Result<Vec<u8>> {
+    let mut body = vec![NAMED_VALUE_WIRE_VERSION];
+    encode_named_value_into(&mut body, value, None, directory, 0)?;
+    Ok(body)
+}
+
+/// 解码 [`encode_named_value`] 产出的单个值。
+pub fn decode_named_value(body: &[u8], directory: &WireNamedDirectory) -> Result<Value> {
+    let mut offset = 0;
+    read_named_version(body, &mut offset)?;
+    let value = read_named_value(body, &mut offset, None, directory, 0)?;
+    if offset != body.len() {
+        return Err(protocol_error("wire named value has trailing bytes"));
+    }
+    Ok(value)
+}
+
+/// 把一行投影成线字节（含版本字节），列布局取自目录。
+pub fn encode_named_row(
+    row: &std::collections::BTreeMap<String, Value>,
+    directory: &WireNamedDirectory,
+) -> Result<Vec<u8>> {
+    let mut body = vec![NAMED_VALUE_WIRE_VERSION];
+    encode_named_fields(&mut body, row, directory, 0)?;
+    Ok(body)
+}
+
+/// 解码 [`encode_named_row`] 产出的行。
+pub fn decode_named_row(body: &[u8], directory: &WireNamedDirectory) -> Result<std::collections::BTreeMap<String, Value>> {
+    let mut offset = 0;
+    read_named_version(body, &mut offset)?;
+    let row = read_named_fields(body, &mut offset, directory, 0)?;
+    if offset != body.len() {
+        return Err(protocol_error("wire named row has trailing bytes"));
+    }
+    Ok(row)
+}
+
+/// 把查询行集合投影成 `ExecutePreparedOk` 的 body（含版本字节）。
+pub fn encode_named_rows(
+    rows: &[std::collections::BTreeMap<String, Value>],
+    directory: &WireNamedDirectory,
+) -> Result<Vec<u8>> {
+    let mut body = vec![NAMED_VALUE_WIRE_VERSION];
+    let count = u32::try_from(rows.len()).map_err(|_| Error::Unsupported("wire row set has more than 4294967295 rows"))?;
+    push_u32(&mut body, count);
+    for row in rows {
+        encode_named_fields(&mut body, row, directory, 0)?;
+    }
+    Ok(body)
+}
+
+/// 解码 [`encode_named_rows`] 产出的行集合。
+pub fn decode_named_rows(
+    body: &[u8],
+    directory: &WireNamedDirectory,
+) -> Result<Vec<std::collections::BTreeMap<String, Value>>> {
+    let mut offset = 0;
+    read_named_version(body, &mut offset)?;
+    let count = read_u32(body, &mut offset)? as usize;
+    if count > body.len() - offset {
+        return Err(protocol_error("wire row count exceeds the remaining body"));
+    }
+    let mut rows = Vec::with_capacity(count);
+    for _ in 0..count {
+        rows.push(read_named_fields(body, &mut offset, directory, 0)?);
+    }
+    if offset != body.len() {
+        return Err(protocol_error("wire named rows have trailing bytes"));
+    }
+    Ok(rows)
+}
+
+fn read_named_version(body: &[u8], offset: &mut usize) -> Result<()> {
+    let version = read_u8(body, offset).map_err(protocol_from_read)?;
+    if version != NAMED_VALUE_WIRE_VERSION {
+        return Err(protocol_error(format!(
+            "wire named value uses projection version `{version}`, this client speaks `{NAMED_VALUE_WIRE_VERSION}`"
+        )));
+    }
+    Ok(())
+}
+
+fn protocol_error(message: impl Into<String>) -> Error {
+    Error::Protocol { message: message.into() }
+}
+
+/// Converts a malformed-frame read into a protocol error, never a storage one.
+fn protocol_from_read(error: Error) -> Error {
+    match error {
+        Error::Corrupt(_) | Error::CorruptReason { .. } => protocol_error(format!("malformed YY wire frame: {error}")),
+        other => other,
+    }
+}
+
+fn encode_named_fields(
+    out: &mut Vec<u8>,
+    fields: &std::collections::BTreeMap<String, Value>,
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<()> {
+    let count = u32::try_from(fields.len()).map_err(|_| Error::Unsupported("wire row has more than 4294967295 fields"))?;
+    push_u32(out, count);
+    for (name, value) in fields {
+        push_bytes(out, name.as_bytes());
+        encode_named_value_into(out, value, directory.column(name), directory, depth)?;
+    }
+    Ok(())
+}
+
+fn read_named_fields(
+    body: &[u8],
+    offset: &mut usize,
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<std::collections::BTreeMap<String, Value>> {
+    let count = read_u32(body, offset).map_err(protocol_from_read)? as usize;
+    if count > body.len() - *offset {
+        return Err(protocol_error("wire row field count exceeds the remaining body"));
+    }
+    let mut fields = std::collections::BTreeMap::new();
+    for _ in 0..count {
+        let name = read_name(body, offset)?;
+        let layout = directory.column(&name);
+        let value = read_named_value(body, offset, layout, directory, depth)?;
+        fields.insert(name, value);
+    }
+    Ok(fields)
+}
+
+fn read_name(body: &[u8], offset: &mut usize) -> Result<String> {
+    let len = read_u32(body, offset).map_err(protocol_from_read)?;
+    let bytes = read_bytes(body, offset, len).map_err(protocol_from_read)?;
+    std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| protocol_error("wire name is not utf-8"))
+}
+
+fn encode_named_value_into(
+    out: &mut Vec<u8>,
+    value: &Value,
+    layout: Option<&WireValueLayout>,
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<()> {
+    match value {
+        Value::Row(fields) => match resolve_wire_layout(layout, directory)? {
+            Some(WireNamedLayout::Structure { schema_id, revision, fields: declared }) => {
+                encode_wire_structure(out, fields, *schema_id, *revision, declared, directory, depth)
+            }
+            Some(WireNamedLayout::Unite { .. }) => {
+                Err(protocol_error("a `unite` value must carry a discriminant and payload, not a bare record"))
+            }
+            None => {
+                out.push(TAG_ROW);
+                encode_named_fields(out, fields, directory, next_named_depth(depth)?)
+            }
+        },
+        Value::List(items) => match resolve_wire_layout(layout, directory)? {
+            Some(WireNamedLayout::Unite { schema_id, revision, variants }) => {
+                encode_wire_unite(out, items, *schema_id, *revision, variants, directory, depth)
+            }
+            _ => {
+                let element_layout = match layout {
+                    Some(WireValueLayout::List(inner)) => Some(inner.as_ref()),
+                    _ => None,
+                };
+                out.push(TAG_LIST);
+                let count = u32::try_from(items.len()).map_err(|_| Error::Unsupported("wire list has more than 4294967295 elements"))?;
+                push_u32(out, count);
+                let nested = next_named_depth(depth)?;
+                for item in items {
+                    encode_named_value_into(out, item, element_layout, directory, nested)?;
+                }
+                Ok(())
+            }
+        },
+        other => encode_value_into(out, other, depth).map_err(protocol_from_read),
+    }
+}
+
+fn resolve_wire_layout<'a>(
+    layout: Option<&WireValueLayout>,
+    directory: &'a WireNamedDirectory,
+) -> Result<Option<&'a WireNamedLayout>> {
+    let Some(WireValueLayout::Named(schema_id)) = layout
+    else {
+        return Ok(None);
+    };
+    directory
+        .declaration(*schema_id)
+        .map(Some)
+        .ok_or_else(|| protocol_error(format!("wire projection names schema id `{schema_id}`, which the directory does not declare")))
+}
+
+fn encode_wire_structure(
+    out: &mut Vec<u8>,
+    fields: &std::collections::BTreeMap<String, Value>,
+    schema_id: u64,
+    revision: u32,
+    declared: &[WireNamedField],
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<()> {
+    for name in fields.keys() {
+        if !declared.iter().any(|field| field.name == *name) {
+            return Err(protocol_error(format!("wire `structure` does not declare member `{name}`")));
+        }
+    }
+    let count = u16::try_from(declared.len()).map_err(|_| Error::Unsupported("wire structure has more than 65535 members"))?;
+    out.push(WIRE_TAG_NAMED_STRUCTURE);
+    out.extend_from_slice(&schema_id.to_le_bytes());
+    out.extend_from_slice(&revision.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    let nested = next_named_depth(depth)?;
+    for field in declared {
+        push_bytes(out, field.name.as_bytes());
+        let value = fields.get(&field.name).unwrap_or(&Value::Null);
+        encode_named_value_into(out, value, Some(&field.ty), directory, nested)?;
+    }
+    Ok(())
+}
+
+fn encode_wire_unite(
+    out: &mut Vec<u8>,
+    items: &[Value],
+    schema_id: u64,
+    revision: u32,
+    variants: &[WireNamedVariant],
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<()> {
+    let [tag, payload] = items
+    else {
+        return Err(protocol_error("a `unite` value must be `[discriminant, payload]` with exactly two elements"));
+    };
+    let Value::I64(discriminant) = tag
+    else {
+        return Err(protocol_error("a `unite` discriminant must be an integer"));
+    };
+    let Value::Row(payload) = payload
+    else {
+        return Err(protocol_error("a `unite` payload must be a record"));
+    };
+    let variant = variants
+        .iter()
+        .find(|variant| variant.discriminant == *discriminant)
+        .ok_or_else(|| protocol_error(format!("`{discriminant}` is not a declared `unite` variant")))?;
+    for name in payload.keys() {
+        if !variant.fields.iter().any(|field| field.name == *name) {
+            return Err(protocol_error(format!("wire `unite` variant `{discriminant}` does not declare payload member `{name}`")));
+        }
+    }
+    for field in &variant.fields {
+        if !payload.contains_key(&field.name) {
+            return Err(protocol_error(format!(
+                "wire `unite` variant `{discriminant}` is missing required payload member `{}`",
+                field.name
+            )));
+        }
+    }
+    let count = u16::try_from(variant.fields.len()).map_err(|_| Error::Unsupported("wire unite variant has more than 65535 members"))?;
+    out.push(WIRE_TAG_NAMED_UNITE);
+    out.extend_from_slice(&schema_id.to_le_bytes());
+    out.extend_from_slice(&revision.to_le_bytes());
+    out.extend_from_slice(&discriminant.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    let nested = next_named_depth(depth)?;
+    for field in &variant.fields {
+        push_bytes(out, field.name.as_bytes());
+        let value = payload.get(&field.name).expect("validated payload member");
+        encode_named_value_into(out, value, Some(&field.ty), directory, nested)?;
+    }
+    Ok(())
+}
+
+fn read_named_value(
+    body: &[u8],
+    offset: &mut usize,
+    layout: Option<&WireValueLayout>,
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<Value> {
+    let start = *offset;
+    let tag = read_u8(body, offset).map_err(protocol_from_read)?;
+    match tag {
+        WIRE_TAG_NAMED_STRUCTURE => read_wire_structure(body, offset, directory, depth),
+        WIRE_TAG_NAMED_UNITE => read_wire_unite(body, offset, directory, depth),
+        TAG_LIST => {
+            let count = read_u32(body, offset).map_err(protocol_from_read)? as usize;
+            if count > body.len() - *offset {
+                return Err(protocol_error("wire list count exceeds the remaining body"));
+            }
+            let element_layout = match layout {
+                Some(WireValueLayout::List(inner)) => Some(inner.as_ref()),
+                _ => None,
+            };
+            let nested = next_named_depth(depth)?;
+            let mut items = Vec::with_capacity(count);
+            for _ in 0..count {
+                items.push(read_named_value(body, offset, element_layout, directory, nested)?);
+            }
+            Ok(Value::List(items))
+        }
+        _ => {
+            *offset = start;
+            // Scalar and dynamic value tags keep the existing wire encoding
+            // (numbers, text, plain records); only named tags are projected here.
+            let value = decode_value_at(body, offset, depth).map_err(protocol_from_read)?;
+            Ok(value)
+        }
+    }
+}
+
+fn read_wire_structure(
+    body: &[u8],
+    offset: &mut usize,
+    directory: &WireNamedDirectory,
+    depth: u8,
+) -> Result<Value> {
+    let schema_id = read_u64(body, offset).map_err(protocol_from_read)?;
+    let revision = read_u32(body, offset).map_err(protocol_from_read)?;
+    let field_count = read_u16(body, offset).map_err(protocol_from_read)? as usize;
+    let declaration = directory
+        .declaration(schema_id)
+        .ok_or_else(|| protocol_error("wire record names a `structure` schema id that the directory does not declare"))?;
+    let WireNamedLayout::Structure { revision: expected, fields: declared, .. } = declaration
+    else {
+        return Err(protocol_error("wire record names a schema id that is not a `structure` declaration"));
+    };
+    if *expected != revision {
+        return Err(protocol_error("wire record uses a `structure` layout revision the directory does not declare"));
+    }
+    if declared.len() != field_count {
+        return Err(protocol_error("wire record `structure` field count disagrees with its declaration"));
+    }
+    let nested = next_named_depth(depth)?;
+    let mut fields = std::collections::BTreeMap::new();
+    for _ in 0..field_count {
+        let name = read_name(body, offset)?;
+        let Some(declared_field) = declared.iter().find(|field| field.name == name)
+        else {
+            return Err(protocol_error(format!("wire `structure` does not declare member `{name}`")));
+        };
+        if fields.contains_key(&name) {
+            return Err(protocol_error(format!("wire `structure` repeats member `{name}`")));
+        }
+        fields.insert(name, read_named_value(body, offset, Some(&declared_field.ty), directory, nested)?);
+    }
+    for field in declared {
+        fields.entry(field.name.clone()).or_insert(Value::Null);
+    }
+    Ok(Value::Row(fields))
+}
+
+fn read_wire_unite(body: &[u8], offset: &mut usize, directory: &WireNamedDirectory, depth: u8) -> Result<Value> {
+    let schema_id = read_u64(body, offset).map_err(protocol_from_read)?;
+    let revision = read_u32(body, offset).map_err(protocol_from_read)?;
+    let discriminant = read_i64(body, offset).map_err(protocol_from_read)?;
+    let member_count = read_u16(body, offset).map_err(protocol_from_read)? as usize;
+    let declaration = directory
+        .declaration(schema_id)
+        .ok_or_else(|| protocol_error("wire record names a `unite` schema id that the directory does not declare"))?;
+    let WireNamedLayout::Unite { revision: expected, variants, .. } = declaration
+    else {
+        return Err(protocol_error("wire record names a schema id that is not a `unite` declaration"));
+    };
+    if *expected != revision {
+        return Err(protocol_error("wire record uses a `unite` layout revision the directory does not declare"));
+    }
+    let variant = variants
+        .iter()
+        .find(|variant| variant.discriminant == discriminant)
+        .ok_or_else(|| protocol_error("wire record names a `unite` variant the declaration does not contain"))?;
+    if variant.fields.len() != member_count {
+        return Err(protocol_error("wire record `unite` payload member count disagrees with its variant"));
+    }
+    let nested = next_named_depth(depth)?;
+    let mut payload = std::collections::BTreeMap::new();
+    for _ in 0..member_count {
+        let name = read_name(body, offset)?;
+        let Some(declared_field) = variant.fields.iter().find(|field| field.name == name)
+        else {
+            return Err(protocol_error(format!("wire `unite` variant `{discriminant}` does not declare payload member `{name}`")));
+        };
+        if payload.contains_key(&name) {
+            return Err(protocol_error(format!("wire `unite` variant `{discriminant}` repeats payload member `{name}`")));
+        }
+        payload.insert(name, read_named_value(body, offset, Some(&declared_field.ty), directory, nested)?);
+    }
+    Ok(Value::List(vec![Value::I64(discriminant), Value::Row(payload)]))
+}
+
+fn next_named_depth(depth: u8) -> Result<u8> {
+    depth
+        .checked_add(1)
+        .filter(|nested| *nested <= MAX_WIRE_VALUE_DEPTH)
+        .ok_or_else(|| protocol_error("wire value nests deeper than the supported depth"))
+}
+
 // ─── 事务帧 ────────────────────────────────────────────────────────────────
 
 /// 编码保存点名（`TxnSavepoint` / `TxnRollbackTo` / `TxnRelease` 的 body）。
@@ -1352,5 +1861,162 @@ mod tests {
         encoded.push(0);
         assert!(decode_value(&encoded).is_err());
         assert!(decode_value(&[0xff]).is_err());
+    }
+
+    const ADDRESS_ID: u64 = 51;
+    const CONTACT_ID: u64 = 52;
+
+    fn named_directory() -> WireNamedDirectory {
+        let declarations = std::collections::BTreeMap::from([
+            (
+                ADDRESS_ID,
+                WireNamedLayout::Structure {
+                    schema_id: ADDRESS_ID,
+                    revision: 4,
+                    fields: vec![
+                        WireNamedField { name: "zip".to_owned(), ty: WireValueLayout::Dynamic },
+                        WireNamedField { name: "country".to_owned(), ty: WireValueLayout::Dynamic },
+                    ],
+                },
+            ),
+            (
+                CONTACT_ID,
+                WireNamedLayout::Unite {
+                    schema_id: CONTACT_ID,
+                    revision: 9,
+                    variants: vec![
+                        WireNamedVariant {
+                            discriminant: 0,
+                            fields: vec![
+                                WireNamedField { name: "address".to_owned(), ty: WireValueLayout::Dynamic },
+                                WireNamedField { name: "label".to_owned(), ty: WireValueLayout::Dynamic },
+                            ],
+                        },
+                        WireNamedVariant { discriminant: 1, fields: Vec::new() },
+                    ],
+                },
+            ),
+        ]);
+        let columns = std::collections::BTreeMap::from([
+            ("address".to_owned(), WireValueLayout::Named(ADDRESS_ID)),
+            ("contact".to_owned(), WireValueLayout::Named(CONTACT_ID)),
+        ]);
+        WireNamedDirectory::new(columns, declarations)
+    }
+
+    fn named_row() -> std::collections::BTreeMap<String, Value> {
+        std::collections::BTreeMap::from([
+            (
+                "address".to_owned(),
+                Value::Row(std::collections::BTreeMap::from([
+                    ("zip".to_owned(), Value::Text("100000".to_owned())),
+                    ("country".to_owned(), Value::Null),
+                ])),
+            ),
+            (
+                "contact".to_owned(),
+                Value::List(vec![
+                    Value::I64(0),
+                    Value::Row(std::collections::BTreeMap::from([
+                        ("address".to_owned(), Value::Text("ada@example.com".to_owned())),
+                        ("label".to_owned(), Value::Null),
+                    ])),
+                ]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn named_rows_project_structures_and_unions_with_wire_tags() {
+        let directory = named_directory();
+        let row = named_row();
+        let body = encode_named_rows(&[row.clone()], &directory).expect("encode named rows");
+        assert_eq!(body[0], NAMED_VALUE_WIRE_VERSION, "the wire projection has its own version byte");
+        // version + row count + column count + "address" length + the name.
+        assert_eq!(body[20], WIRE_TAG_NAMED_STRUCTURE, "a structure uses the wire tag at its value position");
+        assert!(body.contains(&WIRE_TAG_NAMED_UNITE), "a union uses the wire tag at its value position");
+        assert_eq!(decode_named_rows(&body, &directory).expect("decode named rows"), vec![row]);
+    }
+
+    #[test]
+    fn named_projection_rejects_unknown_versions_and_storage_tags_as_protocol_errors() {
+        let directory = named_directory();
+        let body = encode_named_row(&named_row(), &directory).expect("encode named row");
+
+        let mut newer = body.clone();
+        newer[0] = NAMED_VALUE_WIRE_VERSION + 1;
+        assert_eq!(decode_named_row(&newer, &directory).expect_err("unknown version").code(), "database.protocol");
+
+        // A storage-positional value tag is not a wire tag: version + column
+        // count + "address" length + the name, then the value tag.
+        let mut storage_tag = body.clone();
+        storage_tag[16] = 0x12;
+        assert_eq!(decode_named_row(&storage_tag, &directory).expect_err("storage tag").code(), "database.protocol");
+
+        let truncated = &body[..body.len() - 1];
+        assert_eq!(decode_named_row(truncated, &directory).expect_err("truncated frame").code(), "database.protocol");
+
+        // The diagnostic for a protocol failure stays a protocol code, not storage.
+        let wire = decode_error(&encode_error_body(&Error::Protocol { message: "bad frame".to_owned() })).expect("error body");
+        assert_eq!(wire.code, "database.protocol");
+    }
+
+    #[test]
+    fn named_projection_rejects_revision_and_variant_mismatches() {
+        let renamed_revision = changed_revision(named_directory(), 10);
+        let row = encode_named_row(&named_row(), &named_directory()).expect("encode named row");
+        assert_eq!(
+            decode_named_row(&row, &renamed_revision).expect_err("unknown revision").code(),
+            "database.protocol"
+        );
+
+        // A union discriminant that the declaration does not contain is refused.
+        let mut unknown_variant = named_row();
+        unknown_variant.insert(
+            "contact".to_owned(),
+            Value::List(vec![Value::I64(7), Value::Row(std::collections::BTreeMap::new())]),
+        );
+        assert_eq!(
+            encode_named_row(&unknown_variant, &named_directory()).expect_err("unknown discriminant").code(),
+            "database.protocol"
+        );
+
+        // A single value without a column layout stays a plain dynamic value; the
+        // named projection is only applied where a declaration is in scope.
+        let plain = encode_named_value(&Value::Text("ok".to_owned()), &named_directory()).expect("encode plain value");
+        assert_eq!(decode_named_value(&plain, &named_directory()).expect("decode plain value"), Value::Text("ok".to_owned()));
+    }
+
+    fn changed_revision(directory: WireNamedDirectory, revision: u32) -> WireNamedDirectory {
+        let mut declarations = std::collections::BTreeMap::new();
+        declarations.insert(
+            ADDRESS_ID,
+            WireNamedLayout::Structure {
+                schema_id: ADDRESS_ID,
+                revision,
+                fields: vec![
+                    WireNamedField { name: "zip".to_owned(), ty: WireValueLayout::Dynamic },
+                    WireNamedField { name: "country".to_owned(), ty: WireValueLayout::Dynamic },
+                ],
+            },
+        );
+        declarations.insert(
+            CONTACT_ID,
+            match directory.declaration(CONTACT_ID).expect("contact declaration") {
+                WireNamedLayout::Unite { schema_id, revision, variants } => WireNamedLayout::Unite {
+                    schema_id: *schema_id,
+                    revision: *revision,
+                    variants: variants.clone(),
+                },
+                other => panic!("expected a union declaration, got {other:?}"),
+            },
+        );
+        WireNamedDirectory::new(
+            std::collections::BTreeMap::from([
+                ("address".to_owned(), WireValueLayout::Named(ADDRESS_ID)),
+                ("contact".to_owned(), WireValueLayout::Named(CONTACT_ID)),
+            ]),
+            declarations,
+        )
     }
 }
