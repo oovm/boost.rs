@@ -338,4 +338,34 @@ mod tests {
         assert_eq!(detection.format, None);
         assert_eq!(detection.confidence, DetectionConfidence::Unknown);
     }
+
+    /// A verified header outranks a contradictory extension hint.
+    #[test]
+    fn a_pdf_header_outranks_a_docx_extension() {
+        let detection = detect_bytes(b"%PDF-1.7\ntrailer", Some("docx"));
+        assert_eq!(detection.format, Some("pdf"));
+        assert_eq!(detection.container, ContainerKind::Pdf);
+        assert_eq!(detection.confidence, DetectionConfidence::Verified);
+    }
+
+    #[test]
+    fn an_ole_header_outranks_a_pdf_extension() {
+        let detection = detect_bytes(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], Some("pdf"));
+        assert_eq!(detection.format, Some("doc"));
+        assert_eq!(detection.container, ContainerKind::OleCompound);
+    }
+
+    /// An extension alone must not turn plain text into a container format.
+    #[test]
+    fn a_pdf_extension_cannot_fabricate_a_document() {
+        let detection = detect_bytes(b"just words", Some("pdf"));
+        assert_eq!(detection.format, None);
+        assert_eq!(detection.confidence, DetectionConfidence::Unknown);
+    }
+
+    #[test]
+    fn package_hints_ignore_case_and_a_leading_dot() {
+        assert_eq!(detect_bytes(b"PK\x03\x04", Some(".DOCX")).format, Some("docx"));
+        assert_eq!(detect_bytes(b"PK\x03\x04", Some(".Pptm")).format, Some("pptx"));
+    }
 }

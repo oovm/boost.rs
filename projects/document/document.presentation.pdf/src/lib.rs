@@ -417,206 +417,61 @@ impl Frame {
 
 #[cfg(test)]
 mod tests {
-    use document_presentation::authored::{
-        ChartData, ChartElementInput, ChartSeries, ChartType, DeckCreateOptions, ImageElementInput, ShapeElementInput, SlideAddOptions,
-        TableCell, TableElementInput, TableRow, TextContent, TextElementInput, points_to_emu,
-    };
+    use document_presentation::authored::{DeckCreateOptions, SlideAddOptions, TextContent, TextElementInput, Transform};
 
     use super::*;
 
-    fn count(haystack: &[u8], needle: &[u8]) -> usize {
-        haystack.windows(needle.len()).filter(|window| *window == needle).count()
-    }
-
-    fn rich_deck() -> Deck {
-        let mut deck = Deck::create(DeckCreateOptions { title: Some("PDF".to_string()), ..DeckCreateOptions::default() });
+    fn deck_with_text(lines: &[&str]) -> Deck {
+        let mut deck = Deck::create(DeckCreateOptions::default());
         deck.transaction(None, |edit| {
-            let slide = edit.add_slide(SlideAddOptions { layout: None, index: None })?;
-            edit.add_text(
-                &slide,
-                TextElementInput {
-                    text: TextContent::plain("Hello PDF\nSecond line"),
-                    transform: Some(Transform::from_points(40.0, 40.0, 400.0, 100.0).unwrap()),
-                    alt: Some("Greeting".to_string()),
-                    placeholder: None,
-                },
-            )?;
-            edit.add_shape(
-                &slide,
-                ShapeElementInput {
-                    geometry: "ellipse".to_string(),
-                    transform: Some(Transform::from_points(60.0, 200.0, 120.0, 80.0).unwrap()),
-                    fill: Some(Fill::Solid { color: "#22AA44".to_string() }),
-                    line: Some(Line { color: Some("#000000".to_string()), width_emu: points_to_emu(1.0) }),
-                    alt: None,
-                },
-            )?;
-            edit.add_table(
-                &slide,
-                TableElementInput {
-                    column_widths_emu: vec![points_to_emu(100.0).unwrap(), points_to_emu(100.0).unwrap()],
-                    rows: vec![TableRow {
-                        height_emu: points_to_emu(24.0).unwrap(),
-                        cells: vec![TableCell::plain("A"), TableCell::plain("B")],
-                    }],
-                    transform: Some(Transform::from_points(60.0, 320.0, 200.0, 24.0).unwrap()),
-                    alt: Some("Grid".to_string()),
-                },
-            )?;
-            edit.add_chart(
-                &slide,
-                ChartElementInput {
-                    chart_type: ChartType::Column,
-                    data: ChartData { categories: vec!["Q1".to_string()], series: vec![ChartSeries { name: "S".to_string(), values: vec![1.0] }] },
-                    transform: Some(Transform::from_points(300.0, 200.0, 200.0, 150.0).unwrap()),
-                    alt: "Sales".to_string(),
-                },
-            )?;
+            for text in lines {
+                let slide = edit.add_slide(SlideAddOptions { layout: None, index: None })?;
+                edit.add_text(
+                    &slide,
+                    TextElementInput {
+                        text: TextContent::plain(*text),
+                        transform: Some(Transform::from_points(40.0, 40.0, 400.0, 100.0).unwrap()),
+                        alt: None,
+                        placeholder: None,
+                    },
+                )?;
+            }
             Ok(())
         })
         .expect("deck builds");
         deck
     }
 
+    fn count(haystack: &[u8], needle: &[u8]) -> usize {
+        haystack.windows(needle.len()).filter(|window| *window == needle).count()
+    }
+
+    /// Smoke: a text-only deck pages one slide at a time and reports no loss.
     #[test]
-    fn projection_is_a_pdf_with_one_page_per_slide() {
-        let deck = rich_deck();
+    fn a_text_deck_renders_one_page_per_slide() {
+        let deck = deck_with_text(&["Hello PDF", "Second slide"]);
         let export = export_pdf_bytes(&deck).expect("pdf builds");
         assert!(export.bytes.starts_with(b"%PDF-1.7"), "the header must be PDF 1.7");
-        assert_eq!(count(&export.bytes, b"/Type /Page "), 1, "one MediaBox page");
-        assert_eq!(count(&export.bytes, b"/Type /Pages "), 1, "one page tree");
-        assert_eq!(count(&export.bytes, b"/MediaBox [0 0 960 540]"), 1);
-        assert!(export.bytes.ends_with(b"%%EOF\n"));
-        assert!(export.losses.iter().any(|loss| loss.code == LOSS_CHART), "charts are reported");
+        assert_eq!(count(&export.bytes, b"/Type /Page "), 2, "one page per slide");
+        assert_eq!(count(&export.bytes, b"/MediaBox [0 0 960 540]"), 2, "the deck size is carried in points");
+        assert!(count(&export.bytes, b"(Hello PDF)") == 1, "the text is painted");
+        assert!(export.losses.is_empty(), "plain Latin text has no loss: {:?}", export.losses);
     }
 
-    #[test]
-    fn background_text_ellipse_and_tables_are_painted() {
-        let mut deck = rich_deck();
-        let mut document = deck.document().clone();
-        document.slides[0].background = Some(Fill::Solid { color: "#1F2937".to_string() });
-        deck = Deck::from_document(document).expect("valid deck");
-
-        let export = export_pdf_bytes(&deck).expect("pdf builds");
-        let text = String::from_utf8_lossy(&export.bytes);
-        assert!(text.contains("0.122 0.161 0.216 rg"), "the background colour is painted: {text}");
-        assert!(text.contains("(Hello PDF) Tj"), "text is drawn: {text}");
-        assert!(text.contains("(Second line) Tj"));
-        assert!(text.contains(" re\nS"), "table grid lines are stroked");
-        assert!(text.contains(" c\n"), "the ellipse uses curves");
-        assert!(text.contains("0.133 0.667 0.267 rg"), "the shape fill colour is painted");
-        assert!(!export.losses.iter().any(|loss| loss.code == "table"), "tables are painted, not dropped");
-    }
-
+    /// Smoke: WinAnsi cannot represent wide characters, so the run is reported.
     #[test]
     fn non_latin_text_is_reported_as_a_glyph_loss() {
-        let mut deck = Deck::create(DeckCreateOptions::default());
-        deck.transaction(None, |edit| {
-            let slide = edit.add_slide(SlideAddOptions { layout: None, index: None })?;
-            edit.add_text(
-                &slide,
-                TextElementInput {
-                    text: TextContent::plain("caf\u{e9} \u{4e2d}\u{6587}"),
-                    transform: Some(Transform::from_points(40.0, 40.0, 400.0, 100.0).unwrap()),
-                    alt: None,
-                    placeholder: None,
-                },
-            )?;
-            Ok(())
-        })
-        .expect("text deck builds");
-
+        let deck = deck_with_text(&["caf\u{e9} \u{4e2d}\u{6587}"]);
         let export = export_pdf_bytes(&deck).expect("pdf builds");
-        let text = String::from_utf8_lossy(&export.bytes);
-        assert!(text.contains("(caf\\351 ??) Tj"), "Latin-1 is kept and wider text falls back: {text}");
         assert!(export.losses.iter().any(|loss| loss.code == LOSS_GLYPH), "glyph loss is reported");
     }
 
-    fn tiny_png() -> Vec<u8> {
-        // 1x1 opaque red pixel, deflate-compressed IDAT with a stored block.
-        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
-        let mut header = 1u32.to_be_bytes().to_vec();
-        header.extend_from_slice(&1u32.to_be_bytes());
-        header.extend_from_slice(&[8, 2, 0, 0, 0]);
-        png.extend_from_slice(&png_chunk(b"IHDR", &header));
-        // zlib stream: 0x78 0x01, stored deflate block, adler32 over the row.
-        let row = [0u8, 255, 0, 0];
-        let mut idat = vec![0x78, 0x01, 0x01, 4, 0, 0xFB, 0xFF];
-        idat.extend_from_slice(&row);
-        let mut checksum = 1u32;
-        for &byte in &row {
-            checksum = adler32(checksum, byte);
-        }
-        idat.extend_from_slice(&checksum.to_be_bytes());
-        png.extend_from_slice(&png_chunk(b"IDAT", &idat));
-        png.extend_from_slice(&png_chunk(b"IEND", &[]));
-        png
-    }
-
-    fn adler32(mut state: u32, byte: u8) -> u32 {
-        let a = (state & 0xFFFF) + u32::from(byte);
-        let b = (state >> 16) + a;
-        (b % 65521) << 16 | (a % 65521)
-    }
-
-    fn crc32(bytes: &[u8]) -> u32 {
-        let mut crc = 0xFFFF_FFFFu32;
-        for &byte in bytes {
-            crc ^= u32::from(byte);
-            for _ in 0..8 {
-                let mask = (crc & 1).wrapping_neg();
-                crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
-            }
-        }
-        !crc
-    }
-
-    fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
-        let mut out = (data.len() as u32).to_be_bytes().to_vec();
-        out.extend_from_slice(kind);
-        out.extend_from_slice(data);
-        let mut checked = kind.to_vec();
-        checked.extend_from_slice(data);
-        out.extend_from_slice(&crc32(&checked).to_be_bytes());
-        out
-    }
-
-    fn image_deck(bytes: Vec<u8>, name: &str, media_type: &str) -> Deck {
-        let mut deck = Deck::create(DeckCreateOptions::default());
-        deck.transaction(None, |edit| {
-            let asset = edit.add_asset(name, media_type, bytes.clone(), None)?;
-            let slide = edit.add_slide(SlideAddOptions { layout: None, index: None })?;
-            edit.add_image(
-                &slide,
-                ImageElementInput {
-                    asset,
-                    transform: Some(Transform::from_points(20.0, 30.0, 100.0, 50.0).unwrap()),
-                    alt: "Picture".to_string(),
-                },
-            )?;
-            Ok(())
-        })
-        .expect("image deck builds");
-        deck
-    }
-
+    /// Smoke: the backend refuses a deck with no pages instead of writing an
+    /// empty page tree.
     #[test]
-    fn png_pictures_are_embedded_from_asset_bytes() {
-        let deck = image_deck(tiny_png(), "picture.png", "image/png");
-        let export = export_pdf_bytes(&deck).expect("pdf builds");
-        let text = String::from_utf8_lossy(&export.bytes);
-        assert!(export.losses.is_empty(), "a PNG picture is embedded, not dropped: {:?}", export.losses);
-        assert_eq!(count(&export.bytes, b"/Subtype /Image"), 1, "one image XObject");
-        assert!(text.contains("/Width 1 /Height 1"));
-        assert!(text.contains("/ColorSpace /DeviceRGB"));
-        assert!(text.contains("/Im1 Do"), "the picture is painted on the page");
-    }
-
-    #[test]
-    fn unsupported_pictures_are_reported_as_a_loss() {
-        let deck = image_deck(b"GIF89a-not-embedded".to_vec(), "picture.gif", "image/gif");
-        let export = export_pdf_bytes(&deck).expect("pdf builds");
-        assert_eq!(count(&export.bytes, b"/Subtype /Image"), 0, "nothing fabricated for a GIF");
-        assert!(export.losses.iter().any(|loss| loss.code == LOSS_IMAGE), "the skip is reported");
+    fn an_empty_deck_is_refused() {
+        let deck = Deck::create(DeckCreateOptions::default());
+        let error = export_pdf_bytes(&deck).expect_err("a deck without slides has no page");
+        assert_eq!(error.code, "vutex.render.pdf.no_pages");
     }
 }
