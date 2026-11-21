@@ -4,16 +4,17 @@
 //! 运行状态文件与停止协调归 `database.server`。本模块只做公开选项映射、资源
 //! 组装与字段投影。
 
-use std::{fmt, path::Path, sync::Arc};
+use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
 
 use database::{
     cluster::{
         catalog::node::{CatalogLoadError, NodeCatalogFacts, load_node_catalog},
         control::{LeaseError, LocalOwnership, NodeIdentity, NodeLease},
+        peer::{PeerError, PeerIdentity, PeerNode, PeerOptions, PeerRole, PeerTls},
     },
     execution::cluster::{KeyValueExecutor, LocalExecutor, OpenLocalError},
     server::node::{NodeControlError, RuntimeStatusError},
-    types::cluster::Error as ClusterError,
+    types::cluster::{Error as ClusterError, LeaderTerm, ShardEpoch},
 };
 
 /// 无 catalog 时使用的本地分片 id。
@@ -42,6 +43,8 @@ pub enum NodeError {
     Status(RuntimeStatusError),
     /// 停止协调失败。
     Control(NodeControlError),
+    /// 节点间 peer 通道失败。
+    Peer(PeerError),
 }
 
 impl fmt::Display for NodeError {
@@ -52,6 +55,7 @@ impl fmt::Display for NodeError {
             Self::Lease(error) => error.fmt(formatter),
             Self::Status(error) => error.fmt(formatter),
             Self::Control(error) => error.fmt(formatter),
+            Self::Peer(error) => error.fmt(formatter),
         }
     }
 }
@@ -64,6 +68,7 @@ impl std::error::Error for NodeError {
             Self::Lease(error) => Some(error),
             Self::Status(error) => Some(error),
             Self::Control(error) => Some(error),
+            Self::Peer(error) => Some(error),
         }
     }
 }
@@ -105,6 +110,70 @@ impl From<NodeControlError> for NodeError {
     fn from(error: NodeControlError) -> Self {
         Self::Control(error)
     }
+}
+
+impl From<PeerError> for NodeError {
+    fn from(error: PeerError) -> Self {
+        Self::Peer(error)
+    }
+}
+
+/// 启动节点间 peer 监听端的选项。
+#[derive(Debug, Clone)]
+pub struct PeerNodeOptions {
+    /// 监听地址;端口 `0` 由操作系统分配。
+    pub bind: SocketAddr,
+    /// 给出时作为 follower 加入该 leader;`None` 表示本节点是引导 leader。
+    pub leader: Option<SocketAddr>,
+    /// 可选的 mTLS 材料。
+    pub tls: Option<PeerTls>,
+    /// leader 初始路由 epoch;follower 忽略该值。
+    pub epoch: ShardEpoch,
+    /// leader 初始 leader term;follower 忽略该值。
+    pub term: LeaderTerm,
+}
+
+impl PeerNodeOptions {
+    /// 未给出 leader 时使用 `epoch=1`、`term=1` 引导单节点成员视图。
+    pub fn new(bind: SocketAddr) -> Self {
+        Self { bind, leader: None, tls: None, epoch: ShardEpoch(1), term: LeaderTerm(1) }
+    }
+
+    /// 作为 follower 加入指定 leader。
+    pub fn joining(bind: SocketAddr, leader: SocketAddr) -> Self {
+        Self { leader: Some(leader), ..Self::new(bind) }
+    }
+}
+
+/// 本构建真实具备的节点间 peer 能力。
+///
+/// 两个字段都直接对应已实现的传输与 TLS 路径,不再表示"不可用占位"。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeerCapabilities {
+    /// 节点间 TCP peer 通道:join 握手、成员视图与 epoch / owner 广播。
+    pub transport: bool,
+    /// peer mTLS:证书配置与错误凭据的传输层拒绝。
+    pub tls: bool,
+}
+
+/// 报告 peer 能力;调用方据此翻转 `peer.transport` / `peer.tls`,不做额外探测。
+pub const fn peer_capabilities() -> PeerCapabilities {
+    PeerCapabilities { transport: true, tls: true }
+}
+
+/// 启动节点间 peer 监听端,并在给出 leader 时完成 join。
+pub fn start_peer_node(identity: &NodeIdentity, options: PeerNodeOptions) -> Result<Arc<PeerNode>, NodeError> {
+    let peer_identity = PeerIdentity::new(identity.cluster_id(), identity.node_id()).map_err(|_| NodeError::Lease(LeaseError::InvalidIdentity))?;
+    let role = match options.leader {
+        Some(_) => PeerRole::Follower,
+        None => PeerRole::Leader { epoch: options.epoch, term: options.term },
+    };
+    let peer = PeerNode::start(PeerOptions::new(peer_identity, options.bind, role, options.tls))?;
+    if let Some(leader) = options.leader {
+        peer.join(leader)?;
+    }
+    Ok(Arc::new(peer))
 }
 
 /// [`NodeIdentity`] 的 JSON 投影:核心类型不携带 serde 派生。
@@ -233,6 +302,24 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn peer_nodes_form_a_member_view_through_the_facade() {
+        let leader_identity = NodeIdentity::new("cluster-a", "node-1").expect("identity");
+        let leader = start_peer_node(&leader_identity, PeerNodeOptions::new("127.0.0.1:0".parse().expect("bind"))).expect("leader");
+        let follower_identity = NodeIdentity::new("cluster-a", "node-2").expect("identity");
+        let follower = start_peer_node(
+            &follower_identity,
+            PeerNodeOptions::joining("127.0.0.1:0".parse().expect("bind"), leader.address()),
+        )
+        .expect("join");
+
+        assert_eq!(follower.view().map(|view| view.len()), Some(2));
+        assert_eq!(leader.view().map(|view| view.len()), Some(2));
+        assert!(leader.membership().is_leader());
+        assert!(!follower.membership().is_leader());
+        assert_eq!(peer_capabilities(), PeerCapabilities { transport: true, tls: true });
     }
 
     #[test]

@@ -6,5 +6,6 @@
 
 pub mod mongo;
 pub mod mysql;
+pub mod peer;
 pub mod pgsql;
 pub mod redis;
