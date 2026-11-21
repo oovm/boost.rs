@@ -2737,6 +2737,44 @@ fn execute_aggregate(
     Ok(out_rows)
 }
 
+/// Adds one exact decimal into the running `(unscaled, scale, precision)`
+/// total, scaling both operands to the larger scale.
+fn accumulate_decimal(total: Option<(i128, u8, u8)>, value: database_types::Decimal) -> Result<(i128, u8, u8)> {
+    let overflow = || query_runtime_error("SUM() overflowed the exact decimal range");
+    let Some((current, current_scale, current_precision)) = total
+    else {
+        return Ok((value.unscaled(), value.scale(), value.precision()));
+    };
+    if value.scale() == current_scale {
+        let unscaled = current.checked_add(value.unscaled()).ok_or_else(overflow)?;
+        return Ok((unscaled, current_scale, current_precision.max(value.precision())));
+    }
+    let precision = current_precision.max(value.precision());
+    if value.scale() > current_scale {
+        let factor = 10_i128.checked_pow(u32::from(value.scale() - current_scale)).ok_or_else(overflow)?;
+        let scaled = current.checked_mul(factor).ok_or_else(overflow)?;
+        let unscaled = scaled.checked_add(value.unscaled()).ok_or_else(overflow)?;
+        Ok((unscaled, value.scale(), precision))
+    }
+    else {
+        let factor = 10_i128.checked_pow(u32::from(current_scale - value.scale())).ok_or_else(overflow)?;
+        let scaled = value.unscaled().checked_mul(factor).ok_or_else(overflow)?;
+        let unscaled = current.checked_add(scaled).ok_or_else(overflow)?;
+        Ok((unscaled, current_scale, precision))
+    }
+}
+
+/// Exact decimal total as an `f64`, used only when the group also contains a
+/// REAL value that promotes the result.
+fn decimal_as_f64(unscaled: i128, scale: u8) -> f64 {
+    unscaled as f64 / 10_f64.powi(i32::from(scale))
+}
+
+/// Decimal digits `unscaled` needs (zero needs one).
+fn decimal_digits(unscaled: i128) -> u8 {
+    u8::try_from(unscaled.unsigned_abs().to_string().len()).unwrap_or(u8::MAX)
+}
+
 fn eval_aggregate(
     agg: &AggregateField,
     group_rows: &[QueryRow],
@@ -2777,14 +2815,18 @@ fn eval_aggregate(
         }
         AggregateField::Sum { name, expr } => {
             // SUM keeps the numeric family it was given: integer values
-            // accumulate exactly and yield `I64`, and the first REAL value
-            // promotes the whole sum to `F64`. A group with no numeric value is
-            // `NULL`, and a non-numeric value is an error rather than being
-            // skipped.
+            // accumulate exactly and yield `I64`, the first REAL value promotes
+            // the whole sum to `F64`, and exact decimals stay exact (`Decimal`,
+            // as MySQL's `SUM(DECIMAL)` does) instead of being skipped. A group
+            // with no numeric value is `NULL`, and a non-numeric value is an
+            // error rather than being skipped.
             let mut integer_sum: i128 = 0;
             let mut real_sum: f64 = 0.0;
             let mut is_real = false;
             let mut saw_any = false;
+            // Exact-decimal accumulator: (unscaled, scale, declared precision)
+            // kept in one common scale so the total never goes through `f64`.
+            let mut decimal_sum: Option<(i128, u8, u8)> = None;
             for row in group_rows {
                 match eval_project_expr(expr, row, contract, records, bound_values, outer)? {
                     Value::Null => {}
@@ -2803,20 +2845,41 @@ fn eval_aggregate(
                         real_sum += n;
                         saw_any = true;
                     }
+                    Value::Decimal(decimal) => {
+                        decimal_sum = Some(accumulate_decimal(decimal_sum, decimal)?);
+                        saw_any = true;
+                    }
                     other => {
                         return Err(query_runtime_error(format!("SUM() requires numeric values, got `{}`", other.kind())));
                     }
                 }
             }
-            let result = if !saw_any {
-                Value::Null
-            }
-            else if is_real {
-                finite_real(real_sum, "SUM()")?
-            }
-            else {
-                let sum = i64::try_from(integer_sum).map_err(|_| query_runtime_error("SUM() overflowed the signed 64-bit range"))?;
-                Value::I64(sum)
+            let result = match decimal_sum {
+                Some((unscaled, scale, _precision)) if is_real => {
+                    // A float elsewhere in the group promotes the decimal total
+                    // to the same `F64` result as any other mixed sum.
+                    let total = real_sum + decimal_as_f64(unscaled, scale);
+                    finite_real(total, "SUM()")?
+                }
+                Some((unscaled, scale, precision)) => {
+                    let factor = 10_i128.pow(u32::from(scale));
+                    let total = integer_sum
+                        .checked_mul(factor)
+                        .and_then(|integers| unscaled.checked_add(integers))
+                        .ok_or_else(|| query_runtime_error("SUM() overflowed the exact decimal range"))?;
+                    // MySQL widens `DECIMAL(p,s)` to `DECIMAL(p+10,s)` for SUM;
+                    // the exact unscaled total always wins when it needs digits.
+                    let precision = precision.saturating_add(10).max(decimal_digits(total)).min(38);
+                    let total = database_types::Decimal::new(total, precision, scale)
+                        .map_err(|error| query_runtime_error(format!("SUM() overflowed the exact decimal range: {error}")))?;
+                    Value::Decimal(total)
+                }
+                None if !saw_any => Value::Null,
+                None if is_real => finite_real(real_sum, "SUM()")?,
+                None => {
+                    let sum = i64::try_from(integer_sum).map_err(|_| query_runtime_error("SUM() overflowed the signed 64-bit range"))?;
+                    Value::I64(sum)
+                }
             };
             Ok((name.clone(), result))
         }

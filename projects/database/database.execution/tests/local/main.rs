@@ -1,5 +1,6 @@
 ﻿//! 本地查询集成测试。
 
+mod aggregate;
 mod binary_result;
 mod containers;
 mod dml;

@@ -626,3 +626,20 @@ fn recursive_shape_guards_stay_closed() {
     let error = gateway.sql("WITH r AS (SELECT 1 AS n UNION SELECT 2) SELECT * FROM r").expect_err("plain WITH keeps rejecting set bodies");
     assert!(error.message.contains("set-operation"), "unexpected error: {}", error.message);
 }
+
+/// `SUM` over an exact-decimal column keeps the numeric total: the column reads
+/// back as its plain decimal text, which the aggregate must parse instead of
+/// dropping every row and reporting `NULL`.
+#[test]
+fn decimal_sum_returns_the_numeric_total() {
+    let gateway = Gateway::new("decimal-sum");
+    gateway.expect_sql("CREATE TABLE money (id INT NOT NULL PRIMARY KEY, amount DECIMAL(10,2))");
+    gateway.expect_sql("INSERT INTO money (id, amount) VALUES (1, 10.50), (2, 20.25)");
+    assert_eq!(gateway.scalar_text("SELECT amount FROM money WHERE id = 1"), "10.50");
+    let result = gateway.expect_sql("SELECT SUM(amount) FROM money");
+    assert_eq!(result.rows.len(), 1);
+    match &result.rows[0][0] {
+        SqlValue::Number(total) => assert_eq!(*total, 30.75),
+        other => panic!("SUM(DECIMAL) must keep the total, got {other:?}"),
+    }
+}
