@@ -2,11 +2,17 @@
 
 use data_binary_mach_o::mach_o::{
     MachArchitecture, MachOEndian, MachOImageBuilder, MachOParseError, architecture, parse_macho, parse_macho_header,
+    read_macho_symbols,
 };
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;
 const LC_SEGMENT_64: u32 = 0x19;
+const LC_SYMTAB: u32 = 0x2;
 const LC_MAIN: u32 = 0x8000_0028;
+
+fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
 
 fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
     bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
@@ -167,4 +173,79 @@ fn cpu_types_map_to_architectures() {
     assert_eq!(architecture(0x0100_000c), MachArchitecture::Arm64);
     assert_eq!(architecture(42), MachArchitecture::Unknown);
     assert_eq!(MachArchitecture::X64.as_str(), "x64");
+}
+
+/// 在 [`macho64_bytes`] 的基础上追加 `LC_SYMTAB` 与两条符号。
+fn macho64_with_symbols() -> Vec<u8> {
+    let segment_size = 72 + 80;
+    let command_size = segment_size + 24 + 24;
+    let mut bytes = vec![0u8; 0x400];
+
+    put_u32(&mut bytes, 0, MH_MAGIC_64);
+    put_u32(&mut bytes, 4, 0x0100_000C);
+    put_u32(&mut bytes, 12, 2);
+    put_u32(&mut bytes, 16, 3);
+    put_u32(&mut bytes, 20, command_size as u32);
+
+    let segment = 32;
+    put_u32(&mut bytes, segment, LC_SEGMENT_64);
+    put_u32(&mut bytes, segment + 4, segment_size as u32);
+    put_name(&mut bytes, segment + 8, b"__TEXT");
+    put_u64(&mut bytes, segment + 24, 0x1_0000_0000);
+    put_u64(&mut bytes, segment + 32, 0x4000);
+    put_u64(&mut bytes, segment + 40, 0x200);
+    put_u64(&mut bytes, segment + 48, 0x200);
+    put_u32(&mut bytes, segment + 64, 1);
+
+    let section = segment + 72;
+    put_name(&mut bytes, section, b"__text");
+    put_name(&mut bytes, section + 16, b"__TEXT");
+    put_u64(&mut bytes, section + 32, 0x1_0000_0400);
+    put_u64(&mut bytes, section + 40, 0x10);
+    put_u32(&mut bytes, section + 48, 0x400);
+    put_u32(&mut bytes, section + 52, 4);
+    put_u32(&mut bytes, section + 64, 0x8000_0400);
+
+    let main = segment + segment_size;
+    put_u32(&mut bytes, main, LC_MAIN);
+    put_u32(&mut bytes, main + 4, 24);
+    put_u64(&mut bytes, main + 8, 0x400);
+
+    let symtab = main + 24;
+    put_u32(&mut bytes, symtab, LC_SYMTAB);
+    put_u32(&mut bytes, symtab + 4, 24);
+    put_u32(&mut bytes, symtab + 8, 0x300);
+    put_u32(&mut bytes, symtab + 12, 2);
+    put_u32(&mut bytes, symtab + 16, 0x320);
+    put_u32(&mut bytes, symtab + 20, 14);
+
+    let strings = b"\0_start\0_puts\0";
+    bytes[0x320..0x320 + strings.len()].copy_from_slice(strings);
+    put_u32(&mut bytes, 0x300, 1);
+    bytes[0x304] = 0x0f;
+    bytes[0x305] = 1;
+    put_u64(&mut bytes, 0x308, 0x1_0000_0400);
+    put_u32(&mut bytes, 0x310, 8);
+    bytes[0x314] = 0x01;
+    put_u16(&mut bytes, 0x316, 0);
+    bytes
+}
+
+#[test]
+fn reads_symtab_symbols() {
+    let bytes = macho64_with_symbols();
+    let image = parse_macho(&bytes).expect("parse mach-o with symtab");
+    let symtab = image.symtab.expect("symtab");
+    assert_eq!(symtab.symbol_count, 2);
+    assert_eq!(symtab.string_offset, 0x320);
+
+    let symbols = read_macho_symbols(&bytes, &image).expect("read symbols");
+    assert_eq!(symbols.len(), 2);
+    assert_eq!(symbols[0].name, "_start");
+    assert!(symbols[0].is_section());
+    assert!(symbols[0].is_external());
+    assert_eq!(symbols[0].value, 0x1_0000_0400);
+    assert_eq!(symbols[1].name, "_puts");
+    assert!(symbols[1].is_undefined());
+    assert!(symbols[1].is_external());
 }

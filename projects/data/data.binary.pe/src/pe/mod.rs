@@ -1,10 +1,12 @@
 //! `PE/COFF` 解析与原生 / 托管写出。
 
+mod analysis;
 pub mod clr;
 mod native;
 mod read;
 mod writer;
 
+pub use analysis::{PeAnalysisError, PeExport, PeImport, PeSymbol, read_coff_symbols, read_exports, read_imports};
 pub use clr::{
     ClrImageKind, ClrMetadataBuilder, ClrMetadataError, PeWriter, PeWriterError, PeWriterOptions, UserStringsHeap,
     method_body::{FatFormat, IlInstruction, LocalVarFlags, LocalVarType, MethodBody, MethodBodyFlags, parse_method_body_il},

@@ -153,6 +153,18 @@ pub enum ElfParseError {
         /// 节名表长度。
         length: u64,
     },
+    /// 符号表项小于该位宽的最小尺寸。
+    SymbolEntryTooSmall {
+        /// 实际项大小。
+        size: u64,
+    },
+    /// 符号名称表索引超出节数量。
+    SymbolStringTableOutOfRange {
+        /// `sh_link`。
+        index: usize,
+        /// 节数量。
+        count: usize,
+    },
 }
 
 impl fmt::Display for ElfParseError {
@@ -174,6 +186,10 @@ impl fmt::Display for ElfParseError {
             }
             Self::SectionNameTableOutOfRangeBytes { offset, length } => {
                 write!(f, "节名表 0x{offset:X} 处的 {length} 字节越过文件末尾")
+            }
+            Self::SymbolEntryTooSmall { size } => write!(f, "符号表项为 {size} 字节，小于该位宽的下限"),
+            Self::SymbolStringTableOutOfRange { index, count } => {
+                write!(f, "符号名称表索引 {index} 超出 {count} 个节")
             }
         }
     }
@@ -521,4 +537,111 @@ pub fn address_to_offset(sections: &[ElfSection], address: u64) -> Option<u64> {
             None
         }
     })
+}
+
+/// 返回指定 `sh_type` 的全部节，保持节表顺序。
+pub fn sections_of_type<'a>(image: &'a ElfImage, section_type: u32) -> Vec<&'a ElfSection> {
+    image
+        .sections
+        .iter()
+        .filter(|section| section.section_type == section_type)
+        .collect()
+}
+
+/// 一条 `ELF` 符号表记录。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElfSymbol {    /// 符号名；越界时为空串。
+    pub name: String,
+    /// `st_value`。
+    pub value: u64,
+    /// `st_size`。
+    pub size: u64,
+    /// `st_info`。
+    pub info: u8,
+    /// `st_other`。
+    pub other: u8,
+    /// `st_shndx`；`0` 表示未定义。
+    pub section_index: u16,
+}
+
+impl ElfSymbol {
+    /// 绑定属性（`st_info` 高 4 位）。
+    pub fn binding(&self) -> u8 {
+        self.info >> 4
+    }
+
+    /// 符号类型（`st_info` 低 4 位）。
+    pub fn kind(&self) -> u8 {
+        self.info & 0x0f
+    }
+
+    /// 是否为未定义（导入）符号。
+    pub fn is_undefined(&self) -> bool {
+        self.section_index == 0
+    }
+
+    /// 是否为全局或弱绑定。
+    pub fn is_global(&self) -> bool {
+        matches!(self.binding(), 1 | 2)
+    }
+}
+
+/// 读取一个 `SHT_SYMTAB` / `SHT_DYNSYM` 节的全部符号。
+///
+/// 名称按 `sh_link` 指向的字符串表展开；`entry_size` 为 0 时使用该位宽的默认
+/// 项大小。节数据越界或项大小不足时返回错误。
+pub fn read_elf_symbols(
+    bytes: &[u8],
+    image: &ElfImage,
+    section: &ElfSection,
+) -> Result<Vec<ElfSymbol>, ElfParseError> {
+    let minimum = if image.header.class.is_64() { 24u64 } else { 16u64 };
+    let entry_size = if section.entry_size == 0 { minimum } else { section.entry_size };
+    if entry_size < minimum {
+        return Err(ElfParseError::SymbolEntryTooSmall { size: entry_size });
+    }
+    let count = section.size / entry_size;
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let cursor = Cursor { bytes, endian: image.header.endian };
+    cursor.slice(section.offset, count * entry_size)?;
+    let strings = match image.sections.get(section.link as usize) {
+        Some(name_section) => cursor.slice(name_section.offset, name_section.size)?,
+        None => {
+            return Err(ElfParseError::SymbolStringTableOutOfRange {
+                index: section.link as usize,
+                count: image.sections.len(),
+            });
+        }
+    };
+
+    let mut symbols = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let base = section.offset + index * entry_size;
+        let name_offset = cursor.u32(base)?;
+        let symbol = if image.header.class.is_64() {
+            ElfSymbol {
+                name: String::new(),
+                value: cursor.u64(base + 8)?,
+                size: cursor.u64(base + 16)?,
+                info: cursor.slice(base + 4, 1)?[0],
+                other: cursor.slice(base + 5, 1)?[0],
+                section_index: cursor.u16(base + 6)?,
+            }
+        }
+        else {
+            ElfSymbol {
+                name: String::new(),
+                value: u64::from(cursor.u32(base + 4)?),
+                size: u64::from(cursor.u32(base + 8)?),
+                info: cursor.slice(base + 12, 1)?[0],
+                other: cursor.slice(base + 13, 1)?[0],
+                section_index: cursor.u16(base + 14)?,
+            }
+        };
+        symbols.push(ElfSymbol { name: read_name(strings, name_offset as usize), ..symbol });
+    }
+    Ok(symbols)
 }

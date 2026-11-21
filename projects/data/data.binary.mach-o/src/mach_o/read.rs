@@ -1,8 +1,8 @@
 //! `Mach-O` 头、加载命令、段与节的读取。
 //!
 //! 读取 `Mach-O` 32/64 位与大小端文件：固定头、`LC_SEGMENT` / `LC_SEGMENT_64`
-//! 描述的段与节，以及 `LC_MAIN` 提供的入口文件偏移。符号表、重定位与
-//! `dyld` 信息不在此模块范围内。
+//! 描述的段与节、`LC_MAIN` 提供的入口文件偏移，以及 `LC_SYMTAB` 符号表。
+//! 重定位与 `dyld` 绑定信息不在此模块范围内。
 
 use std::fmt;
 
@@ -13,6 +13,7 @@ const FAT_MAGIC_64: u32 = 0xCAFE_BABF;
 
 const LC_SEGMENT: u32 = 0x1;
 const LC_SEGMENT_64: u32 = 0x19;
+const LC_SYMTAB: u32 = 0x2;
 const LC_MAIN: u32 = 0x8000_0028;
 
 /// 32 位头大小。
@@ -173,6 +174,19 @@ pub struct MachSection {
     pub flags: u32,
 }
 
+/// `LC_SYMTAB` 指向的符号表。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MachSymtab {
+    /// 符号表文件偏移。
+    pub symbol_offset: u32,
+    /// 符号数量。
+    pub symbol_count: u32,
+    /// 字符串表文件偏移。
+    pub string_offset: u32,
+    /// 字符串表长度。
+    pub string_size: u32,
+}
+
 /// 解析后的 `Mach-O` 镜像。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachOImage {
@@ -184,6 +198,8 @@ pub struct MachOImage {
     pub sections: Vec<MachSection>,
     /// `LC_MAIN` 给出的入口文件偏移。
     pub entry_offset: Option<u64>,
+    /// `LC_SYMTAB` 给出的符号表。
+    pub symtab: Option<MachSymtab>,
 }
 
 /// 识别 `Mach-O` 魔数，返回 `(is_64, endian)`。
@@ -237,7 +253,7 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
     }
 
     let reader = Reader { bytes, endian: header.endian };
-    let mut image = MachOImage { header, segments: Vec::new(), sections: Vec::new(), entry_offset: None };
+    let mut image = MachOImage { header, segments: Vec::new(), sections: Vec::new(), entry_offset: None, symtab: None };
     let mut offset = header_size;
     for index in 0..image.header.command_count {
         if offset + u64::from(LOAD_COMMAND_MIN_SIZE) > commands_end {
@@ -266,6 +282,16 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
             LC_MAIN => {
                 if size >= 24 {
                     image.entry_offset = Some(reader.u64(offset + 8)?);
+                }
+            }
+            LC_SYMTAB => {
+                if size >= 24 {
+                    image.symtab = Some(MachSymtab {
+                        symbol_offset: reader.u32(offset + 8)?,
+                        symbol_count: reader.u32(offset + 12)?,
+                        string_offset: reader.u32(offset + 16)?,
+                        string_size: reader.u32(offset + 20)?,
+                    });
                 }
             }
             _ => {}
@@ -309,6 +335,14 @@ impl<'a> Reader<'a> {
         Ok(match self.endian {
             MachOEndian::Little => u32::from_le_bytes(raw),
             MachOEndian::Big => u32::from_be_bytes(raw),
+        })
+    }
+
+    fn u16(&self, offset: u64) -> Result<u16, MachOParseError> {
+        let raw = self.slice(offset, 2)?;
+        Ok(match self.endian {
+            MachOEndian::Little => u16::from_le_bytes([raw[0], raw[1]]),
+            MachOEndian::Big => u16::from_be_bytes([raw[0], raw[1]]),
         })
     }
 
@@ -457,4 +491,70 @@ pub fn architecture(cpu_type: i32) -> MachArchitecture {
         0x0100_000c => MachArchitecture::Arm64,
         _ => MachArchitecture::Unknown,
     }
+}
+
+/// 一条 `Mach-O` 符号（`nlist`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MachSymbol {
+    /// 符号名。
+    pub name: String,
+    /// `n_value`。
+    pub value: u64,
+    /// `n_type`。
+    pub symbol_type: u8,
+    /// `n_sect`。
+    pub section: u8,
+    /// `n_desc`。
+    pub description: u16,
+}
+
+impl MachSymbol {
+    /// 是否为外部符号。
+    pub fn is_external(&self) -> bool {
+        self.symbol_type & 0x01 != 0
+    }
+
+    /// 是否为未定义（导入）符号。
+    pub fn is_undefined(&self) -> bool {
+        self.symbol_type & 0x0e == 0x00
+    }
+
+    /// 是否为定义在某个节中的符号。
+    pub fn is_section(&self) -> bool {
+        self.symbol_type & 0x0e == 0x0e && self.section != 0
+    }
+}
+
+/// 读取 `LC_SYMTAB` 描述的全部符号。
+///
+/// 没有符号表时返回空列表；符号表或字符串表越界时返回错误。
+pub fn read_macho_symbols(bytes: &[u8], image: &MachOImage) -> Result<Vec<MachSymbol>, MachOParseError> {
+    let Some(symtab) = image.symtab
+    else {
+        return Ok(Vec::new());
+    };
+    let entry_size = if image.header.is_64 { 16u64 } else { 12u64 };
+    let reader = Reader { bytes, endian: image.header.endian };
+    let table_length = u64::from(symtab.symbol_count) * entry_size;
+    reader.slice(u64::from(symtab.symbol_offset), table_length)?;
+    let strings = reader.slice(u64::from(symtab.string_offset), u64::from(symtab.string_size))?;
+
+    let mut symbols = Vec::with_capacity(symtab.symbol_count as usize);
+    for index in 0..u64::from(symtab.symbol_count) {
+        let base = u64::from(symtab.symbol_offset) + index * entry_size;
+        let name_index = reader.u32(base)? as usize;
+        let symbol_type = reader.slice(base + 4, 1)?[0];
+        let section = reader.slice(base + 5, 1)?[0];
+        let description = reader.u16(base + 6)?;
+        let value = if image.header.is_64 { reader.u64(base + 8)? } else { u64::from(reader.u32(base + 8)?) };
+        let name = match strings.get(name_index..) {
+            Some(tail) => {
+                let length = tail.iter().position(|byte| *byte == 0).unwrap_or(tail.len());
+                String::from_utf8_lossy(&tail[..length]).into_owned()
+            }
+            None => String::new(),
+        };
+        symbols.push(MachSymbol { name, value, symbol_type, section, description });
+    }
+    Ok(symbols)
 }

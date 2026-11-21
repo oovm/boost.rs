@@ -2,8 +2,9 @@
 //!
 //! This crate is the shared engine behind the OpenX binary tools. It owns the
 //! operations every tool repeats — open, header summary, section table, string
-//! scan, hex dump, byte reads, RVA mapping and atomic patching — while the
-//! format decoders stay in `data-binary-pe` and `data-binary-mach-o`.
+//! scan, hex dump, byte reads, imports, exports, symbols, pattern search, address
+//! mapping and atomic patching — while the format decoders stay in
+//! `data-binary-pe` and `data-binary-mach-o`.
 //!
 //! Product policy (which defaults to use, which formats to expose, how to name
 //! errors) stays in the product crate; this crate only performs the operation.
@@ -22,6 +23,11 @@ use boost_fs::publish::{OverwritePolicy, PublishOptions};
 use data_checksum::XxHash64;
 use data_encoding::representation::Hex;
 use serde::{Deserialize, Serialize};
+
+/// `ELF` 静态符号表节类型。
+const SHT_SYMTAB: u32 = 2;
+/// `ELF` 动态符号表节类型。
+const SHT_DYNSYM: u32 = 11;
 
 /// Failure classes shared by every inspection operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +187,179 @@ pub struct StringHit {
 pub struct StringsReport {
     /// Hits that survived the limit.
     pub hits: Vec<StringHit>,
+    /// Number of hits before the limit was applied.
+    pub total: usize,
+    /// Whether the limit removed hits.
+    pub truncated: bool,
+}
+
+/// One imported function.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportEntry {
+    /// Library or image that provides the symbol; empty when the format does not name it.
+    pub module: String,
+    /// Imported name; `None` for ordinal-only imports.
+    pub name: Option<String>,
+    /// Import ordinal, when the format carries one.
+    pub ordinal: Option<u32>,
+    /// Absolute address of the import slot, when the format carries one.
+    pub address: Option<u64>,
+}
+
+/// Bounded result of [`BinarySession::imports`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportsReport {
+    /// Entries that survived the limit.
+    pub entries: Vec<ImportEntry>,
+    /// Number of entries before the limit was applied.
+    pub total: usize,
+    /// Whether the limit removed entries.
+    pub truncated: bool,
+}
+
+/// One exported symbol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportEntry {
+    /// Exported name; `None` for ordinal-only exports.
+    pub name: Option<String>,
+    /// Export ordinal, when the format carries one.
+    pub ordinal: Option<u32>,
+    /// Absolute address of the exported symbol.
+    pub address: Option<u64>,
+    /// Forward target, when the export redirects to another module.
+    pub forwarder: Option<String>,
+}
+
+/// Bounded result of [`BinarySession::exports`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportsReport {
+    /// Entries that survived the limit.
+    pub entries: Vec<ExportEntry>,
+    /// Number of entries before the limit was applied.
+    pub total: usize,
+    /// Whether the limit removed entries.
+    pub truncated: bool,
+}
+
+/// One symbol from a debug or dynamic symbol table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolEntry {
+    /// Symbol name.
+    pub name: String,
+    /// Absolute address or value.
+    pub address: u64,
+    /// Symbol size in bytes, when the format carries one.
+    pub size: u64,
+    /// `function`, `object`, `section`, `file`, `undefined` or `unknown`.
+    pub kind: String,
+    /// `global`, `weak`, `local`, `static` or `unknown`.
+    pub binding: String,
+    /// Section that owns the symbol, when known.
+    pub section: Option<String>,
+}
+
+/// Bounded result of [`BinarySession::symbols`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolsReport {
+    /// Entries that survived the limit.
+    pub entries: Vec<SymbolEntry>,
+    /// Number of entries before the limit was applied.
+    pub total: usize,
+    /// Whether the limit removed entries.
+    pub truncated: bool,
+}
+
+/// Pattern kinds accepted by [`BinarySession::search`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    /// Hex byte string such as `90,90` or `0x90 0x90`.
+    Hex,
+    /// Printable ASCII or UTF-8 text.
+    Ascii,
+    /// UTF-16LE text, as stored by Windows wide strings.
+    Utf16Le,
+}
+
+impl SearchMode {
+    /// Stable lower-case name used in reports and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Hex => "hex",
+            Self::Ascii => "ascii",
+            Self::Utf16Le => "utf16le",
+        }
+    }
+}
+
+fn default_search_limit() -> Option<usize> {
+    Some(100)
+}
+
+/// Inputs of one [`BinarySession::search`] call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchOptions {
+    /// How `pattern` is interpreted.
+    pub mode: SearchMode,
+    /// Pattern text or hex bytes.
+    pub pattern: String,
+    /// Whether ASCII letters must match case.
+    #[serde(default)]
+    pub case_sensitive: bool,
+    /// Whether matches must be surrounded by non-word characters.
+    #[serde(default)]
+    pub whole_word: bool,
+    /// Maximum number of hits to return; `null` means unlimited.
+    #[serde(default = "default_search_limit")]
+    pub limit: Option<usize>,
+    /// First file offset to scan.
+    #[serde(default)]
+    pub start: Option<u64>,
+    /// One past the last file offset to scan.
+    #[serde(default)]
+    pub end: Option<u64>,
+}
+
+impl SearchOptions {
+    /// Builds case-insensitive, whole-file, bounded options.
+    pub fn new(mode: SearchMode, pattern: impl Into<String>) -> Self {
+        Self {
+            mode,
+            pattern: pattern.into(),
+            case_sensitive: false,
+            whole_word: false,
+            limit: default_search_limit(),
+            start: None,
+            end: None,
+        }
+    }
+}
+
+/// One pattern match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    /// File offset of the first matched byte.
+    pub offset: u64,
+    /// Printable preview of the match.
+    pub preview: String,
+}
+
+/// Bounded result of [`BinarySession::search`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchReport {
+    /// Pattern kind that was used.
+    pub mode: String,
+    /// Hits that survived the limit.
+    pub hits: Vec<SearchHit>,
     /// Number of hits before the limit was applied.
     pub total: usize,
     /// Whether the limit removed hits.
@@ -450,6 +629,299 @@ impl BinarySession {
         StringsReport { hits, total, truncated }
     }
 
+    /// Lists imported functions.
+    ///
+    /// PE reads the import directory, ELF reads `SHT_DYNSYM`, and Mach-O reads
+    /// undefined external symbols from `LC_SYMTAB`; the library name is empty
+    /// when the format does not attribute an import to one.
+    pub fn imports(&self, limit: Option<usize>) -> Result<ImportsReport> {
+        let mut entries = match self.format {
+            BinaryFormat::Pe => {
+                let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
+                let imports =
+                    pe::read_imports(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE imports: {error}")))?;
+                imports
+                    .into_iter()
+                    .map(|entry| ImportEntry {
+                        module: entry.library,
+                        name: entry.name,
+                        ordinal: entry.ordinal,
+                        address: entry.iat_rva.map(|rva| image.optional.image_base.saturating_add(u64::from(rva))),
+                    })
+                    .collect()
+            }
+            BinaryFormat::Elf => {
+                let image = elf::parse_elf(&self.bytes).map_err(|error| InspectError::parse(format!("ELF: {error}")))?;
+                let mut entries = Vec::new();
+                for section in elf::sections_of_type(&image, SHT_DYNSYM) {
+                    let symbols = elf::read_elf_symbols(&self.bytes, &image, section)
+                        .map_err(|error| InspectError::parse(format!("ELF symbols: {error}")))?;
+                    entries.extend(
+                        symbols
+                            .into_iter()
+                            .filter(|symbol| symbol.is_undefined() && symbol.is_global() && !symbol.name.is_empty())
+                            .map(|symbol| ImportEntry {
+                                module: String::new(),
+                                name: Some(symbol.name),
+                                ordinal: None,
+                                address: None,
+                            }),
+                    );
+                }
+                entries
+            }
+            BinaryFormat::MachO => {
+                let image =
+                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
+                    .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
+                symbols
+                    .into_iter()
+                    .filter(|symbol| symbol.is_undefined() && symbol.is_external() && !symbol.name.is_empty())
+                    .map(|symbol| ImportEntry { module: String::new(), name: Some(symbol.name), ordinal: None, address: None })
+                    .collect()
+            }
+            BinaryFormat::Unknown => {
+                return Err(InspectError::unsupported("imports are only available for PE, ELF and Mach-O files"));
+            }
+        };
+        let total = entries.len();
+        let limit = limit.unwrap_or(usize::MAX);
+        let truncated = total > limit;
+        entries.truncate(limit);
+        Ok(ImportsReport { entries, total, truncated })
+    }
+
+    /// Lists exported symbols.
+    ///
+    /// PE reads the export directory, ELF reads defined global symbols from
+    /// `SHT_DYNSYM`, and Mach-O reads defined external section symbols.
+    pub fn exports(&self, limit: Option<usize>) -> Result<ExportsReport> {
+        let mut entries = match self.format {
+            BinaryFormat::Pe => {
+                let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
+                let exports =
+                    pe::read_exports(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE exports: {error}")))?;
+                exports
+                    .into_iter()
+                    .map(|entry| ExportEntry {
+                        name: entry.name,
+                        ordinal: Some(entry.ordinal),
+                        address: entry
+                            .forwarder
+                            .is_none()
+                            .then(|| image.optional.image_base.saturating_add(u64::from(entry.rva))),
+                        forwarder: entry.forwarder,
+                    })
+                    .collect()
+            }
+            BinaryFormat::Elf => {
+                let image = elf::parse_elf(&self.bytes).map_err(|error| InspectError::parse(format!("ELF: {error}")))?;
+                let mut entries = Vec::new();
+                for section in elf::sections_of_type(&image, SHT_DYNSYM) {
+                    let symbols = elf::read_elf_symbols(&self.bytes, &image, section)
+                        .map_err(|error| InspectError::parse(format!("ELF symbols: {error}")))?;
+                    entries.extend(
+                        symbols
+                            .into_iter()
+                            .filter(|symbol| {
+                                !symbol.is_undefined()
+                                    && symbol.is_global()
+                                    && !symbol.name.is_empty()
+                                    && matches!(symbol.kind(), 1 | 2 | 10)
+                            })
+                            .map(|symbol| ExportEntry {
+                                name: Some(symbol.name),
+                                ordinal: None,
+                                address: Some(symbol.value),
+                                forwarder: None,
+                            }),
+                    );
+                }
+                entries
+            }
+            BinaryFormat::MachO => {
+                let image =
+                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
+                    .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
+                symbols
+                    .into_iter()
+                    .filter(|symbol| symbol.is_section() && symbol.is_external() && !symbol.name.is_empty())
+                    .map(|symbol| ExportEntry { name: Some(symbol.name), ordinal: None, address: Some(symbol.value), forwarder: None })
+                    .collect()
+            }
+            BinaryFormat::Unknown => {
+                return Err(InspectError::unsupported("exports are only available for PE, ELF and Mach-O files"));
+            }
+        };
+        let total = entries.len();
+        let limit = limit.unwrap_or(usize::MAX);
+        let truncated = total > limit;
+        entries.truncate(limit);
+        Ok(ExportsReport { entries, total, truncated })
+    }
+
+    /// Lists symbols from the debug or dynamic symbol table.
+    ///
+    /// PE reads the `COFF` symbol table, ELF prefers `SHT_SYMTAB` and falls back
+    /// to `SHT_DYNSYM`, and Mach-O reads `LC_SYMTAB`.
+    pub fn symbols(&self, limit: Option<usize>) -> Result<SymbolsReport> {
+        let mut entries = match self.format {
+            BinaryFormat::Pe => {
+                let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
+                let symbols = pe::read_coff_symbols(&image, &self.bytes)
+                    .map_err(|error| InspectError::parse(format!("PE symbols: {error}")))?;
+                symbols
+                    .into_iter()
+                    .map(|symbol| {
+                        let section = (symbol.section_number > 0)
+                            .then(|| image.sections.get(symbol.section_number as usize - 1))
+                            .flatten()
+                            .map(|section| section.name.clone());
+                        let address = if symbol.section_number > 0 {
+                            image.optional.image_base.saturating_add(u64::from(symbol.value))
+                        }
+                        else {
+                            u64::from(symbol.value)
+                        };
+                        let kind = if symbol.is_function() {
+                            "function"
+                        }
+                        else if symbol.section_number > 0 {
+                            "object"
+                        }
+                        else {
+                            "unknown"
+                        };
+                        let binding = match symbol.storage_class {
+                            2 => "global",
+                            3 => "static",
+                            _ => "unknown",
+                        };
+                        SymbolEntry {
+                            name: symbol.name,
+                            address,
+                            size: 0,
+                            kind: kind.to_string(),
+                            binding: binding.to_string(),
+                            section,
+                        }
+                    })
+                    .collect()
+            }
+            BinaryFormat::Elf => {
+                let image = elf::parse_elf(&self.bytes).map_err(|error| InspectError::parse(format!("ELF: {error}")))?;
+                let tables = {
+                    let statics = elf::sections_of_type(&image, SHT_SYMTAB);
+                    if statics.is_empty() { elf::sections_of_type(&image, SHT_DYNSYM) } else { statics }
+                };
+                let mut entries = Vec::new();
+                for section in tables {
+                    let symbols = elf::read_elf_symbols(&self.bytes, &image, section)
+                        .map_err(|error| InspectError::parse(format!("ELF symbols: {error}")))?;
+                    entries.extend(symbols.into_iter().filter(|symbol| !symbol.name.is_empty()).map(|symbol| {
+                        let kind = match symbol.kind() {
+                            1 => "object",
+                            2 => "function",
+                            3 => "section",
+                            4 => "file",
+                            _ => "unknown",
+                        };
+                        let binding = match symbol.binding() {
+                            0 => "local",
+                            1 => "global",
+                            2 => "weak",
+                            _ => "unknown",
+                        };
+                        SymbolEntry {
+                            name: symbol.name,
+                            address: symbol.value,
+                            size: symbol.size,
+                            kind: kind.to_string(),
+                            binding: binding.to_string(),
+                            section: image.sections.get(symbol.section_index as usize).map(|section| section.name.clone()),
+                        }
+                    }));
+                }
+                entries
+            }
+            BinaryFormat::MachO => {
+                let image =
+                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
+                    .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
+                symbols
+                    .into_iter()
+                    .filter(|symbol| !symbol.name.is_empty())
+                    .map(|symbol| {
+                        let section = symbol.section.checked_sub(1).and_then(|index| image.sections.get(index as usize));
+                        let kind = if symbol.is_undefined() {
+                            "undefined"
+                        }
+                        else if section.is_some_and(|section| section.flags & 0x8000_0400 != 0) {
+                            "function"
+                        }
+                        else if section.is_some() {
+                            "object"
+                        }
+                        else {
+                            "unknown"
+                        };
+                        let binding = if symbol.is_external() { "global" } else { "local" };
+                        SymbolEntry {
+                            name: symbol.name,
+                            address: symbol.value,
+                            size: 0,
+                            kind: kind.to_string(),
+                            binding: binding.to_string(),
+                            section: section.map(|section| section.name.clone()),
+                        }
+                    })
+                    .collect()
+            }
+            BinaryFormat::Unknown => {
+                return Err(InspectError::unsupported("symbols are only available for PE, ELF and Mach-O files"));
+            }
+        };
+        let total = entries.len();
+        let limit = limit.unwrap_or(usize::MAX);
+        let truncated = total > limit;
+        entries.truncate(limit);
+        Ok(SymbolsReport { entries, total, truncated })
+    }
+
+    /// Searches for a hex, ASCII or UTF-16LE pattern.
+    pub fn search(&self, options: &SearchOptions) -> Result<SearchReport> {
+        let start = options.start.unwrap_or(0);
+        let end = options.end.unwrap_or(self.size());
+        if start > end || end > self.size() {
+            return Err(InspectError::range(format!(
+                "search range 0x{start:x}..0x{end:x} is outside the file (size {})",
+                self.size()
+            )));
+        }
+        let needle = build_needle(options)?;
+        let range = &self.bytes[start as usize..end as usize];
+        let limit = options.limit.unwrap_or(usize::MAX);
+        let mut hits = Vec::new();
+        let mut total = 0usize;
+        let mut index = 0usize;
+        while index + needle.len() <= range.len() {
+            if matches_at(range, index, &needle, options) {
+                total += 1;
+                if hits.len() < limit {
+                    hits.push(SearchHit {
+                        offset: start + index as u64,
+                        preview: preview(options.mode, &range[index..index + needle.len()]),
+                    });
+                }
+            }
+            index += 1;
+        }
+        Ok(SearchReport { mode: options.mode.as_str().to_string(), hits, total, truncated: total > limit })
+    }
+
     /// Renders a hex dump, falling back to the session defaults.
     pub fn hexdump(&self, offset: Option<u64>, length: Option<u64>) -> Result<String> {
         let offset = offset.unwrap_or(0);
@@ -566,6 +1038,91 @@ impl BinarySession {
             BinaryFormat::Unknown => Err(InspectError::unsupported("address mapping is only available for PE and ELF files")),
         }
     }
+
+    /// Maps a file offset onto an absolute virtual address.
+    pub fn offset_to_va(&self, offset: u64) -> Result<u64> {
+        if offset >= self.size() {
+            return Err(InspectError::range(format!("offset 0x{offset:x} is outside the file (size {})", self.size())));
+        }
+        match self.format {
+            BinaryFormat::Pe => {
+                let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
+                let headers = u64::from(image.optional.size_of_headers);
+                if headers != 0 && offset < headers {
+                    return Ok(image.optional.image_base.saturating_add(offset));
+                }
+                let section = image
+                    .sections
+                    .iter()
+                    .find(|section| {
+                        offset >= u64::from(section.pointer_to_raw_data)
+                            && offset < u64::from(section.pointer_to_raw_data) + u64::from(section.size_of_raw_data)
+                    })
+                    .ok_or_else(|| InspectError::range(format!("offset 0x{offset:x} is not mapped by any PE section")))?;
+                let rva = u64::from(section.virtual_address) + (offset - u64::from(section.pointer_to_raw_data));
+                Ok(image.optional.image_base.saturating_add(rva))
+            }
+            BinaryFormat::Elf => {
+                let image = elf::parse_elf(&self.bytes).map_err(|error| InspectError::parse(format!("ELF: {error}")))?;
+                let section = image
+                    .sections
+                    .iter()
+                    .find(|section| {
+                        section.address != 0
+                            && section.size != 0
+                            && offset >= section.offset
+                            && offset < section.offset.saturating_add(section.size)
+                    })
+                    .ok_or_else(|| InspectError::range(format!("offset 0x{offset:x} is not mapped by any ELF section")))?;
+                Ok(section.address + (offset - section.offset))
+            }
+            BinaryFormat::MachO => {
+                let image =
+                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                if let Some(section) = image.sections.iter().find(|section| {
+                    section.size != 0 && offset >= section.file_offset && offset < section.file_offset.saturating_add(section.size)
+                }) {
+                    return Ok(section.address + (offset - section.file_offset));
+                }
+                if let Some(segment) = image.segments.iter().find(|segment| {
+                    segment.file_size != 0
+                        && offset >= segment.file_offset
+                        && offset < segment.file_offset.saturating_add(segment.file_size)
+                }) {
+                    return Ok(segment.vm_address + (offset - segment.file_offset));
+                }
+                Err(InspectError::range(format!("offset 0x{offset:x} is not mapped by any Mach-O section or segment")))
+            }
+            BinaryFormat::Unknown => Err(InspectError::unsupported("address mapping is only available for PE, ELF and Mach-O files")),
+        }
+    }
+
+    /// Maps a file offset onto a PE image-relative address.
+    ///
+    /// ELF and Mach-O have no image-relative address; use [`Self::offset_to_va`]
+    /// for those formats.
+    pub fn offset_to_rva(&self, offset: u64) -> Result<u64> {
+        if self.format != BinaryFormat::Pe {
+            return Err(InspectError::unsupported("RVA mapping is only available for PE files; use offset_to_va"));
+        }
+        if offset >= self.size() {
+            return Err(InspectError::range(format!("offset 0x{offset:x} is outside the file (size {})", self.size())));
+        }
+        let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
+        let headers = u64::from(image.optional.size_of_headers);
+        if headers != 0 && offset < headers {
+            return Ok(offset);
+        }
+        let section = image
+            .sections
+            .iter()
+            .find(|section| {
+                offset >= u64::from(section.pointer_to_raw_data)
+                    && offset < u64::from(section.pointer_to_raw_data) + u64::from(section.size_of_raw_data)
+            })
+            .ok_or_else(|| InspectError::range(format!("offset 0x{offset:x} is not mapped by any PE section")))?;
+        Ok(u64::from(section.virtual_address) + (offset - u64::from(section.pointer_to_raw_data)))
+    }
 }
 
 /// Detects the container from its leading bytes.
@@ -602,6 +1159,89 @@ pub fn parse_hex(text: &str) -> Result<Vec<u8>> {
         .decode(digits.as_bytes())
         .map(|facts| facts.value)
         .map_err(|error| InspectError::parse(format!("invalid hex byte string: {error}")))
+}
+
+/// Builds the byte pattern a search looks for.
+fn build_needle(options: &SearchOptions) -> Result<Vec<u8>> {
+    if options.pattern.is_empty() {
+        return Err(InspectError::parse("search pattern is empty"));
+    }
+    match options.mode {
+        SearchMode::Hex => parse_hex(&options.pattern),
+        SearchMode::Ascii => Ok(options.pattern.as_bytes().to_vec()),
+        SearchMode::Utf16Le => {
+            let mut bytes = Vec::with_capacity(options.pattern.len() * 2);
+            for unit in options.pattern.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            Ok(bytes)
+        }
+    }
+}
+
+/// Checks one candidate position, including the case and word-boundary rules.
+fn matches_at(haystack: &[u8], index: usize, needle: &[u8], options: &SearchOptions) -> bool {
+    let Some(candidate) = haystack.get(index..index + needle.len())
+    else {
+        return false;
+    };
+    let equal = if options.case_sensitive || options.mode == SearchMode::Hex {
+        candidate == needle
+    }
+    else {
+        candidate.iter().zip(needle).all(|(left, right)| left.to_ascii_lowercase() == right.to_ascii_lowercase())
+    };
+    if !equal {
+        return false;
+    }
+    if !options.whole_word {
+        return true;
+    }
+    if options.mode == SearchMode::Utf16Le {
+        let before = index.checked_sub(2).and_then(|position| utf16_unit(haystack, position));
+        let after = utf16_unit(haystack, index + needle.len());
+        !before.is_some_and(is_word_unit) && !after.is_some_and(is_word_unit)
+    }
+    else {
+        let before = index.checked_sub(1).map(|position| haystack[position]);
+        let after = haystack.get(index + needle.len()).copied();
+        !before.is_some_and(is_word_byte) && !after.is_some_and(is_word_byte)
+    }
+}
+
+fn utf16_unit(bytes: &[u8], position: usize) -> Option<u16> {
+    let raw = bytes.get(position..position + 2)?;
+    Some(u16::from_le_bytes([raw[0], raw[1]]))
+}
+
+fn is_word_unit(unit: u16) -> bool {
+    unit < 0x80 && is_word_byte(unit as u8)
+}
+
+fn is_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+/// Renders a short printable preview of one match.
+fn preview(mode: SearchMode, bytes: &[u8]) -> String {
+    match mode {
+        SearchMode::Hex => {
+            let mut text = String::new();
+            for byte in bytes.iter().take(32) {
+                if !text.is_empty() {
+                    text.push(' ');
+                }
+                text.push_str(&format!("{byte:02x}"));
+            }
+            text
+        }
+        SearchMode::Ascii => String::from_utf8_lossy(&bytes[..bytes.len().min(64)]).into_owned(),
+        SearchMode::Utf16Le => {
+            let units: Vec<u16> =
+                bytes.chunks_exact(2).take(64).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+            String::from_utf16_lossy(&units)
+        }
+    }
 }
 
 fn pe_magic(magic: u16) -> &'static str {
@@ -715,7 +1355,9 @@ fn content_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Architecture, BinaryFormat, BinarySession, InspectOptions, parse_hex, scan_strings};
+    use super::{
+        Architecture, BinaryFormat, BinarySession, InspectOptions, SearchMode, SearchOptions, parse_hex, scan_strings,
+    };
 
     #[test]
     fn hex_parser_accepts_common_separators() {
@@ -791,5 +1433,107 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].offset, 4);
         assert_eq!(hits[0].value, "abcd");
+    }
+
+    #[test]
+    fn search_supports_ascii_hex_and_utf16() {
+        let session = BinarySession::from_bytes(
+            "search.bin",
+            b"\x00Hello World\x00hello\x00H\x00e\x00l\x00l\x00o\x00".to_vec(),
+        );
+
+        let text = session.search(&SearchOptions::new(SearchMode::Ascii, "hello")).unwrap();
+        assert_eq!(text.mode, "ascii");
+        assert_eq!(text.total, 2);
+        assert_eq!(text.hits[0].offset, 1);
+        assert_eq!(text.hits[0].preview, "Hello");
+        assert!(!text.truncated);
+
+        let bounded = session
+            .search(&SearchOptions { limit: Some(1), ..SearchOptions::new(SearchMode::Ascii, "hello") })
+            .unwrap();
+        assert_eq!(bounded.hits.len(), 1);
+        assert_eq!(bounded.total, 2);
+        assert!(bounded.truncated);
+
+        let hex = session.search(&SearchOptions::new(SearchMode::Hex, "48 65")).unwrap();
+        assert_eq!(hex.hits[0].offset, 1);
+        assert_eq!(hex.hits[0].preview, "48 65");
+
+        let wide = session.search(&SearchOptions::new(SearchMode::Utf16Le, "Hello")).unwrap();
+        assert_eq!(wide.total, 1);
+        assert_eq!(wide.hits[0].offset, 19);
+        assert_eq!(wide.hits[0].preview, "Hello");
+
+        let whole = session
+            .search(&SearchOptions { whole_word: true, ..SearchOptions::new(SearchMode::Ascii, "hello") })
+            .unwrap();
+        assert_eq!(whole.total, 2);
+        let partial = session
+            .search(&SearchOptions { whole_word: true, ..SearchOptions::new(SearchMode::Ascii, "Hell") })
+            .unwrap();
+        assert_eq!(partial.total, 0);
+
+        assert_eq!(
+            session.search(&SearchOptions::new(SearchMode::Hex, "zz")).unwrap_err().code(),
+            "binary/parse"
+        );
+        assert_eq!(
+            session
+                .search(&SearchOptions { start: Some(4), end: Some(2), ..SearchOptions::new(SearchMode::Ascii, "a") })
+                .unwrap_err()
+                .code(),
+            "binary/range"
+        );
+    }
+
+    fn small_pe() -> Vec<u8> {
+        fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
+            bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+            bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let mut bytes = vec![0u8; 0x400];
+        bytes[0..2].copy_from_slice(b"MZ");
+        put_u32(&mut bytes, 0x3c, 0x80);
+        bytes[0x80..0x84].copy_from_slice(b"PE\0\0");
+        put_u16(&mut bytes, 0x84, 0x8664);
+        put_u16(&mut bytes, 0x86, 1);
+        put_u16(&mut bytes, 0x94, 0xf0);
+        put_u16(&mut bytes, 0x98, 0x20b);
+        put_u64(&mut bytes, 0x98 + 24, 0x1_4000_0000);
+        put_u32(&mut bytes, 0x98 + 60, 0x200);
+        let section = 0x188;
+        bytes[section..section + 5].copy_from_slice(b".text");
+        put_u32(&mut bytes, section + 8, 0x200);
+        put_u32(&mut bytes, section + 12, 0x1000);
+        put_u32(&mut bytes, section + 16, 0x200);
+        put_u32(&mut bytes, section + 20, 0x200);
+        bytes
+    }
+
+    #[test]
+    fn offsets_map_back_to_rva_and_va() {
+        let session = BinarySession::from_bytes("small.exe", small_pe());
+        assert_eq!(session.offset_to_rva(0x210).unwrap(), 0x1010);
+        assert_eq!(session.offset_to_va(0x210).unwrap(), 0x1_4000_1010);
+        assert_eq!(session.offset_to_rva(0x10).unwrap(), 0x10);
+        assert_eq!(session.offset_to_va(0x10).unwrap(), 0x1_4000_0010);
+        assert_eq!(session.offset_to_rva(0x3ff).unwrap(), 0x11ff);
+        assert_eq!(session.offset_to_va(0x400).unwrap_err().code(), "binary/range");
+
+        let elf = BinarySession::from_bytes("small.elf", {
+            let mut bytes = vec![0u8; 0x40];
+            bytes[0..4].copy_from_slice(b"\x7fELF");
+            bytes[4] = 2;
+            bytes[5] = 1;
+            bytes
+        });
+        assert_eq!(elf.offset_to_va(0).unwrap_err().code(), "binary/range");
+        assert_eq!(elf.offset_to_rva(0).unwrap_err().code(), "binary/unsupported");
     }
 }
