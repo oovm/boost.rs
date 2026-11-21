@@ -1,4 +1,4 @@
-use boost_source::binary::{ByteSource, ContentIdentity, MemorySource, ReadOutcome};
+use boost_source::binary::{ByteSource, ContentIdentity, MemorySource, ReadOutcome, ReadResult, SourceCapabilities};
 use data_binary_core::{AddressSpaceId, ByteExtent, LayoutGraph, LayoutNodeId, NeedRange, NodeState, ReferenceEdge, evidence_absolute};
 
 use crate::{
@@ -376,4 +376,45 @@ fn member_payload_range<S: ByteSource>(
 pub fn index_zip_bytes(label: impl Into<String>, bytes: Vec<u8>) -> Result<ZipArchiveIndex, ZipIndexError> {
     let source = MemorySource::from_bytes(label, bytes);
     index_zip(&source)
+}
+
+/// Indexes archive bytes the caller still owns.
+///
+/// Detection and inspection usually already hold the archive in a buffer, so this
+/// variant avoids copying it into a [`MemorySource`]. The index borrows nothing: member
+/// facts are copied out, and the bytes are only read while this call runs.
+pub fn index_zip_slice(label: impl Into<String>, bytes: &[u8]) -> Result<ZipArchiveIndex, ZipIndexError> {
+    let source = SliceSource { bytes, identity: ContentIdentity::new(label) };
+    index_zip(&source)
+}
+
+/// [`ByteSource`] over a borrowed buffer.
+struct SliceSource<'a> {
+    bytes: &'a [u8],
+    identity: ContentIdentity,
+}
+
+impl ByteSource for SliceSource<'_> {
+    fn length(&self) -> Option<u64> {
+        Some(self.bytes.len() as u64)
+    }
+
+    fn read_at(&self, offset: u64, destination: &mut [u8]) -> ReadResult {
+        let offset = offset as usize;
+        if offset >= self.bytes.len() {
+            return Ok(ReadOutcome::Eof);
+        }
+        let available = self.bytes.len() - offset;
+        let to_copy = destination.len().min(available);
+        destination[..to_copy].copy_from_slice(&self.bytes[offset..offset + to_copy]);
+        if to_copy == destination.len() { Ok(ReadOutcome::Complete) } else { Ok(ReadOutcome::Partial { bytes_read: to_copy as u64 }) }
+    }
+
+    fn capabilities(&self) -> SourceCapabilities {
+        SourceCapabilities::MEMORY
+    }
+
+    fn identity(&self) -> ContentIdentity {
+        self.identity.clone()
+    }
 }

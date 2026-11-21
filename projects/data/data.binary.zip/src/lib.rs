@@ -22,7 +22,7 @@ pub use entry::{
     ZipEncryption, ZipMember, ZipNameEncoding,
 };
 pub use eocd::{EndOfCentralDirectory, find_eocd, scan_eocd_fields};
-pub use index::{ZipArchiveIndex, ZipIndexError, index_zip, index_zip_bytes};
+pub use index::{ZipArchiveIndex, ZipIndexError, index_zip, index_zip_bytes, index_zip_slice};
 pub use time::{
     DOS_MAX_YEAR, DOS_MIN_YEAR, EXTENDED_TIMESTAMP_EXTRA_ID, ZipDateTime, ZipDosDateTime, ZipExtendedTimestamp, parse_extended_timestamp,
 };
