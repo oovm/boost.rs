@@ -235,9 +235,21 @@ pub(crate) fn secure<S: Read + Write>(scheme: &str, host: &str, stream: S, tls: 
     }
 }
 
-/// The pinned Let's Encrypt anchors, parsed once per process.
+/// The pinned Let's Encrypt anchors plus the platform store, parsed once per process.
+///
+/// The pinned set alone rejects every public host behind another CA, so the
+/// operating system's roots are merged in; a duplicate subject is skipped
+/// because the pinned copy is already trusted.
 #[cfg(feature = "tls")]
 fn trust_anchors() -> &'static [TrustAnchor] {
     static ANCHORS: OnceLock<Vec<TrustAnchor>> = OnceLock::new();
-    ANCHORS.get_or_init(lets_encrypt_anchors)
+    ANCHORS.get_or_init(|| {
+        let mut anchors = lets_encrypt_anchors();
+        for anchor in crate::pki::system_anchors() {
+            if !anchors.iter().any(|existing| existing.subject_raw == anchor.subject_raw) {
+                anchors.push(anchor);
+            }
+        }
+        anchors
+    })
 }
