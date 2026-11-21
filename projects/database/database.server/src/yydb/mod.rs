@@ -17,5 +17,5 @@ mod serve;
 
 pub use auth::{AuthBootstrap, Permission, Principal, PrincipalKind, Role, Session, SessionRegistry};
 pub use dispatch::{PreparedPlan, SessionState, dispatch, is_loopback_host};
-pub use serve::{ServeOptions, WireServe, assert_bind_allowed, run_serve};
+pub use serve::{ServeOptions, WireServe, assert_bind_allowed, connection_factory, run_serve};
 pub use session::{BackendFactory, ServeBackend};

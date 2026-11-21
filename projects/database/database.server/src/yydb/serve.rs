@@ -236,6 +236,14 @@ impl BackendFactory for ConnectionFactory {
     }
 }
 
+/// 把一台已打开的嵌入式连接装配成线服务后端工厂。
+///
+/// 进程内宿主与集成测试都用这个入口启动正式 [`WireServe`]，而不是各自
+/// 复制接受循环或直接调用 `dispatch`。
+pub fn connection_factory(connection: Connection) -> Arc<dyn BackendFactory> {
+    Arc::new(ConnectionFactory { connection })
+}
+
 /// Open the database and serve binary protocol v1 until the process exits.
 pub fn run_serve(path: &Path, bind: &str, insecure_bind: bool) -> Result<(), Box<dyn std::error::Error>> {
     let insecure_bind = insecure_bind_opted_in(insecure_bind);
@@ -344,6 +352,9 @@ fn handle_tcp(mut stream: TcpStream, backend: &dyn ServeBackend, state: &Arc<Ses
         };
         let response = dispatch(backend, state, &request);
         write_frame(&mut stream, &response)?;
+        if state.is_closing() {
+            return Ok(());
+        }
         if super::dispatch::is_authenticated(state) {
             let _ = stream.set_read_timeout(None);
         }
@@ -409,6 +420,12 @@ fn handle_websocket(mut stream: TcpStream, backend: &dyn ServeBackend, state: &A
         let response = dispatch(backend, state, &request);
         let encoded = response.encode()?;
         write_ws_binary(&mut stream, &encoded)?;
+        if state.is_closing() {
+            return Ok(());
+        }
+        if super::dispatch::is_authenticated(state) {
+            let _ = stream.set_read_timeout(None);
+        }
     }
 }
 

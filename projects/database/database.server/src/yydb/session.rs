@@ -113,6 +113,14 @@ pub trait ServeBackend: Send {
     fn perf_report(&self) -> Result<String> {
         Err(Error::Unsupported("this backend does not serve perf reports"))
     }
+
+    /// 显式关闭会话：回滚未提交事务并释放会话持有的写租约。
+    ///
+    /// 线服务在回复 `SessionCloseOk` 后关闭连接；本方法保证释放不依赖
+    /// 后端对象的析构时机,后继会话可以立即取得同一租约。
+    fn close(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// 为新连接建立执行后端。
@@ -206,6 +214,13 @@ impl ServeBackend for Connection {
     fn attach_transport(&self, stream: &TcpStream) -> Result<()> {
         let cloned = stream.try_clone().map_err(Error::Io)?;
         self.set_host_adapter(std::sync::Arc::new(TcpWireHostAdapter::new(cloned)));
+        Ok(())
+    }
+
+    fn close(&self) -> Result<()> {
+        // An open transaction must not outlive the session; rollback without an
+        // open transaction is reported by the engine, so the result is ignored.
+        let _ = Connection::rollback(self);
         Ok(())
     }
 }

@@ -2,7 +2,13 @@
 //!
 //! Kept out of `database.protocol.yy` because it executes database operations.
 
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use database_protocol_yy::{
     Frame, MessageType, decode_authenticate, decode_execute_prepared, decode_kv_get, decode_kv_put, decode_micro_register, decode_params,
@@ -43,13 +49,28 @@ pub struct SessionState {
     pub session: Mutex<Option<Session>>,
     /// Plans prepared on this connection, keyed by `statement_id`.
     pub prepared: Mutex<BTreeMap<String, PreparedPlan>>,
+    /// Set after an explicit `SessionClose`; the serve loop stops reading and
+    /// lets the connection handler release its transport.
+    closing: AtomicBool,
 }
 
 impl SessionState {
     /// Fresh per-connection state — no session, empty plan registry, but
     /// already wired to the server's shared [`SessionRegistry`].
     pub fn new(connection_id: u64, registry: std::sync::Arc<SessionRegistry>, remote: bool) -> Self {
-        Self { connection_id, registry, remote, session: Mutex::new(None), prepared: Mutex::new(BTreeMap::new()) }
+        Self {
+            connection_id,
+            registry,
+            remote,
+            session: Mutex::new(None),
+            prepared: Mutex::new(BTreeMap::new()),
+            closing: AtomicBool::new(false),
+        }
+    }
+
+    /// Whether the peer explicitly closed the session.
+    pub fn is_closing(&self) -> bool {
+        self.closing.load(Ordering::Acquire)
     }
 
     /// Convenience constructor for unit tests — loopback-only anonymous
@@ -81,7 +102,14 @@ impl SessionState {
         else {
             None
         };
-        Self { connection_id, registry, remote: false, session: Mutex::new(session), prepared: Mutex::new(BTreeMap::new()) }
+        Self {
+            connection_id,
+            registry,
+            remote: false,
+            session: Mutex::new(session),
+            prepared: Mutex::new(BTreeMap::new()),
+            closing: AtomicBool::new(false),
+        }
     }
 }
 
@@ -332,6 +360,21 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
             Ok(report) => Frame::new(MessageType::PerfReportOk, id, report.into_bytes()),
             Err(error) => error_frame(id, &error),
         },
+        // ── Explicit session close: release the lease before the socket dies ──
+        MessageType::SessionClose => {
+            let outcome = backend.close();
+            let token = state.session.lock().expect("session auth poisoned").as_ref().map(|session| session.token.clone());
+            if let Some(token) = token {
+                state.registry.release_session(&token);
+            }
+            *state.session.lock().expect("session auth poisoned") = None;
+            state.prepared.lock().expect("prepared registry poisoned").clear();
+            state.closing.store(true, Ordering::Release);
+            match outcome {
+                Ok(()) => Frame::new(MessageType::SessionCloseOk, id, Vec::new()),
+                Err(error) => error_frame(id, &error),
+            }
+        }
         // ── server→client messages / handshake-only frames we never dispatch here ──
         MessageType::HelloOk
         | MessageType::AuthenticateOk
@@ -353,6 +396,7 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
         | MessageType::TxnRollbackToOk
         | MessageType::TxnReleaseOk
         | MessageType::PerfReportOk
+        | MessageType::SessionCloseOk
         | MessageType::Error => error_frame(id, &Error::Protocol { message: "unexpected client message type".to_owned() }),
         // Hello / Authenticate are handled by dispatch() before auth check — reaching here means
         // they somehow slipped through; reject defensively.

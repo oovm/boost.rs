@@ -334,4 +334,14 @@ impl SessionRegistry {
         sessions.insert(token.to_owned(), session.clone());
         Ok(session)
     }
+
+    /// Drop an active session so its lease can be re-acquired immediately.
+    ///
+    /// Called on an explicit `SessionClose`; a later `Authenticate` with the
+    /// same bootstrap token creates a fresh session. Returns whether an active
+    /// entry was removed.
+    pub fn release_session(&self, token: &str) -> bool {
+        let mut sessions = self.sessions.lock().expect("session registry poisoned");
+        sessions.remove(token).is_some()
+    }
 }
