@@ -427,6 +427,8 @@ pub enum MachArchitecture {
     X86,
     /// 64 位 x86。
     X64,
+    /// 32 位 ARM。
+    Arm,
     /// 64 位 ARM。
     Arm64,
     /// 未识别的 CPU 类型。
@@ -439,6 +441,7 @@ impl MachArchitecture {
         match self {
             Self::X86 => "x86",
             Self::X64 => "x64",
+            Self::Arm => "arm",
             Self::Arm64 => "arm64",
             Self::Unknown => "unknown",
         }
@@ -450,6 +453,7 @@ pub fn architecture(cpu_type: i32) -> MachArchitecture {
     match cpu_type {
         7 => MachArchitecture::X86,
         0x0100_0007 => MachArchitecture::X64,
+        0x0000_000c => MachArchitecture::Arm,
         0x0100_000c => MachArchitecture::Arm64,
         _ => MachArchitecture::Unknown,
     }

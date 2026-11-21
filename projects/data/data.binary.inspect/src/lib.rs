@@ -118,6 +118,8 @@ pub enum Architecture {
     X86,
     /// 64-bit x86.
     X64,
+    /// 32-bit ARM.
+    Arm,
     /// 64-bit ARM.
     Arm64,
     /// Not reported by the header.
@@ -130,6 +132,7 @@ impl Architecture {
         match self {
             Self::X86 => "x86",
             Self::X64 => "x64",
+            Self::Arm => "arm",
             Self::Arm64 => "arm64",
             Self::Unknown => "unknown",
         }
@@ -400,6 +403,7 @@ impl BinarySession {
                 .map(|image| match elf::architecture(image.header.machine) {
                     elf::ElfArchitecture::X86 => Architecture::X86,
                     elf::ElfArchitecture::X64 => Architecture::X64,
+                    elf::ElfArchitecture::Arm => Architecture::Arm,
                     elf::ElfArchitecture::Arm64 => Architecture::Arm64,
                     elf::ElfArchitecture::Unknown => Architecture::Unknown,
                 })
@@ -408,6 +412,7 @@ impl BinarySession {
                 .map(|header| match mach_o::architecture(header.cpu_type) {
                     mach_o::MachArchitecture::X86 => Architecture::X86,
                     mach_o::MachArchitecture::X64 => Architecture::X64,
+                    mach_o::MachArchitecture::Arm => Architecture::Arm,
                     mach_o::MachArchitecture::Arm64 => Architecture::Arm64,
                     mach_o::MachArchitecture::Unknown => Architecture::Unknown,
                 })

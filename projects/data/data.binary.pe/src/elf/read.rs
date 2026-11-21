@@ -472,6 +472,8 @@ pub enum ElfArchitecture {
     X86,
     /// 64 位 x86。
     X64,
+    /// 32 位 ARM。
+    Arm,
     /// 64 位 ARM。
     Arm64,
     /// 未识别的机器类型。
@@ -484,6 +486,7 @@ impl ElfArchitecture {
         match self {
             Self::X86 => "x86",
             Self::X64 => "x64",
+            Self::Arm => "arm",
             Self::Arm64 => "arm64",
             Self::Unknown => "unknown",
         }
@@ -495,6 +498,7 @@ pub fn architecture(machine: u16) -> ElfArchitecture {
     match machine {
         3 => ElfArchitecture::X86,
         62 => ElfArchitecture::X64,
+        40 => ElfArchitecture::Arm,
         183 => ElfArchitecture::Arm64,
         _ => ElfArchitecture::Unknown,
     }
