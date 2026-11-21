@@ -1,5 +1,6 @@
 use data_binary_pe::elf::{
-    ElfClass, ElfEndian, ElfParseError, ElfSectionLayout, NativeElfImage, NativeElfWriter, parse_elf, parse_elf64,
+    ElfArchitecture, ElfClass, ElfEndian, ElfParseError, ElfSection, ElfSectionLayout, NativeElfImage, NativeElfWriter, address_to_offset,
+    architecture, parse_elf, parse_elf64,
 };
 
 fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
@@ -196,4 +197,42 @@ fn rejects_truncated_and_malformed_tables() {
     assert!(matches!(parse_elf(&bad_encoding), Err(ElfParseError::UnsupportedEncoding(7))));
 
     assert!(matches!(parse_elf(b"\x7fELF"), Err(ElfParseError::TooShort)));
+}
+
+fn section(name: &str, address: u64, offset: u64, size: u64) -> ElfSection {
+    ElfSection {
+        name: name.to_string(),
+        section_type: 1,
+        flags: 0,
+        address,
+        offset,
+        size,
+        link: 0,
+        info: 0,
+        alignment: 16,
+        entry_size: 0,
+    }
+}
+
+#[test]
+fn machine_values_map_to_architectures() {
+    assert_eq!(architecture(3), ElfArchitecture::X86);
+    assert_eq!(architecture(62), ElfArchitecture::X64);
+    assert_eq!(architecture(183), ElfArchitecture::Arm64);
+    assert_eq!(architecture(999), ElfArchitecture::Unknown);
+    assert_eq!(ElfArchitecture::Arm64.as_str(), "arm64");
+}
+
+#[test]
+fn addresses_map_through_non_empty_sections() {
+    let sections = vec![
+        section(".text", 0x1000, 0x0, 0x200),
+        section(".empty", 0x2000, 0x200, 0),
+        section(".data", 0x4000, 0x400, 0x100),
+    ];
+    assert_eq!(address_to_offset(&sections, 0x1010), Some(0x10));
+    assert_eq!(address_to_offset(&sections, 0x4000), Some(0x400));
+    assert_eq!(address_to_offset(&sections, 0x40ff), Some(0x4ff));
+    assert_eq!(address_to_offset(&sections, 0x2000), None);
+    assert_eq!(address_to_offset(&sections, 0x5000), None);
 }

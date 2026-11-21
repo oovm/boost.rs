@@ -464,3 +464,57 @@ fn read_name(names: &[u8], offset: usize) -> String {
     let length = tail.iter().position(|byte| *byte == 0).unwrap_or(tail.len());
     String::from_utf8_lossy(&tail[..length]).into_owned()
 }
+
+/// 由 `e_machine` 归纳出的指令集族。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElfArchitecture {
+    /// 32 位 x86。
+    X86,
+    /// 64 位 x86。
+    X64,
+    /// 64 位 ARM。
+    Arm64,
+    /// 未识别的机器类型。
+    Unknown,
+}
+
+impl ElfArchitecture {
+    /// 报告中使用的稳定小写名。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::X86 => "x86",
+            Self::X64 => "x64",
+            Self::Arm64 => "arm64",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// 把 `e_machine` 映射到指令集族。
+pub fn architecture(machine: u16) -> ElfArchitecture {
+    match machine {
+        3 => ElfArchitecture::X86,
+        62 => ElfArchitecture::X64,
+        183 => ElfArchitecture::Arm64,
+        _ => ElfArchitecture::Unknown,
+    }
+}
+
+/// 把虚拟地址映射到文件偏移。
+///
+/// 只考虑同时具有非零地址和非零大小的节；返回的偏移未做文件长度校验，
+/// 由调用方根据自己的边界策略决定是否拒绝。
+pub fn address_to_offset(sections: &[ElfSection], address: u64) -> Option<u64> {
+    sections.iter().find_map(|section| {
+        if section.address == 0 || section.size == 0 {
+            return None;
+        }
+        let end = section.address.saturating_add(section.size);
+        if address >= section.address && address < end {
+            Some(section.offset.saturating_add(address - section.address))
+        }
+        else {
+            None
+        }
+    })
+}

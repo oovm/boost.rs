@@ -22,6 +22,24 @@ fn pdf_and_gzip_are_distinct_candidates() {
 }
 
 #[test]
+fn builtins_cover_openx_container_signatures() {
+    let cases: [(&[u8], &str); 8] = [
+        (b"\x7fELF\x02\x01\x01", "elf"),
+        (b"MZ\x90\x00", "pe"),
+        (&[0xcf, 0xfa, 0xed, 0xfe], "macho"),
+        (b"\0asm\x01\x00\x00\x00", "wasm"),
+        (b"UnityFS\0\0\0\0\0\0\0", "unityfs"),
+        (b"UnityWeb\0\0\0\0\0\0\0", "unityweb"),
+        (b"CCON\x00\x01", "ccon"),
+        (b"V1MMWX\x00\x00", "wxapkg"),
+    ];
+    for (bytes, expected) in cases {
+        let hits = probe_memory("sample", bytes.to_vec());
+        assert!(hits.iter().any(|hit| hit.format_id == expected), "missing {expected}");
+    }
+}
+
+#[test]
 fn tail_anchor_can_match_end_marker() {
     let mut session = ProbeSession::new();
     session.register(data_binary_probe::Signature {

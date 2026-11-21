@@ -1,0 +1,18 @@
+[package]
+name = "data-binary-inspect"
+description = "File-backed binary inspection sessions: container detection, headers, sections, strings, hex dumps, reads, RVA mapping and atomic patching"
+readme = "readme.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+boost-fs = { workspace = true }
+data-binary-mach-o = { workspace = true }
+data-binary-pe = { workspace = true }
+data-checksum = { workspace = true }
+data-encoding = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -419,3 +419,38 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 }
+
+/// 由 Mach-O `cputype` 归纳出的指令集族。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MachArchitecture {
+    /// 32 位 x86。
+    X86,
+    /// 64 位 x86。
+    X64,
+    /// 64 位 ARM。
+    Arm64,
+    /// 未识别的 CPU 类型。
+    Unknown,
+}
+
+impl MachArchitecture {
+    /// 报告中使用的稳定小写名。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::X86 => "x86",
+            Self::X64 => "x64",
+            Self::Arm64 => "arm64",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// 把 `cputype` 映射到指令集族。
+pub fn architecture(cpu_type: i32) -> MachArchitecture {
+    match cpu_type {
+        7 => MachArchitecture::X86,
+        0x0100_0007 => MachArchitecture::X64,
+        0x0100_000c => MachArchitecture::Arm64,
+        _ => MachArchitecture::Unknown,
+    }
+}

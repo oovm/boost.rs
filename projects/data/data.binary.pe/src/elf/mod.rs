@@ -7,7 +7,8 @@ mod writer;
 
 pub use layout::ElfSectionLayout;
 pub use read::{
-    Elf64Header, Elf64ParseError, ElfClass, ElfEndian, ElfHeader, ElfImage, ElfParseError, ElfSection, parse_elf, parse_elf64,
+    Elf64Header, Elf64ParseError, ElfArchitecture, ElfClass, ElfEndian, ElfHeader, ElfImage, ElfParseError, ElfSection, architecture,
+    address_to_offset, parse_elf, parse_elf64,
 };
 pub use shared_writer::{
     SharedElfDataReference, SharedElfDataRelocation, SharedElfDataTarget, SharedElfImage, SharedElfImportCall, SharedElfSpec,

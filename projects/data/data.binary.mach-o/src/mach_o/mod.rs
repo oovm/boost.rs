@@ -5,7 +5,8 @@ mod read;
 use crate::error::Result;
 
 pub use read::{
-    MachHeader, MachOEndian, MachOImage, MachOParseError, MachSection, MachSegment, macho_magic, parse_macho, parse_macho_header,
+    MachArchitecture, MachHeader, MachOEndian, MachOImage, MachOParseError, MachSection, MachSegment, architecture, macho_magic,
+    parse_macho, parse_macho_header,
 };
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;

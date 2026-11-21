@@ -1,7 +1,7 @@
 //! `mach_o`：64 位 `Mach-O` 可执行镜像的构建与读取。
 
 use data_binary_mach_o::mach_o::{
-    MachOEndian, MachOImageBuilder, MachOParseError, parse_macho, parse_macho_header,
+    MachArchitecture, MachOEndian, MachOImageBuilder, MachOParseError, architecture, parse_macho, parse_macho_header,
 };
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;
@@ -157,4 +157,13 @@ fn rejects_fat_and_truncated_input() {
     let mut bytes = macho64_bytes();
     put_u32(&mut bytes, 20, 4);
     assert!(matches!(parse_macho(&bytes), Err(MachOParseError::CommandOutOfRange { .. })));
+}
+
+#[test]
+fn cpu_types_map_to_architectures() {
+    assert_eq!(architecture(7), MachArchitecture::X86);
+    assert_eq!(architecture(0x0100_0007), MachArchitecture::X64);
+    assert_eq!(architecture(0x0100_000c), MachArchitecture::Arm64);
+    assert_eq!(architecture(42), MachArchitecture::Unknown);
+    assert_eq!(MachArchitecture::X64.as_str(), "x64");
 }

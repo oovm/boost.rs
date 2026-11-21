@@ -132,6 +132,17 @@ pub fn document_container_signatures() -> Vec<Signature> {
             priority: 0,
         },
         Signature::at_start("pdf", b"%PDF-"),
+        Signature::at_start("pe", b"MZ"),
+        Signature::at_start("elf", b"\x7fELF"),
+        Signature::at_start("macho", &[0xcf, 0xfa, 0xed, 0xfe]),
+        Signature::at_start("macho", &[0xce, 0xfa, 0xed, 0xfe]),
+        Signature::at_start("macho", &[0xfe, 0xed, 0xfa, 0xcf]),
+        Signature::at_start("macho", &[0xfe, 0xed, 0xfa, 0xce]),
+        Signature::at_start("wasm", b"\0asm"),
+        Signature::at_start("unityfs", b"UnityFS"),
+        Signature::at_start("unityweb", b"UnityWeb"),
+        Signature::at_start("ccon", b"CCON"),
+        Signature::at_start("wxapkg", b"V1MMWX"),
     ]
 }
 
