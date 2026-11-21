@@ -196,7 +196,12 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
     for declaration in &root.declarations {
         match declaration.kind {
             VosDeclarationKind::Namespace => namespace = declaration.path.clone().unwrap_or_default(),
-            VosDeclarationKind::Table | VosDeclarationKind::Class | VosDeclarationKind::Enums | VosDeclarationKind::Flags => {
+            VosDeclarationKind::Table
+            | VosDeclarationKind::Class
+            | VosDeclarationKind::Enums
+            | VosDeclarationKind::Flags
+            | VosDeclarationKind::Unite
+            | VosDeclarationKind::Structure => {
                 let Some(name) = declaration.name.clone()
                 else {
                     diagnostics.push(diagnostic("VOS001", "type declaration is missing a name", Some(declaration.span)));
@@ -206,6 +211,21 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
                 canonical_path.push(name);
                 if types.iter().any(|item: &TypeContract| item.canonical_path == canonical_path) {
                     diagnostics.push(diagnostic("VOS002", "duplicate type declaration", Some(declaration.span)));
+                    continue;
+                }
+                if matches!(declaration.kind, VosDeclarationKind::Unite) {
+                    match resolve_variants(declaration) {
+                        Ok(variants) => types.push(TypeContract {
+                            canonical_path,
+                            kind: TypeContractKind::Unite,
+                            fields: Vec::new(),
+                            members: Vec::new(),
+                            variants,
+                            closed: true,
+                            span: declaration.span,
+                        }),
+                        Err(errors) => diagnostics.extend(errors),
+                    }
                     continue;
                 }
                 if matches!(declaration.kind, VosDeclarationKind::Enums | VosDeclarationKind::Flags) {
@@ -245,6 +265,8 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
                                     kind: if numeric_kind == VosDeclarationKind::Enums { TypeContractKind::Enums } else { TypeContractKind::Flags },
                                     fields: Vec::new(),
                                     members,
+                                    variants: Vec::new(),
+                                    closed: false,
                                     span: declaration.span,
                                 });
                             }
@@ -263,9 +285,15 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
                 match fields {
                     Ok(fields) => types.push(TypeContract {
                         canonical_path,
-                        kind: if declaration.kind == VosDeclarationKind::Table { TypeContractKind::Table } else { TypeContractKind::Class },
+                        kind: match declaration.kind {
+                            VosDeclarationKind::Table => TypeContractKind::Table,
+                            VosDeclarationKind::Structure => TypeContractKind::Structure,
+                            _ => TypeContractKind::Class,
+                        },
                         fields,
                         members: Vec::new(),
+                        variants: Vec::new(),
+                        closed: declaration.kind == VosDeclarationKind::Structure,
                         span: declaration.span,
                     }),
                     Err(error) => diagnostics.push(error),
@@ -320,9 +348,50 @@ pub fn project_schema_only(root: &VosRoot) -> Result<SchemaProjection, Vec<Contr
                 | VosDeclarationKind::Class
                 | VosDeclarationKind::Enums
                 | VosDeclarationKind::Flags
+                | VosDeclarationKind::Unite
+                | VosDeclarationKind::Structure
         )
     });
     project_schema(&schema_root)
+}
+
+/// Resolves one `unite` declaration into variants with stable discriminants.
+///
+/// The discriminant is the variant's source-order index: a rename keeps it, an
+/// inserted variant shifts the later ones. A variant payload is a closed field
+/// set, so duplicate names inside one payload are refused.
+fn resolve_variants(declaration: &data_text_vos::VosDeclaration) -> Result<Vec<VariantContract>, Vec<ContractDiagnostic>> {
+    let mut diagnostics = Vec::new();
+    let mut names = std::collections::BTreeSet::new();
+    for variant in &declaration.variants {
+        if !names.insert(&variant.name) {
+            diagnostics.push(diagnostic("VOS011", "duplicate unite variant declaration", Some(variant.name_span)));
+        }
+    }
+    let mut variants = Vec::with_capacity(declaration.variants.len());
+    for (index, variant) in declaration.variants.iter().enumerate() {
+        let mut field_names = std::collections::BTreeSet::new();
+        for field in &variant.fields {
+            if !field_names.insert(&field.name) {
+                diagnostics.push(diagnostic("VOS012", "duplicate variant field declaration", Some(field.name_span)));
+            }
+        }
+        match variant.fields.iter().map(resolve_field).collect::<Result<Vec<_>, _>>() {
+            Ok(fields) => variants.push(VariantContract {
+                canonical_name: variant.name.clone(),
+                discriminant: index as i64,
+                fields,
+                span: variant.span,
+            }),
+            Err(error) => diagnostics.push(error),
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(variants)
+    }
+    else {
+        Err(diagnostics)
+    }
 }
 
 /// Resolves one `enums` or `flags` member into its stable numeric identity.

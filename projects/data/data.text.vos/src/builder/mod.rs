@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         VosDeclaration, VosDeclarationKind, VosDeclarationMember, VosField, VosFieldAttribute, VosParameter, VosRoot, VosServiceMethod,
-        VosServiceMethodReturn, VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax,
+        VosServiceMethodReturn, VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax, VosVariant,
     },
     language::VosLanguage,
     lexer::VosLexer,
@@ -31,6 +31,8 @@ impl VosBuilder {
             VosElementType::Class => VosDeclarationKind::Class,
             VosElementType::Enums => VosDeclarationKind::Enums,
             VosElementType::Flags => VosDeclarationKind::Flags,
+            VosElementType::Unite => VosDeclarationKind::Unite,
+            VosElementType::Structure => VosDeclarationKind::Structure,
             VosElementType::Obsolete => VosDeclarationKind::Obsolete,
             VosElementType::Using => VosDeclarationKind::Using,
             VosElementType::Const => VosDeclarationKind::Const,
@@ -112,12 +114,16 @@ impl VosBuilder {
             };
         }
         let mut fields = Vec::new();
-        if matches!(kind, VosDeclarationKind::Table | VosDeclarationKind::Class) {
+        if matches!(kind, VosDeclarationKind::Table | VosDeclarationKind::Class | VosDeclarationKind::Structure) {
             self.collect_fields(node, offset, source, &mut fields)?;
         }
         let mut members = Vec::new();
         if matches!(kind, VosDeclarationKind::Enums | VosDeclarationKind::Flags) {
             self.collect_members(node, offset, source, &mut members)?;
+        }
+        let mut variants = Vec::new();
+        if kind == VosDeclarationKind::Unite {
+            self.collect_variants(node, offset, source, &mut variants)?;
         }
         if kind == VosDeclarationKind::Service {
             self.collect_methods(node, offset, source, &mut methods)?;
@@ -136,6 +142,7 @@ impl VosBuilder {
             return_type_expr,
             fields,
             members,
+            variants,
             span,
         })
     }
@@ -274,6 +281,61 @@ impl VosBuilder {
             value_span,
             span,
         }
+    }
+
+    fn collect_variants<'a>(
+        &self,
+        tree: &GreenNode<'a, VosLanguage>,
+        offset: usize,
+        source: &SourceText,
+        variants: &mut Vec<VosVariant>,
+    ) -> Result<(), TextError> {
+        let mut child_offset = offset;
+        for child in tree.children {
+            match child {
+                GreenTree::Node(node) if node.kind == VosElementType::Variant => {
+                    variants.push(self.build_variant(node, child_offset, source)?);
+                }
+                GreenTree::Node(node) => self.collect_variants(node, child_offset, source, variants)?,
+                GreenTree::Leaf(_) => {}
+            }
+            child_offset += match child {
+                GreenTree::Node(node) => node.byte_length as usize,
+                GreenTree::Leaf(leaf) => leaf.length as usize,
+            };
+        }
+        Ok(())
+    }
+
+    fn build_variant<'a>(&self, node: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText) -> Result<VosVariant, TextError> {
+        let span = (offset..offset + node.byte_length as usize).into();
+        let mut child_offset = offset;
+        let mut name = None;
+        let mut name_span = None;
+        let mut fields = Vec::new();
+        for child in node.children {
+            match child {
+                GreenTree::Leaf(leaf) if leaf.kind == crate::lexer::VosTokenType::Identifier && name.is_none() => {
+                    let leaf_span = child_offset..child_offset + leaf.length as usize;
+                    name = Some(source.get_text_in(leaf_span.clone().into()).into_owned());
+                    name_span = Some(leaf_span.into());
+                }
+                GreenTree::Node(inner) if inner.kind == VosElementType::Block => {
+                    self.collect_fields(inner, child_offset, source, &mut fields)?;
+                }
+                _ => {}
+            }
+            child_offset += match child {
+                GreenTree::Node(node) => node.byte_length as usize,
+                GreenTree::Leaf(leaf) => leaf.length as usize,
+            };
+        }
+        Ok(VosVariant {
+            name: name.unwrap_or_default(),
+            name_span: name_span.unwrap_or((offset..offset).into()),
+            fields,
+            span,
+        })
     }
 
     fn build_field<'a>(&self, node: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText) -> Result<VosField, TextError> {

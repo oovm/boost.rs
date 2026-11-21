@@ -739,6 +739,42 @@ fn numeric_members_reject_missing_values_and_keep_negative_numbers() {
 }
 
 #[test]
+fn unite_and_structure_declarations_project_variants_and_fields() {
+    let source = "unite Contact {\n    Email { address: utf8, label: utf8? },\n    Sms { number: utf8 },\n    None,\n}\n\nstructure Address {\n    zip: utf8,\n    country: utf8,\n}";
+    let root = parse(source).expect("Oak parses unite and structure declarations");
+
+    let unite = &root.declarations[0];
+    assert_eq!(unite.kind, VosDeclarationKind::Unite);
+    assert_eq!(unite.name.as_deref(), Some("Contact"));
+    assert_eq!(unite.variants.iter().map(|variant| variant.name.as_str()).collect::<Vec<_>>(), ["Email", "Sms", "None"]);
+    assert_eq!(unite.variants[0].fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["address", "label"]);
+    assert!(unite.variants[2].fields.is_empty(), "a bare variant has no payload");
+    assert_eq!(&source[unite.variants[1].name_span.clone()], "Sms");
+    assert_eq!(&source[unite.variants[0].span.clone()], "Email { address: utf8, label: utf8? }");
+    assert_eq!(&source[unite.variants[0].fields[1].type_syntax.span.clone()], "utf8?");
+
+    let structure = &root.declarations[1];
+    assert_eq!(structure.kind, VosDeclarationKind::Structure);
+    assert_eq!(structure.fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["zip", "country"]);
+
+    let mut restored = String::new();
+    append_text(&root.syntax, &mut restored);
+    assert_eq!(restored, source);
+}
+
+#[test]
+fn malformed_unite_and_structure_declarations_are_rejected() {
+    for source in [
+        "unite Contact { Email { address } }",
+        "unite Contact { Email { address: } }",
+        "structure Address { zip }",
+        "structure Address { zip: utf8",
+    ] {
+        assert!(parse(source).is_err(), "accepted malformed composite declaration: {source}");
+    }
+}
+
+#[test]
 fn type_depth_has_process_bound() {
     use std::{
         process::Command,

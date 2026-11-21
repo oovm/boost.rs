@@ -34,6 +34,8 @@ impl VosParser {
             VosTokenType::Class => VosElementType::Class,
             VosTokenType::Enums => VosElementType::Enums,
             VosTokenType::Flags => VosElementType::Flags,
+            VosTokenType::Unite => VosElementType::Unite,
+            VosTokenType::Structure => VosElementType::Structure,
             VosTokenType::Service => VosElementType::Service,
             VosTokenType::Micro => VosElementType::Micro,
             VosTokenType::Macro => VosElementType::Macro,
@@ -247,11 +249,14 @@ impl VosParser {
                     break;
                 }
                 if kind == VosTokenType::LeftBrace {
-                    if matches!(element, VosElementType::Table | VosElementType::Class) {
+                    if matches!(element, VosElementType::Table | VosElementType::Class | VosElementType::Structure) {
                         self.parse_fields(state)?;
                     }
                     else if matches!(element, VosElementType::Enums | VosElementType::Flags) {
                         self.parse_members(state)?;
+                    }
+                    else if element == VosElementType::Unite {
+                        self.parse_variants(state)?;
                     }
                     else if element == VosElementType::Service {
                         self.parse_service_body(state)?;
@@ -371,6 +376,35 @@ impl VosParser {
                 self.skip_trivia(state);
             }
             state.finish_at(member_checkpoint, VosElementType::Member);
+            if state.at(VosTokenType::Comma) || state.at(VosTokenType::Semicolon) {
+                state.bump();
+            }
+        }
+        state.expect(VosTokenType::RightBrace)?;
+        state.finish_at(checkpoint, VosElementType::Block);
+        Ok(())
+    }
+
+    /// Parses a `unite` body: one variant name per variant, optionally followed
+    /// by a closed field block.
+    ///
+    /// A bare variant has no payload. A variant with a payload parses exactly
+    /// like a class body, so the same field grammar and diagnostics apply.
+    fn parse_variants<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
+        let checkpoint = state.checkpoint();
+        state.expect(VosTokenType::LeftBrace)?;
+        loop {
+            self.skip_trivia(state);
+            if state.at(VosTokenType::RightBrace) {
+                break;
+            }
+            let variant_checkpoint = state.checkpoint();
+            state.expect(VosTokenType::Identifier)?;
+            self.skip_trivia(state);
+            if state.at(VosTokenType::LeftBrace) {
+                self.parse_fields(state)?;
+            }
+            state.finish_at(variant_checkpoint, VosElementType::Variant);
             if state.at(VosTokenType::Comma) || state.at(VosTokenType::Semicolon) {
                 state.bump();
             }

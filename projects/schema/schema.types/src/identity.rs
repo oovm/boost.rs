@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     ArtifactError, AttributeContract, CanonicalScalar, CanonicalType, ContractArtifact, MemberContract, OperationKind, TypeContractKind,
+    VariantContract,
     contract::{
         ContractAttribute, MethodStreamMode, OperationCardinality, OperationContract, OperationEffect, SemanticCapability, ServiceContract,
         ServiceMethodContract,
@@ -96,6 +97,17 @@ pub struct BoundTypeContract {
     /// Numeric members of an `enums` or `flags` declaration. Empty otherwise.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<MemberContract>,
+    /// Variants of a `unite` declaration. Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<VariantContract>,
+    /// True when the declared layout is closed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub closed: bool,
+}
+
+/// Serde helper: omit a `false` flag from older artifacts.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// A projected field with durable field and virtual-slot identities.
@@ -196,6 +208,38 @@ pub struct ResolvedTypeContract {
     /// Numeric members of an `enums` or `flags` declaration. Empty otherwise.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<ResolvedMemberContract>,
+    /// Variants of a `unite` declaration. Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<ResolvedVariantContract>,
+    /// True when the declared layout is closed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub closed: bool,
+}
+
+/// One variant carried by the resolved contract.
+///
+/// The discriminant is the variant's stable identity (source-order index) and
+/// a variant payload is a closed field set, so a value carries exactly the
+/// declared members of its variant.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResolvedVariantContract {
+    /// Canonical variant name.
+    pub canonical_name: String,
+    /// Stable discriminant.
+    pub discriminant: i64,
+    /// Closed payload fields; empty for a bare variant.
+    pub fields: Vec<ResolvedVariantFieldContract>,
+}
+
+/// One payload field of a resolved `unite` variant.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResolvedVariantFieldContract {
+    /// Canonical field name.
+    pub canonical_name: String,
+    /// Resolved canonical type.
+    pub canonical_type: ResolvedCanonicalType,
 }
 
 /// One numeric member carried by the resolved contract.
@@ -285,6 +329,11 @@ impl ResolvedContract {
             for field in &item.fields {
                 validate_resolved_type(&field.canonical_type, &type_by_path, &path_by_type)?;
             }
+            for variant in &item.variants {
+                for field in &variant.fields {
+                    validate_resolved_type(&field.canonical_type, &type_by_path, &path_by_type)?;
+                }
+            }
         }
         let expected = resolved_schema_fingerprint(&self.types);
         if expected != self.schema_fingerprint {
@@ -297,52 +346,116 @@ impl ResolvedContract {
     }
 }
 
-/// Validates the numeric members attached to one resolved type.
+/// Validates the numeric members and variants attached to one resolved type.
 ///
-/// `enums` and `flags` are the only kinds that carry members. An `enums` member
-/// owns one number and a `flags` member owns exactly one bit, so a duplicate
-/// name, a repeated number, a repeated bit, a zero or multi-bit flag mask, or
-/// members on any other kind are rejected before the catalog is published.
+/// `enums` and `flags` are the only kinds that carry members, and `unite` is the
+/// only kind that carries variants. An `enums` member owns one number and a
+/// `flags` member owns exactly one bit, so a duplicate name, a repeated number,
+/// a repeated bit, a zero or multi-bit flag mask, or members on any other kind
+/// are rejected before the catalog is published. A `unite` variant owns one
+/// discriminant and a closed payload field set; a `structure` is a closed field
+/// record.
 fn validate_members(item: &ResolvedTypeContract) -> Result<(), ArtifactError> {
     let numeric = matches!(item.kind, TypeContractKind::Enums | TypeContractKind::Flags);
-    if !numeric {
-        if item.members.is_empty() {
-            return Ok(());
-        }
+    let variants = item.kind == TypeContractKind::Unite;
+    let closed_kind = matches!(item.kind, TypeContractKind::Unite | TypeContractKind::Structure);
+    if item.closed && !closed_kind {
         return Err(ArtifactError {
-            code: "RES022".to_owned(),
-            message: format!("type `{}` is not numeric and cannot declare members", item.canonical_path.join("::")),
+            code: "RES031".to_owned(),
+            message: format!("type `{}` cannot be closed", item.canonical_path.join("::")),
         });
     }
-    if item.members.is_empty() {
+    if item.kind == TypeContractKind::Structure && !item.closed {
         return Err(ArtifactError {
-            code: "RES023".to_owned(),
-            message: format!("numeric type `{}` must declare at least one member", item.canonical_path.join("::")),
+            code: "RES030".to_owned(),
+            message: format!("structure `{}` must declare a closed layout", item.canonical_path.join("::")),
         });
+    }
+    if !numeric {
+        if !item.members.is_empty() {
+            return Err(ArtifactError {
+                code: "RES022".to_owned(),
+                message: format!("type `{}` is not numeric and cannot declare members", item.canonical_path.join("::")),
+            });
+        }
+    }
+    else {
+        if item.members.is_empty() {
+            return Err(ArtifactError {
+                code: "RES023".to_owned(),
+                message: format!("numeric type `{}` must declare at least one member", item.canonical_path.join("::")),
+            });
+        }
+        if !item.fields.is_empty() {
+            return Err(ArtifactError {
+                code: "RES022".to_owned(),
+                message: format!("numeric type `{}` cannot declare fields", item.canonical_path.join("::")),
+            });
+        }
+        let mut names = BTreeSet::new();
+        let mut values = BTreeSet::new();
+        for member in &item.members {
+            if member.canonical_name.is_empty() || !names.insert(&member.canonical_name) {
+                return Err(ArtifactError { code: "RES024".to_owned(), message: "invalid or duplicate numeric member name".to_owned() });
+            }
+            if item.kind == TypeContractKind::Flags && (member.value <= 0 || !(member.value as u64).is_power_of_two()) {
+                return Err(ArtifactError {
+                    code: "RES025".to_owned(),
+                    message: format!("`flags` member `{}` must declare exactly one nonzero bit", member.canonical_name),
+                });
+            }
+            if !values.insert(member.value) {
+                return Err(ArtifactError {
+                    code: "RES026".to_owned(),
+                    message: format!("numeric member `{}` reuses the value `{}`", member.canonical_name, member.value),
+                });
+            }
+        }
+    }
+    if !variants {
+        if !item.variants.is_empty() {
+            return Err(ArtifactError {
+                code: "RES027".to_owned(),
+                message: format!("type `{}` cannot declare variants", item.canonical_path.join("::")),
+            });
+        }
+        return Ok(());
     }
     if !item.fields.is_empty() {
         return Err(ArtifactError {
-            code: "RES022".to_owned(),
-            message: format!("numeric type `{}` cannot declare fields", item.canonical_path.join("::")),
+            code: "RES027".to_owned(),
+            message: format!("unite `{}` declares variants instead of fields", item.canonical_path.join("::")),
+        });
+    }
+    if item.variants.is_empty() {
+        return Err(ArtifactError {
+            code: "RES028".to_owned(),
+            message: format!("unite `{}` must declare at least one variant", item.canonical_path.join("::")),
+        });
+    }
+    if !item.closed {
+        return Err(ArtifactError {
+            code: "RES030".to_owned(),
+            message: format!("unite `{}` must declare a closed layout", item.canonical_path.join("::")),
         });
     }
     let mut names = BTreeSet::new();
-    let mut values = BTreeSet::new();
-    for member in &item.members {
-        if member.canonical_name.is_empty() || !names.insert(&member.canonical_name) {
-            return Err(ArtifactError { code: "RES024".to_owned(), message: "invalid or duplicate numeric member name".to_owned() });
+    let mut discriminants = BTreeSet::new();
+    for variant in &item.variants {
+        if variant.canonical_name.is_empty() || !names.insert(&variant.canonical_name) {
+            return Err(ArtifactError { code: "RES024".to_owned(), message: "invalid or duplicate variant name".to_owned() });
         }
-        if item.kind == TypeContractKind::Flags && (member.value <= 0 || !(member.value as u64).is_power_of_two()) {
+        if variant.discriminant < 0 || !discriminants.insert(variant.discriminant) {
             return Err(ArtifactError {
-                code: "RES025".to_owned(),
-                message: format!("`flags` member `{}` must declare exactly one nonzero bit", member.canonical_name),
+                code: "RES029".to_owned(),
+                message: format!("variant `{}` has an invalid or duplicate discriminant", variant.canonical_name),
             });
         }
-        if !values.insert(member.value) {
-            return Err(ArtifactError {
-                code: "RES026".to_owned(),
-                message: format!("numeric member `{}` reuses the value `{}`", member.canonical_name, member.value),
-            });
+        let mut field_names = BTreeSet::new();
+        for field in &variant.fields {
+            if field.canonical_name.is_empty() || !field_names.insert(&field.canonical_name) {
+                return Err(ArtifactError { code: "RES024".to_owned(), message: "invalid or duplicate variant field name".to_owned() });
+            }
         }
     }
     Ok(())
@@ -663,20 +776,54 @@ struct CanonicalResolvedTypeContract {
     kind: TypeContractKind,
     fields: Vec<CanonicalResolvedFieldContract>,
     members: Vec<CanonicalMemberContract>,
+    variants: Vec<CanonicalResolvedVariantContract>,
+    closed: bool,
 }
 
 impl From<&ResolvedTypeContract> for CanonicalResolvedTypeContract {
     fn from(contract: &ResolvedTypeContract) -> Self {
         let mut fields = contract.fields.iter().map(CanonicalResolvedFieldContract::from).collect::<Vec<_>>();
         fields.sort_by_key(|item| item.field_id);
+        let mut variants = contract.variants.iter().map(CanonicalResolvedVariantContract::from).collect::<Vec<_>>();
+        variants.sort_by_key(|item| item.discriminant);
         Self {
             type_id: contract.type_id,
             canonical_path: contract.canonical_path.clone(),
             kind: contract.kind,
             fields,
             members: canonical_members(contract.members.iter().map(|member| (&member.canonical_name, member.value))),
+            variants,
+            closed: contract.closed,
         }
     }
+}
+
+#[derive(Serialize)]
+struct CanonicalResolvedVariantContract {
+    canonical_name: String,
+    discriminant: i64,
+    fields: Vec<CanonicalResolvedVariantFieldContract>,
+}
+
+impl From<&ResolvedVariantContract> for CanonicalResolvedVariantContract {
+    fn from(variant: &ResolvedVariantContract) -> Self {
+        let mut fields = variant
+            .fields
+            .iter()
+            .map(|field| CanonicalResolvedVariantFieldContract {
+                canonical_name: field.canonical_name.clone(),
+                canonical_type: field.canonical_type.clone(),
+            })
+            .collect::<Vec<_>>();
+        fields.sort_by(|left, right| left.canonical_name.cmp(&right.canonical_name));
+        Self { canonical_name: variant.canonical_name.clone(), discriminant: variant.discriminant, fields }
+    }
+}
+
+#[derive(Serialize)]
+struct CanonicalResolvedVariantFieldContract {
+    canonical_name: String,
+    canonical_type: ResolvedCanonicalType,
 }
 
 #[derive(Serialize)]
@@ -709,20 +856,63 @@ struct CanonicalTypeContract {
     kind: TypeContractKind,
     fields: Vec<CanonicalFieldContract>,
     members: Vec<CanonicalMemberContract>,
+    variants: Vec<CanonicalBoundVariantContract>,
+    closed: bool,
 }
 
 impl From<&BoundTypeContract> for CanonicalTypeContract {
     fn from(contract: &BoundTypeContract) -> Self {
         let mut fields = contract.fields.iter().map(CanonicalFieldContract::from).collect::<Vec<_>>();
         fields.sort_by_key(|item| item.field_id);
+        let mut variants = contract.variants.iter().map(CanonicalBoundVariantContract::from).collect::<Vec<_>>();
+        variants.sort_by_key(|item| item.discriminant);
         Self {
             type_id: contract.type_id,
             canonical_path: contract.canonical_path.clone(),
             kind: contract.kind,
             fields,
             members: canonical_members(contract.members.iter().map(|member| (&member.canonical_name, member.value))),
+            variants,
+            closed: contract.closed,
         }
     }
+}
+
+/// One variant in the canonical bound-contract fingerprint model.
+#[derive(Serialize)]
+struct CanonicalBoundVariantContract {
+    canonical_name: String,
+    discriminant: i64,
+    fields: Vec<CanonicalBoundVariantFieldContract>,
+}
+
+impl From<&VariantContract> for CanonicalBoundVariantContract {
+    fn from(variant: &VariantContract) -> Self {
+        let mut fields = variant
+            .fields
+            .iter()
+            .map(|field| CanonicalBoundVariantFieldContract {
+                canonical_name: field.canonical_name.clone(),
+                canonical_type: field.canonical_type.clone(),
+                attributes: canonical_attribute_names(&field.attributes),
+            })
+            .collect::<Vec<_>>();
+        fields.sort_by(|left, right| left.canonical_name.cmp(&right.canonical_name));
+        Self { canonical_name: variant.canonical_name.clone(), discriminant: variant.discriminant, fields }
+    }
+}
+
+#[derive(Serialize)]
+struct CanonicalBoundVariantFieldContract {
+    canonical_name: String,
+    canonical_type: CanonicalType,
+    attributes: Vec<String>,
+}
+
+fn canonical_attribute_names(attributes: &[AttributeContract]) -> Vec<String> {
+    let mut names = attributes.iter().map(|attribute| attribute.name.clone()).collect::<Vec<_>>();
+    names.sort();
+    names
 }
 
 /// One numeric member in the canonical fingerprint model.
@@ -828,6 +1018,10 @@ pub enum EntityKind {
     Enums,
     /// Named bit-mask type with one declared bit per member.
     Flags,
+    /// Tagged union type with one discriminant per variant.
+    Unite,
+    /// Closed field record type.
+    Structure,
     /// Schema field owned by a type.
     Field,
     /// Query, UDF, micro or macro operation.
@@ -841,7 +1035,7 @@ pub enum EntityKind {
 impl EntityKind {
     /// Returns `true` when this kind owns fields (types only).
     pub fn is_type(&self) -> bool {
-        matches!(self, Self::Table | Self::Class | Self::Enums | Self::Flags)
+        matches!(self, Self::Table | Self::Class | Self::Enums | Self::Flags | Self::Unite | Self::Structure)
     }
 
     /// Returns `true` when this kind is a type-owned child (field).
@@ -1009,6 +1203,8 @@ impl StableIdentityManifest {
                 TypeContractKind::Class => EntityKind::Class,
                 TypeContractKind::Enums => EntityKind::Enums,
                 TypeContractKind::Flags => EntityKind::Flags,
+                TypeContractKind::Unite => EntityKind::Unite,
+                TypeContractKind::Structure => EntityKind::Structure,
             };
             let name = type_contract.canonical_path.last().cloned().unwrap_or_default();
             entries.push(StableIdentityEntry {

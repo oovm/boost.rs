@@ -15,6 +15,10 @@ pub enum VosElementType {
     Enums,
     /// Flags declaration.
     Flags,
+    /// Untagged union declaration.
+    Unite,
+    /// Closed field structure declaration.
+    Structure,
     /// Obsolete declaration.
     Obsolete,
     /// Import or using declaration.
@@ -35,6 +39,8 @@ pub enum VosElementType {
     Field,
     /// `enums` or `flags` member declaration.
     Member,
+    /// `unite` variant declaration.
+    Variant,
     /// Service method declaration.
     ServiceMethod,
     /// Field, service or method attribute syntax.
@@ -77,6 +83,8 @@ impl From<crate::lexer::VosTokenType> for VosElementType {
             crate::lexer::VosTokenType::Class => Self::Class,
             crate::lexer::VosTokenType::Enums => Self::Enums,
             crate::lexer::VosTokenType::Flags => Self::Flags,
+            crate::lexer::VosTokenType::Unite => Self::Unite,
+            crate::lexer::VosTokenType::Structure => Self::Structure,
             crate::lexer::VosTokenType::Obsolete => Self::Obsolete,
             crate::lexer::VosTokenType::Using => Self::Using,
             crate::lexer::VosTokenType::Const => Self::Const,

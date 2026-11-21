@@ -78,6 +78,8 @@ pub fn bind_identity(projection: &SchemaProjection, manifest: &IdentityManifest)
                         })
                         .collect(),
                     members: projected.members.clone(),
+                    variants: projected.variants.clone(),
+                    closed: projected.closed,
                 });
             }
         }
@@ -243,16 +245,35 @@ pub fn resolve_contract_from_units(units: &[&IdentityBoundProjection]) -> Result
                     })
                 })
                 .collect();
+            let namespace = &item.canonical_path[..item.canonical_path.len().saturating_sub(1)];
+            let variants = item
+                .variants
+                .iter()
+                .map(|variant| ResolvedVariantContract {
+                    canonical_name: variant.canonical_name.clone(),
+                    discriminant: variant.discriminant,
+                    fields: variant
+                        .fields
+                        .iter()
+                        .filter_map(|field| {
+                            let canonical_type = resolve_type(&field.canonical_type, namespace, &type_ids, None, &mut diagnostics)?;
+                            Some(ResolvedVariantFieldContract { canonical_name: field.canonical_name.clone(), canonical_type })
+                        })
+                        .collect(),
+                })
+                .collect();
             ResolvedTypeContract {
                 type_id: item.type_id,
                 canonical_path: item.canonical_path.clone(),
                 kind: item.kind,
                 fields,
+                variants,
                 members: item
                     .members
                     .iter()
                     .map(|member| ResolvedMemberContract { canonical_name: member.canonical_name.clone(), value: member.value })
                     .collect(),
+                closed: item.closed,
             }
         })
         .collect();

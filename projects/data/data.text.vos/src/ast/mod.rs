@@ -46,6 +46,10 @@ pub enum VosDeclarationKind {
     Enums,
     /// Flags declaration.
     Flags,
+    /// Untagged union declaration.
+    Unite,
+    /// Closed field structure declaration.
+    Structure,
     /// Obsolete declaration.
     Obsolete,
     /// Using declaration.
@@ -89,11 +93,30 @@ pub struct VosDeclaration {
     pub return_type: Option<VosSyntaxSlice>,
     /// Structured return type syntax projected by the parser without resolving names.
     pub return_type_expr: Option<VosTypeSyntax>,
-    /// Typed field syntax for table and class declarations.
+    /// Typed field syntax for table, class and structure declarations.
     pub fields: Vec<VosField>,
     /// Numeric members of an `enums` or `flags` declaration.
     pub members: Vec<VosDeclarationMember>,
+    /// Variants of a `unite` declaration.
+    pub variants: Vec<VosVariant>,
     /// Byte span in the original source.
+    pub span: Range<usize>,
+}
+
+/// One variant projected from a `unite` body.
+///
+/// A variant is either a bare name (no payload) or a name followed by a field
+/// block. The documented `..` marker is not accepted: a variant payload is a
+/// closed field set in this contract.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VosVariant {
+    /// Variant name as written.
+    pub name: String,
+    /// Source span of the variant name.
+    pub name_span: Range<usize>,
+    /// Payload fields; empty for a bare variant.
+    pub fields: Vec<VosField>,
+    /// Source span covering the variant declaration.
     pub span: Range<usize>,
 }
 

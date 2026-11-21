@@ -223,9 +223,18 @@ fn coerce_value(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedCon
                 .find(|entry| entry.type_id == *type_id)
                 .ok_or_else(|| coerce_error(format!("declared type targets unknown type id `{type_id}`")))?;
             match target.kind {
-                schema_types::TypeContractKind::Class => coerce_class_record(value, target, contract, depth, ""),
+                schema_types::TypeContractKind::Class | schema_types::TypeContractKind::Structure => {
+                    coerce_class_record(value, target, contract, depth, "")
+                }
                 schema_types::TypeContractKind::Enums => coerce_enum_value(value, target),
                 schema_types::TypeContractKind::Flags => coerce_flags_value(value, target),
+                // A union value needs a tagged codec that this execution slice
+                // does not own, so it is refused instead of stored as an
+                // untagged record that would lose its discriminant.
+                schema_types::TypeContractKind::Unite => Err(coerce_error(format!(
+                    "column type `unite {}` requires the tagged union codec, which is not part of this execution slice",
+                    target.canonical_path.last().map(String::as_str).unwrap_or_default()
+                ))),
                 // A bare table type has no by-value form; the catalog refuses it
                 // at install, so keep the value untouched here.
                 schema_types::TypeContractKind::Table => Ok(value),

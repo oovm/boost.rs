@@ -53,6 +53,8 @@ fn contract() -> ResolvedContract {
                 scalar_field(2, 1, "email", CanonicalScalar::Utf8, vec![attribute("unique", "unique")]),
             ],
             members: Vec::new(),
+            variants: Vec::new(),
+            closed: false,
         },
         ResolvedTypeContract {
             type_id: 2,
@@ -60,6 +62,8 @@ fn contract() -> ResolvedContract {
             kind: TypeContractKind::Table,
             fields: vec![scalar_field(3, 0, "key", CanonicalScalar::Uuid, vec![attribute("primary", "@@key")])],
             members: Vec::new(),
+            variants: Vec::new(),
+            closed: false,
         },
     ];
     ResolvedContract {
@@ -98,6 +102,8 @@ fn history() -> IdentityHistory {
                         bound(2, 1, "email", &["utf8"], vec![attribute("unique", "unique")]),
                     ],
                     members: Vec::new(),
+                    variants: Vec::new(),
+                    closed: false,
                 },
                 BoundTypeContract {
                     type_id: 2,
@@ -105,6 +111,8 @@ fn history() -> IdentityHistory {
                     kind: TypeContractKind::Table,
                     fields: vec![bound(3, 0, "key", &["uuid"], vec![attribute("primary", "@@key")])],
                     members: Vec::new(),
+                    variants: Vec::new(),
+                    closed: false,
                 },
             ],
         },

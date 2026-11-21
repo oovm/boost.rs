@@ -24,6 +24,10 @@ pub enum VosTokenType {
     Enums,
     /// `flags` keyword.
     Flags,
+    /// `unite` keyword.
+    Unite,
+    /// `structure` keyword.
+    Structure,
     /// `obsolete` keyword.
     Obsolete,
     /// `using` keyword.

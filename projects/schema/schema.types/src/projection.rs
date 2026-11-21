@@ -77,10 +77,17 @@ pub struct TypeContract {
     pub fields: Vec<FieldContract>,
     /// Numeric members of an `enums` or `flags` declaration, in source order.
     ///
-    /// Empty for tables, classes, `unite` and `structure`, so artifacts written
-    /// before members existed still decode.
+    /// Empty for other kinds, so artifacts written before members existed still
+    /// decode.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<MemberContract>,
+    /// Variants of a `unite` declaration, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<VariantContract>,
+    /// True when the declared layout is closed: a value cannot carry members
+    /// outside this declaration. `structure` and `unite` variants are closed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub closed: bool,
     /// Source span of the declaration.
     #[serde(serialize_with = "serialize_span", deserialize_with = "deserialize_span")]
     pub span: Range<usize>,
@@ -98,6 +105,10 @@ pub enum TypeContractKind {
     Enums,
     /// Named bit-mask type with one declared bit per member.
     Flags,
+    /// Tagged union with one discriminant per declared variant.
+    Unite,
+    /// Closed field record.
+    Structure,
 }
 
 /// One numeric member of an `enums` or `flags` declaration.
@@ -114,6 +125,30 @@ pub struct MemberContract {
     /// Source span of the member.
     #[serde(serialize_with = "serialize_span", deserialize_with = "deserialize_span")]
     pub span: Range<usize>,
+}
+
+/// One variant of a `unite` declaration.
+///
+/// `discriminant` is the variant's stable identity: its source-order index in
+/// the declaration, so a rename keeps the discriminant and inserting a variant
+/// shifts the later ones. A variant payload is a closed field set.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VariantContract {
+    /// Canonical variant name.
+    pub canonical_name: String,
+    /// Stable discriminant (source-order index).
+    pub discriminant: i64,
+    /// Closed payload fields; empty for a bare variant.
+    pub fields: Vec<FieldContract>,
+    /// Source span of the variant.
+    #[serde(serialize_with = "serialize_span", deserialize_with = "deserialize_span")]
+    pub span: Range<usize>,
+}
+
+/// Serde helper: omit a `false` flag from older artifacts.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// A resolved field contract.
@@ -317,6 +352,12 @@ impl SchemaProjection {
             }
             for member in &type_contract.members {
                 validate_span(&member.span, source, "member span")?;
+            }
+            for variant in &type_contract.variants {
+                validate_span(&variant.span, source, "variant span")?;
+                for field in &variant.fields {
+                    validate_span(&field.span, source, "variant field span")?;
+                }
             }
         }
         Ok(())

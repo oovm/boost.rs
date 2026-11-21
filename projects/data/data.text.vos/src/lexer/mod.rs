@@ -29,6 +29,8 @@ impl VosLexer {
             "class" => VosTokenType::Class,
             "enums" => VosTokenType::Enums,
             "flags" => VosTokenType::Flags,
+            "unite" => VosTokenType::Unite,
+            "structure" => VosTokenType::Structure,
             "obsolete" => VosTokenType::Obsolete,
             "using" => VosTokenType::Using,
             "const" => VosTokenType::Const,

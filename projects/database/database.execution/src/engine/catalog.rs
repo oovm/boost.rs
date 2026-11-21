@@ -66,8 +66,36 @@ pub struct ExecutionType {
     pub fields: Vec<ExecutionField>,
     /// Declared members of an `enums` or `flags` type. Empty otherwise.
     pub members: Vec<ExecutionMember>,
+    /// Declared variants of a `unite` type. Empty otherwise.
+    pub variants: Vec<ExecutionVariant>,
+    /// True when the declared layout is closed (`structure`, `unite`).
+    pub closed: bool,
     /// Uniqueness rules derived from the VOS document plus host declarations.
     pub unique_constraints: Vec<UniqueConstraint>,
+}
+
+/// One declared `unite` variant, kept as catalog metadata.
+///
+/// A union value needs a tagged codec that this execution slice does not own, so
+/// the discriminant stays metadata and the field type lowers to a record shape
+/// that carries the payload member count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecutionVariant {
+    /// Declared variant name.
+    pub name: String,
+    /// Stable discriminant (source-order index).
+    pub discriminant: i64,
+    /// Closed payload fields.
+    pub fields: Vec<ExecutionVariantField>,
+}
+
+/// One payload field of a `unite` variant.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecutionVariantField {
+    /// Declared field name.
+    pub name: String,
+    /// Lowered execution type.
+    pub ty: Type,
 }
 
 /// One declared member of an `enums` or `flags` type, in source order.
@@ -94,6 +122,10 @@ pub enum ExecutionTypeKind {
     Enums,
     /// Named bit-mask type whose members are declared bits.
     Flags,
+    /// Tagged union type whose variants are declared values.
+    Unite,
+    /// Closed field record type.
+    Structure,
 }
 
 /// One VOS field projected into a typed execution handle.
@@ -138,6 +170,8 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_types::Resolve
             schema_types::TypeContractKind::Class => ExecutionTypeKind::Class,
             schema_types::TypeContractKind::Enums => ExecutionTypeKind::Enums,
             schema_types::TypeContractKind::Flags => ExecutionTypeKind::Flags,
+            schema_types::TypeContractKind::Unite => ExecutionTypeKind::Unite,
+            schema_types::TypeContractKind::Structure => ExecutionTypeKind::Structure,
         };
         let name = item
             .canonical_path
@@ -185,12 +219,25 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_types::Resolve
                 .map_err(|error| Error::Schema { message: format!("invalid grouped unique constraint from VOS attribute: {error}") })?;
             unique_constraints.push(constraint);
         }
+        let mut variants = Vec::with_capacity(item.variants.len());
+        for variant in &item.variants {
+            let mut payload = Vec::with_capacity(variant.fields.len());
+            for field in &variant.fields {
+                payload.push(ExecutionVariantField {
+                    name: field.canonical_name.clone(),
+                    ty: resolved_execution_type(&field.canonical_type, contract)?,
+                });
+            }
+            variants.push(ExecutionVariant { name: variant.canonical_name.clone(), discriminant: variant.discriminant, fields: payload });
+        }
         types.push(ExecutionType {
             schema_id: item.type_id,
             name,
             kind,
             fields,
             members: item.members.iter().map(|member| ExecutionMember { name: member.canonical_name.clone(), value: member.value }).collect(),
+            variants,
+            closed: item.closed,
             unique_constraints,
         });
     }
@@ -319,6 +366,10 @@ fn resolved_execution_type_at(
 ///
 /// A `class` is a named domain value embedded in its parent row, so the
 /// execution type is a [`Type::Record`] keyed by the class's durable type id.
+/// A `structure` is the same shape with a closed field set. A `unite` value
+/// needs a tagged codec this slice does not own, so the field lowers to a
+/// record whose member count is the variant count and the discriminants stay in
+/// the catalog's variant table.
 /// `enums` and `flags` are numeric: the value is one declared number or a mask
 /// of declared bits, so the execution type is `i64` and the catalog's member
 /// table keeps the named identity. A `table` has no by-value form: it is only
@@ -331,10 +382,15 @@ fn by_value_user_type(contract: &schema_types::ResolvedContract, type_id: u64) -
         .find(|entry| entry.type_id == type_id)
         .ok_or_else(|| Error::Schema { message: format!("resolved user type targets unknown type id `{type_id}`") })?;
     match target.kind {
-        schema_types::TypeContractKind::Class => {
+        schema_types::TypeContractKind::Class | schema_types::TypeContractKind::Structure => {
             let field_count = u32::try_from(target.fields.len())
-                .map_err(|_| Error::Schema { message: format!("resolved class `{}` has too many fields", target.canonical_path.join("::")) })?;
+                .map_err(|_| Error::Schema { message: format!("resolved type `{}` has too many fields", target.canonical_path.join("::")) })?;
             Ok(Type::Record { schema_id: type_id, field_count })
+        }
+        schema_types::TypeContractKind::Unite => {
+            let variant_count = u32::try_from(target.variants.len())
+                .map_err(|_| Error::Schema { message: format!("resolved unite `{}` has too many variants", target.canonical_path.join("::")) })?;
+            Ok(Type::Record { schema_id: type_id, field_count: variant_count })
         }
         schema_types::TypeContractKind::Enums | schema_types::TypeContractKind::Flags => Ok(Type::I64),
         schema_types::TypeContractKind::Table => Err(Error::Schema {

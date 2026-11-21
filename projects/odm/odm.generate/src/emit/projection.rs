@@ -251,6 +251,8 @@ pub(crate) fn type_kind_label(kind: TypeContractKind) -> String {
         TypeContractKind::Class => "class",
         TypeContractKind::Enums => "enums",
         TypeContractKind::Flags => "flags",
+        TypeContractKind::Unite => "unite",
+        TypeContractKind::Structure => "structure",
     }
     .to_owned()
 }
