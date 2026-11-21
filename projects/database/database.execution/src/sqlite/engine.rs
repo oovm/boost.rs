@@ -283,7 +283,12 @@ impl Engine {
     /// 计划在此刻一次成型,整页快照也在这一刻克隆;之后的逐页解码不再回到
     /// 目录,因此游标读取与并发写入完全隔离。
     pub fn open_lazy_cursor(&mut self, statement: &Statement, parameters: &[Cell]) -> Result<Option<LazyCursor>, SqlError> {
-        let Some(plan) = self.exec().plan_lazy_scan(statement)?
+        // 惰性规划要判断绑定参数能否下推到索引,先把参数装上再规划。
+        self.parameters.clear();
+        self.parameters.extend_from_slice(parameters);
+        let plan = self.exec().plan_lazy_scan(statement);
+        self.parameters.clear();
+        let Some(plan) = plan?
         else {
             return Ok(None);
         };

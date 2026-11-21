@@ -4023,7 +4023,8 @@ impl<'e> ExecContext<'e> {
     /// - 无 `DISTINCT`、`GROUP BY`、`HAVING`、窗口与聚合;
     /// - 无 `LIMIT`/`OFFSET`;
     /// - 无 `ORDER BY`,或排序键就是主键/rowid 升序,与 b-tree 扫描顺序一致;
-    /// - 投影是 `*` 或普通列引用/常量表达式,`WHERE` 可逐行求值。
+    /// - 投影是 `*` 或普通列引用/常量表达式,`WHERE` 可逐行求值;
+    /// - `WHERE` 未命中索引等值/范围下推(命中时物化路径按索引候选行读取)。
     ///
     /// 打开时把当前整页镜像克隆成独立快照,后续写入只改引擎自己的页缓冲,
     /// 游标因此始终读到打开时刻的一致状态。返回 `None` 表示语句不满足条件,
@@ -4130,6 +4131,12 @@ impl<'e> ExecContext<'e> {
         if let Some(filter) = &first.filter
             && !collect_unmasked_columns(filter, &mut refs)
         {
+            return Ok(None);
+        }
+        // 索引等值 / 范围下推会把整表扫描收窄成索引候选行,而惰性游标只会
+        // 按 b-tree 页顺序扫全表。两者不能同时成立:命中下推时让位给物化
+        // 路径,EXPLAIN QUERY PLAN 报告的 SEARCH 才是执行层真实走的路。
+        if self.index_pin(&first.from, &first.filter).is_some() {
             return Ok(None);
         }
         if !lazy_order_matches_scan(def, entry, &first.items, order) {
