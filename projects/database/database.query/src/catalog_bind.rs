@@ -8,12 +8,24 @@ use crate::sql::{
 };
 use schema_types::{CanonicalScalar, ResolvedCanonicalType};
 
-/// Scalar types the gateway can project from a VOS field contract.
+/// Types the SQL gateway can project from a VOS field contract.
 ///
-/// The gateway does not reproduce the full VOS type algebra — it keeps the
-/// information needed to decode row bytes and validate SQL literals. Fields
-/// whose type does not map cleanly fall back to [`SqlFieldType::Unknown`] and
-/// leave interpretation to the runtime.
+/// This enum is **not** the VOS type system. It has two layers:
+///
+/// - variants backed one-to-one by a native VOS scalar (`Int64`, `Float64`,
+///   `String`, `Bool`, `Bytes`, `Date`, `Datetime`, `Uuid`, …);
+/// - gateway-only simulations requested by SQL DDL or produced by SQL
+///   expressions ([`SqlFieldType::Json`], [`SqlFieldType::Array`],
+///   [`SqlFieldType::Decimal`]). They shape the SQL wire face and literal
+///   validation only; they do not add a storage type to VOS/YYDS/YYDB.
+///
+/// In particular `json/jsonb` is simulated: the payload stays UTF-8 text, and
+/// PostgreSQL merely reports `jsonb` so drivers materialize a parsed value.
+/// The dynamic `any` used by `->` / `->>` is a query-time value
+/// (`Value::Row` / `Value::List`), never a declarable column type.
+///
+/// Fields whose native type has no clean SQL projection fall back to
+/// [`SqlFieldType::Unknown`] and leave interpretation to the runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqlFieldType {
     /// 64-bit signed integer (`i64` / `int64`).
@@ -58,15 +70,18 @@ pub enum SqlFieldType {
     /// lowercase spelling, which is what drivers expect for a text-encoded
     /// uuid column.
     Uuid,
-    /// JSON / JSONB column (`json` / `jsonb`).
+    /// SQL-gateway simulated JSON / JSONB (`json` / `jsonb`).
     ///
-    /// Stored as the JSON text the client wrote and compared as text; the
-    /// PostgreSQL wire face reports `jsonb` so drivers materialize a parsed
-    /// JSON value instead of a string.
+    /// Native VOS has no json type: the payload is stored as the UTF-8 text
+    /// the client wrote and compared as text. The PostgreSQL wire face reports
+    /// `jsonb` so drivers materialize a parsed value instead of a string; that
+    /// OID is a reporting detail, not a storage contract.
     Json,
     /// Optional wrapper — inner type + NULL. Box breaks the recursion
     Optional(Box<SqlFieldType>),
-    /// Array of the element type — produced by `array_agg(...)` projections.
+    /// Gateway-only array shape produced by `array_agg(...)` projections.
+    ///
+    /// Not a stored column type; the gateway never persists array values.
     Array(Box<SqlFieldType>),
     /// Anything the gateway does not recognise stays opaque.
     Unknown,
