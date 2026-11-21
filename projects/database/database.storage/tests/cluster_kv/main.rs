@@ -4,4 +4,5 @@ mod commit_bench;
 mod file_shard;
 mod memory_shard;
 mod redis_shard;
+mod replication;
 mod replication_log;

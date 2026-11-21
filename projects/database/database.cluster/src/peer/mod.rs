@@ -8,13 +8,15 @@ pub mod frame;
 pub mod membership;
 pub mod node;
 pub mod ownership;
+pub mod replica;
 pub mod tls;
 
 pub use frame::{
     EpochAnnouncement, Heartbeat, JoinAccepted, JoinRejectCode, JoinRejected, JoinRequest, OwnerSwitch, PeerAck, PeerFrame,
-    PeerIdentity, PeerIdentityError, PeerMember, Roster,
+    PeerIdentity, PeerIdentityError, PeerMember, ReplicaAck, ReplicaRecord, Roster, ShardReplica,
 };
 pub use membership::{MemberView, Membership, MembershipError, MembershipRole};
-pub use node::{BroadcastFailure, BroadcastReport, PeerError, PeerNode, PeerOptions, PeerRole, DEFAULT_PEER_TIMEOUT};
+pub use node::{BroadcastFailure, BroadcastReport, PeerError, PeerNode, PeerOptions, PeerRole, ReplicaDelivery, ReplicaReport, DEFAULT_PEER_TIMEOUT};
 pub use ownership::{Ownership, OwnershipError};
+pub use replica::{ReplicaCursor, ReplicaError, ReplicaSink};
 pub use tls::{PeerTls, PeerTlsError};

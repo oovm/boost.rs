@@ -8,7 +8,7 @@ use std::{
     fmt,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         RwLock,
     },
 };
@@ -172,6 +172,8 @@ pub struct Membership {
     role: MembershipRole,
     view: RwLock<Option<MemberView>>,
     generation: AtomicU64,
+    /// leader 广播的成员表不再包含本节点。
+    revoked: AtomicBool,
 }
 
 impl Membership {
@@ -183,12 +185,24 @@ impl Membership {
         }
         let own = PeerMember { node_id: identity.node_id.clone(), address, epoch, term };
         let view = MemberView { cluster_id: identity.cluster_id.clone(), leader: own.clone(), epoch, term, members: vec![own] };
-        Ok(Self { identity, role: MembershipRole::Leader, view: RwLock::new(Some(view)), generation: AtomicU64::new(1) })
+        Ok(Self {
+            identity,
+            role: MembershipRole::Leader,
+            view: RwLock::new(Some(view)),
+            generation: AtomicU64::new(1),
+            revoked: AtomicBool::new(false),
+        })
     }
 
     /// 建立 follower 视图,在加入前没有任何成员认知。
     pub fn follower(identity: PeerIdentity) -> Self {
-        Self { identity, role: MembershipRole::Follower, view: RwLock::new(None), generation: AtomicU64::new(0) }
+        Self {
+            identity,
+            role: MembershipRole::Follower,
+            view: RwLock::new(None),
+            generation: AtomicU64::new(0),
+            revoked: AtomicBool::new(false),
+        }
     }
 
     /// 本节点身份。
@@ -204,6 +218,14 @@ impl Membership {
     /// 是否为 leader。
     pub fn is_leader(&self) -> bool {
         self.role == MembershipRole::Leader
+    }
+
+    /// 本节点是否已被 leader 移出成员表。
+    ///
+    /// 一旦为真,本节点不再接受复制写或本地写;重新加入并收到包含自己的成员表
+    /// 才会清除。
+    pub fn is_revoked(&self) -> bool {
+        self.revoked.load(Ordering::SeqCst)
     }
 
     /// 当前成员视图;follower 加入前为 `None`。
@@ -320,6 +342,7 @@ impl Membership {
         }
         let mut members = roster.members;
         members.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+        self.revoked.store(!members.iter().any(|member| member.node_id == self.identity.node_id), Ordering::SeqCst);
         *guard = Some(MemberView { cluster_id: self.identity.cluster_id.clone(), leader: roster.leader, epoch: roster.epoch, term: roster.term, members });
         self.generation.fetch_add(1, Ordering::SeqCst);
         Ok(())

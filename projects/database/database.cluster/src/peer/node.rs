@@ -1,31 +1,34 @@
 //! 监听端与连接端:真实 TCP peer 通道。
 //!
 //! 每个节点只监听一个地址,连接按帧一问一答;leader 在接受 join 后向所有成员
-//! 重新广播成员表,epoch 与 owner 切换同样以广播推进。启用 TLS 时握手在任何帧
-//! 之前完成,失败即断开,不退回明文。
+//! 重新广播成员表,epoch 与 owner 切换同样以广播推进。分片写以 [`ShardReplica`]
+//! 帧复制:leader 本地应用后广播,成员按 `(epoch, term)` 准入、应用并回报修订号。
+//! 启用 TLS 时握手在任何帧之前完成,失败即断开,不退回明文。
 
 use std::{
+    collections::BTreeMap,
     fmt,
     io::{self, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex, RwLock,
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-use database_types::cluster::{LeaderTerm, ShardEpoch};
+use database_types::cluster::{Error as ClusterError, FenceToken, LeaderTerm, ReplicaNodeId, ShardEpoch, ShardId};
 use rustls::{ClientConnection, ServerConnection, StreamOwned};
 
 use super::{
     frame::{
-        read_frame, write_frame, EpochAnnouncement, Heartbeat, JoinRejected, JoinRequest, OwnerSwitch,
-        PeerAck, PeerFrame, PeerFrameError, PeerIdentity, Roster,
+        read_frame, write_frame, EpochAnnouncement, Heartbeat, JoinRejected, JoinRequest, OwnerSwitch, PeerAck, PeerFrame,
+        PeerFrameError, PeerIdentity, PeerMember, ReplicaAck, ReplicaRecord, Roster, ShardReplica,
     },
     membership::{MemberView, Membership, MembershipError},
     ownership::{Ownership, OwnershipError},
+    replica::{ReplicaError, ReplicaSink},
     tls::{PeerTls, PeerTlsError},
 };
 
@@ -89,10 +92,16 @@ pub enum PeerError {
     Membership(MembershipError),
     /// owner / epoch 控制面拒绝。
     Ownership(OwnershipError),
+    /// 复制数据面失败。
+    Replica(ReplicaError),
+    /// 本节点的 fence 已被更新的 owner 取代。
+    Fenced(ClusterError),
     /// TLS 材料或握手失败。
     Tls(PeerTlsError),
     /// join 被 leader 显式拒绝。
     Rejected(JoinRejected),
+    /// 本节点已被移出成员表,不再接受写。
+    Revoked,
     /// 本节点尚未加入任何成员视图。
     NotJoined,
     /// 只有 leader 可以推进成员或 owner。
@@ -108,8 +117,11 @@ impl fmt::Display for PeerError {
             Self::Frame(error) => error.fmt(formatter),
             Self::Membership(error) => error.fmt(formatter),
             Self::Ownership(error) => error.fmt(formatter),
+            Self::Replica(error) => error.fmt(formatter),
+            Self::Fenced(error) => error.fmt(formatter),
             Self::Tls(error) => error.fmt(formatter),
             Self::Rejected(rejected) => write!(formatter, "join rejected ({}): {}", rejected.code.as_str(), rejected.message),
+            Self::Revoked => formatter.write_str("node was removed from the cluster roster"),
             Self::NotJoined => formatter.write_str("node has not joined a cluster view"),
             Self::NotLeader => formatter.write_str("only the membership leader may advance the cluster"),
             Self::Protocol(detail) => write!(formatter, "peer protocol violation: {detail}"),
@@ -124,9 +136,17 @@ impl std::error::Error for PeerError {
             Self::Frame(error) => Some(error),
             Self::Membership(error) => Some(error),
             Self::Ownership(error) => Some(error),
+            Self::Replica(error) => Some(error),
+            Self::Fenced(error) => Some(error),
             Self::Tls(error) => Some(error),
             _ => None,
         }
+    }
+}
+
+impl From<ClusterError> for PeerError {
+    fn from(error: ClusterError) -> Self {
+        Self::Fenced(error)
     }
 }
 
@@ -160,8 +180,11 @@ impl PeerError {
             Self::Frame(_) => "database.cluster.peer.frame",
             Self::Membership(_) => "database.cluster.peer.membership",
             Self::Ownership(_) => "database.cluster.peer.ownership",
+            Self::Replica(_) => "database.cluster.peer.replica",
+            Self::Fenced(error) => error.code(),
             Self::Tls(_) => "database.cluster.peer.tls",
             Self::Rejected(_) => "database.cluster.peer.join_rejected",
+            Self::Revoked => "database.cluster.peer.revoked",
             Self::NotJoined => "database.cluster.peer.not_joined",
             Self::NotLeader => "database.cluster.peer.not_leader",
             Self::Protocol(_) => "database.cluster.peer.protocol",
@@ -199,6 +222,46 @@ impl BroadcastReport {
     }
 }
 
+/// 一条复制写在一个成员上的应用结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDelivery {
+    /// 应用该写的节点 id。
+    pub node_id: String,
+    /// 该节点持有的记录修订号。
+    pub revision: u64,
+}
+
+/// 一次复制广播的结果。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReplicaReport {
+    /// leader 分配的复制序号。
+    pub sequence: u64,
+    /// 已确认应用的成员。
+    pub delivered: Vec<ReplicaDelivery>,
+    /// 未确认的成员及原因。
+    pub failed: Vec<BroadcastFailure>,
+}
+
+impl ReplicaReport {
+    /// 成功应用数量。
+    pub fn delivered_count(&self) -> usize {
+        self.delivered.len()
+    }
+
+    /// 失败数量。
+    pub fn failed_count(&self) -> usize {
+        self.failed.len()
+    }
+}
+
+/// 由 epoch / term 限定的复制水位。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ReplicaWatermark {
+    epoch: ShardEpoch,
+    term: LeaderTerm,
+    sequence: u64,
+}
+
 /// 运行中的 peer 监听端。
 #[derive(Debug)]
 pub struct PeerNode {
@@ -212,6 +275,14 @@ struct Inner {
     options: PeerOptions,
     membership: Membership,
     ownership: Arc<Ownership>,
+    /// 本节点的复制落点;未附着时只承载控制面。
+    replica: RwLock<Option<Arc<dyn ReplicaSink>>>,
+    /// 每个分片已应用的最高复制序号,按 `(epoch, term)` 重置。
+    watermarks: Mutex<BTreeMap<String, ReplicaWatermark>>,
+    /// 每个 `(shard, epoch, term)` 已分配的复制序号。
+    sequences: Mutex<BTreeMap<(String, u64, u64), u64>>,
+    /// 串行化 leader 复制写,保证序号连续。
+    replication: Mutex<()>,
     shutdown: AtomicBool,
 }
 
@@ -269,7 +340,16 @@ impl PeerNode {
             PeerRole::Leader { epoch, term } => Arc::new(Ownership::new(epoch, term, Vec::new())),
             PeerRole::Follower => Arc::new(Ownership::default()),
         };
-        let inner = Arc::new(Inner { options, membership, ownership, shutdown: AtomicBool::new(false) });
+        let inner = Arc::new(Inner {
+            options,
+            membership,
+            ownership,
+            replica: RwLock::new(None),
+            watermarks: Mutex::new(BTreeMap::new()),
+            sequences: Mutex::new(BTreeMap::new()),
+            replication: Mutex::new(()),
+            shutdown: AtomicBool::new(false),
+        });
         let thread_inner = Arc::clone(&inner);
         let thread = thread::Builder::new().name(format!("yyds-peer-{}", thread_inner.options.identity.node_id)).spawn(move || {
             accept_loop(thread_inner, listener);
@@ -295,6 +375,61 @@ impl PeerNode {
     /// owner / epoch 控制面状态。
     pub fn ownership(&self) -> &Arc<Ownership> {
         &self.inner.ownership
+    }
+
+    /// 附着本节点的复制落点。
+    ///
+    /// 附着后,leader 的 [`Self::replicate`] 会在本地先应用再广播,成员则把收到的
+    /// [`ShardReplica`] 应用到同一落点。未附着时复制帧一律拒绝,不静默丢弃。
+    pub fn attach_replica(&self, sink: Arc<dyn ReplicaSink>) {
+        if let Ok(mut replica) = self.inner.replica.write() {
+            *replica = Some(sink);
+        }
+    }
+
+    /// 是否已附着复制落点。
+    pub fn has_replica(&self) -> bool {
+        self.inner.replica.read().map(|replica| replica.is_some()).unwrap_or(false)
+    }
+
+    /// 当前 owner 应用一条分片记录变更,并广播给所有成员。
+    ///
+    /// 本地应用先于广播;成员在准入处按 `(epoch, term, leader)` 拒绝旧复制,并把
+    /// 自己持有的修订号回报在 [`ReplicaAck`] 中。序号在 `(shard, epoch, term)` 内
+    /// 单调分配,调用被串行化以保证连续。授权只来自 owner 表:成员协议 leader 与
+    /// 分片 owner 可以不同,接管的 owner 不需要同时是成员 leader。
+    pub fn replicate(
+        &self,
+        shard_id: impl Into<String>,
+        epoch: ShardEpoch,
+        term: LeaderTerm,
+        record: ReplicaRecord,
+    ) -> Result<ReplicaReport, PeerError> {
+        let shard_id = shard_id.into();
+        let view = self.inner.membership.view().ok_or(PeerError::NotJoined)?;
+        if self.inner.membership.is_revoked() {
+            return Err(PeerError::Revoked);
+        }
+        let fence = FenceToken {
+            epoch,
+            term,
+            leader_node_id: ReplicaNodeId(self.inner.options.identity.node_id.clone()),
+        };
+        self.inner.ownership.admit(&ShardId(shard_id.clone()), &fence)?;
+        let _serial = self.inner.replication.lock().map_err(|_| PeerError::Protocol("replication lock poisoned".to_owned()))?;
+        let sequence = self.inner.next_sequence(&shard_id, epoch, term);
+        let write = ShardReplica {
+            epoch,
+            term,
+            leader_node_id: self.inner.options.identity.node_id.clone(),
+            shard_id,
+            sequence,
+            record,
+        };
+        if let Some(sink) = self.inner.replica_sink() {
+            sink.apply(&write).map_err(PeerError::Replica)?;
+        }
+        Ok(self.inner.broadcast_replica(&write, &view.members))
     }
 
     /// 当前成员视图。
@@ -390,17 +525,7 @@ impl PeerNode {
     }
 
     fn connect(&self, address: SocketAddr) -> Result<PeerStream, PeerError> {
-        let stream = TcpStream::connect_timeout(&address, self.inner.options.timeout)?;
-        stream.set_read_timeout(Some(self.inner.options.timeout))?;
-        stream.set_write_timeout(Some(self.inner.options.timeout))?;
-        let _ = stream.set_nodelay(true);
-        let Some(tls) = &self.inner.options.tls
-        else {
-            return Ok(PeerStream { kind: StreamKind::Plain(stream) });
-        };
-        let mut stream = StreamOwned::new(tls.client_connection(address)?, stream);
-        stream.conn.complete_io(&mut stream.sock).map_err(handshake_error)?;
-        Ok(PeerStream { kind: StreamKind::Client(Box::new(stream)) })
+        self.inner.open_stream(address)
     }
 }
 
@@ -466,14 +591,111 @@ impl Inner {
                 Some(self.ack(self.ownership.publish(announcement).map(|_| ())))
             }
             PeerFrame::OwnerSwitch(switch) => Some(self.ack(self.ownership.promote(switch).map(|_| ()))),
+            PeerFrame::ReplicaWrite(write) => Some(self.apply_replica(write)),
             PeerFrame::Heartbeat(_) => Some(PeerFrame::Ack(PeerAck {
                 accepted: true,
                 epoch: self.ownership.epoch(),
                 term: self.ownership.term(),
                 message: String::new(),
             })),
-            PeerFrame::Ack(_) | PeerFrame::JoinAccepted(_) | PeerFrame::JoinRejected(_) => None,
+            PeerFrame::Ack(_)
+            | PeerFrame::ReplicaAck(_)
+            | PeerFrame::JoinAccepted(_)
+            | PeerFrame::JoinRejected(_) => None,
         }
+    }
+
+    /// 应用一条入站复制写,并回报本地修订号。
+    ///
+    /// 准入先于写入:owner 表与 `(epoch, term, leader)` 不一致时整帧拒绝,分片不被
+    /// 触碰。序号按 `(epoch, term)` 比较,旧 epoch 的重放与缺口同样被拒绝。
+    fn apply_replica(&self, write: ShardReplica) -> PeerFrame {
+        let shard = ShardId(write.shard_id.clone());
+        let reject = |message: String| {
+            PeerFrame::ReplicaAck(ReplicaAck {
+                accepted: false,
+                epoch: self.ownership.epoch(),
+                term: self.ownership.term(),
+                shard_id: write.shard_id.clone(),
+                sequence: write.sequence,
+                revision: write.record.revision,
+                message,
+            })
+        };
+        if self.membership.is_revoked() {
+            return reject("node was removed from the cluster roster".to_owned());
+        }
+        let fence = FenceToken {
+            epoch: write.epoch,
+            term: write.term,
+            leader_node_id: ReplicaNodeId(write.leader_node_id.clone()),
+        };
+        if let Err(error) = self.ownership.admit(&shard, &fence) {
+            return reject(error.to_string());
+        }
+        if let Some(watermark) = self.watermark(&shard) {
+            if watermark.epoch == write.epoch && watermark.term == write.term {
+                if write.sequence <= watermark.sequence {
+                    return PeerFrame::ReplicaAck(ReplicaAck {
+                        accepted: true,
+                        epoch: write.epoch,
+                        term: write.term,
+                        shard_id: write.shard_id,
+                        sequence: write.sequence,
+                        revision: write.record.revision,
+                        message: "replayed sequence".to_owned(),
+                    });
+                }
+                let expected = watermark.sequence.saturating_add(1);
+                if write.sequence != expected {
+                    return reject(format!("replication gap: expected sequence {expected}"));
+                }
+            }
+        }
+        let Some(sink) = self.replica_sink()
+        else {
+            return reject("node has no replica sink".to_owned());
+        };
+        match sink.apply(&write) {
+            Ok(revision) => {
+                self.advance_watermark(&shard, write.epoch, write.term, write.sequence);
+                PeerFrame::ReplicaAck(ReplicaAck {
+                    accepted: true,
+                    epoch: write.epoch,
+                    term: write.term,
+                    shard_id: write.shard_id,
+                    sequence: write.sequence,
+                    revision,
+                    message: String::new(),
+                })
+            }
+            Err(error) => reject(error.to_string()),
+        }
+    }
+
+    fn replica_sink(&self) -> Option<Arc<dyn ReplicaSink>> {
+        self.replica.read().ok().and_then(|replica| replica.clone())
+    }
+
+    fn watermark(&self, shard: &ShardId) -> Option<ReplicaWatermark> {
+        self.watermarks.lock().ok().and_then(|watermarks| watermarks.get(&shard.0).copied())
+    }
+
+    fn advance_watermark(&self, shard: &ShardId, epoch: ShardEpoch, term: LeaderTerm, sequence: u64) {
+        if let Ok(mut watermarks) = self.watermarks.lock() {
+            watermarks.insert(shard.0.clone(), ReplicaWatermark { epoch, term, sequence });
+        }
+    }
+
+    fn next_sequence(&self, shard: &str, epoch: ShardEpoch, term: LeaderTerm) -> u64 {
+        let mut sequences = match self.sequences.lock() {
+            Ok(sequences) => sequences,
+            Err(_) => return 0,
+        };
+        let key = (shard.to_owned(), epoch.0, term.0);
+        let next = sequences.get(&key).copied().unwrap_or(0).saturating_add(1);
+        sequences.insert(key, next);
+        next
     }
 
     fn ack(&self, result: Result<(), impl fmt::Display>) -> PeerFrame {
@@ -504,22 +726,60 @@ impl Inner {
     }
 
     fn send(&self, address: SocketAddr, frame: &PeerFrame) -> Result<(), PeerError> {
-        let stream = TcpStream::connect_timeout(&address, self.options.timeout)?;
-        stream.set_read_timeout(Some(self.options.timeout))?;
-        stream.set_write_timeout(Some(self.options.timeout))?;
-        let mut stream = match &self.options.tls {
-            Some(tls) => {
-                let mut stream = StreamOwned::new(tls.client_connection(address)?, stream);
-                stream.conn.complete_io(&mut stream.sock).map_err(handshake_error)?;
-                PeerStream { kind: StreamKind::Client(Box::new(stream)) }
-            }
-            None => PeerStream { kind: StreamKind::Plain(stream) },
-        };
-        write_frame(&mut stream, frame)?;
-        match read_frame(&mut stream)? {
+        match self.request(address, frame)? {
             PeerFrame::Ack(ack) if ack.accepted => Ok(()),
             PeerFrame::Ack(ack) => Err(PeerError::Protocol(ack.message)),
             other => Err(PeerError::Protocol(format!("broadcast answered with {other:?}"))),
+        }
+    }
+
+    /// 打开一条到 `address` 的连接,完成 TLS 握手(若启用)并返回可读写流。
+    fn open_stream(&self, address: SocketAddr) -> Result<PeerStream, PeerError> {
+        let stream = TcpStream::connect_timeout(&address, self.options.timeout)?;
+        stream.set_read_timeout(Some(self.options.timeout))?;
+        stream.set_write_timeout(Some(self.options.timeout))?;
+        let _ = stream.set_nodelay(true);
+        let Some(tls) = &self.options.tls
+        else {
+            return Ok(PeerStream { kind: StreamKind::Plain(stream) });
+        };
+        let mut stream = StreamOwned::new(tls.client_connection(address)?, stream);
+        stream.conn.complete_io(&mut stream.sock).map_err(handshake_error)?;
+        Ok(PeerStream { kind: StreamKind::Client(Box::new(stream)) })
+    }
+
+    /// 一问一答:写入一帧并返回对端的下一帧。
+    fn request(&self, address: SocketAddr, frame: &PeerFrame) -> Result<PeerFrame, PeerError> {
+        let mut stream = self.open_stream(address)?;
+        write_frame(&mut stream, frame)?;
+        Ok(read_frame(&mut stream)?)
+    }
+
+    /// 广播一条复制写,并把每个成员的修订号收集进报告。
+    fn broadcast_replica(&self, write: &ShardReplica, members: &[PeerMember]) -> ReplicaReport {
+        let mut report = ReplicaReport { sequence: write.sequence, delivered: Vec::new(), failed: Vec::new() };
+        for member in members {
+            if member.node_id == self.options.identity.node_id {
+                continue;
+            }
+            let Ok(address) = member.address.parse::<SocketAddr>()
+            else {
+                report.failed.push(BroadcastFailure { node_id: member.node_id.clone(), message: "invalid member address".to_owned() });
+                continue;
+            };
+            match self.send_replica(address, write) {
+                Ok(revision) => report.delivered.push(ReplicaDelivery { node_id: member.node_id.clone(), revision }),
+                Err(error) => report.failed.push(BroadcastFailure { node_id: member.node_id.clone(), message: error.to_string() }),
+            }
+        }
+        report
+    }
+
+    fn send_replica(&self, address: SocketAddr, write: &ShardReplica) -> Result<u64, PeerError> {
+        match self.request(address, &PeerFrame::ReplicaWrite(write.clone()))? {
+            PeerFrame::ReplicaAck(ack) if ack.accepted => Ok(ack.revision),
+            PeerFrame::ReplicaAck(ack) => Err(PeerError::Protocol(ack.message)),
+            other => Err(PeerError::Protocol(format!("replica write answered with {other:?}"))),
         }
     }
 }

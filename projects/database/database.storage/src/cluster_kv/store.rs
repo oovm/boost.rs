@@ -129,6 +129,34 @@ pub trait KvStore {
         let _ = namespace;
         Err(Error::Unsupported("store does not flush namespaces"))
     }
+
+    /// Applies one leader-assigned record verbatim, adopting `record.revision`.
+    ///
+    /// Replication is idempotent: when the store already holds `record.key` at the same or a
+    /// newer revision the inbound record is ignored and the stored revision is returned. A
+    /// store without a replication contract keeps the default `Error::Unsupported` instead of
+    /// silently assigning its own revision, because that would make per-key sequences diverge.
+    fn apply_replicated(&mut self, record: Record) -> Result<u64> {
+        let _ = record;
+        Err(Error::Unsupported("store does not apply replicated records"))
+    }
+
+    /// Removes `key` on behalf of a leader replication frame. Returns whether a record was
+    /// present. Deletes stay idempotent so a replayed frame never fails the replica.
+    fn delete_replicated(&mut self, key: &Key) -> Result<bool> {
+        let _ = key;
+        Err(Error::Unsupported("store does not apply replicated deletes"))
+    }
+
+    /// Records strictly after the `after` cursor in full key order, for state transfer.
+    ///
+    /// `limit` of `0` means no cap. The cursor is the last record the receiver already holds;
+    /// `None` starts from the shard head. Expired records are skipped because a receiver only
+    /// needs live state.
+    fn replicated_after(&self, after: Option<&Key>, limit: usize) -> Result<Vec<Record>> {
+        let _ = (after, limit);
+        Err(Error::Unsupported("store does not enumerate records for state transfer"))
+    }
 }
 
 /// In-memory shard used by unit tests and early integrations.
@@ -210,6 +238,50 @@ impl KvStore for MemoryShard {
         }
         Ok(keys.len())
     }
+
+    fn apply_replicated(&mut self, record: Record) -> Result<u64> {
+        if let Some(current) = self.records.get(&record.key) {
+            if current.revision >= record.revision {
+                return Ok(current.revision);
+            }
+        }
+        self.next_revision = self.next_revision.max(revision_floor(record.revision));
+        self.records.insert(record.key.clone(), record.clone());
+        Ok(record.revision)
+    }
+
+    fn delete_replicated(&mut self, key: &Key) -> Result<bool> {
+        Ok(self.records.remove(key).is_some())
+    }
+
+    fn replicated_after(&self, after: Option<&Key>, limit: usize) -> Result<Vec<Record>> {
+        Ok(collect_replicated(&self.records, after, limit))
+    }
+}
+
+/// Next local revision after applying a leader-assigned `revision`.
+fn revision_floor(revision: u64) -> u64 {
+    revision.checked_add(1).unwrap_or(revision)
+}
+
+/// Records after `after` in key order, skipping expired ones; `limit` of `0` means no cap.
+fn collect_replicated(records: &BTreeMap<Key, Record>, after: Option<&Key>, limit: usize) -> Vec<Record> {
+    let now = now_unix_ms();
+    let iterator = match after {
+        Some(after) => records.range((Bound::Excluded(after), Bound::Unbounded)),
+        None => records.range(..),
+    };
+    let mut out = Vec::new();
+    for (_, record) in iterator {
+        if record.is_expired_at(now) {
+            continue;
+        }
+        out.push(record.clone());
+        if limit > 0 && out.len() >= limit {
+            break;
+        }
+    }
+    out
 }
 
 /// One open write-batch scope.
@@ -686,6 +758,47 @@ impl KvStore for FileShard {
             self.commit_changes(changes)?;
         }
         Ok(removed)
+    }
+
+    fn apply_replicated(&mut self, record: Record) -> Result<u64> {
+        if let Some(current) = self.records.get(&record.key) {
+            if current.revision >= record.revision {
+                return Ok(current.revision);
+            }
+        }
+        let next_revision = self.next_revision.max(revision_floor(record.revision));
+        let mut journal = CommitJournal::new();
+        journal.capture(self, &record.key);
+        self.apply_put(record.clone());
+        if self.owns_batch() {
+            self.stage(&record.key, Some(record.clone()));
+            self.absorb(journal);
+            self.next_revision = next_revision;
+            return Ok(record.revision);
+        }
+        if self.batch.is_some() {
+            self.stage(&record.key, Some(record.clone()));
+            if let Err(error) = self.flush_staged(next_revision) {
+                journal.restore(self);
+                return Err(error);
+            }
+            self.next_revision = next_revision;
+            return Ok(record.revision);
+        }
+        if let Err(error) = self.append_frame(next_revision, &[DeltaOp::Put(record.clone())]) {
+            journal.restore(self);
+            return Err(error);
+        }
+        self.next_revision = next_revision;
+        Ok(record.revision)
+    }
+
+    fn delete_replicated(&mut self, key: &Key) -> Result<bool> {
+        self.delete(key)
+    }
+
+    fn replicated_after(&self, after: Option<&Key>, limit: usize) -> Result<Vec<Record>> {
+        Ok(collect_replicated(&self.records, after, limit))
     }
 }
 

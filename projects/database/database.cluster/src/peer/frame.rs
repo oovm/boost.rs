@@ -205,6 +205,70 @@ pub struct Heartbeat {
     pub term: LeaderTerm,
 }
 
+/// 一条由 leader 分配的分片记录变更。
+///
+/// `value` 为 `Some` 是写入后的内联值,`None` 表示删除该键。`revision` 由 leader
+/// 在写入时分配,成员逐字采用,保证同一键在所有副本上的序号一致。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplicaRecord {
+    /// 记录所属命名空间。
+    pub namespace: String,
+    /// 不透明键字节。
+    pub key: Vec<u8>,
+    /// 写入值;`None` 表示删除。
+    pub value: Option<Vec<u8>>,
+    /// 可选的过期截止时间(Unix 毫秒)。
+    pub expires_at: Option<i64>,
+    /// leader 分配的记录修订号。
+    pub revision: u64,
+}
+
+impl ReplicaRecord {
+    /// 该变更是否为删除。
+    pub fn is_delete(&self) -> bool {
+        self.value.is_none()
+    }
+}
+
+/// leader → member:一条带 epoch / term 的分片复制写。
+///
+/// `sequence` 是 leader 在 `(shard, epoch, term)` 内单调分配的复制序号;成员据此
+/// 拒绝重放并发现缺口。接收端在 `ownership` 准入失败时整帧拒绝,不会写分片。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShardReplica {
+    /// 路由 epoch。
+    pub epoch: ShardEpoch,
+    /// leader term。
+    pub term: LeaderTerm,
+    /// 授权该写的 leader 节点 id。
+    pub leader_node_id: String,
+    /// 目标分片 id。
+    pub shard_id: String,
+    /// leader 分配的复制序号。
+    pub sequence: u64,
+    /// 记录变更。
+    pub record: ReplicaRecord,
+}
+
+/// member → leader:复制写的应用确认。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplicaAck {
+    /// 对端是否应用(或幂等识别为重放)。
+    pub accepted: bool,
+    /// 回复方当前的 epoch。
+    pub epoch: ShardEpoch,
+    /// 回复方当前的 term。
+    pub term: LeaderTerm,
+    /// 分片 id。
+    pub shard_id: String,
+    /// 被确认的复制序号。
+    pub sequence: u64,
+    /// 接收端持有的记录修订号。
+    pub revision: u64,
+    /// 拒绝原因或诊断说明。
+    pub message: String,
+}
+
 /// 控制帧的通用确认。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeerAck {
@@ -234,6 +298,10 @@ pub enum PeerFrame {
     EpochAnnouncement(EpochAnnouncement),
     /// leader → member:单分片 owner 切换。
     OwnerSwitch(OwnerSwitch),
+    /// leader → member:分片复制写。
+    ReplicaWrite(ShardReplica),
+    /// member → leader:复制写确认。
+    ReplicaAck(ReplicaAck),
     /// 任意 → 任意:存活探测。
     Heartbeat(Heartbeat),
     /// 任意 → 任意:确认。
