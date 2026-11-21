@@ -372,18 +372,18 @@ impl BinarySession {
                 info.section_count = image.sections.len() as u64;
             }
             BinaryFormat::MachO => {
-                let image = mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let header = mach_o::parse_macho_header(&self.bytes)
+                    .map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
                 let is_64 = mach_o::macho_magic(&self.bytes).map(|(is_64, _)| is_64).unwrap_or(false);
                 info.magic = Some(if is_64 { "Mach-O 64" } else { "Mach-O 32" }.to_string());
-                info.endian = Some(match image.header.endian {
+                info.endian = Some(match header.endian {
                     mach_o::MachOEndian::Little => "little",
                     mach_o::MachOEndian::Big => "big",
                 }
                 .to_string());
-                info.cpu_type = Some(i64::from(image.header.cpu_type));
-                info.file_type = Some(image.header.file_type);
-                info.command_count = Some(image.header.command_count);
-                info.section_count = image.sections.len() as u64;
+                info.cpu_type = Some(i64::from(header.cpu_type));
+                info.file_type = Some(header.file_type);
+                info.command_count = Some(header.command_count);
             }
             BinaryFormat::Unknown => {}
         }
@@ -526,6 +526,20 @@ impl BinarySession {
                 let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
                 let rva = u32::try_from(address)
                     .map_err(|_| InspectError::range(format!("address 0x{address:x} does not fit a PE RVA")))?;
+                // Headers occupy the bytes before the first section and are mapped 1:1.
+                let first_section = image
+                    .sections
+                    .iter()
+                    .map(|section| section.virtual_address)
+                    .filter(|address| *address > 0)
+                    .min()
+                    .unwrap_or(0);
+                if rva < first_section {
+                    if u64::from(rva) < self.size() {
+                        return Ok(u64::from(rva));
+                    }
+                    return Err(InspectError::range(format!("address 0x{address:x} maps beyond the end of the file")));
+                }
                 let offset = pe::rva_to_offset(&image.sections, rva)
                     .map_err(|error| InspectError::range(format!("address 0x{address:x}: {error}")))?;
                 let offset = u64::from(offset);
