@@ -107,26 +107,30 @@ impl SqlFieldType {
     /// Every other value keeps its plain bytes except [`SqlFieldType::Uuid`],
     /// where the 36-character text form is parsed into its 16 canonical octets
     /// so storage, comparison and index payloads share one representation.
-    pub fn storage_bytes_of(&self, literal: &SqlBoundLiteral) -> Result<Option<Vec<u8>>, SqlFrontendError> {
+    pub fn storage_value_of(&self, literal: &SqlBoundLiteral) -> Result<Option<database_types::Value>, SqlFrontendError> {
+        use database_types::Value;
+        let inner = self.inner();
         if matches!(literal, SqlBoundLiteral::Null) {
             return Ok(None);
         }
-        if matches!(self.inner(), SqlFieldType::Uuid) {
+        if matches!(inner, SqlFieldType::Uuid) {
             return match literal {
-                SqlBoundLiteral::Bytes(bytes) if bytes.len() == 16 => Ok(Some(bytes.clone())),
-                SqlBoundLiteral::String(text) => match parse_uuid(text) {
-                    Some(bytes) => Ok(Some(bytes.to_vec())),
-                    None => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a valid UUID"))),
+                SqlBoundLiteral::Bytes(bytes) if bytes.len() == 16 => {
+                    Ok(Some(Value::Uuid(uuid::Uuid::from_slice(bytes).expect("length checked above"))))
+                }
+                SqlBoundLiteral::String(text) => match uuid::Uuid::parse_str(text) {
+                    Ok(id) => Ok(Some(Value::Uuid(id))),
+                    Err(_) => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a valid UUID"))),
                 },
                 _ => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "a uuid column accepts only 16-octet binary or UUID text")),
             };
         }
-        if matches!(self.inner(), SqlFieldType::Json) {
+        if matches!(inner, SqlFieldType::Json) {
             return Ok(Some(match literal {
-                // 结构化一次：客户端文本只在这里解析成 `any` 值。
-                SqlBoundLiteral::String(text) => crate::sql_execute::json::encode(text)?,
+                // 结构化一次：客户端文本在这里解析成 `any` 值，之后读写都走二进制值。
+                SqlBoundLiteral::String(text) => crate::sql_execute::json::parse(text)?,
                 // PostgreSQL `jsonb` 二进制参数（版本字节 + JSON 文本）。
-                SqlBoundLiteral::Bytes(bytes) => crate::sql_execute::json::encode_bytes(bytes)?,
+                SqlBoundLiteral::Bytes(bytes) => crate::sql_execute::json::parse_bytes(bytes)?,
                 _ => {
                     return Err(SqlFrontendError::new(
                         SqlErrorKind::TypeMismatch,
@@ -135,15 +139,86 @@ impl SqlFieldType {
                 }
             }));
         }
-        Ok(Some(match literal {
+        Ok(Some(match (inner.clone(), literal) {
+            (SqlFieldType::Int16, SqlBoundLiteral::Integer(value)) => {
+                i16::try_from(*value).map(|value| Value::I64(i64::from(value))).map_err(|_| integer_out_of_range(self))?
+            }
+            (SqlFieldType::Int32, SqlBoundLiteral::Integer(value)) => {
+                i32::try_from(*value).map(|value| Value::I64(i64::from(value))).map_err(|_| integer_out_of_range(self))?
+            }
+            (SqlFieldType::Int64, SqlBoundLiteral::Integer(value)) => Value::I64(*value),
+            (SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64, SqlBoundLiteral::String(text)) => {
+                let parsed: i64 =
+                    text.trim().parse().map_err(|_| SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not an integer")))?;
+                match inner {
+                    SqlFieldType::Int16 => {
+                        i16::try_from(parsed).map_err(|_| integer_out_of_range(self))?;
+                    }
+                    SqlFieldType::Int32 => {
+                        i32::try_from(parsed).map_err(|_| integer_out_of_range(self))?;
+                    }
+                    _ => {}
+                }
+                Value::I64(parsed)
+            }
+            (SqlFieldType::Float64, SqlBoundLiteral::Integer(value)) => Value::F64(*value as f64),
+            (SqlFieldType::Float64, SqlBoundLiteral::Number(text) | SqlBoundLiteral::String(text)) => match text.trim().parse::<f64>() {
+                Ok(real) if real.is_finite() => Value::F64(real),
+                _ => return Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a finite number"))),
+            },
+            (SqlFieldType::Bool, SqlBoundLiteral::Boolean(value)) => Value::Bool(*value),
+            (SqlFieldType::Bool, SqlBoundLiteral::Integer(value)) if *value == 0 || *value == 1 => Value::Bool(*value == 1),
+            (SqlFieldType::Bool, SqlBoundLiteral::String(text)) => match text.to_ascii_lowercase().as_str() {
+                "true" | "t" | "1" => Value::Bool(true),
+                "false" | "f" | "0" => Value::Bool(false),
+                _ => return Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a boolean"))),
+            },
+            (SqlFieldType::Bytes, SqlBoundLiteral::Bytes(bytes)) => Value::Bytes(bytes.clone()),
+            (SqlFieldType::Bytes, SqlBoundLiteral::String(text)) => Value::Bytes(text.as_bytes().to_vec()),
+            // 文本承载的类型（字符串、精确小数、日期、时间戳）统一落成文本值。
+            (_, SqlBoundLiteral::Integer(value)) => Value::Text(value.to_string()),
+            (_, SqlBoundLiteral::Number(text)) => Value::Text(text.clone()),
+            (_, SqlBoundLiteral::String(text)) => Value::Text(text.clone()),
+            (_, SqlBoundLiteral::Bytes(bytes)) => Value::Bytes(bytes.clone()),
+            (_, SqlBoundLiteral::Boolean(value)) => Value::Text(if *value { "true" } else { "false" }.to_string()),
+            (SqlFieldType::Array(_), _) => unreachable!("array columns are not stored by this gateway"),
+            (_, SqlBoundLiteral::Null) => unreachable!("handled above"),
+        }))
+    }
+
+    /// Row-id bytes for one primary-key literal.
+    ///
+    /// This is the KV key layout, not the row payload: existing rows were written
+    /// with the same spelling, so changing it would orphan them. uuid keeps its
+    /// 16 canonical octets; every other type keeps the literal's plain bytes.
+    pub fn primary_key_bytes_of(&self, literal: &SqlBoundLiteral) -> Result<Vec<u8>, SqlFrontendError> {
+        if matches!(literal, SqlBoundLiteral::Null) {
+            return Err(SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"));
+        }
+        if matches!(self.inner(), SqlFieldType::Uuid) {
+            return match literal {
+                SqlBoundLiteral::Bytes(bytes) if bytes.len() == 16 => Ok(bytes.clone()),
+                SqlBoundLiteral::String(text) => match parse_uuid(text) {
+                    Some(bytes) => Ok(bytes.to_vec()),
+                    None => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, format!("`{text}` is not a valid UUID"))),
+                },
+                _ => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "a uuid column accepts only 16-octet binary or UUID text")),
+            };
+        }
+        Ok(match literal {
             SqlBoundLiteral::Integer(value) => value.to_string().into_bytes(),
             SqlBoundLiteral::Number(text) => text.as_bytes().to_vec(),
             SqlBoundLiteral::String(text) => text.as_bytes().to_vec(),
             SqlBoundLiteral::Bytes(bytes) => bytes.clone(),
             SqlBoundLiteral::Boolean(value) => (if *value { "1" } else { "0" }).as_bytes().to_vec(),
             SqlBoundLiteral::Null => unreachable!("handled above"),
-        }))
+        })
     }
+}
+
+/// Integer literal outside the declared column width.
+fn integer_out_of_range(field_type: &SqlFieldType) -> SqlFrontendError {
+    SqlFrontendError::new(SqlErrorKind::NumericOverflow, format!("integer value is out of range for {:?}", field_type.inner()))
 }
 
 /// Parses UUID text into its canonical big-endian 16 octets.
@@ -2631,13 +2706,34 @@ mod tests {
         assert!(parse_uuid("not-a-uuid").is_none());
     }
 
-    /// uuid 列的存储字节是 16 字节原文，其余类型保留原有文本字节。
+    /// uuid 列交付 16 字节规范值，文本列保留原始文本值。
     #[test]
-    fn storage_bytes_of_uuid_is_sixteen_octets() {
+    fn storage_value_of_uuid_is_sixteen_octets() {
         let literal = SqlBoundLiteral::String("3F2504E0-4F89-11D3-9A0C-0305E82C3301".to_string());
-        assert_eq!(SqlFieldType::Uuid.storage_bytes_of(&literal).unwrap().map(|bytes| bytes.len()), Some(16));
-        assert_eq!(SqlFieldType::String.storage_bytes_of(&literal).unwrap().map(|bytes| bytes.len()), Some(36));
-        assert!(SqlFieldType::Uuid.storage_bytes_of(&SqlBoundLiteral::Null).unwrap().is_none());
-        assert!(SqlFieldType::Uuid.storage_bytes_of(&SqlBoundLiteral::String("nope".to_string())).is_err());
+        let uuid = SqlFieldType::Uuid.storage_value_of(&literal).unwrap().expect("uuid value");
+        assert!(matches!(uuid, database_types::Value::Uuid(_)));
+        let bytes = database_formats::yy::row::encode_tagged(&uuid).expect("encode tagged uuid");
+        assert_eq!(bytes.len(), 17, "tag + 16 octets");
+        assert!(matches!(SqlFieldType::String.storage_value_of(&literal).unwrap(), Some(database_types::Value::Text(_))));
+        assert!(SqlFieldType::Uuid.storage_value_of(&SqlBoundLiteral::Null).unwrap().is_none());
+        assert!(SqlFieldType::Uuid.storage_value_of(&SqlBoundLiteral::String("nope".to_string())).is_err());
+    }
+
+    #[test]
+    fn json_literals_become_structured_runtime_values() {
+        let value = SqlFieldType::Json
+            .storage_value_of(&SqlBoundLiteral::String(r#"{"a":[1,true,null]}"#.to_string()))
+            .unwrap()
+            .expect("structured json");
+        assert!(matches!(value, database_types::Value::Row(_)));
+    }
+
+    #[test]
+    fn integer_literals_are_range_checked_against_the_column_width() {
+        assert!(SqlFieldType::Int16.storage_value_of(&SqlBoundLiteral::Integer(70_000)).is_err());
+        assert_eq!(
+            SqlFieldType::Int32.storage_value_of(&SqlBoundLiteral::Integer(70_000)).unwrap(),
+            Some(database_types::Value::I64(70_000))
+        );
     }
 }

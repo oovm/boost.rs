@@ -87,6 +87,15 @@ impl<'a> Cursor<'a> {
         self.data.len() - self.pos
     }
 
+    fn read_u8(&mut self) -> Result<u8, SqlFrontendError> {
+        if self.remaining() < 1 {
+            return Err(internal_error("row TLV truncated reading u8"));
+        }
+        let value = self.data[self.pos];
+        self.pos += 1;
+        Ok(value)
+    }
+
     fn read_u16(&mut self) -> Result<u16, SqlFrontendError> {
         if self.remaining() < 2 {
             return Err(internal_error("row TLV truncated reading u16"));

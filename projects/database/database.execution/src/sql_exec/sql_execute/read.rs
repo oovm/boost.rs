@@ -424,8 +424,9 @@ pub(crate) fn scan_join_source(
         let decoded = decode_row_fields(&value_bytes, &source.needed_field_ids)?;
         let mut row = RowFieldValues::new();
         for (field_id, row_id) in source.needed_field_ids.iter().zip(source.row_ids.iter()) {
-            if let Some(bytes) = decoded.get(*field_id) {
-                row.insert(*row_id, bytes.to_vec());
+            if let Some((format, bytes)) = decoded.get_cell(*field_id) {
+                // 换 row 槽时保留载荷格式：扫描块不解释字段值，只搬运。
+                row.insert_cell(*row_id, format, bytes.to_vec());
             }
         }
         rows.push(row);

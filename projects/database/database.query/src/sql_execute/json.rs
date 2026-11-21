@@ -18,25 +18,37 @@ fn mismatch(message: impl Into<String>) -> SqlFrontendError {
     SqlFrontendError::new(SqlErrorKind::TypeMismatch, message)
 }
 
-/// 把客户端 JSON 文本解析成结构化 `any` 值并编码成存储载荷。
+/// 把客户端 JSON 文本解析成结构化 `any` 值。
 ///
-/// 文本参数与 `jsonb` 的二进制参数都可能出现；二进制参数按 PostgreSQL 约定是
-/// `0x01` 版本字节 + JSON 文本，这里统一按 UTF-8 JSON 文本解析。
-pub(crate) fn encode(text: &str) -> Result<Vec<u8>, SqlFrontendError> {
+/// 写入路径只交付这个运行值，物理编码由行格式 codec 决定；[`encode`] 是
+/// 「解析后立刻编码」的便捷组合，供需要直接拿载荷的调用方使用。
+pub(crate) fn parse(text: &str) -> Result<Value, SqlFrontendError> {
     let parsed: serde_json::Value = serde_json::from_str(text).map_err(|error| mismatch(format!("invalid JSON value: {error}")))?;
-    let value = value_of(&parsed)?;
-    encode_tagged(&value).map_err(|error| mismatch(format!("cannot store JSON value: {error}")))
+    value_of(&parsed)
 }
 
-/// 把 `jsonb` 二进制参数的负载还原为文本，再走同一解析路径。
-pub(crate) fn encode_bytes(bytes: &[u8]) -> Result<Vec<u8>, SqlFrontendError> {
+/// 把 `jsonb` 二进制参数的负载还原成结构化值。
+pub(crate) fn parse_bytes(bytes: &[u8]) -> Result<Value, SqlFrontendError> {
     let bytes = match bytes.first() {
         // PostgreSQL `jsonb` 二进制格式：1 字节版本号，后接 JSON 文本。
         Some(1) => &bytes[1..],
         _ => bytes,
     };
     let text = std::str::from_utf8(bytes).map_err(|_| mismatch("JSON parameter is not UTF-8"))?;
-    encode(text)
+    parse(text)
+}
+
+/// 把客户端 JSON 文本解析成结构化 `any` 值并编码成存储载荷。
+///
+/// 文本参数与 `jsonb` 的二进制参数都可能出现；二进制参数按 PostgreSQL 约定是
+/// `0x01` 版本字节 + JSON 文本，这里统一按 UTF-8 JSON 文本解析。
+pub(crate) fn encode(text: &str) -> Result<Vec<u8>, SqlFrontendError> {
+    encode_tagged(&parse(text)?).map_err(|error| mismatch(format!("cannot store JSON value: {error}")))
+}
+
+/// 把 `jsonb` 二进制参数解析成结构化值并编码成存储载荷。
+pub(crate) fn encode_bytes(bytes: &[u8]) -> Result<Vec<u8>, SqlFrontendError> {
+    encode_tagged(&parse_bytes(bytes)?).map_err(|error| mismatch(format!("cannot store JSON value: {error}")))
 }
 
 /// 把存储载荷解码回结构化值。

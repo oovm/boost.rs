@@ -241,6 +241,9 @@ const TAG_FILE: u8 = 0x0D;
 const TAG_LIST: u8 = 0x0E;
 /// 嵌套结构化行（`any` 值里的对象）：按成员名排序的键值序列。
 const TAG_NESTED_ROW: u8 = 0x0F;
+/// 无符号 64 位整数。JSON 里超过 `i64::MAX` 的整数解析成 [`Value::U64`]，
+/// 行格式必须能原样往返，不能按有符号数截断。
+const TAG_U64: u8 = 0x10;
 
 /// Deepest list nesting the row codec encodes or decodes.
 ///
@@ -269,6 +272,10 @@ fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
         }
         Value::I64(integer) => {
             out.push(TAG_I64);
+            out.extend_from_slice(&integer.to_le_bytes());
+        }
+        Value::U64(integer) => {
+            out.push(TAG_U64);
             out.extend_from_slice(&integer.to_le_bytes());
         }
         Value::F64(number) => {
@@ -379,7 +386,7 @@ fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
         }
         _ => {
             return Err(Error::Unsupported(
-                "query row encoding supports null, bool, i64, real, text, uuid, bytes, vector, date, time, timestamp, \
+                "query row encoding supports null, bool, i64, u64, real, text, uuid, bytes, vector, date, time, timestamp, \
                  decimal, bytes object references, file descriptors, lists, and nested rows only",
             ));
         }
@@ -571,7 +578,7 @@ impl<'a> RowCursor<'a> {
             TAG_BOOL => {
                 self.take(1)?;
             }
-            TAG_I64 | TAG_F64 | TAG_TIME | TAG_TIMESTAMP => {
+            TAG_I64 | TAG_U64 | TAG_F64 | TAG_TIME | TAG_TIMESTAMP => {
                 self.take(8)?;
             }
             TAG_TEXT => {
@@ -670,6 +677,7 @@ fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReference
             _ => return Err(Error::Corrupt("row record boolean is not 0 or 1")),
         },
         TAG_I64 => Value::I64(cursor.i64()?),
+        TAG_U64 => Value::U64(cursor.u64()?),
         TAG_F64 => {
             let real = f64::from_le_bytes(cursor.take(8)?.try_into().unwrap());
             if !real.is_finite() {

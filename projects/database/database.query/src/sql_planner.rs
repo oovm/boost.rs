@@ -2542,10 +2542,8 @@ fn combine_remaining(left: Option<SqlCatalogBoundExpression>, right: Option<SqlC
 /// text: point reads, `UNIQUE` checks and secondary-index entries then all
 /// compare on the compact binary form.
 pub fn pk_literal_to_rowid(literal: &SqlBoundLiteral, field_type: &crate::catalog_bind::SqlFieldType) -> Result<Vec<u8>, SqlFrontendError> {
-    if matches!(literal, SqlBoundLiteral::Null) {
-        return Err(SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"));
-    }
-    field_type.storage_bytes_of(literal)?.ok_or_else(|| SqlFrontendError::new(SqlErrorKind::NotNullViolation, "primary key must not be NULL"))
+    // rowid 是 KV 键布局，不是行载荷；沿用历史编码，既有行才不会失联。
+    field_type.primary_key_bytes_of(literal)
 }
 
 fn primary_key_of(table: &crate::SqlCatalogTable) -> Result<&crate::SqlCatalogField, SqlFrontendError> {

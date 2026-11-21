@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use database_formats::yy::row::{ROW_CODEC_VERSION, decode_row, encode_row, row_key, row_references, table_prefix};
+use database_formats::yy::row::{
+    ROW_CODEC_VERSION, decode_row, decode_tagged, encode_row, encode_tagged, row_key, row_references, table_prefix,
+};
 use database_types::{ObjectKind, ObjectRef, Value};
 
 fn sample_row() -> BTreeMap<String, Value> {
@@ -43,4 +45,15 @@ fn a_retired_record_version_fails_closed() {
     let mut bytes = encode_row(&sample_row()).expect("encode");
     bytes[0] = 0;
     assert!(decode_row(&bytes).is_err(), "a record from the retired codec must be rejected");
+}
+
+#[test]
+fn unsigned_integers_round_trip_through_both_codecs() {
+    let mut row = sample_row();
+    row.insert("huge".to_string(), Value::U64(u64::MAX));
+    let bytes = encode_row(&row).expect("encode");
+    assert_eq!(decode_row(&bytes).expect("decode"), row);
+    // 超过 `i64::MAX` 的值只能以 u64 标签往返，不能按有符号数截断。
+    let cell = encode_tagged(&Value::U64(u64::MAX)).expect("encode tagged");
+    assert_eq!(decode_tagged(&cell).expect("decode tagged"), Value::U64(u64::MAX));
 }

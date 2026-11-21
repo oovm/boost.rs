@@ -131,8 +131,8 @@ pub(crate) fn substitute_outer_order_by_option(
 
 /// 外层列在该行上的取值；字段缺失按 SQL NULL 处理。
 pub(crate) fn outer_literal(column: &SqlCatalogOuterColumn, row: &RowFieldValues) -> SqlBoundLiteral {
-    match row.get(column.column.row_id) {
-        Some(bytes) => value_to_literal(SqlValue::from_row_bytes_typed(bytes, &column.field_type)),
+    match row.value_of(column.column.row_id, &column.field_type) {
+        Some(value) => value_to_literal(value),
         None => SqlBoundLiteral::Null,
     }
 }

@@ -62,20 +62,30 @@ pub fn range_supported(field_type: &SqlFieldType) -> bool {
 
 /// 一个已存值在索引里的 payload。
 ///
+/// 输入是按列类型解释后的 [`SqlValue`]，不是行载荷字节：legacy 行与标签行
+/// 的存储字节不同，索引必须按逻辑值编码才能与探测边界对齐。
+///
 /// - `Ok(None)` —— SQL `NULL`：任何索引都不为 NULL 写条目，等值探测也匹配不到 NULL。
 /// - `Ok(Some(payload))` —— 可编码。
 /// - `Err(())` —— 该值无法按列类型编码。调用方必须让索引退回不可用状态，
 ///   不能悄悄少写一条，否则读过索引的结果集会漏行。
-pub fn encode_value(bytes: &[u8], field_type: &SqlFieldType) -> Result<Option<Vec<u8>>, ()> {
-    match field_type.inner() {
-        SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64 => {
-            let text = std::str::from_utf8(bytes).map_err(|_| ())?;
-            let value: i64 = text.trim().parse().map_err(|_| ())?;
-            Ok(Some(encode_integer(value)))
-        }
-        SqlFieldType::String => Ok(Some(bytes.to_vec())),
-        // uuid 在行里已经是 16 字节大端原文，索引载荷直接复用，不经过文本。
-        SqlFieldType::Uuid if bytes.len() == 16 => Ok(Some(bytes.to_vec())),
+pub fn encode_value(value: &crate::SqlValue, field_type: &SqlFieldType) -> Result<Option<Vec<u8>>, ()> {
+    match (value, field_type.inner()) {
+        (crate::SqlValue::Null, _) => Ok(None),
+        (_, SqlFieldType::Int16 | SqlFieldType::Int32 | SqlFieldType::Int64) => match value {
+            crate::SqlValue::Integer(integer) => Ok(Some(encode_integer(*integer))),
+            _ => Err(()),
+        },
+        (_, SqlFieldType::String) => match value {
+            crate::SqlValue::String(text) => Ok(Some(text.as_bytes().to_vec())),
+            _ => Err(()),
+        },
+        // uuid 在行里是 16 字节大端原文；文本形态先解析成规范字节，与行存储对齐。
+        (_, SqlFieldType::Uuid) => match value {
+            crate::SqlValue::Bytes(bytes) if bytes.len() == 16 => Ok(Some(bytes.clone())),
+            crate::SqlValue::String(text) => crate::catalog_bind::parse_uuid(text).map(|bytes| Some(bytes.to_vec())).ok_or(()),
+            _ => Err(()),
+        },
         _ => Err(()),
     }
 }

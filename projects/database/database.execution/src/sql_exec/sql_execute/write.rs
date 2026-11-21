@@ -41,7 +41,7 @@ pub(crate) fn insert_row_if_absent(
     else {
         scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?
     };
-    if let Some(constraint) = unique_conflict_in_snapshot(&plan.unique_constraints, &row, None, &[], &stored)? {
+    if let Some(constraint) = unique_conflict_in_snapshot(&plan.unique_constraints, &row, None, &[], &stored, &plan.field_types)? {
         // `ON CONFLICT DO NOTHING` 对任何唯一冲突都跳过，而不是只跳过主键冲突。
         if do_nothing {
             return returning_result(&plan.returning, &plan.field_types, Vec::new(), 0, dialect);
@@ -100,7 +100,7 @@ pub(crate) fn upsert_row(
             None => {
                 let mut proposed = write_plan_to_row(plan)?;
                 apply_generated(&plan.generated, &plan.field_types, &mut proposed, dialect)?;
-                match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed)? {
+                match find_unique_conflict(executor, transaction, &plan.namespace, &plan.unique_constraints, &proposed, &plan.field_types)? {
                     Some((rowid, bytes)) => (rowid, bytes),
                     None => {
                         enforce_row_guards(
@@ -137,7 +137,15 @@ pub(crate) fn upsert_row(
             return returning_result(&plan.returning, &plan.field_types, Vec::new(), 0, dialect);
         };
         if let Some(constraint) =
-            unique_conflict_on_write(executor, transaction, &plan.namespace, &plan.unique_constraints, &row, Some(&target_rowid))?
+            unique_conflict_on_write(
+                executor,
+                transaction,
+                &plan.namespace,
+                &plan.unique_constraints,
+                &row,
+                Some(&target_rowid),
+                &plan.field_types,
+            )?
         {
             return Err(duplicate_key_error(&constraint));
         }
@@ -307,7 +315,7 @@ pub(crate) fn execute_multi_insert(
             let preimages = load_insert_preimages(executor, Some(handle), plans, &namespace, needs_preimage)?;
             let (order, folded) = fold_insert_plans(plans, &preimages, dialect)?;
             let stored = scan_rows(executor, Some(handle), &namespace, &[], None, None, 0, "unique_check")?;
-            ensure_unique_rows(&first.unique_constraints, &order, &folded, &stored)?;
+            ensure_unique_rows(&first.unique_constraints, &order, &folded, &stored, &first.field_types)?;
         }
     }
     let columns = plans.first().and_then(|plan| plan.returning.as_ref()).map(returning_column_labels).unwrap_or_default();
@@ -364,7 +372,7 @@ pub(crate) fn execute_multi_insert_atomic(
         };
         if !first.unique_constraints.is_empty() {
             // 基存快照 + 同语句已折叠行共同决定 `UNIQUE` 冲突，整批在提交前拦截。
-            ensure_unique_rows(&first.unique_constraints, &order, &folded, &stored)?;
+            ensure_unique_rows(&first.unique_constraints, &order, &folded, &stored, &first.field_types)?;
         }
         if indexes.needs_backfill() {
             indexes.backfill(&stored)?;
@@ -548,8 +556,9 @@ fn ensure_unique_rows(
     order: &[Vec<u8>],
     folded: &BTreeMap<Vec<u8>, BatchedRow>,
     stored: &[(Vec<u8>, Vec<u8>)],
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 ) -> Result<(), SqlFrontendError> {
-    let mut snapshot = UniqueSnapshot::build(constraints, stored)?;
+    let mut snapshot = UniqueSnapshot::build(constraints, stored, field_types)?;
     for rowid in order {
         let entry = &folded[rowid];
         if !entry.applied {
@@ -722,7 +731,7 @@ pub(crate) fn ensure_unique_targets_absent(
     }
     let namespace = Namespace(first.namespace.clone());
     let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
-    let mut snapshot = UniqueSnapshot::build(&first.unique_constraints, &stored)?;
+    let mut snapshot = UniqueSnapshot::build(&first.unique_constraints, &stored, &first.field_types)?;
     for plan in plans {
         let row = write_plan_to_row(plan)?;
         if let Some(constraint) = snapshot.conflict(&row, Some(&plan.rowid)) {
@@ -782,7 +791,15 @@ pub(crate) fn execute_update(
     }
     apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
     if let Some(constraint) =
-        unique_conflict_on_write(executor, transaction, &plan.namespace, &plan.unique_constraints, &row, Some(&plan.rowid))?
+        unique_conflict_on_write(
+            executor,
+            transaction,
+            &plan.namespace,
+            &plan.unique_constraints,
+            &row,
+            Some(&plan.rowid),
+            &plan.field_types,
+        )?
     {
         return Err(duplicate_key_error(&constraint));
     }
@@ -981,7 +998,7 @@ pub(crate) fn execute_update_scan(
         if !plan.unique_constraints.is_empty() {
             if unique_snapshot.is_none() {
                 let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
-                unique_snapshot = Some(UniqueSnapshot::build(&plan.unique_constraints, &stored)?);
+                unique_snapshot = Some(UniqueSnapshot::build(&plan.unique_constraints, &stored, &plan.field_types)?);
             }
             let snapshot = unique_snapshot.as_mut().expect("snapshot was built above");
             if let Some(constraint) = snapshot.conflict(&row, Some(&rowid)) {
@@ -1078,8 +1095,9 @@ pub(crate) fn execute_delete_using(
         for (_, image) in rows {
             let decoded = decode_row(&image)?;
             let mut row = RowFieldValues::new();
-            for (field_id, bytes) in decoded.iter() {
-                row.insert(field_id + source.row_slot * ROW_ID_STRIDE, bytes.clone());
+            for (field_id, format, bytes) in decoded.iter() {
+                // 平移 row_id 时保留载荷格式，legacy 字段不被重新解释。
+                row.insert_cell(field_id + source.row_slot * ROW_ID_STRIDE, format, bytes.to_vec());
             }
             shifted.push(row);
         }
@@ -1145,12 +1163,23 @@ pub(crate) fn write_plan_to_row(plan: &WritePlan) -> Result<RowFieldValues, SqlF
     Ok(row)
 }
 
-/// 把一行的约束列折叠成可比较的元组；任一列为 NULL 时返回 `None`（SQL 的
-/// `UNIQUE` 允许多行 NULL）。
-pub(crate) fn constraint_tuple(row: &RowFieldValues, columns: &[(u64, String)]) -> Option<Vec<Vec<u8>>> {
+/// 把一行的约束列折叠成可比较的元组；任一列为 NULL（字段缺失或 SQL NULL）时
+/// 返回 `None`（SQL 的 `UNIQUE` 允许多行 NULL）。
+///
+/// 比较消费的是按列类型解释后的 [`SqlValue`]，不是行载荷字节：同一逻辑值在
+/// legacy 行与标签行里的字节不同，按字节比较会把重复值漏掉。
+pub(crate) fn constraint_tuple(
+    row: &RowFieldValues,
+    columns: &[(u64, String)],
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
+) -> Option<Vec<SqlValue>> {
     let mut tuple = Vec::with_capacity(columns.len());
     for (field_id, _) in columns {
-        tuple.push(row.get(*field_id)?.to_vec());
+        let value = row.value_typed(*field_id, field_types)?;
+        if matches!(value, SqlValue::Null) {
+            return None;
+        }
+        tuple.push(value);
     }
     Some(tuple)
 }
@@ -1160,10 +1189,11 @@ pub(crate) fn unique_conflict_between(
     constraints: &[UniqueConstraintPlan],
     candidate: &RowFieldValues,
     existing: &RowFieldValues,
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 ) -> Option<String> {
     constraints.iter().filter(|constraint| constraint.unique).find_map(|constraint| {
-        let left = constraint_tuple(candidate, &constraint.columns)?;
-        let right = constraint_tuple(existing, &constraint.columns)?;
+        let left = constraint_tuple(candidate, &constraint.columns, field_types)?;
+        let right = constraint_tuple(existing, &constraint.columns, field_types)?;
         (left == right).then(|| {
             let names: Vec<&str> = constraint.columns.iter().map(|(_, name)| name.as_str()).collect();
             format!("UNIQUE ({})", names.join(", "))
@@ -1179,14 +1209,20 @@ pub(crate) fn unique_conflict_between(
 struct UniqueSnapshot<'a> {
     constraints: Vec<&'a UniqueConstraintPlan>,
     buckets: Vec<std::collections::HashMap<Vec<u8>, Vec<Vec<u8>>>>,
+    field_types: &'a BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 }
 
 impl<'a> UniqueSnapshot<'a> {
-    fn build(constraints: &'a [UniqueConstraintPlan], stored: &[(Vec<u8>, Vec<u8>)]) -> Result<Self, SqlFrontendError> {
+    fn build(
+        constraints: &'a [UniqueConstraintPlan],
+        stored: &[(Vec<u8>, Vec<u8>)],
+        field_types: &'a BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
+    ) -> Result<Self, SqlFrontendError> {
         let ids = constraint_field_ids(constraints);
         // 普通二级索引只维护条目，不参与唯一性判定。
         let constraints: Vec<&UniqueConstraintPlan> = constraints.iter().filter(|constraint| constraint.unique).collect();
-        let mut snapshot = Self { buckets: constraints.iter().map(|_| std::collections::HashMap::new()).collect(), constraints };
+        let mut snapshot =
+            Self { buckets: constraints.iter().map(|_| std::collections::HashMap::new()).collect(), constraints, field_types };
         if snapshot.constraints.is_empty() {
             return Ok(snapshot);
         }
@@ -1200,7 +1236,7 @@ impl<'a> UniqueSnapshot<'a> {
     /// 返回与候选行冲突的约束描述；`excluded_rowid` 用于排除正在改写的那一行。
     fn conflict(&self, candidate: &RowFieldValues, excluded_rowid: Option<&[u8]>) -> Option<String> {
         for (constraint, bucket) in self.constraints.iter().zip(&self.buckets) {
-            let Some(tuple) = constraint_tuple(candidate, &constraint.columns)
+            let Some(tuple) = constraint_tuple(candidate, &constraint.columns, self.field_types)
             else {
                 continue;
             };
@@ -1219,19 +1255,51 @@ impl<'a> UniqueSnapshot<'a> {
     /// 把一条已经通过校验的行加入索引，供同语句后续行查重。
     fn remember(&mut self, rowid: &[u8], row: &RowFieldValues) {
         for (constraint, bucket) in self.constraints.iter().zip(&mut self.buckets) {
-            if let Some(tuple) = constraint_tuple(row, &constraint.columns) {
+            if let Some(tuple) = constraint_tuple(row, &constraint.columns, self.field_types) {
                 bucket.entry(constraint_key(&tuple)).or_default().push(rowid.to_vec());
             }
         }
     }
 }
 
-/// 把约束元组编码成无歧义的哈希 key（每列前置长度）。
-fn constraint_key(tuple: &[Vec<u8>]) -> Vec<u8> {
+/// 把约束元组编码成无歧义的哈希 key。
+///
+/// 每个值带自己的类型标签并前置长度/定长字节，因此 `Integer(1)`、`Number(1.0)`、
+/// `String("1")` 与 `Bytes([0x31])` 不会相撞；`-0.0` 归一成 `0.0`，与 `PartialEq`
+/// 的口径一致。
+fn constraint_key(tuple: &[SqlValue]) -> Vec<u8> {
     let mut key = Vec::new();
     for value in tuple {
-        key.extend_from_slice(&(value.len() as u32).to_be_bytes());
-        key.extend_from_slice(value);
+        match value {
+            SqlValue::Integer(integer) => {
+                key.push(0);
+                key.extend_from_slice(&integer.to_be_bytes());
+            }
+            SqlValue::Number(real) => {
+                let normalized = if *real == 0.0 { 0.0 } else { *real };
+                key.push(1);
+                key.extend_from_slice(&normalized.to_bits().to_be_bytes());
+            }
+            SqlValue::String(text) => {
+                key.push(2);
+                key.extend_from_slice(&(text.len() as u32).to_be_bytes());
+                key.extend_from_slice(text.as_bytes());
+            }
+            SqlValue::Bytes(bytes) => {
+                key.push(3);
+                key.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+                key.extend_from_slice(bytes);
+            }
+            SqlValue::Boolean(flag) => {
+                key.push(4);
+                key.push(u8::from(*flag));
+            }
+            SqlValue::Array(items) => {
+                key.push(5);
+                key.extend_from_slice(&constraint_key(items));
+            }
+            SqlValue::Null => unreachable!("NULL tuples are rejected before keying"),
+        }
     }
     key
 }
@@ -1246,12 +1314,13 @@ pub(crate) fn unique_conflict_in_snapshot(
     excluded_rowid: Option<&[u8]>,
     pending: &[(Vec<u8>, RowFieldValues)],
     stored: &[(Vec<u8>, Vec<u8>)],
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 ) -> Result<Option<String>, SqlFrontendError> {
     for (rowid, row) in pending {
         if excluded_rowid.is_some_and(|excluded| excluded == rowid.as_slice()) {
             continue;
         }
-        if let Some(conflict) = unique_conflict_between(constraints, candidate, row) {
+        if let Some(conflict) = unique_conflict_between(constraints, candidate, row, field_types) {
             return Ok(Some(conflict));
         }
     }
@@ -1261,7 +1330,7 @@ pub(crate) fn unique_conflict_in_snapshot(
         }
         // 冲突只取决于约束列；整行解码会把与约束无关的列也复制一遍。
         let row = decode_row_fields(bytes, &constraint_field_ids(constraints))?;
-        if let Some(conflict) = unique_conflict_between(constraints, candidate, &row) {
+        if let Some(conflict) = unique_conflict_between(constraints, candidate, &row, field_types) {
             return Ok(Some(conflict));
         }
     }
@@ -1291,6 +1360,7 @@ fn find_unique_conflict(
     namespace: &str,
     constraints: &[UniqueConstraintPlan],
     candidate: &RowFieldValues,
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 ) -> Result<Option<(Vec<u8>, Vec<u8>)>, SqlFrontendError> {
     if constraints.is_empty() {
         return Ok(None);
@@ -1300,7 +1370,7 @@ fn find_unique_conflict(
     let ids = constraint_field_ids(constraints);
     for (rowid, bytes) in stored {
         let row = decode_row_fields(&bytes, &ids)?;
-        if unique_conflict_between(constraints, candidate, &row).is_some() {
+        if unique_conflict_between(constraints, candidate, &row, field_types).is_some() {
             return Ok(Some((rowid, bytes)));
         }
     }
@@ -1315,13 +1385,14 @@ pub(crate) fn unique_conflict_on_write(
     constraints: &[UniqueConstraintPlan],
     candidate: &RowFieldValues,
     excluded_rowid: Option<&[u8]>,
+    field_types: &BTreeMap<u64, database_query::catalog_bind::SqlFieldType>,
 ) -> Result<Option<String>, SqlFrontendError> {
     if constraints.is_empty() {
         return Ok(None);
     }
     let namespace = Namespace(namespace.to_string());
     let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
-    unique_conflict_in_snapshot(constraints, candidate, excluded_rowid, &[], &stored)
+    unique_conflict_in_snapshot(constraints, candidate, excluded_rowid, &[], &stored, field_types)
 }
 
 /// 对最终行求值存储生成列，覆盖客户端不可能提供的值。
@@ -1424,8 +1495,13 @@ pub(crate) fn sql_value_to_bytes(
     lit: &SqlBoundLiteral,
     field_type: &database_query::catalog_bind::SqlFieldType,
 ) -> Result<Option<Vec<u8>>, SqlFrontendError> {
-    // 存储形态由列类型决定：uuid 文本转成 16 字节原文，其余类型保留原有字节。
-    field_type.storage_bytes_of(lit)
+    // SQL 绑定只交付类型化运行值；载荷编码由 YY 行格式 codec 决定。
+    let Some(value) = field_type.storage_value_of(lit)? else {
+        return Ok(None);
+    };
+    database_formats::yy::row::encode_tagged(&value)
+        .map(Some)
+        .map_err(|error| internal_error(format!("cannot encode stored value: {error}")))
 }
 
 #[cfg(test)]
@@ -1458,7 +1534,8 @@ mod tests {
         let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())], unique: true }];
         let plans = vec![insert_plan(b"first", "same@example.com", &constraints), insert_plan(b"second", "same@example.com", &constraints)];
         let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
-        let error = ensure_unique_rows(&constraints, &order, &folded, &[]).expect_err("the later row must clash");
+        let field_types = BTreeMap::from([(1, SqlFieldType::String)]);
+        let error = ensure_unique_rows(&constraints, &order, &folded, &[], &field_types).expect_err("the later row must clash");
         assert_eq!(error.kind, SqlErrorKind::DuplicateKey);
     }
 
@@ -1467,7 +1544,8 @@ mod tests {
         let constraints = vec![UniqueConstraintPlan { columns: vec![(1, "email".to_string())], unique: true }];
         let plans = vec![insert_plan(b"first", "a@example.com", &constraints), insert_plan(b"second", "b@example.com", &constraints)];
         let (order, folded) = fold_insert_plans(&plans, &BTreeMap::new(), SqlDialect::Postgres).expect("fold succeeds");
-        ensure_unique_rows(&constraints, &order, &folded, &[]).expect("distinct values must pass");
+        let field_types = BTreeMap::from([(1, SqlFieldType::String)]);
+        ensure_unique_rows(&constraints, &order, &folded, &[], &field_types).expect("distinct values must pass");
     }
 
     #[test]

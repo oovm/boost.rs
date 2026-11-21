@@ -210,9 +210,9 @@ impl IndexMaintenance {
 }
 
 fn entry_state(index: &SecondaryIndex, row: &RowFieldValues) -> EntryState {
-    match row.get(index.field_id) {
+    match row.value_of(index.field_id, &index.field_type) {
         None => EntryState::Null,
-        Some(bytes) => match database_query::sql_index::encode_value(bytes, &index.field_type) {
+        Some(value) => match database_query::sql_index::encode_value(&value, &index.field_type) {
             Ok(Some(payload)) => EntryState::Payload(payload),
             Ok(None) => EntryState::Null,
             Err(()) => EntryState::Unusable,
