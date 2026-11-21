@@ -927,6 +927,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-binary-cil"
+version = "0.1.0"
+
+[[package]]
 name = "data-binary-core"
 version = "0.1.0"
 dependencies = [
@@ -2488,6 +2492,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-unity-serialized"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "database"
 version = "0.1.0"
 dependencies = [
@@ -3274,6 +3285,13 @@ name = "document-session"
 version = "0.1.0"
 dependencies = [
  "document-ir",
+]
+
+[[package]]
+name = "document-spreadsheet-formula"
+version = "0.1.0"
+dependencies = [
+ "document-formats",
 ]
 
 [[package]]

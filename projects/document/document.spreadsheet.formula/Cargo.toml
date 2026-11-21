@@ -1,0 +1,11 @@
+[package]
+name = "document-spreadsheet-formula"
+version.workspace = true
+authors.workspace = true
+description = "电子表格公式引擎 — 词法、语法、依赖图与求值"
+repository = "https://github.com/notedge/document.rs"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+document-formats = { workspace = true, default-features = false, features = ["xlsx"] }

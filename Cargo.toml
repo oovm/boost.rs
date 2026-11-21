@@ -215,6 +215,7 @@ members = [
     "projects/data/data.binary.aarch64",
     "projects/data/data.binary.asn1",
     "projects/data/data.binary.cfb",
+    "projects/data/data.binary.cil",
     "projects/data/boost.data",
     "projects/data/data.binary.core",
     "projects/data/data.binary.inspect",
@@ -245,6 +246,7 @@ members = [
     "projects/data/data.checksum",
     "projects/data/data.compression",
     "projects/data/data.encoding",
+    "projects/data/data.unity.serialized",
     "projects/data/data.text.abc",
     "projects/data/data.text.actionscript",
     "projects/data/data.text.ada",
@@ -423,6 +425,7 @@ members = [
     "projects/document/document.renderer.raster",
     "projects/document/document.renderer.svg",
     "projects/document/document.session",
+    "projects/document/document.spreadsheet.formula",
     "projects/document/document.style",
     "projects/document/document.text",
     "projects/document/document.types",
@@ -802,6 +805,7 @@ document-renderer-pdf = { path = "projects/document/document.renderer.pdf" }
 document-renderer-raster = { path = "projects/document/document.renderer.raster" }
 document-renderer-svg = { path = "projects/document/document.renderer.svg" }
 document-session = { path = "projects/document/document.session" }
+document-spreadsheet-formula = { path = "projects/document/document.spreadsheet.formula" }
 document-style = { path = "projects/document/document.style" }
 document-text = { path = "projects/document/document.text" }
 document-types = { path = "projects/document/document.types" }
@@ -917,6 +921,7 @@ unicode-width = { path = "projects/unicode/unicode.width" }
 data-binary-aarch64 = { path = "projects/data/data.binary.aarch64" }
 data-binary-asn1 = { path = "projects/data/data.binary.asn1" }
 data-binary-cfb = { path = "projects/data/data.binary.cfb" }
+data-binary-cil = { path = "projects/data/data.binary.cil" }
 data-binary-core = { path = "projects/data/data.binary.core" }
 data-binary-inspect = { path = "projects/data/data.binary.inspect" }
 data-binary-dex = { path = "projects/data/data.binary.dex" }
@@ -943,6 +948,7 @@ data-binary-wasm = { path = "projects/data/data.binary.wasm" }
 data-binary-x64 = { path = "projects/data/data.binary.x64" }
 data-binary-xclbin = { path = "projects/data/data.binary.xclbin" }
 data-binary-zip = { path = "projects/data/data.binary.zip" }
+data-unity-serialized = { path = "projects/data/data.unity.serialized" }
 crossterm = "0.29.0"
 dashmap = { version = "6.1.0" }
 futures = { version = "0.3.32" }
