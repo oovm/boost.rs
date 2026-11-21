@@ -1177,9 +1177,6 @@ blake3 = { version = "1", features = ["pure"] }
 sha1 = "0.11.0"
 sha2 = { version = "0.11.1", features = ["oid"] }
 sha1-rsa = { package = "sha1", version = "0.10" }
-aes = "0.8"
-cbc = "0.1"
-ctt-etcpak = "0.5"
 rsa = { version = "0.9.10", features = ["sha2"] }
 serde_yaml = "0.9"
 toml_edit = "0.25"

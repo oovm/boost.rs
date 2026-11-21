@@ -2,10 +2,10 @@
 //!
 //! 遵循 FIPS 197（AES）与 NIST SP 800-38D（GCM）。seal 输出为「密文 ‖ 16 字节认证标签」，
 //! open 接受同一形态。nonce 必须由调用方给出并保证在密钥生命周期内唯一，库不生成 nonce，
-//! 也不提供重用防护模式。AES 只实现加密方向，CTR 与 GCM 都只需这一方向。
+//! 也不提供重用防护模式。AES 分组实现位于 [`crate::aes`]，CTR 与 GCM 只消费加密方向。
 
+use crate::aes::AesKey;
 use crate::{CryptoError, Result};
-use std::sync::OnceLock;
 
 /// AES-GCM 的 nonce 长度（96 bit）。
 const NONCE_LEN: usize = 12;
@@ -65,10 +65,9 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     diff == 0
 }
 
-/// 展开后的 AES 密钥编排，附带 GCM 的初始计数器。
+/// AES 密钥编排，附带 GCM 的初始计数器。
 struct AesSchedule {
-    round_keys: Vec<u8>,
-    rounds: usize,
+    key: AesKey,
     /// J0：96 bit nonce 后接 0x00000001。
     j0: [u8; 16],
 }
@@ -78,33 +77,15 @@ impl AesSchedule {
         if nonce.len() != NONCE_LEN {
             return Err(CryptoError::InvalidInput);
         }
-        let rounds = match key.len() {
-            16 => 10,
-            32 => 14,
-            _ => return Err(CryptoError::InvalidInput),
-        };
+        let key = AesKey::new(key).ok_or(CryptoError::InvalidInput)?;
         let mut j0 = [0u8; 16];
         j0[..NONCE_LEN].copy_from_slice(nonce);
         j0[15] = 1;
-        Ok(Self { round_keys: expand_key(key, rounds), rounds, j0 })
+        Ok(Self { key, j0 })
     }
 
     fn encrypt_block(&self, block: &mut [u8; 16]) {
-        let sbox = sbox();
-        add_round_key(block, &self.round_keys[..16]);
-        for round in 1..self.rounds {
-            for byte in block.iter_mut() {
-                *byte = sbox[*byte as usize];
-            }
-            shift_rows(block);
-            mix_columns(block);
-            add_round_key(block, &self.round_keys[round * 16..round * 16 + 16]);
-        }
-        for byte in block.iter_mut() {
-            *byte = sbox[*byte as usize];
-        }
-        shift_rows(block);
-        add_round_key(block, &self.round_keys[self.rounds * 16..self.rounds * 16 + 16]);
+        self.key.encrypt_block(block);
     }
 
     /// GCM 的 CTR 变换与 GHASH 认证。
@@ -141,118 +122,6 @@ impl AesSchedule {
         xor_into(&mut tag, &state);
         (output, tag)
     }
-}
-
-fn add_round_key(state: &mut [u8; 16], key: &[u8]) {
-    for (slot, byte) in state.iter_mut().zip(key.iter()) {
-        *slot ^= byte;
-    }
-}
-
-fn shift_rows(state: &mut [u8; 16]) {
-    // 列主序：第 r 行左移 r 位。
-    let copy = *state;
-    for row in 1..4 {
-        for column in 0..4 {
-            state[row + 4 * column] = copy[row + 4 * ((column + row) % 4)];
-        }
-    }
-}
-
-fn mix_columns(state: &mut [u8; 16]) {
-    for column in 0..4 {
-        let index = column * 4;
-        let a0 = state[index];
-        let a1 = state[index + 1];
-        let a2 = state[index + 2];
-        let a3 = state[index + 3];
-        let all = a0 ^ a1 ^ a2 ^ a3;
-        state[index] = a0 ^ all ^ xtime(a0 ^ a1);
-        state[index + 1] = a1 ^ all ^ xtime(a1 ^ a2);
-        state[index + 2] = a2 ^ all ^ xtime(a2 ^ a3);
-        state[index + 3] = a3 ^ all ^ xtime(a3 ^ a0);
-    }
-}
-
-fn xtime(value: u8) -> u8 {
-    if value & 0x80 != 0 { (value << 1) ^ 0x1b } else { value << 1 }
-}
-
-fn expand_key(key: &[u8], rounds: usize) -> Vec<u8> {
-    let nk = key.len() / 4;
-    let words = 4 * (rounds + 1);
-    let mut expanded = vec![0u8; words * 4];
-    expanded[..key.len()].copy_from_slice(key);
-    let sbox = sbox();
-    let mut rcon = 1u8;
-    for word in nk..words {
-        let mut temp = [expanded[(word - 1) * 4], expanded[(word - 1) * 4 + 1], expanded[(word - 1) * 4 + 2], expanded[(word - 1) * 4 + 3]];
-        if word % nk == 0 {
-            temp.rotate_left(1);
-            for byte in temp.iter_mut() {
-                *byte = sbox[*byte as usize];
-            }
-            temp[0] ^= rcon;
-            rcon = xtime(rcon);
-        }
-        else if nk > 6 && word % nk == 4 {
-            for byte in temp.iter_mut() {
-                *byte = sbox[*byte as usize];
-            }
-        }
-        for index in 0..4 {
-            expanded[word * 4 + index] = expanded[(word - nk) * 4 + index] ^ temp[index];
-        }
-    }
-    expanded
-}
-
-/// 由 GF(2^8) 乘法逆元与仿射变换现算 S-box，避免手抄 256 项常量表。
-fn sbox() -> &'static [u8; 256] {
-    static TABLE: OnceLock<[u8; 256]> = OnceLock::new();
-    TABLE.get_or_init(|| {
-        let mut table = [0u8; 256];
-        for (value, slot) in table.iter_mut().enumerate() {
-            let inverse = gf8_inverse(value as u8);
-            *slot = inverse ^ inverse.rotate_left(1) ^ inverse.rotate_left(2) ^ inverse.rotate_left(3) ^ inverse.rotate_left(4) ^ 0x63;
-        }
-        table
-    })
-}
-
-/// GF(2^8) 乘法，模多项式 0x11b。
-fn gf8_multiply(mut a: u8, mut b: u8) -> u8 {
-    let mut product = 0u8;
-    for _ in 0..8 {
-        if b & 1 != 0 {
-            product ^= a;
-        }
-        let carry = a & 0x80;
-        a <<= 1;
-        if carry != 0 {
-            a ^= 0x1b;
-        }
-        b >>= 1;
-    }
-    product
-}
-
-/// GF(2^8) 乘法逆元，`0` 映射为 `0`（AES S-box 约定）。
-fn gf8_inverse(value: u8) -> u8 {
-    if value == 0 {
-        return 0;
-    }
-    let mut result = 1u8;
-    let mut base = value;
-    let mut exponent = 254u32;
-    while exponent > 0 {
-        if exponent & 1 == 1 {
-            result = gf8_multiply(result, base);
-        }
-        base = gf8_multiply(base, base);
-        exponent >>= 1;
-    }
-    result
 }
 
 fn increment_counter(counter: &mut [u8; 16]) {
@@ -300,6 +169,7 @@ fn multiply_gf128(state: &mut [u8; 16], h: &[u8; 16]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::aes::sbox;
 
     fn hex(text: &str) -> Vec<u8> {
         (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex")).collect()

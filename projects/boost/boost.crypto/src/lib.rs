@@ -23,6 +23,7 @@ pub mod rsa;
 pub mod secret;
 pub mod x25519;
 
+mod aes;
 mod entropy;
 mod error;
 
