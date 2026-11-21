@@ -131,7 +131,7 @@ fn write_item(out: &mut String, item: &DisplayItem) -> Result<(), Diagnostic> {
                 num(run.size),
                 escape_attribute(&run.font_family),
                 style_declarations(run.style),
-                run.color.map(|color| format!(";color:{color}")).unwrap_or_default(),
+                run.color.as_deref().map(|color| format!(";color:{color}")).unwrap_or_default(),
                 if run.numeric { ";font-variant-numeric:tabular-nums" } else { "" },
             ));
             write_snapshot_text(out, run);
@@ -151,18 +151,18 @@ fn write_item(out: &mut String, item: &DisplayItem) -> Result<(), Diagnostic> {
                 num(top),
                 num(width),
                 num(height),
-                rule.color.map(|color| format!(";background:{color}")).unwrap_or_default(),
+                rule.color.as_deref().map(|color| format!(";background:{color}")).unwrap_or_default(),
             ));
         }
         DisplayItem::Rect(rect) => {
             let mut paint = String::new();
-            if let Some(fill) = rect.fill {
+            if let Some(fill) = rect.fill.as_deref() {
                 paint.push_str(&format!("background:{fill}"));
             }
             else if rect.filled {
                 paint.push_str("background:#f2f2f2");
             }
-            if let Some(stroke) = rect.stroke {
+            if let Some(stroke) = rect.stroke.as_deref() {
                 paint.push_str(&format!(";border:{}pt solid {stroke}", num(rect.stroke_width)));
             }
             else if !rect.filled {
@@ -174,6 +174,23 @@ fn write_item(out: &mut String, item: &DisplayItem) -> Result<(), Diagnostic> {
                 num(rect.y),
                 num(rect.width),
                 num(rect.height),
+                paint,
+            ));
+        }
+        DisplayItem::Ellipse(ellipse) => {
+            let mut paint = String::new();
+            if let Some(fill) = ellipse.fill.as_deref() {
+                paint.push_str(&format!("background:{fill}"));
+            }
+            if let Some(stroke) = ellipse.stroke.as_deref() {
+                paint.push_str(&format!(";border:{}pt solid {stroke}", num(ellipse.stroke_width)));
+            }
+            out.push_str(&format!(
+                "<div class=\"vutex-ellipse\" data-vutex-item=\"ellipse\" style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt;border-radius:50%;{}\"></div>\n",
+                num(ellipse.x),
+                num(ellipse.y),
+                num(ellipse.width),
+                num(ellipse.height),
                 paint,
             ));
         }
@@ -241,7 +258,7 @@ fn write_graphic(out: &mut String, graphic: &DisplayGraphic) -> Result<(), Diagn
 fn write_snapshot_text(out: &mut String, run: &DisplayTextRun) {
     let anchor = run.href.as_deref().filter(|href| is_safe_href(href));
     if let Some(href) = anchor {
-        write_anchor_open(out, href, run.title.as_deref(), run.color);
+        write_anchor_open(out, href, run.title.as_deref(), run.color.as_deref());
     }
     out.push_str(&escape_text(&run.text));
     if anchor.is_some() {
@@ -463,7 +480,7 @@ fn write_flow_run(out: &mut String, run: &FlowRun, math: Option<FlowMathContext>
 ///
 /// The class carries the underline, and the theme ink travels as an inline
 /// colour so the browser default blue never reaches a VuTeX page.
-fn write_anchor_open(out: &mut String, href: &str, title: Option<&str>, color: Option<&'static str>) {
+fn write_anchor_open(out: &mut String, href: &str, title: Option<&str>, color: Option<&str>) {
     out.push_str(&format!("<a class=\"vutex-link\" href=\"{}\"", escape_attribute(href)));
     if let Some(title) = title {
         out.push_str(&format!(" title=\"{}\"", escape_attribute(title)));
@@ -498,8 +515,14 @@ fn write_path(out: &mut String, path: &DisplayPath) {
         return;
     }
     let vh = path.height + path.depth;
+    let fill = path.fill.as_deref().unwrap_or("#111111");
+    let stroke = path
+        .stroke
+        .as_deref()
+        .map(|stroke| format!(r#" stroke="{stroke}" stroke-width="{}""#, num(path.stroke_width)))
+        .unwrap_or_default();
     out.push_str(&format!(
-        "<svg class=\"vutex-path\" data-vutex-item=\"path\" style=\"position:absolute;left:{}pt;top:{}pt;width:{}pt;height:{}pt\" viewBox=\"0 {} {} {}\"><path d=\"{}\" fill=\"#111111\"/></svg>\n",
+        "<svg class=\"vutex-path\" data-vutex-item=\"path\" style=\"position:absolute;left:{}pt;top:{}pt;width:{}pt;height:{}pt\" viewBox=\"0 {} {} {}\"><path d=\"{}\" fill=\"{fill}\"{stroke}/></svg>\n",
         num(path.x),
         num(path.y - path.height),
         num(path.width.max(0.001)),

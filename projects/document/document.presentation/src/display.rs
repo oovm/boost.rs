@@ -1,6 +1,17 @@
 //! Fixed-geometry display presentation: pages of positioned primitives.
 
+use std::borrow::Cow;
+
 use document_compose::math::FontStyle;
+
+/// A paint colour carried by a display primitive.
+///
+/// Layout keeps its theme colours as `&'static str`, so lowering borrows them
+/// without allocating. A producer that computes colours at runtime, such as a
+/// presentation projection, stores an owned string instead. Renderers accept
+/// any CSS hex form (`#rgb`, `#rrggbb`, or `#rrggbbaa`) and fall back to their
+/// own default when a value cannot be parsed; the alpha byte is ignored.
+pub type DisplayColor = Option<Cow<'static, str>>;
 
 /// One positioned text line in display coordinates.
 ///
@@ -42,7 +53,7 @@ pub struct DisplayTextRun {
     /// Renderers emit it with the anchor, never for a dropped destination.
     pub title: Option<String>,
     /// Ink colour the theme asked for, or `None` for the renderer default.
-    pub color: Option<&'static str>,
+    pub color: DisplayColor,
     /// Whether the digits in this run should use tabular figures.
     pub numeric: bool,
     /// Whether this run is page furniture such as a running header or folio.
@@ -66,7 +77,7 @@ pub struct DisplayRule {
     /// Stroke width in points.
     pub thickness: f64,
     /// Stroke colour, or `None` for the renderer default.
-    pub color: Option<&'static str>,
+    pub color: DisplayColor,
 }
 
 /// One box in display coordinates.
@@ -83,9 +94,31 @@ pub struct DisplayRect {
     /// Filled boxes carry a light background, unfilled boxes only an outline.
     pub filled: bool,
     /// Explicit fill colour, or `None` for the renderer's filled default.
-    pub fill: Option<&'static str>,
+    pub fill: DisplayColor,
     /// Outline colour, or `None` for no outline.
-    pub stroke: Option<&'static str>,
+    pub stroke: DisplayColor,
+    /// Outline width in points.
+    pub stroke_width: f64,
+}
+
+/// One ellipse in display coordinates.
+///
+/// The box is the ellipse's bounding box, matching how a presentation shape
+/// stores its preset geometry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DisplayEllipse {
+    /// Left edge in points.
+    pub x: f64,
+    /// Top edge in points.
+    pub y: f64,
+    /// Box width in points.
+    pub width: f64,
+    /// Box height in points.
+    pub height: f64,
+    /// Fill colour, or `None` for no fill.
+    pub fill: DisplayColor,
+    /// Outline colour, or `None` for no outline.
+    pub stroke: DisplayColor,
     /// Outline width in points.
     pub stroke_width: f64,
 }
@@ -151,6 +184,15 @@ pub struct DisplayPath {
     pub height: f64,
     /// Bounding-box depth (below baseline) in points.
     pub depth: f64,
+    /// Fill colour, or `None` for the renderer's ink default.
+    ///
+    /// A path produced from a glyph outline paints as ink with no fill set; a
+    /// presentation shape that arrives as vector geometry states its own fill.
+    pub fill: DisplayColor,
+    /// Outline colour, or `None` for no outline.
+    pub stroke: DisplayColor,
+    /// Outline width in points.
+    pub stroke_width: f64,
 }
 
 /// A fixed-geometry primitive painted by SVG, PDF, and raster backends.
@@ -162,6 +204,9 @@ pub enum DisplayItem {
     Rule(DisplayRule),
     /// A box, either outlined or filled.
     Rect(DisplayRect),
+    /// An ellipse, either filled, outlined, or both.
+    Ellipse(DisplayEllipse),
+
     /// An image slot reserved at a fixed size.
     Image(DisplayImage),
     /// A diagram scene placed at a fixed size.

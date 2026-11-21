@@ -1,5 +1,6 @@
 //! Lowering from computed layout and document semantics into presentation IR.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use document_compose::math::FontStyle;
@@ -53,13 +54,13 @@ fn lower_item(item: &LayoutItem) -> Option<DisplayItem> {
                 href: href.clone(),
                 anchor: anchor.clone(),
                 title: title.clone(),
-                color: *color,
+                color: color.map(Cow::Borrowed),
                 numeric: *numeric,
                 artifact: *artifact,
             })
         }
         LayoutItem::Rule(Rule { x1, y1, x2, y2, thickness, color }) => {
-            DisplayItem::Rule(DisplayRule { x1: *x1, y1: *y1, x2: *x2, y2: *y2, thickness: *thickness, color: *color })
+            DisplayItem::Rule(DisplayRule { x1: *x1, y1: *y1, x2: *x2, y2: *y2, thickness: *thickness, color: color.map(Cow::Borrowed) })
         }
         LayoutItem::Rect(Rect { x, y, width, height, filled, fill, stroke, stroke_width }) => DisplayItem::Rect(DisplayRect {
             x: *x,
@@ -67,8 +68,8 @@ fn lower_item(item: &LayoutItem) -> Option<DisplayItem> {
             width: *width,
             height: *height,
             filled: *filled,
-            fill: *fill,
-            stroke: *stroke,
+            fill: fill.map(Cow::Borrowed),
+            stroke: stroke.map(Cow::Borrowed),
             stroke_width: *stroke_width,
         }),
         LayoutItem::ImagePlaceholder(ImagePlaceholder { x, y, width, height, alt, source }) => {
@@ -78,7 +79,17 @@ fn lower_item(item: &LayoutItem) -> Option<DisplayItem> {
             DisplayItem::Graphic(DisplayGraphic { x: *x, y: *y, width: *width, height: *height, scene: scene.clone(), alt: alt.clone() })
         }
         LayoutItem::Path(Path { d, x, y, width, height, depth }) => {
-            DisplayItem::Path(DisplayPath { d: d.clone(), x: *x, y: *y, width: *width, height: *height, depth: *depth })
+            DisplayItem::Path(DisplayPath {
+                d: d.clone(),
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+                depth: *depth,
+                fill: None,
+                stroke: None,
+                stroke_width: 0.0,
+            })
         }
         // Anchors are collected into the page before items are lowered.
         LayoutItem::Anchor { .. } => return None,

@@ -58,14 +58,15 @@ fn write_item(out: &mut String, item: &DisplayItem) -> Result<(), Diagnostic> {
                 num(rule.y1),
                 num(rule.x2),
                 num(rule.y2),
-                rule.color.unwrap_or("#111111"),
+                rule.color.as_deref().unwrap_or("#111111"),
                 num(rule.thickness),
             ));
         }
         DisplayItem::Rect(rect) => {
-            let fill = rect.fill.unwrap_or("#f2f2f2");
+            let fill = rect.fill.as_deref().unwrap_or("#f2f2f2");
             let border = rect
                 .stroke
+                .as_deref()
                 .map(|stroke| format!(r#" stroke="{stroke}" stroke-width="{}""#, num(rect.stroke_width)))
                 .unwrap_or_default();
             if rect.filled {
@@ -88,6 +89,24 @@ fn write_item(out: &mut String, item: &DisplayItem) -> Result<(), Diagnostic> {
                     if border.is_empty() { " stroke=\"#999999\" stroke-width=\"0.5\"".to_string() } else { border },
                 ));
             }
+        }
+        DisplayItem::Ellipse(ellipse) => {
+            let paint = format!(
+                r#"fill="{}"{}"#,
+                ellipse.fill.as_deref().unwrap_or("none"),
+                ellipse
+                    .stroke
+                    .as_deref()
+                    .map(|stroke| format!(r#" stroke="{stroke}" stroke-width="{}""#, num(ellipse.stroke_width)))
+                    .unwrap_or_default(),
+            );
+            out.push_str(&format!(
+                r##"<ellipse cx="{}" cy="{}" rx="{}" ry="{}" {paint}/>"##,
+                num(ellipse.x + ellipse.width / 2.0),
+                num(ellipse.y + ellipse.height / 2.0),
+                num(ellipse.width / 2.0),
+                num(ellipse.height / 2.0),
+            ));
         }
         DisplayItem::Image(image) => {
             match image.source.as_deref().map(str::trim).filter(|source| !source.is_empty()) {
@@ -175,7 +194,7 @@ fn write_text_run(out: &mut String, run: &DisplayTextRun) {
         num(run.size),
         escape_attribute(&run.font_family),
         style_attributes(run.style),
-        run.color.map(|color| format!(r#" fill="{color}""#)).unwrap_or_default(),
+        run.color.as_deref().map(|color| format!(r#" fill="{color}""#)).unwrap_or_default(),
         if run.numeric { r#" font-variant-numeric="tabular-nums""# } else { "" },
         escape_text(&run.text),
     ));
@@ -184,17 +203,24 @@ fn write_text_run(out: &mut String, run: &DisplayTextRun) {
     }
 }
 
-/// Write one vector glyph outline as a filled `<path>` element.
+/// Write one vector glyph outline or authored shape as a `<path>` element.
 ///
 /// The path `d` string is already in page coordinates relative to `(x, y)`;
 /// we place it in a translated `<g>` so the path coordinates stay intact.
-/// The default fill matches the text run color (#111111).
+/// A glyph outline carries no fill and paints as ink (#111111); an authored
+/// shape states its own fill and outline.
 fn write_path(out: &mut String, path: &DisplayPath) {
     if path.d.is_empty() {
         return;
     }
+    let fill = path.fill.as_deref().unwrap_or("#111111");
+    let stroke = path
+        .stroke
+        .as_deref()
+        .map(|stroke| format!(r#" stroke="{stroke}" stroke-width="{}""#, num(path.stroke_width)))
+        .unwrap_or_default();
     out.push_str(&format!(
-        r##"<g transform="translate({}, {})"><path d="{}" fill="#111111"/></g>"##,
+        r##"<g transform="translate({}, {})"><path d="{}" fill="{fill}"{stroke}/></g>"##,
         num(path.x),
         num(path.y),
         escape_attribute(&path.d),

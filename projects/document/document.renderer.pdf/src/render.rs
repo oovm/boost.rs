@@ -33,7 +33,8 @@ use std::{
 use document_compose::{Diagnostic, Severity, math::FontStyle};
 use document_fonts::{BodyFaceSet, BodyFaceStyle, BodyFamily, BodyMetrics};
 use document_presentation::display::{
-    DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect, DisplayRule, DisplayTextRun,
+    DisplayEllipse, DisplayGraphic, DisplayImage, DisplayItem, DisplayPage, DisplayPath, DisplayPresentation, DisplayRect, DisplayRule,
+    DisplayTextRun,
 };
 use document_renderer::is_safe_href;
 use plotter_scene::DisplayScene;
@@ -1105,6 +1106,7 @@ fn write_item<'d>(
         DisplayItem::TextRun(run) => write_text(out, page_height, run, fonts, embedded, painter.diagnostics.as_deref_mut()),
         DisplayItem::Rule(rule) => write_rule(out, page_height, rule),
         DisplayItem::Rect(rect) => write_rect(out, page_height, rect),
+        DisplayItem::Ellipse(ellipse) => write_ellipse(out, page_height, ellipse),
         DisplayItem::Image(image) => write_image(out, page_height, image, painter),
         DisplayItem::Graphic(graphic) => write_graphic(out, page_height, graphic, painter),
         DisplayItem::Path(path) => write_path(out, page_height, path),
@@ -1134,6 +1136,10 @@ fn write_text(
     else {
         return;
     };
+    let ink = run.color.as_deref().and_then(pdf_rgb);
+    if let Some((red, green, blue)) = ink {
+        let _ = write!(out, "q\n{} {} {} rg\n", num(red), num(green), num(blue));
+    }
     paint_text(
         out,
         run.x,
@@ -1147,6 +1153,9 @@ fn write_text(
         false,
         diagnostics,
     );
+    if ink.is_some() {
+        out.push_str("Q\n");
+    }
 }
 
 /// Emit the glyphs collected for one subset, switching to `TJ` when a pair
@@ -1282,15 +1291,29 @@ fn write_rule(out: &mut String, page_height: f64, rule: &DisplayRule) {
     if !all_finite(&[rule.x1, rule.y1, rule.x2, rule.y2, rule.thickness]) {
         return;
     }
+    let ink = rule.color.as_deref().and_then(pdf_rgb).unwrap_or((0.067, 0.067, 0.067));
     if rule.y1 == rule.y2 && rule.x2 > rule.x1 && rule.thickness > 0.0 {
         let bottom = page_height - (rule.y1 + rule.thickness / 2.0);
         // `q`/`Q` keep the fill colour from leaking into later text.
-        let _ = write!(out, "q\n0.067 g\n{} {} {} {} re\nf\nQ\n", num(rule.x1), num(bottom), num(rule.x2 - rule.x1), num(rule.thickness));
+        let _ = write!(
+            out,
+            "q\n{} {} {} rg\n{} {} {} {} re\nf\nQ\n",
+            num(ink.0),
+            num(ink.1),
+            num(ink.2),
+            num(rule.x1),
+            num(bottom),
+            num(rule.x2 - rule.x1),
+            num(rule.thickness)
+        );
         return;
     }
     let _ = write!(
         out,
-        "0.067 G\n{} w\n{} {} m\n{} {} l\nS\n",
+        "q\n{} {} {} RG\n{} w\n{} {} m\n{} {} l\nS\nQ\n",
+        num(ink.0),
+        num(ink.1),
+        num(ink.2),
         num(rule.thickness),
         num(rule.x1),
         num(page_height - rule.y1),
@@ -1304,14 +1327,89 @@ fn write_rect(out: &mut String, page_height: f64, rect: &DisplayRect) {
         return;
     }
     let y = page_height - (rect.y + rect.height);
+    let fill = rect.fill.as_deref().and_then(pdf_rgb);
+    let stroke = rect.stroke.as_deref().and_then(pdf_rgb);
     // The fill colour stays inside `q`/`Q` so later text keeps the default
     // black fill instead of inheriting the background grey.
-    if rect.filled {
-        let _ = write!(out, "q\n0.949 g\n{} {} {} {} re\nf\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+    if fill.is_none() && stroke.is_none() {
+        if rect.filled {
+            let _ = write!(out, "q\n0.949 g\n{} {} {} {} re\nf\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+        }
+        else {
+            let _ = write!(out, "q\n0.6 G\n0.5 w\n{} {} {} {} re\nS\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+        }
+        return;
     }
-    else {
-        let _ = write!(out, "q\n0.6 G\n0.5 w\n{} {} {} {} re\nS\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+    let _ = write!(out, "q\n");
+    if let Some((red, green, blue)) = fill {
+        let _ = write!(out, "{} {} {} rg\n", num(red), num(green), num(blue));
     }
+    if let Some((red, green, blue)) = stroke {
+        let _ = write!(out, "{} {} {} RG\n{} w\n", num(red), num(green), num(blue), num(rect.stroke_width));
+    }
+    let operator = match (fill.is_some(), stroke.is_some()) {
+        (true, true) => "B",
+        (true, false) => "f",
+        (false, _) => "S",
+    };
+    let _ = write!(out, "{} {} {} {} re\n{operator}\nQ\n", num(rect.x), num(y), num(rect.width), num(rect.height));
+}
+
+/// Paint one ellipse from four cubic Bézier quadrants.
+fn write_ellipse(out: &mut String, page_height: f64, ellipse: &DisplayEllipse) {
+    if !all_finite(&[ellipse.x, ellipse.y, ellipse.width, ellipse.height]) {
+        return;
+    }
+    if ellipse.width <= 0.0 || ellipse.height <= 0.0 {
+        return;
+    }
+    let fill = ellipse.fill.as_deref().and_then(pdf_rgb);
+    let stroke = ellipse.stroke.as_deref().and_then(pdf_rgb);
+    if fill.is_none() && stroke.is_none() {
+        return;
+    }
+    let (cx, cy) = (ellipse.x + ellipse.width / 2.0, page_height - ellipse.y - ellipse.height / 2.0);
+    let (rx, ry) = (ellipse.width / 2.0, ellipse.height / 2.0);
+    // 0.5522847498 is the circular-arc constant that makes four quadrants meet
+    // a true ellipse at the four axis points.
+    let k = 0.552_284_749_8;
+    let _ = write!(
+        out,
+        "q\n{} {} m\n{} {} {} {} {} {} c\n{} {} {} {} {} {} c\n{} {} {} {} {} {} c\n{} {} {} {} {} {} c\n",
+        num(cx),
+        num(cy + ry),
+        num(cx + rx * k),
+        num(cy + ry),
+        num(cx + rx),
+        num(cy + ry * k),
+        num(cx + rx),
+        num(cy),
+        num(cx + rx),
+        num(cy - ry * k),
+        num(cx + rx * k),
+        num(cy - ry),
+        num(cx),
+        num(cy - ry),
+        num(cx - rx * k),
+        num(cy - ry),
+        num(cx - rx),
+        num(cy - ry * k),
+        num(cx - rx),
+        num(cy),
+        num(cx - rx),
+        num(cy + ry * k),
+        num(cx - rx * k),
+        num(cy + ry),
+        num(cx),
+        num(cy + ry),
+    );
+    if let Some((red, green, blue)) = fill {
+        let _ = write!(out, "{} {} {} rg\n", num(red), num(green), num(blue));
+    }
+    if let Some((red, green, blue)) = stroke {
+        let _ = write!(out, "{} {} {} RG\n{} w\n", num(red), num(green), num(blue), num(ellipse.stroke_width));
+    }
+    let _ = write!(out, "{}\nQ\n", if fill.is_some() && stroke.is_some() { "B" } else if fill.is_some() { "f" } else { "S" });
 }
 
 /// Paint one page-level image, or its dashed slot when the source did not resolve.
@@ -1376,7 +1474,44 @@ fn write_path(out: &mut String, page_height: f64, path: &DisplayPath) {
     if pdf_ops.is_empty() {
         return;
     }
-    let _ = write!(out, "q\n0.0 f\n{pdf_ops}f\nQ\n");
+    let fill = path.fill.as_deref().and_then(pdf_rgb);
+    let stroke = path.stroke.as_deref().and_then(pdf_rgb);
+    if fill.is_none() && stroke.is_none() {
+        let _ = write!(out, "q\n0.0 f\n{pdf_ops}f\nQ\n");
+        return;
+    }
+    let _ = write!(out, "q\n");
+    if let Some((red, green, blue)) = fill {
+        let _ = write!(out, "{} {} {} rg\n", num(red), num(green), num(blue));
+    }
+    if let Some((red, green, blue)) = stroke {
+        let _ = write!(out, "{} {} {} RG\n{} w\n", num(red), num(green), num(blue), num(path.stroke_width));
+    }
+    let operator = match (fill.is_some(), stroke.is_some()) {
+        (true, true) => "B",
+        (true, false) => "f",
+        (false, _) => "S",
+    };
+    let _ = write!(out, "{pdf_ops}{operator}\nQ\n");
+}
+
+/// Parse a CSS hex colour into PDF RGB components in `0.0..=1.0`.
+///
+/// `#rgb`, `#rrggbb`, and `#rrggbbaa` are accepted, with or without the `#`.
+/// An unparsable value returns `None`, so the caller keeps its own default
+/// instead of painting an arbitrary colour.
+pub(crate) fn pdf_rgb(value: &str) -> Option<(f64, f64, f64)> {
+    let trimmed = value.trim().trim_start_matches('#');
+    let expanded = match trimmed.len() {
+        3 if trimmed.chars().all(|character| character.is_ascii_hexdigit()) => {
+            trimmed.chars().flat_map(|character| [character, character]).collect::<String>()
+        }
+        6 | 8 => trimmed.to_string(),
+        _ => return None,
+    };
+    let component =
+        |offset: usize| u8::from_str_radix(&expanded[offset..offset + 2], 16).ok().map(|value| f64::from(value) / 255.0);
+    Some((component(0)?, component(2)?, component(4)?))
 }
 
 /// Convert an SVG `d` attribute into PDF path operators.
