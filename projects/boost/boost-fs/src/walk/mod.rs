@@ -4,6 +4,7 @@ mod entry;
 mod error;
 mod filter;
 mod iter;
+pub mod parallel;
 mod walker;
 
 pub use entry::Entry;
