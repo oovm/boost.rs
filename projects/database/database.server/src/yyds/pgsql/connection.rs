@@ -144,7 +144,7 @@ fn serve_session_with_tls(
 ) -> io::Result<()> {
     let mut pending = Vec::new();
     let mut session = TransactionSession::new();
-    let parameters = match read_startup_outcome(&mut stream, &mut pending, tls.as_ref())? {
+    let parameters = match read_startup_outcome(&mut stream, &mut pending, tls.as_ref(), runtime.as_ref())? {
         StartupOutcome::Parameters(parameters) => parameters,
         StartupOutcome::Cancelled | StartupOutcome::Fatal => return Ok(()),
         StartupOutcome::Upgrade(tls) => {
@@ -178,7 +178,12 @@ fn serve_session_with_tls(
     if let Some(application_name) = parameters.get("application_name") {
         send_parameter(&mut stream, "application_name", application_name)?;
     }
-    send_backend_key(&mut stream)?;
+    let (process_id, secret_key) = send_backend_key(&mut stream)?;
+    let _cancel_guard = CancelGuard { runtime: runtime.clone(), process_id, secret_key };
+    if let Some(runtime) = runtime.as_ref() {
+        let token = runtime.cancels.register(process_id, secret_key);
+        session.set_cancel_token(token);
+    }
     send_ready(&mut stream, &mut session)?;
 
     let mut extended = ExtendedSession::default();
@@ -278,6 +283,7 @@ fn read_startup_outcome(
     stream: &mut (impl Read + Write),
     pending: &mut Vec<u8>,
     tls: Option<&Arc<super::tls::PgTls>>,
+    runtime: Option<&Arc<PgsqlSqlRuntime>>,
 ) -> io::Result<StartupOutcome> {
     loop {
         let packet = read_startup(stream, pending)?;
@@ -287,7 +293,20 @@ fn read_startup_outcome(
                 None => stream.write_all(b"N")?,
             },
             GSSENC_REQUEST => stream.write_all(b"N")?,
-            CANCEL_REQUEST => return Ok(StartupOutcome::Cancelled),
+            CANCEL_REQUEST => {
+                // `CancelRequest` carries the key pair from `BackendKeyData`.
+                // The registry only raises a flag; the target session observes
+                // it at its next statement boundary, so a cancel that arrives
+                // while a statement runs cannot publish a later write.
+                if let Some(runtime) = runtime
+                    && packet.payload.len() >= 8
+                {
+                    let process_id = i32::from_be_bytes([packet.payload[0], packet.payload[1], packet.payload[2], packet.payload[3]]);
+                    let secret_key = i32::from_be_bytes([packet.payload[4], packet.payload[5], packet.payload[6], packet.payload[7]]);
+                    runtime.cancels.request(process_id, secret_key);
+                }
+                return Ok(StartupOutcome::Cancelled);
+            }
             PROTOCOL_V3 => {
                 if tls.is_some_and(|tls| tls.requires_client_tls()) {
                     write_fatal(stream, "28000", "TLS is required: send an `SSLRequest` before the startup packet")?;
@@ -1284,7 +1303,12 @@ fn prepare_portal(portal: &mut Portal, session: &mut TransactionSession, runtime
     portal.outcome = Some(run_statement(&sql, runtime, session));
 }
 
-fn parameter_value(oid: u32, bytes: &[u8]) -> Result<SqlValue, (String, String)> {
+/// Decodes one text-format parameter by its declared type OID.
+///
+/// The wire `Bind` path and the direct local session share this decode, so a
+/// `$1` bound locally and the same value sent over the wire produce one
+/// `SqlValue`.
+pub fn parameter_value(oid: u32, bytes: &[u8]) -> Result<SqlValue, (String, String)> {
     // `bytea` 的文本形态是转义或十六进制拼写，不是原始 octets。网关不把这段
     // 拼写当成文本收下，否则转义字符本身会被当作载荷写进列里。二进制格式或
     // `CAST('<hex>' AS BYTEA)` 才是无损通道。
@@ -1465,7 +1489,10 @@ fn pg_parameter(name: &str) -> Option<&'static str> {
 }
 
 /// PostgreSQL type OID for a described gateway field type.
-fn pg_oid(field_type: &SqlFieldType) -> u32 {
+///
+/// The direct (local session) path reports the same OIDs the wire
+/// `RowDescription` carries, so a host decodes both paths identically.
+pub fn pg_oid(field_type: &SqlFieldType) -> u32 {
     match field_type.inner() {
         SqlFieldType::Int32 => OID_INT4,
         SqlFieldType::Int16 => OID_INT2,
@@ -1743,7 +1770,9 @@ fn truthy_value(value: &SqlValue) -> Result<bool, (String, String)> {
     }
 }
 
-fn sql_value_to_pg_text(value: &SqlValue) -> String {
+/// Text payload of one stored value in the PostgreSQL text format the gateway
+/// writes to `DataRow` cells.
+pub fn sql_value_to_pg_text(value: &SqlValue) -> String {
     match value {
         SqlValue::Integer(n) => n.to_string(),
         SqlValue::Number(n) => format!("{n}"),
@@ -2410,11 +2439,29 @@ fn send_parameter(stream: &mut impl Write, key: &str, value: &str) -> io::Result
     write_message(stream, b'S', &payload)
 }
 
-fn send_backend_key(stream: &mut impl Write) -> io::Result<()> {
+fn send_backend_key(stream: &mut impl Write) -> io::Result<(i32, i32)> {
+    let process_id = std::process::id() as i32;
+    let secret_key = NEXT_SECRET.fetch_add(1, Ordering::Relaxed) as i32;
     let mut payload = Vec::with_capacity(8);
-    payload.extend_from_slice(&std::process::id().to_be_bytes());
-    payload.extend_from_slice(&NEXT_SECRET.fetch_add(1, Ordering::Relaxed).to_be_bytes());
-    write_message(stream, b'K', &payload)
+    payload.extend_from_slice(&process_id.to_be_bytes());
+    payload.extend_from_slice(&secret_key.to_be_bytes());
+    write_message(stream, b'K', &payload)?;
+    Ok((process_id, secret_key))
+}
+
+/// Drops one session's cancel flag when its connection ends.
+struct CancelGuard {
+    runtime: Option<Arc<PgsqlSqlRuntime>>,
+    process_id: i32,
+    secret_key: i32,
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.as_ref() {
+            runtime.cancels.unregister(self.process_id, self.secret_key);
+        }
+    }
 }
 
 /// Writes every queued `NotificationResponse` ('A'), then `ReadyForQuery`.
