@@ -418,6 +418,7 @@ members = [
     "projects/document/document.ir",
     "projects/document/document.layout",
     "projects/document/document.presentation",
+    "projects/document/document.presentation.pdf",
     "projects/document/document.presentation.pptx",
     "projects/document/document.renderer",
     "projects/document/document.renderer.html",
@@ -798,6 +799,7 @@ document-input-typst = { path = "projects/document/document.input.typst" }
 document-ir = { path = "projects/document/document.ir" }
 document-layout = { path = "projects/document/document.layout" }
 document-presentation = { path = "projects/document/document.presentation" }
+document-presentation-pdf = { path = "projects/document/document.presentation.pdf" }
 document-presentation-pptx = { path = "projects/document/document.presentation.pptx" }
 document-renderer = { path = "projects/document/document.renderer" }
 document-renderer-html = { path = "projects/document/document.renderer.html" }

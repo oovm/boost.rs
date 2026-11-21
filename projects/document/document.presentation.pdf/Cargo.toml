@@ -1,0 +1,13 @@
+[package]
+name = "document-presentation-pdf"
+version.workspace = true
+authors.workspace = true
+description = "Static PDF projection of the shared editable deck model"
+license.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+document-compose = { workspace = true, features = ["serde"] }
+document-presentation = { workspace = true }
+document-renderer-pdf = { workspace = true }
