@@ -5,5 +5,7 @@
 pub mod catalog;
 /// 租约 / fencing 控制面。
 pub mod control;
+/// 节点间 peer 通道:join 握手、成员视图、epoch 通告与可选 mTLS。
+pub mod peer;
 /// 分片拓扑、路由、复制与分布式执行合同。
 pub mod topology;

@@ -9,9 +9,11 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+data-encoding = { workspace = true }
 database-formats = { workspace = true }
 database-types = { workspace = true }
 data-text-vos = { workspace = true }
+rustls = { workspace = true }
 schema-input-vos = { workspace = true }
 schema-types = { workspace = true }
 serde = { workspace = true }
