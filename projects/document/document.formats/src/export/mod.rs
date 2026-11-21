@@ -18,6 +18,12 @@ pub mod markdown_project;
 /// PDF export.
 #[cfg(feature = "pdf")]
 pub mod pdf;
+/// Rich Text Format export.
+#[cfg(feature = "rtf")]
+pub mod rtf;
+/// SpreadsheetML XLSX export.
+#[cfg(feature = "xlsx")]
+pub mod xlsx;
 
 /// HTML export.
 pub mod html;

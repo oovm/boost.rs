@@ -50,6 +50,9 @@ pub use tex_math::lower_tex_formula_source;
 /// PresentationML PPTX import, IR projection and slide canvas view.
 #[cfg(feature = "pptx")]
 pub mod pptx;
+/// Rich Text Format import.
+#[cfg(feature = "rtf")]
+pub mod rtf;
 /// Typst import via `data-text-typst`.
 #[cfg(feature = "typst")]
 pub mod typst;

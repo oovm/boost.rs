@@ -397,6 +397,34 @@ pub struct XlsxSheet {
 }
 
 impl XlsxSheet {
+    /// Builds an empty sheet in workbook order.
+    ///
+    /// Two widths and one row height are the SpreadsheetML defaults, so a
+    /// writer that never customises geometry still stores valid metadata.
+    pub fn new(name: impl Into<String>, index: u32) -> Self {
+        Self {
+            name: name.into(),
+            index,
+            visibility: SheetVisibility::Visible,
+            dimension: None,
+            columns: Vec::new(),
+            rows: Vec::new(),
+            cells: Vec::new(),
+            merged: Vec::new(),
+            freeze: None,
+            images: Vec::new(),
+            comments: Vec::new(),
+            auto_filter: None,
+            conditional_formatting: false,
+            data_validations: false,
+            charts: 0,
+            embedded_objects: 0,
+            legacy_macro: false,
+            default_row_height: 15.0,
+            default_column_width: 8.43,
+        }
+    }
+
     /// Returns the cell at a one-based row and column.
     pub fn cell(&self, row: u32, column: u32) -> Option<&XlsxCell> {
         self.cells.binary_search_by_key(&(row, column), |cell| (cell.row, cell.column)).ok().map(|index| &self.cells[index])
@@ -534,6 +562,20 @@ pub struct XlsxWorkbook {
 }
 
 impl XlsxWorkbook {
+    /// Builds an empty workbook without sheets.
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            date_system: DateSystem::Date1900,
+            sheets: Vec::new(),
+            styles: WorkbookStyles::default(),
+            defined_names: Vec::new(),
+            macro_enabled: false,
+            issues: Vec::new(),
+            stats: XlsxStats::default(),
+        }
+    }
+
     /// Pushes one issue and keeps the vector stable.
     pub fn push_issue(&mut self, issue: XlsxIssue) {
         self.issues.push(issue);

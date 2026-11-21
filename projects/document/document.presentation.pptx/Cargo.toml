@@ -1,0 +1,15 @@
+[package]
+name = "document-presentation-pptx"
+version.workspace = true
+authors.workspace = true
+description = "PresentationML package writer for the shared editable deck model"
+license.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+data-binary-zip = { workspace = true }
+document-presentation = { workspace = true }
+
+[dev-dependencies]
+document-formats = { workspace = true, features = ["pptx"] }

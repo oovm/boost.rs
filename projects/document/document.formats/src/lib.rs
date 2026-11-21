@@ -88,8 +88,11 @@ pub fn capabilities() -> Vec<FormatCapability> {
         // formatting, data validation, tables, pivots and embedded objects
         // stay refused with structured codes, so the import is partial.
         capabilities.push(FormatCapability { id: "xlsx", direction: FormatDirection::Import, status: FormatStatus::Partial });
-        // No SpreadsheetML writer exists, so the export direction is opt-out.
-        capabilities.push(FormatCapability { id: "xlsx", direction: FormatDirection::Export, status: FormatStatus::Unavailable });
+        // The SpreadsheetML writer emits values, formulas with cached results,
+        // styles, merges, column widths, row heights and frozen panes. Charts,
+        // pictures, comments, conditional formatting and validation are dropped
+        // with loss markers, so the export is partial.
+        capabilities.push(FormatCapability { id: "xlsx", direction: FormatDirection::Export, status: FormatStatus::Partial });
     }
     #[cfg(feature = "pptx")]
     {
@@ -97,7 +100,9 @@ pub fn capabilities() -> Vec<FormatCapability> {
         // placeholders, text, shapes, images, tables and notes. Charts,
         // SmartArt, OLE objects and media stay refused with structured codes.
         capabilities.push(FormatCapability { id: "pptx", direction: FormatDirection::Import, status: FormatStatus::Partial });
-        // No PresentationML writer exists, so the export direction is opt-out.
+        // No PresentationML writer exists in this crate, so the export
+        // direction is opt-out here. Package writing lives in
+        // `document-presentation-pptx`.
         capabilities.push(FormatCapability { id: "pptx", direction: FormatDirection::Export, status: FormatStatus::Unavailable });
     }
     #[cfg(feature = "pandoc-json")]
@@ -110,6 +115,13 @@ pub fn capabilities() -> Vec<FormatCapability> {
     }
     #[cfg(feature = "tex")]
     capabilities.push(FormatCapability { id: "tex", direction: FormatDirection::Import, status: FormatStatus::Partial });
+    #[cfg(feature = "rtf")]
+    {
+        // Paragraphs, breaks and character styles survive; tables, lists,
+        // pictures, fields and colour/font tables degrade with loss markers.
+        capabilities.push(FormatCapability { id: "rtf", direction: FormatDirection::Import, status: FormatStatus::Partial });
+        capabilities.push(FormatCapability { id: "rtf", direction: FormatDirection::Export, status: FormatStatus::Partial });
+    }
     #[cfg(feature = "typst")]
     capabilities.push(FormatCapability { id: "typst", direction: FormatDirection::Import, status: FormatStatus::Partial });
     capabilities

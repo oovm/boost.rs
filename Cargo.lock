@@ -3194,6 +3194,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "document-presentation-pptx"
+version = "0.1.0"
+dependencies = [
+ "data-binary-zip",
+ "document-formats",
+ "document-presentation",
+]
+
+[[package]]
 name = "document-renderer"
 version = "0.1.0"
 dependencies = [

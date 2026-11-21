@@ -17,6 +17,9 @@ pub mod lexer;
 pub use lexer::CsvLexer;
 /// Parser module.
 pub mod parser;
+/// Plain record parsing and escaping shared by spreadsheet products.
+pub mod table;
 
 pub use crate::parser::CsvParser;
+pub use table::{Field, escape_field, parse_records, write_records};
 pub use data_text_core::{ElementType, TokenType};
