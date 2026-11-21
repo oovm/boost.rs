@@ -75,6 +75,8 @@ pub struct CilAssembly {
     types: Vec<CilTypeDef>,
     methods: Vec<CilMethodDef>,
     nested_classes: Vec<CilNestedClass>,
+    assembly_name: Option<String>,
+    assembly_refs: Vec<String>,
 }
 
 impl CilAssembly {
@@ -115,6 +117,8 @@ impl CilAssembly {
             types: parsed.types,
             methods: parsed.methods,
             nested_classes: parsed.nested_classes,
+            assembly_name: parsed.assembly_name,
+            assembly_refs: parsed.assembly_refs,
         })
     }
 
@@ -131,6 +135,16 @@ impl CilAssembly {
     /// 全部 NestedClass 行。
     pub fn nested_classes(&self) -> &[CilNestedClass] {
         &self.nested_classes
+    }
+
+    /// Assembly 表的程序集简单名；没有 Assembly 表时返回 `None`。
+    pub fn assembly_name(&self) -> Option<&str> {
+        self.assembly_name.as_deref()
+    }
+
+    /// AssemblyRef 表的程序集名，按首次出现顺序去重。
+    pub fn assembly_references(&self) -> Vec<&str> {
+        self.assembly_refs.iter().map(String::as_str).collect()
     }
 
     /// 读取方法体头部的代码长度；RVA 无效或没有方法体时返回 `None`。
@@ -270,6 +284,8 @@ struct ParsedMetadata {
     types: Vec<CilTypeDef>,
     methods: Vec<CilMethodDef>,
     nested_classes: Vec<CilNestedClass>,
+    assembly_name: Option<String>,
+    assembly_refs: Vec<String>,
 }
 
 /// 元数据流在根内的位置与长度。
@@ -378,11 +394,15 @@ fn parse_metadata(metadata: &[u8]) -> Result<ParsedMetadata, CilError> {
     let types = parse_types(tables, strings, &layout)?;
     let methods = parse_methods(tables, strings, &layout)?;
     let nested_classes = parse_nested_classes(tables, &layout)?;
+    let assembly_name = parse_assembly_name(tables, strings, &layout)?;
+    let assembly_refs = parse_assembly_refs(tables, strings, &layout)?;
 
     Ok(ParsedMetadata {
         types,
         methods,
         nested_classes,
+        assembly_name,
+        assembly_refs,
     })
 }
 
@@ -722,6 +742,50 @@ fn parse_nested_classes(
     Ok(nested_classes)
 }
 
+/// 读取 Assembly 表的程序集简单名；没有该表时返回 `None`。
+fn parse_assembly_name(
+    tables: &[u8],
+    strings: &[u8],
+    layout: &TableLayout,
+) -> Result<Option<String>, CilError> {
+    if layout.rows[0x20] == 0 {
+        return Ok(None);
+    }
+    let index = IndexSizes {
+        rows: layout.rows,
+        heap: layout.heap,
+    };
+    // HashAlgId(4) + 四个版本号(8) + Flags(4) + PublicKey(blob) + Name(string)
+    let cursor = row_offset(layout, 0x20, 0)? + 4 + 8 + 4 + index.blob();
+    Ok(Some(read_heap_string(
+        strings,
+        read_index(tables, cursor, index.string())?,
+    )?))
+}
+
+/// 读取 AssemblyRef 表的程序集名，按首次出现顺序去重。
+fn parse_assembly_refs(
+    tables: &[u8],
+    strings: &[u8],
+    layout: &TableLayout,
+) -> Result<Vec<String>, CilError> {
+    let index = IndexSizes {
+        rows: layout.rows,
+        heap: layout.heap,
+    };
+    let count = layout.rows[0x23] as usize;
+    let mut references: Vec<String> = Vec::new();
+    for row in 0..count {
+        // 四个版本号(8) + Flags(4) + PublicKeyOrToken(blob) + Name(string)
+        let cursor = row_offset(layout, 0x23, row)? + 8 + 4 + index.blob();
+        let name = read_heap_string(strings, read_index(tables, cursor, index.string())?)?;
+        if !references.iter().any(|candidate| candidate == &name) {
+            references.push(name);
+        }
+    }
+    Ok(references)
+}
+
 fn read_u8(bytes: &[u8], offset: usize) -> Result<u8, CilError> {
     bytes
         .get(offset)
@@ -908,6 +972,43 @@ mod tests {
     }
 
     #[test]
+    fn reads_assembly_name_and_references() {
+        let mut heap = StringHeap::new();
+        let module_name = heap.intern("<Module>");
+        let assembly_name = heap.intern("GameAssembly");
+        let unity_engine = heap.intern("UnityEngine");
+        let mscorlib = heap.intern("mscorlib");
+
+        let tables = vec![
+            (0x00u8, vec![module_row(module_name)]),
+            (
+                0x02u8,
+                vec![type_def_row(0, module_name, 0, 0, 1, 1)],
+            ),
+            (
+                0x20u8,
+                vec![assembly_row(0x8004, 1, 0, assembly_name)],
+            ),
+            (
+                0x23u8,
+                vec![
+                    assembly_ref_row(0, 0, unity_engine),
+                    assembly_ref_row(0, 0, mscorlib),
+                    assembly_ref_row(0, 0, unity_engine),
+                ],
+            ),
+        ];
+        let image = build_image(&tables, &heap.bytes);
+        let assembly = CilAssembly::from_bytes(image).expect("image should parse");
+
+        assert_eq!(assembly.assembly_name(), Some("GameAssembly"));
+        assert_eq!(
+            assembly.assembly_references(),
+            vec!["UnityEngine", "mscorlib"]
+        );
+    }
+
+    #[test]
     fn truncated_images_return_parse_errors() {
         let mut heap = StringHeap::new();
         let module_name = heap.intern("<Module>");
@@ -1081,6 +1182,33 @@ mod tests {
         let mut row = Vec::new();
         row.extend_from_slice(&nested.to_le_bytes());
         row.extend_from_slice(&enclosing.to_le_bytes());
+        row
+    }
+
+    fn assembly_row(hash_algorithm: u32, major: u16, build: u16, name: u32) -> Vec<u8> {
+        let mut row = Vec::new();
+        row.extend_from_slice(&hash_algorithm.to_le_bytes());
+        row.extend_from_slice(&major.to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
+        row.extend_from_slice(&build.to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
+        row.extend_from_slice(&0u32.to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
+        row.extend_from_slice(&(name as u16).to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
+        row
+    }
+
+    fn assembly_ref_row(major: u16, build: u16, name: u32) -> Vec<u8> {
+        let mut row = Vec::new();
+        for value in [major, 0, build, 0] {
+            row.extend_from_slice(&value.to_le_bytes());
+        }
+        row.extend_from_slice(&0u32.to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
+        row.extend_from_slice(&(name as u16).to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
+        row.extend_from_slice(&0u16.to_le_bytes());
         row
     }
 
