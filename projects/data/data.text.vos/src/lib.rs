@@ -14,7 +14,7 @@ pub mod parser;
 
 pub use crate::{
     ast::{
-        VosBinaryOp, VosDeclaration, VosDeclarationKind, VosExpr, VosField, VosFieldAttribute, VosFieldInit, VosFnDecl, VosFnKind, VosLambda,
+        VosBinaryOp, VosDeclaration, VosDeclarationKind, VosDeclarationMember, VosExpr, VosField, VosFieldAttribute, VosFieldInit, VosFnDecl, VosFnKind, VosLambda,
         VosLet, VosLiteral, VosParameter, VosPathSep, VosProgram, VosProjItem, VosRoot, VosServiceMethod, VosServiceMethodReturn, VosStmt,
         VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax, VosUnaryOp,
     },

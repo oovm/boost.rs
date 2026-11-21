@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ArtifactError, AttributeContract, CanonicalScalar, CanonicalType, ContractArtifact, OperationKind, TypeContractKind,
+    ArtifactError, AttributeContract, CanonicalScalar, CanonicalType, ContractArtifact, MemberContract, OperationKind, TypeContractKind,
     contract::{
         ContractAttribute, MethodStreamMode, OperationCardinality, OperationContract, OperationEffect, SemanticCapability, ServiceContract,
         ServiceMethodContract,
@@ -93,6 +93,9 @@ pub struct BoundTypeContract {
     pub kind: TypeContractKind,
     /// Bound fields in projection source order.
     pub fields: Vec<BoundFieldContract>,
+    /// Numeric members of an `enums` or `flags` declaration. Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<MemberContract>,
 }
 
 /// A projected field with durable field and virtual-slot identities.
@@ -190,6 +193,23 @@ pub struct ResolvedTypeContract {
     pub kind: TypeContractKind,
     /// Resolved fields.
     pub fields: Vec<ResolvedFieldContract>,
+    /// Numeric members of an `enums` or `flags` declaration. Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<ResolvedMemberContract>,
+}
+
+/// One numeric member carried by the resolved contract.
+///
+/// The number is the member's stable identity: a `enums` value is one declared
+/// number and a `flags` member is one declared bit mask. Renaming a member keeps
+/// the number, and decimals or `0x` hex literals are both resolved into it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResolvedMemberContract {
+    /// Canonical member name.
+    pub canonical_name: String,
+    /// Declared numeric value.
+    pub value: i64,
 }
 
 /// Versioned semantic contract consumed by database and ORM adapters.
@@ -259,6 +279,7 @@ impl ResolvedContract {
                     return Err(ArtifactError { code: "RES013".to_owned(), message: "invalid resolved field identity".to_owned() });
                 }
             }
+            validate_members(item)?;
         }
         for item in &self.types {
             for field in &item.fields {
@@ -274,6 +295,57 @@ impl ResolvedContract {
         }
         Ok(())
     }
+}
+
+/// Validates the numeric members attached to one resolved type.
+///
+/// `enums` and `flags` are the only kinds that carry members. An `enums` member
+/// owns one number and a `flags` member owns exactly one bit, so a duplicate
+/// name, a repeated number, a repeated bit, a zero or multi-bit flag mask, or
+/// members on any other kind are rejected before the catalog is published.
+fn validate_members(item: &ResolvedTypeContract) -> Result<(), ArtifactError> {
+    let numeric = matches!(item.kind, TypeContractKind::Enums | TypeContractKind::Flags);
+    if !numeric {
+        if item.members.is_empty() {
+            return Ok(());
+        }
+        return Err(ArtifactError {
+            code: "RES022".to_owned(),
+            message: format!("type `{}` is not numeric and cannot declare members", item.canonical_path.join("::")),
+        });
+    }
+    if item.members.is_empty() {
+        return Err(ArtifactError {
+            code: "RES023".to_owned(),
+            message: format!("numeric type `{}` must declare at least one member", item.canonical_path.join("::")),
+        });
+    }
+    if !item.fields.is_empty() {
+        return Err(ArtifactError {
+            code: "RES022".to_owned(),
+            message: format!("numeric type `{}` cannot declare fields", item.canonical_path.join("::")),
+        });
+    }
+    let mut names = BTreeSet::new();
+    let mut values = BTreeSet::new();
+    for member in &item.members {
+        if member.canonical_name.is_empty() || !names.insert(&member.canonical_name) {
+            return Err(ArtifactError { code: "RES024".to_owned(), message: "invalid or duplicate numeric member name".to_owned() });
+        }
+        if item.kind == TypeContractKind::Flags && (member.value <= 0 || !(member.value as u64).is_power_of_two()) {
+            return Err(ArtifactError {
+                code: "RES025".to_owned(),
+                message: format!("`flags` member `{}` must declare exactly one nonzero bit", member.canonical_name),
+            });
+        }
+        if !values.insert(member.value) {
+            return Err(ArtifactError {
+                code: "RES026".to_owned(),
+                message: format!("numeric member `{}` reuses the value `{}`", member.canonical_name, member.value),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_resolved_type(
@@ -590,13 +662,20 @@ struct CanonicalResolvedTypeContract {
     canonical_path: Vec<String>,
     kind: TypeContractKind,
     fields: Vec<CanonicalResolvedFieldContract>,
+    members: Vec<CanonicalMemberContract>,
 }
 
 impl From<&ResolvedTypeContract> for CanonicalResolvedTypeContract {
     fn from(contract: &ResolvedTypeContract) -> Self {
         let mut fields = contract.fields.iter().map(CanonicalResolvedFieldContract::from).collect::<Vec<_>>();
         fields.sort_by_key(|item| item.field_id);
-        Self { type_id: contract.type_id, canonical_path: contract.canonical_path.clone(), kind: contract.kind, fields }
+        Self {
+            type_id: contract.type_id,
+            canonical_path: contract.canonical_path.clone(),
+            kind: contract.kind,
+            fields,
+            members: canonical_members(contract.members.iter().map(|member| (&member.canonical_name, member.value))),
+        }
     }
 }
 
@@ -629,14 +708,37 @@ struct CanonicalTypeContract {
     canonical_path: Vec<String>,
     kind: TypeContractKind,
     fields: Vec<CanonicalFieldContract>,
+    members: Vec<CanonicalMemberContract>,
 }
 
 impl From<&BoundTypeContract> for CanonicalTypeContract {
     fn from(contract: &BoundTypeContract) -> Self {
         let mut fields = contract.fields.iter().map(CanonicalFieldContract::from).collect::<Vec<_>>();
         fields.sort_by_key(|item| item.field_id);
-        Self { type_id: contract.type_id, canonical_path: contract.canonical_path.clone(), kind: contract.kind, fields }
+        Self {
+            type_id: contract.type_id,
+            canonical_path: contract.canonical_path.clone(),
+            kind: contract.kind,
+            fields,
+            members: canonical_members(contract.members.iter().map(|member| (&member.canonical_name, member.value))),
+        }
     }
+}
+
+/// One numeric member in the canonical fingerprint model.
+#[derive(Serialize)]
+struct CanonicalMemberContract {
+    canonical_name: String,
+    value: i64,
+}
+
+/// Orders members by their stable number so a source reorder keeps the
+/// fingerprint stable while a number change moves it.
+fn canonical_members<'a>(members: impl Iterator<Item = (&'a String, i64)>) -> Vec<CanonicalMemberContract> {
+    let mut members =
+        members.map(|(canonical_name, value)| CanonicalMemberContract { canonical_name: canonical_name.clone(), value }).collect::<Vec<_>>();
+    members.sort_by(|left, right| left.value.cmp(&right.value).then_with(|| left.canonical_name.cmp(&right.canonical_name)));
+    members
 }
 
 #[derive(PartialEq, Eq, Serialize)]
@@ -722,6 +824,10 @@ pub enum EntityKind {
     Table,
     /// Inline value or class schema.
     Class,
+    /// Named numeric type with one declared member per value.
+    Enums,
+    /// Named bit-mask type with one declared bit per member.
+    Flags,
     /// Schema field owned by a type.
     Field,
     /// Query, UDF, micro or macro operation.
@@ -735,7 +841,7 @@ pub enum EntityKind {
 impl EntityKind {
     /// Returns `true` when this kind owns fields (types only).
     pub fn is_type(&self) -> bool {
-        matches!(self, Self::Table | Self::Class)
+        matches!(self, Self::Table | Self::Class | Self::Enums | Self::Flags)
     }
 
     /// Returns `true` when this kind is a type-owned child (field).
@@ -901,6 +1007,8 @@ impl StableIdentityManifest {
             let kind = match type_contract.kind {
                 TypeContractKind::Table => EntityKind::Table,
                 TypeContractKind::Class => EntityKind::Class,
+                TypeContractKind::Enums => EntityKind::Enums,
+                TypeContractKind::Flags => EntityKind::Flags,
             };
             let name = type_contract.canonical_path.last().cloned().unwrap_or_default();
             entries.push(StableIdentityEntry {

@@ -224,6 +224,8 @@ fn coerce_value(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedCon
                 .ok_or_else(|| coerce_error(format!("declared type targets unknown type id `{type_id}`")))?;
             match target.kind {
                 schema_types::TypeContractKind::Class => coerce_class_record(value, target, contract, depth, ""),
+                schema_types::TypeContractKind::Enums => coerce_enum_value(value, target),
+                schema_types::TypeContractKind::Flags => coerce_flags_value(value, target),
                 // A bare table type has no by-value form; the catalog refuses it
                 // at install, so keep the value untouched here.
                 schema_types::TypeContractKind::Table => Ok(value),
@@ -279,6 +281,58 @@ fn coerce_class_record(
         return Err(coerce_error(format!("{location} is missing required member `{}`", field.canonical_name)));
     }
     Ok(Value::Row(normalized))
+}
+
+/// Checks one `enums` value against the declared member numbers.
+///
+/// A value is exactly one declared member, so a number the type does not
+/// declare is refused instead of being stored as an anonymous integer. A value
+/// of another kind is refused as well, which is the write-boundary half of
+/// "no implicit conversion between numeric types": a member number that belongs
+/// to a different `enums` type is not declared here and is therefore rejected.
+fn coerce_enum_value(value: Value, target: &schema_types::ResolvedTypeContract) -> Result<Value> {
+    let name = target.canonical_path.last().map(String::as_str).unwrap_or_default();
+    let number = match value {
+        Value::Null => return Ok(Value::Null),
+        Value::I64(number) => number,
+        other => {
+            return Err(coerce_error(format!("column type `enums {name}` requires a declared integer member, got `{}`", other.kind())));
+        }
+    };
+    if target.members.iter().any(|member| member.value == number) {
+        return Ok(Value::I64(number));
+    }
+    Err(coerce_error(format!("value `{number}` is not a declared member of `enums {name}` ({})", declared_members(target))))
+}
+
+/// Checks one `flags` value against the declared bits.
+///
+/// Flags are a bit set: zero is the empty set, any combination of declared bits
+/// is accepted, and a mask with a bit the type does not declare is refused. A
+/// negative mask can never be a valid set of declared bits.
+fn coerce_flags_value(value: Value, target: &schema_types::ResolvedTypeContract) -> Result<Value> {
+    let name = target.canonical_path.last().map(String::as_str).unwrap_or_default();
+    let mask = match value {
+        Value::Null => return Ok(Value::Null),
+        Value::I64(mask) => mask,
+        other => {
+            return Err(coerce_error(format!("column type `flags {name}` requires an integer bit mask, got `{}`", other.kind())));
+        }
+    };
+    if mask < 0 {
+        return Err(coerce_error(format!("flags `{name}` mask `{mask}` is negative and cannot be a set of declared bits")));
+    }
+    let declared = target.members.iter().fold(0_i64, |mask, member| mask | member.value);
+    let unknown = mask & !declared;
+    if unknown == 0 {
+        return Ok(Value::I64(mask));
+    }
+    Err(coerce_error(format!("flags `{name}` mask `0x{mask:x}` sets undeclared bits `0x{unknown:x}` ({})", declared_members(target))))
+}
+
+/// Renders a numeric type's declared members for a rejection message.
+fn declared_members(target: &schema_types::ResolvedTypeContract) -> String {
+    target.members.iter().map(|member| format!("{}={}", member.canonical_name, member.value)).collect::<Vec<_>>().join(", ")
 }
 
 /// Primary-key type of one resolved table type.

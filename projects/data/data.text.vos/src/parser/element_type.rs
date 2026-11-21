@@ -33,6 +33,8 @@ pub enum VosElementType {
     Macro,
     /// Table or class field declaration.
     Field,
+    /// `enums` or `flags` member declaration.
+    Member,
     /// Service method declaration.
     ServiceMethod,
     /// Field, service or method attribute syntax.

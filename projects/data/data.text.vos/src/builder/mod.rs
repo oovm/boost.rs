@@ -1,7 +1,7 @@
 use crate::{
     ast::{
-        VosDeclaration, VosDeclarationKind, VosField, VosFieldAttribute, VosParameter, VosRoot, VosServiceMethod, VosServiceMethodReturn,
-        VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax,
+        VosDeclaration, VosDeclarationKind, VosDeclarationMember, VosField, VosFieldAttribute, VosParameter, VosRoot, VosServiceMethod,
+        VosServiceMethodReturn, VosSyntaxElement, VosSyntaxNode, VosSyntaxSlice, VosSyntaxToken, VosTypeArgument, VosTypeSyntax,
     },
     language::VosLanguage,
     lexer::VosLexer,
@@ -115,6 +115,10 @@ impl VosBuilder {
         if matches!(kind, VosDeclarationKind::Table | VosDeclarationKind::Class) {
             self.collect_fields(node, offset, source, &mut fields)?;
         }
+        let mut members = Vec::new();
+        if matches!(kind, VosDeclarationKind::Enums | VosDeclarationKind::Flags) {
+            self.collect_members(node, offset, source, &mut members)?;
+        }
         if kind == VosDeclarationKind::Service {
             self.collect_methods(node, offset, source, &mut methods)?;
         }
@@ -131,6 +135,7 @@ impl VosBuilder {
             return_type,
             return_type_expr,
             fields,
+            members,
             span,
         })
     }
@@ -204,6 +209,71 @@ impl VosBuilder {
             };
         }
         Ok(())
+    }
+
+    fn collect_members<'a>(
+        &self,
+        tree: &GreenNode<'a, VosLanguage>,
+        offset: usize,
+        source: &SourceText,
+        members: &mut Vec<VosDeclarationMember>,
+    ) -> Result<(), TextError> {
+        let mut child_offset = offset;
+        for child in tree.children {
+            match child {
+                GreenTree::Node(node) if node.kind == VosElementType::Member => {
+                    members.push(self.build_member(node, child_offset, source));
+                }
+                GreenTree::Node(node) => self.collect_members(node, child_offset, source, members)?,
+                GreenTree::Leaf(_) => {}
+            }
+            child_offset += match child {
+                GreenTree::Node(node) => node.byte_length as usize,
+                GreenTree::Leaf(leaf) => leaf.length as usize,
+            };
+        }
+        Ok(())
+    }
+
+    fn build_member<'a>(&self, node: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText) -> VosDeclarationMember {
+        let span = (offset..offset + node.byte_length as usize).into();
+        let mut child_offset = offset;
+        let mut name = None;
+        let mut name_span = None;
+        let mut value = None;
+        let mut value_span = None;
+        let mut negative_start = None;
+        for child in node.children {
+            if let GreenTree::Leaf(leaf) = child {
+                let leaf_span = child_offset..child_offset + leaf.length as usize;
+                if leaf.kind == crate::lexer::VosTokenType::Identifier && name.is_none() {
+                    name = Some(source.get_text_in(leaf_span.clone().into()).into_owned());
+                    name_span = Some(leaf_span.into());
+                }
+                else if leaf.kind == crate::lexer::VosTokenType::Operator
+                    && source.get_text_in(leaf_span.clone().into()).as_ref() == "-"
+                {
+                    negative_start = Some(leaf_span.start);
+                }
+                else if leaf.kind == crate::lexer::VosTokenType::NumberLiteral {
+                    let text = source.get_text_in(leaf_span.clone().into()).into_owned();
+                    let start = negative_start.take().unwrap_or(leaf_span.start);
+                    value = Some(if start < leaf_span.start { format!("-{text}") } else { text });
+                    value_span = Some((start..leaf_span.end).into());
+                }
+            }
+            child_offset += match child {
+                GreenTree::Node(node) => node.byte_length as usize,
+                GreenTree::Leaf(leaf) => leaf.length as usize,
+            };
+        }
+        VosDeclarationMember {
+            name: name.unwrap_or_default(),
+            name_span: name_span.unwrap_or((offset..offset).into()),
+            value,
+            value_span,
+            span,
+        }
     }
 
     fn build_field<'a>(&self, node: &GreenNode<'a, VosLanguage>, offset: usize, source: &SourceText) -> Result<VosField, TextError> {

@@ -698,6 +698,47 @@ fn service_surface_without_return_types_round_trips() {
 }
 
 #[test]
+fn enums_and_flags_project_numeric_members() {
+    let source = "enums State {\n    # comment\n    Draft = 1,\n    Published = 2\n}\nflags Access { Read = 0x01, Write = 0x10 }";
+    let root = parse(source).expect("Oak parses numeric declarations");
+
+    let state = &root.declarations[0];
+    assert_eq!(state.kind, VosDeclarationKind::Enums);
+    assert_eq!(state.name.as_deref(), Some("State"));
+    assert_eq!(
+        state.members.iter().map(|member| (member.name.as_str(), member.value.as_deref())).collect::<Vec<_>>(),
+        [("Draft", Some("1")), ("Published", Some("2"))]
+    );
+    for member in &state.members {
+        assert_eq!(&source[member.name_span.clone()], member.name);
+        if let Some(value_span) = &member.value_span {
+            assert_eq!(&source[value_span.clone()], member.value.as_deref().unwrap());
+        }
+    }
+
+    let access = &root.declarations[1];
+    assert_eq!(access.kind, VosDeclarationKind::Flags);
+    assert_eq!(
+        access.members.iter().map(|member| (member.name.as_str(), member.value.as_deref())).collect::<Vec<_>>(),
+        [("Read", Some("0x01")), ("Write", Some("0x10"))]
+    );
+    assert_eq!(&source[access.members[1].value_span.clone().unwrap()], "0x10");
+
+    let mut restored = String::new();
+    append_text(&root.syntax, &mut restored);
+    assert_eq!(restored, source);
+}
+
+#[test]
+fn numeric_members_reject_missing_values_and_keep_negative_numbers() {
+    assert!(parse("enums State { Draft = }").is_err(), "a member with `=` and no value is invalid");
+    let root = parse("enums Shift { Negative = -1, Zero = 0 }").expect("negative member values parse");
+    let members = &root.declarations[0].members;
+    assert_eq!(members[0].value.as_deref(), Some("-1"));
+    assert_eq!(members[1].value.as_deref(), Some("0"));
+}
+
+#[test]
 fn type_depth_has_process_bound() {
     use std::{
         process::Command,

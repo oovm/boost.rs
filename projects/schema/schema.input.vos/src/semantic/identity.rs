@@ -77,6 +77,7 @@ pub fn bind_identity(projection: &SchemaProjection, manifest: &IdentityManifest)
                             }
                         })
                         .collect(),
+                    members: projected.members.clone(),
                 });
             }
         }
@@ -242,7 +243,17 @@ pub fn resolve_contract_from_units(units: &[&IdentityBoundProjection]) -> Result
                     })
                 })
                 .collect();
-            ResolvedTypeContract { type_id: item.type_id, canonical_path: item.canonical_path.clone(), kind: item.kind, fields }
+            ResolvedTypeContract {
+                type_id: item.type_id,
+                canonical_path: item.canonical_path.clone(),
+                kind: item.kind,
+                fields,
+                members: item
+                    .members
+                    .iter()
+                    .map(|member| ResolvedMemberContract { canonical_name: member.canonical_name.clone(), value: member.value })
+                    .collect(),
+            }
         })
         .collect();
     if diagnostics.is_empty() { Ok(resolved_contract(manifest_version, types)) } else { Err(diagnostics) }

@@ -52,12 +52,14 @@ fn contract() -> ResolvedContract {
                 scalar_field(1, 0, "id", CanonicalScalar::I64, vec![attribute("primary", "@@id")]),
                 scalar_field(2, 1, "email", CanonicalScalar::Utf8, vec![attribute("unique", "unique")]),
             ],
+            members: Vec::new(),
         },
         ResolvedTypeContract {
             type_id: 2,
             canonical_path: vec!["Session".to_owned()],
             kind: TypeContractKind::Table,
             fields: vec![scalar_field(3, 0, "key", CanonicalScalar::Uuid, vec![attribute("primary", "@@key")])],
+            members: Vec::new(),
         },
     ];
     ResolvedContract {
@@ -95,12 +97,14 @@ fn history() -> IdentityHistory {
                         bound(1, 0, "id", &["i64"], vec![attribute("primary", "@@id")]),
                         bound(2, 1, "email", &["utf8"], vec![attribute("unique", "unique")]),
                     ],
+                    members: Vec::new(),
                 },
                 BoundTypeContract {
                     type_id: 2,
                     canonical_path: vec!["Session".to_owned()],
                     kind: TypeContractKind::Table,
                     fields: vec![bound(3, 0, "key", &["uuid"], vec![attribute("primary", "@@key")])],
+                    members: Vec::new(),
                 },
             ],
         },

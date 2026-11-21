@@ -28,9 +28,9 @@ pub type SourceId = PathBuf;
 /// Kinds of top-level declarations that VOS tracks in its symbol table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeclKind {
-    /// `table Name` or `class Name`.
+    /// `table Name`, `class Name`, `enums Name` or `flags Name`.
     Type {
-        /// Declaration kind: `Table` or `Class`.
+        /// Declaration kind.
         kind: VosDeclarationKind,
         /// Name of the type.
         name: String,
@@ -110,7 +110,7 @@ pub fn collect_decls(root: &data_text_vos::VosRoot) -> SourceDecls {
                 decls.namespace = declaration.path.clone().unwrap_or_default();
                 decls.declarations.push(DeclKind::Namespace { path: declaration.path.clone().unwrap_or_default() });
             }
-            VosDeclarationKind::Table | VosDeclarationKind::Class => {
+            VosDeclarationKind::Table | VosDeclarationKind::Class | VosDeclarationKind::Enums | VosDeclarationKind::Flags => {
                 if let Some(name) = &declaration.name {
                     decls.declarations.push(DeclKind::Type { kind: declaration.kind, name: name.clone() });
                 }
@@ -135,7 +135,7 @@ pub fn collect_decls(root: &data_text_vos::VosRoot) -> SourceDecls {
                     decls.using_paths.push(path);
                 }
             }
-            _ => { /* Enums, Flags, Obsolete — not tracked for resolution */ }
+            _ => { /* Obsolete — not tracked for resolution */ }
         }
     }
 

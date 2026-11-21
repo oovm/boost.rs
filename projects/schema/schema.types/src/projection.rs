@@ -75,6 +75,12 @@ pub struct TypeContract {
     pub kind: TypeContractKind,
     /// Fields in source order. Order is not identity.
     pub fields: Vec<FieldContract>,
+    /// Numeric members of an `enums` or `flags` declaration, in source order.
+    ///
+    /// Empty for tables, classes, `unite` and `structure`, so artifacts written
+    /// before members existed still decode.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<MemberContract>,
     /// Source span of the declaration.
     #[serde(serialize_with = "serialize_span", deserialize_with = "deserialize_span")]
     pub span: Range<usize>,
@@ -88,6 +94,26 @@ pub enum TypeContractKind {
     Table,
     /// Inline value/class schema.
     Class,
+    /// Named numeric type with one declared member per value.
+    Enums,
+    /// Named bit-mask type with one declared bit per member.
+    Flags,
+}
+
+/// One numeric member of an `enums` or `flags` declaration.
+///
+/// `value` is the declared number: the member's stable identity for `enums`
+/// and the single-bit mask for `flags`. Renaming a member keeps this number.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemberContract {
+    /// Canonical member name.
+    pub canonical_name: String,
+    /// Declared numeric value.
+    pub value: i64,
+    /// Source span of the member.
+    #[serde(serialize_with = "serialize_span", deserialize_with = "deserialize_span")]
+    pub span: Range<usize>,
 }
 
 /// A resolved field contract.
@@ -288,6 +314,9 @@ impl SchemaProjection {
                 for attribute in &field.attributes {
                     validate_span(&attribute.span, source, "attribute span")?;
                 }
+            }
+            for member in &type_contract.members {
+                validate_span(&member.span, source, "member span")?;
             }
         }
         Ok(())

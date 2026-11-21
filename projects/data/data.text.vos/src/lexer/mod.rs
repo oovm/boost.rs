@@ -109,8 +109,18 @@ impl Lexer<VosLanguage> for VosLexer {
             }
             else if ch.is_ascii_digit() {
                 state.advance(1);
+                // `0x…` hexadecimal member values stay one literal token.
+                let hex = ch == '0' && matches!(state.peek(), Some('x' | 'X'));
+                if hex {
+                    state.advance(1);
+                }
                 while let Some(next) = state.peek() {
-                    if next.is_ascii_digit() || next == '.' { state.advance(1) } else { break }
+                    if next.is_ascii_digit() || next == '.' || (hex && next.is_ascii_hexdigit()) {
+                        state.advance(1);
+                    }
+                    else {
+                        break;
+                    }
                 }
                 state.add_token(VosTokenType::NumberLiteral, start, state.get_position());
             }

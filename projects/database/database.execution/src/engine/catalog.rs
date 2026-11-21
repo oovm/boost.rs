@@ -53,7 +53,7 @@ pub struct ExecutionCatalog {
     pub types: Vec<ExecutionType>,
 }
 
-/// One VOS table or class projected into the execution model.
+/// One VOS table, class or numeric type projected into the execution model.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionType {
     /// Stable VOS TypeId used as the execution schema identity.
@@ -64,8 +64,23 @@ pub struct ExecutionType {
     pub kind: ExecutionTypeKind,
     /// Fields in stable virtual-slot order.
     pub fields: Vec<ExecutionField>,
+    /// Declared members of an `enums` or `flags` type. Empty otherwise.
+    pub members: Vec<ExecutionMember>,
     /// Uniqueness rules derived from the VOS document plus host declarations.
     pub unique_constraints: Vec<UniqueConstraint>,
+}
+
+/// One declared member of an `enums` or `flags` type, in source order.
+///
+/// `value` is the declared number: an `enums` member's stable identity, or one
+/// bit of a `flags` mask. Both kinds are stored as `i64`, so the catalog keeps
+/// this table to recover the named semantics when a value is bound or decoded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionMember {
+    /// Declared member name.
+    pub name: String,
+    /// Declared number for `enums`, single-bit mask for `flags`.
+    pub value: i64,
 }
 
 /// Type declaration kind used by the local execution catalog.
@@ -75,6 +90,10 @@ pub enum ExecutionTypeKind {
     Table,
     /// Inline value/class declaration.
     Class,
+    /// Named numeric type whose values are declared members.
+    Enums,
+    /// Named bit-mask type whose members are declared bits.
+    Flags,
 }
 
 /// One VOS field projected into a typed execution handle.
@@ -117,6 +136,8 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_types::Resolve
         let kind = match item.kind {
             schema_types::TypeContractKind::Table => ExecutionTypeKind::Table,
             schema_types::TypeContractKind::Class => ExecutionTypeKind::Class,
+            schema_types::TypeContractKind::Enums => ExecutionTypeKind::Enums,
+            schema_types::TypeContractKind::Flags => ExecutionTypeKind::Flags,
         };
         let name = item
             .canonical_path
@@ -164,7 +185,14 @@ pub fn execution_catalog_from_resolved_contract(contract: &schema_types::Resolve
                 .map_err(|error| Error::Schema { message: format!("invalid grouped unique constraint from VOS attribute: {error}") })?;
             unique_constraints.push(constraint);
         }
-        types.push(ExecutionType { schema_id: item.type_id, name, kind, fields, unique_constraints });
+        types.push(ExecutionType {
+            schema_id: item.type_id,
+            name,
+            kind,
+            fields,
+            members: item.members.iter().map(|member| ExecutionMember { name: member.canonical_name.clone(), value: member.value }).collect(),
+            unique_constraints,
+        });
     }
     Ok(ExecutionCatalog { types })
 }
@@ -291,8 +319,11 @@ fn resolved_execution_type_at(
 ///
 /// A `class` is a named domain value embedded in its parent row, so the
 /// execution type is a [`Type::Record`] keyed by the class's durable type id.
-/// A `table` has no by-value form: it is only reachable through `&Table`, which
-/// stores the referenced primary key, so a bare table reference is refused.
+/// `enums` and `flags` are numeric: the value is one declared number or a mask
+/// of declared bits, so the execution type is `i64` and the catalog's member
+/// table keeps the named identity. A `table` has no by-value form: it is only
+/// reachable through `&Table`, which stores the referenced primary key, so a
+/// bare table reference is refused.
 fn by_value_user_type(contract: &schema_types::ResolvedContract, type_id: u64) -> Result<Type> {
     let target = contract
         .types
@@ -305,6 +336,7 @@ fn by_value_user_type(contract: &schema_types::ResolvedContract, type_id: u64) -
                 .map_err(|_| Error::Schema { message: format!("resolved class `{}` has too many fields", target.canonical_path.join("::")) })?;
             Ok(Type::Record { schema_id: type_id, field_count })
         }
+        schema_types::TypeContractKind::Enums | schema_types::TypeContractKind::Flags => Ok(Type::I64),
         schema_types::TypeContractKind::Table => Err(Error::Schema {
             message: format!(
                 "resolved type `{}` is a table and must be referenced as `&{}`",

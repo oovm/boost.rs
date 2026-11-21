@@ -249,6 +249,8 @@ pub(crate) fn type_kind_label(kind: TypeContractKind) -> String {
     match kind {
         TypeContractKind::Table => "table",
         TypeContractKind::Class => "class",
+        TypeContractKind::Enums => "enums",
+        TypeContractKind::Flags => "flags",
     }
     .to_owned()
 }

@@ -31,6 +31,8 @@ pub fn from_schema_projection(name: &str, projection: &SchemaProjection) -> Mapp
         let kind_hint = match ty.kind {
             TypeContractKind::Table => EntityKindHint::Unspecified,
             TypeContractKind::Class => EntityKindHint::Document,
+            // Numeric types describe a scalar value, not a stored entity.
+            TypeContractKind::Enums | TypeContractKind::Flags => EntityKindHint::Unspecified,
         };
         let fields = ty
             .fields

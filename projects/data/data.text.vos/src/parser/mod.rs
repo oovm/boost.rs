@@ -250,6 +250,9 @@ impl VosParser {
                     if matches!(element, VosElementType::Table | VosElementType::Class) {
                         self.parse_fields(state)?;
                     }
+                    else if matches!(element, VosElementType::Enums | VosElementType::Flags) {
+                        self.parse_members(state)?;
+                    }
                     else if element == VosElementType::Service {
                         self.parse_service_body(state)?;
                     }
@@ -331,6 +334,43 @@ impl VosParser {
                 self.skip_trivia(state);
             }
             state.finish_at(field_checkpoint, VosElementType::Field);
+            if state.at(VosTokenType::Comma) || state.at(VosTokenType::Semicolon) {
+                state.bump();
+            }
+        }
+        state.expect(VosTokenType::RightBrace)?;
+        state.finish_at(checkpoint, VosElementType::Block);
+        Ok(())
+    }
+
+    /// Parses an `enums` or `flags` body: one name per member with an optional
+    /// `= <decimal|hex>` numeric value.
+    ///
+    /// Values are kept as exact source text; interpreting and checking the
+    /// numbers against the declaration kind belongs to the schema contract,
+    /// not the parser.
+    fn parse_members<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) -> Result<(), TextError> {
+        let checkpoint = state.checkpoint();
+        state.expect(VosTokenType::LeftBrace)?;
+        loop {
+            self.skip_trivia(state);
+            if state.at(VosTokenType::RightBrace) {
+                break;
+            }
+            let member_checkpoint = state.checkpoint();
+            state.expect(VosTokenType::Identifier)?;
+            self.skip_trivia(state);
+            if state.at(VosTokenType::Equal) {
+                state.bump();
+                self.skip_trivia(state);
+                if state.peek_text().as_deref() == Some("-") {
+                    state.bump();
+                    self.skip_trivia(state);
+                }
+                state.expect(VosTokenType::NumberLiteral)?;
+                self.skip_trivia(state);
+            }
+            state.finish_at(member_checkpoint, VosElementType::Member);
             if state.at(VosTokenType::Comma) || state.at(VosTokenType::Semicolon) {
                 state.bump();
             }

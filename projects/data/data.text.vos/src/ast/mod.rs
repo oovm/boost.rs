@@ -91,7 +91,24 @@ pub struct VosDeclaration {
     pub return_type_expr: Option<VosTypeSyntax>,
     /// Typed field syntax for table and class declarations.
     pub fields: Vec<VosField>,
+    /// Numeric members of an `enums` or `flags` declaration.
+    pub members: Vec<VosDeclarationMember>,
     /// Byte span in the original source.
+    pub span: Range<usize>,
+}
+
+/// One member projected from an `enums` or `flags` body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VosDeclarationMember {
+    /// Member name as written.
+    pub name: String,
+    /// Source span of the member name.
+    pub name_span: Range<usize>,
+    /// Exact numeric literal when the member declares one, decimal or `0x` hex.
+    pub value: Option<String>,
+    /// Source span of the numeric literal.
+    pub value_span: Option<Range<usize>>,
+    /// Source span covering the member declaration.
     pub span: Range<usize>,
 }
 

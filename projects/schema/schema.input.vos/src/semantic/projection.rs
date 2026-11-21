@@ -196,7 +196,7 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
     for declaration in &root.declarations {
         match declaration.kind {
             VosDeclarationKind::Namespace => namespace = declaration.path.clone().unwrap_or_default(),
-            VosDeclarationKind::Table | VosDeclarationKind::Class => {
+            VosDeclarationKind::Table | VosDeclarationKind::Class | VosDeclarationKind::Enums | VosDeclarationKind::Flags => {
                 let Some(name) = declaration.name.clone()
                 else {
                     diagnostics.push(diagnostic("VOS001", "type declaration is missing a name", Some(declaration.span)));
@@ -206,6 +206,51 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
                 canonical_path.push(name);
                 if types.iter().any(|item: &TypeContract| item.canonical_path == canonical_path) {
                     diagnostics.push(diagnostic("VOS002", "duplicate type declaration", Some(declaration.span)));
+                    continue;
+                }
+                if matches!(declaration.kind, VosDeclarationKind::Enums | VosDeclarationKind::Flags) {
+                    let mut member_names = std::collections::BTreeSet::new();
+                    for member in &declaration.members {
+                        if !member_names.insert(&member.name) {
+                            diagnostics.push(diagnostic("VOS006", "duplicate numeric member declaration", Some(member.name_span)));
+                        }
+                    }
+                    match declaration.members.iter().map(resolve_member).collect::<Result<Vec<_>, _>>() {
+                        Ok(members) => {
+                            let numeric_kind = declaration.kind;
+                            let mut values = std::collections::BTreeMap::new();
+                            let mut valid = true;
+                            for member in &members {
+                                if numeric_kind == VosDeclarationKind::Flags && (member.value <= 0 || !(member.value as u64).is_power_of_two())
+                                {
+                                    diagnostics.push(diagnostic(
+                                        "VOS009",
+                                        &format!("`flags` member `{}` must declare exactly one nonzero bit", member.canonical_name),
+                                        Some(member.span.clone()),
+                                    ));
+                                    valid = false;
+                                }
+                                if values.insert(member.value, member.canonical_name.as_str()).is_some() {
+                                    diagnostics.push(diagnostic(
+                                        "VOS010",
+                                        &format!("numeric member `{}` reuses the value `{}`", member.canonical_name, member.value),
+                                        Some(member.span.clone()),
+                                    ));
+                                    valid = false;
+                                }
+                            }
+                            if valid {
+                                types.push(TypeContract {
+                                    canonical_path,
+                                    kind: if numeric_kind == VosDeclarationKind::Enums { TypeContractKind::Enums } else { TypeContractKind::Flags },
+                                    fields: Vec::new(),
+                                    members,
+                                    span: declaration.span,
+                                });
+                            }
+                        }
+                        Err(error) => diagnostics.push(error),
+                    }
                     continue;
                 }
                 let mut field_names = std::collections::BTreeSet::new();
@@ -220,6 +265,7 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
                         canonical_path,
                         kind: if declaration.kind == VosDeclarationKind::Table { TypeContractKind::Table } else { TypeContractKind::Class },
                         fields,
+                        members: Vec::new(),
                         span: declaration.span,
                     }),
                     Err(error) => diagnostics.push(error),
@@ -267,9 +313,41 @@ pub fn project_schema(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDi
 pub fn project_schema_only(root: &VosRoot) -> Result<SchemaProjection, Vec<ContractDiagnostic>> {
     let mut schema_root = root.clone();
     schema_root.declarations.retain(|declaration| {
-        matches!(declaration.kind, VosDeclarationKind::Namespace | VosDeclarationKind::Table | VosDeclarationKind::Class)
+        matches!(
+            declaration.kind,
+            VosDeclarationKind::Namespace
+                | VosDeclarationKind::Table
+                | VosDeclarationKind::Class
+                | VosDeclarationKind::Enums
+                | VosDeclarationKind::Flags
+        )
     });
     project_schema(&schema_root)
+}
+
+/// Resolves one `enums` or `flags` member into its stable numeric identity.
+fn resolve_member(member: &data_text_vos::VosDeclarationMember) -> Result<MemberContract, ContractDiagnostic> {
+    let Some(text) = &member.value
+    else {
+        return Err(diagnostic("VOS007", "numeric member requires an explicit value", Some(member.name_span)));
+    };
+    let value = parse_member_number(text)
+        .ok_or_else(|| diagnostic("VOS008", &format!("member value `{text}` is not a 64-bit integer"), member.value_span))?;
+    Ok(MemberContract { canonical_name: member.name.clone(), value, span: member.span })
+}
+
+/// Reads a decimal or `0x` hexadecimal member value.
+fn parse_member_number(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let (negative, body) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let magnitude = match body.strip_prefix("0x").or_else(|| body.strip_prefix("0X")) {
+        Some(hex) => i64::from_str_radix(hex, 16).ok()?,
+        None => body.parse::<i64>().ok()?,
+    };
+    Some(if negative { magnitude.checked_neg()? } else { magnitude })
 }
 
 fn resolve_field(field: &VosField) -> Result<FieldContract, ContractDiagnostic> {
