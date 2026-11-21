@@ -244,11 +244,11 @@ fn coerce_value(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedCon
     }
 }
 
-/// Checks one by-value `class` record against the class's declared members.
+/// Checks one by-value `class` or `structure` record against its declared members.
 ///
-/// Every declared member is the class's identity, so a member the class does
-/// not declare is refused instead of being stored, and a missing member is
-/// refused unless it is declared `T?`. Member values recurse back through
+/// Every declared member is the type's identity, so a member the type does not
+/// declare is refused instead of being stored, and a missing member is refused
+/// unless it is declared `T?`. Member values recurse back through
 /// [`coerce_value`], so a nested class, list or scalar is checked the same way
 /// as a top-level column and its error keeps the field path. A missing `T?`
 /// member is normalized to an explicit null so the stored record and a re-read
@@ -260,8 +260,9 @@ fn coerce_class_record(
     depth: u8,
     path: &str,
 ) -> Result<Value> {
-    let class = target.canonical_path.last().map(String::as_str).unwrap_or_default();
-    let location = if path.is_empty() { format!("class `{class}`") } else { format!("class `{class}` member `{path}`") };
+    let name = target.canonical_path.last().map(String::as_str).unwrap_or_default();
+    let label = if target.kind == schema_types::TypeContractKind::Structure { "structure" } else { "class" };
+    let location = if path.is_empty() { format!("{label} `{name}`") } else { format!("{label} `{name}` member `{path}`") };
     let fields = match value {
         Value::Row(fields) => fields,
         other => {
