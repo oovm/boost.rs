@@ -107,6 +107,10 @@ pub enum MessageType {
     PerfReport,
     /// 性能快照回复（body：JSON）。
     PerfReportOk,
+    /// 客户端显式关闭会话并释放其租约。
+    SessionClose,
+    /// 会话已关闭（连接随后由服务端关闭）。
+    SessionCloseOk,
     /// 错误回复。
     Error,
     /// 未识别类型（仍按帧发出，便于对端回 Error）。
@@ -155,6 +159,8 @@ impl MessageType {
             36 => Self::TxnReleaseOk,
             37 => Self::PerfReport,
             38 => Self::PerfReportOk,
+            39 => Self::SessionClose,
+            40 => Self::SessionCloseOk,
             255 => Self::Error,
             other => Self::Unknown(other),
         }
@@ -201,6 +207,8 @@ impl MessageType {
             Self::TxnReleaseOk => 36,
             Self::PerfReport => 37,
             Self::PerfReportOk => 38,
+            Self::SessionClose => 39,
+            Self::SessionCloseOk => 40,
             Self::Error => 255,
             Self::Unknown(code) => code,
         }
@@ -234,6 +242,7 @@ pub fn response_type(request: MessageType) -> Option<MessageType> {
         MessageType::TxnRollbackTo => Some(MessageType::TxnRollbackToOk),
         MessageType::TxnRelease => Some(MessageType::TxnReleaseOk),
         MessageType::PerfReport => Some(MessageType::PerfReportOk),
+        MessageType::SessionClose => Some(MessageType::SessionCloseOk),
         _ => None,
     }
 }
@@ -2051,6 +2060,28 @@ pub fn decode_savepoint_name(body: &[u8]) -> Result<String> {
     std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("savepoint name is not utf-8")).map(|name| name.to_owned())
 }
 
+// ─── 会话关闭 ──────────────────────────────────────────────────────────────
+
+/// 编码 `SessionClose` 的可选原因文本。
+///
+/// 原因只用于诊断；服务端按帧本身释放会话与租约，不解析原因做分支。
+pub fn encode_session_close(reason: Option<&str>) -> Vec<u8> {
+    let mut body = Vec::new();
+    push_bytes(&mut body, reason.unwrap_or_default().as_bytes());
+    body
+}
+
+/// 解码 `SessionClose` 原因（空文本视为 `None`）。
+pub fn decode_session_close(body: &[u8]) -> Result<Option<String>> {
+    let mut offset = 0;
+    let len = read_u32(body, &mut offset)?;
+    let bytes = read_bytes(body, &mut offset, len)?;
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    std::str::from_utf8(bytes).map(|reason| Some(reason.to_owned())).map_err(|_| Error::Corrupt("session close reason is not utf-8"))
+}
+
 /// 把 `host:port` / `[::1]:port` 拆成主机与端口。
 pub fn split_bind(bind: &str) -> Result<(String, u16)> {
     let bind = bind.trim();
@@ -2090,6 +2121,7 @@ mod tests {
             MessageType::TxnRollbackTo,
             MessageType::TxnRelease,
             MessageType::PerfReport,
+            MessageType::SessionClose,
         ];
         for request in requests {
             let response = response_type(request).unwrap_or_else(|| panic!("{request:?} must have a response type"));
@@ -2111,6 +2143,13 @@ mod tests {
         let body = encode_authenticate_ok("session-token-42");
         assert_eq!(decode_authenticate_ok(&body).expect("decode"), "session-token-42");
         assert!(decode_authenticate_ok(&[1, 0, 0]).is_err());
+    }
+
+    #[test]
+    fn session_close_reason_roundtrips_and_empty_is_none() {
+        assert_eq!(decode_session_close(&encode_session_close(Some("client closed"))).expect("decode"), Some("client closed".to_owned()));
+        assert_eq!(decode_session_close(&encode_session_close(None)).expect("decode"), None);
+        assert_eq!(decode_session_close(&[]).expect_err("truncated body").code(), "database.corrupt");
     }
 
     #[test]
