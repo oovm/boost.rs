@@ -423,13 +423,15 @@ fn reference_key_type(contract: &schema_types::ResolvedContract, type_id: u64) -
 /// Maps a canonical VOS scalar to the exact 本地 execution scalar.
 ///
 /// Only scalars whose storage semantics 本地 already owns are accepted. Narrow
-/// integers, floats, `utf16` and `uuid` have no execution type here, so they
-/// return [`Error::Schema`] instead of widening, merging or silently dropping
-/// the declared scalar.
+/// integers, `f32`, `utf16` and wider integers have no execution type here, so
+/// they return [`Error::Schema`] instead of widening, merging or silently
+/// dropping the declared scalar. `f64` is accepted because the row codec and
+/// coercion path already carry [`Value::F64`].
 pub fn execution_type_for_scalar(scalar: schema_types::CanonicalScalar) -> Result<Type> {
     use schema_types::CanonicalScalar;
     match scalar {
         CanonicalScalar::I64 => Ok(Type::I64),
+        CanonicalScalar::F64 => Ok(Type::F64),
         CanonicalScalar::Bool => Ok(Type::Bool),
         CanonicalScalar::Utf8 => Ok(Type::Text),
         CanonicalScalar::Bytes => Ok(Type::Bytes),
@@ -453,6 +455,7 @@ pub fn canonical_scalar_for_execution_type(ty: &Type) -> Result<schema_types::Ca
     use schema_types::CanonicalScalar;
     match ty {
         Type::I64 => Ok(CanonicalScalar::I64),
+        Type::F64 => Ok(CanonicalScalar::F64),
         Type::Bool => Ok(CanonicalScalar::Bool),
         Type::Text => Ok(CanonicalScalar::Utf8),
         Type::Bytes => Ok(CanonicalScalar::Bytes),
@@ -715,6 +718,12 @@ mod row_schema_tests {
             NamedValueLayout::Structure { revision, .. } => *revision,
             other => panic!("expected a structure layout, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn f64_scalars_map_to_the_real_execution_type() {
+        assert_eq!(execution_type_for_scalar(schema_types::CanonicalScalar::F64).unwrap(), Type::F64);
+        assert_eq!(canonical_scalar_for_execution_type(&Type::F64).unwrap(), schema_types::CanonicalScalar::F64);
     }
 
     #[test]

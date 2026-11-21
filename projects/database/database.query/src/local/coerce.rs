@@ -586,7 +586,10 @@ fn coerce_vector(value: Value, dimension: u32) -> Result<Value> {
             }
             Ok(Value::Vector(vector))
         }
-        other => Err(coerce_error(format!("column type `vector<{dimension}>` requires a vector value, got `{}`", other.kind()))),
+        other => Err(coerce_error(format!(
+            "unsupported scalar value: column type `vector<{dimension}>` requires a vector value, got `{}`",
+            other.kind()
+        ))),
     }
 }
 

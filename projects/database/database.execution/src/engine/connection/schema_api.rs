@@ -394,5 +394,7 @@ fn rebind_identities(state: &super::State, projection: &schema_types::SchemaProj
 }
 
 fn schema_mismatch() -> Error {
-    Error::Schema { message: "schema document does not match the durable catalog -- call migrate_schema to advance the version".into() }
+    Error::Schema {
+        message: "schema document changed -- call migrate_schema to advance the version".into(),
+    }
 }

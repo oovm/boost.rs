@@ -257,9 +257,13 @@ fn split_collect(expr: &VosExpr) -> Result<VosExpr> {
                 }
                 Ok(object.as_ref().clone())
             }
-            _ => Err(query_error("read pipelines must end in `.collect()`")),
+            _ => Err(query_error(
+                "read pipelines ending in `.collect()` are executable; `.count()` and `.get(key)` are the other terminals",
+            )),
         },
-        _ => Err(query_error("read pipelines must end in `.collect()`")),
+        _ => Err(query_error(
+            "read pipelines ending in `.collect()` are executable; `.count()` and `.get(key)` are the other terminals",
+        )),
     }
 }
 

@@ -21,6 +21,8 @@ pub enum Type {
     Bool,
     /// Signed 64-bit integer.
     I64,
+    /// IEEE-754 binary64 REAL value.
+    F64,
     /// UTF-8 text value.
     Text,
     /// Opaque bytes.
