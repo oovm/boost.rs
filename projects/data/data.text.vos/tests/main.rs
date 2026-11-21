@@ -89,6 +89,49 @@ fn operation_declaration_slices_keep_exact_source_spans() {
 }
 
 #[test]
+fn quoted_identifiers_name_the_same_declaration_as_plain_ones() {
+    let plain = parse("table User { id: uuid, }").expect("plain identifiers parse");
+    let quoted = parse("table `User` { `id`: uuid, }").expect("backticks quote identifiers");
+    assert_eq!(quoted.declarations[0].name, plain.declarations[0].name);
+    assert_eq!(quoted.declarations[0].name.as_deref(), Some("User"));
+    assert_eq!(quoted.declarations[0].fields[0].name, "id");
+
+    let keyword = parse("table `class` { `table`: utf8, }").expect("a keyword can be a quoted name");
+    assert_eq!(keyword.declarations[0].name.as_deref(), Some("class"));
+    assert_eq!(keyword.declarations[0].fields[0].name, "table");
+
+    let mut restored = String::new();
+    append_text(&quoted.syntax, &mut restored);
+    assert_eq!(restored, "table `User` { `id`: uuid, }");
+}
+
+#[test]
+fn quoted_identifiers_require_a_closing_backtick() {
+    for source in ["table `User { id: uuid, }", "table T { `id: utf8 }", "table T { ``: utf8 }"] {
+        assert!(parse(source).is_err(), "accepted malformed quoted identifier: {source}");
+    }
+}
+
+#[test]
+fn line_comments_treat_backticks_and_slashes_as_text() {
+    let source = "// keep `raw` text and // inner slashes\ntable T { id: utf8, // trailing `x`\n# hash `y`\n}";
+    let root = parse(source).expect("comment text is inert");
+    assert_eq!(root.declarations[0].name.as_deref(), Some("T"));
+    assert_eq!(root.declarations[0].fields[0].name, "id");
+
+    let mut restored = String::new();
+    append_text(&root.syntax, &mut restored);
+    assert_eq!(restored, source);
+}
+
+#[test]
+fn a_lone_slash_stays_an_operator() {
+    let program = parse_program("a / b").expect("division is not a comment");
+    assert!(matches!(program.result, Some(VosExpr::Binary { op: VosBinaryOp::Div, .. })));
+}
+
+
+#[test]
 fn rejects_lexical_errors_before_vos_semantic_lowering() {
     let error = parse("table User { name: utf8; \0 }").expect_err("Oak rejects NUL");
     assert!(!error.is_empty());

@@ -8,8 +8,13 @@ pub type VosToken = Token<VosTokenType>;
 pub enum VosTokenType {
     /// Ignored whitespace.
     Whitespace,
-    /// `#` line comments.
+    /// `#` and `//` line comments.
     Comment,
+    /// A backtick that quotes an identifier, so a keyword can be used as a name.
+    ///
+    /// The quotes are trivia: `` `table` `` and `table` name the same
+    /// declaration, and the identifier token between them keeps the inner text.
+    Quote,
     /// End of input.
     Eof,
     /// Identifier.
@@ -97,7 +102,7 @@ impl TokenType for VosTokenType {
     const END_OF_STREAM: Self = Self::Eof;
 
     fn is_ignored(&self) -> bool {
-        matches!(self, Self::Whitespace | Self::Comment)
+        matches!(self, Self::Whitespace | Self::Comment | Self::Quote)
     }
 
     fn is_comment(&self) -> bool {
@@ -114,6 +119,7 @@ impl TokenType for VosTokenType {
             Self::Comment => UniversalTokenRole::Comment,
             Self::Eof => UniversalTokenRole::Eof,
             Self::Error => UniversalTokenRole::Error,
+            Self::Quote => UniversalTokenRole::Punctuation,
             Self::Identifier => UniversalTokenRole::Name,
             Self::Operator => UniversalTokenRole::Operator,
             Self::StringLiteral | Self::NumberLiteral | Self::BooleanLiteral | Self::NullLiteral => UniversalTokenRole::Literal,

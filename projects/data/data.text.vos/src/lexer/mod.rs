@@ -49,6 +49,40 @@ impl VosLexer {
         state.add_token(kind, start, state.get_position());
     }
 
+    /// Scans a backtick-quoted identifier such as `` `table` ``.
+    ///
+    /// The quotes are spelled as [`VosTokenType::Quote`] trivia and the inner
+    /// text keeps the identifier token, so a quoted name and an unquoted one
+    /// resolve to the same declaration. Quoting exists for names that collide
+    /// with a declaration keyword, so a quoted run is never classified as one.
+    fn scan_quoted_identifier<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
+        let start = state.get_position();
+        state.advance(1);
+        state.add_token(VosTokenType::Quote, start, state.get_position());
+        let inner = state.get_position();
+        while let Some(ch) = state.peek() {
+            if ch == '`' || ch == '\n' || ch == '\r' {
+                break;
+            }
+            state.advance(ch.len_utf8());
+        }
+        let inner_end = state.get_position();
+        if inner_end > inner {
+            state.add_token(VosTokenType::Identifier, inner, inner_end);
+        }
+        else {
+            state.add_error(data_text_core::TextError::expected_token("identifier", inner, None));
+        }
+        if state.peek() == Some('`') {
+            let close = state.get_position();
+            state.advance(1);
+            state.add_token(VosTokenType::Quote, close, state.get_position());
+        }
+        else {
+            state.add_error(data_text_core::TextError::unexpected_eof(inner_end, None));
+        }
+    }
+
     fn scan_string<'a, S: Source + ?Sized>(&self, state: &mut State<'a, S>) {
         let start = state.get_position();
         let quote = state.peek().expect("string starts with a quote");
@@ -105,6 +139,25 @@ impl Lexer<VosLanguage> for VosLexer {
                     state.advance(next.len_utf8());
                 }
                 state.add_token(VosTokenType::Comment, start, state.get_position());
+            }
+            else if ch == '/' {
+                state.advance(ch.len_utf8());
+                if state.peek() == Some('/') {
+                    state.advance(1);
+                    while let Some(next) = state.peek() {
+                        if next == '\n' || next == '\r' {
+                            break;
+                        }
+                        state.advance(next.len_utf8());
+                    }
+                    state.add_token(VosTokenType::Comment, start, state.get_position());
+                }
+                else {
+                    state.add_token(VosTokenType::Operator, start, state.get_position());
+                }
+            }
+            else if ch == '`' {
+                self.scan_quoted_identifier(&mut state);
             }
             else if ch.is_alphabetic() || ch == '_' {
                 self.scan_identifier(&mut state);
