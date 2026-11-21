@@ -6,7 +6,7 @@
 
 use std::{
     io::{BufRead, BufReader, Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -181,6 +181,11 @@ impl Session {
     /// 发一条命令并断言它回 `+OK`。
     fn ok(&mut self, arguments: &[&str]) {
         assert_eq!(self.call(arguments), Value::Simple("OK".to_string()), "{arguments:?}");
+    }
+
+    /// 直接关闭连接，模拟客户端在阻塞命令上不做任何协商就断开。
+    fn disconnect(self) {
+        let _ = self.writer.shutdown(Shutdown::Both);
     }
 }
 
@@ -469,4 +474,108 @@ fn a_blocking_command_answers_empty_once_its_timeout_elapses() {
     wait_for_blocked(&mut peer, 1);
     assert_eq!(blocked.receive(), Value::Array(None), "an elapsed timeout answers the empty reply");
     wait_for_blocked(&mut peer, 0);
+}
+
+/// 轮询 `INFO clients`，等 watch 投影到达期望值。
+fn wait_for_watch_projection(observer: &mut Session, clients: i64, keys: i64) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let info = observer.call(&["INFO", "clients"]).bulk();
+        if info.contains(&format!("watching_clients:{clients}")) && info.contains(&format!("total_watched_keys:{keys}")) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "watch projection never reached watching_clients={clients}, total_watched_keys={keys}: {info}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn watched_keys_are_projected_into_info_clients_and_client_list() {
+    let gateway = Gateway::start("watch-projection");
+    let mut watcher = gateway.connect();
+    let mut peer = gateway.connect();
+    let Value::Integer(watcher_id) = watcher.call(&["CLIENT", "ID"])
+    else {
+        panic!("CLIENT ID must answer an integer");
+    };
+
+    // 没有 watch 的连接不计数。
+    wait_for_watch_projection(&mut peer, 0, 0);
+
+    watcher.ok(&["WATCH", "one", "two"]);
+    wait_for_watch_projection(&mut peer, 1, 2);
+    let list = peer.call(&["CLIENT", "LIST"]).bulk();
+    let line = list.lines().find(|line| line.contains(&format!("id={watcher_id} "))).expect("the watcher must appear in CLIENT LIST");
+    assert!(line.contains("watch=2"), "{line}");
+
+    // 重复 WATCH 同一个键保留原修订号，也不额外计数。
+    watcher.ok(&["WATCH", "one"]);
+    wait_for_watch_projection(&mut peer, 1, 2);
+
+    // `UNWATCH` 释放全部钉住的键。
+    watcher.ok(&["UNWATCH"]);
+    wait_for_watch_projection(&mut peer, 0, 0);
+    let list = peer.call(&["CLIENT", "LIST"]).bulk();
+    let line = list.lines().find(|line| line.contains(&format!("id={watcher_id} "))).expect("still connected");
+    assert!(line.contains("watch=0"), "{line}");
+
+    // `EXEC` 之后 watch 列表同样被释放。
+    watcher.ok(&["WATCH", "one"]);
+    wait_for_watch_projection(&mut peer, 1, 1);
+    watcher.ok(&["MULTI"]);
+    assert_eq!(watcher.call(&["PING"]), Value::Simple("QUEUED".to_string()));
+    assert!(matches!(watcher.call(&["EXEC"]), Value::Array(Some(_))));
+    wait_for_watch_projection(&mut peer, 0, 0);
+}
+
+#[test]
+fn a_client_that_disconnects_while_blocked_leaves_the_wait_table() {
+    let gateway = Gateway::start("blocked-disconnect");
+    let mut blocked = gateway.connect();
+    let mut peer = gateway.connect();
+    let Value::Integer(blocked_id) = blocked.call(&["CLIENT", "ID"])
+    else {
+        panic!("CLIENT ID must answer an integer");
+    };
+    // 无限超时的阻塞命令：没有外部 UNBLOCK 时，只有连接层自己的探测能让线程退出。
+    blocked.send(&["BLPOP", "jobs", "0"]);
+    wait_for_blocked(&mut peer, 1);
+    assert!(peer.call(&["INFO", "clients"]).bulk().contains("total_blocking_keys:1"));
+
+    blocked.disconnect();
+
+    wait_for_blocked(&mut peer, 0);
+    let info = peer.call(&["INFO", "clients"]).bulk();
+    assert!(info.contains("total_blocking_keys:0"), "{info}");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let list = peer.call(&["CLIENT", "LIST"]).bulk();
+        if !list.contains(&format!("id={blocked_id} ")) {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the disconnected blocker must leave CLIENT LIST: {list}");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_missed_srem_leaves_the_watch_intact_and_a_hit_aborts() {
+    let gateway = Gateway::start("watch-srem");
+    let mut client = gateway.connect();
+    assert_eq!(client.call(&["SADD", "myset", "a"]), Value::Integer(1));
+    client.ok(&["WATCH", "myset"]);
+    // 未命中的 `SREM` 不改集合内容，真机不把它算作修改。
+    assert_eq!(client.call(&["SREM", "myset", "missing"]), Value::Integer(0));
+    client.ok(&["MULTI"]);
+    assert_eq!(client.call(&["SADD", "myset", "b"]), Value::Simple("QUEUED".to_string()));
+    assert_eq!(client.call(&["EXEC"]), Value::Array(Some(vec![Value::Integer(1)])), "a missed SREM must not abort");
+
+    client.ok(&["WATCH", "myset"]);
+    assert_eq!(client.call(&["SREM", "myset", "a"]), Value::Integer(1));
+    client.ok(&["MULTI"]);
+    assert_eq!(client.call(&["SADD", "myset", "c"]), Value::Simple("QUEUED".to_string()));
+    assert_eq!(client.call(&["EXEC"]), Value::Array(None), "a hit SREM must abort the transaction");
 }

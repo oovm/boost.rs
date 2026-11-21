@@ -31,12 +31,39 @@ pub struct ClientSink {
     stream: Mutex<TcpStream>,
     protocol: AtomicU8,
     stopping: Option<Arc<AtomicBool>>,
+    /// 写侧来自非阻塞 socket，可安全做不消耗字节的对端存活探测。
+    pollable: bool,
 }
 
 impl ClientSink {
     /// Wraps the write half of a connection, starting on RESP2.
+    ///
+    /// 阻塞模式打开的 socket 上 `peek` 会等数据，因此这类写侧不做存活探测。
     pub fn new(stream: TcpStream, stopping: Option<Arc<AtomicBool>>) -> Self {
-        Self { stream: Mutex::new(stream), protocol: AtomicU8::new(2), stopping }
+        Self { stream: Mutex::new(stream), protocol: AtomicU8::new(2), stopping, pollable: false }
+    }
+
+    /// Wraps the write half of a connection whose socket is in non-blocking mode.
+    pub fn new_polling(stream: TcpStream, stopping: Option<Arc<AtomicBool>>) -> Self {
+        Self { stream: Mutex::new(stream), protocol: AtomicU8::new(2), stopping, pollable: true }
+    }
+
+    /// 该写侧能否做对端存活探测。
+    pub fn pollable(&self) -> bool {
+        self.pollable
+    }
+
+    /// 非阻塞地探测对端是否已关闭，不消耗客户端已发送的字节。
+    ///
+    /// 只对非阻塞 socket 有意义：`peek` 拿到 `Ok(0)` 即对端关闭（或已 `shutdown`）。
+    /// 有未读数据时返回 `false`，因为此时还看不出连接是否已经断开。
+    pub fn peer_closed(&self) -> bool {
+        if !self.pollable {
+            return false;
+        }
+        let stream = self.lock();
+        let mut byte = [0_u8; 1];
+        matches!(stream.peek(&mut byte), Ok(0))
     }
 
     /// Protocol version the connection negotiated through `HELLO`.

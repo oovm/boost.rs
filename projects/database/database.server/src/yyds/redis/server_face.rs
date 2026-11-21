@@ -66,6 +66,8 @@ pub(crate) struct ClientState {
     multi: Option<usize>,
     /// 连接当前是否停在一条阻塞命令上，`CLIENT LIST` 的 `flags=b` 使用。
     blocked: bool,
+    /// 连接钉住的逻辑键数，`CLIENT LIST` 的 `watch=` 使用。
+    watched: usize,
     /// `CLIENT NO-EVICT` 的开关状态，目前只记录不回显。
     no_evict: bool,
     /// `CLIENT NO-TOUCH` 的开关状态，目前只记录不回显。
@@ -122,6 +124,7 @@ impl ClientRecord {
                 last_activity: now,
                 multi: None,
                 blocked: false,
+                watched: 0,
                 no_evict: false,
                 no_touch: false,
             }),
@@ -181,6 +184,28 @@ impl ClientRecord {
         self.lock().blocked = blocked;
     }
 
+    /// `WATCH` / `UNWATCH` / `EXEC` 之后同步 `CLIENT LIST` 的 `watch=` 与 `INFO` 的汇总。
+    pub(crate) fn set_watching(&self, watched: usize) {
+        self.lock().watched = watched;
+    }
+
+    /// 当前钉住的逻辑键数，`INFO clients` 汇总时读取。
+    pub(crate) fn watched(&self) -> usize {
+        self.lock().watched
+    }
+
+    /// 探测对端是否已关闭，阻塞等待期间用它感知客户端直接断开。
+    ///
+    /// 无 socket 的嵌入式会话与阻塞模式 socket 都无法探测，返回 `false`。
+    pub(crate) fn peer_closed(&self) -> bool {
+        self.sink.as_ref().is_some_and(|sink| sink.peer_closed())
+    }
+
+    /// 阻塞等待的 socket 探测间隔；写侧不可探测时返回 `None`。
+    pub(crate) fn blocked_poll_interval(&self) -> Option<std::time::Duration> {
+        self.sink.as_ref().filter(|sink| sink.pollable()).map(|_| super::connection::BLOCKED_POLL_INTERVAL)
+    }
+
     fn set_flag(&self, evict: bool, on: bool) {
         let mut state = self.lock();
         if evict {
@@ -228,7 +253,7 @@ impl ClientRecord {
             flags.push('b');
         }
         format!(
-            "id={} addr={} laddr={} fd={} name={} age={} idle={} flags={flags} db={} sub={} psub={} ssub=0 multi={} watch=0 \
+            "id={} addr={} laddr={} fd={} name={} age={} idle={} flags={flags} db={} sub={} psub={} ssub=0 multi={} watch={} \
              qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 omem-shared=0 omem-unshared=0 \
              tot-mem=0 events=r cmd={} user=default redir=-1 resp={} lib-name={} lib-ver={} io-thread=0 tot-net-in=0 tot-net-out=0 \
              tot-cmds={} read-events=0 avg-pipeline-len-sum=0 avg-pipeline-len-cnt=0",
@@ -243,6 +268,7 @@ impl ClientRecord {
             sub,
             psub,
             state.multi.map_or(-1, |queued| queued as i64),
+            state.watched,
             state.last_command,
             state.protocol,
             lib_name,
@@ -401,6 +427,16 @@ impl ClientRegistry {
 
     fn count(&self) -> usize {
         self.lock().len()
+    }
+
+    /// 至少钉住一个键的连接数，`INFO clients` 的 `watching_clients` 使用。
+    fn watching_clients(&self) -> usize {
+        self.snapshot().iter().filter(|entry| entry.watched() > 0).count()
+    }
+
+    /// 所有连接钉住的逻辑键总数，`INFO clients` 的 `total_watched_keys` 使用。
+    fn total_watched_keys(&self) -> usize {
+        self.snapshot().iter().map(|entry| entry.watched()).sum()
     }
 
     /// 统计一条命令，`INFO stats` 的 `total_commands_processed` 使用。
@@ -1056,10 +1092,10 @@ fn info_clients(registry: &ClientRegistry, pubsub: &PubSubState) -> String {
         format!("blocked_clients:{}", registry.blocking().blocked_clients()),
         "tracking_clients:0".into(),
         format!("pubsub_clients:{subscribers}"),
-        "watching_clients:0".into(),
+        format!("watching_clients:{}", registry.watching_clients()),
         "clients_in_timeout_table:0".into(),
         format!("active_clients:{clients}"),
-        "total_watched_keys:0".into(),
+        format!("total_watched_keys:{}", registry.total_watched_keys()),
         format!("total_blocking_keys:{}", registry.blocking().total_blocking_keys()),
         "total_blocking_keys_on_nokey:0".into(),
         String::new(),
@@ -1624,6 +1660,7 @@ impl EmbeddedServerFace {
             }
             self.state.session.discard();
             self.state.record.set_multi(None);
+            self.state.project_watch();
             self.state.protocol = 2;
             self.state.record.set_protocol(2);
             self.database = 0;
@@ -1666,6 +1703,7 @@ impl EmbeddedServerFace {
             }
             self.state.session.discard();
             self.state.record.set_multi(None);
+            self.state.project_watch();
             self.answer(stream, &mut outcome, Reply::ok())?;
             outcome.in_multi = false;
             return Ok(outcome);
@@ -1680,6 +1718,7 @@ impl EmbeddedServerFace {
                 return Ok(outcome);
             }
             self.state.session.unwatch();
+            self.state.project_watch();
             self.answer(stream, &mut outcome, Reply::ok())?;
             return Ok(outcome);
         }
@@ -1829,6 +1868,7 @@ impl EmbeddedServerFace {
             let revision = key_revision(executor, &namespace, key).map_err(io::Error::other)?;
             self.state.session.watch(&namespace, key, revision);
         }
+        self.state.project_watch();
         self.answer(stream, &mut outcome, Reply::ok())?;
         Ok(outcome)
     }
@@ -1852,6 +1892,7 @@ impl EmbeddedServerFace {
         let watched = self.state.session.watched().to_vec();
         let queue = self.state.session.finish_exec();
         self.state.record.set_multi(None);
+        self.state.project_watch();
         outcome.in_multi = false;
         if dirty {
             self.answer_error(

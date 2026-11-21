@@ -45,6 +45,9 @@ use super::{
     server_face::{self, ClientRecord, ClientRegistry, command_context},
 };
 
+/// 阻塞命令等待期间探测对端是否断开的间隔。
+pub(crate) const BLOCKED_POLL_INTERVAL: Duration = Duration::from_millis(20);
+
 /// Per-connection state carried across RESP2 frames.
 ///
 /// Session-scoped by design: the transaction queue and watch list belong to a single
@@ -74,6 +77,42 @@ impl ConnectionState {
     pub(crate) fn replaying(record: Arc<ClientRecord>, protocol: u8) -> Self {
         Self { protocol, session: TransactionSession::deferred(), record }
     }
+
+    /// 把当前 watch 列表投影到共享连接记录。
+    ///
+    /// `CLIENT LIST` 的 `watch=` 与 `INFO clients` 的 `watching_clients` /
+    /// `total_watched_keys` 读取的都是这份投影；watch 列表只归本连接的会话所有，
+    /// 因此每次 `WATCH` / `UNWATCH` / `EXEC` / `DISCARD` / `RESET` 之后都要重新投影。
+    pub(crate) fn project_watch(&self) {
+        self.record.set_watching(watched_key_count(&self.session));
+    }
+}
+
+/// 连接当前钉住的逻辑键数。
+///
+/// `WATCH` 会按值种类把同一个逻辑键钉在六个命名空间上，计数要按「逻辑库 + 键」去重，
+/// 与真机 `watch=` 与 `total_watched_keys` 的口径一致；不同 `SELECT` 库上的同名键
+/// 属于不同的键，所以库也参与去重。
+fn watched_key_count(session: &TransactionSession) -> usize {
+    if session.watched().is_empty() {
+        return 0;
+    }
+    let mut logical: Vec<(String, &[u8])> = Vec::new();
+    for entry in session.watched() {
+        let mut base = entry.namespace.0.as_str();
+        for kind in collections::KeyKind::ALL {
+            let suffix = format!(":{}", kind.name());
+            if let Some(stripped) = base.strip_suffix(&suffix) {
+                base = stripped;
+                break;
+            }
+        }
+        let slot = (base.to_owned(), entry.key.as_slice());
+        if !logical.contains(&slot) {
+            logical.push(slot);
+        }
+    }
+    logical.len()
 }
 
 /// Serves one bounded RESP2 connection with a 30-second I/O timeout.
@@ -104,7 +143,7 @@ pub fn serve_cancellable(stream: TcpStream, limits: RequestLimits, stopping: Arc
     stream.set_nonblocking(true)?;
     let (remote, local) = socket_pair(&stream);
     let reader = CancellableSocket { stream: stream.try_clone()?, stopping: Arc::clone(&stopping) };
-    let sink = Arc::new(ClientSink::new(stream, Some(stopping)));
+    let sink = Arc::new(ClientSink::new_polling(stream, Some(stopping)));
     serve_io(
         reader,
         sink,
@@ -129,7 +168,7 @@ pub fn serve_cancellable_with_executor(
     stream.set_nonblocking(true)?;
     let (remote, local) = socket_pair(&stream);
     let reader = CancellableSocket { stream: stream.try_clone()?, stopping: Arc::clone(&stopping) };
-    let sink = Arc::new(ClientSink::new(stream, Some(stopping)));
+    let sink = Arc::new(ClientSink::new_polling(stream, Some(stopping)));
     serve_io(
         reader,
         sink,
@@ -166,7 +205,7 @@ pub fn serve_cancellable_with_executor_and_tracker(
     stream.set_nonblocking(true)?;
     let (remote, local) = socket_pair(&stream);
     let reader = CancellableSocket { stream: stream.try_clone()?, stopping: Arc::clone(&stopping) };
-    let sink = Arc::new(ClientSink::new(stream, Some(stopping)));
+    let sink = Arc::new(ClientSink::new_polling(stream, Some(stopping)));
     serve_io(reader, sink, remote, local, limits, Some(executor), tracker, registry, pubsub, clients)
 }
 
@@ -376,6 +415,8 @@ fn handle_watch(
             let revision = match session::key_revision(executor, &kind_namespace, key) {
                 Ok(revision) => revision,
                 Err(message) => {
+                    // 已经钉住的键照样属于这条连接，先把投影对齐再回错误。
+                    state.project_watch();
                     write_error(stream, &message)?;
                     return Ok(());
                 }
@@ -386,6 +427,7 @@ fn handle_watch(
             state.session.watch(&kind_namespace, key, revision);
         }
     }
+    state.project_watch();
     stream.write_all(b"+OK\r\n")
 }
 
@@ -396,6 +438,7 @@ fn handle_unwatch(stream: &mut dyn Write, count: usize, state: &mut ConnectionSt
         return Ok(());
     }
     state.session.unwatch();
+    state.project_watch();
     stream.write_all(b"+OK\r\n")
 }
 
@@ -465,6 +508,7 @@ fn respond(
         if state.session.multi_error() {
             state.session.discard();
             state.record.set_multi(None);
+            state.project_watch();
             stream.write_all(b"-EXECABORT Transaction discarded because of previous errors.\r\n")?;
             return Ok(true);
         }
@@ -482,12 +526,14 @@ fn respond(
                     write_null_array(stream, state.protocol)?;
                     state.session.discard();
                     state.record.set_multi(None);
+                    state.project_watch();
                     return Ok(true);
                 }
                 Err(message) => {
                     write_error(stream, &message)?;
                     state.session.discard();
                     state.record.set_multi(None);
+                    state.project_watch();
                     return Ok(true);
                 }
             }
@@ -507,6 +553,7 @@ fn respond(
         }
         state.session.discard();
         state.record.set_multi(None);
+        state.project_watch();
         stream.write_all(b"+OK\r\n")?;
         return Ok(true);
     }
@@ -639,6 +686,7 @@ fn respond(
         state.record.set_multi(None);
         state.record.set_database(0);
         state.record.set_name(None);
+        state.project_watch();
         sink.set_protocol(2);
         *namespace = Namespace("redis:0".into());
         stream.write_all(b"+RESET\r\n")?;
@@ -789,6 +837,7 @@ fn execute_transaction(
     let protocol = state.protocol;
     // `EXEC` always releases the watched keys, whether the queue was non-empty or not.
     state.record.set_multi(None);
+    state.project_watch();
 
     write!(stream, "*{count}\r\n")?;
 
@@ -897,9 +946,12 @@ fn serve_blocking(
     let table = clients.blocking();
     let slots = table.register(record.id, namespace, &keys);
     record.set_blocked(true);
+    // 阻塞等待期间读循环停在这里，没人再读 socket；只有主动探测才能发现客户端直接断开
+    // 或 `CLIENT KILL`。探测只对非阻塞 socket 的写侧可用，其它连接保持原先的等待方式。
+    let poll = record.blocked_poll_interval();
     let mut observed = table.generation();
     let reply = loop {
-        if record.is_closed() {
+        if record.is_closed() || record.peer_closed() {
             break Reply::NullArray;
         }
         let heads: Vec<usize> = plan
@@ -916,8 +968,17 @@ fn serve_blocking(
                 Err(error) => break error.to_reply(),
             }
         }
-        match table.wait(record.id, deadline, observed) {
-            Wake::TimedOut => break Reply::NullArray,
+        // 一次最多睡一个探测间隔，醒来先重探 socket，再看整体超时是否已到。
+        let now = Instant::now();
+        let slice = match (deadline, poll) {
+            (Some(deadline), Some(interval)) => Some(deadline.min(now + interval)),
+            (Some(deadline), None) => Some(deadline),
+            (None, Some(interval)) => Some(now + interval),
+            (None, None) => None,
+        };
+        match table.wait(record.id, slice, observed) {
+            Wake::TimedOut if deadline.is_some_and(|deadline| Instant::now() >= deadline) => break Reply::NullArray,
+            Wake::TimedOut => {}
             Wake::Unblocked(UnblockMode::Timeout) => break Reply::NullArray,
             Wake::Unblocked(UnblockMode::Error) => {
                 break Reply::Error("UNBLOCKED client unblocked via CLIENT UNBLOCK".to_owned());
