@@ -423,6 +423,44 @@ fn blockers_on_one_key_are_served_in_registration_order() {
 }
 
 #[test]
+fn a_blocking_pop_answers_immediately_when_data_is_present() {
+    let gateway = Gateway::start("blocked-ready");
+    let mut client = gateway.connect();
+    assert_eq!(client.call(&["RPUSH", "jobs", "work"]), Value::Integer(1));
+    assert_eq!(
+        client.call(&["BLPOP", "jobs", "0"]),
+        Value::Array(Some(vec![Value::Bulk(Some(b"jobs".to_vec())), Value::Bulk(Some(b"work".to_vec()))])),
+        "data already in the list must be served without waiting"
+    );
+}
+
+#[test]
+fn a_blocking_sorted_set_pop_waits_for_a_member() {
+    let gateway = Gateway::start("blocked-zset");
+    let mut blocked = gateway.connect();
+    let mut producer = gateway.connect();
+    let Value::Integer(blocked_id) = blocked.call(&["CLIENT", "ID"])
+    else {
+        panic!("CLIENT ID must answer an integer");
+    };
+    blocked.send(&["BZPOPMIN", "scores", "0"]);
+    wait_for_blocked(&mut producer, 1);
+    let list = producer.call(&["CLIENT", "LIST"]).bulk();
+    let line = list.lines().find(|line| line.contains(&format!("id={blocked_id} "))).expect("the blocked connection must appear");
+    assert!(line.contains("flags=Nb"), "{line}");
+    assert!(line.contains("cmd=bzpopmin"), "{line}");
+
+    assert_eq!(producer.call(&["ZADD", "scores", "1", "member"]), Value::Integer(1));
+    match blocked.receive() {
+        Value::Array(Some(values)) => {
+            assert_eq!(values[0], Value::Bulk(Some(b"scores".to_vec())));
+            assert_eq!(values[1], Value::Bulk(Some(b"member".to_vec())));
+        }
+        other => panic!("BZPOPMIN must answer the popped member, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_blocking_command_answers_empty_once_its_timeout_elapses() {
     let gateway = Gateway::start("blocked-timeout");
     let mut blocked = gateway.connect();
