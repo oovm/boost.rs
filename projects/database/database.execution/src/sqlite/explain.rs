@@ -20,12 +20,16 @@ use super::{
 /// The column headers follow SQLite, but the rows describe this tree-walking
 /// interpreter, not a SQLite VDBE program. Opcode names are this engine's
 /// steps, so the rows are not comparable with the real engine's disassembly.
-/// `EXPLAIN QUERY PLAN` reports the accesses that will really run, which is
-/// a scan whenever this engine has no index-driven lookup path.
+/// `EXPLAIN QUERY PLAN` reports the accesses that will really run: an index
+/// seek when this engine's own probe gates narrow the scan through an index,
+/// and a plain scan otherwise. The detail strings follow SQLite's wording
+/// (`SEARCH ... USING INDEX ...`) so the access path is comparable with the
+/// official planner, but the rows still describe this interpreter, not a
+/// SQLite VDBE program.
 pub fn statement(exec: &ExecContext<'_>, query_plan: bool, statement: &Statement) -> Result<ExecResult, SqlError> {
     check_tables(exec, statement, &BTreeSet::new())?;
     let (columns, rows) = if query_plan {
-        (vec!["id".to_string(), "parent".to_string(), "notused".to_string(), "detail".to_string()], self::query_plan(statement))
+        (vec!["id".to_string(), "parent".to_string(), "notused".to_string(), "detail".to_string()], self::query_plan(exec, statement))
     }
     else {
         (
@@ -126,19 +130,19 @@ fn table_known(exec: &ExecContext<'_>, name: &str) -> bool {
 /// Planner rows in SQLite's four-column shape. Ids are allocated here in
 /// visit order and `notused` stays zero because the real value is an
 /// internal bitmap, not an address this engine can produce.
-fn query_plan(statement: &Statement) -> Vec<Vec<Cell>> {
+fn query_plan(exec: &ExecContext<'_>, statement: &Statement) -> Vec<Vec<Cell>> {
     let mut rows = Vec::new();
     let mut next_id = 1_i64;
-    plan_rows(statement, &mut rows, &mut next_id);
+    plan_rows(exec, statement, &mut rows, &mut next_id);
     rows
 }
 
-fn plan_rows(statement: &Statement, rows: &mut Vec<Vec<Cell>>, next_id: &mut i64) {
+fn plan_rows(exec: &ExecContext<'_>, statement: &Statement, rows: &mut Vec<Vec<Cell>>, next_id: &mut i64) {
     match statement {
         Statement::Select { first, compounds, order, .. } => {
-            plan_core(first, rows, next_id);
+            plan_core(exec, first, rows, next_id);
             for term in compounds {
-                plan_core(&term.core, rows, next_id);
+                plan_core(exec, &term.core, rows, next_id);
             }
             if !first.group.is_empty() {
                 push_plan_row(rows, next_id, "USE TEMP B-TREE FOR GROUP BY");
@@ -150,7 +154,7 @@ fn plan_rows(statement: &Statement, rows: &mut Vec<Vec<Cell>>, next_id: &mut i64
                 push_plan_row(rows, next_id, "USE TEMP B-TREE FOR ORDER BY");
             }
         }
-        Statement::Insert { query: Some(query), .. } => plan_rows(query, rows, next_id),
+        Statement::Insert { query: Some(query), .. } => plan_rows(exec, query, rows, next_id),
         Statement::Update { table, from, .. } => {
             push_plan_row(rows, next_id, &format!("SCAN {table}"));
             for source in from {
@@ -160,18 +164,66 @@ fn plan_rows(statement: &Statement, rows: &mut Vec<Vec<Cell>>, next_id: &mut i64
         Statement::Delete { table, .. } => {
             push_plan_row(rows, next_id, &format!("SCAN {table}"));
         }
-        Statement::Explain { statement, .. } => plan_rows(statement, rows, next_id),
+        Statement::Explain { statement, .. } => plan_rows(exec, statement, rows, next_id),
         _ => {}
     }
 }
 
-fn plan_core(core: &SelectCore, rows: &mut Vec<Vec<Cell>>, next_id: &mut i64) {
+fn plan_core(exec: &ExecContext<'_>, core: &SelectCore, rows: &mut Vec<Vec<Cell>>, next_id: &mut i64) {
     if core.from.is_empty() {
         push_plan_row(rows, next_id, "SCAN CONSTANT ROW");
     }
+    let single = core.from.len() == 1;
     for table in &core.from {
-        push_plan_row(rows, next_id, &format!("SCAN {}", table_ref_label(table)));
+        // 与执行层同一套下推门禁:只有单表 `WHERE` 真的会把这次扫描收窄到
+        // 某个索引的候选行时,计划才报告索引访问;否则如实报告全表扫描。
+        let access = if single { index_access(exec, table, &core.filter) } else { None };
+        match access {
+            Some(detail) => push_plan_row(rows, next_id, &detail),
+            None => push_plan_row(rows, next_id, &format!("SCAN {}", table_ref_label(table))),
+        }
     }
+}
+
+/// One index access path, or `None` when the executor would scan the table.
+///
+/// The gates are the executor's own (`index_probe_rows` / `index_range_rows`),
+/// so the reported plan and the rows that really get read cannot disagree: a
+/// poisoned key set, a non-matching affinity or a managed index falls back to
+/// the scan in both places.
+fn index_access(exec: &ExecContext<'_>, table: &TableRef, filter: &Option<Expr>) -> Option<String> {
+    let filter = filter.as_ref()?;
+    let (def, table_ref) = exec.bounded_scan_target(std::slice::from_ref(table))?;
+    let label = table_ref.label();
+    let table_key = def.name.to_ascii_lowercase();
+    for index in exec.catalog.indexes.values() {
+        if index.managed || index.table != table_key {
+            continue;
+        }
+        let Some(position) = index.columns.first().copied()
+        else {
+            continue;
+        };
+        let column = &def.columns[position].name;
+        if exec.index_probe_rows(index, def, filter, label).is_some() {
+            return Some(format!("SEARCH {label} USING INDEX {} ({column}=?)", index.name));
+        }
+        let mut lower = None;
+        let mut upper = None;
+        super::probe::collect_range_bounds(filter, def, label, position, exec.parameters, &mut lower, &mut upper);
+        if exec.index_range_rows(index, def, filter, label).is_some() {
+            let mut terms = Vec::new();
+            if let Some(bound) = &lower {
+                terms.push(format!("{column}{}?", if bound.inclusive { ">=" } else { ">" }));
+            }
+            if let Some(bound) = &upper {
+                terms.push(format!("{column}{}?", if bound.inclusive { "<=" } else { "<" }));
+            }
+            let shape = if terms.is_empty() { String::new() } else { format!(" ({})", terms.join(" AND ")) };
+            return Some(format!("SEARCH {label} USING INDEX {}{shape}", index.name));
+        }
+    }
+    None
 }
 
 /// Stepping program in SQLite's eight-column shape. This engine evaluates a
