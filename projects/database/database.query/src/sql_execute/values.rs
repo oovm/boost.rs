@@ -367,6 +367,8 @@ fn natural_sql_value(value: &database_types::Value) -> SqlValue {
         Value::Text(text) => SqlValue::String(text.clone()),
         Value::Bytes(bytes) => SqlValue::Bytes(bytes.clone()),
         Value::Uuid(id) => SqlValue::String(id.hyphenated().to_string()),
+        // 精确小数按声明精度与标度渲染成十进制文本：它就是数值，不是类型名。
+        Value::Decimal(decimal) => SqlValue::String(decimal.to_plain_string()),
         // 列表与嵌套行只在 `json` 列里出现；这里与 JSON 列共用同一个渲染器。
         Value::List(_) | Value::Row(_) => match super::json::text_of(value) {
             Ok(text) => SqlValue::String(text),
