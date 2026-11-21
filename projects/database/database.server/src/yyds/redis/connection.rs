@@ -35,9 +35,11 @@ use database_execution::cluster::{
         string::{self, KeyAccessTracker, TrackedExecutor},
     },
 };
+use database_protocol_redis::codec::{CommandError, Reply};
 use database_types::cluster::Namespace;
 
 use super::{
+    blocked::{self, BlockingPlan, Family, UnblockMode, Wake},
     pubsub::{ClientSink, PubSubRegistry, SinkRef, encode_ack},
     resp::{FrameError, Request, RequestLimits, decode_request},
     server_face::{self, ClientRecord, ClientRegistry, command_context},
@@ -267,6 +269,9 @@ fn serve_io(
                     if !result? {
                         return Ok(());
                     }
+                    // 一条命令可能写入了阻塞命令等待的数据，也可能叫停了别的连接：唤醒所有
+                    // 等待者重新判定队首并重试取数。
+                    clients.blocking().wake();
                     pending.drain(..consumed);
                 }
                 Ok(None) => break,
@@ -715,9 +720,18 @@ fn respond(
                     stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
                 }
                 else if collections::is_list_command(command) {
-                    let reply =
-                        collections::handle_list(request, executor, namespace, state.protocol, registry, !state.session.defer_blocking())
-                            .unwrap_or_else(|error| error.to_reply());
+                    let reply = collection_reply(
+                        Family::List,
+                        command,
+                        request,
+                        executor,
+                        namespace,
+                        state.protocol,
+                        state.session.defer_blocking(),
+                        registry,
+                        clients,
+                        &state.record,
+                    );
                     stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
                 }
                 else if collections::is_set_command(command) {
@@ -725,7 +739,18 @@ fn respond(
                     stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
                 }
                 else if collections::is_zset_command(command) {
-                    let reply = collections::handle_zset(request, executor, namespace, state.protocol).unwrap_or_else(|error| error.to_reply());
+                    let reply = collection_reply(
+                        Family::Zset,
+                        command,
+                        request,
+                        executor,
+                        namespace,
+                        state.protocol,
+                        state.session.defer_blocking(),
+                        registry,
+                        clients,
+                        &state.record,
+                    );
                     stream.write_all(&database_protocol_redis::codec::encode_reply(&reply, state.protocol))?
                 }
                 else {
@@ -807,6 +832,124 @@ pub(crate) fn subscriber_command_allowed(command: &[u8]) -> bool {
         || command.eq_ignore_ascii_case(b"PING")
         || command.eq_ignore_ascii_case(b"QUIT")
         || command.eq_ignore_ascii_case(b"RESET")
+}
+
+/// 集合族命令的一次分派：阻塞命令停在连接线程里等数据，其余命令按原语义立刻执行。
+///
+/// `defer_blocking` 为真（`EXEC` 复放）时阻塞命令按真机的非阻塞语义回一次结果，不会让
+/// 持有事务的连接睡在键上。
+#[allow(clippy::too_many_arguments)]
+fn collection_reply(
+    family: Family,
+    command: &[u8],
+    request: &Request<'_>,
+    executor: Option<&dyn KeyValueExecutor>,
+    namespace: &Namespace,
+    protocol: u8,
+    defer_blocking: bool,
+    registry: &BlockingRegistry,
+    clients: &ClientRegistry,
+    record: &Arc<ClientRecord>,
+) -> Reply {
+    let Some(executor) = executor
+    else {
+        return CommandError::Failed("unsupported command".to_owned()).to_reply();
+    };
+    match blocked::plan(command, &request.arguments).filter(|plan| plan.family == family) {
+        Some(plan) if !defer_blocking => {
+            serve_blocking(&plan, command, &request.arguments, executor, namespace, protocol, registry, clients, record)
+        }
+        _ => match family {
+            Family::List => collections::handle_list(request, Some(executor), namespace, protocol, registry, !defer_blocking),
+            Family::Zset => collections::handle_zset(request, Some(executor), namespace, protocol),
+        }
+        .unwrap_or_else(|error| error.to_reply()),
+    }
+}
+
+/// 执行一条阻塞命令：先按非阻塞语义取一次，取不到就登记等待，直到数据到达、超时或
+/// `CLIENT UNBLOCK`。
+///
+/// 取数语义仍由集合命令处理器负责，这里只决定「什么时候、用哪些键重试」：只有排在某个键
+/// 队首的连接才有权从该键取数，因此同一键上的等待者按登记顺序被服务。数据只能由别的命令
+/// 写入，所以等待者由命令完成时的广播唤醒，而不是靠轮询。
+#[allow(clippy::too_many_arguments)]
+fn serve_blocking(
+    plan: &BlockingPlan,
+    command: &[u8],
+    arguments: &[&[u8]],
+    executor: &dyn KeyValueExecutor,
+    namespace: &Namespace,
+    protocol: u8,
+    registry: &BlockingRegistry,
+    clients: &ClientRegistry,
+    record: &Arc<ClientRecord>,
+) -> Reply {
+    let owned: Vec<Vec<u8>> = arguments.iter().map(|argument| argument.to_vec()).collect();
+    // 第一次尝试同时完成 arity / 超时 / 类型校验，因此错误在这里就回给客户端。
+    match attempt(plan.family, &owned, executor, namespace, protocol, registry) {
+        Ok(reply) if !empty_reply(&reply) => return reply,
+        Ok(_) => {}
+        Err(error) => return error.to_reply(),
+    }
+    let deadline = blocked::deadline(&plan.timeout);
+    let keys: Vec<&[u8]> = plan.key_indices.iter().map(|index| arguments[*index]).collect();
+    let table = clients.blocking();
+    let slots = table.register(record.id, namespace, &keys);
+    record.set_blocked(true);
+    let mut observed = table.generation();
+    let reply = loop {
+        if record.is_closed() {
+            break Reply::NullArray;
+        }
+        let heads: Vec<usize> = plan
+            .key_indices
+            .iter()
+            .copied()
+            .filter(|index| table.is_head(record.id, &(namespace.clone(), arguments[*index].to_vec())))
+            .collect();
+        if !heads.is_empty() {
+            let rebuilt = blocked::head_arguments(command, arguments, plan, &heads);
+            match attempt(plan.family, &rebuilt, executor, namespace, protocol, registry) {
+                Ok(reply) if !empty_reply(&reply) => break reply,
+                Ok(_) => {}
+                Err(error) => break error.to_reply(),
+            }
+        }
+        match table.wait(record.id, deadline, observed) {
+            Wake::TimedOut => break Reply::NullArray,
+            Wake::Unblocked(UnblockMode::Timeout) => break Reply::NullArray,
+            Wake::Unblocked(UnblockMode::Error) => {
+                break Reply::Error("UNBLOCKED client unblocked via CLIENT UNBLOCK".to_owned());
+            }
+            Wake::Signaled(generation) => observed = generation,
+        }
+    };
+    table.release(record.id, &slots);
+    record.set_blocked(false);
+    reply
+}
+
+/// 按非阻塞语义执行一次阻塞命令，返回处理器给出的回复。
+fn attempt(
+    family: Family,
+    arguments: &[Vec<u8>],
+    executor: &dyn KeyValueExecutor,
+    namespace: &Namespace,
+    protocol: u8,
+    registry: &BlockingRegistry,
+) -> Result<Reply, CommandError> {
+    let borrowed: Vec<&[u8]> = arguments.iter().map(Vec::as_slice).collect();
+    let request = Request { arguments: borrowed, consumed: 0 };
+    match family {
+        Family::List => collections::handle_list(&request, Some(executor), namespace, protocol, registry, false),
+        Family::Zset => collections::handle_zset(&request, Some(executor), namespace, protocol),
+    }
+}
+
+/// 阻塞命令「这一次没取到数据」的回复形状：null bulk 或 null array。
+fn empty_reply(reply: &Reply) -> bool {
+    matches!(reply, Reply::Null | Reply::NullArray)
 }
 
 /// One `SUBSCRIBE` or `PSUBSCRIBE`: registers each name and answers one ack frame per name.

@@ -22,8 +22,7 @@ use database_execution::cluster::{
 };
 use database_query::cluster_kv::{KeyValueCommand, KeyValueResult};
 use database_server::yyds::redis::{
-    connection::serve_cancellable_with_executor_and_tracker, pubsub::PubSubRegistry, resp::RequestLimits,
-    server_face::ClientRegistry,
+    connection::serve_cancellable_with_executor_and_tracker, pubsub::PubSubRegistry, resp::RequestLimits, server_face::ClientRegistry,
 };
 use database_storage::cluster_kv::redis::RedisShard;
 use database_types::cluster::{FenceToken, Namespace};
@@ -305,4 +304,131 @@ fn a_byte_identical_set_still_invalidates_the_watch_of_its_key() {
     client.ok(&["MULTI"]);
     assert_eq!(client.call(&["SET", "plain", "next"]), Value::Simple("QUEUED".to_string()));
     assert_eq!(client.call(&["EXEC"]), Value::Array(None), "an identical SET is still a modification");
+}
+
+/// 轮询 `INFO clients`，等阻塞计数到达期望值。
+fn wait_for_blocked(observer: &mut Session, expected: i64) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let info = observer.call(&["INFO", "clients"]).bulk();
+        let blocked = info.lines().find_map(|line| line.strip_prefix("blocked_clients:")).and_then(|rest| rest.trim().parse::<i64>().ok());
+        if blocked == Some(expected) {
+            return;
+        }
+        assert!(std::time::Instant::now() < deadline, "blocked_clients never reached {expected}: {info}");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_blocked_client_is_projected_and_served_on_the_next_push() {
+    let gateway = Gateway::start("blocked-projection");
+    let mut blocked = gateway.connect();
+    let mut producer = gateway.connect();
+    let Value::Integer(blocked_id) = blocked.call(&["CLIENT", "ID"])
+    else {
+        panic!("CLIENT ID must answer an integer");
+    };
+
+    // 不读回复：这条连接停在 `BLPOP` 上。
+    blocked.send(&["BLPOP", "jobs", "0"]);
+    wait_for_blocked(&mut producer, 1);
+
+    let info = producer.call(&["INFO", "clients"]).bulk();
+    assert!(info.contains("blocked_clients:1"), "{info}");
+    assert!(info.contains("total_blocking_keys:1"), "{info}");
+    let list = producer.call(&["CLIENT", "LIST"]).bulk();
+    let line =
+        list.lines().find(|line| line.contains(&format!("id={blocked_id} "))).expect("the blocked connection must appear in CLIENT LIST");
+    assert!(line.contains("flags=Nb"), "{line}");
+    assert!(line.contains("cmd=blpop"), "{line}");
+
+    assert_eq!(producer.call(&["LPUSH", "jobs", "work"]), Value::Integer(1));
+    assert_eq!(
+        blocked.receive(),
+        Value::Array(Some(vec![Value::Bulk(Some(b"jobs".to_vec())), Value::Bulk(Some(b"work".to_vec()))])),
+        "the pushed element must reach the first waiter"
+    );
+    wait_for_blocked(&mut producer, 0);
+    let list = producer.call(&["CLIENT", "LIST"]).bulk();
+    let line = list.lines().find(|line| line.contains(&format!("id={blocked_id} "))).expect("still connected");
+    assert!(line.contains("flags=N "), "{line}");
+}
+
+#[test]
+fn client_unblock_times_out_the_blocked_command_and_keeps_the_connection() {
+    let gateway = Gateway::start("unblock-timeout");
+    let mut blocked = gateway.connect();
+    let mut peer = gateway.connect();
+    let Value::Integer(blocked_id) = blocked.call(&["CLIENT", "ID"])
+    else {
+        panic!("CLIENT ID must answer an integer");
+    };
+    blocked.send(&["BLPOP", "jobs", "0"]);
+    wait_for_blocked(&mut peer, 1);
+
+    assert_eq!(peer.call(&["CLIENT", "UNBLOCK", &blocked_id.to_string()]), Value::Integer(1));
+    assert_eq!(blocked.receive(), Value::Array(None), "TIMEOUT unblocks with the empty reply");
+    // 解除阻塞后连接继续可用，且不再计入阻塞客户端。
+    assert_eq!(blocked.call(&["PING"]), Value::Simple("PONG".to_string()));
+    wait_for_blocked(&mut peer, 0);
+    assert_eq!(peer.call(&["CLIENT", "UNBLOCK", &blocked_id.to_string()]), Value::Integer(0), "an idle client cannot be unblocked");
+}
+
+#[test]
+fn client_unblock_error_reports_the_unblocked_error() {
+    let gateway = Gateway::start("unblock-error");
+    let mut blocked = gateway.connect();
+    let mut peer = gateway.connect();
+    let Value::Integer(blocked_id) = blocked.call(&["CLIENT", "ID"])
+    else {
+        panic!("CLIENT ID must answer an integer");
+    };
+    blocked.send(&["BLPOP", "jobs", "0"]);
+    wait_for_blocked(&mut peer, 1);
+
+    assert_eq!(peer.call(&["CLIENT", "UNBLOCK", &blocked_id.to_string(), "ERROR"]), Value::Integer(1));
+    match blocked.receive() {
+        Value::Error(message) => assert_eq!(message, "UNBLOCKED client unblocked via CLIENT UNBLOCK"),
+        other => panic!("ERROR unblock must answer an error, got {other:?}"),
+    }
+    assert_eq!(blocked.call(&["PING"]), Value::Simple("PONG".to_string()));
+}
+
+#[test]
+fn blockers_on_one_key_are_served_in_registration_order() {
+    let gateway = Gateway::start("blocked-fifo");
+    let mut first = gateway.connect();
+    let mut second = gateway.connect();
+    let mut producer = gateway.connect();
+
+    first.send(&["BLPOP", "jobs", "0"]);
+    wait_for_blocked(&mut producer, 1);
+    second.send(&["BLPOP", "jobs", "0"]);
+    wait_for_blocked(&mut producer, 2);
+    assert!(producer.call(&["INFO", "clients"]).bulk().contains("total_blocking_keys:1"), "one key, two waiters");
+
+    assert_eq!(producer.call(&["LPUSH", "jobs", "one"]), Value::Integer(1));
+    assert_eq!(
+        first.receive(),
+        Value::Array(Some(vec![Value::Bulk(Some(b"jobs".to_vec())), Value::Bulk(Some(b"one".to_vec()))])),
+        "the earlier waiter must win the first element"
+    );
+    assert_eq!(producer.call(&["LPUSH", "jobs", "two"]), Value::Integer(1));
+    assert_eq!(
+        second.receive(),
+        Value::Array(Some(vec![Value::Bulk(Some(b"jobs".to_vec())), Value::Bulk(Some(b"two".to_vec()))])),
+        "the later waiter must take the second element"
+    );
+}
+
+#[test]
+fn a_blocking_command_answers_empty_once_its_timeout_elapses() {
+    let gateway = Gateway::start("blocked-timeout");
+    let mut blocked = gateway.connect();
+    let mut peer = gateway.connect();
+    blocked.send(&["BLPOP", "jobs", "0.4"]);
+    wait_for_blocked(&mut peer, 1);
+    assert_eq!(blocked.receive(), Value::Array(None), "an elapsed timeout answers the empty reply");
+    wait_for_blocked(&mut peer, 0);
 }

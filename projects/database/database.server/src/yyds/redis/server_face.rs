@@ -34,6 +34,7 @@ use database_storage::cluster_kv::{now_unix_ms, redis::namespace as redis_namesp
 use database_types::cluster::Namespace;
 
 use super::{
+    blocked::{BlockedTable, UnblockMode},
     connection::ConnectionState,
     pubsub::{ClientSink, PubSubState},
     resp::Request,
@@ -63,6 +64,8 @@ pub(crate) struct ClientState {
     last_activity: Instant,
     /// `MULTI` 队列长度；`None` 表示不在事务中，对应真机的 `multi=-1`。
     multi: Option<usize>,
+    /// 连接当前是否停在一条阻塞命令上，`CLIENT LIST` 的 `flags=b` 使用。
+    blocked: bool,
     /// `CLIENT NO-EVICT` 的开关状态，目前只记录不回显。
     no_evict: bool,
     /// `CLIENT NO-TOUCH` 的开关状态，目前只记录不回显。
@@ -118,6 +121,7 @@ impl ClientRecord {
                 protocol: 2,
                 last_activity: now,
                 multi: None,
+                blocked: false,
                 no_evict: false,
                 no_touch: false,
             }),
@@ -172,6 +176,11 @@ impl ClientRecord {
         self.lock().multi = queue;
     }
 
+    /// 阻塞命令进入/结束等待时同步 `CLIENT LIST` 的 `flags=b`。
+    pub(crate) fn set_blocked(&self, blocked: bool) {
+        self.lock().blocked = blocked;
+    }
+
     fn set_flag(&self, evict: bool, on: bool) {
         let mut state = self.lock();
         if evict {
@@ -194,7 +203,7 @@ impl ClientRecord {
     }
 
     /// 是否已被 `CLIENT KILL` 选中。
-    fn is_closed(&self) -> bool {
+    pub(crate) fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Acquire)
     }
 
@@ -213,8 +222,11 @@ impl ClientRecord {
         let name = state.name.as_ref().map(|value| String::from_utf8_lossy(value).into_owned()).unwrap_or_default();
         let lib_name = String::from_utf8_lossy(&state.lib_name).into_owned();
         let lib_ver = String::from_utf8_lossy(&state.lib_ver).into_owned();
-        // 真机把处于订阅态的连接标成 `flags=P`，其余为 `flags=N`。
-        let flags = if sub + psub > 0 { "P" } else { "N" };
+        // 真机在订阅态标 `P`、普通连接标 `N`，停在阻塞命令上时再追加 `b`。
+        let mut flags = String::from(if sub + psub > 0 { "P" } else { "N" });
+        if state.blocked {
+            flags.push('b');
+        }
         format!(
             "id={} addr={} laddr={} fd={} name={} age={} idle={} flags={flags} db={} sub={} psub={} ssub=0 multi={} watch=0 \
              qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 omem-shared=0 omem-unshared=0 \
@@ -257,6 +269,8 @@ pub struct ClientRegistry {
     requirepass: Mutex<Option<String>>,
     /// 服务器级持久化状态：最后保存时刻与后台保存进行中标记。
     persistence: Mutex<PersistenceState>,
+    /// 监听器级阻塞等待表：阻塞命令与 `CLIENT UNBLOCK` 跨连接协调。
+    blocked: BlockedTable,
     started: Instant,
     run_id: String,
     port: u16,
@@ -278,6 +292,7 @@ impl ClientRegistry {
             persistence: Mutex::new(PersistenceState::new(
                 SystemTime::now().duration_since(UNIX_EPOCH).map(|elapsed| elapsed.as_secs() as i64).unwrap_or(0),
             )),
+            blocked: BlockedTable::default(),
             started: Instant::now(),
             run_id: generate_run_id(),
             port,
@@ -298,6 +313,11 @@ impl ClientRegistry {
     /// 当前服务器级 `requirepass`。
     pub fn requirepass(&self) -> Option<String> {
         self.requirepass.lock().unwrap_or_else(|poison| poison.into_inner()).clone()
+    }
+
+    /// 监听器级阻塞等待表：连接读循环登记等待，`CLIENT UNBLOCK` 与 `INFO` 读取它。
+    pub(crate) fn blocking(&self) -> &BlockedTable {
+        &self.blocked
     }
 
     /// 写入监听器级配置值，供嵌入式宿主在启动时对齐自己的运行时设置。
@@ -506,6 +526,7 @@ pub(crate) fn handle_client(
             stream.write_all(b"+OK\r\n")?;
             Ok(true)
         }
+        "unblock" => handle_client_unblock(stream, request, registry),
         "kill" => handle_client_kill(stream, request, state, registry, pubsub),
         _ => {
             write_error(stream, &format!("unknown subcommand '{}'. Try CLIENT HELP.", String::from_utf8_lossy(raw)))?;
@@ -517,6 +538,34 @@ pub(crate) fn handle_client(
 /// 约定：失败时返回 `true`，表示连接保持打开。
 fn write_arity(stream: &mut dyn Write, name: &str) -> io::Result<()> {
     stream.write_all(format!("-ERR wrong number of arguments for '{name}' command\r\n").as_bytes())
+}
+
+/// `CLIENT UNBLOCK <id> [TIMEOUT|ERROR]`：叫醒一条停在阻塞命令上的连接。
+///
+/// 回 `1` 表示目标确实在阻塞并已被解除，`0` 表示目标没在阻塞（或不存在），与真机一致。
+/// `TIMEOUT` 让阻塞命令按超时语义回空，`ERROR` 让它回 `UNBLOCKED` 错误。
+fn handle_client_unblock(stream: &mut dyn Write, request: &Request<'_>, registry: &ClientRegistry) -> io::Result<bool> {
+    let count = request.arguments.len();
+    if !(3..=4).contains(&count) {
+        return write_arity(stream, "client|unblock").map(|_| true);
+    }
+    let Some(client) = parse_positive(request.arguments[2])
+    else {
+        write_error(stream, "value is not an integer or out of range")?;
+        return Ok(true);
+    };
+    let mode = match request.arguments.get(3) {
+        None => UnblockMode::Timeout,
+        Some(raw) if raw.eq_ignore_ascii_case(b"TIMEOUT") => UnblockMode::Timeout,
+        Some(raw) if raw.eq_ignore_ascii_case(b"ERROR") => UnblockMode::Error,
+        Some(_) => {
+            write_error(stream, "CLIENT UNBLOCK reason should be TIMEOUT or ERROR")?;
+            return Ok(true);
+        }
+    };
+    let unblocked = registry.blocking().unblock(client, mode);
+    stream.write_all(format!(":{}\r\n", i32::from(unblocked)).as_bytes())?;
+    Ok(true)
 }
 
 /// 真机只接受 0x21..=0x7e 的客户端名，空名合法且等价于清除。
@@ -1004,14 +1053,14 @@ fn info_clients(registry: &ClientRegistry, pubsub: &PubSubState) -> String {
         "maxclients:10000".into(),
         "client_recent_max_input_buffer:0".into(),
         "client_recent_max_output_buffer:0".into(),
-        "blocked_clients:0".into(),
+        format!("blocked_clients:{}", registry.blocking().blocked_clients()),
         "tracking_clients:0".into(),
         format!("pubsub_clients:{subscribers}"),
         "watching_clients:0".into(),
         "clients_in_timeout_table:0".into(),
         format!("active_clients:{clients}"),
         "total_watched_keys:0".into(),
-        "total_blocking_keys:0".into(),
+        format!("total_blocking_keys:{}", registry.blocking().total_blocking_keys()),
         "total_blocking_keys_on_nokey:0".into(),
         String::new(),
     ]

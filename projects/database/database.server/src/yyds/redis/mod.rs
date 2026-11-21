@@ -11,6 +11,7 @@ use database_protocol::{GatewayConfig, GatewayKind, startup_banner as protocol_s
 use database_query::version_label;
 use database_types::{Error, Result};
 
+pub(crate) mod blocked;
 pub mod connection;
 pub mod pubsub;
 pub mod server_face;
