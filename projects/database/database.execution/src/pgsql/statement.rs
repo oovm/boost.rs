@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use database_query::{
     OnCommit, PgObjectStatement, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind,
-    SqlExecutionPlan, SqlFrontendError, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query, bind_sql_catalog, describe_plan,
-    is_ddl_statement, parse_ddl, parse_pg_object_statement, parse_pg_utility, parse_session_command, plan_statement_for_dialect,
-    rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
+    SqlExecutionPlan, SqlFrontendError, SqlParameterStyle, SqlSessionCommand, SqlTransactionAction, SqlValue, analyze_meta_query,
+    bind_sql_catalog, describe_plan, is_ddl_statement, neutralized_sql_parameters, parse_ddl, parse_pg_object_statement, parse_pg_utility,
+    parse_session_command, plan_statement_for_dialect, rewrite_double_colon_casts, rewrite_escape_strings, rewrite_pg_temp_references,
+    substitute_sql_parameters,
 };
 
 use crate::{
@@ -79,6 +80,13 @@ pub fn dispatch_statement(
     runtime: Option<&Arc<PgsqlSqlRuntime>>,
     session: &mut TransactionSession,
 ) -> Result<StatementOutcome, StatementError> {
+    // A queued `CancelRequest` refuses the next statement instead of letting it
+    // publish after the caller stopped waiting. The engine cannot preempt a
+    // running statement, so the flag is only observed here.
+    if session.take_cancel() {
+        session.fail();
+        return Err(StatementError::new("57014", "canceling statement due to user request"));
+    }
     let trimmed = sql.trim().trim_end_matches(';').trim();
     if trimmed.is_empty() {
         return Ok(StatementOutcome::Command(""));
@@ -577,6 +585,10 @@ pub fn run_statement(
     runtime: &Arc<PgsqlSqlRuntime>,
     session: &mut TransactionSession,
 ) -> Result<ExecutionOutcome, (String, String)> {
+    if session.take_cancel() {
+        session.fail();
+        return Err(("57014".to_string(), "canceling statement due to user request".to_string()));
+    }
     // An aborted block rejects every later statement without executing it, so a
     // stale `statement_timeout` cannot mask the `25P02` the client must see.
     if session.is_aborted() {
@@ -704,6 +716,71 @@ fn run_statement_inner(
     };
     debug_assert_eq!(description.len(), result.columns.len(), "described columns must match executed columns");
     Ok(ExecutionOutcome { is_read, description, rows: result.rows, command_tag })
+}
+
+/// Runs one parameterised statement on the direct path.
+///
+/// The placeholders are rendered with the same substitution the wire gateway
+/// uses, so a local `$1` binding and a wire `Bind` observe one literal form and
+/// one planning path. Only transport-free callers (the local session handle)
+/// use this entry; the gateway substitutes into the portal itself because it
+/// also has to answer `Describe` before `Execute`.
+pub fn run_statement_with_parameters(
+    sql: &str,
+    parameters: &[SqlValue],
+    runtime: &Arc<PgsqlSqlRuntime>,
+    session: &mut TransactionSession,
+) -> Result<ExecutionOutcome, (String, String)> {
+    if session.is_aborted() {
+        return Err(("25P02".to_string(), ABORTED_BLOCK.to_string()));
+    }
+    let rendered = substitute_sql_parameters(sql, parameters, SqlParameterStyle::DollarNumber)
+        .map_err(|error| ("08P01".to_string(), format!("SQL parameter error: {}", error.message)))?;
+    run_statement(&rendered, runtime, session)
+}
+
+/// Describes one statement without executing it.
+///
+/// `prepare` must report the same columns `Execute` would return, so this runs
+/// the shared normalize → bind → plan sequence and projects the plan. A failure
+/// aborts an open block exactly like a failing statement does, matching the
+/// extended protocol's `Parse`/`Describe` error rule.
+pub fn describe_statement(
+    sql: &str,
+    runtime: &Arc<PgsqlSqlRuntime>,
+    session: &mut TransactionSession,
+) -> Result<Vec<SqlColumn>, (String, String)> {
+    if session.is_aborted() {
+        return Err(("25P02".to_string(), ABORTED_BLOCK.to_string()));
+    }
+    let normalized = rewrite_double_colon_casts(sql, SqlDialect::Postgres).map_err(|error| {
+        session.fail();
+        statement_error("cast", error)
+    })?;
+    let escaped = rewrite_escape_strings(&normalized).map_err(|error| {
+        session.fail();
+        statement_error("literal", error)
+    })?;
+    // `Describe` must work before the caller bound anything: the shared
+    // neutralising pass renders every placeholder as the literal `0`, which
+    // keeps `WHERE pk = $1` plannable, and only the projection is reported.
+    let rendered = neutralized_sql_parameters(&escaped, SqlParameterStyle::DollarNumber)
+        .map(|(sql, _)| sql)
+        .map_err(|error| {
+            session.fail();
+            ("08P01".to_string(), format!("SQL parameter error: {}", error.message))
+        })?;
+    let temp_rewritten = rewrite_pg_temp_references(&rendered, |name| session.temp_table_exists(name));
+    let catalog = session.catalog(&runtime.schema);
+    let bound = bind_sql_catalog(&temp_rewritten, &catalog, catalog.schema_version(), SqlDialect::Postgres).map_err(|error| {
+        session.fail();
+        statement_error("bind", error)
+    })?;
+    let plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Postgres).map_err(|error| {
+        session.fail();
+        statement_error("plan", error)
+    })?;
+    Ok(describe_plan(&plan))
 }
 
 /// Maps a structured gateway failure to its PostgreSQL SQLSTATE. Protocol code

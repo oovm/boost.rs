@@ -19,7 +19,10 @@ pub use explain::execute_explain;
 pub use notify::{Notification, NotificationHub};
 pub use prepared::execute_utility;
 pub use session::{
-    ABORTED_BLOCK, DEFAULT_SEARCH_PATH, PgsqlSqlRuntime, PreparedSqlStatement, SessionCursor, TransactionControl, TransactionRunError,
-    TransactionSession, run_transaction,
+    ABORTED_BLOCK, CancelRegistry, DEFAULT_SEARCH_PATH, PgsqlSqlRuntime, PreparedSqlStatement, SessionCursor, TransactionControl,
+    TransactionRunError, TransactionSession, run_transaction,
 };
-pub use statement::{ExecutionOutcome, StatementError, StatementOutcome, dispatch_statement, pg_sqlstate, run_statement, statement_error};
+pub use statement::{
+    ExecutionOutcome, StatementError, StatementOutcome, describe_statement, dispatch_statement, pg_sqlstate, run_statement,
+    run_statement_with_parameters, statement_error,
+};

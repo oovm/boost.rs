@@ -175,6 +175,8 @@ pub struct PgsqlSqlRuntime {
     pub notifications: Arc<super::notify::NotificationHub>,
     /// Cluster-wide databases, roles and table grants.
     pub objects: Arc<database_storage::pgsql::PgObjectCatalog>,
+    /// Live cancel flags, keyed by the `BackendKeyData` handed to each session.
+    pub cancels: Arc<CancelRegistry>,
 }
 
 impl PgsqlSqlRuntime {
@@ -186,6 +188,7 @@ impl PgsqlSqlRuntime {
             executor,
             notifications: Arc::new(super::notify::NotificationHub::new()),
             objects: Arc::new(database_storage::pgsql::PgObjectCatalog::new_in_memory()),
+            cancels: Arc::new(CancelRegistry::new()),
         }
     }
 
@@ -195,7 +198,13 @@ impl PgsqlSqlRuntime {
         executor: Arc<dyn KeyValueExecutor>,
         objects: Arc<database_storage::pgsql::PgObjectCatalog>,
     ) -> Self {
-        Self { schema, executor, notifications: Arc::new(super::notify::NotificationHub::new()), objects }
+        Self {
+            schema,
+            executor,
+            notifications: Arc::new(super::notify::NotificationHub::new()),
+            objects,
+            cancels: Arc::new(CancelRegistry::new()),
+        }
     }
 }
 
@@ -239,6 +248,59 @@ pub struct TransactionSession {
     statement_timeout: Option<Duration>,
     /// Text form `SHOW statement_timeout` reports back.
     statement_timeout_text: String,
+    /// Cooperative cancel flag a `CancelRequest` flips for this session.
+    ///
+    /// The engine executes synchronously, so a cancel that arrives while a
+    /// statement is already running cannot preempt it. The flag is therefore
+    /// consumed at the *next* statement boundary: a queued cancel refuses that
+    /// statement with `57014` and aborts an open block instead of letting a
+    /// later write publish after the caller gave up.
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+}
+
+/// Cancel flags keyed by the `BackendKeyData` the gateway handed out.
+///
+/// `CancelRequest` arrives on its own socket with no authentication other than
+/// the key pair, so the registry is the only route from that packet to the
+/// session it names. An unknown pair is ignored, which is what PostgreSQL does
+/// for a stale key.
+#[derive(Debug, Default)]
+pub struct CancelRegistry {
+    flags: std::sync::Mutex<BTreeMap<(i32, i32), Arc<std::sync::atomic::AtomicBool>>>,
+}
+
+impl CancelRegistry {
+    /// Creates an empty registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers one session and returns the flag its statement boundaries read.
+    pub fn register(&self, process_id: i32, secret_key: i32) -> Arc<std::sync::atomic::AtomicBool> {
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.flags
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert((process_id, secret_key), Arc::clone(&flag));
+        flag
+    }
+
+    /// Drops one session's flag when its connection ends.
+    pub fn unregister(&self, process_id: i32, secret_key: i32) {
+        self.flags.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&(process_id, secret_key));
+    }
+
+    /// Raises the flag for one session; `false` means the key is unknown.
+    pub fn request(&self, process_id: i32, secret_key: i32) -> bool {
+        let guard = self.flags.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match guard.get(&(process_id, secret_key)) {
+            Some(flag) => {
+                flag.store(true, std::sync::atomic::Ordering::Release);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 impl TransactionSession {
@@ -261,7 +323,18 @@ impl TransactionSession {
             temp_checkpoint: None,
             statement_timeout: None,
             statement_timeout_text: "0".to_string(),
+            cancel: None,
         }
+    }
+
+    /// Binds the cancel flag `CancelRequest` raises for this session.
+    pub fn set_cancel_token(&mut self, flag: Arc<std::sync::atomic::AtomicBool>) {
+        self.cancel = Some(flag);
+    }
+
+    /// Consumes one queued cancel, if the session has a flag and it is raised.
+    pub fn take_cancel(&mut self) -> bool {
+        self.cancel.as_ref().is_some_and(|flag| flag.swap(false, std::sync::atomic::Ordering::AcqRel))
     }
 
     /// Captures the registry state when a transaction block opens.
