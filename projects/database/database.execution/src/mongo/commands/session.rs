@@ -78,6 +78,22 @@ pub fn kill_cursors(command: &BsonDocument, cursors: &mut CursorStore) -> Result
     Ok(response)
 }
 
+/// `mongod 8.0.9` refuses any `writeConcern` field on a statement of a
+/// multi-document transaction (`InvalidOptions`) and leaves the transaction
+/// unopened. Callers run this before [`SessionContext::new`] so a rejected
+/// statement cannot start a transaction that a later commit would publish.
+pub(crate) fn reject_transaction_write_concern(command: &BsonDocument) -> Result<(), CommandError> {
+    if command.get("writeConcern").is_none() {
+        return Ok(());
+    }
+    let in_transaction =
+        transaction_key(command).is_some() && transaction_number(command)?.is_some() && !command_bool(command, "autocommit", true);
+    if in_transaction {
+        return Err(CommandError::new(72, "writeConcern is not allowed within a multi-statement transaction"));
+    }
+    Ok(())
+}
+
 /// Logical session carried by `lsid`. `key` stays `None` while the session has
 /// no open transaction, so the command reads and writes committed data.
 pub(crate) struct SessionContext {

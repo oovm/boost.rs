@@ -57,6 +57,7 @@ pub(crate) fn ensure_document_size(document: &BsonDocument, collection: &str) ->
 /// enforcement, and ordered / unordered continuation.
 pub fn insert(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDocument, CommandError> {
     let namespace = namespace_from_command(command, "insert").ok_or_else(|| CommandError::new(73, "insert command missing collection name"))?;
+    reject_transaction_write_concern(command)?;
     let session = SessionContext::new(command, store)?;
 
     let Some(BsonValue::Array(documents)) = command.get("documents")
@@ -290,6 +291,7 @@ pub(crate) fn id_duplicate_error(namespace: &str, index: usize, identifier: &Bso
 /// `delete` with `limit` (`0` deletes every match).
 pub fn delete(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDocument, CommandError> {
     let namespace = namespace_from_command(command, "delete").ok_or_else(|| CommandError::new(73, "delete command missing collection name"))?;
+    reject_transaction_write_concern(command)?;
     let session = SessionContext::new(command, store)?;
 
     let specifications = match command.get("deletes") {
@@ -385,6 +387,7 @@ pub(crate) fn stage_update_oplog(store: &dyn MongoStorage, session: Option<&str>
 /// `upsert`; `multi` toggles updateMany.
 pub fn update(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDocument, CommandError> {
     let namespace = namespace_from_command(command, "update").ok_or_else(|| CommandError::new(73, "update command missing collection name"))?;
+    reject_transaction_write_concern(command)?;
     let session = SessionContext::new(command, store)?;
     let Some(BsonValue::Array(specifications)) = command.get("updates")
     else {
@@ -1916,6 +1919,7 @@ pub(crate) fn find_projection(documents: Vec<BsonDocument>, fields: Option<&Bson
 pub fn find_and_modify(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDocument, CommandError> {
     let namespace = namespace_from_command(command, "findAndModify")
         .ok_or_else(|| CommandError::new(73, "findAndModify command missing collection name"))?;
+    reject_transaction_write_concern(command)?;
     let session = SessionContext::new(command, store)?;
     let empty = BsonDocument::new();
     let filter = match command.get("query") {
