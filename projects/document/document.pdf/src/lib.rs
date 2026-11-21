@@ -2,9 +2,9 @@
 //!
 //! The object model, parser, stream filters and writer live in
 //! `data-binary-pdf`. This crate adds the operations a product exposes:
-//! inspection, merge, split, page arrangement, page deletion, metadata and
-//! bookmark edits, form filling, stamping, one-page creation, and text and
-//! image extraction.
+//! inspection, merge, split, page arrangement, page deletion and rotation,
+//! metadata and bookmark edits, form filling, stamping, one-page creation, and
+//! text and image extraction.
 //!
 //! Every malformed input becomes a [`ServiceError`]; no entry point panics.
 
@@ -321,6 +321,20 @@ pub struct DeletePagesReport {
     pub bytes: usize,
 }
 
+/// Result of [`rotate_pages`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotatePagesReport {
+    /// Output path.
+    pub path: String,
+    /// Pages written to the output.
+    pub pages: usize,
+    /// Pages whose effective `/Rotate` changed.
+    pub rotated: usize,
+    /// Output size in bytes.
+    pub bytes: usize,
+}
+
 /// `/Info` fields accepted by [`set_metadata`].
 ///
 /// A missing field keeps its source value, while an empty string removes it.
@@ -617,6 +631,47 @@ fn selected_pages(ranges: &str, page_count: usize) -> Result<BTreeSet<usize>> {
         selected.extend(start..=end);
     }
     Ok(selected)
+}
+
+/// Adds the requested clockwise rotation to the pages selected by a 1-based
+/// range list such as `1,3-5`.
+///
+/// `degrees` must be `90`, `180` or `270` and is added to each page's current
+/// `/Rotate`, normalized to `0..360`; a result of `0` omits `/Rotate`. Other
+/// pages keep their existing rotation. The output file is replaced only when
+/// `overwrite` is true.
+pub fn rotate_pages(input: &Path, pages: &str, degrees: i32, out: &Path, overwrite: bool) -> Result<RotatePagesReport> {
+    if !matches!(degrees, 90 | 180 | 270) {
+        return Err(argument(format!("rotate_pages rotation {degrees} is not 90, 180 or 270")));
+    }
+    let document = load_document(input)?;
+    let selected = selected_pages(pages, document.pages.len())?;
+    if out.exists() && !overwrite {
+        return Err(exists_error(format!("{} already exists", out.display())));
+    }
+
+    let mut writer = PdfWriter::new();
+    let mut map = BTreeMap::new();
+    let mut written = Vec::with_capacity(document.pages.len());
+    let mut rotated = 0;
+    for (index, page) in document.pages.iter().enumerate() {
+        let rotation = if selected.contains(&(index + 1)) {
+            rotated += 1;
+            Some(normalize_rotation(page.rotation + i64::from(degrees)))
+        } else {
+            None
+        };
+        written.push(copy_page_with_rotation(&mut writer, &document, &mut map, page, rotation)?);
+    }
+    let info = copy_info(&mut writer, &document, &mut map, None)?;
+    let bytes = finish_document(&mut writer, &written, info)?;
+    write_file(out, &bytes, overwrite)?;
+    Ok(RotatePagesReport {
+        path: out.display().to_string(),
+        pages: written.len(),
+        rotated,
+        bytes: bytes.len(),
+    })
 }
 
 /// Copies every page into a new PDF while rewriting its information
@@ -1364,5 +1419,43 @@ mod tests {
         assert_eq!(error.code(), "io/exists");
         delete_pages(&source, "1", &out, true).expect("overwrite output");
         assert_eq!(inspect(&out).expect("inspect overwritten").pages, 1);
+    }
+
+    #[test]
+    fn rotate_pages_changes_only_the_selection_and_normalizes() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One", "Two", "Three"]);
+
+        let first = workspace.path("rotated.pdf");
+        let report = rotate_pages(&source, "1-2", 90, &first, false).expect("rotate pages");
+        assert_eq!(report.pages, 3);
+        assert_eq!(report.rotated, 2);
+        assert!(report.bytes > 0);
+        let sizes = inspect(&first).expect("inspect rotated").page_sizes;
+        assert_eq!(sizes[0].rotation, 90);
+        assert_eq!(sizes[1].rotation, 90);
+        assert_eq!(sizes[2].rotation, 0);
+
+        let second = workspace.path("rotated-again.pdf");
+        rotate_pages(&first, "1", 180, &second, false).expect("add 180 degrees");
+        assert_eq!(inspect(&second).expect("inspect").page_sizes[0].rotation, 270);
+
+        let full = workspace.path("rotated-full.pdf");
+        rotate_pages(&second, "1", 90, &full, false).expect("complete the turn");
+        assert_eq!(inspect(&full).expect("inspect").page_sizes[0].rotation, 0);
+        let document = parse_document(&fs::read(&full).expect("read output")).expect("parse output");
+        assert!(document.pages[0].own.get("Rotate").is_none(), "a zero rotation must be omitted");
+    }
+
+    #[test]
+    fn rotate_pages_rejects_unsupported_degrees() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One"]);
+        let out = workspace.path("out.pdf");
+
+        for degrees in [0, 45, -90, 360] {
+            let error = rotate_pages(&source, "1", degrees, &out, true).expect_err("unsupported rotation");
+            assert_eq!(error.code(), "session/argument-invalid", "{degrees}");
+        }
     }
 }
