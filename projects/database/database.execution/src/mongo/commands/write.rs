@@ -1950,7 +1950,7 @@ pub fn find_and_modify(command: &BsonDocument, store: &dyn MongoStorage) -> Resu
     let sort = parse_sort(command.get("sort"));
     // 无排序时只需要第一篇命中；有排序时顺序由排序决定，仍要读完整段再排。
     let mut documents = if sort.is_empty() {
-        collect_matching_bounded(store, &namespace, filter, session.key(), false, Some(1))?.0
+        collect_matching_bounded(store, &namespace, filter, session.key(), false, Some(1), None)?.0
     }
     else {
         collect_matching(store, &namespace, filter, session.key())?

@@ -95,6 +95,7 @@ pub fn code_name(code: i32) -> Option<&'static str> {
         20 => "IllegalOperation",
         121 => "DocumentValidationFailure",
         175 => "QueryPlanKilled",
+        292 => "QueryExceededMemoryLimitNoDiskUseAllowed",
         251 => "NoSuchTransaction",
         225 => "TransactionTooOld",
         256 => "TransactionCommitted",

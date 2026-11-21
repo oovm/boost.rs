@@ -255,10 +255,12 @@ pub(crate) fn scan_with_access(
     need_total: bool,
     stop_after: Option<usize>,
     skip: usize,
+    sort_budget: Option<usize>,
 ) -> Result<ScanOutcome, CommandError> {
     match access {
         QueryAccess::Collection { .. } => {
-            let (documents, documents_examined) = collect_matching_bounded(store, namespace, filter, session, need_total, stop_after)?;
+            let (documents, documents_examined) =
+                collect_matching_bounded(store, namespace, filter, session, need_total, stop_after, sort_budget)?;
             Ok(ScanOutcome { documents, keys_examined: 0, documents_examined, exhausted: true, skipped_at_index: 0 })
         }
         QueryAccess::Index(plan) => {
@@ -271,12 +273,14 @@ pub(crate) fn scan_with_access(
             let mut documents = Vec::new();
             let mut skipped_at_index = 0usize;
             let mut exhausted = true;
+            let mut sort_bytes = 0usize;
             let deliver = |document_key: Vec<u8>,
                            store: &dyn MongoStorage,
                            seen: &mut BTreeSet<Vec<u8>>,
                            documents: &mut Vec<BsonDocument>,
                            documents_examined: &mut i64,
-                           skipped_at_index: &mut usize|
+                           skipped_at_index: &mut usize,
+                           sort_bytes: &mut usize|
              -> Result<bool, CommandError> {
                 if !seen.insert(document_key.clone()) {
                     return Ok(false);
@@ -292,7 +296,7 @@ pub(crate) fn scan_with_access(
                     && let Ok(document) = parse_bson(&payload)
                     && document_matches(&document, filter)?
                 {
-                    documents.push(document);
+                    push_matched(documents, sort_bytes, document, sort_budget)?;
                     return Ok(true);
                 }
                 Ok(false)
@@ -317,7 +321,15 @@ pub(crate) fn scan_with_access(
                     keys_examined += entries.len() as i64;
                     entries.reverse();
                     for (_entry_key, document_key) in entries {
-                        deliver(document_key, store, &mut seen, &mut documents, &mut documents_examined, &mut skipped_at_index)?;
+                        deliver(
+                            document_key,
+                            store,
+                            &mut seen,
+                            &mut documents,
+                            &mut documents_examined,
+                            &mut skipped_at_index,
+                            &mut sort_bytes,
+                        )?;
                     }
                     continue 'scan;
                 }
@@ -337,8 +349,15 @@ pub(crate) fn scan_with_access(
                     keys_examined += fetched as i64;
                     for (entry_key, document_key) in batch {
                         cursor = Some(entry_key);
-                        if deliver(document_key, store, &mut seen, &mut documents, &mut documents_examined, &mut skipped_at_index)?
-                            && stop_after.is_some_and(|bound| documents.len() + skipped_at_index >= bound)
+                        if deliver(
+                            document_key,
+                            store,
+                            &mut seen,
+                            &mut documents,
+                            &mut documents_examined,
+                            &mut skipped_at_index,
+                            &mut sort_bytes,
+                        )? && stop_after.is_some_and(|bound| documents.len() + skipped_at_index >= bound)
                         {
                             exhausted = false;
                             break 'scan;
@@ -359,6 +378,41 @@ pub(crate) fn scan_with_access(
 /// 排序非空时结果顺序由排序决定，不能提前停；`limit` 为 `0` 表示不限量。
 pub(crate) fn scan_stop_after(sort: &[(String, i32)], skip: usize, limit: usize) -> Option<usize> {
     if sort.is_empty() && limit > 0 { Some(skip.saturating_add(limit)) } else { None }
+}
+
+/// 阻塞排序的声明上限，与 `server_parameters` 暴露的
+/// `internalQueryMaxBlockingSortMemoryUsageBytes` 同值（100 MiB）。
+///
+/// 本实现不做外部排序：有排序的 `find` 一边扫描一边累计命中集的 BSON 编码
+/// 长度，超过这个预算立即以 292 拒绝，而不是继续把更大的结果集整体物化。
+/// 20k 级排序（约 12 MiB RSS）仍在预算内；规模增长到超限时答案是确定的拒绝，
+/// 不会出现“取决于机器内存”的 OOM。
+pub const BLOCKING_SORT_MEMORY_LIMIT_BYTES: usize = 104_857_600;
+
+fn blocking_sort_exceeded() -> CommandError {
+    CommandError::new(
+        292,
+        format!(
+            "Sort exceeded memory limit of {BLOCKING_SORT_MEMORY_LIMIT_BYTES} bytes; this server does not implement external sorting"
+        ),
+    )
+}
+
+/// 命中集入列前记账；`None` 表示这次查询的结果顺序不需要阻塞排序。
+fn push_matched(
+    documents: &mut Vec<BsonDocument>,
+    sort_bytes: &mut usize,
+    candidate: BsonDocument,
+    sort_budget: Option<usize>,
+) -> Result<(), CommandError> {
+    if let Some(budget) = sort_budget {
+        *sort_bytes = sort_bytes.saturating_add(candidate.encoded_len());
+        if *sort_bytes > budget {
+            return Err(blocking_sort_exceeded());
+        }
+    }
+    documents.push(candidate);
+    Ok(())
 }
 
 /// `find` with filter, sort, skip, limit and cursor batching.
@@ -418,7 +472,11 @@ pub fn find(command: &BsonDocument, store: &dyn MongoStorage, cursors: &mut Curs
     // 无排序时结果顺序就是扫描顺序，命中前 `skip + limit` 篇即可停手。
     let stop_after = scan_stop_after(&sort, skip, limit);
     let pushed = pushed_skip(&access, &sort, skip);
-    let mut documents = scan_with_access(store, &namespace, &filter, &access, session.key(), false, stop_after, pushed)?.documents;
+    // 有排序就必须先把命中集收齐再排：按声明的阻塞排序预算边扫描边记账，
+    // 超限时显式拒绝，而不是无上限地物化（本实现不溢写）。
+    let sort_budget = (!sort.is_empty()).then_some(BLOCKING_SORT_MEMORY_LIMIT_BYTES);
+    let mut documents =
+        scan_with_access(store, &namespace, &filter, &access, session.key(), false, stop_after, pushed, sort_budget)?.documents;
     if matches!(access, QueryAccess::Collection { direction: -1 }) {
         documents.reverse();
     }
@@ -503,7 +561,7 @@ pub fn count(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonDoc
                 matched
             }
             _ => {
-                let outcome = scan_with_access(store, &namespace, &filter, &access, session.key(), false, stop_after, pushed)?;
+                let outcome = scan_with_access(store, &namespace, &filter, &access, session.key(), false, stop_after, pushed, None)?;
                 outcome.documents.len() + outcome.skipped_at_index
             }
         }
@@ -720,8 +778,9 @@ pub(crate) fn collect_matching_bounded(
     session: Option<&str>,
     need_total: bool,
     stop_after: Option<usize>,
+    sort_budget: Option<usize>,
 ) -> Result<(Vec<BsonDocument>, i64), CommandError> {
-    if stop_after.is_none() {
+    if stop_after.is_none() && sort_budget.is_none() {
         let documents = collect_matching(store, namespace, filter, session)?;
         let total = if need_total { namespace_documents(store, namespace, session)?.len() as i64 } else { 0 };
         return Ok((documents, total));
@@ -730,13 +789,19 @@ pub(crate) fn collect_matching_bounded(
         let key = value_to_key(identifier);
         return Ok(match namespace_document(store, namespace, &key, session)? {
             Some(bytes) => match parse_bson(&bytes) {
-                Ok(document) if document_matches(&document, filter)? => (vec![document], 1),
+                Ok(document) if document_matches(&document, filter)? => {
+                    let mut documents = Vec::new();
+                    let mut sort_bytes = 0usize;
+                    push_matched(&mut documents, &mut sort_bytes, document, sort_budget)?;
+                    (documents, 1)
+                }
                 _ => (Vec::new(), 1),
             },
             None => (Vec::new(), 0),
         });
     }
     let mut documents = Vec::new();
+    let mut sort_bytes = 0usize;
     let mut examined = 0i64;
     if let Some(session) = session {
         // 只读事务（或没写过本命名空间的事务）直接按已提交数据分页；只有暂存
@@ -757,7 +822,7 @@ pub(crate) fn collect_matching_bounded(
                         if let Ok(candidate) = parse_bson(&value)
                             && document_matches(&candidate, filter)?
                         {
-                            documents.push(candidate);
+                            push_matched(&mut documents, &mut sort_bytes, candidate, sort_budget)?;
                             if stop_after.is_some_and(|bound| documents.len() >= bound) {
                                 return Ok((documents, examined));
                             }
@@ -777,7 +842,7 @@ pub(crate) fn collect_matching_bounded(
                         if let Ok(candidate) = parse_bson(&value)
                             && document_matches(&candidate, filter)?
                         {
-                            documents.push(candidate);
+                            push_matched(&mut documents, &mut sort_bytes, candidate, sort_budget)?;
                             if stop_after.is_some_and(|bound| documents.len() >= bound) {
                                 return Ok((documents, examined));
                             }
@@ -790,7 +855,7 @@ pub(crate) fn collect_matching_bounded(
                         if let Ok(candidate) = parse_bson(&value)
                             && document_matches(&candidate, filter)?
                         {
-                            documents.push(candidate);
+                            push_matched(&mut documents, &mut sort_bytes, candidate, sort_budget)?;
                             if stop_after.is_some_and(|bound| documents.len() >= bound) {
                                 return Ok((documents, examined));
                             }
@@ -817,7 +882,7 @@ pub(crate) fn collect_matching_bounded(
             if let Ok(candidate) = parse_bson(&value)
                 && document_matches(&candidate, filter)?
             {
-                documents.push(candidate);
+                push_matched(&mut documents, &mut sort_bytes, candidate, sort_budget)?;
                 if stop_after.is_some_and(|bound| documents.len() >= bound) {
                     return Ok((documents, examined));
                 }

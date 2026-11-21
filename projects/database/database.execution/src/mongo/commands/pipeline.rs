@@ -30,7 +30,7 @@ pub fn aggregate(command: &BsonDocument, store: &dyn MongoStorage) -> Result<Bso
         validate_filter(filter, "aggregate $match")?;
         let stop_after = aggregate_stop_after(&planned[1..]);
         let access = choose_access(store, &namespace, filter, &Hint::None, &[], &[], session.key())?;
-        documents = scan_with_access(store, &namespace, filter, &access, session.key(), false, stop_after, 0)?.documents;
+        documents = scan_with_access(store, &namespace, filter, &access, session.key(), false, stop_after, 0, None)?.documents;
         remaining = &planned[1..];
     }
     else {

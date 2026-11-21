@@ -78,7 +78,7 @@ pub fn explain(command: &BsonDocument, store: &dyn MongoStorage) -> Result<BsonD
 
     // 执行耗时来自真实扫描的单调时钟，不再写 0。
     let execution_started = std::time::Instant::now();
-    let outcome = scan_with_access(store, &namespace, &filter, &access, None, true, stop_after, pushed)?;
+    let outcome = scan_with_access(store, &namespace, &filter, &access, None, true, stop_after, pushed, None)?;
     let execution_millis = execution_started.elapsed().as_millis() as i32;
     let matched = outcome.documents.len() + outcome.skipped_at_index;
     let counted = if limit > 0 { matched.saturating_sub(skip).min(limit) } else { matched.saturating_sub(skip) };
