@@ -50,6 +50,13 @@ thread_local! {
     /// Nested statements (`EXPLAIN ANALYZE`) push another catalog; the last one
     /// wins and is popped when the statement finishes.
     static SEQUENCE_CATALOGS: RefCell<Vec<Arc<dyn SqlSequenceCatalog>>> = const { RefCell::new(Vec::new()) };
+
+    /// Session GUC snapshot visible to `current_setting()`.
+    ///
+    /// The evaluator is a pure function of the row, so the statement that runs
+    /// it installs the session's effective settings for its own duration. The
+    /// key is the lower-case parameter name.
+    static SESSION_SETTINGS: RefCell<Vec<Arc<std::collections::BTreeMap<String, String>>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Runs `body` with `catalog` visible to the sequence functions.
@@ -70,6 +77,26 @@ pub fn with_sequence_catalog<T>(catalog: Arc<dyn SqlSequenceCatalog>, body: impl
 /// The catalog the current statement installed, when sequence functions run.
 pub(crate) fn sequence_catalog() -> Option<Arc<dyn SqlSequenceCatalog>> {
     SEQUENCE_CATALOGS.with(|stack| stack.borrow().last().cloned())
+}
+
+/// Runs `body` with `settings` visible to `current_setting()`.
+pub fn with_session_settings<T>(settings: Arc<std::collections::BTreeMap<String, String>>, body: impl FnOnce() -> T) -> T {
+    struct Pop;
+    impl Drop for Pop {
+        fn drop(&mut self) {
+            SESSION_SETTINGS.with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        }
+    }
+    SESSION_SETTINGS.with(|stack| stack.borrow_mut().push(settings));
+    let _pop = Pop;
+    body()
+}
+
+/// Value of one session GUC, when a caller installed a settings snapshot.
+pub(crate) fn session_setting(name: &str) -> Option<String> {
+    SESSION_SETTINGS.with(|stack| stack.borrow().last().and_then(|settings| settings.get(&name.trim().to_ascii_lowercase()).cloned()))
 }
 
 /// Payload byte cursor used by the row TLV decoder.

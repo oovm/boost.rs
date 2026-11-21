@@ -1175,6 +1175,8 @@ pub enum SqlScalarFunction {
     Database,
     /// `CURRENT_SCHEMA()` / `SCHEMA()` — current schema name.
     CurrentSchema,
+    /// `CURRENT_SETTING(name)` — value of one run-time configuration parameter.
+    CurrentSetting,
     /// `NOW()` / `CURRENT_TIMESTAMP()` / bare `CURRENT_TIMESTAMP` — UTC session
     /// timestamp rendered as TEXT `YYYY-MM-DD HH:MM:SS`.
     Now,
@@ -1245,6 +1247,7 @@ impl SqlScalarFunction {
             "VERSION" => Some(Self::Version),
             "DATABASE" | "CURRENT_DATABASE" => Some(Self::Database),
             "CURRENT_SCHEMA" | "SCHEMA" => Some(Self::CurrentSchema),
+            "CURRENT_SETTING" => Some(Self::CurrentSetting),
             "NOW" | "CURRENT_TIMESTAMP" => Some(Self::Now),
             "CURRENT_DATE" => Some(Self::CurrentDate),
             "CURRENT_TIME" => Some(Self::CurrentTime),
@@ -1300,6 +1303,7 @@ impl SqlScalarFunction {
             Self::Version => "VERSION",
             Self::Database => "DATABASE",
             Self::CurrentSchema => "CURRENT_SCHEMA",
+            Self::CurrentSetting => "CURRENT_SETTING",
             Self::Now => "NOW",
             Self::CurrentDate => "CURRENT_DATE",
             Self::CurrentTime => "CURRENT_TIME",
@@ -1346,6 +1350,7 @@ impl SqlScalarFunction {
             | Self::Curdate
             | Self::Curtime => (0, Some(0)),
             Self::Lower | Self::Upper | Self::Length | Self::CharLength | Self::Abs => (1, Some(1)),
+            Self::CurrentSetting => (1, Some(2)),
             Self::Round => (1, Some(2)),
             Self::Substring => (2, Some(3)),
             Self::Trim | Self::Ltrim | Self::Rtrim => (1, Some(2)),
@@ -2409,7 +2414,7 @@ fn bind_expression(expression: &Expression) -> Result<SqlBoundExpression, SqlFro
                     SqlFrontendError::new(
                         SqlErrorKind::UnknownFunction,
                         format!(
-                            "unknown SQL function: {display} (supported: aggregate COUNT/SUM/AVG/MAX/MIN and scalar VERSION/DATABASE/CURRENT_SCHEMA/NOW/CURRENT_DATE/CURRENT_TIME/CURDATE/CURTIME/LOWER/UPPER/LENGTH/CHAR_LENGTH/SUBSTRING/TRIM/LTRIM/RTRIM/REPLACE/CONCAT/COALESCE/ABS/ROUND/INSTR/STRPOS/LEFT/RIGHT)"
+                            "unknown SQL function: {display} (supported: aggregate COUNT/SUM/AVG/MAX/MIN and scalar VERSION/DATABASE/CURRENT_SCHEMA/CURRENT_SETTING/NOW/CURRENT_DATE/CURRENT_TIME/CURDATE/CURTIME/LOWER/UPPER/LENGTH/CHAR_LENGTH/SUBSTRING/TRIM/LTRIM/RTRIM/REPLACE/CONCAT/COALESCE/ABS/ROUND/INSTR/STRPOS/LEFT/RIGHT)"
                         ),
                     )
                 });

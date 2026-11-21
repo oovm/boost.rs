@@ -27,6 +27,29 @@ pub fn eval_scalar_function(function: SqlScalarFunction, args: &[SqlValue], dial
         SqlScalarFunction::Version => Text(crate::version_label()),
         // 未选择数据库 / schema 时，MySQL 与 PostgreSQL 都返回 NULL。
         SqlScalarFunction::Database | SqlScalarFunction::CurrentSchema => Null,
+        // `current_setting(name[, missing_ok])` reads the session GUC snapshot the
+        // running statement installed. A name outside the snapshot is unknown, and
+        // PostgreSQL reports it as `42704` unless `missing_ok` is true.
+        SqlScalarFunction::CurrentSetting => {
+            let Some(name) = scalar_text(args, 0) else {
+                return Ok(Null);
+            };
+            match super::session_setting(&name) {
+                Some(value) => Text(value),
+                None => {
+                    let missing_ok = matches!(args.get(1), Some(SqlValue::Boolean(true)));
+                    if missing_ok {
+                        Null
+                    }
+                    else {
+                        return Err(SqlFrontendError::new(
+                            SqlErrorKind::UnknownVariable,
+                            format!("unrecognized configuration parameter \"{name}\""),
+                        ));
+                    }
+                }
+            }
+        }
         SqlScalarFunction::Now => Text(current_timestamp()),
         SqlScalarFunction::CurrentDate => Text(current_date()),
         SqlScalarFunction::CurrentTime => Text(current_time()),
