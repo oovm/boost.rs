@@ -1,6 +1,7 @@
 ﻿//! 嵌入式引擎集成测试。
 
 mod catalog_independent;
+mod class_value;
 mod connection_close;
 mod placement_purity;
 mod prepared_schema_invalidation;

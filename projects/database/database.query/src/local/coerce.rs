@@ -5,6 +5,8 @@
 //! value into the exact scalar the column stores, so VOS and SQL inserts and
 //! updates type their values through one implementation.
 
+use std::collections::BTreeMap;
+
 use database_types::{Error, Result, Value};
 use schema_input_vos::ResolvedContract;
 use schema_types::ResolvedCanonicalType;
@@ -171,6 +173,9 @@ pub(crate) fn scalar_target(ty: &ResolvedCanonicalType) -> Option<ScalarTarget> 
 ///   type (`&User` with a `utf8` key is `utf8`),
 /// - `[T]` accepts a list and coerces every element as `T`.
 ///
+/// A bare named `class` is used by value, so the value must be a record whose
+/// members are checked recursively against that class's declared fields.
+///
 /// Canonical scalars outside the local execution set are rejected instead of
 /// being stored untyped, so a declared `utf16` or narrow integer never degrades
 /// into text or a wider integer. A `uuid` column keeps the canonical lowercase
@@ -209,8 +214,71 @@ fn coerce_value(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedCon
             }
             other => Err(coerce_error(format!("column type `[T]` requires a list value, got `{}`", other.kind()))),
         },
+        // A by-value named `class` is embedded in the parent row, so the value
+        // is a record checked against the class's declared members.
+        ResolvedCanonicalType::User { type_id, .. } => {
+            let target = contract
+                .types
+                .iter()
+                .find(|entry| entry.type_id == *type_id)
+                .ok_or_else(|| coerce_error(format!("declared type targets unknown type id `{type_id}`")))?;
+            match target.kind {
+                schema_types::TypeContractKind::Class => coerce_class_record(value, target, contract, depth, ""),
+                // A bare table type has no by-value form; the catalog refuses it
+                // at install, so keep the value untouched here.
+                schema_types::TypeContractKind::Table => Ok(value),
+            }
+        }
         _ => coerce_exact(value, ty),
     }
+}
+
+/// Checks one by-value `class` record against the class's declared members.
+///
+/// Every declared member is the class's identity, so a member the class does
+/// not declare is refused instead of being stored, and a missing member is
+/// refused unless it is declared `T?`. Member values recurse back through
+/// [`coerce_value`], so a nested class, list or scalar is checked the same way
+/// as a top-level column and its error keeps the field path. A missing `T?`
+/// member is normalized to an explicit null so the stored record and a re-read
+/// agree on the member set.
+fn coerce_class_record(
+    value: Value,
+    target: &schema_types::ResolvedTypeContract,
+    contract: &ResolvedContract,
+    depth: u8,
+    path: &str,
+) -> Result<Value> {
+    let class = target.canonical_path.last().map(String::as_str).unwrap_or_default();
+    let location = if path.is_empty() { format!("class `{class}`") } else { format!("class `{class}` member `{path}`") };
+    let fields = match value {
+        Value::Row(fields) => fields,
+        other => {
+            return Err(coerce_error(format!("{location} requires a record value, got `{}`", other.kind())));
+        }
+    };
+    let mut normalized = BTreeMap::new();
+    for (name, member) in fields {
+        let Some(field) = target.fields.iter().find(|field| field.canonical_name == name)
+        else {
+            return Err(coerce_error(format!("{location} does not declare record member `{name}`")));
+        };
+        let member_path = if path.is_empty() { name.clone() } else { format!("{path}.{name}") };
+        let member = coerce_value(member, &field.canonical_type, contract, depth + 1)
+            .map_err(|error| coerce_error(format!("{location} member `{member_path}`: {error}")))?;
+        normalized.insert(name, member);
+    }
+    for field in &target.fields {
+        if normalized.contains_key(&field.canonical_name) {
+            continue;
+        }
+        if matches!(field.canonical_type, ResolvedCanonicalType::Optional(_)) {
+            normalized.insert(field.canonical_name.clone(), Value::Null);
+            continue;
+        }
+        return Err(coerce_error(format!("{location} is missing required member `{}`", field.canonical_name)));
+    }
+    Ok(Value::Row(normalized))
 }
 
 /// Primary-key type of one resolved table type.

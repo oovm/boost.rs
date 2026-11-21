@@ -278,9 +278,40 @@ fn resolved_execution_type_at(
             other => resolved_execution_type_at(other, contract, depth + 1),
         },
         ResolvedCanonicalType::List(_) => Ok(Type::List),
-        ResolvedCanonicalType::User { .. } | ResolvedCanonicalType::Generic { .. } => {
-            Err(Error::Unsupported("resolved VOS composite type is not in the execution slice"))
+        // A by-value named `class` is embedded in its parent row, so it lowers to
+        // a schema-identified record rather than a key reference.
+        ResolvedCanonicalType::User { type_id, .. } => by_value_user_type(contract, *type_id),
+        ResolvedCanonicalType::Generic { .. } => {
+            Err(Error::Unsupported("resolved VOS generic type is not in the execution slice"))
         }
+    }
+}
+
+/// Lowers a user-defined type used by value into an execution type.
+///
+/// A `class` is a named domain value embedded in its parent row, so the
+/// execution type is a [`Type::Record`] keyed by the class's durable type id.
+/// A `table` has no by-value form: it is only reachable through `&Table`, which
+/// stores the referenced primary key, so a bare table reference is refused.
+fn by_value_user_type(contract: &schema_types::ResolvedContract, type_id: u64) -> Result<Type> {
+    let target = contract
+        .types
+        .iter()
+        .find(|entry| entry.type_id == type_id)
+        .ok_or_else(|| Error::Schema { message: format!("resolved user type targets unknown type id `{type_id}`") })?;
+    match target.kind {
+        schema_types::TypeContractKind::Class => {
+            let field_count = u32::try_from(target.fields.len())
+                .map_err(|_| Error::Schema { message: format!("resolved class `{}` has too many fields", target.canonical_path.join("::")) })?;
+            Ok(Type::Record { schema_id: type_id, field_count })
+        }
+        schema_types::TypeContractKind::Table => Err(Error::Schema {
+            message: format!(
+                "resolved type `{}` is a table and must be referenced as `&{}`",
+                target.canonical_path.join("::"),
+                target.canonical_path.last().map(String::as_str).unwrap_or_default()
+            ),
+        }),
     }
 }
 
