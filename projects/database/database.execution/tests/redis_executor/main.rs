@@ -2,10 +2,11 @@
 
 use std::sync::Mutex;
 
-use database_execution::cluster::{KeyValueExecutor, redis::RedisExecutor};
+use database_execution::cluster::{KeyValueExecutor, redis::RedisExecutor, redis::collections::handle_set};
+use database_protocol_redis::{codec::Reply, resp::Request};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
 use database_storage::cluster_kv::redis::{RedisShard, namespace};
-use database_types::cluster::Namespace;
+use database_types::cluster::{FenceToken, Namespace};
 
 fn temporary_dir(name: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!("redis-executor-{name}-{}", std::process::id()));
@@ -117,3 +118,65 @@ fn a_scan_reads_only_the_requested_kind() {
     assert_eq!(set_scan, vec![(b"b".to_vec(), b"2".to_vec())]);
     let _ = std::fs::remove_dir_all(&data_dir);
 }
+
+/// 服务器面命名空间（`redis:<db>[:kind]`）与执行器使用的 `redis:db<db>` 之间的薄适配器。
+///
+/// 生产宿主自己做这层映射；这里复用它来驱动真实的集合命令处理器。
+#[derive(Debug)]
+struct GatewayExecutor(RedisExecutor<'static>);
+
+impl GatewayExecutor {
+    fn rewrite(namespace: &Namespace) -> Namespace {
+        match namespace.0.strip_prefix("redis:") {
+            Some(rest) if !rest.starts_with("db") => Namespace(format!("redis:db{rest}")),
+            _ => namespace.clone(),
+        }
+    }
+}
+
+impl KeyValueExecutor for GatewayExecutor {
+    fn execute(&self, fence: Option<&FenceToken>, command: KeyValueCommand) -> database_types::cluster::Result<KeyValueResult> {
+        self.0.execute(fence, KeyValueCommand { namespace: Self::rewrite(&command.namespace), ..command })
+    }
+}
+
+fn request(arguments: &[&'static [u8]]) -> Request<'static> {
+    Request { arguments: arguments.to_vec(), consumed: 0 }
+}
+
+fn integer(reply: Reply) -> i64 {
+    match reply {
+        Reply::Integer(value) => value,
+        other => panic!("expected an integer reply, got {other:?}"),
+    }
+}
+
+fn revision(executor: &dyn KeyValueExecutor, key: &[u8]) -> Option<u64> {
+    match executor.execute(None, command(0, "set", key, KeyValueAction::GetRevision)).expect("revision") {
+        KeyValueResult::Revision(revision) => revision,
+        other => panic!("expected a revision result, got {other:?}"),
+    }
+}
+
+/// `SREM` 未命中任何成员时集合内容不变：不得重写同值记录、不得推进修订号。
+///
+/// `WATCH` 以修订号判定键是否被改过，同值重写会让一次未命中的 `SREM` 误使事务失效。
+#[test]
+fn srem_of_absent_members_keeps_the_set_revision() {
+    let data_dir = temporary_dir("srem-revision");
+    let shard: &'static Mutex<RedisShard> = Box::leak(Box::new(Mutex::new(RedisShard::open(&data_dir).expect("open"))));
+    let executor = GatewayExecutor(RedisExecutor::new(shard));
+    let base = Namespace("redis:0".to_string());
+
+    assert_eq!(integer(handle_set(&request(&[b"SADD", b"tags", b"a", b"b"]), Some(&executor), &base, 2).expect("sadd")), 2);
+    let before = revision(&executor, b"tags");
+    assert!(before.is_some(), "the set must exist after SADD");
+
+    assert_eq!(integer(handle_set(&request(&[b"SREM", b"tags", b"missing"]), Some(&executor), &base, 2).expect("srem")), 0);
+    assert_eq!(revision(&executor, b"tags"), before, "a no-op SREM must leave the record and its revision untouched");
+
+    assert_eq!(integer(handle_set(&request(&[b"SREM", b"tags", b"a"]), Some(&executor), &base, 2).expect("srem")), 1);
+    assert_ne!(revision(&executor, b"tags"), before, "a real removal writes a new record");
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+

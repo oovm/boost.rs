@@ -2091,6 +2091,11 @@ pub fn handle_set(
             }
             !hit
         });
+        // 没有任何成员被移除时集合内容不变：不重写同值记录，修订号也就不推进，
+        // `WATCH` 不会因为一次未命中的 `SREM` 误判键被改过。
+        if removed == 0 {
+            return Ok(Reply::integer(0));
+        }
         if members.is_empty() {
             if let Err(message) = remove_value(executor, &KeyKind::Set.namespace(base), key) {
                 return Err(CommandError::Failed(message.to_owned()));
