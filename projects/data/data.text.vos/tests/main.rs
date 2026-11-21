@@ -113,8 +113,8 @@ fn quoted_identifiers_require_a_closing_backtick() {
 }
 
 #[test]
-fn line_comments_treat_backticks_and_slashes_as_text() {
-    let source = "// keep `raw` text and // inner slashes\ntable T { id: utf8, // trailing `x`\n# hash `y`\n}";
+fn hash_comments_accept_backticks_and_doc_markers() {
+    let source = "# keep `raw` text and // inner slashes\n#? field documentation with `code`\ntable T { id: utf8, # trailing `x`\n#? doc `y`\n}";
     let root = parse(source).expect("comment text is inert");
     assert_eq!(root.declarations[0].name.as_deref(), Some("T"));
     assert_eq!(root.declarations[0].fields[0].name, "id");
@@ -122,6 +122,18 @@ fn line_comments_treat_backticks_and_slashes_as_text() {
     let mut restored = String::new();
     append_text(&root.syntax, &mut restored);
     assert_eq!(restored, source);
+}
+
+#[test]
+fn slash_comments_are_rejected() {
+    for source in [
+        "// line comment\ntable T { id: uuid, }",
+        "/// doc comment\ntable T { id: uuid, }",
+        "//! module doc\ntable T { id: uuid, }",
+        "table T { id: uuid, // trailing }",
+    ] {
+        assert!(parse(source).is_err(), "accepted a slash comment: {source}");
+    }
 }
 
 #[test]

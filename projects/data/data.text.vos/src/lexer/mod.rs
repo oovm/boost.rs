@@ -143,6 +143,7 @@ impl Lexer<VosLanguage> for VosLexer {
             else if ch == '/' {
                 state.advance(ch.len_utf8());
                 if state.peek() == Some('/') {
+                    // VOS has no slash comments: only `#` and `#?` open one.
                     state.advance(1);
                     while let Some(next) = state.peek() {
                         if next == '\n' || next == '\r' {
@@ -150,7 +151,8 @@ impl Lexer<VosLanguage> for VosLexer {
                         }
                         state.advance(next.len_utf8());
                     }
-                    state.add_token(VosTokenType::Comment, start, state.get_position());
+                    state.add_error(data_text_core::TextError::expected_token("# comment", start, None));
+                    state.add_token(VosTokenType::Error, start, state.get_position());
                 }
                 else {
                     state.add_token(VosTokenType::Operator, start, state.get_position());
