@@ -188,7 +188,7 @@ pub fn dispatch_statement(
         }
         Ok(None) => {}
     }
-    let command = parse_session_command(trimmed).map_err(|_| {
+    let command = parse_session_command(normalized_session_syntax(trimmed).as_deref().unwrap_or(trimmed)).map_err(|_| {
         session.fail();
         StatementError::new("42601", "SQL parser could not parse the statement")
     })?;
@@ -644,7 +644,7 @@ fn run_statement_inner(
     }
     // 扩展查询不经过 `dispatch_statement`，语法错误必须在这里映射为 `42601`
     // 而不是被后面的 catalog 绑定错误统一归为 `42P01`。
-    if parse_session_command(sql).is_err() {
+    if parse_session_command(normalized_session_syntax(sql).as_deref().unwrap_or(sql)).is_err() {
         session.fail();
         return Err(("42601".to_string(), "SQL parser could not parse the statement".to_string()));
     }
@@ -665,10 +665,15 @@ fn run_statement_inner(
         session.fail();
         statement_error("bind", error)
     })?;
-    let plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Postgres).map_err(|error| {
+    let mut plan = plan_statement_for_dialect(bound, &catalog, SqlDialect::Postgres).map_err(|error| {
         session.fail();
         statement_error("plan", error)
     })?;
+    // `numeric(p,s)` keeps its display scale in the declared column type, which
+    // the gateway catalog projection does not carry. Coerce the literal writes
+    // before execution so a stored decimal reads back exactly like PostgreSQL.
+    super::numeric_scale::coerce_write_plan(&mut plan, |type_id| session.declared_sql_types(&runtime.schema, type_id))
+        .map_err(|error| (error.sqlstate, error.message))?;
     enforce_privileges(&plan, &catalog, runtime, session.user(), |type_id| session.owns_temp_type(type_id))?;
     let is_read = matches!(
         &plan,
@@ -682,17 +687,50 @@ fn run_statement_inner(
     // Derive the result shape from the catalog plan so an empty result set
     // reports the declared type instead of falling back to `text`.
     let description = describe_plan(&plan);
-    let handle_ref: Option<&dyn TransactionHandle> = session.transaction_handle();
+    // One statement outside an explicit block is its own transaction in
+    // PostgreSQL. Running it through a transaction handle is what makes two
+    // writers of the same row meet: the handle registers the row in the shared
+    // lock table, so the second writer waits for the first to commit or roll
+    // back instead of publishing an overwrite.
+    let implicit = match (is_read, session.transaction_handle()) {
+        (false, None) => Some(Arc::clone(&runtime.executor).begin_transaction(None).map_err(|error| {
+            session.fail();
+            ("0A000".to_string(), format!("BEGIN failed: {error}"))
+        })?),
+        _ => None,
+    };
+    let handle_ref: Option<&dyn TransactionHandle> = session.transaction_handle().or(implicit.as_deref());
     // `nextval` / `currval` / `setval` read and advance the durable sequence
     // state in the object catalog; the statement installs it for its own run.
     let sequences: Arc<dyn database_query::SqlSequenceCatalog> = Arc::new(ObjectSequences(Arc::clone(&runtime.objects)));
-    let result = database_query::with_sequence_catalog(sequences, || {
-        crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres)
-    })
-    .map_err(|error| {
-        session.fail();
-        statement_error("execution", error)
-    })?;
+    let settings = Arc::new(session.settings_snapshot());
+    let executed = database_query::with_session_settings(settings, || {
+        database_query::with_sequence_catalog(sequences, || {
+            crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres)
+        })
+    });
+    let result = match executed {
+        Ok(result) => {
+            if let Some(handle) = implicit
+                && let Err(error) = handle.commit()
+            {
+                session.fail();
+                let code = match &error {
+                    database_types::cluster::Error::CasConflict { .. } => "40001",
+                    _ => "58P01",
+                };
+                return Err((code.to_string(), format!("COMMIT failed: {error}")));
+            }
+            result
+        }
+        Err(error) => {
+            if let Some(handle) = implicit {
+                handle.rollback();
+            }
+            session.fail();
+            return Err(statement_error("execution", error));
+        }
+    };
     let command_tag = if is_read {
         format!("SELECT {}", result.rows.len())
     }
@@ -781,6 +819,52 @@ pub fn describe_statement(
         statement_error("plan", error)
     })?;
     Ok(describe_plan(&plan))
+}
+
+/// Rewrites `SET <name> TO <value>` into the `SET <name> = <value>` spelling the
+/// shared session-command parser accepts.
+///
+/// PostgreSQL treats `TO` and `=` as synonyms on `SET`; the SQL syntax tree the
+/// gateway lowers session commands from only carries the `=` form, so the
+/// statement core normalises the keyword before parsing. Quoted strings and
+/// identifiers are skipped, so a `TO` inside a value is never rewritten.
+pub fn normalized_session_syntax(sql: &str) -> Option<String> {
+    let trimmed = sql.trim();
+    let first = trimmed.split_whitespace().next()?;
+    if !first.eq_ignore_ascii_case("SET") {
+        return None;
+    }
+    let bytes = trimmed.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut index = first.len();
+    while index < bytes.len() {
+        let byte = bytes[index];
+        match quote {
+            Some(active) if byte == active => quote = None,
+            Some(_) => {}
+            None if byte == b'\'' || byte == b'"' => quote = Some(byte),
+            None if (byte == b'T' || byte == b't')
+                && index > 0
+                && bytes[index - 1].is_ascii_whitespace()
+                && bytes.get(index + 1).is_some_and(|next| *next == b'O' || *next == b'o')
+                && bytes.get(index + 2).is_some_and(u8::is_ascii_whitespace) =>
+            {
+                let rest = trimmed[index + 2..].trim_start();
+                // Only a value separator: the next token must not be a keyword.
+                if rest.is_empty() || rest.starts_with('=') {
+                    return None;
+                }
+                let mut rewritten = String::with_capacity(trimmed.len() + 1);
+                rewritten.push_str(&trimmed[..index]);
+                rewritten.push('=');
+                rewritten.push_str(&trimmed[index + 2..]);
+                return Some(rewritten);
+            }
+            None => {}
+        }
+        index += 1;
+    }
+    None
 }
 
 /// Maps a structured gateway failure to its PostgreSQL SQLSTATE. Protocol code

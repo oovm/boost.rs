@@ -248,6 +248,9 @@ pub struct TransactionSession {
     statement_timeout: Option<Duration>,
     /// Text form `SHOW statement_timeout` reports back.
     statement_timeout_text: String,
+    /// Values written by `SET <name> = '<value>'` for the parameters the gateway
+    /// does not interpret itself, keyed by lower-case name.
+    overrides: BTreeMap<String, String>,
     /// Cooperative cancel flag a `CancelRequest` flips for this session.
     ///
     /// The engine executes synchronously, so a cancel that arrives while a
@@ -323,6 +326,7 @@ impl TransactionSession {
             temp_checkpoint: None,
             statement_timeout: None,
             statement_timeout_text: "0".to_string(),
+            overrides: BTreeMap::new(),
             cancel: None,
         }
     }
@@ -446,14 +450,36 @@ impl TransactionSession {
     }
 
     /// `RESET` / `RESET ALL`: every emulated GUC returns to its default.
-    ///
-    /// The gateway keeps no override for GUCs other than `search_path` (their
-    /// `SET` is accepted as a no-op and `SHOW` answers the default table), so
-    /// restoring them is already satisfied by the static default table.
     pub fn reset_parameters(&mut self) {
         self.search_path = DEFAULT_SEARCH_PATH.to_string();
         self.statement_timeout = None;
         self.statement_timeout_text = "0".to_string();
+        self.overrides.clear();
+    }
+
+    /// `RESET <name>`: one parameter returns to its default.
+    pub fn reset_parameter(&mut self, name: &str) {
+        let needle = name.trim().to_ascii_lowercase();
+        match needle.as_str() {
+            "search_path" => self.search_path = DEFAULT_SEARCH_PATH.to_string(),
+            "statement_timeout" => {
+                self.statement_timeout = None;
+                self.statement_timeout_text = "0".to_string();
+            }
+            _ => {
+                self.overrides.remove(&needle);
+            }
+        }
+    }
+
+    /// `SET <name> = '<value>'` for a parameter other than the two the gateway
+    /// interprets itself.
+    ///
+    /// PostgreSQL keeps the written value for the session, and `SHOW` /
+    /// `current_setting()` report it back; storing it here gives those two the
+    /// same answer without teaching the session each parameter's meaning.
+    pub fn set_parameter(&mut self, name: &str, value: String) {
+        self.overrides.insert(name.trim().to_ascii_lowercase(), value);
     }
 
     /// Applies a `SET statement_timeout = ...` value.
@@ -675,6 +701,64 @@ impl TransactionSession {
     /// Open transaction handle, when this session owns a runtime transaction.
     pub fn transaction_handle(&self) -> Option<&dyn TransactionHandle> {
         self.handle.as_deref()
+    }
+
+    /// Declared SQL type text of one column, temporary tables first.
+    ///
+    /// The catalog projection keeps only the gateway field type, which drops a
+    /// `numeric(12,2)` scale. The declared text is what the DDL wrote, so the
+    /// write path reads the display scale from here.
+    pub fn declared_sql_types(&self, schema: &SqlSchemaRegistry, type_id: u64) -> BTreeMap<u64, String> {
+        let lookup = |registry: &SqlSchemaRegistry| {
+            registry
+                .snapshot()
+                .tables
+                .into_iter()
+                .find(|table| table.type_id == type_id)
+                .map(|table| table.fields.into_iter().map(|field| (field.field_id, field.sql_type)).collect::<BTreeMap<_, _>>())
+                .unwrap_or_default()
+        };
+        if let Some(temp) = &self.temp {
+            let declared = lookup(&temp.registry);
+            if !declared.is_empty() {
+                return declared;
+            }
+        }
+        lookup(schema)
+    }
+
+    /// Effective value of one GUC, the same answer `SHOW` and
+    /// `current_setting()` report.
+    ///
+    /// The two session-mutable parameters layer over the static default table,
+    /// so every caller sees one value per session.
+    pub fn parameter(&self, name: &str) -> Option<String> {
+        let name = name.trim();
+        if name.eq_ignore_ascii_case("search_path") {
+            return Some(self.search_path.clone());
+        }
+        if name.eq_ignore_ascii_case("statement_timeout") {
+            return Some(self.statement_timeout_text.clone());
+        }
+        if let Some(value) = self.overrides.get(&name.to_ascii_lowercase()) {
+            return Some(value.clone());
+        }
+        super::parameters::default_parameter(name).map(str::to_string)
+    }
+
+    /// Every effective GUC, keyed by lower-case name.
+    ///
+    /// The statement core installs this snapshot for its own duration so
+    /// `current_setting()` answers exactly what `SHOW` would.
+    pub fn settings_snapshot(&self) -> BTreeMap<String, String> {
+        let mut settings: BTreeMap<String, String> =
+            super::parameters::PG_PARAMETERS.iter().map(|(name, value)| ((*name).to_string(), (*value).to_string())).collect();
+        settings.insert("search_path".to_string(), self.search_path.clone());
+        settings.insert("statement_timeout".to_string(), self.statement_timeout_text.clone());
+        for (name, value) in &self.overrides {
+            settings.insert(name.clone(), value.clone());
+        }
+        settings
     }
 
     /// Registers a SQL-level prepared statement. Returns `false` when the name

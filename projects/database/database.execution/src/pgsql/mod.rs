@@ -9,6 +9,8 @@ pub mod copy;
 pub mod cursors;
 pub mod explain;
 pub mod notify;
+pub mod numeric_scale;
+pub mod parameters;
 pub mod prepared;
 pub mod session;
 pub mod statement;
@@ -17,12 +19,14 @@ pub use copy::{CopyInPlan, CopyInState};
 pub use cursors::execute_cursor_utility;
 pub use explain::execute_explain;
 pub use notify::{Notification, NotificationHub};
+pub use numeric_scale::{coerce_write_plan, declared_scale};
+pub use parameters::{default_parameter, PG_PARAMETERS};
 pub use prepared::execute_utility;
 pub use session::{
     ABORTED_BLOCK, CancelRegistry, DEFAULT_SEARCH_PATH, PgsqlSqlRuntime, PreparedSqlStatement, SessionCursor, TransactionControl,
     TransactionRunError, TransactionSession, run_transaction,
 };
 pub use statement::{
-    ExecutionOutcome, StatementError, StatementOutcome, describe_statement, dispatch_statement, pg_sqlstate, run_statement,
-    run_statement_with_parameters, statement_error,
+    ExecutionOutcome, StatementError, StatementOutcome, describe_statement, dispatch_statement, normalized_session_syntax, pg_sqlstate,
+    run_statement, run_statement_with_parameters, statement_error,
 };
