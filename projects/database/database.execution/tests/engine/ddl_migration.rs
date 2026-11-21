@@ -104,3 +104,39 @@ fn a_rename_with_an_appended_optional_field_keeps_data_and_identity() {
     let error = conn.execute_vos_write(r#"Sku.insert({ id: 2, code: "A", name: "dup" })"#).unwrap_err();
     assert_eq!(error.code(), "database.unique.violation", "{error}");
 }
+
+#[test]
+fn appending_an_optional_field_keeps_old_rows_readable_as_null() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Note { @@id: i64, name: utf8 }").unwrap();
+    conn.execute_vos_write(r#"Note.insert({ id: 1, name: "first" })"#).unwrap();
+
+    conn.migrate_schema("table Note { @@id: i64, name: utf8, memo: utf8? }", &RenameMap::default()).unwrap();
+
+    let rows = conn.query_vos("Note.all().collect()").unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    let missing = conn.query_vos("Note.all().filter(n => n.memo == null).collect()").unwrap();
+    assert_eq!(missing.len(), 1, "an old row reads the appended optional column as null");
+    conn.execute_vos_write(r#"Note.insert({ id: 2, name: "second", memo: "hi" })"#).unwrap();
+    conn.execute_vos_write(r#"Note.insert({ id: 3, name: "third" })"#).unwrap();
+    let present = conn.query_vos(r#"Note.all().filter(n => n.memo == "hi").collect()"#).unwrap();
+    assert_eq!(present.len(), 1, "{present:?}");
+}
+
+#[test]
+fn a_published_optional_field_survives_reopening_with_old_rows() {
+    let path = std::env::temp_dir().join(format!("ddl-migration-optional-{}.yydx", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.ensure_schema("table Note { @@id: i64, name: utf8 }").unwrap();
+        conn.execute_vos_write(r#"Note.insert({ id: 1, name: "first" })"#).unwrap();
+        conn.migrate_schema("table Note { @@id: i64, name: utf8, memo: utf8? }", &RenameMap::default()).unwrap();
+        conn.close();
+    }
+    let conn = Connection::open(&path).unwrap();
+    let rows = conn.query_vos("Note.all().collect()").unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    conn.close();
+    let _ = std::fs::remove_file(&path);
+}
