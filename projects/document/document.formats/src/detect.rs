@@ -153,7 +153,7 @@ fn detect_text(bytes: &[u8], extension_hint: Option<&str>) -> FormatDetection {
         return FormatDetection::resolved(format, ContainerKind::Plain, DetectionConfidence::Hinted, describe_text_signature(format));
     }
     if let Some(format) = normalize_hint(extension_hint) {
-        if matches!(format, "markdown" | "notedown" | "html" | "tex" | "typst") {
+        if matches!(format, "markdown" | "notedown" | "html" | "tex" | "typst" | "rtf") {
             return FormatDetection::resolved(
                 format,
                 ContainerKind::Plain,
@@ -175,6 +175,9 @@ fn textual_signature(bytes: &[u8]) -> Option<&'static str> {
     if trimmed.starts_with("\\documentclass") || trimmed.starts_with("\\begin{document") || trimmed.starts_with("\\section{") {
         return Some("tex");
     }
+    if trimmed.starts_with("{\\rtf") {
+        return Some("rtf");
+    }
     None
 }
 
@@ -189,6 +192,7 @@ fn describe_text_signature(format: &'static str) -> &'static str {
     match format {
         "html" => "leading `<html`/`<head`/`<body`/`<!doctype html` signature identifies HTML text",
         "tex" => "leading `\\documentclass`/`\\begin{document`/`\\section{` signature identifies TeX source",
+        "rtf" => "leading `{\\rtf` signature identifies Rich Text Format",
         _ => "text signature identifies the format",
     }
 }
@@ -200,6 +204,7 @@ fn normalize_hint(extension_hint: Option<&str>) -> Option<&'static str> {
         "nd" | "notedown" => "notedown",
         "html" | "htm" | "xhtml" => "html",
         "tex" | "latex" => "tex",
+        "rtf" => "rtf",
         "typ" | "typst" => "typst",
         "docx" => "docx",
         "doc" => "doc",
@@ -309,6 +314,14 @@ mod tests {
     fn extension_hint_selects_plain_text_format() {
         assert_eq!(detect_bytes(b"# Title\n\nBody.\n", Some("md")).format, Some("markdown"));
         assert_eq!(detect_bytes(b"= Title\n", Some("typ")).format, Some("typst"));
+    }
+
+    #[test]
+    fn rtf_signature_identifies_the_document() {
+        let detection = detect_bytes(b"{\\rtf1\\ansi\\deff0}", Some("txt"));
+        assert_eq!(detection.format, Some("rtf"));
+        assert!(detection.evidence.contains("Rich Text"));
+        assert_eq!(detect_bytes(b"{\\rtf1", None).format, Some("rtf"));
     }
 
     #[test]
