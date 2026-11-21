@@ -18,6 +18,7 @@ pub mod mp4;
 #[cfg(feature = "obj")]
 pub mod obj;
 pub mod png;
+pub mod texture;
 #[cfg(feature = "svg")]
 pub mod svg;
 pub mod wav;
@@ -30,6 +31,7 @@ pub use mp4::{AudioParams as Mp4AudioParams, Muxer as Mp4Muxer, VIDEO_TIMESCALE 
 #[cfg(feature = "obj")]
 pub use obj::{to_obj_string, write_obj};
 pub use png::write_png;
+pub use texture::{decode_bc1, decode_bc7};
 #[cfg(feature = "svg")]
 pub use svg::{to_svg_string, write_svg};
 pub use wav::{WavFloat, WavPcm16, WavPcm24, parse_wav_f32, parse_wav_pcm16, parse_wav_pcm24, write_wav};

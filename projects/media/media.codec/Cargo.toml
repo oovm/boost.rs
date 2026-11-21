@@ -9,6 +9,7 @@ authors.workspace = true
 publish.workspace = true
 
 [dependencies]
+ctt-etcpak = { workspace = true }
 media-types = { workspace = true }
 media-image = { workspace = true }
 media-vector = { workspace = true, optional = true }
