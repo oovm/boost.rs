@@ -120,7 +120,13 @@ impl SqlValue {
             // Exact decimals arrive on the wire as text; keep them textual so
             // drivers observe the same value they would from MySQL.
             crate::catalog_bind::SqlFieldType::Decimal => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
-            crate::catalog_bind::SqlFieldType::Json => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
+            // `json` / `jsonb` 的落库载荷是结构化 `any` 值（行记录类型标签），
+            // 这里解码后只在 SQL 驱动边界渲染一次文本。
+            crate::catalog_bind::SqlFieldType::Json => match super::json::text_from_bytes(bytes) {
+                Ok(text) => SqlValue::String(text),
+                // 早期版本把 JSON 存成文本；保持可读，避免旧数据变成硬错误。
+                Err(_) => SqlValue::String(String::from_utf8_lossy(bytes).into_owned()),
+            },
             // `DATE`/`DATETIME` columns store the canonical text spelling; the gateway
             // re-emits it verbatim and the driver-side column type turns it into a date.
             crate::catalog_bind::SqlFieldType::Date | crate::catalog_bind::SqlFieldType::Datetime => {

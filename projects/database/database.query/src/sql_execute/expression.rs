@@ -503,9 +503,10 @@ pub fn eval_binary(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue
 
 /// JSON 取箭头求值：`->` 返回子树 JSON 文本，`->>` 返回去引号标量文本。
 ///
-/// json/jsonb 列在网关里以 JSON 文本存储；字符串键取对象成员，整数下标取数组元素。
-/// 缺键与越界返回 NULL，非法 JSON 或非对象/非数组的取值报类型错误。NULL 侧已在
-/// `eval_binary` 入口传播。
+/// 落库是结构化 `any` 值；到了 SQL 值层，JSON 已在驱动边界物化为紧凑文本，
+/// 因此这里按文本取值。字符串键取对象成员，整数下标取数组元素。缺键与越界返回
+/// NULL，非法 JSON 或非对象/非数组的取值报类型错误。NULL 侧已在 `eval_binary`
+/// 入口传播。
 fn eval_json_access(op: SqlBoundBinaryOperator, left: &SqlValue, right: &SqlValue) -> Result<SqlValue, SqlFrontendError> {
     let type_mismatch = |message: String| SqlFrontendError::new(SqlErrorKind::TypeMismatch, message);
     let json_text = match left {

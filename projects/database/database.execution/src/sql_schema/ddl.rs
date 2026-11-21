@@ -447,9 +447,10 @@ fn map_sql_type(sql_type: &str) -> Result<(SqlFieldType, Option<u32>), SqlFronte
         // `DECIMAL(p,s)` keeps its value as decimal text; the declared precision
         // and scale are dialect display facts and do not narrow the gateway type.
         "DECIMAL" | "NUMERIC" | "DEC" | "FIXED" => SqlFieldType::Decimal,
-        // JSON/JSONB 是 SQL gateway 的模拟类型：VOS 原生没有 json，落库始终是
-        // UTF-8 文本（与 SQLite 同口径）。该独立类型只服务 wire 上报（PostgreSQL
-        // 上报 `jsonb`）与字面量校验，不新增存储类型。
+        // JSON/JSONB 只是 SQL gateway 的类型拼写：底层没有 json 标量，落库是
+        // 结构化 `any` 值（`Value::Row` / `Value::List`）的行记录编码，文本仅在
+        // 驱动边界渲染。该类型只服务 wire 上报（PostgreSQL 上报 `jsonb`）与
+        // 字面量校验，不新增存储类型。
         "JSON" | "JSONB" => SqlFieldType::Json,
         "BINARY" | "VARBINARY" | "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BYTEA" => SqlFieldType::Bytes,
         _ => {

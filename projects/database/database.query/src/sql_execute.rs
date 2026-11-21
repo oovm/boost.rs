@@ -12,6 +12,9 @@ use crate::{
 };
 
 mod expression;
+
+/// JSON 列的网关编解码：落库是结构化 `any` 值，文本只在驱动边界出现。
+pub(crate) mod json;
 mod scalar;
 mod values;
 

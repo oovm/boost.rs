@@ -19,10 +19,11 @@ use schema_types::{CanonicalScalar, ResolvedCanonicalType};
 ///   [`SqlFieldType::Decimal`]). They shape the SQL wire face and literal
 ///   validation only; they do not add a storage type to VOS/YYDS/YYDB.
 ///
-/// In particular `json/jsonb` is simulated: the payload stays UTF-8 text, and
-/// PostgreSQL merely reports `jsonb` so drivers materialize a parsed value.
-/// The dynamic `any` used by `->` / `->>` is a query-time value
-/// (`Value::Row` / `Value::List`), never a declarable column type.
+/// In particular `json/jsonb` has no storage scalar of its own: the payload is
+/// the runtime structured `any` value (`Value::Row` / `Value::List` and JSON
+/// scalars) encoded with the row-record type tags, and text is rendered only at
+/// the SQL driver boundary. There is no "native json type" to distinguish —
+/// `json` / `jsonb` are gateway spellings for the same structured payload.
 ///
 /// Fields whose native type has no clean SQL projection fall back to
 /// [`SqlFieldType::Unknown`] and leave interpretation to the runtime.
@@ -70,12 +71,11 @@ pub enum SqlFieldType {
     /// lowercase spelling, which is what drivers expect for a text-encoded
     /// uuid column.
     Uuid,
-    /// SQL-gateway simulated JSON / JSONB (`json` / `jsonb`).
+    /// SQL 网关的 JSON / JSONB（`json` / `jsonb`）。
     ///
-    /// Native VOS has no json type: the payload is stored as the UTF-8 text
-    /// the client wrote and compared as text. The PostgreSQL wire face reports
-    /// `jsonb` so drivers materialize a parsed value instead of a string; that
-    /// OID is a reporting detail, not a storage contract.
+    /// 底层没有 json 标量：落库载荷是运行时结构化 `any` 值（[`database_types::Value::Row`] /
+    /// [`database_types::Value::List`] 与 JSON 标量）的行记录编码，读写都不以 UTF-8
+    /// 文本落库。PostgreSQL wire 报 `jsonb`，文本只在驱动边界渲染，属于表示层。
     Json,
     /// Optional wrapper — inner type + NULL. Box breaks the recursion
     Optional(Box<SqlFieldType>),
@@ -120,6 +120,20 @@ impl SqlFieldType {
                 },
                 _ => Err(SqlFrontendError::new(SqlErrorKind::TypeMismatch, "a uuid column accepts only 16-octet binary or UUID text")),
             };
+        }
+        if matches!(self.inner(), SqlFieldType::Json) {
+            return Ok(Some(match literal {
+                // 结构化一次：客户端文本只在这里解析成 `any` 值。
+                SqlBoundLiteral::String(text) => crate::sql_execute::json::encode(text)?,
+                // PostgreSQL `jsonb` 二进制参数（版本字节 + JSON 文本）。
+                SqlBoundLiteral::Bytes(bytes) => crate::sql_execute::json::encode_bytes(bytes)?,
+                _ => {
+                    return Err(SqlFrontendError::new(
+                        SqlErrorKind::TypeMismatch,
+                        "a json column accepts only JSON text or a jsonb binary parameter",
+                    ));
+                }
+            }));
         }
         Ok(Some(match literal {
             SqlBoundLiteral::Integer(value) => value.to_string().into_bytes(),

@@ -164,6 +164,20 @@ pub fn encode_tagged(value: &Value) -> Result<Vec<u8>> {
     Ok(encoded)
 }
 
+/// Decode one payload previously produced by [`encode_tagged`].
+///
+/// This is the cell-level counterpart of [`decode_row`]: it decodes a single
+/// stored value (for example a structured `any` column) without a field name or
+/// record envelope.
+pub fn decode_tagged(bytes: &[u8]) -> Result<Value> {
+    let mut cursor = RowCursor::new(bytes);
+    let value = decode_value(&mut cursor, &mut None, false, 0)?;
+    if cursor.position != bytes.len() {
+        return Err(Error::Corrupt("tagged value has trailing bytes"));
+    }
+    Ok(value)
+}
+
 /// Fill `selected` with the tagged bytes of `names` from one stored record.
 ///
 /// The slices borrow `bytes`, so a caller can compare columns of a stored row
@@ -225,6 +239,8 @@ const TAG_VECTOR: u8 = 0x0B;
 const TAG_OBJECT: u8 = 0x0C;
 const TAG_FILE: u8 = 0x0D;
 const TAG_LIST: u8 = 0x0E;
+/// 嵌套结构化行（`any` 值里的对象）：按成员名排序的键值序列。
+const TAG_NESTED_ROW: u8 = 0x0F;
 
 /// Deepest list nesting the row codec encodes or decodes.
 ///
@@ -336,6 +352,19 @@ fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
             out.extend_from_slice(&file.manifest.hash);
             out.extend_from_slice(&file.manifest.size.to_le_bytes());
         }
+        Value::Row(fields) => {
+            out.push(TAG_NESTED_ROW);
+            put_len(out, fields.len(), "nested row")?;
+            let nested = depth
+                .checked_add(1)
+                .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                .ok_or(Error::Unsupported("nested row nests deeper than the supported depth"))?;
+            for (name, item) in fields {
+                put_len(out, name.len(), "nested row field name")?;
+                out.extend_from_slice(name.as_bytes());
+                encode_value(out, item, nested)?;
+            }
+        }
         Value::List(items) => {
             out.push(TAG_LIST);
             let count = u32::try_from(items.len()).map_err(|_| Error::Unsupported("row record list has more than 4294967295 elements"))?;
@@ -351,7 +380,7 @@ fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
         _ => {
             return Err(Error::Unsupported(
                 "query row encoding supports null, bool, i64, real, text, uuid, bytes, vector, date, time, timestamp, \
-                 decimal, bytes object references, file descriptors, and lists only",
+                 decimal, bytes object references, file descriptors, lists, and nested rows only",
             ));
         }
     }
@@ -600,6 +629,21 @@ impl<'a> RowCursor<'a> {
                     self.skip_value(nested)?;
                 }
             }
+            TAG_NESTED_ROW => {
+                let count = self.u32()? as usize;
+                if count > self.remaining() {
+                    return Err(Error::Corrupt("nested row length exceeds the remaining bytes"));
+                }
+                let nested = depth
+                    .checked_add(1)
+                    .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                    .ok_or(Error::Corrupt("nested row nests deeper than the supported depth"))?;
+                for _ in 0..count {
+                    let key_len = self.u32()? as usize;
+                    self.take(key_len)?;
+                    self.skip_value(nested)?;
+                }
+            }
             _ => return Err(Error::Corrupt("row record value tag is unknown")),
         }
         Ok(self.position)
@@ -710,6 +754,23 @@ fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReference
                 items.push(decode_value(cursor, references, resolve, nested)?);
             }
             Value::List(items)
+        }
+        TAG_NESTED_ROW => {
+            let count = cursor.u32()? as usize;
+            if count > cursor.remaining() {
+                return Err(Error::Corrupt("nested row length exceeds the remaining bytes"));
+            }
+            let nested = depth
+                .checked_add(1)
+                .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                .ok_or(Error::Corrupt("nested row nests deeper than the supported depth"))?;
+            let mut fields = std::collections::BTreeMap::new();
+            for _ in 0..count {
+                let name = cursor.text()?;
+                let value = decode_value(cursor, references, resolve, nested)?;
+                fields.insert(name, value);
+            }
+            Value::Row(fields)
         }
         _ => return Err(Error::Corrupt("row record value tag is unknown")),
     })
