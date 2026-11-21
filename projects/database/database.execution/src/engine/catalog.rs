@@ -12,6 +12,7 @@
 use std::collections::BTreeMap;
 
 use crate::program::{FieldHandle, LayoutField, RecordLayout, RecordLayoutError, Type};
+use database_formats::yy::row::{NamedFieldLayout, NamedValueLayout, NamedVariantLayout, RowSchemaDirectory, ValueLayout};
 use database_types::{Error, Result, UniqueConstraint};
 
 /// A type-qualified field path used by [`RenameMap`].
@@ -76,9 +77,10 @@ pub struct ExecutionType {
 
 /// One declared `unite` variant, kept as catalog metadata.
 ///
-/// A union value needs a tagged codec that this execution slice does not own, so
-/// the discriminant stays metadata and the field type lowers to a record shape
-/// that carries the payload member count.
+/// The discriminant is the variant's durable physical identity: the row codec
+/// stores it with the payload, so a rename keeps old records readable while a
+/// reordered declaration changes the layout revision and rejects them instead of
+/// binding the bytes to another variant.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionVariant {
     /// Declared variant name.
@@ -366,10 +368,9 @@ fn resolved_execution_type_at(
 ///
 /// A `class` is a named domain value embedded in its parent row, so the
 /// execution type is a [`Type::Record`] keyed by the class's durable type id.
-/// A `structure` is the same shape with a closed field set. A `unite` value
-/// needs a tagged codec this slice does not own, so the field lowers to a
-/// record whose member count is the variant count and the discriminants stay in
-/// the catalog's variant table.
+/// A `structure` is the same shape with a closed field set. A `unite` value is
+/// a record-shaped handle in the operator model, while the row codec stores its
+/// stable discriminant and payload from the catalog's variant table.
 /// `enums` and `flags` are numeric: the value is one declared number or a mask
 /// of declared bits, so the execution type is `i64` and the catalog's member
 /// table keeps the named identity. A `table` has no by-value form: it is only
@@ -482,4 +483,195 @@ fn decimal_type_from_arguments(arguments: &[schema_types::ResolvedCanonicalTypeA
     database_types::Decimal::new(0, precision, scale)
         .map(|decimal| Type::Decimal { precision: decimal.precision(), scale: decimal.scale() })
         .map_err(|error| Error::Schema { message: format!("`Decimal<{precision}, {scale}>` rejected: {error}") })
+}
+
+/// Builds the row codec's named-layout directory from one resolved contract.
+///
+/// The directory is the only place the physical codec learns a `unite` variant's
+/// discriminant and a `structure`'s positional member order. Columns are keyed by
+/// column name because a stored row record carries no table identity; named
+/// declarations are keyed by durable schema identity so decoding does not depend
+/// on that map.
+///
+/// A layout revision is derived from what the stored bytes depend on: the
+/// discriminant set and payload shape of a `unite`, and the stable field
+/// identities plus type shapes of a `structure`. Renaming a variant or a
+/// structure field therefore keeps the revision, while reordering a declaration
+/// changes it and makes stored records reject instead of being reinterpreted.
+pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result<RowSchemaDirectory> {
+    let mut named = BTreeMap::new();
+    for item in &contract.types {
+        let layout = match item.kind {
+            schema_types::TypeContractKind::Class => {
+                NamedValueLayout::Class { schema_id: item.type_id, fields: named_fields(&item.fields, contract, 0) }
+            }
+            schema_types::TypeContractKind::Structure => NamedValueLayout::Structure {
+                schema_id: item.type_id,
+                revision: structure_revision(item),
+                fields: named_fields(&item.fields, contract, 0),
+            },
+            schema_types::TypeContractKind::Unite => NamedValueLayout::Unite {
+                schema_id: item.type_id,
+                revision: unite_revision(item),
+                variants: item
+                    .variants
+                    .iter()
+                    .map(|variant| NamedVariantLayout {
+                        discriminant: variant.discriminant,
+                        fields: variant
+                            .fields
+                            .iter()
+                            .map(|field| NamedFieldLayout {
+                                name: field.canonical_name.clone(),
+                                ty: value_layout(&field.canonical_type, contract, 0),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            },
+            _ => continue,
+        };
+        named.insert(item.type_id, layout);
+    }
+    let mut columns = BTreeMap::new();
+    for item in &contract.types {
+        if item.kind != schema_types::TypeContractKind::Table {
+            continue;
+        }
+        for field in &item.fields {
+            let layout = value_layout(&field.canonical_type, contract, 0);
+            if matches!(layout, ValueLayout::Dynamic) {
+                continue;
+            }
+            if let Some(existing) = columns.get(&field.canonical_name)
+                && existing != &layout
+            {
+                // One statement-wide directory has no table identity to
+                // disambiguate a shared column name, so two different named
+                // layouts for it cannot be encoded unambiguously.
+                return Err(Error::Schema {
+                    message: format!(
+                        "column `{}` is declared with different named layouts in this contract; the row codec needs one \
+                         layout per column name",
+                        field.canonical_name
+                    ),
+                });
+            }
+            columns.insert(field.canonical_name.clone(), layout);
+        }
+    }
+    Ok(RowSchemaDirectory::new(columns, named))
+}
+
+fn named_fields(
+    fields: &[schema_types::ResolvedFieldContract],
+    contract: &schema_types::ResolvedContract,
+    depth: u8,
+) -> Vec<NamedFieldLayout> {
+    fields
+        .iter()
+        .map(|field| NamedFieldLayout { name: field.canonical_name.clone(), ty: value_layout(&field.canonical_type, contract, depth) })
+        .collect()
+}
+
+fn value_layout(ty: &schema_types::ResolvedCanonicalType, contract: &schema_types::ResolvedContract, depth: u8) -> ValueLayout {
+    use schema_types::ResolvedCanonicalType;
+    if depth > MAX_TYPE_DEPTH {
+        return ValueLayout::Dynamic;
+    }
+    match ty {
+        ResolvedCanonicalType::Optional(inner) => value_layout(inner, contract, depth + 1),
+        // A reference stores the target's primary key, so it has no named value.
+        ResolvedCanonicalType::Reference(_) => ValueLayout::Dynamic,
+        ResolvedCanonicalType::List(inner) => ValueLayout::List(Box::new(value_layout(inner, contract, depth + 1))),
+        ResolvedCanonicalType::User { type_id, .. } => {
+            let named = contract.types.iter().any(|entry| {
+                entry.type_id == *type_id
+                    && matches!(
+                        entry.kind,
+                        schema_types::TypeContractKind::Class
+                            | schema_types::TypeContractKind::Structure
+                            | schema_types::TypeContractKind::Unite
+                    )
+            });
+            if named {
+                ValueLayout::Named(*type_id)
+            }
+            else {
+                ValueLayout::Dynamic
+            }
+        }
+        _ => ValueLayout::Dynamic,
+    }
+}
+
+fn structure_revision(item: &schema_types::ResolvedTypeContract) -> u32 {
+    let mut hash = Fnv1a::default();
+    for field in &item.fields {
+        hash.write(&field.field_id.to_le_bytes());
+        hash.write(type_signature(&field.canonical_type).as_bytes());
+    }
+    hash.finish()
+}
+
+fn unite_revision(item: &schema_types::ResolvedTypeContract) -> u32 {
+    let mut hash = Fnv1a::default();
+    for variant in &item.variants {
+        hash.write(&variant.discriminant.to_le_bytes());
+        for field in &variant.fields {
+            hash.write(field.canonical_name.as_bytes());
+            hash.write(type_signature(&field.canonical_type).as_bytes());
+        }
+        // A separator keeps `[a, b]` distinct from `[a b]`.
+        hash.write(b"\x1f");
+    }
+    hash.finish()
+}
+
+fn type_signature(ty: &schema_types::ResolvedCanonicalType) -> String {
+    use schema_types::{ResolvedCanonicalType, ResolvedCanonicalTypeArgument};
+    match ty {
+        ResolvedCanonicalType::Scalar(scalar) => scalar.to_string(),
+        ResolvedCanonicalType::File => "file".to_owned(),
+        ResolvedCanonicalType::Vector { element, dimension } => format!("vector<{element:?},{dimension}>"),
+        ResolvedCanonicalType::User { type_id, .. } => format!("user:{type_id}"),
+        ResolvedCanonicalType::Reference(inner) => format!("&{}", type_signature(inner)),
+        ResolvedCanonicalType::Optional(inner) => format!("?{}", type_signature(inner)),
+        ResolvedCanonicalType::List(inner) => format!("[]{}", type_signature(inner)),
+        ResolvedCanonicalType::Generic { path, arguments } => {
+            let arguments = arguments
+                .iter()
+                .map(|argument| match argument {
+                    ResolvedCanonicalTypeArgument::Type(ty) => type_signature(ty),
+                    ResolvedCanonicalTypeArgument::Literal(literal) => literal.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{}<{arguments}>", path.join("::"))
+        }
+    }
+}
+
+/// FNV-1a over the layout signature, used only as a stable revision number.
+struct Fnv1a(u32);
+
+impl Default for Fnv1a {
+    fn default() -> Self {
+        Self(0x811c_9dc5)
+    }
+}
+
+impl Fnv1a {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut hash = self.0;
+        for byte in bytes {
+            hash ^= u32::from(*byte);
+            hash = hash.wrapping_mul(0x0100_0193);
+        }
+        self.0 = hash;
+    }
+
+    fn finish(&self) -> u32 {
+        self.0
+    }
 }

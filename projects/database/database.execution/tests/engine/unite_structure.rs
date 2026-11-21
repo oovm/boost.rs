@@ -1,9 +1,10 @@
 //! `structure` is a closed field record and `unite` is a tagged union.
 //!
 //! A `structure` value is embedded like a class record and its closed member set
-//! is enforced at the write boundary. A `unite` value needs a tagged codec that
-//! this execution slice does not own, so the catalog keeps its variants and
-//! discriminants as metadata and a write is refused instead of losing the tag.
+//! is enforced at the write boundary. A `unite` value carries a stable variant
+//! discriminant plus that variant's payload; the row codec takes both from the
+//! catalog directory, so a renamed variant keeps its identity and a declaration
+//! that is reordered rejects old bytes instead of reinterpreting them.
 
 use std::collections::BTreeMap;
 
@@ -18,14 +19,15 @@ structure Address {
 }
 
 unite Contact {
-    Email { address: utf8 },
+    Email { address: utf8, label: utf8? },
+    Sms { number: utf8 },
     None,
 }
 
 table Person {
     @@id: i64,
     address: Address,
-    contact: Contact,
+    contact: Contact?,
 }
 ";
 
@@ -55,10 +57,31 @@ fn stored_address(zip: &str, country: Option<&str>) -> Value {
     Value::Row(fields)
 }
 
-fn insert(conn: &Connection, address: Value, contact: Option<Value>) -> database_types::Result<()> {
+/// The author-facing spelling of a union value: one variant name plus payload.
+fn variant(name: &str, payload: &[(&str, Value)]) -> Value {
+    let mut fields = BTreeMap::new();
+    for (key, value) in payload {
+        fields.insert((*key).to_owned(), value.clone());
+    }
     let mut named = BTreeMap::new();
+    named.insert(name.to_owned(), Value::Row(fields));
+    Value::Row(named)
+}
+
+/// The canonical spelling a decode returns: `[discriminant, payload]`.
+fn stored_variant(discriminant: i64, payload: &[(&str, Value)]) -> Value {
+    let mut fields = BTreeMap::new();
+    for (key, value) in payload {
+        fields.insert((*key).to_owned(), value.clone());
+    }
+    Value::List(vec![Value::I64(discriminant), Value::Row(fields)])
+}
+
+fn insert(conn: &Connection, id: i64, address: Value, contact: Option<Value>) -> database_types::Result<()> {
+    let mut named = BTreeMap::new();
+    named.insert("id".to_owned(), Value::I64(id));
     named.insert("address".to_owned(), address);
-    let mut source = "Person.insert({ id: 1, address: $address".to_owned();
+    let mut source = "Person.insert({ id: $id, address: $address".to_owned();
     if let Some(contact) = contact {
         named.insert("contact".to_owned(), contact);
         source.push_str(", contact: $contact");
@@ -92,7 +115,7 @@ fn a_structure_value_is_a_closed_record_and_survives_a_reopen() {
                 .iter()
                 .map(|variant| (variant.name.as_str(), variant.discriminant, variant.fields.len()))
                 .collect::<Vec<_>>(),
-            [("Email", 0, 1), ("None", 1, 0)],
+            [("Email", 0, 2), ("Sms", 1, 1), ("None", 2, 0)],
             "variant discriminants and payload sizes stay in the catalog"
         );
         assert_eq!(contact.variants[0].fields[0].ty, Type::Text);
@@ -102,11 +125,11 @@ fn a_structure_value_is_a_closed_record_and_survives_a_reopen() {
         assert_eq!(field("address"), Type::Record { schema_id: address_type.schema_id, field_count: 2 });
         assert_eq!(
             field("contact"),
-            Type::Record { schema_id: contact.schema_id, field_count: 2 },
+            Type::Record { schema_id: contact.schema_id, field_count: 3 },
             "a unite field lowers to a record shape whose member count is the variant count"
         );
 
-        insert(&conn, address("100000", Some("CN")), None).unwrap();
+        insert(&conn, 1, address("100000", Some("CN")), None).unwrap();
         let stored = rows(&conn);
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].get("address"), Some(&stored_address("100000", Some("CN"))));
@@ -130,26 +153,88 @@ fn a_structure_rejects_unknown_and_missing_members() {
         other => panic!("expected a record, got {other:?}"),
     };
     fields.insert("district".to_owned(), Value::Text("haidian".to_owned()));
-    let error = insert(&conn, Value::Row(fields), None).expect_err("a closed structure rejects undeclared members");
+    let error = insert(&conn, 1, Value::Row(fields), None).expect_err("a closed structure rejects undeclared members");
     assert_eq!(error.code(), "database.schema.invalid");
     assert!(format!("{error}").contains("does not declare record member `district`"), "{error}");
 
-    let error = insert(&conn, Value::Row(BTreeMap::new()), None).expect_err("a closed structure requires every member");
+    let error = insert(&conn, 1, Value::Row(BTreeMap::new()), None).expect_err("a closed structure requires every member");
     assert_eq!(error.code(), "database.schema.invalid");
     assert!(format!("{error}").contains("missing required member `zip`"), "{error}");
     assert!(rows(&conn).is_empty(), "a refused structure value must not store a row");
 }
 
 #[test]
-fn a_unite_value_is_refused_instead_of_losing_its_discriminant() {
+fn unite_variants_with_different_payloads_carry_their_discriminant_across_a_reopen() {
+    let path = path("unite-round-trip");
+    cleanup(&path);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.ensure_schema(SCHEMA).unwrap();
+
+        // Three variants: two payload shapes and one bare variant.
+        insert(&conn, 1, address("100000", None), Some(variant("Email", &[("address", Value::Text("ada@example.com".to_owned()))])))
+            .unwrap();
+        insert(&conn, 2, address("200000", None), Some(variant("Sms", &[("number", Value::Text("+1-555-0100".to_owned()))]))).unwrap();
+        insert(&conn, 3, address("300000", None), Some(variant("None", &[]))).unwrap();
+
+        let stored = rows(&conn);
+        assert_eq!(stored.len(), 3);
+        assert_eq!(
+            stored[0].get("contact"),
+            Some(&stored_variant(0, &[("address", Value::Text("ada@example.com".to_owned())), ("label", Value::Null)])),
+            "the write normalizes a missing optional payload member to an explicit null"
+        );
+        assert_eq!(
+            stored[1].get("contact"),
+            Some(&stored_variant(1, &[("number", Value::Text("+1-555-0100".to_owned()))])),
+            "a variant with another payload shape keeps its own discriminant"
+        );
+        assert_eq!(stored[2].get("contact"), Some(&stored_variant(2, &[])), "a bare variant carries no payload members");
+    }
+    {
+        let conn = Connection::open(&path).unwrap();
+        let stored = rows(&conn);
+        assert_eq!(stored.len(), 3, "all variants must survive a reopen");
+        assert_eq!(
+            stored[0].get("contact"),
+            Some(&stored_variant(0, &[("address", Value::Text("ada@example.com".to_owned())), ("label", Value::Null)]))
+        );
+        assert_eq!(stored[1].get("contact"), Some(&stored_variant(1, &[("number", Value::Text("+1-555-0100".to_owned()))])));
+        assert_eq!(stored[2].get("contact"), Some(&stored_variant(2, &[])));
+    }
+    cleanup(&path);
+}
+
+#[test]
+fn a_unite_write_rejects_unknown_variants_and_payload_mismatches() {
     let conn = Connection::open_in_memory().unwrap();
     conn.ensure_schema(SCHEMA).unwrap();
 
-    let mut payload = BTreeMap::new();
-    payload.insert("address".to_owned(), Value::Text("ada@example.com".to_owned()));
-    let error = insert(&conn, address("100000", None), Some(Value::Row(payload))).expect_err("a union value needs a tagged codec");
+    let error = insert(&conn, 1, address("100000", None), Some(variant("Fax", &[]))).expect_err("unknown variant");
     assert_eq!(error.code(), "database.schema.invalid");
-    let message = format!("{error}");
-    assert!(message.contains("column type `unite Contact` requires the tagged union codec"), "{message}");
+    assert!(format!("{error}").contains("`Fax` is not a declared variant of `unite Contact`"), "{error}");
+
+    let error = insert(&conn, 1, address("100000", None), Some(variant("Email", &[("label", Value::Text("work".to_owned()))])))
+        .expect_err("missing required payload member");
+    assert!(format!("{error}").contains("is missing required payload member `address`"), "{error}");
+
+    let error = insert(
+        &conn,
+        1,
+        address("100000", None),
+        Some(variant("Email", &[("address", Value::Text("ada@example.com".to_owned())), ("district", Value::Text("x".to_owned()))])),
+    )
+    .expect_err("undeclared payload member");
+    assert!(format!("{error}").contains("does not declare payload member `district`"), "{error}");
+
+    let error = insert(&conn, 1, address("100000", None), Some(variant("Sms", &[("address", Value::Text("x".to_owned()))])))
+        .expect_err("payload of another variant");
+    assert!(format!("{error}").contains("does not declare payload member `address`"), "{error}");
+
+    // The canonical spelling is validated too: an undeclared discriminant is refused.
+    let canonical = Value::List(vec![Value::I64(9), Value::Row(BTreeMap::new())]);
+    let error = insert(&conn, 1, address("100000", None), Some(canonical)).expect_err("undeclared discriminant");
+    assert!(format!("{error}").contains("value `9` is not a declared variant of `unite Contact`"), "{error}");
+
     assert!(rows(&conn).is_empty(), "a refused union value must not store a row");
 }

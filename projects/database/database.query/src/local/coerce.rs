@@ -228,13 +228,7 @@ fn coerce_value(value: Value, ty: &ResolvedCanonicalType, contract: &ResolvedCon
                 }
                 schema_types::TypeContractKind::Enums => coerce_enum_value(value, target),
                 schema_types::TypeContractKind::Flags => coerce_flags_value(value, target),
-                // A union value needs a tagged codec that this execution slice
-                // does not own, so it is refused instead of stored as an
-                // untagged record that would lose its discriminant.
-                schema_types::TypeContractKind::Unite => Err(coerce_error(format!(
-                    "column type `unite {}` requires the tagged union codec, which is not part of this execution slice",
-                    target.canonical_path.last().map(String::as_str).unwrap_or_default()
-                ))),
+                schema_types::TypeContractKind::Unite => coerce_unite_value(value, target, contract, depth),
                 // A bare table type has no by-value form; the catalog refuses it
                 // at install, so keep the value untouched here.
                 schema_types::TypeContractKind::Table => Ok(value),
@@ -343,6 +337,128 @@ fn coerce_flags_value(value: Value, target: &schema_types::ResolvedTypeContract)
 /// Renders a numeric type's declared members for a rejection message.
 fn declared_members(target: &schema_types::ResolvedTypeContract) -> String {
     target.members.iter().map(|member| format!("{}={}", member.canonical_name, member.value)).collect::<Vec<_>>().join(", ")
+}
+
+/// Checks one `unite` value against its declared variants and normalizes it.
+///
+/// A union value must name its variant and carry that variant's payload. Two
+/// input spellings are accepted and both normalize to the canonical
+/// `[discriminant, payload]` pair the row codec stores:
+///
+/// - `{ VariantName: { member: value, … } }` — the author-facing spelling, where a
+///   bare variant takes `null` or an empty record,
+/// - `[discriminant, { member: value, … }]` — the canonical spelling a decode
+///   returns, so a value read from storage can be written back unchanged.
+///
+/// An undeclared variant, an undeclared payload member, a missing required member
+/// and a payload that disagrees with the variant are refused before the write is
+/// staged. Member values recurse through [`coerce_value`], so a nested `class`,
+/// `structure`, `unite`, list or scalar is checked the same way as a column.
+fn coerce_unite_value(
+    value: Value,
+    target: &schema_types::ResolvedTypeContract,
+    contract: &ResolvedContract,
+    depth: u8,
+) -> Result<Value> {
+    let name = target.canonical_path.last().map(String::as_str).unwrap_or_default();
+    let (variant, payload) = match value {
+        Value::List(items) => {
+            let [discriminant, payload] = items.as_slice()
+            else {
+                return Err(coerce_error(format!(
+                    "column type `unite {name}` requires `[discriminant, payload]` with exactly two elements"
+                )));
+            };
+            let Value::I64(discriminant) = discriminant
+            else {
+                return Err(coerce_error(format!("column type `unite {name}` requires an integer discriminant")));
+            };
+            let variant = target
+                .variants
+                .iter()
+                .find(|variant| variant.discriminant == *discriminant)
+                .ok_or_else(|| coerce_error(format!(
+                    "value `{discriminant}` is not a declared variant of `unite {name}` ({})",
+                    declared_variants(target)
+                )))?;
+            let Value::Row(payload) = payload
+            else {
+                return Err(coerce_error(format!(
+                    "column type `unite {name}` requires a record payload for variant `{}`, got `{}`",
+                    variant.canonical_name,
+                    payload.kind()
+                )));
+            };
+            (variant, payload.clone())
+        }
+        Value::Row(fields) => {
+            if fields.len() != 1 {
+                return Err(coerce_error(format!(
+                    "column type `unite {name}` requires exactly one variant name, got {} record members",
+                    fields.len()
+                )));
+            }
+            let (variant_name, payload) = fields.into_iter().next().expect("validated single variant member");
+            let variant = target
+                .variants
+                .iter()
+                .find(|variant| variant.canonical_name == variant_name)
+                .ok_or_else(|| coerce_error(format!(
+                    "`{variant_name}` is not a declared variant of `unite {name}` ({})",
+                    declared_variants(target)
+                )))?;
+            let payload = match payload {
+                Value::Null => BTreeMap::new(),
+                Value::Row(payload) => payload,
+                Value::List(items) if items.is_empty() => BTreeMap::new(),
+                other => {
+                    return Err(coerce_error(format!(
+                        "`unite {name}` variant `{variant_name}` requires a record payload, got `{}`",
+                        other.kind()
+                    )));
+                }
+            };
+            (variant, payload)
+        }
+        other => {
+            return Err(coerce_error(format!(
+                "column type `unite {name}` requires a variant record or `[discriminant, payload]`, got `{}`",
+                other.kind()
+            )));
+        }
+    };
+    let location = format!("unite `{name}` variant `{}`", variant.canonical_name);
+    let mut normalized = BTreeMap::new();
+    for (member_name, member) in payload {
+        let Some(field) = variant.fields.iter().find(|field| field.canonical_name == member_name)
+        else {
+            return Err(coerce_error(format!("{location} does not declare payload member `{member_name}`")));
+        };
+        let member = coerce_value(member, &field.canonical_type, contract, depth + 1)
+            .map_err(|error| coerce_error(format!("{location} payload member `{member_name}`: {error}")))?;
+        normalized.insert(member_name, member);
+    }
+    for field in &variant.fields {
+        if normalized.contains_key(&field.canonical_name) {
+            continue;
+        }
+        if matches!(field.canonical_type, ResolvedCanonicalType::Optional(_)) {
+            normalized.insert(field.canonical_name.clone(), Value::Null);
+            continue;
+        }
+        return Err(coerce_error(format!("{location} is missing required payload member `{}`", field.canonical_name)));
+    }
+    Ok(Value::List(vec![Value::I64(variant.discriminant), Value::Row(normalized)]))
+}
+
+/// Renders a union's declared variants for a rejection message.
+fn declared_variants(target: &schema_types::ResolvedTypeContract) -> String {
+    target
+        .variants
+        .iter()
+        .map(|variant| format!("{}={}", variant.canonical_name, variant.discriminant))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Primary-key type of one resolved table type.

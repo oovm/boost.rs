@@ -12,7 +12,7 @@ use crate::engine::{
     Error, Result,
     bytes::{ObjectStoreResolver, Placement},
 };
-use database_formats::yy::row::{ObjectResolver, with_object_resolver};
+use database_formats::yy::row::{ObjectResolver, with_object_resolver, with_row_schema};
 use database_query::local::{Dialect, PreparedStatement, QueryKind, QueryRow, fingerprint as fp, prepare as prepare_source};
 use database_types::Value;
 
@@ -90,13 +90,16 @@ impl Connection {
         Placement::Preview
     }
 
-    /// Run `body` with the object resolver in scope so row decoding can
-    /// resolve out-of-line references.
+    /// Run `body` with the row resolver and the schema-derived named layouts in
+    /// scope, so row decoding can resolve out-of-line references and a stored
+    /// `unite` or `structure` value decodes under its declaration.
     ///
     /// Placement is no longer a callback: the write entries take an explicit
     /// [`Placement`] so planning stays pure and only execution writes.
-    fn with_row_resolver<T>(&self, body: impl FnOnce() -> T) -> T {
-        with_object_resolver(Some(self.object_resolver()), body)
+    fn with_row_context<T>(&self, contract: &schema_types::ResolvedContract, body: impl FnOnce() -> Result<T>) -> Result<T> {
+        let directory = crate::engine::catalog::row_schema_directory(contract)?;
+        let directory = Arc::new(directory);
+        with_row_schema(Some(directory), || with_object_resolver(Some(self.object_resolver()), body))
     }
 
     /// Prepare a VOS read pipeline into a reusable query plan.
@@ -292,7 +295,7 @@ impl Connection {
         contract: &schema_types::ResolvedContract,
         records: &BTreeMap<String, Vec<u8>>,
     ) -> Result<Vec<QueryRow>> {
-        with_object_resolver(Some(self.object_resolver()), || crate::local::execute_prepared(stmt, values, Some(contract), records))
+        self.with_row_context(contract, || crate::local::execute_prepared(stmt, values, Some(contract), records))
     }
 
     fn execute_with_profiled(
@@ -308,7 +311,7 @@ impl Connection {
             return self.execute_with(stmt, values, contract, records);
         };
         let started = tick();
-        let (rows, exec) = with_object_resolver(Some(self.object_resolver()), || {
+        let (rows, exec) = self.with_row_context(contract, || {
             crate::local::execute_prepared_profiled(stmt, values, Some(contract), records)
         })?;
         self.add_exec_profile(profile, started, &exec, rows.len());
@@ -336,13 +339,13 @@ impl Connection {
         };
         let Some(profile) = profile
         else {
-            let (out, _) = with_object_resolver(Some(self.object_resolver()), || {
+            let (out, _) = self.with_row_context(contract, || {
                 crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, rows, false)
             })?;
             return Ok(out);
         };
         let started = tick();
-        let (out, exec) = with_object_resolver(Some(self.object_resolver()), || {
+        let (out, exec) = self.with_row_context(contract, || {
             crate::local::execute_prepared_borrowed(stmt, values, Some(contract), records, rows, true)
         })?;
         self.add_exec_profile(profile, started, &exec, out.len());
@@ -519,7 +522,7 @@ impl Connection {
                 };
                 let exempt = holds_every_row || self.rules_warm(contract, &metadata.unique_constraints, &basis);
                 let keys = self
-                    .with_row_resolver(|| {
+                    .with_row_context(contract, || {
                         let mut place = |value| self.planning_placement().place(value);
                         database_query::local::point_write_keys(
                             &plan.program,
@@ -530,8 +533,8 @@ impl Connection {
                             exempt,
                             &mut place,
                         )
-                    })
-                    .map(|keys| keys.map(Self::key_windows))?;
+                    })?
+                    .map(Self::key_windows);
                 let complete = keys.is_none() || holds_every_row;
                 Ok((keys, (plan, basis, complete)))
             },
@@ -549,7 +552,7 @@ impl Connection {
                     database_query::local::constraints::from_contract(&contract)?,
                     constraints,
                 );
-                let count = self.with_row_resolver(|| {
+                let count = self.with_row_context(&contract, || {
                     let mut place = |value| placement.place(value);
                     let ops = database_query::local::lower_write_program(
                         &plan.program,
@@ -648,7 +651,7 @@ impl Connection {
                 );
                 let index = database_query::local::constraints::WriteIndex { index: &self.unique_index, basis, complete };
                 let placement = self.placement();
-                let outcome = self.with_row_resolver(|| {
+                let outcome = self.with_row_context(&contract, || {
                     crate::local::execute_write_prepared(
                         &stmt,
                         &values,

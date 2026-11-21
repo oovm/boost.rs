@@ -2,11 +2,15 @@
 //!
 //! 一行表记录以 `__yydb/v0/row/<table>/<pk>` 为记录名，值采用带版本前缀的二进
 //! 制行格式：版本字节、列数、NULL 位图、按列名升序的名字表和逐个带标签的值。
-//! 旧 JSON 行格式与 v1 二进制行格式（字段长度 16 位）均已退役，解码遇到非当前
-//! 版本一律失败并提示重建，不猜测形状。
+//! 旧 JSON 行格式、v1 二进制行格式（字段长度 16 位）与 v2 二进制行格式均已退役，
+//! 解码遇到非当前版本一律失败并提示重建，不猜测形状。
 //!
 //! 行内的 `bytes` 与 `vector<N>` 可能被宿主改写为对象引用；解码需要
 //! [`ObjectResolver`]，由宿主在一条语句执行期间用 [`with_object_resolver`] 安装。
+//!
+//! 具名 `unite` / `structure` 值由 [`RowSchemaDirectory`] 决定物理表示：目录给出
+//! 稳定判别值、布局 revision 与成员顺序，记录里不重复变体名或逐实例字段名。
+//! 宿主在一条语句执行期间用 [`with_row_schema`] 安装目录，编解码都按该目录校验。
 
 use std::{cell::RefCell, collections::BTreeMap, sync::Arc};
 
@@ -23,10 +27,11 @@ pub const ROW_PREFIX: &str = "__yydb/v0/row/";
 /// Version byte prefixed to every stored row record.
 ///
 /// Row records are self-describing and versioned. A record whose first byte is
-/// not [`ROW_CODEC_VERSION`] was written by a retired codec (the JSON encoding
-/// or the v1 binary encoding, which capped every field at 65535 bytes), and
-/// decoding it fails closed with a rebuild hint instead of guessing a shape.
-pub const ROW_CODEC_VERSION: u8 = 2;
+/// not [`ROW_CODEC_VERSION`] was written by a retired codec (the JSON encoding,
+/// the v1 binary encoding which capped every field at 65535 bytes, or the v2
+/// encoding that had no closed named-value layout), and decoding it fails closed
+/// with a rebuild hint instead of guessing a shape.
+pub const ROW_CODEC_VERSION: u8 = 3;
 
 /// Reads the octets behind an out-of-line `bytes` object reference.
 ///
@@ -67,6 +72,168 @@ pub fn with_object_resolver<T>(resolver: Option<SharedResolver>, body: impl FnOn
     body()
 }
 
+/// Physical layout of one value as the row codec reads it.
+///
+/// `Dynamic` means no named declaration applies: the tagged value keeps its
+/// ordinary self-describing form. `List` applies the inner layout to every
+/// element. `Named` refers to a [`RowSchemaDirectory`] entry by durable schema
+/// identity, so a `class`, `structure` or `unite` column never has to repeat its
+/// name or per-instance member names in the record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValueLayout {
+    /// Self-describing value with no named declaration.
+    Dynamic,
+    /// List whose elements follow the inner layout.
+    List(Box<ValueLayout>),
+    /// Named declaration, keyed by durable schema identity.
+    Named(u64),
+}
+
+/// Layout of one named `class`, `structure` or `unite` declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NamedValueLayout {
+    /// Named domain value embedded as a record with member names.
+    ///
+    /// A class row stays name-tagged (its members are not positionally closed);
+    /// the layout only tells the encoder how to represent declared members that
+    /// are themselves `structure` or `unite` values.
+    Class {
+        /// Durable schema identity.
+        schema_id: u64,
+        /// Declared members in catalog order.
+        fields: Vec<NamedFieldLayout>,
+    },
+    /// Closed field record with a positional layout.
+    Structure {
+        /// Durable schema identity.
+        schema_id: u64,
+        /// Layout revision; a change rejects stored records instead of misreading.
+        revision: u32,
+        /// Declared members in layout order.
+        fields: Vec<NamedFieldLayout>,
+    },
+    /// Tagged union with a stable discriminant per variant.
+    Unite {
+        /// Durable schema identity.
+        schema_id: u64,
+        /// Layout revision derived from discriminant/payload shape.
+        revision: u32,
+        /// Declared variants in catalog order.
+        variants: Vec<NamedVariantLayout>,
+    },
+}
+
+impl NamedValueLayout {
+    /// Durable schema identity of this named declaration.
+    pub fn schema_id(&self) -> u64 {
+        match self {
+            Self::Class { schema_id, .. } | Self::Structure { schema_id, .. } | Self::Unite { schema_id, .. } => *schema_id,
+        }
+    }
+}
+
+/// One member of a named `class` or `structure` layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedFieldLayout {
+    /// Member name in the catalog.
+    pub name: String,
+    /// Layout of the member value.
+    pub ty: ValueLayout,
+}
+
+/// One variant of a named `unite` layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedVariantLayout {
+    /// Stable discriminant (source-order index in the declaration).
+    pub discriminant: i64,
+    /// Closed payload members in catalog order.
+    pub fields: Vec<NamedFieldLayout>,
+}
+
+/// Catalog-derived directory the row codec consults while encoding.
+///
+/// Column layouts are keyed by column name because a stored row record carries
+/// no table identity; hosts install one directory per statement. Named layouts
+/// are keyed by durable schema identity, which every stored `unite` and
+/// `structure` value carries so decoding does not depend on the column map.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RowSchemaDirectory {
+    columns: BTreeMap<String, ValueLayout>,
+    named: BTreeMap<u64, NamedValueLayout>,
+}
+
+impl RowSchemaDirectory {
+    /// Builds a directory from column layouts and named declarations.
+    pub fn new(columns: BTreeMap<String, ValueLayout>, named: BTreeMap<u64, NamedValueLayout>) -> Self {
+        Self { columns, named }
+    }
+
+    /// Layout of one table column, when the catalog declares a named type there.
+    pub fn column(&self, name: &str) -> Option<&ValueLayout> {
+        self.columns.get(name)
+    }
+
+    /// Layout of one named declaration.
+    pub fn named(&self, schema_id: u64) -> Option<&NamedValueLayout> {
+        self.named.get(&schema_id)
+    }
+}
+
+type SharedDirectory = Arc<RowSchemaDirectory>;
+
+thread_local! {
+    /// Named-value directory installed for the duration of one statement.
+    static ROW_SCHEMA: RefCell<Option<SharedDirectory>> = const { RefCell::new(None) };
+}
+
+struct SchemaGuard(Option<SharedDirectory>);
+
+impl Drop for SchemaGuard {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        ROW_SCHEMA.with(|slot| {
+            slot.replace(previous);
+        });
+    }
+}
+
+/// Runs `body` with `directory` installed for row encoding on this thread.
+///
+/// A record that carries a `unite` or closed `structure` value cannot be encoded
+/// or decoded without its declaration, so a host that stores those values always
+/// installs the directory for the statement. Without it, encoding a named value
+/// fails closed instead of falling back to a name-tagged record that would lose
+/// the discriminant.
+pub fn with_row_schema<T>(directory: Option<SharedDirectory>, body: impl FnOnce() -> T) -> T {
+    let previous = ROW_SCHEMA.with(|slot| slot.replace(directory));
+    let _guard = SchemaGuard(previous);
+    body()
+}
+
+fn current_row_schema() -> Option<SharedDirectory> {
+    ROW_SCHEMA.with(|slot| slot.borrow().clone())
+}
+
+/// Encode one row with an explicit directory, without touching the ambient one.
+pub fn encode_row_with_directory(row: &BTreeMap<String, Value>, directory: &RowSchemaDirectory) -> Result<Vec<u8>> {
+    with_row_schema(Some(Arc::new(directory.clone())), || encode_row(row))
+}
+
+/// Decode one row with an explicit directory, without touching the ambient one.
+pub fn decode_row_with_directory(bytes: &[u8], directory: &RowSchemaDirectory) -> Result<BTreeMap<String, Value>> {
+    with_row_schema(Some(Arc::new(directory.clone())), || decode_row(bytes))
+}
+
+/// Encode one value with an explicit directory, without touching the ambient one.
+pub fn encode_tagged_with_directory(value: &Value, directory: &RowSchemaDirectory) -> Result<Vec<u8>> {
+    with_row_schema(Some(Arc::new(directory.clone())), || encode_tagged(value))
+}
+
+/// Decode one value with an explicit directory, without touching the ambient one.
+pub fn decode_tagged_with_directory(bytes: &[u8], directory: &RowSchemaDirectory) -> Result<Value> {
+    with_row_schema(Some(Arc::new(directory.clone())), || decode_tagged(bytes))
+}
+
 /// Build the storage key for one table row.
 pub fn row_key(table: &str, pk: &str) -> String {
     format!("{ROW_PREFIX}{table}/{pk}")
@@ -105,6 +272,8 @@ pub fn row_references(bytes: &[u8]) -> Result<RowReferences> {
 /// IEEE-754 bits, and keys never repeat the enclosing table name.
 pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
     let column_count = u16::try_from(row.len()).map_err(|_| Error::Unsupported("query row has more than 65535 columns"))?;
+    let directory = current_row_schema();
+    let directory = directory.as_deref();
     let mut out = Vec::with_capacity(4 + row.len() * 12);
     out.push(ROW_CODEC_VERSION);
     out.extend_from_slice(&column_count.to_le_bytes());
@@ -118,11 +287,11 @@ pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
         put_len(&mut out, name.len(), "column name")?;
         out.extend_from_slice(name.as_bytes());
     }
-    for value in row.values() {
+    for (name, value) in row {
         if matches!(value, Value::Null) {
             continue;
         }
-        encode_value(&mut out, value, 0)?;
+        encode_value(&mut out, value, column_layout(directory, name), directory, 0)?;
     }
     Ok(out)
 }
@@ -141,6 +310,8 @@ pub fn decode_row(bytes: &[u8]) -> Result<BTreeMap<String, Value>> {
 /// Values are encoded with the same codec the record uses, so equality of these
 /// byte blobs is exactly equality of the stored values. `NULL` is `None`.
 pub fn select_encoded(row: &BTreeMap<String, Value>, names: &[&str]) -> Result<Vec<Option<Vec<u8>>>> {
+    let directory = current_row_schema();
+    let directory = directory.as_deref();
     let mut selected = vec![None; names.len()];
     for (slot, name) in names.iter().enumerate() {
         let Some(value) = row.get(*name)
@@ -151,7 +322,7 @@ pub fn select_encoded(row: &BTreeMap<String, Value>, names: &[&str]) -> Result<V
             continue;
         }
         let mut encoded = Vec::new();
-        encode_value(&mut encoded, value, 0)?;
+        encode_value(&mut encoded, value, column_layout(directory, name), directory, 0)?;
         selected[slot] = Some(encoded);
     }
     Ok(selected)
@@ -159,8 +330,10 @@ pub fn select_encoded(row: &BTreeMap<String, Value>, names: &[&str]) -> Result<V
 
 /// Tagged bytes of one value, the same form [`select_encoded`] answers per column.
 pub fn encode_tagged(value: &Value) -> Result<Vec<u8>> {
+    let directory = current_row_schema();
+    let directory = directory.as_deref();
     let mut encoded = Vec::new();
-    encode_value(&mut encoded, value, 0)?;
+    encode_value(&mut encoded, value, None, directory, 0)?;
     Ok(encoded)
 }
 
@@ -170,8 +343,9 @@ pub fn encode_tagged(value: &Value) -> Result<Vec<u8>> {
 /// stored value (for example a structured `any` column) without a field name or
 /// record envelope.
 pub fn decode_tagged(bytes: &[u8]) -> Result<Value> {
+    let directory = current_row_schema();
     let mut cursor = RowCursor::new(bytes);
-    let value = decode_value(&mut cursor, &mut None, false, 0)?;
+    let value = decode_value(&mut cursor, &mut None, false, directory.as_deref(), 0)?;
     if cursor.position != bytes.len() {
         return Err(Error::Corrupt("tagged value has trailing bytes"));
     }
@@ -244,6 +418,11 @@ const TAG_NESTED_ROW: u8 = 0x0F;
 /// 无符号 64 位整数。JSON 里超过 `i64::MAX` 的整数解析成 [`Value::U64`]，
 /// 行格式必须能原样往返，不能按有符号数截断。
 const TAG_U64: u8 = 0x10;
+/// 具名 `unite` 值：稳定 schema id、布局 revision、判别值和定位载荷。
+///
+/// 载荷按变体在目录中的成员顺序逐个编码，记录里不含变体名或成员名。读取时
+/// 按目录校验 revision、判别值与载荷成员数，任一不符都 fail-closed。
+const TAG_UNITE: u8 = 0x11;
 
 /// Deepest list nesting the row codec encodes or decodes.
 ///
@@ -259,7 +438,13 @@ fn put_len(out: &mut Vec<u8>, len: usize, _what: &str) -> Result<()> {
     Ok(())
 }
 
-fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
+fn encode_value(
+    out: &mut Vec<u8>,
+    value: &Value,
+    layout: Option<&ValueLayout>,
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<()> {
     match value {
         // A row column's null is carried by the row null bitmap, but a list
         // element needs its own tag because there is no bitmap inside a list.
@@ -359,29 +544,34 @@ fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
             out.extend_from_slice(&file.manifest.hash);
             out.extend_from_slice(&file.manifest.size.to_le_bytes());
         }
-        Value::Row(fields) => {
-            out.push(TAG_NESTED_ROW);
-            put_len(out, fields.len(), "nested row")?;
-            let nested = depth
-                .checked_add(1)
-                .filter(|nested| *nested <= MAX_LIST_DEPTH)
-                .ok_or(Error::Unsupported("nested row nests deeper than the supported depth"))?;
-            for (name, item) in fields {
-                put_len(out, name.len(), "nested row field name")?;
-                out.extend_from_slice(name.as_bytes());
-                encode_value(out, item, nested)?;
+        Value::Row(fields) => match named_layout(layout, directory)? {
+            Some(NamedValueLayout::Class { fields: declared, .. }) => {
+                encode_class(out, fields, declared, directory, depth)?;
             }
-        }
+            Some(NamedValueLayout::Unite { .. }) => {
+                return Err(Error::Schema {
+                    message: "a `unite` value must carry a discriminant and payload, not a bare record".into(),
+                });
+            }
+            Some(NamedValueLayout::Structure { .. }) | None => {
+                encode_dynamic_row(out, fields, directory, depth)?;
+            }
+        },
         Value::List(items) => {
+            if let Some(NamedValueLayout::Unite { schema_id, revision, variants }) = named_layout(layout, directory)? {
+                encode_unite(out, items, *schema_id, *revision, variants, directory, depth)?;
+                return Ok(());
+            }
+            let element_layout = match layout {
+                Some(ValueLayout::List(inner)) => Some(inner.as_ref()),
+                _ => None,
+            };
             out.push(TAG_LIST);
             let count = u32::try_from(items.len()).map_err(|_| Error::Unsupported("row record list has more than 4294967295 elements"))?;
             out.extend_from_slice(&count.to_le_bytes());
-            let nested = depth
-                .checked_add(1)
-                .filter(|nested| *nested <= MAX_LIST_DEPTH)
-                .ok_or(Error::Unsupported("row record list nests deeper than the supported depth"))?;
+            let nested = deeper(depth, "row record list nests deeper than the supported depth")?;
             for item in items {
-                encode_value(out, item, nested)?;
+                encode_value(out, item, element_layout, directory, nested)?;
             }
         }
         _ => {
@@ -390,6 +580,138 @@ fn encode_value(out: &mut Vec<u8>, value: &Value, depth: u8) -> Result<()> {
                  decimal, bytes object references, file descriptors, lists, and nested rows only",
             ));
         }
+    }
+    Ok(())
+}
+
+/// Layout of one stored column, treating `Dynamic` as "no named declaration".
+fn column_layout<'a>(directory: Option<&'a RowSchemaDirectory>, name: &str) -> Option<&'a ValueLayout> {
+    match directory.and_then(|directory| directory.column(name)) {
+        Some(ValueLayout::Dynamic) | None => None,
+        Some(layout) => Some(layout),
+    }
+}
+
+/// Resolves the named declaration a layout points at.
+fn named_layout<'a>(layout: Option<&ValueLayout>, directory: Option<&'a RowSchemaDirectory>) -> Result<Option<&'a NamedValueLayout>> {
+    let Some(ValueLayout::Named(schema_id)) = layout
+    else {
+        return Ok(None);
+    };
+    let Some(directory) = directory
+    else {
+        return Err(Error::Unsupported("encoding a named value needs the schema directory installed for the statement"));
+    };
+    directory
+        .named(*schema_id)
+        .map(Some)
+        .ok_or_else(|| Error::Schema { message: format!("row encoding names schema id `{schema_id}`, which the directory does not declare") })
+}
+
+fn deeper(depth: u8, what: &'static str) -> Result<u8> {
+    depth.checked_add(1).filter(|nested| *nested <= MAX_LIST_DEPTH).ok_or(Error::Unsupported(what))
+}
+
+/// Encodes a record with member names and no named declaration.
+fn encode_dynamic_row(
+    out: &mut Vec<u8>,
+    fields: &BTreeMap<String, Value>,
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<()> {
+    out.push(TAG_NESTED_ROW);
+    put_len(out, fields.len(), "nested row")?;
+    let nested = deeper(depth, "nested row nests deeper than the supported depth")?;
+    for (name, item) in fields {
+        put_len(out, name.len(), "nested row field name")?;
+        out.extend_from_slice(name.as_bytes());
+        encode_value(out, item, None, directory, nested)?;
+    }
+    Ok(())
+}
+
+/// Encodes one `unite` value as a stable discriminant plus positional payload.
+///
+/// The canonical in-memory form is `[i64 discriminant, row payload]`. The record
+/// carries the schema id, layout revision, discriminant and payload member count;
+/// member names stay in the directory, so a rename never changes the bytes.
+fn encode_unite(
+    out: &mut Vec<u8>,
+    items: &[Value],
+    schema_id: u64,
+    revision: u32,
+    variants: &[NamedVariantLayout],
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<()> {
+    let [tag, payload] = items
+    else {
+        return Err(Error::Schema { message: "a `unite` value must be `[discriminant, payload]` with exactly two elements".into() });
+    };
+    let Value::I64(discriminant) = tag
+    else {
+        return Err(Error::Schema { message: "a `unite` discriminant must be an integer".into() });
+    };
+    let Value::Row(payload) = payload
+    else {
+        return Err(Error::Schema { message: "a `unite` payload must be a record".into() });
+    };
+    let variant = variants.iter().find(|variant| variant.discriminant == *discriminant).ok_or_else(|| Error::Schema {
+        message: format!(
+            "`{discriminant}` is not a declared `unite` variant ({})",
+            variants.iter().map(|variant| variant.discriminant.to_string()).collect::<Vec<_>>().join(", ")
+        ),
+    })?;
+    for name in payload.keys() {
+        if !variant.fields.iter().any(|field| field.name == *name) {
+            return Err(Error::Schema {
+                message: format!("`unite` variant `{discriminant}` does not declare payload member `{name}`"),
+            });
+        }
+    }
+    for field in &variant.fields {
+        if !payload.contains_key(&field.name) {
+            return Err(Error::Schema {
+                message: format!("`unite` variant `{discriminant}` is missing required payload member `{}`", field.name),
+            });
+        }
+    }
+    let member_count =
+        u16::try_from(variant.fields.len()).map_err(|_| Error::Unsupported("unite variant has more than 65535 payload members"))?;
+    out.push(TAG_UNITE);
+    out.extend_from_slice(&schema_id.to_le_bytes());
+    out.extend_from_slice(&revision.to_le_bytes());
+    out.extend_from_slice(&discriminant.to_le_bytes());
+    out.extend_from_slice(&member_count.to_le_bytes());
+    let nested = deeper(depth, "unite payload nests deeper than the supported depth")?;
+    for field in &variant.fields {
+        let value = payload.get(&field.name).expect("validated payload member");
+        encode_value(out, value, Some(&field.ty), directory, nested)?;
+    }
+    Ok(())
+}
+
+/// Encodes one named `class` value with member names and per-member layouts.
+fn encode_class(
+    out: &mut Vec<u8>,
+    fields: &BTreeMap<String, Value>,
+    declared: &[NamedFieldLayout],
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<()> {
+    for name in fields.keys() {
+        if !declared.iter().any(|field| field.name == *name) {
+            return Err(Error::Schema { message: format!("named class does not declare member `{name}`") });
+        }
+    }
+    out.push(TAG_NESTED_ROW);
+    put_len(out, fields.len(), "nested row")?;
+    let nested = deeper(depth, "nested row nests deeper than the supported depth")?;
+    for (name, item) in fields {
+        put_len(out, name.len(), "nested row field name")?;
+        out.extend_from_slice(name.as_bytes());
+        let layout = declared.iter().find(|field| field.name == *name).map(|field| &field.ty);
+        encode_value(out, item, layout, directory, nested)?;
     }
     Ok(())
 }
@@ -458,6 +780,8 @@ fn hex_digit(byte: u8) -> Option<u8> {
 }
 
 fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool) -> Result<BTreeMap<String, Value>> {
+    let directory = current_row_schema();
+    let directory = directory.as_deref();
     match bytes.first() {
         Some(version) if *version == ROW_CODEC_VERSION => {}
         Some(_) => {
@@ -492,7 +816,7 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
             row.insert(name, Value::Null);
             continue;
         }
-        let value = decode_value(&mut values, references, resolve, 0)?;
+        let value = decode_value(&mut values, references, resolve, directory, 0)?;
         row.insert(name, value);
     }
     if values.remaining() != 0 {
@@ -651,6 +975,18 @@ impl<'a> RowCursor<'a> {
                     self.skip_value(nested)?;
                 }
             }
+            TAG_UNITE => {
+                // schema id, layout revision, discriminant, payload member count.
+                self.take(8 + 4 + 8 + 2)?;
+                let count = self.u16()? as usize;
+                let nested = depth
+                    .checked_add(1)
+                    .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                    .ok_or(Error::Corrupt("unite payload nests deeper than the supported depth"))?;
+                for _ in 0..count {
+                    self.skip_value(nested)?;
+                }
+            }
             _ => return Err(Error::Corrupt("row record value tag is unknown")),
         }
         Ok(self.position)
@@ -668,7 +1004,13 @@ impl<'a> RowCursor<'a> {
     }
 }
 
-fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReferences>, resolve: bool, depth: u8) -> Result<Value> {
+fn decode_value(
+    cursor: &mut RowCursor<'_>,
+    references: &mut Option<RowReferences>,
+    resolve: bool,
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<Value> {
     Ok(match cursor.u8()? {
         TAG_NULL => Value::Null,
         TAG_BOOL => match cursor.u8()? {
@@ -759,7 +1101,7 @@ fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReference
                 .ok_or(Error::Corrupt("row record list nests deeper than the supported depth"))?;
             let mut items = Vec::with_capacity(count);
             for _ in 0..count {
-                items.push(decode_value(cursor, references, resolve, nested)?);
+                items.push(decode_value(cursor, references, resolve, directory, nested)?);
             }
             Value::List(items)
         }
@@ -775,13 +1117,65 @@ fn decode_value(cursor: &mut RowCursor<'_>, references: &mut Option<RowReference
             let mut fields = std::collections::BTreeMap::new();
             for _ in 0..count {
                 let name = cursor.text()?;
-                let value = decode_value(cursor, references, resolve, nested)?;
+                let value = decode_value(cursor, references, resolve, directory, nested)?;
                 fields.insert(name, value);
             }
             Value::Row(fields)
         }
+        TAG_UNITE => decode_unite(cursor, references, resolve, directory, depth)?,
         _ => return Err(Error::Corrupt("row record value tag is unknown")),
     })
+}
+
+/// Decodes one `unite` value and re-establishes its canonical in-memory form.
+///
+/// The record names its schema id and layout revision, so decoding is directed by
+/// the directory instead of the column map. A revision change, an undeclared
+/// discriminant or a payload member count that disagrees with the variant is a
+/// structured rejection: stored bytes are never reinterpreted under another
+/// variant.
+fn decode_unite(
+    cursor: &mut RowCursor<'_>,
+    references: &mut Option<RowReferences>,
+    resolve: bool,
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<Value> {
+    let schema_id = cursor.u64()?;
+    let revision = cursor.u32()?;
+    let discriminant = cursor.i64()?;
+    let member_count = cursor.u16()? as usize;
+    let Some(directory) = directory
+    else {
+        return Err(Error::Unsupported("decoding a `unite` value needs the schema directory installed for the statement"));
+    };
+    let named = directory
+        .named(schema_id)
+        .ok_or_else(|| Error::Corrupt("row record names a `unite` schema id that the directory does not declare"))?;
+    let NamedValueLayout::Unite { revision: expected, variants, .. } = named
+    else {
+        return Err(Error::Corrupt("row record names a schema id that is not a `unite` declaration"));
+    };
+    if *expected != revision {
+        return Err(Error::Corrupt("row record uses a `unite` layout revision the directory does not declare"));
+    }
+    let variant = variants
+        .iter()
+        .find(|variant| variant.discriminant == discriminant)
+        .ok_or_else(|| Error::Corrupt("row record names a `unite` variant the declaration does not contain"))?;
+    if variant.fields.len() != member_count {
+        return Err(Error::Corrupt("row record `unite` payload member count disagrees with its variant"));
+    }
+    let nested = depth
+        .checked_add(1)
+        .filter(|nested| *nested <= MAX_LIST_DEPTH)
+        .ok_or(Error::Corrupt("unite payload nests deeper than the supported depth"))?;
+    let mut payload = BTreeMap::new();
+    for field in &variant.fields {
+        let value = decode_value(cursor, references, resolve, Some(directory), nested)?;
+        payload.insert(field.name.clone(), value);
+    }
+    Ok(Value::List(vec![Value::I64(discriminant), Value::Row(payload)]))
 }
 
 fn resolve_object_reference(value: Value) -> Result<Value> {
