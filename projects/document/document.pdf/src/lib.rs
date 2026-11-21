@@ -2,8 +2,9 @@
 //!
 //! The object model, parser, stream filters and writer live in
 //! `data-binary-pdf`. This crate adds the operations a product exposes:
-//! inspection, merge, split, page arrangement, metadata and bookmark edits,
-//! form filling, stamping, one-page creation, and text and image extraction.
+//! inspection, merge, split, page arrangement, page deletion, metadata and
+//! bookmark edits, form filling, stamping, one-page creation, and text and
+//! image extraction.
 //!
 //! Every malformed input becomes a [`ServiceError`]; no entry point panics.
 
@@ -306,6 +307,20 @@ pub struct ArrangeReport {
     pub pages: usize,
 }
 
+/// Result of [`delete_pages`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletePagesReport {
+    /// Output path.
+    pub path: String,
+    /// Pages written to the output.
+    pub pages: usize,
+    /// Pages dropped from the source document.
+    pub removed: usize,
+    /// Output size in bytes.
+    pub bytes: usize,
+}
+
 /// `/Info` fields accepted by [`set_metadata`].
 ///
 /// A missing field keeps its source value, while an empty string removes it.
@@ -558,6 +573,50 @@ pub fn arrange(input: &Path, out: &Path, ops: &DocumentArrange) -> Result<Arrang
     let bytes = finish_document(&mut writer, &pages, info)?;
     write_file(out, &bytes, true)?;
     Ok(ArrangeReport { path: out.display().to_string(), pages: pages.len() })
+}
+
+/// Removes the pages selected by a 1-based range list such as `2,5-7`.
+///
+/// The range syntax is the one [`split`] accepts. Removing every page is
+/// rejected with `session/argument-invalid`, and the output file is replaced
+/// only when `overwrite` is true.
+pub fn delete_pages(input: &Path, pages: &str, out: &Path, overwrite: bool) -> Result<DeletePagesReport> {
+    let document = load_document(input)?;
+    let selected = selected_pages(pages, document.pages.len())?;
+    if selected.len() == document.pages.len() {
+        return Err(argument("delete_pages cannot remove every page"));
+    }
+    if out.exists() && !overwrite {
+        return Err(exists_error(format!("{} already exists", out.display())));
+    }
+
+    let mut writer = PdfWriter::new();
+    let mut map = BTreeMap::new();
+    let mut kept = Vec::with_capacity(document.pages.len() - selected.len());
+    for (index, page) in document.pages.iter().enumerate() {
+        if selected.contains(&(index + 1)) {
+            continue;
+        }
+        kept.push(copy_page(&mut writer, &document, &mut map, page)?);
+    }
+    let info = copy_info(&mut writer, &document, &mut map, None)?;
+    let bytes = finish_document(&mut writer, &kept, info)?;
+    write_file(out, &bytes, overwrite)?;
+    Ok(DeletePagesReport {
+        path: out.display().to_string(),
+        pages: kept.len(),
+        removed: selected.len(),
+        bytes: bytes.len(),
+    })
+}
+
+/// Expands a 1-based range list into the selected page numbers.
+fn selected_pages(ranges: &str, page_count: usize) -> Result<BTreeSet<usize>> {
+    let mut selected = BTreeSet::new();
+    for (start, end) in parse_ranges(ranges, page_count)? {
+        selected.extend(start..=end);
+    }
+    Ok(selected)
 }
 
 /// Copies every page into a new PDF while rewriting its information
@@ -1220,5 +1279,90 @@ fn publish_target(path: &Path) -> PathBuf {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => path.to_path_buf(),
         _ => PathBuf::from(".").join(path),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    /// Temporary directory helper mirroring the product integration tests.
+    struct Workspace {
+        root: PathBuf,
+    }
+
+    impl Workspace {
+        fn new() -> Self {
+            let sequence = NEXT.fetch_add(1, Ordering::SeqCst);
+            let root = std::env::temp_dir().join(format!("document-pdf-{}-{sequence}", std::process::id()));
+            fs::create_dir_all(&root).expect("create test workspace");
+            Self { root }
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.root.join(name)
+        }
+
+        fn create(&self, name: &str, pages: &[&str]) -> PathBuf {
+            let out = self.path(name);
+            let report = create(&CreateRequest {
+                out: out.clone(),
+                pages: pages.iter().map(|page| (*page).to_string()).collect(),
+                overwrite: true,
+                ..CreateRequest::default()
+            })
+            .expect("create fixture PDF");
+            assert_eq!(report.pages, pages.len());
+            out
+        }
+    }
+
+    impl Drop for Workspace {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn delete_pages_keeps_only_the_unselected_pages() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One", "Two", "Three", "Four"]);
+        let out = workspace.path("kept.pdf");
+
+        let report = delete_pages(&source, "2,4", &out, false).expect("delete pages");
+        assert_eq!(report.pages, 2);
+        assert_eq!(report.removed, 2);
+        assert!(report.bytes > 0);
+        assert_eq!(inspect(&out).expect("inspect output").pages, 2);
+
+        let text = extract_text(&out).expect("extract output").markdown;
+        assert!(text.contains("One"), "{text}");
+        assert!(text.contains("Three"), "{text}");
+        assert!(!text.contains("Two"), "{text}");
+        assert!(!text.contains("Four"), "{text}");
+    }
+
+    #[test]
+    fn delete_pages_rejects_every_page_bad_ranges_and_existing_output() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One", "Two"]);
+        let out = workspace.path("out.pdf");
+
+        let error = delete_pages(&source, "1-2", &out, true).expect_err("every page cannot be removed");
+        assert_eq!(error.code(), "session/argument-invalid");
+        let error = delete_pages(&source, "3", &out, true).expect_err("out of range");
+        assert_eq!(error.code(), "session/argument-invalid");
+        let error = delete_pages(&source, "1-", &out, true).expect_err("malformed range");
+        assert_eq!(error.code(), "session/argument-invalid");
+
+        fs::write(&out, b"placeholder").expect("seed output");
+        let error = delete_pages(&source, "1", &out, false).expect_err("existing output");
+        assert_eq!(error.code(), "io/exists");
+        delete_pages(&source, "1", &out, true).expect("overwrite output");
+        assert_eq!(inspect(&out).expect("inspect overwritten").pages, 1);
     }
 }
