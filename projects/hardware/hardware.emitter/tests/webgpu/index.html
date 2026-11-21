@@ -74,17 +74,18 @@ function f32Bits(x) {
 const STORAGE = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
 const UNIFORM = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
 
-function write(device, values, usage) {
-  const buffer = device.createBuffer({ size: Math.max(values.byteLength, 4), usage });
+function write(device, values, usage, label) {
+  const buffer = device.createBuffer({ label, size: Math.max(values.byteLength, 4), usage });
   device.queue.writeBuffer(buffer, 0, values);
   return buffer;
 }
 
 async function readBack(device, buffer) {
-  const readback = device.createBuffer({ size: buffer.size, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ });
+  const readback = device.createBuffer({ label: 'readback', size: buffer.size, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ });
   const encoder = device.createCommandEncoder();
   encoder.copyBufferToBuffer(buffer, 0, readback, 0, buffer.size);
   device.queue.submit([encoder.finish()]);
+  await device.queue.onSubmittedWorkDone();
   await readback.mapAsync(GPUMapMode.READ);
   const out = new Uint32Array(readback.getMappedRange().slice(0));
   readback.unmap();
@@ -109,9 +110,9 @@ async function dispatch(device, pipeline, entries, count) {
 }
 
 async function runCopyCase(device, pipeline, count) {
-  const src = write(device, Uint32Array.from({ length: CAP }, (_, i) => srcPattern(i)), STORAGE);
-  const dst = write(device, new Uint32Array(CAP).fill(SENTINEL), STORAGE);
-  const params = write(device, new Uint32Array([count, 0, 0, 0]), UNIFORM);
+  const src = write(device, Uint32Array.from({ length: CAP }, (_, i) => srcPattern(i)), STORAGE, 'copy-src');
+  const dst = write(device, new Uint32Array(CAP).fill(SENTINEL), STORAGE, 'copy-dst');
+  const params = write(device, new Uint32Array([count, 0, 0, 0]), UNIFORM, 'copy-params');
   await dispatch(device, pipeline, [
     { binding: 0, resource: { buffer: params } },
     { binding: 1, resource: { buffer: src } },
