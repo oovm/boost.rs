@@ -32,6 +32,21 @@ pub trait ServeBackend: Send {
     /// 把 schema 收敛到目标文档;`version` 是客户端声明的版本。
     fn ensure_schema(&self, version: u32, document: &str) -> Result<()>;
 
+    /// 按 DDL 语句选择的策略发布一次 schema 迁移。
+    ///
+    /// `renames_json` 是 N-API 同形的重命名条目 JSON 数组；`mode` 是
+    /// `database.protocol.yy` 的迁移模式 wire 值。
+    fn migrate_schema(&self, version: u32, document: &str, renames_json: &str, mode: u8) -> Result<()> {
+        let _ = (version, document, renames_json, mode);
+        Err(Error::Unsupported("this backend does not serve schema migrations"))
+    }
+
+    /// 收敛延后迁移遗留行，返回本次升级行数。
+    fn compact_schemas(&self, budget: u32) -> Result<u32> {
+        let _ = budget;
+        Err(Error::Unsupported("this backend does not serve schema compaction"))
+    }
+
     /// 读一个 key。
     fn kv_get(&self, key: &str) -> Result<Option<Vec<u8>>>;
 
@@ -129,6 +144,39 @@ pub trait BackendFactory: Send + Sync {
     fn open(&self, peer_is_loopback: bool) -> Box<dyn ServeBackend>;
 }
 
+/// Parse the rename entries accepted by the N-API layer into a durable map.
+fn parse_rename_map(json: &str) -> Result<database_execution::engine::catalog::RenameMap> {
+    use database_execution::engine::catalog::{FieldPath, RenameMap};
+    let mut renames = RenameMap::default();
+    if json.trim().is_empty() || json.trim() == "null" || json.trim() == "[]" {
+        return Ok(renames);
+    }
+    let entries: Vec<serde_json::Value> =
+        serde_json::from_str(json).map_err(|_| Error::Schema { message: "renames payload is not valid JSON".into() })?;
+    for entry in entries {
+        let object = entry.as_object().ok_or_else(|| Error::Schema { message: "rename entry must be an object".into() })?;
+        if let (Some(from), Some(to)) = (
+            object.get("fromType").and_then(serde_json::Value::as_str),
+            object.get("toType").and_then(serde_json::Value::as_str),
+        ) {
+            renames.types.insert(from.to_owned(), to.to_owned());
+        }
+        else if let (Some(type_name), Some(from_field), Some(to_field)) = (
+            object.get("type").and_then(serde_json::Value::as_str),
+            object.get("fromField").and_then(serde_json::Value::as_str),
+            object.get("toField").and_then(serde_json::Value::as_str),
+        ) {
+            renames
+                .fields
+                .insert(FieldPath { type_name: type_name.to_owned(), field_name: from_field.to_owned() }, to_field.to_owned());
+        }
+        else {
+            return Err(Error::Schema { message: "rename entry must have {fromType,toType} or {type,fromField,toField}".into() });
+        }
+    }
+    Ok(renames)
+}
+
 impl ServeBackend for Connection {
     fn info(&self) -> Result<Vec<u8>> {
         let path = self.path().map(|path| path.display().to_string()).unwrap_or_else(|| "<memory>".to_owned());
@@ -146,6 +194,22 @@ impl ServeBackend for Connection {
 
     fn ensure_schema(&self, _version: u32, document: &str) -> Result<()> {
         Connection::ensure_schema(self, document)
+    }
+
+    fn migrate_schema(&self, _version: u32, document: &str, renames_json: &str, mode: u8) -> Result<()> {
+        let renames = parse_rename_map(renames_json)?;
+        let mode = match mode {
+            database_protocol_yy::MIGRATION_MODE_REWRITE => database_execution::engine::MigrationMode::Rewrite,
+            database_protocol_yy::MIGRATION_MODE_METADATA_ONLY => database_execution::engine::MigrationMode::MetadataOnly,
+            database_protocol_yy::MIGRATION_MODE_DEFERRED => database_execution::engine::MigrationMode::Deferred,
+            database_protocol_yy::MIGRATION_MODE_REBUILD_ONLY => database_execution::engine::MigrationMode::RebuildOnly,
+            other => return Err(Error::Schema { message: format!("unknown schema migration mode `{other}`") }),
+        };
+        Connection::migrate_schema_with_mode(self, document, &renames, mode)
+    }
+
+    fn compact_schemas(&self, budget: u32) -> Result<u32> {
+        Connection::compact_schemas(self, budget as usize).map(|count| u32::try_from(count).unwrap_or(u32::MAX))
     }
 
     fn kv_get(&self, key: &str) -> Result<Option<Vec<u8>>> {

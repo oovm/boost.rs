@@ -47,6 +47,14 @@ pub enum MessageType {
     SchemaEnsure,
     /// 确保 schema 确认。
     SchemaEnsureOk,
+    /// 发布 schema 迁移（body：version、document、renames JSON、mode）。
+    SchemaMigrate,
+    /// schema 迁移确认。
+    SchemaMigrateOk,
+    /// 收敛延后迁移遗留行（body：budget）。
+    SchemaCompact,
+    /// 收敛结果（body：升级行数）。
+    SchemaCompactOk,
     /// KV 读取。
     KvGet,
     /// KV 读取回复。
@@ -161,6 +169,10 @@ impl MessageType {
             38 => Self::PerfReportOk,
             39 => Self::SessionClose,
             40 => Self::SessionCloseOk,
+            41 => Self::SchemaMigrate,
+            42 => Self::SchemaMigrateOk,
+            43 => Self::SchemaCompact,
+            44 => Self::SchemaCompactOk,
             255 => Self::Error,
             other => Self::Unknown(other),
         }
@@ -209,6 +221,10 @@ impl MessageType {
             Self::PerfReportOk => 38,
             Self::SessionClose => 39,
             Self::SessionCloseOk => 40,
+            Self::SchemaMigrate => 41,
+            Self::SchemaMigrateOk => 42,
+            Self::SchemaCompact => 43,
+            Self::SchemaCompactOk => 44,
             Self::Error => 255,
             Self::Unknown(code) => code,
         }
@@ -227,6 +243,8 @@ pub fn response_type(request: MessageType) -> Option<MessageType> {
         MessageType::Info => Some(MessageType::InfoOk),
         MessageType::SchemaGet => Some(MessageType::SchemaGetOk),
         MessageType::SchemaEnsure => Some(MessageType::SchemaEnsureOk),
+        MessageType::SchemaMigrate => Some(MessageType::SchemaMigrateOk),
+        MessageType::SchemaCompact => Some(MessageType::SchemaCompactOk),
         MessageType::KvGet => Some(MessageType::KvGetOk),
         MessageType::KvPut => Some(MessageType::KvPutOk),
         MessageType::MicroRegister => Some(MessageType::MicroRegisterOk),
@@ -456,6 +474,70 @@ pub fn encode_schema_ensure(version: u32, document: &str) -> Vec<u8> {
     push_u32(&mut body, version);
     push_bytes(&mut body, document.as_bytes());
     body
+}
+
+/// 迁移模式 wire 值：立即重写。
+pub const MIGRATION_MODE_REWRITE: u8 = 0;
+/// 迁移模式 wire 值：仅元数据变更。
+pub const MIGRATION_MODE_METADATA_ONLY: u8 = 1;
+/// 迁移模式 wire 值：延后收敛。
+pub const MIGRATION_MODE_DEFERRED: u8 = 2;
+/// 迁移模式 wire 值：仅重建。
+pub const MIGRATION_MODE_REBUILD_ONLY: u8 = 3;
+
+/// 编码 `SchemaMigrate` body。
+///
+/// 布局：`version u32`、`document`、`renames JSON`（空串表示无重命名）、
+/// `mode u8`。迁移策略随语句传输，不进入 schema 文档。
+pub fn encode_schema_migrate(version: u32, document: &str, renames_json: &str, mode: u8) -> Vec<u8> {
+    let mut body = Vec::new();
+    push_u32(&mut body, version);
+    push_bytes(&mut body, document.as_bytes());
+    push_bytes(&mut body, renames_json.as_bytes());
+    body.push(mode);
+    body
+}
+
+/// 解码 `SchemaMigrate` body。
+pub fn decode_schema_migrate(body: &[u8]) -> Result<(u32, String, String, u8)> {
+    let mut offset = 0;
+    let version = read_u32(body, &mut offset)?;
+    let document = read_utf8(body, &mut offset)?;
+    let renames = read_utf8(body, &mut offset)?;
+    let mode = *body.get(offset).ok_or(Error::Corrupt("schema migrate body is truncated"))?;
+    Ok((version, document, renames, mode))
+}
+
+/// 编码 `SchemaCompact` body。
+pub fn encode_schema_compact(budget: u32) -> Vec<u8> {
+    let mut body = Vec::new();
+    push_u32(&mut body, budget);
+    body
+}
+
+/// 解码 `SchemaCompact` body。
+pub fn decode_schema_compact(body: &[u8]) -> Result<u32> {
+    let mut offset = 0;
+    read_u32(body, &mut offset)
+}
+
+/// 编码 `SchemaCompactOk` body。
+pub fn encode_schema_compact_ok(count: u32) -> Vec<u8> {
+    let mut body = Vec::new();
+    push_u32(&mut body, count);
+    body
+}
+
+/// 解码 `SchemaCompactOk` body。
+pub fn decode_schema_compact_ok(body: &[u8]) -> Result<u32> {
+    let mut offset = 0;
+    read_u32(body, &mut offset)
+}
+
+fn read_utf8(body: &[u8], offset: &mut usize) -> Result<String> {
+    let len = read_u32(body, offset)?;
+    let bytes = read_bytes(body, offset, len)?;
+    std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| Error::Corrupt("schema payload is not utf-8"))
 }
 
 /// 编码 `KvGet` body。

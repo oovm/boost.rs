@@ -28,15 +28,31 @@ pub use database_udf::HostMicroDefinition;
 
 use database_protocol_yy::{
     ExecutePreparedRows, Frame, MessageType, decode_error, decode_execute_prepared_ok, decode_kv_get_ok, decode_named_rows, decode_prepare_ok,
-    decode_rows, decode_scalar_call_ok, decode_schema_get_ok, encode_authenticate, encode_execute_prepared, encode_kv_get, encode_kv_put,
-    encode_micro_register, encode_params, encode_prepare, encode_savepoint_name, encode_scalar_call, encode_schema_ensure,
-    encode_session_close, read_frame as read_tcp_frame, split_bind, write_frame as write_tcp_frame,
+    decode_rows, decode_scalar_call_ok, decode_schema_compact_ok, decode_schema_get_ok, encode_authenticate, encode_execute_prepared,
+    encode_kv_get, encode_kv_put, encode_micro_register, encode_params, encode_prepare, encode_savepoint_name, encode_scalar_call,
+    encode_schema_compact, encode_schema_ensure, encode_schema_migrate, encode_session_close, read_frame as read_tcp_frame, split_bind,
+    write_frame as write_tcp_frame,
 };
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 /// 首次发布 schema 时使用的目录 revision；后续迁移由服务端发布更高 revision。
 const SCHEMA_INITIAL_VERSION: u32 = 1;
+
+/// DDL policy the client attaches to a remote schema migration.
+///
+/// The policy belongs to the change statement, never to a column declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SchemaMigrationMode {
+    /// Re-encode affected rows before publishing.
+    Rewrite,
+    /// Only name/order changes; layout changes are rejected.
+    MetadataOnly,
+    /// Publish now, keep old rows readable, compact later.
+    Deferred,
+    /// Publish and refuse old rows; the host rebuilds from its source.
+    RebuildOnly,
+}
 
 /// A result row keyed by column name.
 pub type Row = BTreeMap<String, Value>;
@@ -222,6 +238,37 @@ impl Client {
         let response = self.round_trip(MessageType::SchemaEnsure, encode_schema_ensure(version, document))?;
         expect_type(&response, MessageType::SchemaEnsureOk)?;
         Ok(())
+    }
+
+    /// Publish a schema migration under an explicit DDL policy.
+    ///
+    /// The policy travels with the statement, never with the schema document:
+    /// `Deferred` leaves old rows readable and lets the host call
+    /// [`Self::compact_schemas`] later; `MetadataOnly` rejects layout changes.
+    pub fn migrate_schema(
+        &self,
+        version: u32,
+        document: &str,
+        renames_json: &str,
+        mode: SchemaMigrationMode,
+    ) -> Result<()> {
+        let mode = match mode {
+            SchemaMigrationMode::Rewrite => database_protocol_yy::MIGRATION_MODE_REWRITE,
+            SchemaMigrationMode::MetadataOnly => database_protocol_yy::MIGRATION_MODE_METADATA_ONLY,
+            SchemaMigrationMode::Deferred => database_protocol_yy::MIGRATION_MODE_DEFERRED,
+            SchemaMigrationMode::RebuildOnly => database_protocol_yy::MIGRATION_MODE_REBUILD_ONLY,
+        };
+        let body = encode_schema_migrate(version, document, renames_json, mode);
+        let response = self.round_trip(MessageType::SchemaMigrate, body)?;
+        expect_type(&response, MessageType::SchemaMigrateOk)?;
+        Ok(())
+    }
+
+    /// Upgrade up to `budget` rows left behind by a deferred migration.
+    pub fn compact_schemas(&self, budget: u32) -> Result<u32> {
+        let response = self.round_trip(MessageType::SchemaCompact, encode_schema_compact(budget))?;
+        expect_type(&response, MessageType::SchemaCompactOk)?;
+        decode_schema_compact_ok(&response.body)
     }
 
     /// Fetch remote info text (`path=…\n…`).

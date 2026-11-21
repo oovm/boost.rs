@@ -12,9 +12,9 @@ use std::{
 
 use database_protocol_yy::{
     Frame, MessageType, decode_authenticate, decode_execute_prepared, decode_kv_get, decode_kv_put, decode_micro_register, decode_params,
-    decode_prepare, decode_savepoint_name, decode_scalar_call, decode_schema_ensure, encode_authenticate_ok, encode_execute_prepared_ok,
-    encode_kv_get_ok, encode_named_execute_prepared_ok, encode_named_rows, encode_prepare_ok, encode_rows, encode_scalar_call_ok,
-    encode_schema_ok, error_frame,
+    decode_prepare, decode_savepoint_name, decode_scalar_call, decode_schema_compact, decode_schema_ensure, decode_schema_migrate,
+    encode_authenticate_ok, encode_execute_prepared_ok, encode_kv_get_ok, encode_named_execute_prepared_ok, encode_named_rows,
+    encode_prepare_ok, encode_rows, encode_scalar_call_ok, encode_schema_compact_ok, encode_schema_ok, error_frame,
 };
 use database_query::local::{PreparedStatement, QueryKind, SessionOp};
 use database_types::{Error, Result};
@@ -203,6 +203,20 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
             },
             Err(error) => error_frame(id, &error),
         },
+        MessageType::SchemaMigrate => match decode_schema_migrate(&request.body) {
+            Ok((version, document, renames, mode)) => match backend.migrate_schema(version, &document, &renames, mode) {
+                Ok(()) => Frame::new(MessageType::SchemaMigrateOk, id, Vec::new()),
+                Err(error) => error_frame(id, &error),
+            },
+            Err(error) => error_frame(id, &error),
+        },
+        MessageType::SchemaCompact => match decode_schema_compact(&request.body) {
+            Ok(budget) => match backend.compact_schemas(budget) {
+                Ok(count) => Frame::new(MessageType::SchemaCompactOk, id, encode_schema_compact_ok(count)),
+                Err(error) => error_frame(id, &error),
+            },
+            Err(error) => error_frame(id, &error),
+        },
         MessageType::KvGet => match decode_kv_get(&request.body) {
             Ok(key) => match backend.kv_get(&key) {
                 Ok(value) => Frame::new(MessageType::KvGetOk, id, encode_kv_get_ok(value)),
@@ -381,6 +395,8 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
         | MessageType::InfoOk
         | MessageType::SchemaGetOk
         | MessageType::SchemaEnsureOk
+        | MessageType::SchemaMigrateOk
+        | MessageType::SchemaCompactOk
         | MessageType::KvGetOk
         | MessageType::KvPutOk
         | MessageType::MicroRegisterOk
@@ -441,7 +457,7 @@ fn execute_ok_frame<B: ServeBackend + ?Sized>(backend: &B, id: u32, rows: &[data
 fn required_permission(msg: MessageType) -> Permission {
     match msg {
         MessageType::KvPut => Permission::Write,
-        MessageType::SchemaEnsure => Permission::Schema,
+        MessageType::SchemaEnsure | MessageType::SchemaMigrate | MessageType::SchemaCompact => Permission::Schema,
         MessageType::TxnBegin
         | MessageType::TxnCommit
         | MessageType::TxnRollback

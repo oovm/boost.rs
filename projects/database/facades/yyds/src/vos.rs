@@ -383,6 +383,24 @@ impl ServeBackend for VosBackend {
         self.node.ensure_schema(version, document)
     }
 
+    /// 集群 schema 迁移需要成员协议先就绪。
+    ///
+    /// 目录在集群里是复制状态，立即重写、延后收敛与旧 revision 读取都必须由
+    /// 成员共识和 peer transport 驱动；在此之前返回结构化拒绝，而不是只改
+    /// 本节点目录造成分片间 schema 漂移。
+    fn migrate_schema(&self, _version: u32, _document: &str, _renames_json: &str, _mode: u8) -> Result<()> {
+        Err(Error::Unsupported(
+            "YYDS cluster schema migration requires the CLUSTER member protocol; use a yydb node for DDL until it lands",
+        ))
+    }
+
+    /// 延后迁移的旧行收敛同样依赖成员协议。
+    fn compact_schemas(&self, _budget: u32) -> Result<u32> {
+        Err(Error::Unsupported(
+            "YYDS cluster schema compaction requires the CLUSTER member protocol; use a yydb node for DDL until it lands",
+        ))
+    }
+
     fn kv_get(&self, key: &str) -> Result<Option<Vec<u8>>> {
         self.ensure_open()?;
         let namespace = Namespace(VOS_NAMESPACE.to_owned());
