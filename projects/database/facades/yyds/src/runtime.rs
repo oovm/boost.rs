@@ -8,7 +8,7 @@ use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
 
 use database::{
     cluster::{
-        catalog::node::{CatalogLoadError, NodeCatalogFacts, load_node_catalog},
+        catalog::{Catalog, node::{CatalogLoadError, NodeCatalogFacts, load_node_catalog}},
         control::{LeaseError, LocalOwnership, NodeIdentity, NodeLease},
         peer::{PeerError, PeerIdentity, PeerNode, PeerOptions, PeerRole, PeerTls},
     },
@@ -227,8 +227,19 @@ pub fn init_node(data_dir: &Path, identity: NodeIdentity) -> Result<(), NodeErro
 ///
 /// `catalog_path` 为 `None` 表示调用方显式选择单节点模式,只使用本地分片;为 `Some`
 /// 时必须读到带已发布路由的 catalog,读取或校验失败都返回结构化错误,不回退。
+///
+/// catalog 模式下同时把 catalog 发布的 owner 表装入执行器的 fencing 快照,使
+/// `execute(Some(fence), ...)` 能以已发布 owner 为准而不是一律 fail closed。
 pub fn open_executor(directory: &Path, catalog_path: Option<&Path>) -> Result<Arc<dyn KeyValueExecutor>, NodeError> {
-    let executor = LocalExecutor::open_local(directory, catalog_path)?;
+    let Some(catalog_path) = catalog_path
+    else {
+        let executor = LocalExecutor::open_local(directory, None)?;
+        return Ok(Arc::new(executor));
+    };
+    let routing = load_node_catalog(Some(catalog_path))?.routing.into_map();
+    let owners = Catalog::open(catalog_path)?.owners().to_vec();
+    let shards = database::storage::cluster_kv::open_shards(directory, routing.shards())?;
+    let executor = LocalExecutor::new(routing, shards, owners)?;
     Ok(Arc::new(executor))
 }
 
@@ -278,7 +289,8 @@ mod tests {
     use super::*;
     use database::{
         cluster::catalog::{Catalog, catalog_path, node::CatalogLoadError},
-        types::cluster::{ShardEpoch, ShardId},
+        query::cluster_kv::{KeyValueAction, KeyValueCommand},
+        types::cluster::{FenceToken, LeaderTerm, Namespace, ReplicaNodeId, ShardEpoch, ShardId},
     };
 
     use database::cluster::control::NodeIdentity;
@@ -389,5 +401,28 @@ mod tests {
         let snapshot = inspect_node(dir.path(), Some(&path)).expect("inspect");
         assert_eq!(snapshot.routing_epoch, Some(7));
         assert_eq!(snapshot.shard_count, Some(2));
+    }
+
+    #[test]
+    fn published_catalog_owners_fence_the_executor() {
+        let dir = TempDir::create("owners");
+        let path = catalog_path(dir.path().join("cluster"));
+        let mut catalog = Catalog::open(&path).expect("open catalog");
+        catalog.publish_routing(ShardEpoch(3), vec![ShardId("shard-a".into())]).expect("publish routing");
+        catalog.publish_owner(ShardId("shard-a".into()), ReplicaNodeId("node-a".into()), LeaderTerm(2));
+        catalog.flush().expect("flush catalog");
+
+        let executor = open_executor(dir.path(), Some(&path)).expect("catalog mode opens");
+        let command = KeyValueCommand {
+            namespace: Namespace("default".into()),
+            key: b"k1".to_vec(),
+            action: KeyValueAction::Put(b"v1".to_vec()),
+        };
+        let fence = FenceToken { epoch: ShardEpoch(3), term: LeaderTerm(2), leader_node_id: ReplicaNodeId("node-a".into()) };
+        executor.execute(Some(&fence), command.clone()).expect("the published owner writes");
+
+        let stale = FenceToken { epoch: ShardEpoch(3), term: LeaderTerm(1), leader_node_id: ReplicaNodeId("node-a".into()) };
+        let error = executor.execute(Some(&stale), command).expect_err("a stale term must be fenced");
+        assert_eq!(error.code(), "database.shard.fencing.rejected");
     }
 }
