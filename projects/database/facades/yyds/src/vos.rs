@@ -17,7 +17,10 @@
 
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Condvar, Mutex, MutexGuard},
+    sync::{
+        Arc, Condvar, Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Instant,
 };
 
@@ -259,12 +262,27 @@ pub struct VosBackend {
     node: Arc<VosNode>,
     txn: Mutex<Option<TxnState>>,
     holds_gate: Mutex<bool>,
+    closed: AtomicBool,
 }
 
 impl VosBackend {
     /// 用节点共享状态建立一条连接的后端。
     pub fn new(node: Arc<VosNode>) -> Self {
-        Self { node, txn: Mutex::new(None), holds_gate: Mutex::new(false) }
+        Self { node, txn: Mutex::new(None), holds_gate: Mutex::new(false), closed: AtomicBool::new(false) }
+    }
+
+    fn ensure_open(&self) -> Result<()> {
+        if self.closed.load(Ordering::Acquire) { Err(Error::SessionClosed) } else { Ok(()) }
+    }
+
+    /// 显式释放本会话：丢弃未提交事务并交还写闸门。
+    ///
+    /// 幂等；`close` 帧与对象析构都会走同一入口，所以后继会话不必等待
+    /// 旧后端被 GC。
+    fn release_lease(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.txn().take();
+        self.exit_gate();
     }
 
     fn txn(&self) -> MutexGuard<'_, Option<TxnState>> {
@@ -343,8 +361,7 @@ impl VosBackend {
 
 impl Drop for VosBackend {
     fn drop(&mut self) {
-        self.txn.get_mut().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
-        self.exit_gate();
+        self.release_lease();
     }
 }
 
@@ -367,6 +384,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn kv_get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        self.ensure_open()?;
         let namespace = Namespace(VOS_NAMESPACE.to_owned());
         let command = KeyValueCommand { namespace, key: key.as_bytes().to_vec(), action: KeyValueAction::Get };
         match self.node.executor.execute(None, command).map_err(Error::from)? {
@@ -376,6 +394,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn kv_put(&self, key: String, value: Vec<u8>) -> Result<()> {
+        self.ensure_open()?;
         let namespace = Namespace(VOS_NAMESPACE.to_owned());
         let command = KeyValueCommand { namespace, key: key.into_bytes(), action: KeyValueAction::Put(value) };
         match self.node.executor.execute(None, command).map_err(Error::from)? {
@@ -385,14 +404,17 @@ impl ServeBackend for VosBackend {
     }
 
     fn prepare(&self, source: &str) -> Result<PreparedStatement> {
+        self.ensure_open()?;
         prepare(source)
     }
 
     fn query_prepared(&self, statement: &PreparedStatement, params: &BTreeMap<String, Value>) -> Result<Vec<QueryRow>> {
+        self.ensure_open()?;
         self.read(statement, params)
     }
 
     fn execute_prepared(&self, statement: &PreparedStatement, params: &BTreeMap<String, Value>) -> Result<Vec<QueryRow>> {
+        self.ensure_open()?;
         match statement.query_kind {
             QueryKind::Read => self.read(statement, params),
             QueryKind::Write => {
@@ -407,6 +429,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn begin(&self) -> Result<()> {
+        self.ensure_open()?;
         let guard = self.txn();
         if guard.is_some() {
             return Err(Error::Protocol { message: "a transaction is already open on this connection".to_owned() });
@@ -427,6 +450,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn commit(&self) -> Result<()> {
+        self.ensure_open()?;
         let Some(state) = self.txn().take()
         else {
             return Err(Error::Protocol { message: "no open transaction to commit".to_owned() });
@@ -437,6 +461,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn rollback(&self) -> Result<()> {
+        self.ensure_open()?;
         if self.txn().take().is_none() {
             self.exit_gate();
             return Err(Error::Protocol { message: "no open transaction to roll back".to_owned() });
@@ -446,6 +471,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn savepoint(&self, name: &str) -> Result<()> {
+        self.ensure_open()?;
         let mut guard = self.txn();
         let Some(state) = guard.as_mut()
         else {
@@ -456,6 +482,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn rollback_to_savepoint(&self, name: &str) -> Result<()> {
+        self.ensure_open()?;
         let mut guard = self.txn();
         let Some(state) = guard.as_mut()
         else {
@@ -470,6 +497,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn release_savepoint(&self, name: &str) -> Result<()> {
+        self.ensure_open()?;
         let mut guard = self.txn();
         let Some(state) = guard.as_mut()
         else {
@@ -484,6 +512,7 @@ impl ServeBackend for VosBackend {
     }
 
     fn perf_report(&self) -> Result<String> {
+        self.ensure_open()?;
         let mut report = report_json(&self.node.perf).map_err(|error| Error::Protocol { message: error.to_string() })?;
         let schema_version = self.node.schema().map(|schema| schema.version);
         let open = self.txn().is_some();
@@ -491,6 +520,11 @@ impl ServeBackend for VosBackend {
             object.insert("node".to_owned(), serde_json::json!({ "namespace": VOS_NAMESPACE, "schemaVersion": schema_version, "transactionOpen": open }));
         }
         serde_json::to_string(&report).map_err(|error| Error::Protocol { message: error.to_string() })
+    }
+
+    fn close(&self) -> Result<()> {
+        self.release_lease();
+        Ok(())
     }
 }
 
@@ -519,7 +553,13 @@ impl BackendFactory for VosBackendFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs, path::PathBuf, time::SystemTime};
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::PathBuf,
+        sync::mpsc::{RecvTimeoutError, channel},
+        time::{Duration, SystemTime},
+    };
 
     use database::{
         client::yy::Client,
@@ -672,6 +712,32 @@ table Item {
         assert!(client.rollback_to_savepoint("missing").is_err(), "unknown savepoint must fail");
         client.rollback().expect("rollback");
         assert!(client.rollback().is_err(), "double rollback must fail");
+    }
+
+    #[test]
+    fn explicit_close_releases_the_write_lease_to_the_next_session() {
+        let node = Node::start("lease");
+        let holder = node.client();
+        let successor = node.client();
+
+        holder.begin().expect("the first session takes the write lease");
+        let (sender, receiver) = channel();
+        let handle = std::thread::spawn(move || {
+            let outcome = successor.begin();
+            let _ = successor.rollback();
+            sender.send(outcome.map_err(|error| error.to_string())).expect("report successor outcome");
+        });
+        assert!(
+            matches!(receiver.recv_timeout(Duration::from_millis(200)), Err(RecvTimeoutError::Timeout)),
+            "a successor must not acquire the lease while the holder keeps it"
+        );
+
+        holder.close().expect("explicit close releases the lease");
+        let outcome = receiver.recv_timeout(Duration::from_secs(5)).expect("successor is admitted after close");
+        assert!(outcome.is_ok(), "successor begin failed: {outcome:?}");
+        handle.join().expect("successor thread");
+
+        assert!(matches!(holder.begin(), Err(Error::SessionClosed)), "the released session is rejected");
     }
 
     #[test]
