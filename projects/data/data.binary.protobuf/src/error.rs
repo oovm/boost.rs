@@ -50,10 +50,3 @@ pub enum ProtoError {
     #[error("writer cannot encode: {0}")]
     Writer(&'static str),
 }
-
-impl ProtoError {
-    /// Number of bytes still missing from a fixed-width read.
-    pub(crate) fn truncated(offset: usize, need: usize, have: usize) -> Self {
-        Self::Truncated { offset, need, have }
-    }
-}

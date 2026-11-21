@@ -99,7 +99,8 @@ pub(crate) fn format_source(source: &str, options: &FormatOptions) -> Result<Str
                     }
                 }
             }
-            constraint = if ternary { language_format::gap::GapConstraint::RequiredSpace } else { language_format::gap::GapConstraint::NoSpace };
+            constraint =
+                if ternary { language_format::gap::GapConstraint::RequiredSpace } else { language_format::gap::GapConstraint::NoSpace };
         }
         if right_text == "<" || right_text == ">" {
             let next = significant.get(index + 2).and_then(|token| source.get(token.span.clone()));

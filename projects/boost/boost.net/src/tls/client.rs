@@ -533,7 +533,13 @@ impl TlsClient<TcpStream> {
         let writer_stream = self.wire.stream().try_clone().map_err(TlsError::Io)?;
         let TlsClient { wire, server_app, server_app_secret, client_app, read_buffer, read_position, .. } = self;
         let (stream, pending) = wire.into_parts();
-        let reader = TlsReader { wire: Wire::with_pending(stream, pending), app: server_app, app_secret: server_app_secret, buffer: read_buffer, position: read_position };
+        let reader = TlsReader {
+            wire: Wire::with_pending(stream, pending),
+            app: server_app,
+            app_secret: server_app_secret,
+            buffer: read_buffer,
+            position: read_position,
+        };
         let writer = TlsWriter { wire: Wire::new(writer_stream), app: client_app };
         Ok((reader, writer))
     }
