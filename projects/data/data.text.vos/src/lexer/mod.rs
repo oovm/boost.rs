@@ -94,11 +94,8 @@ impl Lexer<VosLanguage> for VosLexer {
                 }
                 state.add_token(VosTokenType::Whitespace, start, state.get_position());
             }
-            else if ch == '#' || (ch == '/' && state.peek_next_n(1) == Some('/')) {
+            else if ch == '#' {
                 state.advance(ch.len_utf8());
-                if ch == '/' {
-                    state.advance(1);
-                }
                 while let Some(next) = state.peek() {
                     if next == '\n' || next == '\r' {
                         break;

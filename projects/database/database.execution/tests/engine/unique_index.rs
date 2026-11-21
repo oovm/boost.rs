@@ -108,30 +108,3 @@ fn bulk_inserts_with_a_unique_column_stay_rejected_at_the_first_duplicate() {
     let rows = conn.query_vos("User.all().collect()").unwrap();
     assert_eq!(rows.len(), 500);
 }
-
-#[test]
-fn a_partial_rule_keeps_its_predicate_through_bulk_writes_and_cold_rebuilds() {
-    let conn = Connection::open_in_memory().unwrap();
-    conn.ensure_schema("table Job { @@id: i64, [unique(ux_job_open where status = 1)] scope: utf8, status: i64 }").unwrap();
-    // Bulk writes through the maintained index: rows outside the predicate
-    // share one key freely while rows inside it collide.
-    for id in 1..=50_i64 {
-        let status = if id % 2 == 0 { 0 } else { 1 };
-        let source = format!(r#"Job.insert({{ id: {id}, scope: "s{id}", status: {status} }})"#);
-        conn.execute_vos_write(&source).unwrap();
-    }
-    for id in 51..=60_i64 {
-        conn.execute_vos_write(&format!(r#"Job.insert({{ id: {id}, scope: "shared", status: 0 }})"#)).unwrap();
-    }
-    conn.execute_vos_write(r#"Job.insert({ id: 61, scope: "shared", status: 1 })"#).unwrap();
-    let error = conn.execute_vos_write(r#"Job.insert({ id: 62, scope: "shared", status: 1 })"#).unwrap_err();
-    assert_eq!(unique_violation(error), "ux_job_open");
-    // A raw record write drops the cache; the cold rebuild must skip the very
-    // same rows the warm index never entered.
-    conn.write_batch(&[("cache/probe".to_owned(), Some(b"1".to_vec()))]).unwrap();
-    let error = conn.execute_vos_write(r#"Job.insert({ id: 63, scope: "shared", status: 1 })"#).unwrap_err();
-    assert_eq!(unique_violation(error), "ux_job_open");
-    conn.execute_vos_write(r#"Job.insert({ id: 64, scope: "shared", status: 0 })"#).unwrap();
-    let rows = conn.query_vos("Job.all().collect()").unwrap();
-    assert_eq!(rows.len(), 62);
-}

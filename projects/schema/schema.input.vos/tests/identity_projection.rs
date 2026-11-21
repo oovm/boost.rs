@@ -6,7 +6,7 @@ use schema_input_vos::parse_schema;
 fn operation_identity_ignores_whitespace_newlines_and_comments() {
     let compact = parse_schema("query active(status: utf8, limit: i64) -> [User] { User }").unwrap().project_operations().unwrap();
     let formatted =
-        parse_schema("// leading comment\nquery   active ( status : utf8 ,  limit :i64 )\n  -> [ User ]\n{\n  // body comment\n  User\n}\n")
+        parse_schema("# leading comment\nquery   active ( status : utf8 ,  limit :i64 )\n  -> [ User ]\n{\n  # body comment\n  User\n}\n")
             .unwrap()
             .project_operations()
             .unwrap();

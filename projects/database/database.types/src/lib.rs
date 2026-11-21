@@ -25,7 +25,7 @@ pub use reason::ReasonCode;
 /// Exact calendar, clock, instant, and fixed-point decimal scalars.
 pub mod scalar;
 
-pub use constraint::{PartialPredicate, PredicateCondition, TableUniqueConstraint, UniqueConstraint, UniqueConstraintError};
+pub use constraint::{TableUniqueConstraint, UniqueConstraint, UniqueConstraintError};
 pub use scalar::{Date, Decimal, ScalarError, Time, Timestamp};
 
 /// Largest `bytes` payload kept inside a row cell instead of the object store.

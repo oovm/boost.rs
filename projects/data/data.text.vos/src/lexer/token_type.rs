@@ -8,7 +8,7 @@ pub type VosToken = Token<VosTokenType>;
 pub enum VosTokenType {
     /// Ignored whitespace.
     Whitespace,
-    /// Comments.
+    /// `#` line comments.
     Comment,
     /// End of input.
     Eof,
