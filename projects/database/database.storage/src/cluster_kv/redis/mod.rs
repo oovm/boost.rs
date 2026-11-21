@@ -377,7 +377,8 @@ impl RedisShard {
     /// 给整数值加上 `delta`，保留其截止时间。
     ///
     /// 结果对本节点上的每次读取立即可见。它在下一次 [`RedisShard::flush`]、任何其他改动
-    /// 或节点析构时到达分片；在此之前只存在于内存。
+    /// 或节点析构时到达分片；在此之前只存在于内存。`sync_always` 策略下例外：它同时把批次
+    /// 标成有未落盘改动，因此外层批次关闭时就会写穿，回包前已到达稳定存储。
     pub fn incr_by(&mut self, db: u8, key: &[u8], delta: i64) -> io::Result<std::result::Result<i64, IncrementError>> {
         let current = match self.get(db, key) {
             None => 0,
@@ -397,6 +398,12 @@ impl RedisShard {
         self.records.insert(record_key.clone(), record);
         self.touch_watched(&record_key);
         self.pending_increments = true;
+        // `appendfsync always` 承诺回包前写穿，而计数默认只留在缓冲里等下一次 flush。
+        // 该策略下把批次也标成有未落盘改动，使 `end_batch` 关闭最外层批次时立即落盘；
+        // `everysec` 保持缓冲，顺序 `INCR` 流仍不会逐条命令重写快照。
+        if self.sync_always {
+            self.dirty = true;
+        }
         Ok(Ok(total))
     }
 

@@ -134,6 +134,33 @@ fn counters_stay_buffered_until_a_flush() -> io::Result<()> {
 }
 
 #[test]
+fn appendfsync_always_writes_counters_through_before_the_batch_closes() -> io::Result<()> {
+    let data_dir = temporary_dir("counter-sync-always");
+    let mut shard = RedisShard::open(&data_dir)?;
+    shard.set(0, b"counter", b"41", None)?;
+    shard.flush()?;
+
+    // `everysec` 保持缓冲：批次关闭不写盘。
+    let before = std::fs::read(shard.shard_path())?;
+    shard.begin_batch();
+    assert_eq!(shard.incr_by(0, b"counter", 1)?, Ok(42));
+    shard.end_batch()?;
+    assert_eq!(std::fs::read(shard.shard_path())?, before, "everysec keeps the counter buffered past the batch");
+
+    // `appendfsync always` 承诺回包前写穿：批次关闭即落盘。
+    shard.set_sync_always(true);
+    shard.begin_batch();
+    assert_eq!(shard.incr_by(0, b"counter", 1)?, Ok(43));
+    shard.end_batch()?;
+    let bytes = std::fs::read(shard.shard_path())?;
+    let (records, _) = decode_shard(&bytes).expect("decode the snapshot written by end_batch");
+    let stored = records.get(&Key::new(namespace(0), b"counter".to_vec())).expect("the counter reached the shard");
+    assert_eq!(record_bytes(stored), b"43".as_slice(), "the reply must not precede the durable write");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    Ok(())
+}
+
+#[test]
 fn a_missing_shard_is_recreated_from_its_catalog() -> io::Result<()> {
     let data_dir = temporary_dir("repair");
     {
