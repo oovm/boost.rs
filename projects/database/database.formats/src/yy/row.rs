@@ -31,6 +31,11 @@ pub const ROW_PREFIX: &str = "__yydb/v0/row/";
 /// the v1 binary encoding which capped every field at 65535 bytes, or the v2
 /// encoding that had no closed named-value layout), and decoding it fails closed
 /// with a rebuild hint instead of guessing a shape.
+///
+/// Before 1.0 the project does not promise cross-version reads. A codec change
+/// bumps this version and the previous version is rejected outright; callers
+/// rebuild from source data instead of expecting a compatibility branch, a dual
+/// write or a shim.
 pub const ROW_CODEC_VERSION: u8 = 3;
 
 /// Reads the octets behind an out-of-line `bytes` object reference.

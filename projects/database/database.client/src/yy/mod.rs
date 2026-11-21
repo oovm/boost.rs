@@ -21,9 +21,10 @@ pub use database_types::{Error, Result, SchemaVersion, Value};
 pub use database_udf::HostMicroDefinition;
 
 use database_protocol_yy::{
-    Frame, MessageType, decode_error, decode_execute_prepared_ok, decode_kv_get_ok, decode_prepare_ok, decode_rows, decode_scalar_call_ok,
-    decode_schema_get_ok, encode_authenticate, encode_execute_prepared, encode_kv_get, encode_kv_put, encode_micro_register, encode_params,
-    encode_prepare, encode_savepoint_name, encode_scalar_call, encode_schema_ensure, read_frame, split_bind, write_frame,
+    ExecutePreparedRows, Frame, MessageType, decode_error, decode_execute_prepared_ok, decode_kv_get_ok, decode_named_rows, decode_prepare_ok,
+    decode_rows, decode_scalar_call_ok, decode_schema_get_ok, encode_authenticate, encode_execute_prepared, encode_kv_get, encode_kv_put,
+    encode_micro_register, encode_params, encode_prepare, encode_savepoint_name, encode_scalar_call, encode_schema_ensure, read_frame,
+    split_bind, write_frame,
 };
 
 /// Handle to a remote YYDB server started with `yydb serve`.
@@ -137,7 +138,10 @@ impl Client {
         let encoded = if params.is_empty() { None } else { Some(encode_params(params)?) };
         let response = self.round_trip(MessageType::ExecutePrepared, encode_execute_prepared(statement_id, encoded.as_deref()))?;
         expect_type(&response, MessageType::ExecutePreparedOk)?;
-        decode_rows(&decode_execute_prepared_ok(&response.body)?)
+        match decode_execute_prepared_ok(&response.body)? {
+            ExecutePreparedRows::Plain(rows) => decode_rows(&rows),
+            ExecutePreparedRows::Named { directory, rows } => decode_named_rows(&rows, &directory),
+        }
     }
 
     /// Prepare and execute in one call.

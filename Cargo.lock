@@ -2731,6 +2731,7 @@ dependencies = [
  "database-types",
  "database-udf",
  "rustls",
+ "schema-types",
  "serde",
  "serde_json",
  "sha1 0.11.0",

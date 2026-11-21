@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     net::TcpListener,
     sync::Arc,
     thread,
@@ -8,7 +9,8 @@ use std::{
 use database_client::yy::{Client, Error};
 use database_execution::engine::{Connection, Value};
 use database_protocol_yy::{
-    decode_prepare_ok, encode_execute_prepared, encode_prepare, read_frame, write_frame, Frame, MessageType,
+    ExecutePreparedRows, decode_execute_prepared_ok, decode_prepare_ok, encode_execute_prepared, encode_prepare, read_frame, write_frame, Frame,
+    MessageType,
 };
 use database_server::yydb::{SessionState, dispatch};
 
@@ -113,4 +115,132 @@ fn tcp_roundtrip_against_local_dispatch_server() {
     })
     .unwrap();
     assert_eq!(client.call_scalar_version("double", 1, &[Value::I64(21)]).unwrap(), Value::I64(42));
+}
+
+/// Named types (class + structure + unite) take the independent wire projection:
+/// the server encodes from its runtime directory and the remote client decodes
+/// the same values back, with no storage tag or client-side schema contract.
+#[test]
+fn prepared_read_round_trips_class_structure_and_unite_through_the_wire_client() {
+    const SCHEMA: &str = "\
+class Profile { name: utf8, age: i64, bio: utf8? }
+
+structure Address { zip: utf8, country: utf8? }
+
+unite Contact {
+    Email { address: utf8, label: utf8? },
+    Sms { number: utf8 },
+    None,
+}
+
+table Person {
+    @@id: i64,
+    profile: Profile,
+    address: Address,
+    contact: Contact?,
+}
+";
+
+    let conn = Arc::new(Connection::open_in_memory().unwrap());
+    conn.ensure_schema(SCHEMA).unwrap();
+    let params = BTreeMap::from([
+        (
+            "profile".to_owned(),
+            Value::Row(BTreeMap::from([
+                ("name".to_owned(), Value::Text("Ada".to_owned())),
+                ("age".to_owned(), Value::I64(36)),
+            ])),
+        ),
+        (
+            "address".to_owned(),
+            Value::Row(BTreeMap::from([
+                ("zip".to_owned(), Value::Text("100000".to_owned())),
+                ("country".to_owned(), Value::Text("CN".to_owned())),
+            ])),
+        ),
+        (
+            "contact".to_owned(),
+            Value::Row(BTreeMap::from([(
+                "Email".to_owned(),
+                Value::Row(BTreeMap::from([("address".to_owned(), Value::Text("ada@example.com".to_owned()))])),
+            )])),
+        ),
+    ]);
+    let named: BTreeMap<String, Value> =
+        std::iter::once(("id".to_owned(), Value::I64(1))).chain(params).collect();
+    conn.execute_vos_write_with_params(
+        "Person.insert({ id: $id, profile: $profile, address: $address, contact: $contact })",
+        &named,
+    )
+    .unwrap();
+
+    // The server must choose the named projection from its runtime directory,
+    // not from the shape of the result values.
+    let state = SessionState::for_test(9);
+    let prepare = Frame::new(MessageType::Prepare, 1, encode_prepare("Person.all().collect()"));
+    let prepared = dispatch(conn.as_ref(), &state, &prepare);
+    assert_eq!(prepared.msg_type, MessageType::PrepareOk);
+    let statement_id = decode_prepare_ok(&prepared.body).unwrap();
+    let execute = Frame::new(MessageType::ExecutePrepared, 2, encode_execute_prepared(&statement_id, None));
+    let executed = dispatch(conn.as_ref(), &state, &execute);
+    assert_eq!(executed.msg_type, MessageType::ExecutePreparedOk);
+    assert!(
+        matches!(decode_execute_prepared_ok(&executed.body).expect("decode result frame"), ExecutePreparedRows::Named { .. }),
+        "a schema declaring named types must use the named wire projection"
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server_conn = Arc::clone(&conn);
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let state = SessionState::for_test(3);
+        while let Ok(request) = read_frame(&mut stream) {
+            let response = dispatch(server_conn.as_ref(), &state, &request);
+            write_frame(&mut stream, &response).unwrap();
+        }
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let client = loop {
+        match Client::connect(addr.to_string()) {
+            Ok(client) => break client,
+            Err(_) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
+
+    let rows = client.query("Person.all().collect()", &BTreeMap::new()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("id"), Some(&Value::I64(1)));
+    assert_eq!(
+        rows[0].get("profile"),
+        Some(&Value::Row(BTreeMap::from([
+            ("name".to_owned(), Value::Text("Ada".to_owned())),
+            ("age".to_owned(), Value::I64(36)),
+            ("bio".to_owned(), Value::Null),
+        ]))),
+        "a class value keeps its declared members across the wire"
+    );
+    assert_eq!(
+        rows[0].get("address"),
+        Some(&Value::Row(BTreeMap::from([
+            ("zip".to_owned(), Value::Text("100000".to_owned())),
+            ("country".to_owned(), Value::Text("CN".to_owned())),
+        ]))),
+        "a structure value decodes from its closed wire layout"
+    );
+    assert_eq!(
+        rows[0].get("contact"),
+        Some(&Value::List(vec![
+            Value::I64(0),
+            Value::Row(BTreeMap::from([
+                ("address".to_owned(), Value::Text("ada@example.com".to_owned())),
+                ("label".to_owned(), Value::Null),
+            ])),
+        ])),
+        "a unite value keeps its discriminant and payload across the wire"
+    );
 }

@@ -7,7 +7,8 @@ use std::{collections::BTreeMap, sync::Mutex};
 use database_protocol_yy::{
     Frame, MessageType, decode_authenticate, decode_execute_prepared, decode_kv_get, decode_kv_put, decode_micro_register, decode_params,
     decode_prepare, decode_savepoint_name, decode_scalar_call, decode_schema_ensure, encode_authenticate_ok, encode_execute_prepared_ok,
-    encode_kv_get_ok, encode_prepare_ok, encode_rows, encode_scalar_call_ok, encode_schema_ok, error_frame,
+    encode_kv_get_ok, encode_named_execute_prepared_ok, encode_named_rows, encode_prepare_ok, encode_rows, encode_scalar_call_ok,
+    encode_schema_ok, error_frame,
 };
 use database_query::local::{PreparedStatement, QueryKind, SessionOp};
 use database_types::{Error, Result};
@@ -291,10 +292,7 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
                 Ok(r) => r,
                 Err(error) => return error_frame(id, &error),
             };
-            match encode_rows(&rows) {
-                Ok(rows_body) => Frame::new(MessageType::ExecutePreparedOk, id, encode_execute_prepared_ok(&rows_body)),
-                Err(error) => error_frame(id, &error),
-            }
+            execute_ok_frame(backend, id, &rows)
         }
         // ── Transaction boundary ─────────────────────────────────────────
         MessageType::TxnBegin => match backend.begin() {
@@ -362,6 +360,32 @@ fn dispatch_authed<B: ServeBackend + ?Sized>(backend: &B, state: &SessionState, 
             error_frame(id, &Error::Protocol { message: "handshake frame received after auth — protocol violation".to_owned() })
         }
         MessageType::Unknown(code) => error_frame(id, &Error::Protocol { message: format!("unknown msg_type {code}") }),
+    }
+}
+
+/// Build the `ExecutePreparedOk` reply for one result set.
+///
+/// The runtime directory decides the projection: a schema that declares named
+/// types sends the named wire projection together with its directory, so the
+/// client validates revisions and discriminants without holding a schema
+/// contract. A schema without named types keeps the plain row encoding.
+fn execute_ok_frame<B: ServeBackend + ?Sized>(backend: &B, id: u32, rows: &[database_query::local::QueryRow]) -> Frame {
+    let directory = match backend.wire_named_directory() {
+        Ok(directory) => directory,
+        Err(error) => return error_frame(id, &error),
+    };
+    match directory {
+        Some(directory) => match encode_named_rows(rows, &directory) {
+            Ok(rows_body) => match encode_named_execute_prepared_ok(&directory, &rows_body) {
+                Ok(body) => Frame::new(MessageType::ExecutePreparedOk, id, body),
+                Err(error) => error_frame(id, &error),
+            },
+            Err(error) => error_frame(id, &error),
+        },
+        None => match encode_rows(rows) {
+            Ok(rows_body) => Frame::new(MessageType::ExecutePreparedOk, id, encode_execute_prepared_ok(&rows_body)),
+            Err(error) => error_frame(id, &error),
+        },
     }
 }
 

@@ -8,9 +8,12 @@
 use std::{collections::BTreeMap, net::TcpStream};
 
 use database_execution::engine::{Connection, PlanOutcome};
+use database_formats::yy::row::{NamedFieldLayout, NamedValueLayout, ValueLayout};
+use database_protocol_yy::{WireNamedDirectory, WireNamedField, WireNamedLayout, WireNamedVariant, WireValueLayout};
 use database_query::local::{PreparedStatement, QueryRow};
 use database_types::{Error, Result, SchemaVersion, Value};
 use database_udf::HostMicroDefinition;
+use schema_types::TypeContractKind;
 
 use super::host_wire::TcpWireHostAdapter;
 
@@ -48,6 +51,15 @@ pub trait ServeBackend: Send {
     /// 预编译一段查询源。
     fn prepare(&self, source: &str) -> Result<PreparedStatement> {
         Err(Error::Unsupported("this backend does not serve prepared statements"))
+    }
+
+    /// 当前运行目录的具名 wire 投影。
+    ///
+    /// `Some` 表示本后端的 schema 声明了 `class` / `structure` / `unite` /
+    /// `enums` / `flags`，prepared 结果必须按具名投影发送；`None` 保持普通行集。
+    /// 判定只来自运行目录，不看结果值或字段名。
+    fn wire_named_directory(&self) -> Result<Option<WireNamedDirectory>> {
+        Ok(None)
     }
 
     /// 执行已预编译的语句。
@@ -148,6 +160,13 @@ impl ServeBackend for Connection {
         Connection::prepare_vos(self, source)
     }
 
+    fn wire_named_directory(&self) -> Result<Option<WireNamedDirectory>> {
+        let Some(contract) = Connection::resolved_contract(self)? else {
+            return Ok(None);
+        };
+        named_wire_directory(&contract)
+    }
+
     fn query_prepared(&self, statement: &PreparedStatement, params: &BTreeMap<String, Value>) -> Result<Vec<QueryRow>> {
         Connection::query_prepared(self, statement, params)
     }
@@ -189,4 +208,75 @@ impl ServeBackend for Connection {
         self.set_host_adapter(std::sync::Arc::new(TcpWireHostAdapter::new(cloned)));
         Ok(())
     }
+}
+
+/// 从运行目录构造 prepared 结果的具名 wire 投影。
+///
+/// 只有 schema 真的声明了具名类型时才返回 `Some`；`enums` / `flags` 本身是具名
+/// 数值，不产生具名记录声明，但同样要求走具名投影，避免以后给它们加线编码时
+/// 还要改判定。
+fn named_wire_directory(contract: &schema_types::ResolvedContract) -> Result<Option<WireNamedDirectory>> {
+    let declares_named = contract.types.iter().any(|item| {
+        matches!(
+            item.kind,
+            TypeContractKind::Class
+                | TypeContractKind::Structure
+                | TypeContractKind::Unite
+                | TypeContractKind::Enums
+                | TypeContractKind::Flags
+        )
+    });
+    if !declares_named {
+        return Ok(None);
+    }
+    let stored = database_execution::engine::catalog::row_schema_directory(contract)?;
+    let mut columns = BTreeMap::new();
+    for item in contract.types.iter().filter(|item| item.kind == TypeContractKind::Table) {
+        for field in &item.fields {
+            let Some(layout) = stored.column(&field.canonical_name) else {
+                continue;
+            };
+            if matches!(layout, ValueLayout::Dynamic) {
+                continue;
+            }
+            columns.insert(field.canonical_name.clone(), wire_layout(layout));
+        }
+    }
+    let mut declarations = BTreeMap::new();
+    for item in &contract.types {
+        let Some(declaration) = stored.named(item.type_id) else {
+            continue;
+        };
+        declarations.insert(item.type_id, wire_declaration(declaration));
+    }
+    Ok(Some(WireNamedDirectory::new(columns, declarations)))
+}
+
+fn wire_layout(layout: &ValueLayout) -> WireValueLayout {
+    match layout {
+        ValueLayout::Dynamic => WireValueLayout::Dynamic,
+        ValueLayout::List(inner) => WireValueLayout::List(Box::new(wire_layout(inner))),
+        ValueLayout::Named(schema_id) => WireValueLayout::Named(*schema_id),
+    }
+}
+
+fn wire_declaration(declaration: &NamedValueLayout) -> WireNamedLayout {
+    match declaration {
+        NamedValueLayout::Class { schema_id, fields } => WireNamedLayout::Class { schema_id: *schema_id, fields: wire_fields(fields) },
+        NamedValueLayout::Structure { schema_id, revision, fields } => {
+            WireNamedLayout::Structure { schema_id: *schema_id, revision: *revision, fields: wire_fields(fields) }
+        }
+        NamedValueLayout::Unite { schema_id, revision, variants } => WireNamedLayout::Unite {
+            schema_id: *schema_id,
+            revision: *revision,
+            variants: variants
+                .iter()
+                .map(|variant| WireNamedVariant { discriminant: variant.discriminant, fields: wire_fields(&variant.fields) })
+                .collect(),
+        },
+    }
+}
+
+fn wire_fields(fields: &[NamedFieldLayout]) -> Vec<WireNamedField> {
+    fields.iter().map(|field| WireNamedField { name: field.name.clone(), ty: wire_layout(&field.ty) }).collect()
 }
