@@ -177,3 +177,76 @@ fn a_union_value_needs_its_directory_to_decode() {
     assert!(decode_row(&bytes).is_err(), "named values fail closed without the schema directory");
 }
 
+/// One closed `structure` with a required and an optional member.
+const ADDRESS_SCHEMA: u64 = 43;
+
+fn address_directory(revision: u32, members: &[&str]) -> RowSchemaDirectory {
+    let named = BTreeMap::from([(
+        ADDRESS_SCHEMA,
+        NamedValueLayout::Structure {
+            schema_id: ADDRESS_SCHEMA,
+            revision,
+            fields: members.iter().map(|name| NamedFieldLayout { name: (*name).to_owned(), ty: ValueLayout::Dynamic }).collect(),
+        },
+    )]);
+    let columns = BTreeMap::from([("address".to_owned(), ValueLayout::Named(ADDRESS_SCHEMA))]);
+    RowSchemaDirectory::new(columns, named)
+}
+
+fn stored_address(zip: &str, country: Option<&str>) -> Value {
+    let mut fields = BTreeMap::new();
+    fields.insert("zip".to_owned(), Value::Text(zip.to_owned()));
+    fields.insert("country".to_owned(), country.map_or(Value::Null, |country| Value::Text(country.to_owned())));
+    Value::Row(fields)
+}
+
+#[test]
+fn a_structure_value_uses_a_closed_positional_layout() {
+    let directory = address_directory(9, &["zip", "country"]);
+    let mut row = BTreeMap::new();
+    row.insert("address".to_owned(), stored_address("100000", None));
+    let closed = encode_row_with_directory(&row, &directory).expect("encode closed structure");
+    // The dynamic encoding keeps every member name; the closed one must not.
+    let dynamic = encode_row(&row).expect("encode dynamic record");
+    assert!(!closed.windows(b"zip".len()).any(|window| window == b"zip"), "member name leaked into the closed record");
+    assert!(!closed.windows(b"country".len()).any(|window| window == b"country"), "member name leaked into the closed record");
+    assert_eq!(closed.len(), 42, "closed structure record is 42 persisted bytes");
+    assert_eq!(dynamic.len(), 50, "the dynamic name-tagged record is 50 persisted bytes");
+    assert!(closed.len() < dynamic.len(), "the closed layout must not be larger than the dynamic one");
+    assert_eq!(decode_row_with_directory(&closed, &directory).expect("decode closed structure"), row);
+}
+
+#[test]
+fn a_structure_rejects_unknown_members_unknown_revisions_and_truncated_records() {
+    let directory = address_directory(9, &["zip", "country"]);
+    let mut row = BTreeMap::new();
+    row.insert("address".to_owned(), stored_address("100000", None));
+    let bytes = encode_row_with_directory(&row, &directory).expect("encode");
+
+    let mut with_unknown = match stored_address("100000", None) {
+        Value::Row(fields) => fields,
+        other => panic!("expected a record, got {other:?}"),
+    };
+    with_unknown.insert("district".to_owned(), Value::Text("haidian".to_owned()));
+    let mut refused = BTreeMap::new();
+    refused.insert("address".to_owned(), Value::Row(with_unknown));
+    assert!(encode_row_with_directory(&refused, &directory).is_err(), "an undeclared member must be refused");
+
+    let stale = address_directory(10, &["zip", "country"]);
+    assert!(decode_row_with_directory(&bytes, &stale).is_err(), "an unknown layout revision must be rejected");
+    // A declaration reorder changes the positional binding, so the execution
+    // catalog derives a new revision for it and old bytes reject instead of
+    // binding a value to another member.
+    let reordered = address_directory(11, &["country", "zip"]);
+    assert!(decode_row_with_directory(&bytes, &reordered).is_err(), "a reordered layout needs its own revision");
+
+    assert!(decode_row_with_directory(&bytes[..bytes.len() - 1], &directory).is_err(), "a truncated record must be rejected");
+
+    // Corrupt the field count inside the nested value: version + count + bitmap +
+    // column name, then tag + schema id + revision, then the count itself.
+    let mut corrupt = bytes.clone();
+    corrupt[28] = 3;
+    assert!(decode_row_with_directory(&corrupt, &directory).is_err(), "a corrupted field count must be rejected");
+}
+
+

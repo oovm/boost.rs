@@ -133,6 +133,14 @@ fn a_structure_value_is_a_closed_record_and_survives_a_reopen() {
         let stored = rows(&conn);
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].get("address"), Some(&stored_address("100000", Some("CN"))));
+
+        // The persisted row must not repeat per-instance member names for a
+        // closed structure: address is positional in the record.
+        let records = conn.scan_prefix("__yydb/v0/row/Person/", None, 10).unwrap();
+        assert_eq!(records.len(), 1);
+        let bytes = &records[0].1;
+        assert!(!bytes.windows(b"zip".len()).any(|window| window == b"zip"), "member name leaked into the stored row");
+        assert!(!bytes.windows(b"country".len()).any(|window| window == b"country"), "member name leaked into the stored row");
     }
     {
         let conn = Connection::open(&path).unwrap();

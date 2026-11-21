@@ -423,6 +423,9 @@ const TAG_U64: u8 = 0x10;
 /// 载荷按变体在目录中的成员顺序逐个编码，记录里不含变体名或成员名。读取时
 /// 按目录校验 revision、判别值与载荷成员数，任一不符都 fail-closed。
 const TAG_UNITE: u8 = 0x11;
+/// 具名 `structure` 值：稳定 schema id、布局 revision、字段数、NULL 位图和
+/// 按目录字段序编码的定位值。记录里不含逐实例字段名。
+const TAG_STRUCTURE: u8 = 0x12;
 
 /// Deepest list nesting the row codec encodes or decodes.
 ///
@@ -548,12 +551,15 @@ fn encode_value(
             Some(NamedValueLayout::Class { fields: declared, .. }) => {
                 encode_class(out, fields, declared, directory, depth)?;
             }
+            Some(NamedValueLayout::Structure { schema_id, revision, fields: declared }) => {
+                encode_structure(out, fields, *schema_id, *revision, declared, directory, depth)?;
+            }
             Some(NamedValueLayout::Unite { .. }) => {
                 return Err(Error::Schema {
                     message: "a `unite` value must carry a discriminant and payload, not a bare record".into(),
                 });
             }
-            Some(NamedValueLayout::Structure { .. }) | None => {
+            None => {
                 encode_dynamic_row(out, fields, directory, depth)?;
             }
         },
@@ -712,6 +718,49 @@ fn encode_class(
         out.extend_from_slice(name.as_bytes());
         let layout = declared.iter().find(|field| field.name == *name).map(|field| &field.ty);
         encode_value(out, item, layout, directory, nested)?;
+    }
+    Ok(())
+}
+
+/// Encodes one closed `structure` value positionally, without member names.
+///
+/// The catalog's field order is the layout order. A member that is null or absent
+/// is recorded in the null bitmap, so an optional member costs one bit instead of
+/// a name and a tag; the remaining members follow in declaration order. Undeclared
+/// members are refused at the write boundary.
+fn encode_structure(
+    out: &mut Vec<u8>,
+    fields: &BTreeMap<String, Value>,
+    schema_id: u64,
+    revision: u32,
+    declared: &[NamedFieldLayout],
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<()> {
+    for name in fields.keys() {
+        if !declared.iter().any(|field| field.name == *name) {
+            return Err(Error::Schema { message: format!("closed `structure` does not declare member `{name}`") });
+        }
+    }
+    let field_count = u16::try_from(declared.len()).map_err(|_| Error::Unsupported("structure has more than 65535 members"))?;
+    out.push(TAG_STRUCTURE);
+    out.extend_from_slice(&schema_id.to_le_bytes());
+    out.extend_from_slice(&revision.to_le_bytes());
+    out.extend_from_slice(&field_count.to_le_bytes());
+    let bitmap_start = out.len();
+    out.resize(bitmap_start + declared.len().div_ceil(8), 0);
+    for (index, field) in declared.iter().enumerate() {
+        if fields.get(&field.name).is_none_or(|value| matches!(value, Value::Null)) {
+            out[bitmap_start + index / 8] |= 1 << (index % 8);
+        }
+    }
+    let nested = deeper(depth, "structure nests deeper than the supported depth")?;
+    for field in declared {
+        let Some(value) = fields.get(&field.name).filter(|value| !matches!(value, Value::Null))
+        else {
+            continue;
+        };
+        encode_value(out, value, Some(&field.ty), directory, nested)?;
     }
     Ok(())
 }
@@ -987,6 +1036,20 @@ impl<'a> RowCursor<'a> {
                     self.skip_value(nested)?;
                 }
             }
+            TAG_STRUCTURE => {
+                // schema id, layout revision, field count, null bitmap.
+                self.take(8 + 4 + 2)?;
+                let count = self.u16()? as usize;
+                let bitmap = self.take(count.div_ceil(8))?;
+                let present = (0..count).filter(|index| bitmap[index / 8] & (1 << (index % 8)) == 0).count();
+                let nested = depth
+                    .checked_add(1)
+                    .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                    .ok_or(Error::Corrupt("structure nests deeper than the supported depth"))?;
+                for _ in 0..present {
+                    self.skip_value(nested)?;
+                }
+            }
             _ => return Err(Error::Corrupt("row record value tag is unknown")),
         }
         Ok(self.position)
@@ -1123,8 +1186,60 @@ fn decode_value(
             Value::Row(fields)
         }
         TAG_UNITE => decode_unite(cursor, references, resolve, directory, depth)?,
+        TAG_STRUCTURE => decode_structure(cursor, references, resolve, directory, depth)?,
         _ => return Err(Error::Corrupt("row record value tag is unknown")),
     })
+}
+
+/// Decodes one closed `structure` value back into a member-named record.
+///
+/// The record names its schema id and layout revision, so the directory supplies
+/// the field order. Field count, bitmap length and revision are all checked
+/// before any value is read; a truncated record, a corrupted offset or an unknown
+/// revision is a structured rejection, never a best-effort read.
+fn decode_structure(
+    cursor: &mut RowCursor<'_>,
+    references: &mut Option<RowReferences>,
+    resolve: bool,
+    directory: Option<&RowSchemaDirectory>,
+    depth: u8,
+) -> Result<Value> {
+    let schema_id = cursor.u64()?;
+    let revision = cursor.u32()?;
+    let field_count = cursor.u16()? as usize;
+    let bitmap_len = field_count.div_ceil(8);
+    let bitmap = cursor.take(bitmap_len)?;
+    let Some(directory) = directory
+    else {
+        return Err(Error::Unsupported("decoding a `structure` value needs the schema directory installed for the statement"));
+    };
+    let named = directory
+        .named(schema_id)
+        .ok_or_else(|| Error::Corrupt("row record names a `structure` schema id that the directory does not declare"))?;
+    let NamedValueLayout::Structure { revision: expected, fields: declared, .. } = named
+    else {
+        return Err(Error::Corrupt("row record names a schema id that is not a `structure` declaration"));
+    };
+    if *expected != revision {
+        return Err(Error::Corrupt("row record uses a `structure` layout revision the directory does not declare"));
+    }
+    if declared.len() != field_count {
+        return Err(Error::Corrupt("row record `structure` field count disagrees with its declaration"));
+    }
+    let nested = depth
+        .checked_add(1)
+        .filter(|nested| *nested <= MAX_LIST_DEPTH)
+        .ok_or(Error::Corrupt("structure nests deeper than the supported depth"))?;
+    let mut fields = BTreeMap::new();
+    for (index, field) in declared.iter().enumerate() {
+        if bitmap[index / 8] & (1 << (index % 8)) != 0 {
+            fields.insert(field.name.clone(), Value::Null);
+            continue;
+        }
+        let value = decode_value(cursor, references, resolve, Some(directory), nested)?;
+        fields.insert(field.name.clone(), value);
+    }
+    Ok(Value::Row(fields))
 }
 
 /// Decodes one `unite` value and re-establishes its canonical in-memory form.
