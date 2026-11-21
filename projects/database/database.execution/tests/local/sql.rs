@@ -2025,6 +2025,35 @@ fn update_with_zero_affected_rows_still_succeeds() {
 }
 
 #[test]
+fn update_counts_only_rows_whose_stored_value_changed() {
+    let contract = contract();
+    let mut records = BTreeMap::new();
+    seed(&contract, &mut records);
+
+    // MySQL reports changed rows, not matched rows: re-assigning the stored
+    // value is a no-op and must not be counted.
+    let unchanged = execute_sql("UPDATE Account SET score = 10, tenant = 't1' WHERE account_id = 1", &[], &contract, &[], &mut records)
+        .expect("same-value update");
+    assert_eq!(unchanged.affected, 0);
+
+    // Whole-table self-assignment changes nothing either.
+    let self_assign = execute_sql("UPDATE Account SET score = score", &[], &contract, &[], &mut records).expect("identity update");
+    assert_eq!(self_assign.affected, 0);
+
+    // A real change still counts, and the row keeps its new value.
+    let changed = execute_sql("UPDATE Account SET score = score + 1 WHERE account_id = 1", &[], &contract, &[], &mut records)
+        .expect("changed update");
+    assert_eq!(changed.affected, 1);
+    let rows = execute_sql("SELECT score FROM Account WHERE account_id = 1", &[], &contract, &[], &mut records).expect("read back");
+    assert_eq!(rows.rows[0].get("score"), Some(&Value::I64(11)));
+
+    // Multi-row statement: only the one row whose value differs is reported.
+    let mixed = execute_sql("UPDATE Account SET tenant = 't1' WHERE account_id IN (1, 3)", &[], &contract, &[], &mut records)
+        .expect("mixed update");
+    assert_eq!(mixed.affected, 1);
+}
+
+#[test]
 fn update_self_reference_arithmetic_increments_row() {
     let contract = contract();
     let mut records = BTreeMap::new();

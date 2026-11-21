@@ -682,7 +682,8 @@ fn update_rows(
         predicate.map(|predicate| exec::resolve_subquery_predicates(predicate, None, &ReadRows::owned(records), bound_values)).transpose()?;
     let predicate = predicate.as_ref();
 
-    let mut replacements: Vec<(String, Option<QueryRow>, QueryRow)> = Vec::new();
+    let mut replacements: Vec<(String, QueryRow, QueryRow)> = Vec::new();
+    let mut matched = 0usize;
     {
         let entries = load_table_entries(records, &storage)?;
         for (key, mut row) in entries {
@@ -691,8 +692,10 @@ fn update_rows(
                     continue;
                 }
             }
-            // The index needs the pre-image to retract the old keys.
-            let old = index.map(|_| row.clone());
+            matched += 1;
+            // The pre-image feeds both the index retraction and the changed-row
+            // test below.
+            let pre_image = row.clone();
             for assignment in assignments {
                 let slot = catalog::field_on_table(entry, &assignment.field)?;
                 if assignment.field == pk_field {
@@ -702,11 +705,18 @@ fn update_rows(
                 let coerced = coerce::value_to_scalar(value, &slot.canonical_type, contract)?;
                 row.insert(assignment.field.clone(), placement.place(coerced)?);
             }
-            replacements.push((key, old, row));
+            // MySQL reports the rows whose stored value actually changed:
+            // re-assigning the current value is a no-op, not an affected row.
+            // (`CLIENT_FOUND_ROWS`, which asks for matched rows instead, is not
+            // negotiated by this gateway.)
+            if pre_image == row {
+                continue;
+            }
+            replacements.push((key, pre_image, row));
         }
     }
 
-    if require_match && replacements.is_empty() {
+    if require_match && matched == 0 {
         // Only VOS keyed updates set this flag, and their authors have always
         // seen the missing primary key named in the error.
         let key = match predicate {
@@ -723,7 +733,7 @@ fn update_rows(
         let pk = row.get(&pk_field).ok_or_else(|| write_error(format!("updated `{table}` row lost primary key field `{pk_field}`")))?;
         let pk_text = constraints::value_text(pk)?;
         match index {
-            Some(ctx) => ctx.index.enforce(ctx, records, declared, &storage, &pk_field, &pk_text, old.as_ref(), row)?,
+            Some(ctx) => ctx.index.enforce(ctx, records, declared, &storage, &pk_field, &pk_text, Some(old), row)?,
             None => constraints::check(records, declared, &storage, &pk_field, &pk_text, row)?,
         }
         remove_row(records, key);
