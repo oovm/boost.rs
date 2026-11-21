@@ -1,11 +1,91 @@
 //! Local single-node executor: shard routing, buffered commits and transaction handles.
 
+use std::{
+    sync::{
+        Condvar,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
 use super::*;
 
 /// Executor-wide mutex that serialises every [`LocalExecutor::execute`] and
 /// [`LocalExecutor::commit_batch`] call so that committed batches appear atomic to the rest of
 /// the process.
 static EXECUTOR_GLOBAL_LOCK: Mutex<()> = Mutex::new(());
+
+/// Monotonic transaction identity used by the row lock table.
+static NEXT_TRANSACTION_ID: AtomicU64 = AtomicU64::new(1);
+
+/// How long a transaction waits for a row another transaction already wrote.
+///
+/// Same order of magnitude as InnoDB's `innodb_lock_wait_timeout` default (50 s). The wait is
+/// bounded instead of unbounded: a lock that never frees up (for example two transactions
+/// taking the same two rows in opposite order) surfaces as a retryable conflict rather than a
+/// hung connection.
+const ROW_LOCK_WAIT: Duration = Duration::from_secs(50);
+
+/// Row-level write locks held by open local transactions.
+///
+/// A transaction that writes `(namespace, key)` for the first time registers itself here and
+/// keeps the registration until COMMIT / ROLLBACK / handle drop. A second transaction writing
+/// the same row waits for the first one to finish instead of buffering the write immediately
+/// and leaving the *first* committer to fail with a serialization conflict.
+#[derive(Debug, Default)]
+struct RowLocks {
+    state: Mutex<RowLockState>,
+    released: Condvar,
+}
+
+#[derive(Debug, Default)]
+struct RowLockState {
+    /// Row identity → owning transaction.
+    owners: HashMap<(String, Vec<u8>), u64>,
+}
+
+impl RowLocks {
+    /// Waits until `owner` may write `row`, or the wait bound expires.
+    ///
+    /// Re-entrant for the owner: the second write of the same row inside one transaction is not
+    /// a lock conflict. An expired wait is reported as [`Error::CasConflict`] — the stable,
+    /// retryable cluster failure the gateways already map to MySQL `1213`.
+    fn acquire(&self, row: &(String, Vec<u8>), owner: u64) -> database_types::cluster::Result<()> {
+        let deadline = Instant::now() + ROW_LOCK_WAIT;
+        let mut state = self.state.lock().map_err(|_| Error::Corrupt("row lock table poisoned"))?;
+        loop {
+            match state.owners.get(row) {
+                None => {
+                    state.owners.insert(row.clone(), owner);
+                    return Ok(());
+                }
+                Some(current) if *current == owner => return Ok(()),
+                Some(_) => {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        return Err(Error::CasConflict { key: format!("{}:{}", row.0, String::from_utf8_lossy(&row.1)) });
+                    }
+                    let (next, _) = self.released.wait_timeout(state, deadline - now).map_err(|_| Error::Corrupt("row lock table poisoned"))?;
+                    state = next;
+                }
+            }
+        }
+    }
+
+    /// Releases every row the transaction still held and wakes the waiters.
+    fn release_all(&self, rows: &[(String, Vec<u8>)]) {
+        if rows.is_empty() {
+            return;
+        }
+        if let Ok(mut state) = self.state.lock() {
+            for row in rows {
+                state.owners.remove(row);
+            }
+            drop(state);
+            self.released.notify_all();
+        }
+    }
+}
 
 /// Routes commands to mounted local shards under one immutable routing map.
 #[derive(Debug)]
@@ -14,6 +94,8 @@ pub struct LocalExecutor<S = FileShard> {
     shards: HashMap<ShardId, Mutex<S>>,
     /// Snapshot of catalog-published owner records used for fencing validation.
     owners: Vec<OwnerEntry>,
+    /// Row locks shared by every transaction this executor opens.
+    row_locks: Arc<RowLocks>,
 }
 
 /// Failure while opening the local executor from a node directory.
@@ -67,7 +149,12 @@ where
         if shards.len() != routing.shards().len() || routing.shards().iter().any(|shard| !shards.contains_key(shard)) {
             return Err(Error::Unsupported("mounted shards must exactly match the published routing map"));
         }
-        Ok(Self { routing, shards: shards.into_iter().map(|(id, shard)| (id, Mutex::new(shard))).collect(), owners })
+        Ok(Self {
+            routing,
+            shards: shards.into_iter().map(|(id, shard)| (id, Mutex::new(shard))).collect(),
+            owners,
+            row_locks: Arc::new(RowLocks::default()),
+        })
     }
 
     /// Returns the immutable routing map used by this executor.
@@ -356,16 +443,55 @@ pub struct LocalTransactionHandle {
     fence: Option<FenceToken>,
     buffer: Mutex<HashMap<(String, Vec<u8>), BufferedState>>,
     savepoints: Mutex<Vec<(String, HashMap<(String, Vec<u8>), BufferedState>)>>,
+    /// Row locks shared with every other transaction on the same executor.
+    locks: Arc<RowLocks>,
+    /// This transaction's identity in the lock table.
+    owner: u64,
+    /// Rows this transaction currently holds; released when it ends.
+    held: Mutex<Vec<(String, Vec<u8>)>>,
 }
 
 impl LocalTransactionHandle {
     /// Creates a new handle bound to an executor via a shared Arc and the caller's fence context.
     ///
-    /// Gateways should go through [`KeyValueExecutor::begin_transaction`] so the executor can
-    /// enforce its transaction capability contract; this constructor backs that path and unit
-    /// tests of the buffering semantics.
+    /// The handle gets a private row lock table, so two handles built this way never wait on
+    /// each other. [`KeyValueExecutor::begin_transaction`] is the path that shares one table
+    /// across the executor's transactions and is what the gateways use.
     pub fn new(executor: Arc<dyn KeyValueExecutor>, fence: Option<FenceToken>) -> Self {
-        Self { executor, fence, buffer: Mutex::new(HashMap::new()), savepoints: Mutex::new(Vec::new()) }
+        Self::with_locks(executor, fence, Arc::new(RowLocks::default()))
+    }
+
+    /// Creates a handle that shares `locks` with the other transactions of one executor.
+    fn with_locks(executor: Arc<dyn KeyValueExecutor>, fence: Option<FenceToken>, locks: Arc<RowLocks>) -> Self {
+        Self {
+            executor,
+            fence,
+            buffer: Mutex::new(HashMap::new()),
+            savepoints: Mutex::new(Vec::new()),
+            locks,
+            owner: NEXT_TRANSACTION_ID.fetch_add(1, Ordering::Relaxed),
+            held: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Takes the row lock for `(namespace, key)` before the write is buffered.
+    ///
+    /// The lock is what makes the second writer wait for the first one to commit or roll back;
+    /// the buffered write itself is still validated against its pre-image by OCC at commit
+    /// time, so a waiter whose snapshot went stale while it waited still fails instead of
+    /// silently overwriting the row.
+    fn lock_row(&self, namespace: &str, key: &[u8]) -> database_types::cluster::Result<()> {
+        {
+            let held = self.held.lock().map_err(|_| Error::Corrupt("row lock set poisoned"))?;
+            if held.iter().any(|(held_namespace, held_key)| held_namespace == namespace && held_key == key) {
+                return Ok(());
+            }
+        }
+        let row = (namespace.to_owned(), key.to_vec());
+        self.locks.acquire(&row, self.owner)?;
+        let mut held = self.held.lock().map_err(|_| Error::Corrupt("row lock set poisoned"))?;
+        held.push(row);
+        Ok(())
     }
 
     /// Resolves the current observable value for `(namespace, key)` by merging the buffer
@@ -390,9 +516,35 @@ impl LocalTransactionHandle {
     }
 }
 
+impl Drop for LocalTransactionHandle {
+    fn drop(&mut self) {
+        // COMMIT and ROLLBACK both end here: the lock must be released only after the commit
+        // boundary has published (or discarded) the writes, never before.
+        if let Ok(mut held) = self.held.lock() {
+            let rows = std::mem::take(&mut *held);
+            drop(held);
+            self.locks.release_all(&rows);
+        }
+    }
+}
+
 impl TransactionHandle for LocalTransactionHandle {
     fn execute(&self, command: KeyValueCommand) -> database_types::cluster::Result<KeyValueResult> {
         let KeyValueCommand { namespace, key, action } = command;
+        // 事务内的写命令先在行锁表登记：同一行的第二个事务在这里等待第一个事务结束，
+        // 而不是先缓冲、再由先提交者拿到冲突。
+        if matches!(
+            action,
+            KeyValueAction::Put(_)
+                | KeyValueAction::PutIfAbsent(_)
+                | KeyValueAction::PutIfPresent(_)
+                | KeyValueAction::Delete
+                | KeyValueAction::GetSet(_)
+                | KeyValueAction::GetDelete
+                | KeyValueAction::IncrementBy(_)
+        ) {
+            self.lock_row(&namespace.0, &key)?;
+        }
         match action {
             KeyValueAction::Get => {
                 let value = self.resolve(&namespace.0, &key)?;
@@ -529,11 +681,17 @@ impl TransactionHandle for LocalTransactionHandle {
 
     fn write_if_unchanged(&self, command: KeyValueCommand, expected: Option<Vec<u8>>) -> database_types::cluster::Result<KeyValueResult> {
         let KeyValueCommand { namespace, key, action } = command;
+        if !matches!(action, KeyValueAction::Put(_) | KeyValueAction::Delete) {
+            return Err(Error::Unsupported("conditional transaction writes accept only Put and Delete"));
+        }
+        // 行锁先于读取与缓冲：第二个写同一行的事务在这里等到第一个事务提交或回滚，
+        // 读到 pre-image 之后也不会再被它改写。
+        self.lock_row(&namespace.0, &key)?;
         // `removed` must be resolved before taking the buffer lock because `resolve` uses it too.
         let removed = match action {
             KeyValueAction::Delete => self.resolve(&namespace.0, &key)?.is_some(),
             KeyValueAction::Put(_) => false,
-            _ => return Err(Error::Unsupported("conditional transaction writes accept only Put and Delete")),
+            _ => unreachable!("checked above"),
         };
         let mut buffer = self.buffer.lock().map_err(|_| Error::Corrupt("transaction buffer poisoned"))?;
         // The earliest write on this key already captured the authoritative base pre-image, so a
@@ -556,8 +714,12 @@ impl TransactionHandle for LocalTransactionHandle {
         }
     }
 
-    fn commit(self: Box<Self>) -> database_types::cluster::Result<()> {
-        let buffer = self.buffer.into_inner().map_err(|_| Error::Corrupt("transaction buffer poisoned"))?;
+    fn commit(mut self: Box<Self>) -> database_types::cluster::Result<()> {
+        // 句柄实现 `Drop`（释放行锁），因此不能把字段移出 `Box<Self>`，从互斥量里取走即可。
+        let buffer = {
+            let mut guard = self.buffer.lock().map_err(|_| Error::Corrupt("transaction buffer poisoned"))?;
+            std::mem::take(&mut *guard)
+        };
 
         // 组装 commit_batch 参数：最终 replay command + 可选 OCC 条件。
         // validate + batch apply 都在 executor.commit_batch 内部的同一提交锁区间里完成。
@@ -841,7 +1003,9 @@ where
         // The caller's fence (routing epoch + leader term + owner node) is captured into the
         // handle and replayed verbatim at commit time; a single-node gateway passes `None`
         // explicitly rather than letting the handle default to an unowned commit.
-        Ok(Box::new(LocalTransactionHandle::new(self, fence.cloned())))
+        // 行锁与其余事务共享同一张表：第二个写同一行的事务由此等待，而不是并发缓冲。
+        let row_locks = Arc::clone(&self.row_locks);
+        Ok(Box::new(LocalTransactionHandle::with_locks(self, fence.cloned(), row_locks)))
     }
 }
 
