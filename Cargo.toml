@@ -422,6 +422,7 @@ members = [
     "projects/document/document.renderer.pdf",
     "projects/document/document.renderer.raster",
     "projects/document/document.renderer.svg",
+    "projects/document/document.session",
     "projects/document/document.style",
     "projects/document/document.text",
     "projects/document/document.types",
@@ -800,6 +801,7 @@ document-renderer-html = { path = "projects/document/document.renderer.html" }
 document-renderer-pdf = { path = "projects/document/document.renderer.pdf" }
 document-renderer-raster = { path = "projects/document/document.renderer.raster" }
 document-renderer-svg = { path = "projects/document/document.renderer.svg" }
+document-session = { path = "projects/document/document.session" }
 document-style = { path = "projects/document/document.style" }
 document-text = { path = "projects/document/document.text" }
 document-types = { path = "projects/document/document.types" }

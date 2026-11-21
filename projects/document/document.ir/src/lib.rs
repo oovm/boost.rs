@@ -13,6 +13,7 @@ mod inline;
 mod math;
 mod metadata;
 mod page;
+mod projection;
 mod relation;
 mod source;
 mod status;
@@ -32,6 +33,11 @@ pub use math::{
 };
 pub use metadata::{MetadataEntry, MetadataValue};
 pub use page::PageSetup;
+pub use projection::{
+    DocumentStatistics, DocumentSummary, LossEntry, LossSeverity, ParagraphSummary, SearchHit, SectionSummary, TableSummary,
+    WORDS_PER_MINUTE, block_address, child_ids, find, flat_order, losses, parse_block_address, plain_text, roots, statistics,
+    summarize,
+};
 pub use relation::{Relation, RelationEndpoint, RelationKind};
 pub use source::{CoverageReport, SourceKind, SourceRef, SourceSpan};
 pub use status::{LossMarker, SemanticStatus};

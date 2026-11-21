@@ -1,0 +1,11 @@
+[package]
+name = "document-session"
+version.workspace = true
+authors.workspace = true
+description = "进程内文档句柄表 — 单调修订号与有界撤销栈"
+repository = "https://github.com/notedge/document.rs"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+document-ir = { workspace = true }
