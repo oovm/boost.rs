@@ -92,6 +92,8 @@ pub struct ParagraphSummary {
     pub index: usize,
     /// Index of the nearest enclosing section, or `-1` outside any section.
     pub section_index: i64,
+    /// Authored paragraph style name, when the source named one.
+    pub style: Option<String>,
     /// Flattened paragraph text.
     pub text: String,
 }
@@ -175,7 +177,12 @@ impl Walker<'_> {
             }
             Block::Paragraph { content } => {
                 let index = self.paragraphs.len();
-                self.paragraphs.push(ParagraphSummary { index, section_index: section.map_or(-1, |value| value as i64), text: plain_text(content) });
+                self.paragraphs.push(ParagraphSummary {
+                    index,
+                    section_index: section.map_or(-1, |value| value as i64),
+                    style: None,
+                    text: plain_text(content),
+                });
             }
             Block::Table { head, body, foot, .. } => {
                 let rows = head.len() + body.len() + foot.len();
