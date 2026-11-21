@@ -7,7 +7,9 @@
 //! The rule is that every claim carries evidence and an unresolved container
 //! stays ambiguous. A ZIP stream cannot say whether it is an OPC Word package
 //! or an OCF ebook package before the package parts are read, so the probe
-//! returns both candidates instead of guessing from a filename.
+//! returns every candidate instead of guessing from a filename. The
+//! `package-detect` feature lifts that limit: it reads the central directory and
+//! names the package from the part the format requires.
 
 /// Container family observed from the leading bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,36 +89,63 @@ pub fn detect_bytes(bytes: &[u8], extension_hint: Option<&str>) -> FormatDetecti
         );
     }
     if looks_like_zip(bytes) {
-        return detect_zip(extension_hint);
+        return detect_zip(bytes, extension_hint);
     }
     detect_text(bytes, extension_hint)
 }
 
-fn detect_zip(extension_hint: Option<&str>) -> FormatDetection {
+/// Package candidates a ZIP container can hold before its parts are read.
+const ZIP_CANDIDATES: [&str; 4] = ["docx", "xlsx", "pptx", "epub"];
+
+fn detect_zip(bytes: &[u8], extension_hint: Option<&str>) -> FormatDetection {
+    #[cfg(feature = "package-detect")]
+    if let Some((format, evidence)) = probe_package(bytes) {
+        return FormatDetection::resolved(format, ContainerKind::Zip, DetectionConfidence::Verified, evidence);
+    }
+    #[cfg(not(feature = "package-detect"))]
+    let _ = bytes;
     match normalize_hint(extension_hint) {
-        Some("docx") => FormatDetection::resolved(
-            "docx",
+        Some(format) if matches!(format, "docx" | "xlsx" | "pptx" | "epub") => FormatDetection::resolved(
+            format,
             ContainerKind::Zip,
             DetectionConfidence::Hinted,
-            "ZIP container plus a `.docx` extension hint selects the OPC Word package",
-        ),
-        Some("epub") => FormatDetection::resolved(
-            "epub",
-            ContainerKind::Zip,
-            DetectionConfidence::Hinted,
-            "ZIP container plus an `.epub` extension hint selects the OCF ebook package",
+            format!("ZIP container plus a `.{format}` extension hint selects the OPC/OCF package"),
         ),
         Some(other) => FormatDetection::ambiguous(
-            vec!["docx", "epub"],
+            ZIP_CANDIDATES.to_vec(),
             ContainerKind::Zip,
-            format!("ZIP container cannot be separated by the `{other}` extension hint, so DOCX and EPUB both remain"),
+            format!("ZIP container cannot be separated by the `{other}` extension hint, so the package candidates remain"),
         ),
         None => FormatDetection::ambiguous(
-            vec!["docx", "epub"],
+            ZIP_CANDIDATES.to_vec(),
             ContainerKind::Zip,
-            "ZIP container carries either an OPC Word package or an OCF ebook package, so both candidates remain",
+            "ZIP container carries an OPC Word, Spreadsheet, Presentation or OCF ebook package, so all candidates remain",
         ),
     }
+}
+
+/// Reads the central directory and names the package from its defining part.
+///
+/// The probe only claims a format when the part the format requires is present, so a
+/// truncated or unreadable container falls back to the hint-based answer instead of a
+/// guess.
+#[cfg(feature = "package-detect")]
+fn probe_package(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
+    let index = data_binary_zip::index_zip_slice("detect", bytes).ok()?;
+    let has = |name: &[u8]| index.members.iter().any(|member| member.raw_name.eq_ignore_ascii_case(name));
+    if has(b"word/document.xml") {
+        return Some(("docx", "OPC package part `word/document.xml` identifies the Word package"));
+    }
+    if has(b"xl/workbook.xml") {
+        return Some(("xlsx", "OPC package part `xl/workbook.xml` identifies the Spreadsheet package"));
+    }
+    if has(b"ppt/presentation.xml") {
+        return Some(("pptx", "OPC package part `ppt/presentation.xml` identifies the Presentation package"));
+    }
+    if has(b"mimetype") && has(b"META-INF/container.xml") {
+        return Some(("epub", "OCF package carries `mimetype` and `META-INF/container.xml`"));
+    }
+    None
 }
 
 fn detect_text(bytes: &[u8], extension_hint: Option<&str>) -> FormatDetection {
@@ -174,6 +203,8 @@ fn normalize_hint(extension_hint: Option<&str>) -> Option<&'static str> {
         "typ" | "typst" => "typst",
         "docx" => "docx",
         "doc" => "doc",
+        "xlsx" | "xlsm" => "xlsx",
+        "pptx" | "pptm" => "pptx",
         "epub" => "epub",
         "pdf" => "pdf",
         _ => return None,
@@ -212,7 +243,7 @@ mod tests {
     fn zip_without_a_hint_keeps_both_package_candidates() {
         let detection = detect_bytes(b"PK\x03\x04docx-or-epub", None);
         assert_eq!(detection.format, None);
-        assert_eq!(detection.candidates, vec!["docx", "epub"]);
+        assert_eq!(detection.candidates, vec!["docx", "xlsx", "pptx", "epub"]);
         assert_eq!(detection.confidence, DetectionConfidence::Ambiguous);
     }
 
@@ -220,6 +251,51 @@ mod tests {
     fn zip_hint_resolves_the_package_candidate() {
         assert_eq!(detect_bytes(b"PK\x03\x04", Some("docx")).format, Some("docx"));
         assert_eq!(detect_bytes(b"PK\x03\x04", Some(".epub")).format, Some("epub"));
+        assert_eq!(detect_bytes(b"PK\x03\x04", Some("xlsm")).format, Some("xlsx"));
+    }
+
+    /// Builds an archive from `(name, payload)` parts using the shared ZIP writer.
+    #[cfg(feature = "package-detect")]
+    fn package(parts: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut writer = data_binary_zip::ZipWriter::new();
+        for (name, payload) in parts {
+            writer.push(data_binary_zip::ZipEntry::stored(name, payload.to_vec()));
+        }
+        writer.into_bytes().expect("zip")
+    }
+
+    #[cfg(feature = "package-detect")]
+    #[test]
+    fn package_parts_name_the_ooxml_family() {
+        let word = package(&[("word/document.xml", b"<w:document/>")]);
+        let detection = detect_bytes(&word, Some("docx"));
+        assert_eq!(detection.format, Some("docx"));
+        assert_eq!(detection.confidence, DetectionConfidence::Verified);
+        assert!(detection.evidence.contains("word/document.xml"));
+
+        let sheet = package(&[("xl/workbook.xml", b"<workbook/>")]);
+        assert_eq!(detect_bytes(&sheet, Some("xlsx")).format, Some("xlsx"));
+
+        let deck = package(&[("ppt/presentation.xml", b"<p:presentation/>")]);
+        assert_eq!(detect_bytes(&deck, Some("pptx")).format, Some("pptx"));
+    }
+
+    #[cfg(feature = "package-detect")]
+    #[test]
+    fn package_parts_outrank_a_wrong_extension_hint() {
+        let sheet = package(&[("xl/workbook.xml", b"<workbook/>")]);
+        let detection = detect_bytes(&sheet, Some("docx"));
+        assert_eq!(detection.format, Some("xlsx"));
+        assert_eq!(detection.confidence, DetectionConfidence::Verified);
+    }
+
+    #[cfg(feature = "package-detect")]
+    #[test]
+    fn a_container_without_a_known_part_falls_back_to_the_hint() {
+        let archive = package(&[("payload.bin", b"nothing")]);
+        let detection = detect_bytes(&archive, Some("docx"));
+        assert_eq!(detection.format, Some("docx"));
+        assert_eq!(detection.confidence, DetectionConfidence::Hinted);
     }
 
     #[test]

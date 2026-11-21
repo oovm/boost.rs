@@ -2,6 +2,9 @@
 //! Document format import and export around `notedown-ir`.
 
 mod capability;
+/// A1 notation shared with spreadsheet products.
+#[cfg(feature = "xlsx")]
+pub mod a1;
 pub mod detect;
 mod error;
 pub mod export;

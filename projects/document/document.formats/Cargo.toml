@@ -19,6 +19,7 @@ data-text-core = { workspace = true, optional = true }
 data-text-markdown = { workspace = true, optional = true }
 data-text-notedown = { workspace = true, optional = true }
 data-binary-core = { workspace = true, optional = true }
+data-binary-zip = { workspace = true, optional = true }
 data-binary-doc = { workspace = true, optional = true }
 data-binary-docx = { workspace = true, optional = true }
 data-binary-epub = { workspace = true, optional = true }
@@ -42,4 +43,8 @@ html = ["dep:data-text-core", "dep:data-text-html", "dep:blake3", "tex"]
 tex = ["dep:data-text-core", "dep:data-text-tex"]
 typst = ["dep:data-text-core", "dep:data-text-typst"]
 pandoc-json = ["dep:serde_json"]
+# `package-detect` makes `detect::detect_bytes` read a ZIP container's central
+# directory, so an OOXML or OCF package is named from its own parts instead of an
+# extension hint. It is additive: without the feature the ZIP answer stays ambiguous.
+package-detect = ["dep:data-binary-zip"]
 

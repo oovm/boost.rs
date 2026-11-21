@@ -10,7 +10,7 @@ pub mod model;
 pub mod reader;
 pub mod render;
 
-mod reference;
+pub(crate) mod reference;
 mod styles;
 mod value;
 
