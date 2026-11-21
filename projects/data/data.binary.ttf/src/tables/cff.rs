@@ -868,6 +868,7 @@ impl Type2<'_> {
             self.stack.clear();
             return;
         }
+        let y_start = self.y;
         let values: Vec<f64> = self.stack.drain(..8).collect();
         let x1 = self.x + values[0];
         let y1 = self.y;
@@ -884,10 +885,11 @@ impl Type2<'_> {
         let x2 = x1 + values[5];
         let y2 = y1 + values[6];
         let x3 = x2 + values[7];
-        let y3 = y2;
-        self.builder.curve_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x3 as f32, y3 as f32);
+        // A flex must close: the second curve ends back on the starting
+        // horizontal line even if the deltas do not sum to exactly zero.
+        self.builder.curve_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x3 as f32, y_start as f32);
         self.x = x3;
-        self.y = y3;
+        self.y = y_start;
         self.stack.clear();
     }
 
@@ -896,6 +898,7 @@ impl Type2<'_> {
             self.stack.clear();
             return;
         }
+        let y_start = self.y;
         let values: Vec<f64> = self.stack.drain(..9).collect();
         let x1 = self.x + values[0];
         let y1 = self.y + values[1];
@@ -912,10 +915,10 @@ impl Type2<'_> {
         let x2 = x1 + values[6];
         let y2 = y1 + values[7];
         let x3 = x2 + values[8];
-        let y3 = y2;
-        self.builder.curve_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x3 as f32, y3 as f32);
+        // The implicit final `-(dy1 + dy2 + dy5)` returns to the starting y.
+        self.builder.curve_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x3 as f32, y_start as f32);
         self.x = x3;
-        self.y = y3;
+        self.y = y_start;
         self.stack.clear();
     }
 
@@ -924,6 +927,7 @@ impl Type2<'_> {
             self.stack.clear();
             return;
         }
+        let (x_start, y_start) = (self.x, self.y);
         let values: Vec<f64> = self.stack.drain(..11).collect();
         let dx = values[0] + values[2] + values[4] + values[6] + values[8];
         let dy = values[1] + values[3] + values[5] + values[7] + values[9];
@@ -941,7 +945,9 @@ impl Type2<'_> {
         let y1 = self.y + values[7];
         let x2 = x1 + values[8];
         let y2 = y1 + values[9];
-        let (x3, y3) = if dx.abs() > dy.abs() { (x2 + values[10], y2) } else { (x2, y2 + values[10]) };
+        // The flex axis decides which of the two starting coordinates the
+        // last point snaps back to; the perpendicular delta is implicit.
+        let (x3, y3) = if dx.abs() > dy.abs() { (x2 + values[10], y_start) } else { (x_start, y2 + values[10]) };
         self.builder.curve_to(x1 as f32, y1 as f32, x2 as f32, y2 as f32, x3 as f32, y3 as f32);
         self.x = x3;
         self.y = y3;
@@ -1012,4 +1018,286 @@ impl OutlineBuilder for BBoxCollector {
     }
 
     fn close(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Records the outline calls so the tests can assert exact geometry.
+    #[derive(Default)]
+    struct Recorder {
+        lines: Vec<(f32, f32)>,
+        curves: Vec<([f32; 2], [f32; 2], [f32; 2])>,
+        closes: usize,
+        last: (f32, f32),
+    }
+
+    impl OutlineBuilder for Recorder {
+        fn move_to(&mut self, x: f32, y: f32) {
+            self.last = (x, y);
+        }
+
+        fn line_to(&mut self, x: f32, y: f32) {
+            self.lines.push((x, y));
+            self.last = (x, y);
+        }
+
+        fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+            self.curves.push(([x1, y1], [x1, y1], [x, y]));
+            self.last = (x, y);
+        }
+
+        fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+            self.curves.push(([x1, y1], [x2, y2], [x, y]));
+            self.last = (x, y);
+        }
+
+        fn close(&mut self) {
+            self.closes += 1;
+        }
+    }
+
+    fn number(value: i32) -> Vec<u8> {
+        let mut out = vec![28];
+        out.extend_from_slice(&(value as i16).to_be_bytes());
+        out
+    }
+
+    fn operands(values: &[i32]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for value in values {
+            out.extend(number(*value));
+        }
+        out
+    }
+
+    /// Run a charstring through the interpreter without a CFF container.
+    fn run(code: &[u8]) -> Result<Recorder, CffError> {
+        let data = code.to_vec();
+        let mut recorder = Recorder::default();
+        {
+            let mut interpreter = Type2 {
+                data: &data,
+                global_subrs: &[],
+                builder: &mut recorder,
+                stack: Vec::new(),
+                transient: [0.0; 32],
+                hints: 0,
+                width_seen: false,
+                path_open: false,
+                x: 0.0,
+                y: 0.0,
+                operations: 0,
+            };
+            interpreter.run(code, &[], 0)?;
+        }
+        Ok(recorder)
+    }
+
+    #[test]
+    fn subr_bias_matches_the_type2_table() {
+        assert_eq!(bias(0), 107);
+        assert_eq!(bias(1239), 107);
+        assert_eq!(bias(1240), 1131);
+        assert_eq!(bias(33_899), 1131);
+        assert_eq!(bias(33_900), 32_768);
+    }
+
+    #[test]
+    fn fd_select_formats_map_every_glyph() {
+        assert_eq!(parse_fd_select(&[0, 0, 1, 1, 1], 0, 4).expect("format 0"), vec![0, 1, 1, 1]);
+        // Format 3: glyphs 0..2 use FD 0, glyphs 2..4 use FD 1.
+        let format_3 = [3, 0, 2, 0, 0, 0, 0, 2, 1, 0, 4];
+        assert_eq!(parse_fd_select(&format_3, 0, 4).expect("format 3"), vec![0, 0, 1, 1]);
+        assert!(parse_fd_select(&[9], 0, 1).is_err(), "unknown FDSelect format");
+        assert!(parse_fd_select(&[0, 1], 0, 4).is_err(), "format 0 must cover every glyph");
+    }
+
+    #[test]
+    fn hflex_ends_on_the_starting_baseline() {
+        let mut code = operands(&[0, 0]);
+        code.push(21);
+        code.extend(operands(&[10, 20, 2, 30, 40, 50, 3, 60]));
+        code.extend([12, 34]);
+        let recorder = run(&code).expect("hflex");
+        assert_eq!(recorder.curves.len(), 2);
+        assert_eq!(recorder.last, (210.0, 0.0), "flex must close back onto y=0");
+    }
+
+    #[test]
+    fn hflex1_forces_the_implicit_closing_delta() {
+        let mut code = operands(&[0, 0]);
+        code.push(21);
+        // dy1 + dy2 + dy5 = 6, so the implicit final delta must bring y back to 0.
+        code.extend(operands(&[10, 1, 20, 2, 30, 40, 50, 3, 60]));
+        code.extend([12, 36]);
+        let recorder = run(&code).expect("hflex1");
+        assert_eq!(recorder.curves.len(), 2);
+        assert_eq!(recorder.last, (210.0, 0.0));
+    }
+
+    #[test]
+    fn flex1_snaps_the_perpendicular_axis_to_the_start() {
+        let mut code = operands(&[0, 0]);
+        code.push(21);
+        // dx = 150, dy = 3: the horizontal axis wins and y returns to 0.
+        code.extend(operands(&[10, 1, 20, 1, 30, 0, 40, 0, 50, 1, 7]));
+        code.extend([12, 37]);
+        let recorder = run(&code).expect("flex1");
+        assert_eq!(recorder.curves.len(), 2);
+        assert_eq!(recorder.last, (157.0, 0.0));
+
+        // The vertical branch snaps x back to the start instead.
+        let mut code = operands(&[0, 0]);
+        code.push(21);
+        code.extend(operands(&[1, 10, 2, 20, 0, 30, 0, 20, 1, 19, 7]));
+        code.extend([12, 37]);
+        let recorder = run(&code).expect("flex1 vertical");
+        assert_eq!(recorder.curves.len(), 2);
+        assert_eq!(recorder.last, (0.0, 106.0));
+    }
+
+    #[test]
+    fn flex_draws_two_curves_before_the_flex_depth() {
+        let mut code = operands(&[0, 0]);
+        code.push(21);
+        code.extend(operands(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 50]));
+        code.extend([12, 35]);
+        let recorder = run(&code).expect("flex");
+        assert_eq!(recorder.curves.len(), 2);
+        assert_eq!(recorder.last, (36.0, 42.0));
+    }
+
+    #[test]
+    fn truncated_charstrings_return_errors_instead_of_panicking() {
+        assert!(matches!(run(&[28, 0]), Err(CffError::Truncated)));
+        assert!(matches!(run(&[12]), Err(CffError::Truncated)));
+        assert!(matches!(run(&[255, 0, 0]), Err(CffError::Truncated)));
+    }
+
+    #[test]
+    fn cff2_and_short_headers_are_rejected() {
+        assert!(matches!(CffTable::parse(&[2, 0, 4, 4]), Err(CffError::Unsupported(_))));
+        assert!(matches!(CffTable::parse(&[1, 0]), Err(CffError::Truncated)));
+    }
+
+    // ---- synthetic CID-keyed CFF end to end ----
+
+    fn cff_index(items: &[Vec<u8>]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&(items.len() as u16).to_be_bytes());
+        if items.is_empty() {
+            return out;
+        }
+        out.push(4);
+        let mut offset = 1u32;
+        out.extend_from_slice(&offset.to_be_bytes());
+        for item in items {
+            offset += item.len() as u32;
+            out.extend_from_slice(&offset.to_be_bytes());
+        }
+        for item in items {
+            out.extend_from_slice(item);
+        }
+        out
+    }
+
+    fn dict_entry(operator: u16, values: &[i32]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for value in values {
+            out.push(29);
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        if operator < 1200 {
+            out.push(operator as u8);
+        }
+        else {
+            out.push(12);
+            out.push((operator - 1200) as u8);
+        }
+        out
+    }
+
+    fn glyph_with_local_subr() -> Vec<u8> {
+        let mut code = operands(&[0, 0]);
+        code.push(21);
+        code.extend(operands(&[100, 0]));
+        code.push(5);
+        // One local subr means a bias of 107.
+        code.extend(number(-107));
+        code.push(10);
+        code.push(14);
+        code
+    }
+
+    fn closing_subr() -> Vec<u8> {
+        let mut code = operands(&[0, 100]);
+        code.push(5);
+        code.extend(operands(&[-100, 0]));
+        code.push(5);
+        code.push(11);
+        code
+    }
+
+    /// Build a CID-keyed CFF whose glyph 1 draws its top edge through the
+    /// local subroutine of FD 1, so a wrong FDSelect mapping loses that edge.
+    fn cid_cff(fd_select: &[u8]) -> Vec<u8> {
+        let header = vec![1u8, 0, 4, 4];
+        let name = cff_index(&[b"CIDTest".to_vec()]);
+        let strings = cff_index(&[]);
+        let global_subrs = cff_index(&[]);
+        let charstrings = cff_index(&[vec![14], glyph_with_local_subr()]);
+        let top_length =
+            dict_entry(1230, &[0, 0, 0]).len() + dict_entry(17, &[0]).len() + dict_entry(1236, &[0]).len() + dict_entry(1237, &[0]).len();
+        let top_index_length = 2 + 1 + 2 * 4 + top_length;
+        let charstrings_offset = header.len() + name.len() + top_index_length + strings.len() + global_subrs.len();
+        let fdarray_offset = charstrings_offset + charstrings.len();
+        // Two Font DICTs of eleven bytes each.
+        let fdarray_length = 2 + 1 + 3 * 4 + 22;
+        let fdselect_offset = fdarray_offset + fdarray_length;
+        let private_offset = fdselect_offset + fd_select.len();
+        let private_length = dict_entry(19, &[0]).len();
+        let subrs_offset = private_offset + private_length;
+
+        let private = dict_entry(19, &[private_length as i32]);
+        let font_dict_0 = dict_entry(18, &[0, 0]);
+        let font_dict_1 = dict_entry(18, &[private_length as i32, private_offset as i32]);
+        let fdarray = cff_index(&[font_dict_0, font_dict_1]);
+        let local_subrs = cff_index(&[closing_subr()]);
+        let top = [
+            dict_entry(1230, &[0, 0, 0]),
+            dict_entry(17, &[charstrings_offset as i32]),
+            dict_entry(1236, &[fdarray_offset as i32]),
+            dict_entry(1237, &[fdselect_offset as i32]),
+        ]
+        .concat();
+
+        let mut out = header;
+        out.extend(name);
+        out.extend(cff_index(&[top]));
+        out.extend(strings);
+        out.extend(global_subrs);
+        out.extend(charstrings);
+        out.extend(fdarray);
+        out.extend_from_slice(fd_select);
+        out.extend(private);
+        out.extend(local_subrs);
+        assert_eq!(out.len(), subrs_offset + cff_index(&[closing_subr()]).len());
+        out
+    }
+
+    #[test]
+    fn cid_fd_select_routes_glyphs_to_their_private_subrs() {
+        for fd_select in [vec![0u8, 0, 1], vec![3, 0, 2, 0, 0, 0, 0, 1, 1, 0, 2]] {
+            let table = CffTable::parse(&cid_cff(&fd_select)).expect("parse CID CFF");
+            assert_eq!(table.num_glyphs(), 2);
+            let bbox = table.glyph_bbox(1).expect("glyph 1 bbox");
+            assert_eq!((bbox.x_min, bbox.y_min, bbox.x_max, bbox.y_max), (0, 0, 100, 100), "FDSelect {fd_select:?}");
+            let mut recorder = Recorder::default();
+            assert!(table.outline_glyph(1, &mut recorder).is_some());
+            assert!(recorder.lines.contains(&(100.0, 100.0)), "FD 1 owns the subroutine that draws the top edge");
+            assert!(table.glyph_bbox(0).is_none(), ".notdef is empty");
+        }
+    }
 }
