@@ -27,6 +27,65 @@ fn field_rename_rebuilds_the_unique_rule_against_the_new_column() {
 }
 
 #[test]
+fn a_type_change_without_a_declared_migration_is_rejected() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Item { @@id: i64, qty: i64 }").unwrap();
+    conn.execute_vos_write(r#"Item.insert({ id: 1, qty: 7 })"#).unwrap();
+
+    let error = conn.migrate_schema("table Item { @@id: i64, qty: utf8 }", &RenameMap::default()).unwrap_err();
+    assert_eq!(error.code(), "database.schema.invalid", "{error}");
+    assert!(error.to_string().contains("Item.qty"), "{error}");
+
+    // The rejected migration leaves schema and rows untouched.
+    assert_eq!(conn.schema_version().unwrap(), Some(1));
+    let rows = conn.query_vos("Item.all().collect()").unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+}
+
+#[test]
+fn ensure_schema_rejects_a_type_change_instead_of_adopting_the_document() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Item { @@id: i64, qty: i64 }").unwrap();
+
+    let error = conn.ensure_schema("table Item { @@id: i64, qty: utf8 }").unwrap_err();
+    assert_eq!(error.code(), "database.schema.invalid", "{error}");
+    assert_eq!(conn.schema().unwrap().unwrap().document, "table Item { @@id: i64, qty: i64 }");
+}
+
+#[test]
+fn a_rejected_migration_leaves_the_published_schema_and_rows_for_reopen() {
+    let path = std::env::temp_dir().join(format!("ddl-migration-rejected-{}.yydx", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.ensure_schema("table Item { @@id: i64, qty: i64 }").unwrap();
+        conn.execute_vos_write(r#"Item.insert({ id: 1, qty: 7 })"#).unwrap();
+        assert!(conn.migrate_schema("table Item { @@id: i64, qty: utf8 }", &RenameMap::default()).is_err());
+        conn.close();
+    }
+    let conn = Connection::open(&path).unwrap();
+    assert_eq!(conn.schema_version().unwrap(), Some(1), "a failed migration must not advance the version");
+    assert_eq!(conn.query_vos("Item.all().collect()").unwrap().len(), 1);
+    conn.close();
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn a_published_rename_invalidates_prepared_statements() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.ensure_schema("table Sku { @@id: i64, sku: utf8 }").unwrap();
+    conn.execute_vos_write(r#"Sku.insert({ id: 1, sku: "A" })"#).unwrap();
+    let stmt = conn.prepare_vos("Sku.all().collect()").unwrap();
+
+    conn.migrate_schema("table Sku { @@id: i64, code: utf8 }", &rename_field("Sku", "sku", "code")).unwrap();
+
+    let error = conn.query_prepared(&stmt, &Default::default()).unwrap_err();
+    assert_eq!(error.code(), "database.schema.invalidated", "{error}");
+    let fresh = conn.prepare_vos("Sku.all().collect()").unwrap();
+    assert_eq!(conn.query_prepared(&fresh, &Default::default()).unwrap().len(), 1);
+}
+
+#[test]
 fn a_rename_with_an_appended_optional_field_keeps_data_and_identity() {
     let conn = Connection::open_in_memory().unwrap();
     conn.ensure_schema("table Sku { @@id: i64, [unique] sku: utf8, name: utf8 }").unwrap();

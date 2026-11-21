@@ -181,11 +181,13 @@ impl Connection {
         let bound = schema_vos::bind(&projection, &manifest)?;
         let evolved = schema_vos::evolve(history, bound)?;
         let resolved_contract = schema_vos::resolve_contract(&evolved.snapshot)?;
-        // Renames keep durable identities, so the stored rows still carry the
-        // previous column and table names. Rewrite them under the new catalog
-        // before it is published; nothing changes if any record fails.
+        // A field that keeps its durable identity must keep its declared type.
+        // Only an explicit rename declares that the caller owns the change, so
+        // an implicit `i64 -> utf8` can never advance the version and leave the
+        // stored rows describing a different type than the catalog.
         let previous = state.resolved_contract.clone();
         if let Some(previous) = previous.as_deref() {
+            validate_retained_field_types(previous, &resolved_contract, renames)?;
             rewrite_renamed_rows(&mut state, previous, &resolved_contract, renames)?;
         }
         let remapped = schema::remap_unique_constraints(&state.unique_constraints, renames)?;
@@ -258,6 +260,46 @@ impl CatalogDefinition {
 
 fn schema_document(state: &super::State) -> Option<String> {
     state.schema.as_ref().map(|schema| schema.document.clone())
+}
+
+/// Rejects an implicit type change of a field that keeps its durable identity.
+///
+/// The durable field id is what stored rows and prepared plans bind to, so a
+/// migration that silently reinterprets that identity under another type would
+/// leave old bytes addressing a different declared type. Only an explicit
+/// rename states that the caller owns the change; anything else fails before
+/// the version advances.
+fn validate_retained_field_types(
+    previous: &schema_types::ResolvedContract,
+    next: &schema_types::ResolvedContract,
+    renames: &schema::RenameMap,
+) -> Result<()> {
+    for previous_type in &previous.types {
+        let Some(next_type) = next.types.iter().find(|item| item.type_id == previous_type.type_id)
+        else {
+            continue;
+        };
+        let previous_name = previous_type.canonical_path.last().map(String::as_str).unwrap_or_default();
+        for previous_field in &previous_type.fields {
+            let Some(next_field) = next_type.fields.iter().find(|field| field.field_id == previous_field.field_id)
+            else {
+                continue;
+            };
+            let before = schema::type_signature(&previous_field.canonical_type);
+            let after = schema::type_signature(&next_field.canonical_type);
+            if before == after || renames.field_target(previous_name, &previous_field.canonical_name).is_some() {
+                continue;
+            }
+            return Err(Error::Schema {
+                message: format!(
+                    "migration changes the type of field `{previous_name}.{}` from `{before}` to `{after}` without an \
+                     explicit rename; declare the field migration instead of reusing its durable identity",
+                    previous_field.canonical_name
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Rewrites stored row records so renamed columns and tables keep their data.

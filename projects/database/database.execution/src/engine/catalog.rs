@@ -628,7 +628,7 @@ fn unite_revision(item: &schema_types::ResolvedTypeContract) -> u32 {
     hash.finish()
 }
 
-fn type_signature(ty: &schema_types::ResolvedCanonicalType) -> String {
+pub(crate) fn type_signature(ty: &schema_types::ResolvedCanonicalType) -> String {
     use schema_types::{ResolvedCanonicalType, ResolvedCanonicalTypeArgument};
     match ty {
         ResolvedCanonicalType::Scalar(scalar) => scalar.to_string(),
