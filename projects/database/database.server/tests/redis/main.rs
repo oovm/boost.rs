@@ -4,3 +4,4 @@
 //! 这里只保留最小 smoke：入口创建、最小命令往返与结果。
 
 mod gateway;
+mod sessions;

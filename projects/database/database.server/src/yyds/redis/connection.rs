@@ -327,11 +327,19 @@ impl Drop for SubscriptionGuard {
     }
 }
 
-/// `WATCH key [key ...]` — pins each key's current record revision as the version `EXEC` validates.
+/// `WATCH key [key ...]` — pins each logical key's current revision as the version `EXEC` validates.
 ///
-/// A repeated `WATCH` of an already-pinned key keeps the original revision, and a missing
-/// key is pinned as absent, so a later insert also aborts the transaction. Watching inside
-/// `MULTI` is rejected without touching the existing watch list, like upstream Redis.
+/// 一个逻辑键在任一时刻只活在一种值种类里，但写命令落在各自的种类命名空间上
+/// （`SADD` 写 `:set`、`LPUSH` 写 `:list`、`HSET` 写 `:hash`），而 `EXPIRE` 之类的
+/// TTL 写会重写该种类自己的记录。只钉字符串命名空间会让这些写对 `EXEC` 不可见，因此
+/// 这里把六种值种类的当前修订号一起钉住：键从缺席变成某种值、或某种值被改写/删除，
+/// 都会让 `EXEC` 放弃事务。
+///
+/// A repeated `WATCH` of an already-pinned key keeps the original revisions, and a missing
+/// key is pinned as absent in every kind, so a later insert also aborts the transaction.
+/// Watching inside `MULTI` is rejected without touching the existing watch list, like
+/// upstream Redis. 真正的空操作写（重复 `SADD` 已存在成员）不提交记录、不推进修订号，
+/// 因此不会让事务失效，与真机一致。
 fn handle_watch(
     stream: &mut dyn Write,
     request: &Request<'_>,
@@ -357,14 +365,21 @@ fn handle_watch(
         if state.session.is_watching(namespace, key) {
             continue;
         }
-        let revision = match session::key_revision(executor, namespace, key) {
-            Ok(revision) => revision,
-            Err(message) => {
-                write_error(stream, &message)?;
-                return Ok(());
-            }
-        };
-        state.session.watch(namespace, key, revision);
+        let mut pinned = Vec::with_capacity(collections::KeyKind::ALL.len());
+        for kind in collections::KeyKind::ALL {
+            let kind_namespace = kind.namespace(namespace);
+            let revision = match session::key_revision(executor, &kind_namespace, key) {
+                Ok(revision) => revision,
+                Err(message) => {
+                    write_error(stream, &message)?;
+                    return Ok(());
+                }
+            };
+            pinned.push((kind_namespace, revision));
+        }
+        for (kind_namespace, revision) in pinned {
+            state.session.watch(&kind_namespace, key, revision);
+        }
     }
     stream.write_all(b"+OK\r\n")
 }

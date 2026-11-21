@@ -213,11 +213,17 @@ impl RedisShard {
     }
 
     /// 设置或清除键的某一种活值种类的截止时间。
+    ///
+    /// 清除一个本来就没有截止时间的键是空操作：真机不把它当作修改，所以既不重写记录也不
+    /// 推进修订号，`WATCH` 的事务不会因此失效。
     pub fn set_deadline_kind(&mut self, db: u8, kind: &str, key: &[u8], expires_at: Option<i64>) -> io::Result<bool> {
         let Some(record) = self.get_kind(db, kind, key)
         else {
             return Ok(false);
         };
+        if expires_at.is_none() && record.expires_at.is_none() {
+            return Ok(false);
+        }
         let value = format::record_bytes(record).to_vec();
         self.commit(vec![Change::Put { key: kind_key(db, kind, key), value, expires_at }])?;
         Ok(true)
