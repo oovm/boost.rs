@@ -1,9 +1,11 @@
 //! `.yydb` 记录值中的表行记录编解码。
 //!
 //! 一行表记录以 `__yydb/v0/row/<table>/<pk>` 为记录名，值采用带版本前缀的二进
-//! 制行格式：版本字节、列数、NULL 位图、按列名升序的名字表和逐个带标签的值。
-//! 旧 JSON 行格式、v1 二进制行格式（字段长度 16 位）与 v2 二进制行格式均已退役，
-//! 解码遇到非当前版本一律失败并提示重建，不猜测形状。
+//! 制行格式：版本字节、标志、布局 revision、列数、列身份表、NULL 位图和逐个带
+//! 标签的值。v4 起列身份是持久 `FieldId`，显示名由目录提供，因此改名与重排不
+//! 再改变存量字节；只有无法从目录解析身份的动态记录才退回列名。
+//! 旧 JSON 行格式、v1/v2/v3 二进制行格式均已退役，解码遇到非当前版本一律失败
+//! 并提示重建，不猜测形状。
 //!
 //! 行内的 `bytes` 与 `vector<N>` 可能被宿主改写为对象引用；解码需要
 //! [`ObjectResolver`]，由宿主在一条语句执行期间用 [`with_object_resolver`] 安装。
@@ -36,7 +38,10 @@ pub const ROW_PREFIX: &str = "__yydb/v0/row/";
 /// bumps this version and the previous version is rejected outright; callers
 /// rebuild from source data instead of expecting a compatibility branch, a dual
 /// write or a shim.
-pub const ROW_CODEC_VERSION: u8 = 3;
+pub const ROW_CODEC_VERSION: u8 = 4;
+
+/// Header flag: the column table carries durable `FieldId`s instead of names.
+const ROW_FLAG_FIELD_IDS: u8 = 0b0000_0001;
 
 /// Reads the octets behind an out-of-line `bytes` object reference.
 ///
@@ -138,8 +143,14 @@ impl NamedValueLayout {
 }
 
 /// One member of a named `class` or `structure` layout.
+///
+/// The durable `field_id` is the physical identity inside a stored record; the
+/// display name is resolved through the directory, so renaming a member never
+/// rewrites stored bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamedFieldLayout {
+    /// Durable field identity.
+    pub field_id: u64,
     /// Member name in the catalog.
     pub name: String,
     /// Layout of the member value.
@@ -155,32 +166,131 @@ pub struct NamedVariantLayout {
     pub fields: Vec<NamedFieldLayout>,
 }
 
-/// Catalog-derived directory the row codec consults while encoding.
+/// Layout facts that belong to one published catalog revision.
 ///
-/// Column layouts are keyed by column name because a stored row record carries
-/// no table identity; hosts install one directory per statement. Named layouts
-/// are keyed by durable schema identity, which every stored `unite` and
-/// `structure` value carries so decoding does not depend on the column map.
+/// A row record names the revision it was written under. Reads select the
+/// matching layout from the directory, which is what lets a deferred migration
+/// keep old rows readable while new rows use the current declaration.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RowSchemaDirectory {
+pub struct RevisionLayout {
+    revision: u32,
     columns: BTreeMap<String, ValueLayout>,
+    column_ids: BTreeMap<String, u64>,
+    fields: BTreeMap<u64, NamedFieldLayout>,
     named: BTreeMap<u64, NamedValueLayout>,
 }
 
-impl RowSchemaDirectory {
-    /// Builds a directory from column layouts and named declarations.
-    pub fn new(columns: BTreeMap<String, ValueLayout>, named: BTreeMap<u64, NamedValueLayout>) -> Self {
-        Self { columns, named }
+impl RevisionLayout {
+    /// Builds one revision layout from column names, their durable identities
+    /// and the named declarations the columns refer to.
+    pub fn new(
+        revision: u32,
+        columns: BTreeMap<String, ValueLayout>,
+        column_ids: BTreeMap<String, u64>,
+        named: BTreeMap<u64, NamedValueLayout>,
+    ) -> Self {
+        let fields = column_ids
+            .iter()
+            .filter_map(|(name, field_id)| {
+                columns.get(name).map(|ty| (*field_id, NamedFieldLayout { field_id: *field_id, name: name.clone(), ty: ty.clone() }))
+            })
+            .collect();
+        Self { revision, columns, column_ids, fields, named }
     }
 
-    /// Layout of one table column, when the catalog declares a named type there.
+    /// Revision this layout was published under.
+    pub fn revision(&self) -> u32 {
+        self.revision
+    }
+
+    /// Layout of one table column by display name.
     pub fn column(&self, name: &str) -> Option<&ValueLayout> {
         self.columns.get(name)
     }
 
-    /// Layout of one named declaration.
+    /// Durable identity of one table column.
+    pub fn column_id(&self, name: &str) -> Option<u64> {
+        self.column_ids.get(name).copied()
+    }
+
+    /// Column declaration by durable identity.
+    pub fn field(&self, field_id: u64) -> Option<&NamedFieldLayout> {
+        self.fields.get(&field_id)
+    }
+
+    /// Named declaration by durable schema identity.
     pub fn named(&self, schema_id: u64) -> Option<&NamedValueLayout> {
         self.named.get(&schema_id)
+    }
+}
+
+/// Catalog-derived directory the row codec consults while encoding.
+///
+/// The current revision is used for writes; retained revisions let a deferred
+/// migration decode rows written before the change without rewriting them.
+/// Named layouts are keyed by durable schema identity, which every stored
+/// `class`, `unite` and `structure` value carries.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RowSchemaDirectory {
+    current: RevisionLayout,
+    history: BTreeMap<u32, RevisionLayout>,
+}
+
+impl RowSchemaDirectory {
+    /// Builds a directory from column layouts and named declarations.
+    ///
+    /// The row revision is `0`; hosts that persist revisions use
+    /// [`Self::revisioned`].
+    pub fn new(columns: BTreeMap<String, ValueLayout>, named: BTreeMap<u64, NamedValueLayout>) -> Self {
+        Self::revisioned(0, columns, BTreeMap::new(), named)
+    }
+
+    /// Builds a directory for one published revision.
+    pub fn revisioned(
+        revision: u32,
+        columns: BTreeMap<String, ValueLayout>,
+        column_ids: BTreeMap<String, u64>,
+        named: BTreeMap<u64, NamedValueLayout>,
+    ) -> Self {
+        Self { current: RevisionLayout::new(revision, columns, column_ids, named), history: BTreeMap::new() }
+    }
+
+    /// Retains one earlier revision for deferred reads.
+    pub fn with_history(
+        mut self,
+        revision: u32,
+        columns: BTreeMap<String, ValueLayout>,
+        column_ids: BTreeMap<String, u64>,
+        named: BTreeMap<u64, NamedValueLayout>,
+    ) -> Self {
+        self.history.insert(revision, RevisionLayout::new(revision, columns, column_ids, named));
+        self
+    }
+
+    /// Current revision used by writes.
+    pub fn revision(&self) -> u32 {
+        self.current.revision()
+    }
+
+    /// Layout of one table column, when the catalog declares a named type there.
+    pub fn column(&self, name: &str) -> Option<&ValueLayout> {
+        self.current.column(name)
+    }
+
+    /// Durable identity of one table column in the current revision.
+    pub fn column_id(&self, name: &str) -> Option<u64> {
+        self.current.column_id(name)
+    }
+
+    /// Layout of one named declaration in the current revision.
+    pub fn named(&self, schema_id: u64) -> Option<&NamedValueLayout> {
+        self.current.named(schema_id)
+    }
+
+    /// Layout selected by a stored row's revision, falling back to the current
+    /// one when the revision is the one this directory was built for.
+    fn layout_for(&self, revision: u32) -> Option<&RevisionLayout> {
+        if revision == self.current.revision() { Some(&self.current) } else { self.history.get(&revision) }
     }
 }
 
@@ -270,33 +380,73 @@ pub fn row_references(bytes: &[u8]) -> Result<RowReferences> {
 
 /// Encode one row as the binary row record format.
 ///
-/// Layout: `version u8`, `column count u16`, `null bitmap ceil(n/8)`, then one
-/// `name length u32 + UTF-8 name` per column in ascending name order, then one
-/// tagged value for every column the bitmap does not mark null. Integers keep
-/// their declared width, text and octets carry a length prefix, floats are raw
-/// IEEE-754 bits, and keys never repeat the enclosing table name.
+/// Layout: `version u8`, `flags u8`, `layout revision u32`, `column count u16`,
+/// then either one `field id u64` per column or one `name length u32 + UTF-8
+/// name`, then the NULL bitmap and one tagged value for every non-null column.
+/// A directory that can resolve every column name to a durable field identity
+/// writes ids; otherwise the record stays name-keyed so dynamic projections and
+/// storage-level rows still round-trip.
 pub fn encode_row(row: &BTreeMap<String, Value>) -> Result<Vec<u8>> {
     let column_count = u16::try_from(row.len()).map_err(|_| Error::Unsupported("query row has more than 65535 columns"))?;
     let directory = current_row_schema();
     let directory = directory.as_deref();
-    let mut out = Vec::with_capacity(4 + row.len() * 12);
+    let named = directory.and_then(|directory| {
+        let mut identities = Vec::with_capacity(row.len());
+        for name in row.keys() {
+            identities.push((*directory.current.column_ids.get(name)?, name));
+        }
+        identities.sort_by_key(|(field_id, _)| *field_id);
+        Some(identities)
+    });
+    let revision = directory.map_or(0, RowSchemaDirectory::revision);
+    let mut out = Vec::with_capacity(8 + row.len() * 12);
     out.push(ROW_CODEC_VERSION);
+    out.push(if named.is_some() { ROW_FLAG_FIELD_IDS } else { 0 });
+    out.extend_from_slice(&revision.to_le_bytes());
     out.extend_from_slice(&column_count.to_le_bytes());
     let bitmap_len = row.len().div_ceil(8);
-    let bitmap_start = out.len();
-    out.resize(bitmap_start + bitmap_len, 0);
-    for (index, (name, value)) in row.iter().enumerate() {
-        if matches!(value, Value::Null) {
-            out[bitmap_start + index / 8] |= 1 << (index % 8);
+    let bitmap_start = out.len() + if named.is_some() { row.len() * 8 } else { row.iter().map(|(name, _)| 4 + name.len()).sum() };
+    if let Some(identities) = &named {
+        for (field_id, _) in identities {
+            out.extend_from_slice(&field_id.to_le_bytes());
         }
-        put_len(&mut out, name.len(), "column name")?;
-        out.extend_from_slice(name.as_bytes());
     }
-    for (name, value) in row {
-        if matches!(value, Value::Null) {
-            continue;
+    else {
+        for name in row.keys() {
+            put_len(&mut out, name.len(), "column name")?;
+            out.extend_from_slice(name.as_bytes());
         }
-        encode_value(&mut out, value, column_layout(directory, name), directory, 0)?;
+    }
+    out.resize(bitmap_start + bitmap_len, 0);
+    match &named {
+        Some(identities) => {
+            for (index, (_, name)) in identities.iter().enumerate() {
+                let value = &row[*name];
+                if matches!(value, Value::Null) {
+                    out[bitmap_start + index / 8] |= 1 << (index % 8);
+                }
+            }
+            for (_, name) in identities {
+                let value = &row[*name];
+                if matches!(value, Value::Null) {
+                    continue;
+                }
+                encode_value(&mut out, value, column_layout(directory, name), directory, 0)?;
+            }
+        }
+        None => {
+            for (index, (_, value)) in row.iter().enumerate() {
+                if matches!(value, Value::Null) {
+                    out[bitmap_start + index / 8] |= 1 << (index % 8);
+                }
+            }
+            for (name, value) in row {
+                if matches!(value, Value::Null) {
+                    continue;
+                }
+                encode_value(&mut out, value, column_layout(directory, name), directory, 0)?;
+            }
+        }
     }
     Ok(out)
 }
@@ -350,7 +500,7 @@ pub fn encode_tagged(value: &Value) -> Result<Vec<u8>> {
 pub fn decode_tagged(bytes: &[u8]) -> Result<Value> {
     let directory = current_row_schema();
     let mut cursor = RowCursor::new(bytes);
-    let value = decode_value(&mut cursor, &mut None, false, directory.as_deref(), 0)?;
+    let value = decode_value(&mut cursor, &mut None, false, directory.as_deref().map(|directory| &directory.current), 0)?;
     if cursor.position != bytes.len() {
         return Err(Error::Corrupt("tagged value has trailing bytes"));
     }
@@ -372,28 +522,60 @@ pub fn select_stored<'a>(bytes: &'a [u8], names: &[&str], selected: &mut [Option
         }
         None => return Err(Error::Corrupt("row record is empty")),
     }
+    let directory = current_row_schema();
+    let directory = directory.as_deref();
     let mut cursor = RowCursor::new(bytes);
     cursor.take(1)?;
+    let flags = cursor.u8()?;
+    if flags & !ROW_FLAG_FIELD_IDS != 0 {
+        return Err(Error::Corrupt("row record header flags are unknown"));
+    }
+    let revision = cursor.u32()?;
+    let field_keyed = flags & ROW_FLAG_FIELD_IDS != 0;
+    let layout = if field_keyed {
+        Some(
+            directory
+                .ok_or_else(|| Error::Unsupported("selecting from a field-id keyed row needs the schema directory installed"))?
+                .layout_for(revision)
+                .ok_or_else(|| Error::Corrupt("row record uses a layout revision the directory does not declare"))?,
+        )
+    }
+    else {
+        None
+    };
+    let wanted: Vec<Option<u64>> = names.iter().map(|name| layout.and_then(|layout| layout.column_id(name))).collect();
     let column_count = cursor.u16()? as usize;
     let bitmap = cursor.take(column_count.div_ceil(8))?;
-    // Two cursors over one record: one reads the name table, the other the values
-    // that follow it, so a skipped value is never decoded.
-    let names_start = cursor;
-    let mut names_cursor = names_start;
-    for _ in 0..column_count {
-        names_cursor.skip_text()?;
+    // Two cursors over one record: one reads the identity/name table, the other
+    // the values that follow, so a skipped value is never decoded.
+    let keys_start = cursor;
+    let mut keys_cursor = keys_start;
+    if field_keyed {
+        keys_cursor.take(column_count * 8)?;
     }
-    let mut values = names_cursor;
-    let mut names_cursor = names_start;
+    else {
+        for _ in 0..column_count {
+            keys_cursor.skip_text()?;
+        }
+    }
+    let mut values = keys_cursor;
+    let mut keys_cursor = keys_start;
     for index in 0..column_count {
-        let name = names_cursor.text_slice()?;
+        let slot = if field_keyed {
+            let field_id = keys_cursor.u64()?;
+            wanted.iter().position(|wanted| *wanted == Some(field_id))
+        }
+        else {
+            let name = keys_cursor.text_slice()?;
+            names.iter().position(|wanted| *wanted == name)
+        };
         // A NULL column carries no value bytes: the row bitmap already said so.
         if bitmap[index / 8] & (1 << (index % 8)) != 0 {
             continue;
         }
         let start = values.position;
         let end = values.skip_value(0)?;
-        if let Some(slot) = names.iter().position(|wanted| *wanted == name) {
+        if let Some(slot) = slot {
             selected[slot] = Some(&bytes[start..end]);
         }
     }
@@ -431,6 +613,10 @@ const TAG_UNITE: u8 = 0x11;
 /// 具名 `structure` 值：稳定 schema id、布局 revision、字段数、NULL 位图和
 /// 按目录字段序编码的定位值。记录里不含逐实例字段名。
 const TAG_STRUCTURE: u8 = 0x12;
+/// 具名 `class` 值：稳定 schema id、成员数和按持久字段身份升序排列的成员。
+///
+/// 记录里不含成员名，改名与重排由目录解析，不改变存量字节。
+const TAG_NAMED_ROW: u8 = 0x13;
 
 /// Deepest list nesting the row codec encodes or decodes.
 ///
@@ -553,8 +739,8 @@ fn encode_value(
             out.extend_from_slice(&file.manifest.size.to_le_bytes());
         }
         Value::Row(fields) => match named_layout(layout, directory)? {
-            Some(NamedValueLayout::Class { fields: declared, .. }) => {
-                encode_class(out, fields, declared, directory, depth)?;
+            Some(NamedValueLayout::Class { schema_id, fields: declared }) => {
+                encode_class(out, fields, *schema_id, declared, directory, depth)?;
             }
             Some(NamedValueLayout::Structure { schema_id, revision, fields: declared }) => {
                 encode_structure(out, fields, *schema_id, *revision, declared, directory, depth)?;
@@ -702,37 +888,49 @@ fn encode_unite(
     Ok(())
 }
 
-/// Encodes one named `class` value with member names and per-member layouts.
+/// Encodes one named `class` value with durable member identities.
+///
+/// The record names its schema id and one field id per present member; the
+/// directory supplies the display names, so a member rename or reorder keeps
+/// stored bytes valid.
 fn encode_class(
     out: &mut Vec<u8>,
     fields: &BTreeMap<String, Value>,
+    schema_id: u64,
     declared: &[NamedFieldLayout],
     directory: Option<&RowSchemaDirectory>,
     depth: u8,
 ) -> Result<()> {
+    let mut present = Vec::with_capacity(fields.len());
     for name in fields.keys() {
-        if !declared.iter().any(|field| field.name == *name) {
-            return Err(Error::Schema { message: format!("named class does not declare member `{name}`") });
-        }
+        let field = declared
+            .iter()
+            .find(|field| field.name == *name)
+            .ok_or_else(|| Error::Schema { message: format!("named class does not declare member `{name}`") })?;
+        present.push(field);
     }
-    out.push(TAG_NESTED_ROW);
-    put_len(out, fields.len(), "nested row")?;
-    let nested = deeper(depth, "nested row nests deeper than the supported depth")?;
-    for (name, item) in fields {
-        put_len(out, name.len(), "nested row field name")?;
-        out.extend_from_slice(name.as_bytes());
-        let layout = declared.iter().find(|field| field.name == *name).map(|field| &field.ty);
-        encode_value(out, item, layout, directory, nested)?;
+    present.sort_by_key(|field| field.field_id);
+    let count = u16::try_from(present.len()).map_err(|_| Error::Unsupported("named class has more than 65535 members"))?;
+    out.push(TAG_NAMED_ROW);
+    out.extend_from_slice(&schema_id.to_le_bytes());
+    out.extend_from_slice(&count.to_le_bytes());
+    for field in &present {
+        out.extend_from_slice(&field.field_id.to_le_bytes());
+    }
+    let nested = deeper(depth, "named class nests deeper than the supported depth")?;
+    for field in present {
+        let value = fields.get(&field.name).expect("present member");
+        encode_value(out, value, Some(&field.ty), directory, nested)?;
     }
     Ok(())
 }
 
-/// Encodes one closed `structure` value positionally, without member names.
+/// Encodes one closed `structure` value positionally by durable field identity.
 ///
-/// The catalog's field order is the layout order. A member that is null or absent
-/// is recorded in the null bitmap, so an optional member costs one bit instead of
-/// a name and a tag; the remaining members follow in declaration order. Undeclared
-/// members are refused at the write boundary.
+/// Members are written in ascending field-id order, not declaration order, so a
+/// declaration reorder keeps both the layout revision and every stored byte.
+/// The null bitmap marks absent or null members; undeclared members are refused
+/// at the write boundary.
 fn encode_structure(
     out: &mut Vec<u8>,
     fields: &BTreeMap<String, Value>,
@@ -747,20 +945,25 @@ fn encode_structure(
             return Err(Error::Schema { message: format!("closed `structure` does not declare member `{name}`") });
         }
     }
-    let field_count = u16::try_from(declared.len()).map_err(|_| Error::Unsupported("structure has more than 65535 members"))?;
+    let mut ordered: Vec<&NamedFieldLayout> = declared.iter().collect();
+    ordered.sort_by_key(|field| field.field_id);
+    let field_count = u16::try_from(ordered.len()).map_err(|_| Error::Unsupported("structure has more than 65535 members"))?;
     out.push(TAG_STRUCTURE);
     out.extend_from_slice(&schema_id.to_le_bytes());
     out.extend_from_slice(&revision.to_le_bytes());
     out.extend_from_slice(&field_count.to_le_bytes());
+    for field in &ordered {
+        out.extend_from_slice(&field.field_id.to_le_bytes());
+    }
     let bitmap_start = out.len();
-    out.resize(bitmap_start + declared.len().div_ceil(8), 0);
-    for (index, field) in declared.iter().enumerate() {
+    out.resize(bitmap_start + ordered.len().div_ceil(8), 0);
+    for (index, field) in ordered.iter().enumerate() {
         if fields.get(&field.name).is_none_or(|value| matches!(value, Value::Null)) {
             out[bitmap_start + index / 8] |= 1 << (index % 8);
         }
     }
     let nested = deeper(depth, "structure nests deeper than the supported depth")?;
-    for field in declared {
+    for field in ordered {
         let Some(value) = fields.get(&field.name).filter(|value| !matches!(value, Value::Null))
         else {
             continue;
@@ -848,29 +1051,59 @@ fn parse_row(bytes: &[u8], references: &mut Option<RowReferences>, resolve: bool
     }
     let mut header = RowCursor::new(bytes);
     header.take(1)?;
-    let column_count = header.u16()? as usize;
-    let bitmap_len = column_count.div_ceil(8);
-    // The bitmap stays a slice of the record; copying it would add one heap
-    // allocation per decoded row for no benefit.
-    let bitmap = header.take(bitmap_len)?;
-    // Walk the name table once to find where the values start instead of
-    // collecting the names into a `Vec`: the names are only needed one at a
-    // time, and each decoded name is moved straight into the row as its key.
-    let names_start = header;
-    let mut walk = names_start;
-    for _ in 0..column_count {
-        walk.skip_text()?;
+    let flags = header.u8()?;
+    if flags & !ROW_FLAG_FIELD_IDS != 0 {
+        return Err(Error::Corrupt("row record header flags are unknown"));
     }
-    let mut names = names_start;
+    let revision = header.u32()?;
+    let column_count = header.u16()? as usize;
+    let field_keyed = flags & ROW_FLAG_FIELD_IDS != 0;
+    let revision_layout = if field_keyed {
+        Some(
+            directory
+                .ok_or_else(|| Error::Unsupported("decoding a field-id keyed row needs the schema directory installed"))?
+                .layout_for(revision)
+                .ok_or_else(|| Error::Corrupt("row record uses a layout revision the directory does not declare"))?,
+        )
+    }
+    else {
+        directory.map(|directory| &directory.current)
+    };
+    let bitmap_len = column_count.div_ceil(8);
+    // Keep the bitmap as a slice of the record and walk the identity table twice:
+    // the first walk finds where values start, the second binds each value.
+    let keys_start = header;
+    let mut walk = keys_start;
+    if field_keyed {
+        walk.take(column_count * 8)?;
+    }
+    else {
+        for _ in 0..column_count {
+            walk.skip_text()?;
+        }
+    }
+    let bitmap = walk.take(bitmap_len)?;
+    let mut keys = keys_start;
     let mut values = walk;
     let mut row = BTreeMap::new();
     for index in 0..column_count {
-        let name = names.text()?;
+        let name = if field_keyed {
+            let field_id = keys.u64()?;
+            let declared = revision_layout.ok_or_else(|| Error::Corrupt("row record names a field without a directory"))?;
+            declared
+                .field(field_id)
+                .ok_or_else(|| Error::Corrupt("row record names a field id the directory does not declare"))?
+                .name
+                .clone()
+        }
+        else {
+            keys.text()?
+        };
         if bitmap[index / 8] & (1 << (index % 8)) != 0 {
             row.insert(name, Value::Null);
             continue;
         }
-        let value = decode_value(&mut values, references, resolve, directory, 0)?;
+        let value = decode_value(&mut values, references, resolve, revision_layout, 0)?;
         row.insert(name, value);
     }
     if values.remaining() != 0 {
@@ -1042,9 +1275,10 @@ impl<'a> RowCursor<'a> {
                 }
             }
             TAG_STRUCTURE => {
-                // schema id, layout revision, field count, null bitmap.
+                // schema id, layout revision, field count, member identities, bitmap.
                 self.take(8 + 4 + 2)?;
                 let count = self.u16()? as usize;
+                self.take(count * 8)?;
                 let bitmap = self.take(count.div_ceil(8))?;
                 let present = (0..count).filter(|index| bitmap[index / 8] & (1 << (index % 8)) == 0).count();
                 let nested = depth
@@ -1052,6 +1286,19 @@ impl<'a> RowCursor<'a> {
                     .filter(|nested| *nested <= MAX_LIST_DEPTH)
                     .ok_or(Error::Corrupt("structure nests deeper than the supported depth"))?;
                 for _ in 0..present {
+                    self.skip_value(nested)?;
+                }
+            }
+            TAG_NAMED_ROW => {
+                // schema id, member count, member identities, then one value each.
+                self.take(8 + 2)?;
+                let count = self.u16()? as usize;
+                self.take(count * 8)?;
+                let nested = depth
+                    .checked_add(1)
+                    .filter(|nested| *nested <= MAX_LIST_DEPTH)
+                    .ok_or(Error::Corrupt("named class nests deeper than the supported depth"))?;
+                for _ in 0..count {
                     self.skip_value(nested)?;
                 }
             }
@@ -1076,7 +1323,7 @@ fn decode_value(
     cursor: &mut RowCursor<'_>,
     references: &mut Option<RowReferences>,
     resolve: bool,
-    directory: Option<&RowSchemaDirectory>,
+    revision_layout: Option<&RevisionLayout>,
     depth: u8,
 ) -> Result<Value> {
     Ok(match cursor.u8()? {
@@ -1169,7 +1416,7 @@ fn decode_value(
                 .ok_or(Error::Corrupt("row record list nests deeper than the supported depth"))?;
             let mut items = Vec::with_capacity(count);
             for _ in 0..count {
-                items.push(decode_value(cursor, references, resolve, directory, nested)?);
+                items.push(decode_value(cursor, references, resolve, revision_layout, nested)?);
             }
             Value::List(items)
         }
@@ -1185,40 +1432,42 @@ fn decode_value(
             let mut fields = std::collections::BTreeMap::new();
             for _ in 0..count {
                 let name = cursor.text()?;
-                let value = decode_value(cursor, references, resolve, directory, nested)?;
+                let value = decode_value(cursor, references, resolve, revision_layout, nested)?;
                 fields.insert(name, value);
             }
             Value::Row(fields)
         }
-        TAG_UNITE => decode_unite(cursor, references, resolve, directory, depth)?,
-        TAG_STRUCTURE => decode_structure(cursor, references, resolve, directory, depth)?,
+        TAG_UNITE => decode_unite(cursor, references, resolve, revision_layout, depth)?,
+        TAG_STRUCTURE => decode_structure(cursor, references, resolve, revision_layout, depth)?,
+        TAG_NAMED_ROW => decode_named_row(cursor, references, resolve, revision_layout, depth)?,
         _ => return Err(Error::Corrupt("row record value tag is unknown")),
     })
 }
 
 /// Decodes one closed `structure` value back into a member-named record.
 ///
-/// The record names its schema id and layout revision, so the directory supplies
-/// the field order. Field count, bitmap length and revision are all checked
-/// before any value is read; a truncated record, a corrupted offset or an unknown
-/// revision is a structured rejection, never a best-effort read.
+/// The record names its schema id, layout revision and durable member identities;
+/// the directory supplies display names. Field count, identity order, bitmap
+/// length and revision are all checked before any value is read, so a truncated
+/// record or an unknown revision is a structured rejection.
 fn decode_structure(
     cursor: &mut RowCursor<'_>,
     references: &mut Option<RowReferences>,
     resolve: bool,
-    directory: Option<&RowSchemaDirectory>,
+    revision_layout: Option<&RevisionLayout>,
     depth: u8,
 ) -> Result<Value> {
     let schema_id = cursor.u64()?;
     let revision = cursor.u32()?;
     let field_count = cursor.u16()? as usize;
+    let identities = cursor.take(field_count * 8)?;
     let bitmap_len = field_count.div_ceil(8);
     let bitmap = cursor.take(bitmap_len)?;
-    let Some(directory) = directory
+    let Some(layout) = revision_layout
     else {
         return Err(Error::Unsupported("decoding a `structure` value needs the schema directory installed for the statement"));
     };
-    let named = directory
+    let named = layout
         .named(schema_id)
         .ok_or_else(|| Error::Corrupt("row record names a `structure` schema id that the directory does not declare"))?;
     let NamedValueLayout::Structure { revision: expected, fields: declared, .. } = named
@@ -1228,20 +1477,28 @@ fn decode_structure(
     if *expected != revision {
         return Err(Error::Corrupt("row record uses a `structure` layout revision the directory does not declare"));
     }
-    if declared.len() != field_count {
+    let mut ordered: Vec<&NamedFieldLayout> = declared.iter().collect();
+    ordered.sort_by_key(|field| field.field_id);
+    if ordered.len() != field_count {
         return Err(Error::Corrupt("row record `structure` field count disagrees with its declaration"));
+    }
+    for (index, field) in ordered.iter().enumerate() {
+        let stored = u64::from_le_bytes(identities[index * 8..index * 8 + 8].try_into().unwrap());
+        if stored != field.field_id {
+            return Err(Error::Corrupt("row record `structure` member identity disagrees with its declaration"));
+        }
     }
     let nested = depth
         .checked_add(1)
         .filter(|nested| *nested <= MAX_LIST_DEPTH)
         .ok_or(Error::Corrupt("structure nests deeper than the supported depth"))?;
     let mut fields = BTreeMap::new();
-    for (index, field) in declared.iter().enumerate() {
+    for (index, field) in ordered.iter().enumerate() {
         if bitmap[index / 8] & (1 << (index % 8)) != 0 {
             fields.insert(field.name.clone(), Value::Null);
             continue;
         }
-        let value = decode_value(cursor, references, resolve, Some(directory), nested)?;
+        let value = decode_value(cursor, references, resolve, revision_layout, nested)?;
         fields.insert(field.name.clone(), value);
     }
     Ok(Value::Row(fields))
@@ -1249,27 +1506,27 @@ fn decode_structure(
 
 /// Decodes one `unite` value and re-establishes its canonical in-memory form.
 ///
-/// The record names its schema id and layout revision, so decoding is directed by
-/// the directory instead of the column map. A revision change, an undeclared
-/// discriminant or a payload member count that disagrees with the variant is a
-/// structured rejection: stored bytes are never reinterpreted under another
+/// The record names its schema id, layout revision, discriminant and payload
+/// member identities. A revision change, an undeclared discriminant, an
+/// identity-order mismatch or a payload count that disagrees with the variant is
+/// a structured rejection: stored bytes are never reinterpreted under another
 /// variant.
 fn decode_unite(
     cursor: &mut RowCursor<'_>,
     references: &mut Option<RowReferences>,
     resolve: bool,
-    directory: Option<&RowSchemaDirectory>,
+    revision_layout: Option<&RevisionLayout>,
     depth: u8,
 ) -> Result<Value> {
     let schema_id = cursor.u64()?;
     let revision = cursor.u32()?;
     let discriminant = cursor.i64()?;
     let member_count = cursor.u16()? as usize;
-    let Some(directory) = directory
+    let Some(layout) = revision_layout
     else {
         return Err(Error::Unsupported("decoding a `unite` value needs the schema directory installed for the statement"));
     };
-    let named = directory
+    let named = layout
         .named(schema_id)
         .ok_or_else(|| Error::Corrupt("row record names a `unite` schema id that the directory does not declare"))?;
     let NamedValueLayout::Unite { revision: expected, variants, .. } = named
@@ -1292,10 +1549,52 @@ fn decode_unite(
         .ok_or(Error::Corrupt("unite payload nests deeper than the supported depth"))?;
     let mut payload = BTreeMap::new();
     for field in &variant.fields {
-        let value = decode_value(cursor, references, resolve, Some(directory), nested)?;
+        let value = decode_value(cursor, references, resolve, revision_layout, nested)?;
         payload.insert(field.name.clone(), value);
     }
     Ok(Value::List(vec![Value::I64(discriminant), Value::Row(payload)]))
+}
+
+/// Decodes one named `class` value back into a member-named record.
+///
+/// Members are identified by durable field identity, so a renamed or reordered
+/// declaration still binds the stored values to the right names.
+fn decode_named_row(
+    cursor: &mut RowCursor<'_>,
+    references: &mut Option<RowReferences>,
+    resolve: bool,
+    revision_layout: Option<&RevisionLayout>,
+    depth: u8,
+) -> Result<Value> {
+    let schema_id = cursor.u64()?;
+    let member_count = cursor.u16()? as usize;
+    let identities = cursor.take(member_count * 8)?;
+    let Some(layout) = revision_layout
+    else {
+        return Err(Error::Unsupported("decoding a named `class` value needs the schema directory installed for the statement"));
+    };
+    let named = layout
+        .named(schema_id)
+        .ok_or_else(|| Error::Corrupt("row record names a `class` schema id that the directory does not declare"))?;
+    let NamedValueLayout::Class { fields: declared, .. } = named
+    else {
+        return Err(Error::Corrupt("row record names a schema id that is not a `class` declaration"));
+    };
+    let nested = depth
+        .checked_add(1)
+        .filter(|nested| *nested <= MAX_LIST_DEPTH)
+        .ok_or(Error::Corrupt("named class nests deeper than the supported depth"))?;
+    let mut fields = BTreeMap::new();
+    for index in 0..member_count {
+        let field_id = u64::from_le_bytes(identities[index * 8..index * 8 + 8].try_into().unwrap());
+        let declared = declared
+            .iter()
+            .find(|field| field.field_id == field_id)
+            .ok_or_else(|| Error::Corrupt("row record names a `class` member the declaration does not contain"))?;
+        let value = decode_value(cursor, references, resolve, revision_layout, nested)?;
+        fields.insert(declared.name.clone(), value);
+    }
+    Ok(Value::Row(fields))
 }
 
 fn resolve_object_reference(value: Value) -> Result<Value> {

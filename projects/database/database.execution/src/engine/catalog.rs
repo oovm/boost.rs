@@ -491,16 +491,14 @@ fn decimal_type_from_arguments(arguments: &[schema_types::ResolvedCanonicalTypeA
 /// Builds the row codec's named-layout directory from one resolved contract.
 ///
 /// The directory is the only place the physical codec learns a `unite` variant's
-/// discriminant and a `structure`'s positional member order. Columns are keyed by
-/// column name because a stored row record carries no table identity; named
-/// declarations are keyed by durable schema identity so decoding does not depend
-/// on that map.
+/// discriminant and a member's durable identity. Columns are keyed by display
+/// name for the in-memory row map, while stored records carry `FieldId`s; named
+/// declarations are keyed by durable schema identity.
 ///
-/// A layout revision is derived from what the stored bytes depend on: the
-/// discriminant set and payload shape of a `unite`, and the stable field
-/// identities plus type shapes of a `structure`. Renaming a variant or a
-/// structure field therefore keeps the revision, while reordering a declaration
-/// changes it and makes stored records reject instead of being reinterpreted.
+/// A layout revision is derived from what the stored bytes depend on: durable
+/// type/field identities and type shapes, never display names or declaration
+/// order. Renaming or reordering therefore keeps the revision, while adding,
+/// dropping or retyping a member publishes a new one.
 pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result<RowSchemaDirectory> {
     let mut named = BTreeMap::new();
     for item in &contract.types {
@@ -525,6 +523,10 @@ pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result
                             .fields
                             .iter()
                             .map(|field| NamedFieldLayout {
+                                // Variant payload members do not carry a durable
+                                // field identity yet; the physical order stays
+                                // positional and is covered by the revision.
+                                field_id: 0,
                                 name: field.canonical_name.clone(),
                                 ty: value_layout(&field.canonical_type, contract, 0),
                             })
@@ -537,6 +539,7 @@ pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result
         named.insert(item.type_id, layout);
     }
     let mut columns = BTreeMap::new();
+    let mut column_ids = BTreeMap::new();
     for item in &contract.types {
         if item.kind != schema_types::TypeContractKind::Table {
             continue;
@@ -549,9 +552,8 @@ pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result
             if let Some(existing) = columns.get(&field.canonical_name)
                 && existing != &layout
             {
-                // One statement-wide directory has no table identity to
-                // disambiguate a shared column name, so two different named
-                // layouts for it cannot be encoded unambiguously.
+                // The in-memory row map is name-keyed, so two different named
+                // layouts for one column name cannot be encoded unambiguously.
                 return Err(Error::Schema {
                     message: format!(
                         "column `{}` is declared with different named layouts in this contract; the row codec needs one \
@@ -561,9 +563,42 @@ pub fn row_schema_directory(contract: &schema_types::ResolvedContract) -> Result
                 });
             }
             columns.insert(field.canonical_name.clone(), layout);
+            column_ids.insert(field.canonical_name.clone(), field.field_id);
         }
     }
-    Ok(RowSchemaDirectory::new(columns, named))
+    Ok(RowSchemaDirectory::revisioned(row_schema_revision(contract), columns, column_ids, named))
+}
+
+/// Structural revision of one contract's row layout.
+///
+/// Only durable identities and type shapes participate, so a rename or a
+/// declaration reorder keeps the revision and every stored byte readable.
+pub fn row_schema_revision(contract: &schema_types::ResolvedContract) -> u32 {
+    let mut hash = Fnv1a::default();
+    let mut types: Vec<&schema_types::ResolvedTypeContract> = contract.types.iter().collect();
+    types.sort_by_key(|item| item.type_id);
+    for item in types {
+        hash.write(&item.type_id.to_le_bytes());
+        let mut fields: Vec<&schema_types::ResolvedFieldContract> = item.fields.iter().collect();
+        fields.sort_by_key(|field| field.field_id);
+        for field in fields {
+            hash.write(&field.field_id.to_le_bytes());
+            hash.write(type_signature(&field.canonical_type).as_bytes());
+        }
+        let mut variants: Vec<&schema_types::ResolvedVariantContract> = item.variants.iter().collect();
+        variants.sort_by_key(|variant| variant.discriminant);
+        for variant in variants {
+            hash.write(&variant.discriminant.to_le_bytes());
+            // Unite payload fields do not carry a durable field identity yet, so
+            // their name and type still participate in the layout revision.
+            for field in &variant.fields {
+                hash.write(field.canonical_name.as_bytes());
+                hash.write(type_signature(&field.canonical_type).as_bytes());
+            }
+        }
+        hash.write(b"\x1f");
+    }
+    hash.finish()
 }
 
 fn named_fields(
@@ -573,7 +608,11 @@ fn named_fields(
 ) -> Vec<NamedFieldLayout> {
     fields
         .iter()
-        .map(|field| NamedFieldLayout { name: field.canonical_name.clone(), ty: value_layout(&field.canonical_type, contract, depth) })
+        .map(|field| NamedFieldLayout {
+            field_id: field.field_id,
+            name: field.canonical_name.clone(),
+            ty: value_layout(&field.canonical_type, contract, depth),
+        })
         .collect()
 }
 
@@ -610,7 +649,9 @@ fn value_layout(ty: &schema_types::ResolvedCanonicalType, contract: &schema_type
 
 fn structure_revision(item: &schema_types::ResolvedTypeContract) -> u32 {
     let mut hash = Fnv1a::default();
-    for field in &item.fields {
+    let mut fields: Vec<&schema_types::ResolvedFieldContract> = item.fields.iter().collect();
+    fields.sort_by_key(|field| field.field_id);
+    for field in fields {
         hash.write(&field.field_id.to_le_bytes());
         hash.write(type_signature(&field.canonical_type).as_bytes());
     }
@@ -619,7 +660,9 @@ fn structure_revision(item: &schema_types::ResolvedTypeContract) -> u32 {
 
 fn unite_revision(item: &schema_types::ResolvedTypeContract) -> u32 {
     let mut hash = Fnv1a::default();
-    for variant in &item.variants {
+    let mut variants: Vec<&schema_types::ResolvedVariantContract> = item.variants.iter().collect();
+    variants.sort_by_key(|variant| variant.discriminant);
+    for variant in variants {
         hash.write(&variant.discriminant.to_le_bytes());
         for field in &variant.fields {
             hash.write(field.canonical_name.as_bytes());

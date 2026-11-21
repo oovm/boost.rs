@@ -69,12 +69,16 @@ fn contact_named(revision: u32, email_fields: &[&str], email_variant: bool) -> B
     if email_variant {
         variants.push(NamedVariantLayout {
             discriminant: 0,
-            fields: email_fields.iter().map(|name| NamedFieldLayout { name: (*name).to_owned(), ty: ValueLayout::Dynamic }).collect(),
+            fields: email_fields
+                .iter()
+                .enumerate()
+                .map(|(index, name)| NamedFieldLayout { field_id: index as u64 + 1, name: (*name).to_owned(), ty: ValueLayout::Dynamic })
+                .collect(),
         });
     }
     variants.push(NamedVariantLayout {
         discriminant: 1,
-        fields: vec![NamedFieldLayout { name: "number".to_owned(), ty: ValueLayout::Dynamic }],
+        fields: vec![NamedFieldLayout { field_id: 1, name: "number".to_owned(), ty: ValueLayout::Dynamic }],
     });
     variants.push(NamedVariantLayout { discriminant: 2, fields: Vec::new() });
     BTreeMap::from([(CONTACT_SCHEMA, NamedValueLayout::Unite { schema_id: CONTACT_SCHEMA, revision, variants })])
@@ -186,7 +190,11 @@ fn address_directory(revision: u32, members: &[&str]) -> RowSchemaDirectory {
         NamedValueLayout::Structure {
             schema_id: ADDRESS_SCHEMA,
             revision,
-            fields: members.iter().map(|name| NamedFieldLayout { name: (*name).to_owned(), ty: ValueLayout::Dynamic }).collect(),
+            fields: members
+                .iter()
+                .enumerate()
+                .map(|(index, name)| NamedFieldLayout { field_id: index as u64 + 1, name: (*name).to_owned(), ty: ValueLayout::Dynamic })
+                .collect(),
         },
     )]);
     let columns = BTreeMap::from([("address".to_owned(), ValueLayout::Named(ADDRESS_SCHEMA))]);
@@ -210,9 +218,22 @@ fn a_structure_value_uses_a_closed_positional_layout() {
     let dynamic = encode_row(&row).expect("encode dynamic record");
     assert!(!closed.windows(b"zip".len()).any(|window| window == b"zip"), "member name leaked into the closed record");
     assert!(!closed.windows(b"country".len()).any(|window| window == b"country"), "member name leaked into the closed record");
-    assert_eq!(closed.len(), 42, "closed structure record is 42 persisted bytes");
-    assert_eq!(dynamic.len(), 50, "the dynamic name-tagged record is 50 persisted bytes");
-    assert!(closed.len() < dynamic.len(), "the closed layout must not be larger than the dynamic one");
+    assert_eq!(closed.len(), 63, "closed structure record is 63 persisted bytes");
+    assert_eq!(dynamic.len(), 55, "the dynamic name-tagged record is 55 persisted bytes");
+    assert_eq!(decode_row_with_directory(&closed, &directory).expect("decode closed structure"), row);
+}
+
+#[test]
+fn a_closed_structure_is_denser_than_names_for_long_members() {
+    let members = ["shipping_address_line_one", "shipping_address_line_two"];
+    let directory = address_directory(9, &members);
+    let mut fields = BTreeMap::new();
+    fields.insert(members[0].to_owned(), Value::Text("100000".to_owned()));
+    fields.insert(members[1].to_owned(), Value::Null);
+    let row = BTreeMap::from([("address".to_owned(), Value::Row(fields))]);
+    let closed = encode_row_with_directory(&row, &directory).expect("encode closed structure");
+    let dynamic = encode_row(&row).expect("encode dynamic record");
+    assert!(closed.len() < dynamic.len(), "the closed layout must be denser once member names are long");
     assert_eq!(decode_row_with_directory(&closed, &directory).expect("decode closed structure"), row);
 }
 
