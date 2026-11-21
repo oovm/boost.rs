@@ -890,6 +890,28 @@ where
         Ok(merge_sorted(shard_results, limit))
     }
 
+    fn apply_replicated(&self, shard_id: &ShardId, record: Record) -> database_types::cluster::Result<u64> {
+        let shard = self.shards.get(shard_id).ok_or(Error::Unsupported("replicated shard is not mounted on this node"))?;
+        Self::with_global_lock(|| {
+            let mut shard = shard.lock().map_err(|_| Error::Corrupt("local shard lock poisoned"))?;
+            shard.apply_replicated(record)
+        })
+    }
+
+    fn delete_replicated(&self, shard_id: &ShardId, key: &Key) -> database_types::cluster::Result<bool> {
+        let shard = self.shards.get(shard_id).ok_or(Error::Unsupported("replicated shard is not mounted on this node"))?;
+        Self::with_global_lock(|| {
+            let mut shard = shard.lock().map_err(|_| Error::Corrupt("local shard lock poisoned"))?;
+            shard.delete_replicated(key)
+        })
+    }
+
+    fn replicated_after(&self, shard_id: &ShardId, after: Option<&Key>, limit: usize) -> database_types::cluster::Result<Vec<Record>> {
+        let shard = self.shards.get(shard_id).ok_or(Error::Unsupported("replicated shard is not mounted on this node"))?;
+        let shard = shard.lock().map_err(|_| Error::Corrupt("local shard lock poisoned"))?;
+        shard.replicated_after(after, limit)
+    }
+
     fn execute(&self, fence: Option<&FenceToken>, command: KeyValueCommand) -> database_types::cluster::Result<KeyValueResult> {
         let decision = self.routing.route(&command.namespace.0, &command.key);
         self.check_fence(fence, &decision.shard)?;

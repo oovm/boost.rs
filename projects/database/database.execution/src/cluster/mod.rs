@@ -10,7 +10,7 @@ use std::{
 
 use database_cluster::topology::ShardMap;
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
-use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, ShardChange, StoredValue, now_unix_ms};
+use database_storage::cluster_kv::{FileShard, InlineValue, Key, KvStore, Record, ShardChange, StoredValue, now_unix_ms};
 use database_types::cluster::{Error, FenceToken, Namespace, OwnerEntry, ShardId, SweepReport};
 
 mod sweep;
@@ -56,6 +56,33 @@ pub trait KeyValueExecutor: Debug + Send + Sync {
     ) -> database_types::cluster::Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let _ = fence;
         Err(Error::Unsupported("scan is not implemented by this executor"))
+    }
+
+    /// Applies one leader-assigned record to a mounted shard verbatim.
+    ///
+    /// The revision in `record` is authoritative: a replica must never allocate its own
+    /// sequence, or per-key sequences diverge across members. Replays of the same or an older
+    /// revision are idempotent. Executors that cannot reach the underlying shard store return
+    /// `Error::Unsupported` instead of silently writing through another path.
+    fn apply_replicated(&self, _shard: &ShardId, _record: Record) -> database_types::cluster::Result<u64> {
+        Err(Error::Unsupported("replicated records are not supported by this executor"))
+    }
+
+    /// Removes one key on behalf of a leader replication frame.
+    ///
+    /// Deletes are idempotent so a replayed frame never fails the replica.
+    fn delete_replicated(&self, _shard: &ShardId, _key: &Key) -> database_types::cluster::Result<bool> {
+        Err(Error::Unsupported("replicated deletes are not supported by this executor"))
+    }
+
+    /// Records strictly after `after` in full key order, for state transfer.
+    fn replicated_after(
+        &self,
+        _shard: &ShardId,
+        _after: Option<&Key>,
+        _limit: usize,
+    ) -> database_types::cluster::Result<Vec<Record>> {
+        Err(Error::Unsupported("state transfer is not supported by this executor"))
     }
 
     /// Commits a buffered transaction with OCC validation under the caller's ownership context.

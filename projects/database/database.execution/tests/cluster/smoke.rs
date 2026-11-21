@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use database_cluster::topology::ShardMap;
 use database_execution::cluster::{KeyValueExecutor, LocalExecutor};
 use database_query::cluster_kv::{KeyValueAction, KeyValueCommand, KeyValueResult};
-use database_storage::cluster_kv::MemoryShard;
+use database_storage::cluster_kv::{InlineValue, Key, MemoryShard, Record, StoredValue};
 use database_types::cluster::{Namespace, ShardEpoch, ShardId};
 
 fn command(action: KeyValueAction, key: &[u8]) -> KeyValueCommand {
@@ -36,6 +36,37 @@ fn execute_reads_and_writes_through_the_routing_table() {
     assert_eq!(executor.execute(None, command(KeyValueAction::Get, key)).unwrap(), KeyValueResult::Get(Some(b"value".to_vec())));
     assert_eq!(executor.execute(None, command(KeyValueAction::Delete, key)).unwrap(), KeyValueResult::Delete { removed: true });
     assert_eq!(executor.execute(None, command(KeyValueAction::Get, key)).unwrap(), KeyValueResult::Get(None));
+}
+
+#[test]
+fn replicated_records_adopt_the_leader_revision_on_the_mounted_shard() {
+    let executor = executor(&["shard-a"]);
+    let shard = ShardId("shard-a".into());
+    let record = Record {
+        key: Key::new("redis:0", b"k1"),
+        value: StoredValue::Inline(InlineValue(b"v1".to_vec())),
+        revision: 7,
+        expires_at: None,
+    };
+    assert_eq!(executor.apply_replicated(&shard, record.clone()).unwrap(), 7);
+    assert_eq!(executor.apply_replicated(&shard, record.clone()).unwrap(), 7, "replaying the same revision is idempotent");
+    assert_eq!(executor.execute(None, command(KeyValueAction::GetRevision, b"k1")).unwrap(), KeyValueResult::Revision(Some(7)));
+
+    let second = Record {
+        key: Key::new("redis:0", b"k2"),
+        value: StoredValue::Inline(InlineValue(b"v2".to_vec())),
+        revision: 8,
+        expires_at: None,
+    };
+    assert_eq!(executor.apply_replicated(&shard, second).unwrap(), 8);
+    let records = executor.replicated_after(&shard, None, 0).unwrap();
+    assert_eq!(records.iter().map(|record| record.key.clone()).collect::<Vec<_>>(), vec![Key::new("redis:0", b"k1"), Key::new("redis:0", b"k2")]);
+
+    assert!(executor.delete_replicated(&shard, &Key::new("redis:0", b"k1")).unwrap());
+    assert!(!executor.delete_replicated(&shard, &Key::new("redis:0", b"k1")).unwrap(), "deletes are idempotent");
+
+    let error = executor.apply_replicated(&ShardId("shard-z".into()), record).unwrap_err();
+    assert_eq!(error.code(), "database.shard.unsupported", "a shard that is not mounted is refused instead of written");
 }
 
 #[test]
