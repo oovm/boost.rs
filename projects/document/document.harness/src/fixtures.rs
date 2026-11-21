@@ -1,7 +1,7 @@
 //! 内存容器 fixture 构造。
 //!
 //! 下游需要 OOXML/docx 输入时用这里的最小 stored-zip 构造器，不要在仓库里提交
-//! 二进制 fixture；Boost 的 `no_binary_assets` 守卫同样禁止提交二进制。
+//! 文档类二进制 fixture；输入一律在测试运行时生成。
 
 /// 构造仅使用 stored（不压缩）条目的最小 ZIP 归档。
 pub fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
