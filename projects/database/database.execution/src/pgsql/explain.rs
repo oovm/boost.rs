@@ -67,7 +67,7 @@ pub fn execute_explain(
             *root = format!("{root} (actual rows={})", result.rows.len());
         }
     }
-    let description = vec![SqlColumn { name: "QUERY PLAN".to_owned(), field_type: SqlFieldType::String, field_id: None }];
+    let description = vec![SqlColumn { name: "QUERY PLAN".to_owned(), field_type: SqlFieldType::String, field_id: None, type_modifier: None }];
     let rows = lines.into_iter().map(|line| vec![SqlValue::String(line)]).collect();
     Ok(StatementOutcome::Result(ExecutionOutcome { is_read: true, description, rows, command_tag: "EXPLAIN".to_owned() }))
 }

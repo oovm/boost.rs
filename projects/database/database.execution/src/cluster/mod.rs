@@ -223,5 +223,5 @@ pub trait TransactionHandle: Debug {
 
 mod local;
 mod schema;
-pub use local::{LocalExecutor, LocalTransactionHandle, OpenLocalError};
+pub use local::{LocalExecutor, LocalTransactionHandle, OpenLocalError, with_row_lock_wait};
 pub use schema::CatalogSchemaService;

@@ -23,6 +23,7 @@ pub const PG_PARAMETERS: &[(&str, &str)] = &[
     ("server_encoding", "UTF8"),
     ("search_path", DEFAULT_SEARCH_PATH),
     ("statement_timeout", "0"),
+    ("lock_timeout", "0"),
     ("standard_conforming_strings", "on"),
     ("timezone", "UTC"),
     ("transaction_isolation", "read committed"),
@@ -34,4 +35,17 @@ pub const PG_PARAMETERS: &[(&str, &str)] = &[
 pub fn default_parameter(name: &str) -> Option<&'static str> {
     let needle = name.trim().to_ascii_lowercase();
     PG_PARAMETERS.iter().find(|(key, _)| *key == needle).map(|(_, value)| *value)
+}
+
+/// Canonical spelling PostgreSQL uses when it lists a parameter.
+///
+/// The table keeps lower-case keys for lookup, while `SHOW ALL` reports the
+/// mixed-case name PostgreSQL uses for these three settings.
+pub fn canonical_parameter_name(name: &str) -> &str {
+    match name {
+        "datestyle" => "DateStyle",
+        "intervalstyle" => "IntervalStyle",
+        "timezone" => "TimeZone",
+        other => other,
+    }
 }

@@ -77,6 +77,16 @@ pub const DEFAULT_SEARCH_PATH: &str = "\"$user\", public";
 /// SQLSTATE `25P02` message for statements issued inside an aborted block.
 pub const ABORTED_BLOCK: &str = "current transaction is aborted, commands ignored until end of transaction block";
 
+/// Longest a row-lock wait may block before the gateway reports `55P03`.
+///
+/// The wire transport a driver uses for this gateway gives up after about five
+/// seconds, so a longer silent wait can only surface as a broken connection
+/// (`08006`) instead of a SQLSTATE. PostgreSQL's `lock_timeout` default is `0`
+/// (wait forever); the gateway caps every wait at this window so the lock
+/// timeout diagnostic always reaches the client.
+pub const ROW_LOCK_REPORT_WINDOW: Duration = Duration::from_secs(4);
+
+
 /// Outcome of the shared transaction-block control used by the wire session
 /// commands and by the local engine's direct path.
 #[derive(Debug)]
@@ -248,9 +258,23 @@ pub struct TransactionSession {
     statement_timeout: Option<Duration>,
     /// Text form `SHOW statement_timeout` reports back.
     statement_timeout_text: String,
+    /// `lock_timeout` as set for this session, `None` when never set.
+    ///
+    /// The effective row-lock wait is always capped by
+    /// [`ROW_LOCK_REPORT_WINDOW`], so the client receives `55P03` instead of a
+    /// transport failure.
+    lock_timeout: Option<Duration>,
+    /// Text form `SHOW lock_timeout` reports back.
+    lock_timeout_text: String,
     /// Values written by `SET <name> = '<value>'` for the parameters the gateway
     /// does not interpret itself, keyed by lower-case name.
     overrides: BTreeMap<String, String>,
+    /// Value each parameter had before the first `SET LOCAL` of the open block.
+    ///
+    /// `SET LOCAL` only applies inside a block and is discarded when the block
+    /// ends, whether by `COMMIT` or `ROLLBACK`; the saved value is what gets
+    /// restored.
+    local_parameters: BTreeMap<String, Option<String>>,
     /// Cooperative cancel flag a `CancelRequest` flips for this session.
     ///
     /// The engine executes synchronously, so a cancel that arrives while a
@@ -326,7 +350,10 @@ impl TransactionSession {
             temp_checkpoint: None,
             statement_timeout: None,
             statement_timeout_text: "0".to_string(),
+            lock_timeout: None,
+            lock_timeout_text: "0".to_string(),
             overrides: BTreeMap::new(),
+            local_parameters: BTreeMap::new(),
             cancel: None,
         }
     }
@@ -354,6 +381,8 @@ impl TransactionSession {
         if self.failed {
             return TransactionControl::Rejected { code: "25P02", message: ABORTED_BLOCK.to_string() };
         }
+        // `SET LOCAL` checkpoints belong to exactly one block.
+        self.local_parameters.clear();
         let Some(rt) = runtime
         else {
             // No runtime — stay in protocol-only mode. `execute_plan` receives
@@ -396,6 +425,7 @@ impl TransactionSession {
             // `COMMIT` of an aborted block is a rollback: the catalog goes with the rows.
             self.restore_schema(runtime)?;
             self.restore_temp();
+            self.restore_local_parameters();
             return Ok(TransactionControl::Done("ROLLBACK"));
         }
         if let Some(handle) = self.handle.take() {
@@ -407,6 +437,7 @@ impl TransactionSession {
                 // A failed commit did not publish the transaction, so the
                 // DDL it collected is discarded too.
                 self.restore_schema(runtime)?;
+                self.restore_local_parameters();
                 return Ok(TransactionControl::Rejected { code, message: format!("COMMIT failed: {err}") });
             }
         }
@@ -421,6 +452,7 @@ impl TransactionSession {
         self.schema_checkpoint = None;
         self.apply_on_commit();
         self.temp_checkpoint = None;
+        self.restore_local_parameters();
         Ok(TransactionControl::Done("COMMIT"))
     }
 
@@ -436,6 +468,7 @@ impl TransactionSession {
         self.drop_cursors(false);
         self.restore_schema(runtime)?;
         self.restore_temp();
+        self.restore_local_parameters();
         Ok(TransactionControl::Done("ROLLBACK"))
     }
 
@@ -454,7 +487,10 @@ impl TransactionSession {
         self.search_path = DEFAULT_SEARCH_PATH.to_string();
         self.statement_timeout = None;
         self.statement_timeout_text = "0".to_string();
+        self.lock_timeout = None;
+        self.lock_timeout_text = "0".to_string();
         self.overrides.clear();
+        self.local_parameters.clear();
     }
 
     /// `RESET <name>`: one parameter returns to its default.
@@ -465,6 +501,10 @@ impl TransactionSession {
             "statement_timeout" => {
                 self.statement_timeout = None;
                 self.statement_timeout_text = "0".to_string();
+            }
+            "lock_timeout" => {
+                self.lock_timeout = None;
+                self.lock_timeout_text = "0".to_string();
             }
             _ => {
                 self.overrides.remove(&needle);
@@ -482,6 +522,62 @@ impl TransactionSession {
         self.overrides.insert(name.trim().to_ascii_lowercase(), value);
     }
 
+    /// Applies one `SET` / `SET LOCAL` value.
+    ///
+    /// `SET LOCAL` only takes effect inside a transaction block and is discarded
+    /// when the block ends; the value in effect before the first local assignment
+    /// is checkpointed here so `COMMIT` and `ROLLBACK` restore it. Returns `false`
+    /// when a timeout value cannot be parsed, which the caller reports as
+    /// `22023`.
+    pub fn set_parameter_value(&mut self, name: &str, value: String, local: bool) -> bool {
+        let name = name.trim().to_ascii_lowercase();
+        if matches!(name.as_str(), "statement_timeout" | "lock_timeout") && parse_timeout_millis(&value).is_none() {
+            return false;
+        }
+        // PostgreSQL warns and ignores `SET LOCAL` outside a transaction block.
+        if local && !self.in_transaction() {
+            return true;
+        }
+        if local {
+            if !self.local_parameters.contains_key(&name) {
+                let previous = self.parameter(&name);
+                self.local_parameters.insert(name.clone(), previous);
+            }
+        }
+        self.apply_parameter_value(&name, value);
+        true
+    }
+
+    /// Writes one already-validated parameter value.
+    fn apply_parameter_value(&mut self, name: &str, value: String) {
+        match name {
+            "search_path" => self.search_path = value,
+            "statement_timeout" => {
+                let millis = parse_timeout_millis(&value).unwrap_or(0);
+                self.assign_statement_timeout(millis);
+            }
+            "lock_timeout" => {
+                let millis = parse_timeout_millis(&value).unwrap_or(0);
+                self.assign_lock_timeout(millis);
+            }
+            _ => {
+                self.overrides.insert(name.to_string(), value);
+            }
+        }
+    }
+
+    /// Restores the values captured by `SET LOCAL` when the block ends.
+    fn restore_local_parameters(&mut self) {
+        for (name, previous) in std::mem::take(&mut self.local_parameters) {
+            if let Some(value) = previous {
+                self.apply_parameter_value(&name, value);
+            }
+            else {
+                self.overrides.remove(&name);
+            }
+        }
+    }
+
     /// Applies a `SET statement_timeout = ...` value.
     ///
     /// PostgreSQL accepts an integer number of milliseconds or a text value with
@@ -489,28 +585,32 @@ impl TransactionSession {
     /// value was understood, so the caller can report `22023` for junk instead
     /// of silently accepting it.
     pub fn set_statement_timeout(&mut self, text: &str) -> bool {
-        let trimmed = text.trim();
-        let lower = trimmed.to_ascii_lowercase();
-        let (digits, millis_per_unit) = if let Some(value) = lower.strip_suffix("ms") {
-            (value, 1u64)
-        }
-        else if let Some(value) = lower.strip_suffix("min") {
-            (value, 60_000)
-        }
-        else if let Some(value) = lower.strip_suffix('s') {
-            (value, 1_000)
-        }
-        else {
-            (lower.as_str(), 1)
-        };
-        let Ok(amount) = digits.trim().parse::<u64>()
+        let Some(millis) = parse_timeout_millis(text)
         else {
             return false;
         };
-        let millis = amount.saturating_mul(millis_per_unit);
+        self.assign_statement_timeout(millis);
+        true
+    }
+
+    /// Applies a `SET lock_timeout = ...` value.
+    pub fn set_lock_timeout(&mut self, text: &str) -> bool {
+        let Some(millis) = parse_timeout_millis(text)
+        else {
+            return false;
+        };
+        self.assign_lock_timeout(millis);
+        true
+    }
+
+    fn assign_statement_timeout(&mut self, millis: u64) {
         self.statement_timeout = (millis > 0).then(|| Duration::from_millis(millis));
         self.statement_timeout_text = if millis == 0 { "0".to_string() } else { format!("{millis}ms") };
-        true
+    }
+
+    fn assign_lock_timeout(&mut self, millis: u64) {
+        self.lock_timeout = (millis > 0).then(|| Duration::from_millis(millis));
+        self.lock_timeout_text = if millis == 0 { "0".to_string() } else { format!("{millis}ms") };
     }
 
     /// Effective per-statement limit, `None` when disabled.
@@ -521,6 +621,15 @@ impl TransactionSession {
     /// Text `SHOW statement_timeout` reports.
     pub fn statement_timeout_text(&self) -> &str {
         &self.statement_timeout_text
+    }
+
+    /// How long one row-lock wait may block before `55P03` is returned.
+    ///
+    /// A session `lock_timeout` shortens the wait; the gateway window is always
+    /// the ceiling so the diagnostic cannot lose the race with the client's
+    /// transport timeout.
+    pub fn lock_wait_budget(&self) -> Duration {
+        self.lock_timeout.unwrap_or(ROW_LOCK_REPORT_WINDOW).min(ROW_LOCK_REPORT_WINDOW)
     }
 
     /// `DISCARD ALL`: full session cleanup. PostgreSQL only lets the statement run
@@ -727,6 +836,41 @@ impl TransactionSession {
         lookup(schema)
     }
 
+    /// Fills the wire type modifier of every column that projects a stored
+    /// numeric field, so `RowDescription` carries the declared scale.
+    ///
+    /// Expression casts already carry their own modifier; this only supplies the
+    /// catalog part, which the plan does not have.
+    pub fn apply_declared_type_modifiers(&self, schema: &SqlSchemaRegistry, columns: &mut [SqlColumn]) {
+        if columns.iter().all(|column| column.field_id.is_none() || column.type_modifier.is_some()) {
+            return;
+        }
+        let mut declared: BTreeMap<u64, String> = schema
+            .snapshot()
+            .tables
+            .into_iter()
+            .flat_map(|table| table.fields.into_iter().map(|field| (field.field_id, field.sql_type)))
+            .collect();
+        // A temporary table shadows a persistent one with the same field id.
+        if let Some(temp) = &self.temp {
+            declared.extend(
+                temp.registry.snapshot().tables.into_iter().flat_map(|table| table.fields.into_iter().map(|field| (field.field_id, field.sql_type))),
+            );
+        }
+        for column in columns {
+            if column.type_modifier.is_some() {
+                continue;
+            }
+            let Some(field_id) = column.field_id
+            else {
+                continue;
+            };
+            if let Some(sql_type) = declared.get(&field_id) {
+                column.type_modifier = super::numeric_scale::numeric_type_modifier(sql_type);
+            }
+        }
+    }
+
     /// Effective value of one GUC, the same answer `SHOW` and
     /// `current_setting()` report.
     ///
@@ -739,6 +883,9 @@ impl TransactionSession {
         }
         if name.eq_ignore_ascii_case("statement_timeout") {
             return Some(self.statement_timeout_text.clone());
+        }
+        if name.eq_ignore_ascii_case("lock_timeout") {
+            return Some(self.lock_timeout_text.clone());
         }
         if let Some(value) = self.overrides.get(&name.to_ascii_lowercase()) {
             return Some(value.clone());
@@ -755,6 +902,7 @@ impl TransactionSession {
             super::parameters::PG_PARAMETERS.iter().map(|(name, value)| ((*name).to_string(), (*value).to_string())).collect();
         settings.insert("search_path".to_string(), self.search_path.clone());
         settings.insert("statement_timeout".to_string(), self.statement_timeout_text.clone());
+        settings.insert("lock_timeout".to_string(), self.lock_timeout_text.clone());
         for (name, value) in &self.overrides {
             settings.insert(name.clone(), value.clone());
         }
@@ -891,4 +1039,23 @@ impl Default for TransactionSession {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Parses a PostgreSQL timeout value (`integer` milliseconds or a `ms` / `s` /
+/// `min` suffix) into milliseconds.
+fn parse_timeout_millis(text: &str) -> Option<u64> {
+    let lower = text.trim().to_ascii_lowercase();
+    let (digits, millis_per_unit) = if let Some(value) = lower.strip_suffix("ms") {
+        (value, 1u64)
+    }
+    else if let Some(value) = lower.strip_suffix("min") {
+        (value, 60_000)
+    }
+    else if let Some(value) = lower.strip_suffix('s') {
+        (value, 1_000)
+    }
+    else {
+        (lower.as_str(), 1)
+    };
+    Some(digits.trim().parse::<u64>().ok()?.saturating_mul(millis_per_unit))
 }

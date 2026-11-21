@@ -16,13 +16,13 @@ use super::{
     wire::{FrameError, StartupParameterError, StartupParameters, decode_message, decode_startup, encode_message},
 };
 use database_execution::pgsql::{
-    ABORTED_BLOCK, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession, dispatch_statement, normalized_session_syntax,
+    ABORTED_BLOCK, ExecutionOutcome, PgsqlSqlRuntime, StatementOutcome, TransactionSession, dispatch_statement, parse_pg_session_command,
     pg_sqlstate, run_statement, statement_error,
 };
 use database_protocol_pgsql::auth::ScramServer;
 use database_query::{
     DiscardTarget, SqlBoundExpression, SqlBoundLiteral, SqlCatalogBoundStatement, SqlColumn, SqlDialect, SqlFieldType, SqlParameterStyle,
-    SqlSessionCommand, SqlValue, analyze_meta_query, bind_sql_catalog, describe_bound_insert, describe_plan, parse_session_command,
+    SqlSessionCommand, SqlValue, analyze_meta_query, bind_sql_catalog, describe_bound_insert, describe_plan,
     encode_hex, infer_sql_parameter_types, neutralized_sql_parameters, nulled_sql_parameters, pg_server_version, plan_statement_for_dialect,
     rewrite_double_colon_casts, split_sql_batch, substitute_sql_parameters,
 };
@@ -247,7 +247,7 @@ fn serve_session_with_tls(
                 }
                 let step = match tag {
                     b'P' => handle_parse(&mut stream, &message.payload, &mut extended),
-                    b'B' => handle_bind(&mut stream, &message.payload, &mut extended, runtime.as_ref()),
+                    b'B' => handle_bind(&mut stream, &message.payload, &mut extended, &mut session, runtime.as_ref()),
                     b'D' => handle_describe(&mut stream, &message.payload, &mut extended, &mut session, runtime.as_ref()),
                     b'E' => handle_execute(&mut stream, &message.payload, &mut extended, &mut session, runtime.as_ref()),
                     b'C' => handle_close(&mut stream, &message.payload, &mut extended),
@@ -571,8 +571,7 @@ fn handle_single_statement(
 /// protocol surface; transaction control, savepoints and `SET NAMES` keep their
 /// existing extended-protocol path, so they are not claimed here.
 fn extended_session_command(sql: &str) -> Option<SqlSessionCommand> {
-    let normalized = normalized_session_syntax(sql);
-    let command = parse_session_command(normalized.as_deref().unwrap_or(sql)).ok().flatten()?;
+    let command = parse_pg_session_command(sql).ok().flatten()?;
     matches!(
         command,
         SqlSessionCommand::SetVariable { .. }
@@ -588,28 +587,29 @@ fn extended_session_command(sql: &str) -> Option<SqlSessionCommand> {
 /// PostgreSQL reports the parameter name as the column label and `text` as the
 /// type, on both the simple and the extended path.
 fn show_column(name: &str) -> SqlColumn {
-    SqlColumn { name: name.to_string(), field_type: SqlFieldType::String, field_id: None }
+    SqlColumn { name: name.to_string(), field_type: SqlFieldType::String, field_id: None, type_modifier: None }
 }
 
-/// Applies one `SET <name> = <value>` to the session.
+/// Applies one `SET [LOCAL] <name> = <value>` to the session.
 ///
-/// `search_path` is the only parameter the gateway interprets; every other known
-/// parameter keeps the written value for the session, and an unknown name reports
-/// `42704`.
-fn apply_set_variable(session: &mut TransactionSession, name: &str, value: &SqlBoundExpression) -> Result<(), (String, String)> {
+/// `search_path`, `statement_timeout` and `lock_timeout` are interpreted here;
+/// every other known parameter keeps the written value for the session, and an
+/// unknown name reports `42704`. `SET LOCAL` is checkpointed by the session so
+/// the value disappears when the block ends.
+fn apply_set_variable(
+    session: &mut TransactionSession,
+    scope: Option<database_query::SqlVariableScope>,
+    name: &str,
+    value: &SqlBoundExpression,
+) -> Result<(), (String, String)> {
+    let local = matches!(scope, Some(database_query::SqlVariableScope::Local));
     let needle = name.trim().to_ascii_lowercase();
     if needle == "search_path" {
-        return match value {
-            SqlBoundExpression::Literal(SqlBoundLiteral::String(path)) => {
-                session.set_search_path(path.clone());
-                Ok(())
-            }
+        let path = match value {
+            SqlBoundExpression::Literal(SqlBoundLiteral::String(path)) => path.clone(),
             // `SET search_path TO public` writes an unquoted identifier, which is
             // the spelling clients use most; it means the same schema list.
-            SqlBoundExpression::Identifier(path) => {
-                session.set_search_path(path.clone());
-                Ok(())
-            }
+            SqlBoundExpression::Identifier(path) => path.clone(),
             other => {
                 // The engine rejects any non-string value with `22023
                 // invalid_parameter_value` and echoes the value it saw, so the
@@ -623,29 +623,47 @@ fn apply_set_variable(session: &mut TransactionSession, name: &str, value: &SqlB
                     SqlBoundExpression::Literal(SqlBoundLiteral::Bytes(_)) => "\\x".to_string(),
                     _ => String::new(),
                 };
-                Err(("22023".to_string(), format!("invalid value for parameter \"search_path\": \"{rendered}\"")))
+                return Err(("22023".to_string(), format!("invalid value for parameter \"search_path\": \"{rendered}\"")));
             }
         };
+        session.set_parameter_value("search_path", path, local);
+        return Ok(());
     }
-    if needle == "statement_timeout" {
-        let rendered = match value {
-            SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
-            SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
-            SqlBoundExpression::Literal(SqlBoundLiteral::String(text)) => text.clone(),
-            SqlBoundExpression::Identifier(text) => text.clone(),
-            _ => String::new(),
-        };
-        if session.set_statement_timeout(&rendered) {
+    if needle == "statement_timeout" || needle == "lock_timeout" {
+        let rendered = timeout_setting_text(value);
+        if session.set_parameter_value(&needle, rendered.clone(), local) {
             return Ok(());
         }
-        return Err(("22023".to_string(), format!("invalid value for parameter \"statement_timeout\": \"{rendered}\"")));
+        return Err(("22023".to_string(), format!("invalid value for parameter \"{needle}\": \"{rendered}\"")));
     }
     if pg_parameter(name).is_none() {
         return Err(("42704".to_string(), format!("unrecognized configuration parameter \"{name}\"")));
     }
+    if local && !session.in_transaction() {
+        // PostgreSQL warns and leaves the value unchanged outside a block.
+        return Ok(());
+    }
     // PostgreSQL keeps the written value for the session; storing it is what
     // makes `SHOW <name>` and `current_setting('<name>')` report it back.
-    let rendered = match value {
+    session.set_parameter_value(&needle, rendered_setting_text(value), local);
+    Ok(())
+}
+
+/// Renders a `SET <name> = <value>` timeout operand as the text the session
+/// parses.
+fn timeout_setting_text(value: &SqlBoundExpression) -> String {
+    match value {
+        SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
+        SqlBoundExpression::Literal(SqlBoundLiteral::String(text)) => text.clone(),
+        SqlBoundExpression::Identifier(text) => text.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Renders a generic `SET <name> = <value>` operand as stored text.
+fn rendered_setting_text(value: &SqlBoundExpression) -> String {
+    match value {
         SqlBoundExpression::Literal(SqlBoundLiteral::String(text)) => text.clone(),
         SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => number.to_string(),
         SqlBoundExpression::Literal(SqlBoundLiteral::Number(number)) => number.clone(),
@@ -653,9 +671,7 @@ fn apply_set_variable(session: &mut TransactionSession, name: &str, value: &SqlB
         SqlBoundExpression::Identifier(text) => text.clone(),
         SqlBoundExpression::Literal(SqlBoundLiteral::Null) => "NULL".to_string(),
         _ => String::new(),
-    };
-    session.set_parameter(name, rendered);
-    Ok(())
+    }
 }
 
 /// Value of one `SHOW <parameter>`.
@@ -667,6 +683,25 @@ fn show_parameter(session: &TransactionSession, name: &str) -> Result<String, (S
         .parameter(name)
         .or_else(|| pg_parameter(name).map(str::to_string))
         .ok_or_else(|| ("42704".to_string(), format!("unrecognized configuration parameter \"{name}\"")))
+}
+
+/// Whether `SHOW ALL` was written.
+fn is_show_all(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case("ALL")
+}
+
+/// Every parameter `SHOW ALL` reports, in name order.
+fn all_parameters(session: &TransactionSession) -> Vec<(String, String)> {
+    session
+        .settings_snapshot()
+        .into_iter()
+        .map(|(name, value)| (database_execution::pgsql::canonical_parameter_name(&name).to_string(), value))
+        .collect()
+}
+
+/// The three columns `SHOW ALL` returns.
+fn all_parameter_columns() -> Vec<SqlColumn> {
+    ["name", "setting", "description"].into_iter().map(show_column).collect()
 }
 
 /// Applies one session command on the extended protocol.
@@ -682,12 +717,23 @@ fn apply_extended_session_command(
         return Err(SessionCommandError::Failed { code: "25P02".to_string(), message: ABORTED_BLOCK.to_string() });
     }
     match command {
-        SqlSessionCommand::SetVariable { name, value, .. } => match apply_set_variable(session, name, value) {
+        SqlSessionCommand::SetVariable { scope, name, value } => match apply_set_variable(session, *scope, name, value) {
             Ok(()) => Ok(SessionCommandOutcome::Command("SET")),
             Err((code, message)) => Err(SessionCommandError::Failed { code, message }),
         },
+        SqlSessionCommand::ShowParameter { name, .. } if is_show_all(name) => {
+            let columns = all_parameter_columns();
+            let rows = all_parameters(session)
+                .into_iter()
+                .map(|(name, setting)| vec![SqlValue::String(name), SqlValue::String(setting), SqlValue::String(String::new())])
+                .collect();
+            Ok(SessionCommandOutcome::Rows { columns, rows })
+        }
         SqlSessionCommand::ShowParameter { name, .. } => match show_parameter(session, name) {
-            Ok(value) => Ok(SessionCommandOutcome::Row { name: name.clone(), value }),
+            Ok(value) => Ok(SessionCommandOutcome::Rows {
+                columns: vec![show_column(name)],
+                rows: vec![vec![SqlValue::String(value)]],
+            }),
             Err((code, message)) => Err(SessionCommandError::Failed { code, message }),
         },
         SqlSessionCommand::ShowVariables { .. } => Err(SessionCommandError::Failed {
@@ -713,12 +759,12 @@ fn apply_extended_session_command(
 enum SessionCommandOutcome {
     /// Completed with a command tag and no rows.
     Command(&'static str),
-    /// `SHOW` answered one row of text.
-    Row {
-        /// Column label, the parameter name as written.
-        name: String,
-        /// Parameter value.
-        value: String,
+    /// `SHOW` answered a result set (`SHOW ALL` returns every parameter).
+    Rows {
+        /// Described columns.
+        columns: Vec<SqlColumn>,
+        /// Row values in column order.
+        rows: Vec<Vec<SqlValue>>,
     },
 }
 
@@ -768,17 +814,30 @@ fn handle_session_command(
                 }
             }
         }
-        SqlSessionCommand::SetVariable { name, value, .. } => {
+        SqlSessionCommand::SetVariable { scope, name, value } => {
             if session.is_aborted() {
                 return write_error_response(stream, "25P02", ABORTED_BLOCK);
             }
-            match apply_set_variable(session, &name, &value) {
+            match apply_set_variable(session, scope, &name, &value) {
                 Ok(()) => write_command_complete(stream, "SET"),
                 Err((code, message)) => {
                     session.fail();
                     write_error_response(stream, &code, &message)
                 }
             }
+        }
+        SqlSessionCommand::ShowParameter { name, .. } if is_show_all(&name) => {
+            if session.is_aborted() {
+                return write_error_response(stream, "25P02", ABORTED_BLOCK);
+            }
+            let columns = all_parameter_columns();
+            let formats = vec![0_i16; columns.len()];
+            write_row_description(stream, &columns, &formats)?;
+            for (name, setting) in all_parameters(session) {
+                let row = [SqlValue::String(name), SqlValue::String(setting), SqlValue::String(String::new())];
+                write_data_row(stream, &row, &columns, &formats)?;
+            }
+            write_command_complete(stream, "SHOW")
         }
         SqlSessionCommand::ShowParameter { name, .. } => {
             if session.is_aborted() {
@@ -933,6 +992,7 @@ fn handle_parse(stream: &mut impl Write, payload: &[u8], extended: &mut Extended
     let session_command = extended_session_command(sql);
     let description = match &session_command {
         // `SHOW <parameter>` reports one `text` column named after the parameter.
+        Some(SqlSessionCommand::ShowParameter { name, .. }) if is_show_all(name) => Some(all_parameter_columns()),
         Some(SqlSessionCommand::ShowParameter { name, .. }) => Some(vec![show_column(name)]),
         Some(_) => Some(Vec::new()),
         None => None,
@@ -948,6 +1008,7 @@ fn handle_bind(
     stream: &mut impl Write,
     payload: &[u8],
     extended: &mut ExtendedSession,
+    session: &mut TransactionSession,
     runtime: Option<&Arc<PgsqlSqlRuntime>>,
 ) -> io::Result<ExtendedStep> {
     let mut cursor = 0;
@@ -1039,7 +1100,7 @@ fn handle_bind(
             statement.description = Some(Vec::new());
         }
         else {
-            match statement_description(&sql, runtime, Some(&parameters)) {
+            match statement_description(&sql, runtime, session, Some(&parameters)) {
                 Ok(description) => statement.description = Some(description),
                 Err((code, message)) => return extended_protocol_error(stream, &code, &message),
             }
@@ -1093,7 +1154,7 @@ fn handle_describe(
             // Session utility statements have no catalog shape; the empty
             // description below answers them with `NoData`, like PostgreSQL.
             if statement.description.is_none() && statement.session_command.is_none() {
-                match statement_description(&statement.sql, runtime, None) {
+                match statement_description(&statement.sql, runtime, session, None) {
                     Ok(description) => statement.description = Some(description),
                     Err((code, message)) => {
                         write_error_response(stream, &code, &message)?;
@@ -1189,6 +1250,21 @@ fn resolve_formats(formats: &[i16], columns: usize) -> Vec<i16> {
 /// keeps pk lookups plannable, and retry with `NULL` when `0` is not writable
 /// for the target column.
 fn statement_description(
+    sql: &str,
+    runtime: Option<&Arc<PgsqlSqlRuntime>>,
+    session: &TransactionSession,
+    parameters: Option<&[SqlValue]>,
+) -> Result<Vec<SqlColumn>, (String, String)> {
+    let mut columns = statement_description_inner(sql, runtime, parameters)?;
+    if let Some(runtime) = runtime {
+        // The plan knows the expression typmods; the declared scale of a stored
+        // numeric column comes from the catalog, which only the session has.
+        session.apply_declared_type_modifiers(&runtime.schema, &mut columns);
+    }
+    Ok(columns)
+}
+
+fn statement_description_inner(
     sql: &str,
     runtime: Option<&Arc<PgsqlSqlRuntime>>,
     parameters: Option<&[SqlValue]>,
@@ -1315,15 +1391,20 @@ fn handle_execute(
     // answer with `CommandComplete`; `SHOW` additionally emits its one text row.
     let session_command = extended.portals.get(name).and_then(|portal| portal.session_command.clone());
     if let Some(command) = session_command {
-        let formats = extended.portals.get(name).map(|portal| resolve_formats(&portal.result_formats, 1)).unwrap_or_else(|| vec![0]);
         return match apply_extended_session_command(&command, session, extended) {
             Ok(SessionCommandOutcome::Command(tag)) => {
                 write_command_complete(stream, tag)?;
                 Ok(ExtendedStep::Continue)
             }
-            Ok(SessionCommandOutcome::Row { name, value }) => {
-                let column = show_column(&name);
-                write_data_row(stream, &[SqlValue::String(value)], &[column], &formats)?;
+            Ok(SessionCommandOutcome::Rows { columns, rows }) => {
+                let formats = extended
+                    .portals
+                    .get(name)
+                    .map(|portal| resolve_formats(&portal.result_formats, columns.len()))
+                    .unwrap_or_else(|| vec![0; columns.len()]);
+                for row in &rows {
+                    write_data_row(stream, row, &columns, &formats)?;
+                }
                 write_command_complete(stream, "SHOW")?;
                 Ok(ExtendedStep::Continue)
             }
@@ -1725,7 +1806,9 @@ fn write_row_description(stream: &mut impl Write, columns: &[SqlColumn], formats
         body.extend_from_slice(&0_i16.to_be_bytes()); // column_attr = 0
         body.extend_from_slice(&oid.to_be_bytes());
         body.extend_from_slice(&type_size(oid).to_be_bytes());
-        body.extend_from_slice(&(-1_i32).to_be_bytes()); // type_mod = -1
+        // `type_mod` is the declared typmod: a `numeric(p,s)` column or cast
+        // reports its scale here, everything else reports `-1`.
+        body.extend_from_slice(&column.type_modifier.unwrap_or(-1).to_be_bytes());
         body.extend_from_slice(&formats.get(index).copied().unwrap_or(0).to_be_bytes());
     }
     payload.extend_from_slice(&(body.len() as i32 + 4).to_be_bytes());

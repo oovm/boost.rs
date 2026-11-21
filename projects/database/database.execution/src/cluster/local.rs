@@ -1,6 +1,7 @@
 //! Local single-node executor: shard routing, buffered commits and transaction handles.
 
 use std::{
+    cell::Cell,
     sync::{
         Condvar,
         atomic::{AtomicU64, Ordering},
@@ -25,6 +26,37 @@ static NEXT_TRANSACTION_ID: AtomicU64 = AtomicU64::new(1);
 /// taking the same two rows in opposite order) surfaces as a retryable conflict rather than a
 /// hung connection.
 const ROW_LOCK_WAIT: Duration = Duration::from_secs(50);
+
+thread_local! {
+    /// Per-statement override of [`ROW_LOCK_WAIT`], installed by a protocol
+    /// adapter that must report the timeout before its transport gives up.
+    static ROW_LOCK_WAIT_OVERRIDE: Cell<Option<Duration>> = const { Cell::new(None) };
+}
+
+/// Runs `body` with the row-lock wait bound overridden on this thread.
+///
+/// The override is thread-local because one statement runs synchronously on the
+/// connection thread that installed it, so concurrent sessions never observe
+/// each other's budget. The previous value (usually `None`) is restored even if
+/// `body` unwinds.
+pub fn with_row_lock_wait<T>(budget: Duration, body: impl FnOnce() -> T) -> T {
+    struct Restore(Option<Duration>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0;
+            ROW_LOCK_WAIT_OVERRIDE.with(|slot| slot.set(previous));
+        }
+    }
+
+    let previous = ROW_LOCK_WAIT_OVERRIDE.with(|slot| slot.replace(Some(budget)));
+    let _restore = Restore(previous);
+    body()
+}
+
+/// Row-lock wait bound in effect for the current thread.
+fn row_lock_wait_budget() -> Duration {
+    ROW_LOCK_WAIT_OVERRIDE.with(Cell::get).unwrap_or(ROW_LOCK_WAIT)
+}
 
 /// Row-level write locks held by open local transactions.
 ///
@@ -51,7 +83,7 @@ impl RowLocks {
     /// a lock conflict. An expired wait is reported as [`Error::CasConflict`] — the stable,
     /// retryable cluster failure the gateways already map to MySQL `1213`.
     fn acquire(&self, row: &(String, Vec<u8>), owner: u64) -> database_types::cluster::Result<()> {
-        let deadline = Instant::now() + ROW_LOCK_WAIT;
+        let deadline = Instant::now() + row_lock_wait_budget();
         let mut state = self.state.lock().map_err(|_| Error::Corrupt("row lock table poisoned"))?;
         loop {
             match state.owners.get(row) {

@@ -6,7 +6,7 @@
 //! belong to `database.query`; this module executes the resulting plan and owns
 //! the transaction/DDL ordering that both paths must observe.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use database_query::{
     OnCommit, PgObjectStatement, SqlCatalogBoundProjection, SqlCatalogBoundStatement, SqlColumn, SqlDdlStatement, SqlDialect, SqlErrorKind,
@@ -17,7 +17,7 @@ use database_query::{
 };
 
 use crate::{
-    cluster::TransactionHandle,
+    cluster::{TransactionHandle, with_row_lock_wait},
     sql_schema::{SqlDdlOutcome, apply_auto_increment},
 };
 
@@ -188,7 +188,7 @@ pub fn dispatch_statement(
         }
         Ok(None) => {}
     }
-    let command = parse_session_command(normalized_session_syntax(trimmed).as_deref().unwrap_or(trimmed)).map_err(|_| {
+    let command = parse_pg_session_command(trimmed).map_err(|_| {
         session.fail();
         StatementError::new("42601", "SQL parser could not parse the statement")
     })?;
@@ -213,12 +213,13 @@ pub fn dispatch_statement(
             // dispatch applies it for the wire session and the local engine
             // alike. Every other GUC stays a protocol-session surface.
             match &command {
-                SqlSessionCommand::SetVariable { name, value, .. } if name.trim().eq_ignore_ascii_case("statement_timeout") => {
+                SqlSessionCommand::SetVariable { scope, name, value } if name.trim().eq_ignore_ascii_case("statement_timeout") => {
                     if session.is_aborted() {
                         return Err(StatementError::new("25P02", ABORTED_BLOCK));
                     }
                     let rendered = render_setting(value);
-                    if !session.set_statement_timeout(&rendered) {
+                    let local = matches!(scope, Some(database_query::SqlVariableScope::Local));
+                    if !session.set_parameter_value("statement_timeout", rendered.clone(), local) {
                         session.fail();
                         return Err(StatementError::new("22023", format!("invalid value for parameter \"statement_timeout\": \"{rendered}\"")));
                     }
@@ -686,7 +687,8 @@ fn run_statement_inner(
     );
     // Derive the result shape from the catalog plan so an empty result set
     // reports the declared type instead of falling back to `text`.
-    let description = describe_plan(&plan);
+    let mut description = describe_plan(&plan);
+    session.apply_declared_type_modifiers(&runtime.schema, &mut description);
     // One statement outside an explicit block is its own transaction in
     // PostgreSQL. Running it through a transaction handle is what makes two
     // writers of the same row meet: the handle registers the row in the shared
@@ -704,9 +706,16 @@ fn run_statement_inner(
     // state in the object catalog; the statement installs it for its own run.
     let sequences: Arc<dyn database_query::SqlSequenceCatalog> = Arc::new(ObjectSequences(Arc::clone(&runtime.objects)));
     let settings = Arc::new(session.settings_snapshot());
-    let executed = database_query::with_session_settings(settings, || {
-        database_query::with_sequence_catalog(sequences, || {
-            crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres)
+    // The executor's row-lock wait is a synchronous block on this thread. Cap it
+    // at the session's lock window so a held row produces `55P03` well inside
+    // the transport budget instead of a dropped connection.
+    let lock_budget = session.lock_wait_budget();
+    let started = Instant::now();
+    let executed = with_row_lock_wait(lock_budget, || {
+        database_query::with_session_settings(settings, || {
+            database_query::with_sequence_catalog(sequences, || {
+                crate::sql_exec::execute_plan(runtime.executor.as_ref(), handle_ref, &plan, SqlDialect::Postgres)
+            })
         })
     });
     let result = match executed {
@@ -728,6 +737,12 @@ fn run_statement_inner(
                 handle.rollback();
             }
             session.fail();
+            // `execute_plan` reports the exhausted row-lock wait as a conflict;
+            // after a full lock window that conflict is the lock timeout, which
+            // PostgreSQL reports as `lock_not_available`.
+            if error.kind == SqlErrorKind::Conflict && started.elapsed() + std::time::Duration::from_millis(50) >= lock_budget {
+                return Err(("55P03".to_string(), "canceling statement due to lock timeout".to_string()));
+            }
             return Err(statement_error("execution", error));
         }
     };
@@ -818,7 +833,31 @@ pub fn describe_statement(
         session.fail();
         statement_error("plan", error)
     })?;
-    Ok(describe_plan(&plan))
+    let mut description = describe_plan(&plan);
+    session.apply_declared_type_modifiers(&runtime.schema, &mut description);
+    Ok(description)
+}
+
+/// Parses one PostgreSQL session command, including `SHOW ALL`.
+///
+/// The shared parser treats `ALL` as the keyword it is and rejects the
+/// statement, while PostgreSQL answers `SHOW ALL` with the whole parameter
+/// table. Recognising it here keeps the simple and extended paths on one
+/// parser.
+pub fn parse_pg_session_command(sql: &str) -> Result<Option<SqlSessionCommand>, SqlFrontendError> {
+    let trimmed = sql.trim().trim_end_matches(';').trim();
+    if is_show_all(trimmed) {
+        return Ok(Some(SqlSessionCommand::ShowParameter { scope: None, name: "ALL".to_string() }));
+    }
+    parse_session_command(normalized_session_syntax(trimmed).as_deref().unwrap_or(trimmed))
+}
+
+/// Whether the statement is exactly `SHOW ALL`.
+fn is_show_all(sql: &str) -> bool {
+    let mut tokens = sql.split_whitespace();
+    matches!(tokens.next(), Some(token) if token.eq_ignore_ascii_case("SHOW"))
+        && matches!(tokens.next(), Some(token) if token.eq_ignore_ascii_case("ALL"))
+        && tokens.next().is_none()
 }
 
 /// Rewrites `SET <name> TO <value>` into the `SET <name> = <value>` spelling the
