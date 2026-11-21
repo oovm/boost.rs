@@ -119,40 +119,49 @@ pub(crate) const MYSQL_VARIABLES: &[(&str, &str)] = &[
     ("wait_timeout", "28800"),
 ];
 
-/// Resolves a `SELECT @@version` style system-variable probe against [`MYSQL_VARIABLES`].
+/// Resolves a `SELECT @@version` style system-variable probe against the
+/// session's effective variable values.
 ///
 /// The scope prefix (`@@global.` / `@@session.` / `@@local.`) is accepted and
-/// ignored: the gateway keeps one immutable variable table for every scope.
-/// Numeric-looking values are returned as numbers so drivers reading
-/// `@@max_allowed_packet` or `@@lower_case_table_names` get integer semantics.
+/// ignored: the gateway keeps one variable table per connection. A value the
+/// client assigned with `SET` shadows the static default for the rest of the
+/// connection, which is how drivers read back `SET time_zone = '+08:00'`
+/// instead of the startup `SYSTEM`. Numeric-looking values are returned as
+/// numbers so drivers reading `@@max_allowed_packet` or
+/// `@@lower_case_table_names` get integer semantics.
 ///
 /// `autocommit` is the one variable the session owns. Drivers read it back to
 /// decide whether they still need to disable it, so answering with the static
 /// table would hide a session that already switched transactions off.
-pub(crate) fn mysql_system_variable(name: &str, autocommit: bool) -> Result<database_query::SqlBoundLiteral, SqlFrontendError> {
-    let bare = name.strip_prefix("@@").unwrap_or(name);
-    let variable = bare.rsplit('.').next().unwrap_or(bare).to_ascii_lowercase();
-    let value = MYSQL_VARIABLES
-        .iter()
-        .find(|(candidate, _)| *candidate == variable)
-        .map(|(_, value)| *value)
-        .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::UnknownVariable, format!("Unknown system variable '{variable}'")))?;
-    let value = if variable == "autocommit" { if autocommit { "ON" } else { "OFF" } } else { value };
+pub(crate) fn mysql_system_variable(name: &str, session: &TransactionSession) -> Result<database_query::SqlBoundLiteral, SqlFrontendError> {
+    let variable = mysql_variable_name(name);
+    let value = session.variable_value(&variable)?;
     if !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()) {
         if let Ok(number) = value.parse::<i64>() {
             return Ok(database_query::SqlBoundLiteral::Integer(number));
         }
     }
-    Ok(database_query::SqlBoundLiteral::String(value.to_string()))
+    Ok(database_query::SqlBoundLiteral::String(value))
+}
+
+/// Canonical name of a `SET` / `@@` variable reference: scope prefixes and the
+/// `@@` sigil stripped, lowercased.
+pub(crate) fn mysql_variable_name(name: &str) -> String {
+    let bare = name.strip_prefix("@@").unwrap_or(name);
+    bare.rsplit('.').next().unwrap_or(bare).trim().to_ascii_lowercase()
+}
+
+/// Default value of one variable from the static table.
+fn mysql_variable_default(variable: &str) -> Option<&'static str> {
+    MYSQL_VARIABLES.iter().find(|(candidate, _)| *candidate == variable).map(|(_, value)| *value)
 }
 
 /// Whether a `SET` target names a known MySQL session variable the gateway
 /// emulates via `MYSQL_VARIABLES`. Rejects unknown names with `1193` at the
 /// session layer instead of silently accepting them.
 pub(crate) fn is_known_mysql_variable(name: &str) -> bool {
-    let bare = name.strip_prefix("@@").unwrap_or(name);
-    let short = bare.rsplit('.').next().unwrap_or(bare);
-    MYSQL_VARIABLES.iter().any(|(key, _)| key.eq_ignore_ascii_case(short))
+    let short = mysql_variable_name(name);
+    MYSQL_VARIABLES.iter().any(|(key, _)| *key == short)
 }
 
 /// MySQL `LIKE` matching for `SHOW VARIABLES LIKE 'pattern'` — `%` matches any
@@ -181,6 +190,10 @@ pub struct TransactionSession {
     /// Whether `autocommit` session variable is ON (default). `SET autocommit = OFF`
     /// clears the `SERVER_STATUS_AUTOCOMMIT` flag on subsequent OK / EOF responses.
     pub(crate) autocommit: bool,
+    /// Session-variable values the client assigned with `SET`. They shadow the
+    /// static [`MYSQL_VARIABLES`] defaults for the rest of the connection and are
+    /// dropped by `COM_RESET_CONNECTION`.
+    pub(crate) variables: HashMap<String, String>,
     /// Schema selected by the handshake database field or `COM_INIT_DB`, used
     /// verbatim by `DATABASE()` and the synthesized `TABLE_SCHEMA` columns.
     pub(crate) schema: String,
@@ -204,6 +217,7 @@ impl TransactionSession {
             handle: None,
             failed: false,
             autocommit: true,
+            variables: HashMap::new(),
             schema: String::new(),
             schema_checkpoint: None,
             catalog_cache: None,
@@ -229,6 +243,46 @@ impl TransactionSession {
     /// Whether the `autocommit` session variable is ON.
     pub fn is_autocommit(&self) -> bool {
         self.autocommit
+    }
+
+    /// Effective value of one session variable: the client's `SET` override,
+    /// the `autocommit` flag, or the static default. Unknown names keep the
+    /// `1193` classification instead of inventing a value.
+    pub(crate) fn variable_value(&self, variable: &str) -> Result<String, SqlFrontendError> {
+        if variable == "autocommit" {
+            return Ok(if self.autocommit { "ON" } else { "OFF" }.to_string());
+        }
+        if let Some(value) = self.variables.get(variable) {
+            return Ok(value.clone());
+        }
+        mysql_variable_default(variable)
+            .map(str::to_string)
+            .ok_or_else(|| SqlFrontendError::new(SqlErrorKind::UnknownVariable, format!("Unknown system variable '{variable}'")))
+    }
+
+    /// Records a `SET <variable> = <value>` for the rest of the connection.
+    pub(crate) fn set_variable(&mut self, name: &str, value: String) {
+        self.variables.insert(mysql_variable_name(name), value);
+    }
+
+    /// `SHOW VARIABLES` rows: static defaults in table order with every client
+    /// override applied.
+    pub(crate) fn variables_snapshot(&self) -> Vec<(&'static str, String)> {
+        MYSQL_VARIABLES
+            .iter()
+            .map(|(name, default)| {
+                let value = if *name == "autocommit" {
+                    if self.autocommit { "ON".to_string() } else { "OFF".to_string() }
+                }
+                else if let Some(value) = self.variables.get(*name) {
+                    value.clone()
+                }
+                else {
+                    (*default).to_string()
+                };
+                (*name, value)
+            })
+            .collect()
     }
 
     /// Whether the transaction is aborted and only rollback can end it.
@@ -322,6 +376,13 @@ impl TransactionSession {
                 self.restore_schema(runtime)?;
                 Ok(Err(match err {
                     // OCC 拒绝必须回报给客户端，否则并发写会被静默丢弃。
+                    //
+                    // 已知能力缺口：没有行级锁等待。并发写同一行的第二个事务
+                    // 不会阻塞，先提交者在这里拿到可重试的 1213；提交是原子
+                    // 的，失败事务不会晚写。补齐需要 `cluster/local.rs` 的
+                    // `LocalTransactionHandle` 在语句阶段持锁并按有界、
+                    // 可取消的方式等待（owner: execution cluster 事务层），
+                    // MySQL 网关不伪造行锁。
                     ClusterError::CasConflict { .. } => MysqlError::new(1213, "40001", format!("COMMIT failed: serialization conflict: {err}")),
                     err => MysqlError::new(1105, "HY000", format!("COMMIT failed: {err}")),
                 }))
@@ -417,6 +478,7 @@ impl TransactionSession {
         self.executor = None;
         self.failed = false;
         self.autocommit = true;
+        self.variables.clear();
         self.schema.clear();
         self.select_cache.clear();
         // Resetting a connection discards an open transaction, catalog changes included.

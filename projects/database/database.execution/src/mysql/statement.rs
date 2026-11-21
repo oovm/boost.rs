@@ -23,7 +23,7 @@ use database_query::{
 use crate::{cluster::TransactionHandle, sql_exec::execute_plan, sql_schema::apply_auto_increment};
 
 use super::session::{
-    MYSQL_VARIABLES, MysqlError, MysqlSqlRuntime, TransactionSession, is_known_mysql_variable, like_matches, mysql_system_variable,
+    MysqlError, MysqlSqlRuntime, TransactionSession, is_known_mysql_variable, like_matches, mysql_system_variable, mysql_variable_name,
     statement_error,
 };
 
@@ -234,7 +234,7 @@ fn build_plan(
         sql,
         catalog,
         catalog.schema_version(),
-        &|name: &str| mysql_system_variable(name, session.autocommit),
+        &|name: &str| mysql_system_variable(name, session),
         SqlDialect::Mysql,
     )
     .map_err(|error| ("bind", error))?;
@@ -381,10 +381,9 @@ fn session_command(
         },
         Ok(Some(SqlSessionCommand::ShowVariables { pattern, .. })) => {
             let mut rows = Vec::new();
-            for (name, value) in MYSQL_VARIABLES {
+            for (name, value) in session.variables_snapshot() {
                 if pattern.as_deref().is_none_or(|pattern| like_matches(pattern, name)) {
-                    let effective_value = if *name == "autocommit" { if session.autocommit { "ON" } else { "OFF" } } else { value };
-                    rows.push(vec![SqlValue::String((*name).to_string()), SqlValue::String(effective_value.to_string())]);
+                    rows.push(vec![SqlValue::String(name.to_string()), SqlValue::String(value)]);
                 }
             }
             let result = SqlResult { columns: vec!["Variable_name".into(), "Value".into()], rows, affected_rows: 0 };
@@ -478,8 +477,7 @@ fn set_variable(
     // Values arrive as `@@session.autocommit` from drivers that qualify the
     // scope, so strip the same prefix the variable resolver strips before
     // matching the session flag.
-    let bare = name.strip_prefix("@@").unwrap_or(name);
-    let needle = bare.rsplit('.').next().unwrap_or(bare).trim().to_ascii_lowercase();
+    let needle = mysql_variable_name(name);
     if needle == "autocommit" {
         let autocommit = match value {
             SqlBoundExpression::Literal(SqlBoundLiteral::String(s)) => TransactionSession::parse_bool_value(&s),
@@ -493,7 +491,31 @@ fn set_variable(
             Err(error) => return write_mysql_error(sink, &error),
         }
     }
+    else {
+        // Every other known variable is plain session state: store the value so
+        // `SELECT @@<name>` / `SHOW VARIABLES` read back what the client set
+        // instead of the startup default.
+        let Some(text) = rendered_variable_value(&value)
+        else {
+            session.fail();
+            return sink.write_error(1235, "42000", &format!("SET {needle} requires a literal value"));
+        };
+        session.set_variable(&needle, text);
+    }
     sink.write_ok(0, None, session.status_flags())
+}
+
+/// Renders a `SET <variable> = <value>` literal as the canonical session-value
+/// text. A non-literal expression has no stored form in the gateway's text
+/// variable table.
+fn rendered_variable_value(value: &SqlBoundExpression) -> Option<String> {
+    match value {
+        SqlBoundExpression::Literal(SqlBoundLiteral::String(text) | SqlBoundLiteral::Number(text)) => Some(text.clone()),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Integer(number)) => Some(number.to_string()),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(true)) => Some("ON".to_string()),
+        SqlBoundExpression::Literal(SqlBoundLiteral::Boolean(false)) => Some("OFF".to_string()),
+        _ => None,
+    }
 }
 
 /// Runs one SQL statement through the full bind → plan → execute pipeline and
@@ -726,7 +748,7 @@ pub fn prepare_statement(
                 &neutral,
                 &catalog,
                 catalog.schema_version(),
-                &|name: &str| mysql_system_variable(name, session.autocommit),
+                &|name: &str| mysql_system_variable(name, session),
                 SqlDialect::Mysql,
             ) {
                 Ok(bound) => bound,
