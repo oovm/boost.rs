@@ -7,7 +7,17 @@
 
 #![warn(missing_docs)]
 
-pub use database::client::*;
+/// YY 线原生客户端：连接、认证会话、prepared、事务与关闭/重连。
+pub use database::client::yy::Client;
+/// 客户端生命周期状态。
+pub use database::client::yy::ClientState;
+/// 结果行（列名 → 类型化值）。
+pub use database::client::yy::Row;
+/// 表投影句柄：把表操作编译成 VOS 源，再走共享的 prepared 帧。
+pub use database::client::yy::Table;
 /// 宿主侧运行时性能记录器（与节点内置的卡点分析同一出口）。
 pub use database::harness;
-pub use database::types::{Decimal, Error, ScalarError, Timestamp, Value};
+pub use database::{
+    client::*,
+    types::{Decimal, Error, ScalarError, Timestamp, Value},
+};
