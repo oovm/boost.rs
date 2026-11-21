@@ -792,9 +792,11 @@ pub(crate) fn execute_update(
     apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
     // MySQL 只把真正改变的行计成影响行：把列写回当前值既不改存储、也不推进修订号，
     // 与本地写入路径同一口径。PostgreSQL 报命中行数，因此在那里保留重写。
+    // 协商了 `CLIENT_FOUND_ROWS` 的连接按命中行数回报，同值改写因此仍计 1 行。
     let new_bytes = encode_row(&row);
     if dialect == SqlDialect::Mysql && new_bytes == existing_bytes {
-        return Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: 0 });
+        let affected_rows = u64::from(crate::sql_exec::found_rows_enabled());
+        return Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows });
     }
     if let Some(constraint) =
         unique_conflict_on_write(
@@ -1029,7 +1031,7 @@ pub(crate) fn execute_update_scan(
     }
     let index_commands = indexes.take_commands();
     let changed = apply_statement_changes(executor, transaction, changes, index_commands, &namespace, "update_scan")?;
-    let affected = if dialect == SqlDialect::Mysql { changed } else { matched };
+    let affected = if dialect == SqlDialect::Mysql && !crate::sql_exec::found_rows_enabled() { changed } else { matched };
     Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
 }
 

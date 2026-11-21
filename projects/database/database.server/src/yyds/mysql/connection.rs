@@ -14,6 +14,7 @@ use database_execution::mysql::{
     MysqlPrepareOutcome, MysqlPreparedRegistry, MysqlPreparedStatement, MysqlSqlRuntime, MysqlStatementSink, TransactionSession,
     dispatch_query, execute_prepared, prepare_statement,
 };
+use database_execution::sql_exec::with_found_rows;
 use database_protocol_mysql::{
     LenencError, MAX_PACKET_PAYLOAD, MYSQL_TYPE_BLOB, MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME, MYSQL_TYPE_DECIMAL, MYSQL_TYPE_DOUBLE,
     MYSQL_TYPE_FLOAT, MYSQL_TYPE_INT24, MYSQL_TYPE_LONG, MYSQL_TYPE_LONG_BLOB, MYSQL_TYPE_LONGLONG, MYSQL_TYPE_MEDIUM_BLOB,
@@ -32,6 +33,8 @@ const CLIENT_SECURE_CONNECTION: u32 = 0x0000_8000;
 const CLIENT_PLUGIN_AUTH: u32 = 0x0008_0000;
 const CLIENT_PLUGIN_AUTH_LENENC: u32 = 0x0020_0000;
 const CLIENT_CONNECT_WITH_DB: u32 = 0x0000_0008;
+/// 客户端要求 DML 的 OK 包报告命中行数而不是改变行数。
+const CLIENT_FOUND_ROWS: u32 = 0x0000_0002;
 /// Largest request frame accepted, and the value advertised as
 /// `@@max_allowed_packet`. Keeping the two equal means a client never sends
 /// a frame the server will refuse.
@@ -100,18 +103,21 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
             return Ok(());
         }
     };
-    let (username, empty_password, database) = match parse_handshake_response(&response) {
+    let response = match parse_handshake_response(&response) {
         Ok(parsed) => parsed,
         Err(error) => {
             write_error(&mut reader, 2, 1043, "08S01", error)?;
             return Ok(());
         }
     };
-    if username.is_empty() || !empty_password {
+    if response.username.is_empty() || !response.empty_password {
         write_error(&mut reader, 2, 1045, "28000", "access denied: loopback accepts only an empty password")?;
         return Ok(());
     }
-    session.set_schema(database.unwrap_or_default());
+    session.set_schema(response.database.unwrap_or_default());
+    // 客户端声明的 `CLIENT_FOUND_ROWS` 决定 DML 的 OK 包口径：协商了就按命中行数
+    // 回报，否则按改变行数回报。口径随连接固定，SQL 执行面带每条 dispatch 的作用域。
+    let found_rows = response.found_rows;
     write_ok(&mut reader, 2, session.status_flags())?;
 
     loop {
@@ -172,15 +178,17 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 &mut session,
                 &mut result_buffer,
             )?,
-            COM_STMT_EXECUTE => handle_execute(
-                &mut reader,
-                sequence.wrapping_add(1),
-                &payload,
-                runtime.as_ref(),
-                &mut statements,
-                &mut session,
-                &mut result_buffer,
-            )?,
+            COM_STMT_EXECUTE => with_found_rows(found_rows, || {
+                handle_execute(
+                    &mut reader,
+                    sequence.wrapping_add(1),
+                    &payload,
+                    runtime.as_ref(),
+                    &mut statements,
+                    &mut session,
+                    &mut result_buffer,
+                )
+            })?,
             COM_STMT_CLOSE => {
                 if let Some(id) = take_u32(&payload[1..]) {
                     statements.remove(&id);
@@ -199,7 +207,7 @@ fn serve_session(stream: impl Read + Write, runtime: Option<Arc<MysqlSqlRuntime>
                 // execution pipeline owns which response this statement gets and
                 // every session transition behind it.
                 let mut sink = WireSink { stream: &mut reader, sequence: sequence.wrapping_add(1), buffer: &mut result_buffer };
-                dispatch_query(&mut sink, sql, runtime.as_ref(), &mut session)?;
+                with_found_rows(found_rows, || dispatch_query(&mut sink, sql, runtime.as_ref(), &mut session))?;
             }
             // Every other command byte is either a real MySQL command this
             // gateway does not implement (`COM_CHANGE_USER`, `COM_STMT_FETCH`,
@@ -232,7 +240,17 @@ fn handshake() -> Vec<u8> {
     payload
 }
 
-fn parse_handshake_response(payload: &[u8]) -> Result<(String, bool, Option<String>), &'static str> {
+/// 解析后的启动响应：身份信息与客户端声明的会话能力。
+struct HandshakeResponse {
+    username: String,
+    /// 密码为空（loopback 只接受空密码）。
+    empty_password: bool,
+    database: Option<String>,
+    /// 客户端要求 DML 的 OK 包按命中行数报告。
+    found_rows: bool,
+}
+
+fn parse_handshake_response(payload: &[u8]) -> Result<HandshakeResponse, &'static str> {
     if payload.len() < 32 {
         return Err("truncated handshake response");
     }
@@ -270,7 +288,12 @@ fn parse_handshake_response(payload: &[u8]) -> Result<(String, bool, Option<Stri
         let _ = take_nul_bytes(payload, &mut cursor)?;
     }
     let username = String::from_utf8(username.to_vec()).map_err(|_| "username is not UTF-8")?;
-    Ok((username, auth_response.is_empty(), database))
+    Ok(HandshakeResponse {
+        username,
+        empty_password: auth_response.is_empty(),
+        database,
+        found_rows: capabilities & CLIENT_FOUND_ROWS != 0,
+    })
 }
 
 fn take_nul_bytes<'a>(payload: &'a [u8], cursor: &mut usize) -> Result<&'a [u8], &'static str> {
