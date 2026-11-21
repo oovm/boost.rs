@@ -568,7 +568,7 @@ pub fn detect(bytes: &[u8]) -> BinaryFormat {
     if pe::parse_pe(bytes).is_ok() {
         return BinaryFormat::Pe;
     }
-    if elf::parse_elf(bytes).is_ok() {
+    if bytes.starts_with(b"\x7fELF") {
         return BinaryFormat::Elf;
     }
     if mach_o::macho_magic(bytes).is_some() {
