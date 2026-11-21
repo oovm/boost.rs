@@ -21,7 +21,7 @@ mod auth;
 /// Connection primitives: handshake, `COM_QUERY` and prepared statements.
 pub mod client;
 
-pub use client::{ClientConfig, Connection};
+pub use client::{CancelHandle, ClientConfig, Connection};
 
 /// One textual cell from a result set (bytes preserved when non-UTF-8).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,6 +185,17 @@ impl Session {
     /// Run a text-protocol statement (`COM_QUERY`).
     pub fn query(&mut self, sql: &str) -> Result<QueryResult> {
         self.connection.query(sql)
+    }
+
+    /// Handle that can abort this session's in-flight request from another
+    /// thread; aborting closes the session.
+    pub fn cancel_handle(&self) -> Result<CancelHandle> {
+        self.connection.cancel_handle()
+    }
+
+    /// Run a text-protocol statement under a per-request read timeout.
+    pub fn query_with_timeout(&mut self, sql: &str, timeout: Duration) -> Result<QueryResult> {
+        self.connection.query_with_timeout(sql, timeout)
     }
 
     /// Run a statement that should not return rows.

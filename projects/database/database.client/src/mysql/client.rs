@@ -6,8 +6,12 @@
 
 use std::{
     io::{Read, Write},
-    net::{SocketAddr, TcpStream, ToSocketAddrs},
-    time::Duration,
+    net::{Shutdown, SocketAddr, TcpStream, ToSocketAddrs},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use database_protocol_mysql::{LenencError, MAX_PACKET_PAYLOAD, encode_length_encoded, read_length_encoded};
@@ -78,12 +82,44 @@ const UTF8MB4_GENERAL_CI: u8 = 45;
 /// Advertised maximum packet size in the handshake response.
 const MAX_PACKET_SIZE: u32 = 0x0100_0000;
 
+/// Handle that can interrupt a live [`Connection`] from another thread.
+///
+/// A blocked request polls its cancel flag every [`POLL_INTERVAL`], so `abort`
+/// bounds the wait even on platforms where shutting a cloned socket down does
+/// not wake a pending `recv` (Windows). The socket shutdown is still attempted
+/// to unblock a stuck `write`. The connection is not reusable afterwards — the
+/// caller drops it and reconnects.
+#[derive(Debug)]
+pub struct CancelHandle {
+    cancelled: Arc<AtomicBool>,
+    stream: TcpStream,
+}
+
+impl CancelHandle {
+    /// Interrupts the in-flight request and closes the socket.
+    pub fn abort(&self) -> Result<()> {
+        self.cancelled.store(true, Ordering::SeqCst);
+        // Best-effort: interrupt a blocked write. The request's read loop also
+        // checks `cancelled`, which is what bounds the wait on every platform.
+        let _ = self.stream.shutdown(Shutdown::Both);
+        Ok(())
+    }
+}
+
+/// How often a blocked request re-checks its cancel flag and deadline.
+pub const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
 /// One classic-protocol connection with a strictly incrementing packet
 /// sequence.
 #[derive(Debug)]
 pub struct Connection {
     stream: TcpStream,
     next_sequence: u8,
+    cancelled: Arc<AtomicBool>,
+    /// End of the current request, when it runs under a per-request timeout.
+    deadline: Option<Instant>,
+    /// Timeout every plain request gets from [`ClientConfig::timeout`].
+    request_timeout: Duration,
 }
 
 impl Connection {
@@ -91,15 +127,22 @@ impl Connection {
     pub fn open(config: &ClientConfig) -> Result<Self> {
         let address = resolve(&config.host, config.port)?;
         let stream = TcpStream::connect_timeout(&address, config.timeout).map_err(Error::Io)?;
-        stream.set_read_timeout(Some(config.timeout)).map_err(Error::Io)?;
+        // Reads poll at `POLL_INTERVAL` so cancellation and per-request
+        // deadlines stay bounded; `config.timeout` bounds the handshake and
+        // writes.
+        stream.set_read_timeout(Some(POLL_INTERVAL)).map_err(Error::Io)?;
         stream.set_write_timeout(Some(config.timeout)).map_err(Error::Io)?;
-        let mut connection = Self { stream, next_sequence: 0 };
+        let mut connection =
+            Self { stream, next_sequence: 0, cancelled: Arc::new(AtomicBool::new(false)), deadline: None, request_timeout: config.timeout };
+        connection.deadline = Some(Instant::now() + config.timeout);
         connection.handshake(config)?;
+        connection.deadline = None;
         Ok(connection)
     }
 
     /// Run one `COM_QUERY` statement.
     pub fn query(&mut self, sql: &str) -> Result<QueryResult> {
+        self.begin_request(None);
         self.next_sequence = 0;
         let mut payload = Vec::with_capacity(sql.len() + 1);
         payload.push(0x03);
@@ -108,11 +151,42 @@ impl Connection {
         self.read_result(false)
     }
 
+    /// Handle that can abort this connection from another thread.
+    ///
+    /// The handle is cheap to clone and independent of the connection's
+    /// borrow, so a request thread blocked in `query` can be interrupted by a
+    /// supervisor instead of waiting for the socket timeout.
+    pub fn cancel_handle(&self) -> Result<CancelHandle> {
+        Ok(CancelHandle { cancelled: Arc::clone(&self.cancelled), stream: self.stream.try_clone().map_err(Error::Io)? })
+    }
+
+    /// Runs one `COM_QUERY` under a per-request timeout.
+    ///
+    /// A request that timed out leaves the protocol mid-response, so the caller
+    /// must drop the connection rather than issue another command on it.
+    pub fn query_with_timeout(&mut self, sql: &str, timeout: Duration) -> Result<QueryResult> {
+        self.begin_request(Some(timeout));
+        self.next_sequence = 0;
+        let mut payload = Vec::with_capacity(sql.len() + 1);
+        payload.push(0x03);
+        payload.extend_from_slice(sql.as_bytes());
+        self.write_packet(&payload)?;
+        self.read_result(false)
+    }
+
+    /// Starts a request: clears the previous cancel flag and arms the optional
+    /// deadline.
+    fn begin_request(&mut self, timeout: Option<Duration>) {
+        self.cancelled.store(false, Ordering::SeqCst);
+        self.deadline = Some(Instant::now() + timeout.unwrap_or(self.request_timeout));
+    }
+
     /// Run one parameterised statement: prepare, execute, close.
     ///
     /// The statement is prepared per call so the adapter never has to hold
     /// server-side handles, and closing runs even when execution failed.
     pub fn query_with_params(&mut self, sql: &str, params: &[Param<'_>]) -> Result<QueryResult> {
+        self.begin_request(None);
         let prepared = self.prepare(sql)?;
         if params.len() != usize::from(prepared.parameter_count) {
             let _ = self.close_prepared(prepared.id);
@@ -305,7 +379,7 @@ impl Connection {
         let mut payload = Vec::new();
         loop {
             let mut header = [0u8; 4];
-            self.stream.read_exact(&mut header).map_err(Error::Io)?;
+            self.read_exact_cancellable(&mut header)?;
             let length = usize::from(header[0]) | (usize::from(header[1]) << 8) | (usize::from(header[2]) << 16);
             if header[3] != self.next_sequence {
                 return Err(Error::Protocol {
@@ -313,13 +387,40 @@ impl Connection {
                 });
             }
             let mut chunk = vec![0u8; length];
-            self.stream.read_exact(&mut chunk).map_err(Error::Io)?;
+            self.read_exact_cancellable(&mut chunk)?;
             payload.extend_from_slice(&chunk);
             self.next_sequence = self.next_sequence.wrapping_add(1);
             if length < MAX_PACKET_PAYLOAD {
                 return Ok(payload);
             }
         }
+    }
+
+    /// Reads exactly `buffer.len()` bytes, re-checking cancellation and the
+    /// request deadline at every [`POLL_INTERVAL`] read timeout.
+    fn read_exact_cancellable(&mut self, buffer: &mut [u8]) -> Result<()> {
+        let mut filled = 0;
+        while filled < buffer.len() {
+            if self.cancelled.load(Ordering::SeqCst) {
+                return Err(Error::Io(std::io::Error::new(std::io::ErrorKind::Interrupted, "MySQL request was cancelled")));
+            }
+            if let Some(deadline) = self.deadline {
+                if Instant::now() >= deadline {
+                    return Err(Error::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "MySQL request timed out")));
+                }
+            }
+            match self.stream.read(&mut buffer[filled..]) {
+                Ok(0) => return Err(Error::Io(std::io::Error::from(std::io::ErrorKind::UnexpectedEof))),
+                Ok(read) => filled += read,
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+                    ) => {}
+                Err(error) => return Err(Error::Io(error)),
+            }
+        }
+        Ok(())
     }
 
     fn write_packet(&mut self, payload: &[u8]) -> Result<()> {
@@ -831,5 +932,99 @@ mod tests {
             panic!("expected Protocol")
         };
         assert_eq!(message, "1096 (HY000): boom");
+    }
+
+    /// Minimal server: completes the startup handshake, then reads one command
+    /// and never answers, so the client blocks inside `read`.
+    fn silent_server() -> SocketAddr {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback listener");
+        let address = listener.local_addr().expect("listener address");
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept the client");
+            write_server_packet(&mut stream, 0, &fake_handshake());
+            let _ = read_client_packet(&mut stream);
+            write_server_packet(&mut stream, 2, &[0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
+            let _ = read_client_packet(&mut stream);
+            // Hold the socket open without answering the command.
+            std::thread::sleep(Duration::from_secs(10));
+        });
+        address
+    }
+
+    fn fake_handshake() -> Vec<u8> {
+        // `CLIENT_LONG_PASSWORD | CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH`.
+        const CAPABILITIES: u32 = 0x0000_0001 | 0x0000_0200 | 0x0000_8000 | 0x0008_0000;
+        let mut payload = Vec::new();
+        payload.push(10);
+        payload.extend_from_slice(b"8.0.36-fake\0");
+        payload.extend_from_slice(&1_u32.to_le_bytes());
+        payload.extend_from_slice(b"12345678");
+        payload.push(0);
+        payload.extend_from_slice(&(CAPABILITIES as u16).to_le_bytes());
+        payload.push(45);
+        payload.extend_from_slice(&2_u16.to_le_bytes());
+        payload.extend_from_slice(&((CAPABILITIES >> 16) as u16).to_le_bytes());
+        payload.push(21);
+        payload.extend_from_slice(&[0_u8; 10]);
+        payload.extend_from_slice(b"123456789012");
+        payload.push(0);
+        payload.extend_from_slice(b"mysql_native_password\0");
+        payload
+    }
+
+    fn write_server_packet(stream: &mut impl Write, sequence: u8, payload: &[u8]) {
+        let length = payload.len();
+        let mut packet = Vec::with_capacity(4 + length);
+        packet.push(length as u8);
+        packet.push((length >> 8) as u8);
+        packet.push((length >> 16) as u8);
+        packet.push(sequence);
+        packet.extend_from_slice(payload);
+        stream.write_all(&packet).expect("write a server packet");
+    }
+
+    fn read_client_packet(stream: &mut impl Read) -> Option<Vec<u8>> {
+        let mut header = [0_u8; 4];
+        stream.read_exact(&mut header).ok()?;
+        let length = usize::from(header[0]) | (usize::from(header[1]) << 8) | (usize::from(header[2]) << 16);
+        let mut payload = vec![0_u8; length];
+        stream.read_exact(&mut payload).ok()?;
+        Some(payload)
+    }
+
+    fn silent_connection(address: SocketAddr) -> Connection {
+        Connection::open(&ClientConfig::new("127.0.0.1", address.port(), "root")).expect("handshake with the fake server")
+    }
+
+    #[test]
+    fn abort_handle_interrupts_a_blocked_request() {
+        let address = silent_server();
+        let mut connection = silent_connection(address);
+        let cancel = connection.cancel_handle().expect("cancel handle");
+
+        let started = std::time::Instant::now();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(100));
+                cancel.abort().expect("abort the blocked connection");
+            });
+            connection.query("SELECT SLEEP(5)").expect_err("an aborted request must fail instead of hanging");
+        });
+        assert!(started.elapsed() < Duration::from_secs(3), "abort must interrupt promptly, took {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn query_with_timeout_bounds_a_silent_server() {
+        let address = silent_server();
+        let mut connection = silent_connection(address);
+
+        let started = std::time::Instant::now();
+        let error = connection
+            .query_with_timeout("SELECT SLEEP(5)", Duration::from_millis(150))
+            .expect_err("a silent server must hit the per-request timeout");
+        assert!(matches!(error, Error::Io(_)), "unexpected error: {error:?}");
+        assert!(started.elapsed() < Duration::from_secs(3), "the per-request timeout must bound the wait, took {:?}", started.elapsed());
     }
 }
