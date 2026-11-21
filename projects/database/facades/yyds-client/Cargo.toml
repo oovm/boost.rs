@@ -14,4 +14,5 @@ readme = "readme.md"
 path = "src/lib.rs"
 
 [dependencies]
-database = { workspace = true }
+# 门面独立成立：显式打开自己用到的 surface，避免被下游 feature 统一情况左右。
+database = { workspace = true, features = ["types", "client", "harness"] }
