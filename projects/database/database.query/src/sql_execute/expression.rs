@@ -111,6 +111,11 @@ fn eval_interval_arithmetic(
 fn eval_postgres_cast(value: SqlValue, target: &str, from_literal: bool) -> Result<SqlValue, SqlFrontendError> {
     let upper = target.trim().to_ascii_uppercase();
     let base = upper.split('(').next().unwrap_or(&upper).trim().trim_end_matches("[]").trim();
+    // `numeric(p,s)` / `decimal(p,s)` fixes the display scale, so the cast has to
+    // produce the canonical scaled text rather than any numeric spelling.
+    if let Some((precision, scale)) = numeric_cast_parameters(&upper) {
+        return eval_numeric_cast(value, precision, scale);
+    }
     match (value, base) {
         (SqlValue::Null, _) => Ok(SqlValue::Null),
         (SqlValue::Integer(n), "INT2" | "INT4" | "INT8" | "SMALLINT" | "INTEGER" | "INT" | "BIGINT" | "OID") => Ok(SqlValue::Integer(n)),
@@ -157,6 +162,51 @@ fn eval_postgres_cast(value: SqlValue, target: &str, from_literal: bool) -> Resu
         (SqlValue::Bytes(bytes), base) if is_postgres_text_type(base) => Ok(SqlValue::String(format!("\\x{}", crate::sql::encode_hex(&bytes)))),
         _ => Ok(SqlValue::Null),
     }
+}
+
+/// Parses the declared `(precision, scale)` of a `NUMERIC` / `DECIMAL` target.
+fn numeric_cast_parameters(target: &str) -> Option<(u8, u8)> {
+    let open = target.find('(')?;
+    let base = target[..open].trim();
+    if !base.eq_ignore_ascii_case("NUMERIC") && !base.eq_ignore_ascii_case("DECIMAL") {
+        return None;
+    }
+    // The CAST parser ends the type at the first `)`, which is the modifier's
+    // own, so the target often arrives without its closing parenthesis.
+    let rest = &target[open + 1..];
+    let end = rest.find(')').unwrap_or(rest.len());
+    let mut parameters = rest[..end].split(',').map(str::trim);
+    let precision = parameters.next()?.parse::<u8>().ok()?;
+    let scale = match parameters.next() {
+        Some(scale) => scale.parse::<u8>().ok()?,
+        None => 0,
+    };
+    (scale <= precision).then_some((precision, scale))
+}
+
+/// Applies `numeric(p,s)` semantics: round to `s` fractional digits, keep the
+/// display scale and reject values that do not fit `p`.
+fn eval_numeric_cast(value: SqlValue, precision: u8, scale: u8) -> Result<SqlValue, SqlFrontendError> {
+    let text = match value {
+        SqlValue::Null => return Ok(SqlValue::Null),
+        SqlValue::Integer(n) => n.to_string(),
+        SqlValue::Number(n) => format_number(n),
+        SqlValue::String(text) => text,
+        SqlValue::Boolean(flag) => (if flag { 1 } else { 0 }).to_string(),
+        _ => return Ok(SqlValue::Null),
+    };
+    let scaled = rescale_decimal_text(&text, scale).ok_or_else(|| invalid_text_representation(&text, "numeric"))?;
+    let digits = scaled.trim_start_matches('-');
+    let (integer, fraction) = match digits.split_once('.') {
+        Some(parts) => parts,
+        None => (digits, ""),
+    };
+    let significant_integer = integer.trim_start_matches('0');
+    let integer_digits = significant_integer.len().max(usize::from(significant_integer.is_empty() && fraction.is_empty()));
+    if integer_digits + usize::from(scale) > usize::from(precision) {
+        return Err(SqlFrontendError::new(SqlErrorKind::NumericOverflow, "numeric field overflow"));
+    }
+    Ok(SqlValue::String(scaled))
 }
 
 /// Target types PostgreSQL treats as text-compatible spellings, so a value

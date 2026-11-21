@@ -546,3 +546,96 @@ pub fn expression_needed_field_ids(
     }
     ids
 }
+
+/// Rounds a decimal spelling to `scale` fractional digits, half away from zero,
+/// and pads it with zeros so the display scale is preserved.
+///
+/// Returns `None` when `text` is not a decimal spelling, so callers keep their
+/// own rejection path (`22P02` for a cast, the write validator for a literal).
+pub fn rescale_decimal_text(text: &str, scale: u8) -> Option<String> {
+    let trimmed = text.trim();
+    let (negative, body) = match trimmed.strip_prefix('-') {
+        Some(body) => (true, body),
+        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+    };
+    if body.is_empty() || !body.chars().all(|character| character.is_ascii_digit() || character == '.') || body.matches('.').count() > 1 || body == "."
+    {
+        return None;
+    }
+    let (integer, fraction) = match body.split_once('.') {
+        Some((integer, fraction)) => (integer, fraction),
+        None => (body, ""),
+    };
+    let scale = usize::from(scale);
+    let mut integer_digits: Vec<u8> = integer.bytes().map(|byte| byte - b'0').collect();
+    let mut fraction_digits: Vec<u8> = fraction.bytes().map(|byte| byte - b'0').collect();
+    if fraction_digits.len() > scale {
+        let round_up = fraction_digits[scale] >= 5;
+        fraction_digits.truncate(scale);
+        if round_up {
+            increment_digits(&mut fraction_digits, &mut integer_digits);
+        }
+    }
+    fraction_digits.resize(scale, 0);
+    let integer_text = render_digits(&integer_digits);
+    let zero = integer_digits.iter().chain(fraction_digits.iter()).all(|digit| *digit == 0);
+    let sign = if negative && !zero { "-" } else { "" };
+    // The fraction keeps every declared digit, including leading zeros.
+    let fraction_text: String = fraction_digits.iter().map(|digit| char::from(b'0' + digit)).collect();
+    Some(if scale == 0 { format!("{sign}{integer_text}") } else { format!("{sign}{integer_text}.{fraction_text}") })
+}
+
+/// Adds one to `fraction` as a fixed-point number, carrying into `integer`.
+fn increment_digits(fraction: &mut [u8], integer: &mut Vec<u8>) {
+    for position in (0..fraction.len()).rev() {
+        if fraction[position] == 9 {
+            fraction[position] = 0;
+            continue;
+        }
+        fraction[position] += 1;
+        return;
+    }
+    for position in (0..integer.len()).rev() {
+        if integer[position] == 9 {
+            integer[position] = 0;
+            continue;
+        }
+        integer[position] += 1;
+        return;
+    }
+    integer.insert(0, 1);
+}
+
+fn render_digits(digits: &[u8]) -> String {
+    match digits.iter().position(|digit| *digit != 0) {
+        Some(start) => digits[start..].iter().map(|digit| char::from(b'0' + digit)).collect(),
+        // An all-zero integer part still renders as one `0`.
+        None => "0".to_string(),
+    }
+}
+
+/// Declared precision and scale of a `NUMERIC` / `DECIMAL` type, in PostgreSQL's
+/// wire typmod encoding: `((precision << 16) | scale) + 4`.
+///
+/// Returns `None` for a bare `NUMERIC` and for every other type.
+pub fn numeric_type_modifier(sql_type: &str) -> Option<i32> {
+    let sql_type = sql_type.trim();
+    let open = sql_type.find('(')?;
+    let base = sql_type[..open].trim();
+    if !base.eq_ignore_ascii_case("NUMERIC") && !base.eq_ignore_ascii_case("DECIMAL") {
+        return None;
+    }
+    // The type text can arrive without its closing parenthesis: the CAST parser
+    // stops the type at the first `)`, which is the modifier's own.
+    let rest = &sql_type[open + 1..];
+    let end = rest.find(')').unwrap_or(rest.len());
+    let mut parameters = rest[..end].split(',').map(str::trim);
+    let precision = parameters.next()?.parse::<i32>().ok()?;
+    let scale = match parameters.next() {
+        Some(scale) => scale.parse::<i32>().ok()?,
+        // `NUMERIC(p)` keeps zero fractional digits.
+        None => 0,
+    };
+    (scale <= precision).then_some(((precision << 16) | scale) + 4)
+}
+

@@ -27,7 +27,7 @@ pub use self::{
     scalar::{apply_interval_to_datetime, eval_scalar_function, extract_value, format_number, parse_interval, scalar_text, IntervalOffset},
     values::{
         RowFieldValues, SqlResult, SqlValue, cmp_string, decode_row, decode_row_fields, encode_row, eq_string, expression_needed_field_ids,
-        scan_needed_field_ids,
+        numeric_type_modifier, rescale_decimal_text, scan_needed_field_ids,
     },
 };
 

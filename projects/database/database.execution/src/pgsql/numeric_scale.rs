@@ -79,76 +79,32 @@ fn rescale_literal(literal: &SqlBoundLiteral, precision: u8, scale: u8) -> Resul
 /// Returns `None` when `text` is not a decimal spelling, which keeps the
 /// existing literal validation in charge of the rejection.
 pub fn rescale_decimal_text(text: &str, scale: u8) -> Option<String> {
-    let trimmed = text.trim();
-    let (negative, body) = match trimmed.strip_prefix('-') {
-        Some(body) => (true, body),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
-    if body.is_empty()
-        || !body.chars().all(|character| character.is_ascii_digit() || character == '.')
-        || body.matches('.').count() > 1
-        || body == "."
-    {
-        return None;
-    }
-    let (integer, fraction) = match body.split_once('.') {
-        Some((integer, fraction)) => (integer, fraction),
-        None => (body, ""),
-    };
-    let scale = usize::from(scale);
-    let mut integer_digits: Vec<u8> = integer.bytes().map(|byte| byte - b'0').collect();
-    let mut fraction_digits: Vec<u8> = fraction.bytes().map(|byte| byte - b'0').collect();
-    if fraction_digits.len() > scale {
-        let round_up = fraction_digits[scale] >= 5;
-        fraction_digits.truncate(scale);
-        if round_up {
-            increment(&mut fraction_digits, &mut integer_digits);
-        }
-    }
-    fraction_digits.resize(scale, 0);
-    let integer_text = render_digits(&integer_digits);
-    let zero = integer_digits.iter().chain(fraction_digits.iter()).all(|digit| *digit == 0);
-    let sign = if negative && !zero { "-" } else { "" };
-    // The fraction keeps every declared digit, including leading zeros.
-    let fraction_text: String = fraction_digits.iter().map(|digit| char::from(b'0' + digit)).collect();
-    Some(if scale == 0 { format!("{sign}{integer_text}") } else { format!("{sign}{integer_text}.{fraction_text}") })
+    database_query::sql_execute::rescale_decimal_text(text, scale)
 }
 
-/// Adds one to `fraction` as a fixed-point number, carrying into `integer`.
-fn increment(fraction: &mut [u8], integer: &mut Vec<u8>) {
-    for position in (0..fraction.len()).rev() {
-        if fraction[position] == 9 {
-            fraction[position] = 0;
-            continue;
-        }
-        fraction[position] += 1;
-        return;
-    }
-    for position in (0..integer.len()).rev() {
-        if integer[position] == 9 {
-            integer[position] = 0;
-            continue;
-        }
-        integer[position] += 1;
-        return;
-    }
-    integer.insert(0, 1);
+/// PostgreSQL's wire typmod for a declared `numeric(p,s)` type.
+pub fn numeric_type_modifier(sql_type: &str) -> Option<i32> {
+    database_query::sql_execute::numeric_type_modifier(sql_type)
 }
 
-fn render_digits(digits: &[u8]) -> String {
-    let digits = match digits.iter().position(|digit| *digit != 0) {
-        Some(start) => &digits[start..],
-        // An all-zero integer part still renders as one `0`.
-        None => return if digits.is_empty() { "0".to_string() } else { "0".to_string() },
-    };
-    digits.iter().map(|digit| char::from(b'0' + digit)).collect()
+/// Coerces one assigned value to the declared scale of its target column.
+///
+/// A literal is rewritten in place; any other expression is wrapped in a cast to
+/// `numeric(p,s)` so the evaluator applies the scale after arithmetic.
+fn coerce_expression(expression: &SqlCatalogBoundExpression, precision: u8, scale: u8) -> Result<SqlCatalogBoundExpression, StatementError> {
+    match expression {
+        SqlCatalogBoundExpression::Literal(literal) => Ok(SqlCatalogBoundExpression::Literal(rescale_literal(literal, precision, scale)?)),
+        other => Ok(SqlCatalogBoundExpression::Cast {
+            expr: Box::new(other.clone()),
+            target: format!("numeric({precision},{scale})"),
+        }),
+    }
 }
 
 /// Rewrites the decimal literals a write plan carries to their declared scale.
 ///
-/// Only literal writes are covered: `INSERT ... VALUES` and literal `UPDATE`
-/// assignments. Values computed by an expression are evaluated by the execution
-/// layer, which is outside this module.
+/// `INSERT ... VALUES` and `UPDATE ... SET` assignments are covered, including
+/// assignments computed by an expression (which become a `numeric(p,s)` cast).
 ///
 /// `declared` answers one column map per table identity, which keeps a statement
 /// that writes several fields of one table to a single catalog snapshot.
@@ -175,9 +131,7 @@ pub fn coerce_write_plan(
                 else {
                     continue;
                 };
-                if let SqlCatalogBoundExpression::Literal(literal) = &assignment.value {
-                    assignment.value = SqlCatalogBoundExpression::Literal(rescale_literal(literal, precision, scale)?);
-                }
+                assignment.value = coerce_expression(&assignment.value, precision, scale)?;
             }
             Ok(())
         }

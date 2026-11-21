@@ -25,6 +25,12 @@ pub struct SqlColumn {
     /// precise than the projected type: a `DATE` column is `String` in the
     /// gateway but must be reported as a date on the wire.
     pub field_id: Option<u64>,
+    /// PostgreSQL wire type modifier when the expression itself fixes one.
+    ///
+    /// A `numeric(p,s)` cast carries `((p << 16) | s) + 4` here; direct field
+    /// projections leave it `None` because the declared type lives in the
+    /// catalog, and the adapter fills it from `field_id`.
+    pub type_modifier: Option<i32>,
 }
 
 /// Describes the result shape of a planned statement. Writes have no shape.
@@ -55,6 +61,7 @@ pub fn describe_plan_for_dialect(plan: &SqlExecutionPlan, dialect: SqlDialect) -
                 name: label.clone(),
                 field_type: infer_expression_type(expression, &BTreeMap::new(), dialect),
                 field_id: projected_field_id(expression),
+                type_modifier: projected_type_modifier(expression),
             })
             .collect(),
         SqlExecutionPlan::Insert(plan) => describe_returning(&plan.returning, &plan.field_types, dialect),
@@ -108,6 +115,7 @@ fn describe_returning(
             name: label.clone(),
             field_type: infer_expression_type(expression, field_types, dialect),
             field_id: projected_field_id(expression),
+            type_modifier: projected_type_modifier(expression),
         })
         .collect()
 }
@@ -117,6 +125,15 @@ fn describe_returning(
 fn projected_field_id(expression: &SqlCatalogBoundExpression) -> Option<u64> {
     match expression {
         SqlCatalogBoundExpression::Column(column) => Some(column.field_id),
+        _ => None,
+    }
+}
+
+/// Wire type modifier fixed by the expression itself, which today means the
+/// scale of a `numeric(p,s)` / `decimal(p,s)` cast.
+fn projected_type_modifier(expression: &SqlCatalogBoundExpression) -> Option<i32> {
+    match expression {
+        SqlCatalogBoundExpression::Cast { target, .. } => crate::sql_execute::numeric_type_modifier(target),
         _ => None,
     }
 }
@@ -175,13 +192,14 @@ fn describe_projections(plan: &impl ProjectedPlan, dialect: SqlDialect) -> Vec<S
     let mut columns = Vec::with_capacity(plan.projection_fields().len() + plan.projection_expressions().len());
     for (field_id, label) in plan.projection_fields() {
         let field_type = plan.field_types().get(field_id).cloned().unwrap_or(SqlFieldType::Unknown).inner();
-        columns.push(SqlColumn { name: label.clone(), field_type, field_id: Some(*field_id) });
+        columns.push(SqlColumn { name: label.clone(), field_type, field_id: Some(*field_id), type_modifier: None });
     }
     for (expression, label) in plan.projection_expressions() {
         columns.push(SqlColumn {
             name: label.clone(),
             field_type: infer_expression_type(expression, plan.field_types(), dialect),
             field_id: projected_field_id(expression),
+            type_modifier: projected_type_modifier(expression),
         });
     }
     columns

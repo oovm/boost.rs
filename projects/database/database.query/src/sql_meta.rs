@@ -90,7 +90,7 @@ impl MetaQuery {
     pub fn describe(&self) -> Vec<SqlColumn> {
         self.columns
             .iter()
-            .map(|column| SqlColumn { name: column.name.clone(), field_type: column.field_type.clone(), field_id: None })
+            .map(|column| SqlColumn { name: column.name.clone(), field_type: column.field_type.clone(), field_id: None, type_modifier: None })
             .collect()
     }
 
