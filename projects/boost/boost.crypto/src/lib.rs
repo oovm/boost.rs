@@ -12,6 +12,7 @@
 #![warn(missing_docs)]
 
 pub mod aead;
+pub mod cipher;
 pub mod ecdsa;
 pub mod ed25519;
 pub mod encoding;
