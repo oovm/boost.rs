@@ -790,6 +790,12 @@ pub(crate) fn execute_update(
         }
     }
     apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
+    // MySQL 只把真正改变的行计成影响行：把列写回当前值既不改存储、也不推进修订号，
+    // 与本地写入路径同一口径。PostgreSQL 报命中行数，因此在那里保留重写。
+    let new_bytes = encode_row(&row);
+    if dialect == SqlDialect::Mysql && new_bytes == existing_bytes {
+        return Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: 0 });
+    }
     if let Some(constraint) =
         unique_conflict_on_write(
             executor,
@@ -812,7 +818,7 @@ pub(crate) fn execute_update(
     let old_row = decode_row(&existing_bytes)?;
     indexes.remember_replace(Some(&old_row), &row, &plan.rowid);
     let index_commands = indexes.take_commands();
-    let command = KeyValueCommand { namespace, key: plan.rowid.clone(), action: KeyValueAction::Put(encode_row(&row)) };
+    let command = KeyValueCommand { namespace, key: plan.rowid.clone(), action: KeyValueAction::Put(new_bytes) };
     // 事务内 UPDATE 是 read-modify-write：把读到的 pre-image 交给 OCC，
     // 另一个事务在此期间提交同一行时 COMMIT 会被拒绝，而不是静默覆盖。
     commit_row_write(executor, transaction, command, CommitCondition::ValueEquals(Some(existing_bytes)), &index_commands, "update")?;
@@ -968,6 +974,8 @@ pub(crate) fn execute_update_scan(
     // 避免每个命中行都全表重扫、逐行解码；零命中语句则不付这份成本。
     let mut unique_snapshot: Option<UniqueSnapshot<'_>> = None;
     let predicate_ids = plan.predicate.as_ref().map(|predicate| expression_needed_field_ids(&[], &[], Some(predicate)));
+    // 命中行数与改变行数分开统计：MySQL 报 changed rows，PostgreSQL 报 matched rows。
+    let mut matched: u64 = 0;
     for (rowid, pre_image) in scanned {
         // 选择性 UPDATE 先用谓词列判定命中，命中后才解码整行：改写需要保留未赋值的
         // 列，但未命中的行不值得付整行解码的成本。
@@ -978,6 +986,7 @@ pub(crate) fn execute_update_scan(
                 continue;
             }
         }
+        matched += 1;
         let mut row = decode_row(&pre_image)?;
         // SET 右值基于改写前的行求值，全部求完再统一应用（同时赋值语义）。
         let mut updates = Vec::with_capacity(plan.fields.len());
@@ -995,6 +1004,11 @@ pub(crate) fn execute_update_scan(
             }
         }
         apply_generated(&plan.generated, &plan.field_types, &mut row, dialect)?;
+        let new_bytes = encode_row(&row);
+        // MySQL 只把真正改变的行计成影响行；同值改写不提交，也不维护索引。
+        if dialect == SqlDialect::Mysql && new_bytes == pre_image {
+            continue;
+        }
         if !plan.unique_constraints.is_empty() {
             if unique_snapshot.is_none() {
                 let stored = scan_rows(executor, transaction, &namespace, &[], None, None, 0, "unique_check")?;
@@ -1009,12 +1023,13 @@ pub(crate) fn execute_update_scan(
         enforce_row_guards(executor, transaction, &plan.check_constraints, &plan.foreign_keys, &plan.field_types, &row, dialect)?;
         indexes.remember_replace(Some(&old_row), &row, &rowid);
         changes.push(StatementChange {
-            command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Put(encode_row(&row)) },
+            command: KeyValueCommand { namespace: namespace.clone(), key: rowid, action: KeyValueAction::Put(new_bytes) },
             pre_image,
         });
     }
     let index_commands = indexes.take_commands();
-    let affected = apply_statement_changes(executor, transaction, changes, index_commands, &namespace, "update_scan")?;
+    let changed = apply_statement_changes(executor, transaction, changes, index_commands, &namespace, "update_scan")?;
+    let affected = if dialect == SqlDialect::Mysql { changed } else { matched };
     Ok(SqlResult { columns: Vec::new(), rows: Vec::new(), affected_rows: affected })
 }
 

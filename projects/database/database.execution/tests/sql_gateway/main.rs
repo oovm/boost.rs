@@ -643,3 +643,22 @@ fn decimal_sum_returns_the_numeric_total() {
         other => panic!("SUM(DECIMAL) must keep the total, got {other:?}"),
     }
 }
+
+/// `UPDATE` 的影响行数是 **changed rows**：把列写回当前值是 0 行，不是命中行数。
+///
+/// MySQL 的默认口径（未协商 `CLIENT_FOUND_ROWS`）只报告真正改变的行；单点主键路径与
+/// 扫描路径必须同一口径。同值改写既不推进修订号，也不该被计成影响行。
+#[test]
+fn update_counts_changed_rows_on_both_paths() {
+    let gateway = Gateway::new("update-changed");
+    gateway.expect_sql("CREATE TABLE stock (id INT NOT NULL PRIMARY KEY, qty INT)");
+    gateway.expect_sql("INSERT INTO stock (id, qty) VALUES (1, 5), (2, 7)");
+
+    // 单点路径：写回同值。
+    assert_eq!(gateway.expect_sql("UPDATE stock SET qty = 5 WHERE id = 1").affected_rows, 0);
+    // 扫描路径：只有 id = 2 真正从 7 变成 5。
+    assert_eq!(gateway.expect_sql("UPDATE stock SET qty = 5 WHERE id > 0").affected_rows, 1);
+    // 真的改写仍然计数。
+    assert_eq!(gateway.expect_sql("UPDATE stock SET qty = qty + 1 WHERE id = 1").affected_rows, 1);
+}
+
