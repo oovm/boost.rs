@@ -128,6 +128,23 @@ impl EnvironmentBuilder {
         self.insert_shared(TypeKey::qualified::<T, Q>(), scope, label, dependencies, factory)
     }
 
+    /// 以组件形式注册共享 provider，输出 `Arc<C>`。
+    ///
+    /// 依赖直接取 [`Component::dependencies`]，构造交给 [`Component::construct`]，因此组件不必
+    /// 再手写一份 provider 闭包。`input` 每次解析都会调用一次来生成普通输入，调用方不需要为
+    /// 输入类型实现 `Clone`。
+    pub fn register_component<C>(
+        &mut self,
+        scope: Scope,
+        label: &'static str,
+        input: impl Fn() -> C::Input + Send + Sync + 'static,
+    ) -> Result<(), WireError>
+    where
+        C: Component,
+    {
+        self.register::<Arc<C>, _>(scope, label, C::dependencies(), move |resolver| C::construct(input(), resolver).map(Arc::new))
+    }
+
     /// 注册 transient provider：每次解析都运行工厂，不要求 `Clone`。
     pub fn register_transient<T, F>(&mut self, label: &'static str, dependencies: Vec<Dependency>, factory: F) -> Result<(), WireError>
     where

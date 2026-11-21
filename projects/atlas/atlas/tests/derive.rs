@@ -128,6 +128,55 @@ fn optional_provider_failure_is_not_swallowed() {
     assert_eq!(error.kind(), WireErrorKind::ProviderFailed);
 }
 
+/// 直接以组件身份注册的服务集合：依赖与构造都来自 derive。
+#[derive(atlas::Component)]
+#[atlas(input = ServiceRegistryInput, runtime = atlas::wire)]
+struct ServiceRegistry {
+    #[wire(key = Primary)]
+    model: Arc<ModelClient>,
+
+    #[wire]
+    orders: Arc<OrderService>,
+}
+
+#[test]
+fn derived_component_registers_as_provider() {
+    let mut builder = Environment::builder();
+    builder
+        .register::<Arc<dyn OrderRepository + Send + Sync>, _>(Scope::Application, "repository", Vec::new(), |_| {
+            Ok(Arc::new(Orders) as Arc<dyn OrderRepository + Send + Sync>)
+        })
+        .expect("注册仓库");
+    builder
+        .register_qualified::<Arc<ModelClient>, Primary, _>(Scope::Application, "model", Vec::new(), |_| {
+            Ok(Arc::new(ModelClient { role: "primary" }))
+        })
+        .expect("注册角色模型");
+    builder
+        .register_component::<OrderService>(Scope::Application, "orders", || OrderServiceInput { region: "ap-guangzhou".into(), max_items: 10 })
+        .expect("注册组件");
+    let environment = builder.freeze().expect("冻结环境");
+
+    let registry = environment.construct::<ServiceRegistry>(ServiceRegistryInput).expect("构造注册表");
+    assert_eq!(registry.orders.region, "ap-guangzhou");
+    assert_eq!(registry.orders.max_items, 10);
+    assert_eq!(registry.orders.repository.region(), "orders");
+    assert_eq!(registry.model.role, "primary");
+    assert!(registry.orders.metrics.is_none());
+}
+
+#[test]
+fn derived_component_rejects_duplicate_registration() {
+    let mut builder = Environment::builder();
+    builder
+        .register_component::<OrderService>(Scope::Application, "orders", || OrderServiceInput { region: "ap-guangzhou".into(), max_items: 10 })
+        .expect("首次注册");
+    let error = builder
+        .register_component::<OrderService>(Scope::Application, "orders", || OrderServiceInput { region: "ap-shanghai".into(), max_items: 20 })
+        .expect_err("重复注册必须失败");
+    assert_eq!(error.kind(), WireErrorKind::DuplicateKey);
+}
+
 fn environment() -> Environment {
     let mut builder = Environment::builder();
     builder

@@ -93,3 +93,62 @@ fn frozen_cycle_reports_its_witness_path() {
     let path = error.path();
     assert!(path.contains(&"first") && path.contains(&"second"), "{path:?}");
 }
+
+/// 直接消费组件的根：证明组件注册与普通 provider 走同一条解析路径。
+struct ServiceRoot {
+    service: Arc<Service>,
+}
+
+impl Component for ServiceRoot {
+    type Input = ();
+
+    fn dependencies() -> Vec<Dependency> {
+        vec![Dependency::of::<Arc<Service>>("service", false)]
+    }
+
+    fn construct(_: Self::Input, resolver: &mut Resolver<'_>) -> Result<Self, WireError> {
+        Ok(Self { service: resolver.resolve::<Arc<Service>>(None)? })
+    }
+}
+
+#[test]
+fn registered_component_is_cached_in_its_scope() {
+    let mut builder = Environment::builder();
+    builder
+        .register::<Arc<dyn Repository>, _>(Scope::Application, "repository", Vec::new(), |_| Ok(Arc::new(Orders) as Arc<dyn Repository>))
+        .expect("注册仓库");
+    builder.register_component::<Service>(Scope::Application, "service", || "ap-guangzhou".to_owned()).expect("注册组件");
+    let environment = builder.freeze().expect("冻结环境");
+
+    let first = environment.construct::<ServiceRoot>(()).expect("构造根");
+    let second = environment.construct::<ServiceRoot>(()).expect("再次构造根");
+    assert_eq!(first.service.region, "ap-guangzhou");
+    assert!(Arc::ptr_eq(&first.service, &second.service), "应用级组件每个环境只构造一次");
+}
+
+#[test]
+fn registered_component_can_be_request_scoped() {
+    let mut builder = Environment::builder();
+    builder
+        .register::<Arc<dyn Repository>, _>(Scope::Application, "repository", Vec::new(), |_| Ok(Arc::new(Orders) as Arc<dyn Repository>))
+        .expect("注册仓库");
+    builder.register_component::<Service>(Scope::Request, "service", || "ap-guangzhou".to_owned()).expect("注册请求级组件");
+    let environment = builder.freeze().expect("冻结环境");
+
+    let error = environment.construct::<ServiceRoot>(()).err().expect("请求级组件不能在应用级构造");
+    assert_eq!(error.kind(), WireErrorKind::ScopeViolation);
+
+    let left = environment.open_request().seal().expect("打开左作用域").construct::<ServiceRoot>(()).expect("构造左根");
+    let right = environment.open_request().seal().expect("打开右作用域").construct::<ServiceRoot>(()).expect("构造右根");
+    assert!(!Arc::ptr_eq(&left.service, &right.service), "请求级组件每个作用域一份");
+    assert_eq!(left.service.repository.name(), "orders");
+}
+
+#[test]
+fn registered_component_checks_its_dependencies_at_freeze() {
+    let mut builder = Environment::builder();
+    builder.register_component::<Service>(Scope::Application, "service", || "ap-guangzhou".to_owned()).expect("注册组件");
+    let error = builder.freeze().err().expect("缺少仓库时冻结必须失败");
+    assert_eq!(error.kind(), WireErrorKind::NotRegistered);
+    assert!(error.path().contains(&"service"), "{error}");
+}

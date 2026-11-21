@@ -64,3 +64,42 @@ let service = environment.construct::<Service>("ap-guangzhou".into())?;
 [`Scope::Application`] 每个环境一份，[`Scope::Request`] 每个请求作用域一份，
 [`Scope::Transient`] 每次解析一份。应用级 provider 不可直接或经 transient 间接依赖
 请求级键；`freeze` 会拒绝这种图。
+
+# 组件注册
+
+[`EnvironmentBuilder::register_component`] 把实现了 [`Component`] 的类型注册成
+`Arc<C>` 共享 provider：依赖取自 `C::dependencies()`，构造交给 `C::construct`，普通输入
+由调用方每次解析时现场生成。组件因此不必再手写一份 provider 闭包，也不要求输入类型
+实现 `Clone`。
+
+```no_run
+use std::sync::Arc;
+
+use atlas_wire::{Component, Environment, Scope, WireError};
+
+struct Clock;
+
+impl Component for Clock {
+    type Input = ();
+
+    fn dependencies() -> Vec<atlas_wire::Dependency> {
+        Vec::new()
+    }
+
+    fn construct(_: (), _: &mut atlas_wire::Resolver<'_>) -> Result<Self, WireError> {
+        Ok(Self)
+    }
+}
+
+struct Server {
+    clock: Arc<Clock>,
+}
+
+let mut builder = Environment::builder();
+builder.register_component::<Clock>(Scope::Application, "clock", || ())?;
+builder.register::<Arc<Server>, _>(Scope::Application, "server", vec![atlas_wire::Dependency::of::<Arc<Clock>>("clock", false)], |resolver| {
+    Ok(Arc::new(Server { clock: resolver.resolve::<Arc<Clock>>(None)? }))
+})?;
+let environment = builder.freeze()?;
+# Ok::<(), WireError>(())
+```
