@@ -1,0 +1,8 @@
+[package]
+name = "data-binary-cil"
+description = "ECMA-335 CLI metadata reader: PE CLI header, #~ tables, #Strings names and method bodies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
