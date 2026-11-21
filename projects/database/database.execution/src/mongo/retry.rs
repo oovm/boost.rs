@@ -65,8 +65,16 @@ fn session_id(command: &BsonDocument) -> Option<&database_protocol_mongo::bson::
 }
 
 /// 一条重试写命令的登记键；不可重试或没有 `txnNumber` 时返回 `None`。
+///
+/// 多文档事务内的语句带 `autocommit: false`，它们由事务号区分而不属于重试写：
+/// 同一事务里的第二条语句如果也被登记成 `(lsid, txnNumber, 0)`，就会被当成
+/// 上一条语句的重试而直接回放，实际写入被静默吞掉。`mongod` 只登记
+/// `autocommit` 不为 `false` 的写命令，这里保持一致。
 pub fn retry_key(name: &str, command: &BsonDocument) -> Option<RetryKey> {
     if !retryable_write_command(name) {
+        return None;
+    }
+    if matches!(command.get("autocommit"), Some(BsonValue::Bool(false))) {
         return None;
     }
     let session = session_id(command)?;
@@ -182,6 +190,16 @@ mod tests {
         assert_eq!(defaulted.text(), "04|AQIDBA==|7|0");
         assert!(retry_key("insert", &write_command("insert", None, Some(1))).is_none());
         assert!(retry_key("find", &write_command("find", Some(7), Some(1))).is_none());
+    }
+
+    #[test]
+    fn retry_key_is_absent_inside_a_multi_document_transaction() {
+        let mut transaction = write_command("insert", Some(7), None);
+        transaction.push("autocommit".to_string(), BsonValue::Bool(false));
+        assert!(retry_key("insert", &transaction).is_none());
+        let mut retryable = write_command("insert", Some(7), None);
+        retryable.push("autocommit".to_string(), BsonValue::Bool(true));
+        assert!(retry_key("insert", &retryable).is_some());
     }
 
     #[test]
