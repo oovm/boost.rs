@@ -286,6 +286,18 @@ pub enum X64TextInstruction {
     StoreDwordRcxToRax,
     /// `mov rdx, [slot]`：把帧槽装入 `rdx`（`CopyBytes` 的长度实参）。
     LoadSlotToRdx(u16),
+    /// `shl rax, imm8`：按固定位数左移（数组元素 8 字节槽的容量换算）。
+    ShiftLeftRaxImmediate(u8),
+    /// `mov [rax], rdx`：把 `rdx` 写入 `rax` 指向的机器字（数组头部长度）。
+    StoreRdxToRax,
+    /// `mov rax, [rax + rcx*8 + 8]`：按 `rcx` 索引读取数组元素。
+    ///
+    /// 数组表示由本 lane 冻结：`[0]` 是 `i64` 元素个数，元素从 `+8` 起按 8 字节槽
+    /// 连续排列（见 `x86_64` 的数组合同）。读取不做越界检查，边界由语言合同的
+    /// `Cardinal` 前置判定承担。
+    LoadIndexedFromRaxRcx,
+    /// `mov [rax + rcx*8 + 8], rdx`：按 `rcx` 索引写入数组元素。
+    StoreIndexedRdxToRaxRcx,
     /// 复制字节：`rax` = 目标、`rcx` = 源、`rdx` = 长度。
     ///
     /// 编码器负责保存/恢复被 SysV64 与 Win64 共同视为被调用者保存的

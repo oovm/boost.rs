@@ -28,7 +28,7 @@ use crate::{
         ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableFunction as MirFunction,
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
-    contracts::{Constant, InstructionKind, Operand, Terminator},
+    contracts::{ArrayInitialization, Constant, InstructionKind, Operand, Terminator},
     emitter_backend_machine::{MachineImageKind, classify_machine_image},
     lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
@@ -200,8 +200,48 @@ impl X86_64OperatorCode {
     }
 }
 
-/// 可执行文件容器：决定入口接收方式与最终字节格式。
+/// x86-64 数组 operator 的冻结操作。
 ///
+/// 数组表示由本 lane 冻结（与 wasm-gc 的宿主 arraytype 表无关）：
+/// `[T]` 是宿主堆上的一块连续内存，`[0]` 为 `i64` 元素个数，元素从 `+8` 起
+/// 按 8 字节槽排列。集合语义（越界、初始化前沿）全部留在 Valkyrie 标准库；
+/// 这里只编码已经解析并绑定的四类机械操作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum X64ArrayOperation {
+    /// `array.new<T>(capacity) -> [T]`：分配并零初始化容量槽位。
+    New,
+    /// `array.length<T>([T]) -> usize`：读取头部元素个数。
+    Length,
+    /// `array.get<T>([T], index) -> T`：按 0 基下标读取一个 8 字节槽。
+    Get,
+    /// `array.set<T>([T], index, T) -> unit`：按 0 基下标写入一个 8 字节槽。
+    Set,
+}
+
+/// 已冻结的 x86-64 数组 operator 计划。
+///
+/// 只冻结 arity 与操作身份：数组元素类型不进入计划，元素宽度由本 lane 的
+/// 「统一 8 字节槽」表示固定，调用点先按声明签名校验后再发射。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct X64ArrayOperatorPlan {
+    /// 冻结的实参个数；编码前必须与调用实参个数一致。
+    pub arity: usize,
+    /// 冻结的数组操作身份。
+    pub operation: X64ArrayOperation,
+}
+
+/// 数组分配的宿主导入模块（Win64 `.idata`）。
+const KERNEL32_DLL: &str = "kernel32.dll";
+/// 取进程默认堆句柄。
+const GET_PROCESS_HEAP: &str = "GetProcessHeap";
+/// 从默认堆分配内存。
+const HEAP_ALLOC: &str = "HeapAlloc";
+/// `HeapAlloc` 的 `HEAP_ZERO_MEMORY` 标志（分配后全零）。
+const HEAP_ZERO_MEMORY: i64 = 0x0000_0008;
+/// 数组头部长度字段的字节宽度。
+const ARRAY_HEADER_BYTES: i64 = 8;
+
+/// 可执行文件容器：决定入口接收方式与最终字节格式。
 /// 容器选择来自规范目标的 `os`，不由 `arch` 推断。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContainerKind {
@@ -496,7 +536,7 @@ impl FunctionLowerer<'_> {
                 .copied()
                 .ok_or_else(|| format!("x86_64 lowering：函数 `{}` 入口形参 {index} 缺少局部槽", self.function.symbol))?;
             if let Some(ty) = self.function.value_types.get(parameter)
-                && !is_slot_type(ty)
+                && !is_local_carrier_type(ty)
             {
                 return Err(format!("x86_64 lowering：函数 `{}` 的形参类型 `{ty}` 没有 x86_64 标量载体", self.function.symbol));
             }
@@ -555,6 +595,96 @@ impl FunctionLowerer<'_> {
                 Ok(())
             }
             InstructionKind::Call { callee, arguments } => self.emit_call(instruction, callee, arguments),
+            InstructionKind::ArrayNew { array_type, length, initialization } => {
+                let element = heap_array_element_type(array_type).ok_or_else(|| {
+                    format!("x86_64 lowering：`ArrayNew` 的类型 `{array_type}` 不是堆数组 `[T]`：function={}", self.function.symbol)
+                })?;
+                if !is_slot_type(element) {
+                    return Err(format!(
+                        "x86_64 lowering：数组元素类型 `{element}` 没有 8 字节槽载体：function={}",
+                        self.function.symbol
+                    ));
+                }
+                match initialization {
+                    ArrayInitialization::Default => {
+                        // `HeapAlloc(HEAP_ZERO_MEMORY)` 已把元素槽置零；标量元素的
+                        // 语言默认值就是零，无需第二遍填充。
+                    }
+                    ArrayInitialization::Fill(_) => {
+                        return Err(format!(
+                            "x86_64 lowering 尚不支持 `ArrayNew` 的 `Fill` 初始化：function={}",
+                            self.function.symbol
+                        ));
+                    }
+                }
+                let local = self.require_output_local(instruction)?;
+                self.emit_array_allocation(length)?;
+                self.push(X64TextInstruction::StoreSlot(local));
+                Ok(())
+            }
+            InstructionKind::ArrayFromElements { array_type, elements, .. } => {
+                let element = heap_array_element_type(array_type).ok_or_else(|| {
+                    format!(
+                        "x86_64 lowering：`ArrayFromElements` 的类型 `{array_type}` 不是堆数组 `[T]`：function={}",
+                        self.function.symbol
+                    )
+                })?;
+                if !is_slot_type(element) {
+                    return Err(format!(
+                        "x86_64 lowering：数组元素类型 `{element}` 没有 8 字节槽载体：function={}",
+                        self.function.symbol
+                    ));
+                }
+                let count = i64::try_from(elements.len())
+                    .map_err(|_| format!("x86_64 lowering：数组字面量长度超出 `i64`：function={}", self.function.symbol))?;
+                let local = self.require_output_local(instruction)?;
+                self.emit_array_allocation(&Operand::Constant(Constant::Int(count)))?;
+                self.push(X64TextInstruction::StoreSlot(local));
+                // 逐元素写入：值先落临时槽，避免常量求值借用 `rax` 覆盖数组指针。
+                let base = self.reserve_temps(2);
+                let value_slot = self.temp_slot(base, 0)?;
+                let index_slot = self.temp_slot(base, 1)?;
+                for (index, value) in elements.iter().enumerate() {
+                    self.emit_operand_to_rax(value)?;
+                    self.push(X64TextInstruction::StoreSlot(value_slot));
+                    self.push(X64TextInstruction::LoadI64(index as i64));
+                    self.push(X64TextInstruction::StoreSlot(index_slot));
+                    self.push(X64TextInstruction::LoadSlot(local));
+                    self.push(X64TextInstruction::LoadSlotToRcx(index_slot));
+                    self.push(X64TextInstruction::LoadSlotToRdx(value_slot));
+                    self.push(X64TextInstruction::StoreIndexedRdxToRaxRcx);
+                }
+                Ok(())
+            }
+            InstructionKind::ArrayLength { array } => {
+                let local = self.require_output_local(instruction)?;
+                self.require_heap_array_operand(array)?;
+                self.emit_operand_to_rax(array)?;
+                self.push(X64TextInstruction::LoadFromRax);
+                self.push(X64TextInstruction::StoreSlot(local));
+                Ok(())
+            }
+            InstructionKind::ArrayGet { array, index } => {
+                let local = self.require_output_local(instruction)?;
+                self.require_heap_array_operand(array)?;
+                // 下标先装载：常量下标会借用 `rax` 作暂存，数组指针必须最后装入。
+                self.emit_operand_to_rcx(index)?;
+                self.emit_operand_to_rax(array)?;
+                self.push(X64TextInstruction::LoadIndexedFromRaxRcx);
+                self.push(X64TextInstruction::StoreSlot(local));
+                Ok(())
+            }
+            InstructionKind::ArraySet { array, index, value } => {
+                if self.output_local(instruction)?.is_some() {
+                    return Err(format!("x86_64 lowering：`ArraySet` 不得绑定结果槽：function={}", self.function.symbol));
+                }
+                self.require_heap_array_operand(array)?;
+                self.emit_operand_to_rcx(index)?;
+                self.emit_operand_to_rdx(value)?;
+                self.emit_operand_to_rax(array)?;
+                self.push(X64TextInstruction::StoreIndexedRdxToRaxRcx);
+                Ok(())
+            }
             other => Err(format!("x86_64 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol)),
         }
     }
@@ -748,12 +878,15 @@ impl FunctionLowerer<'_> {
                 self.function.symbol
             ));
         };
-        let X86OperatorBinding::Frozen(plan) = binding
-        else {
-            return Err(format!(
-                "x86_64 目标 operator `{instance:?}` 绑定未冻结（链接 `{link}`）：拒绝补造指令: function={}",
-                self.function.symbol
-            ));
+        let plan = match binding {
+            X86OperatorBinding::Array(plan) => return self.emit_array_operator_call(instruction, plan, arguments),
+            X86OperatorBinding::Frozen(plan) => plan,
+            X86OperatorBinding::Unfrozen => {
+                return Err(format!(
+                    "x86_64 目标 operator `{instance:?}` 绑定未冻结（链接 `{link}`）：拒绝补造指令: function={}",
+                    self.function.symbol
+                ));
+            }
         };
         let code = plan.encoding;
         if arguments.len() != plan.arity || plan.arity != code.arity() {
@@ -804,6 +937,12 @@ impl FunctionLowerer<'_> {
                 self.push(X64TextInstruction::LoadI64(i64::from(*value)));
                 Ok(())
             }
+            // 编译期文本落成程序内联的自相对描述符；`utf16` 复用同一物理载体，
+            // 因为本 lane 尚未闭合任何真实的 UTF-16 消费路径（见 `is_local_carrier_type`）。
+            Constant::Utf8(value) | Constant::Utf16(value) => {
+                self.push(X64TextInstruction::LoadString(value.clone()));
+                Ok(())
+            }
             other => Err(format!("x86_64 lowering 尚不支持常量 `{other:?}`：缺少 x86_64 常量载体合同，function={}", self.function.symbol)),
         }
     }
@@ -850,6 +989,130 @@ impl FunctionLowerer<'_> {
             }
             Operand::Symbol(path) => Err(format!("x86_64 lowering 不支持符号操作数 `{path:?}`: function={}", self.function.symbol)),
         }
+    }
+
+    /// 把操作数装入数组写入使用的 `rdx`（值槽）。
+    fn emit_operand_to_rdx(&mut self, operand: &Operand) -> Result<()> {
+        match operand {
+            Operand::Value(value) => {
+                let local = self.value_local(*value)?;
+                self.push(X64TextInstruction::LoadSlotToRdx(local));
+                Ok(())
+            }
+            Operand::Constant(constant) => {
+                if !matches!(constant, Constant::Int(_) | Constant::Bool(_)) {
+                    return Err(format!(
+                        "x86_64 lowering 尚不支持常量 `{constant:?}` 作为数组元素：缺少 x86_64 常量载体合同，function={}",
+                        self.function.symbol
+                    ));
+                }
+                self.emit_constant_to_rax(constant)?;
+                let base = self.reserve_temps(1);
+                let slot = self.temp_slot(base, 0)?;
+                self.push(X64TextInstruction::StoreSlot(slot));
+                self.push(X64TextInstruction::LoadSlotToRdx(slot));
+                Ok(())
+            }
+            Operand::Item(instance) => Err(format!(
+                "x86_64 lowering 不支持把可调用身份 `{instance:?}` 当数组元素使用: function={}",
+                self.function.symbol
+            )),
+            Operand::Symbol(path) => {
+                Err(format!("x86_64 lowering 不支持符号操作数 `{path:?}` 作为数组元素: function={}", self.function.symbol))
+            }
+        }
+    }
+
+    /// 数组指令的操作数必须是堆数组 `[T]`。
+    fn require_heap_array_operand(&self, operand: &Operand) -> Result<()> {
+        let ty = self.operand_semantic_type(operand)?;
+        if heap_array_element_type(&ty).is_none() {
+            return Err(format!("x86_64 lowering：数组指令的操作数类型 `{ty}` 不是堆数组 `[T]`：function={}", self.function.symbol));
+        }
+        Ok(())
+    }
+
+    /// 分配 `length` 个 8 字节元素槽的数组；`rax` 返回数组指针。
+    ///
+    /// 布局：`[0] = i64 元素个数`，元素 `i` 位于 `[8 + 8*i]`。分配走 Win64 默认堆
+    /// （`GetProcessHeap` + `HeapAlloc(HEAP_ZERO_MEMORY)`），元素槽初始为零。
+    /// 这是本 lane 的数组运行时；分配失败没有异常通道，由后续访问自然故障闭合。
+    fn emit_array_allocation(&mut self, length: &Operand) -> Result<()> {
+        let base = self.reserve_temps(3);
+        let count_slot = self.temp_slot(base, 0)?;
+        let size_slot = self.temp_slot(base, 1)?;
+        let heap_slot = self.temp_slot(base, 2)?;
+
+        // 元素个数落槽后换算字节数：8（头部）+ 8 * count。
+        self.emit_operand_to_rax(length)?;
+        self.push(X64TextInstruction::StoreSlot(count_slot));
+        self.push(X64TextInstruction::ShiftLeftRaxImmediate(3));
+        self.push(X64TextInstruction::AddRaxImmediate(ARRAY_HEADER_BYTES as i32));
+        self.push(X64TextInstruction::StoreSlot(size_slot));
+
+        // GetProcessHeap()：无参数，句柄在 `rax`。
+        self.push(X64TextInstruction::CallImport { module: KERNEL32_DLL.to_string(), field: GET_PROCESS_HEAP.to_string() });
+        self.push(X64TextInstruction::StoreSlot(heap_slot));
+
+        // HeapAlloc(hHeap, HEAP_ZERO_MEMORY, bytes)：rcx/rdx/r8（Win64）。
+        self.push(X64TextInstruction::LoadSlotToArg { slot: heap_slot, index: 0 });
+        self.push(X64TextInstruction::LoadSlotToArg { slot: size_slot, index: 2 });
+        self.push(X64TextInstruction::LoadI64(HEAP_ZERO_MEMORY));
+        self.push(X64TextInstruction::StoreSlot(size_slot));
+        self.push(X64TextInstruction::LoadSlotToArg { slot: size_slot, index: 1 });
+        self.push(X64TextInstruction::CallImport { module: KERNEL32_DLL.to_string(), field: HEAP_ALLOC.to_string() });
+
+        // 写头部元素个数：`[rax] = count`。
+        self.push(X64TextInstruction::LoadSlotToRcx(count_slot));
+        self.push(X64TextInstruction::StoreRcxToRax);
+        Ok(())
+    }
+
+    /// 数组 operator 调用的机械发射（`[host_provider]` 冻结的 `array.*`）。
+    fn emit_array_operator_call(
+        &mut self,
+        instruction: &MirInstruction,
+        plan: X64ArrayOperatorPlan,
+        arguments: &[Operand],
+    ) -> Result<()> {
+        if arguments.len() != plan.arity {
+            return Err(format!(
+                "x86_64 数组 operator 实参数量与冻结 arity 不符: function={} expected={} actual={}",
+                self.function.symbol,
+                plan.arity,
+                arguments.len()
+            ));
+        }
+        match plan.operation {
+            X64ArrayOperation::New => {
+                let local = self.require_output_local(instruction)?;
+                self.emit_array_allocation(&arguments[0])?;
+                self.push(X64TextInstruction::StoreSlot(local));
+            }
+            X64ArrayOperation::Length => {
+                let local = self.require_output_local(instruction)?;
+                self.emit_operand_to_rax(&arguments[0])?;
+                self.push(X64TextInstruction::LoadFromRax);
+                self.push(X64TextInstruction::StoreSlot(local));
+            }
+            X64ArrayOperation::Get => {
+                let local = self.require_output_local(instruction)?;
+                self.emit_operand_to_rcx(&arguments[1])?;
+                self.emit_operand_to_rax(&arguments[0])?;
+                self.push(X64TextInstruction::LoadIndexedFromRaxRcx);
+                self.push(X64TextInstruction::StoreSlot(local));
+            }
+            X64ArrayOperation::Set => {
+                if self.output_local(instruction)?.is_some() {
+                    return Err(format!("x86_64 lowering：数组 `set` 不得绑定结果槽：function={}", self.function.symbol));
+                }
+                self.emit_operand_to_rcx(&arguments[1])?;
+                self.emit_operand_to_rdx(&arguments[2])?;
+                self.emit_operand_to_rax(&arguments[0])?;
+                self.push(X64TextInstruction::StoreIndexedRdxToRaxRcx);
+            }
+        }
+        Ok(())
     }
 
     /// 操作数在计划中冻结的语义类型。
@@ -944,7 +1207,7 @@ impl FunctionLowerer<'_> {
             .get(&value)
             .ok_or_else(|| format!("x86_64 lowering：SSA 值 {:?} 缺少规划的局部槽: function={}", value, self.function.symbol))?;
         if let Some(ty) = self.slots.local_types.get(local as usize)
-            && !is_slot_type(ty)
+            && !is_local_carrier_type(ty)
         {
             return Err(format!("x86_64 lowering：SSA 值 {:?} 的类型 `{ty}` 没有 x86_64 标量载体: function={}", value, self.function.symbol));
         }
@@ -963,6 +1226,28 @@ fn is_slot_type(ty: &SemanticType) -> bool {
             | SemanticType::Integer32 { .. }
             | SemanticType::Integer64 { .. }
     )
+}
+
+/// 帧槽可承载的类型：标量值、堆数组指针（`[T]` 的物理载体是 8 字节指针），
+/// 以及编译期文本的描述符指针。
+///
+/// 文本只在「不读取内容」的路径上出现（例如 `panic` 的消息实参，原生以 `ud2`
+/// 终止而不格式化），物理载体是程序装配器内联的自相对描述符
+/// `{ i32 self_relative_ptr; u32 len }`——与宿主扩展复用同一载体，不引入第二套
+/// 字符串布局。真正消费文本的宿主边界仍由扩展 lane 负责。
+fn is_local_carrier_type(ty: &SemanticType) -> bool {
+    is_slot_type(ty) || heap_array_element_type(ty).is_some() || matches!(ty, SemanticType::Utf8 | SemanticType::Utf16)
+}
+
+/// 堆数组 `[T]` 的元素类型；定长值聚合 `[T; N]` 与标量返回 `None`。
+///
+/// 定长数组在语言里是栈上值聚合，不走本 lane 的堆数组表示，必须在调用点
+/// 结构化拒绝而不是把它当指针搬运。
+fn heap_array_element_type(ty: &SemanticType) -> Option<&SemanticType> {
+    match ty {
+        SemanticType::Array(element) => Some(element),
+        _ => None,
+    }
 }
 
 /// `Cast` 的整数表示：位宽 + 符号性。
@@ -1095,8 +1380,10 @@ fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
 /// x86-64 平台私有的 operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum X86OperatorBinding {
-    /// 已冻结的 x86-64 operator 编码。
+    /// 已冻结的 x86-64 标量 operator 编码。
     Frozen(TargetOperatorPlan<X86_64OperatorCode>),
+    /// 已冻结的 x86-64 数组 operator 计划（机械堆数组操作）。
+    Array(X64ArrayOperatorPlan),
     /// 声明了 x86-64 operator，但没有可编码配方；emit 必须结构化失败。
     Unfrozen,
 }
@@ -1113,10 +1400,129 @@ pub(crate) fn freeze_x86_64_operator(
     else {
         return Ok(None);
     };
+    if let Some(plan) = freeze_x86_64_array_operator(mnemonic, instance, symbol, parameter_types, return_type)? {
+        return Ok(Some(X86OperatorBinding::Array(plan)));
+    }
     let Some(plan) = freeze_x86_64_operator_binding(mnemonic)
     else {
         return Ok(Some(X86OperatorBinding::Unfrozen));
     };
     crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
     Ok(Some(X86OperatorBinding::Frozen(plan)))
+}
+
+/// 按声明签名冻结 x86-64 数组 operator。
+///
+/// 数组 operator 的物理形状不是标量载体：`[T]` 与 `usize` 都占 8 字节槽，但
+/// 载体种类不同，不能用 `validate_frozen_operator` 的标量规则判定。这里只校验
+/// arity、数组位置的类型身份与元素可为 8 字节槽，未知助记符返回 `None` 交回
+/// 标量表处理。
+fn freeze_x86_64_array_operator(
+    mnemonic: &str,
+    instance: compiler_types::ItemInstanceId,
+    symbol: &str,
+    parameter_types: &[compiler_types::SemanticType],
+    return_type: &compiler_types::SemanticType,
+) -> crate::Result<Option<X64ArrayOperatorPlan>> {
+    let operation = match mnemonic {
+        "array.new" => X64ArrayOperation::New,
+        "array.length" => X64ArrayOperation::Length,
+        "array.get" => X64ArrayOperation::Get,
+        "array.set" => X64ArrayOperation::Set,
+        _ => return Ok(None),
+    };
+    let arity = match operation {
+        X64ArrayOperation::New | X64ArrayOperation::Length => 1,
+        X64ArrayOperation::Get => 2,
+        X64ArrayOperation::Set => 3,
+    };
+    if parameter_types.len() != arity {
+        return Err(format!(
+            "x86_64 数组 operator `{mnemonic}` 的声明 arity 与冻结计划不符: function={symbol} expected={arity} actual={} instance={instance:?}",
+            parameter_types.len()
+        ));
+    }
+    let require_slot = |index: usize, ty: &compiler_types::SemanticType| -> crate::Result<()> {
+        if !is_slot_type(ty) {
+            return Err(format!(
+                "x86_64 数组 operator `{mnemonic}` 的参数 {index} 类型 `{ty}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
+            ));
+        }
+        Ok(())
+    };
+    let require_array = |index: usize| -> crate::Result<&compiler_types::SemanticType> {
+        let ty = &parameter_types[index];
+        let Some(element) = heap_array_element_type(ty)
+        else {
+            return Err(format!(
+                "x86_64 数组 operator `{mnemonic}` 的参数 {index} 类型 `{ty}` 不是堆数组 `[T]`: function={symbol} instance={instance:?}"
+            ));
+        };
+        if !is_slot_type(element) {
+            return Err(format!(
+                "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
+            ));
+        }
+        Ok(element)
+    };
+    match operation {
+        X64ArrayOperation::New => {
+            require_slot(0, &parameter_types[0])?;
+            require_array_return(mnemonic, symbol, instance, return_type)?;
+        }
+        X64ArrayOperation::Length => {
+            require_array(0)?;
+            if !is_slot_type(return_type) {
+                return Err(format!(
+                    "x86_64 数组 operator `{mnemonic}` 的返回类型 `{return_type}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
+                ));
+            }
+        }
+        X64ArrayOperation::Get => {
+            let element = require_array(0)?;
+            require_slot(1, &parameter_types[1])?;
+            if return_type != element {
+                return Err(format!(
+                    "x86_64 数组 operator `{mnemonic}` 的返回类型 `{return_type}` 与元素类型 `{element}` 不一致: function={symbol} instance={instance:?}"
+                ));
+            }
+        }
+        X64ArrayOperation::Set => {
+            let element = require_array(0)?;
+            require_slot(1, &parameter_types[1])?;
+            if &parameter_types[2] != element {
+                return Err(format!(
+                    "x86_64 数组 operator `{mnemonic}` 的写入值类型 `{}` 与元素类型 `{element}` 不一致: function={symbol} instance={instance:?}",
+                    parameter_types[2]
+                ));
+            }
+            if !return_type.is_unitish() {
+                return Err(format!(
+                    "x86_64 数组 operator `{mnemonic}` 的返回类型 `{return_type}` 必须是 unit: function={symbol} instance={instance:?}"
+                ));
+            }
+        }
+    }
+    Ok(Some(X64ArrayOperatorPlan { arity, operation }))
+}
+
+/// `array.new` 的返回必须是元素可承载的堆数组。
+fn require_array_return(
+    mnemonic: &str,
+    symbol: &str,
+    instance: compiler_types::ItemInstanceId,
+    return_type: &compiler_types::SemanticType,
+) -> crate::Result<()> {
+    let Some(element) = heap_array_element_type(return_type)
+    else {
+        return Err(format!(
+            "x86_64 数组 operator `{mnemonic}` 的返回类型 `{return_type}` 不是堆数组 `[T]`: function={symbol} instance={instance:?}"
+        ));
+    };
+    if !is_slot_type(element) {
+        return Err(format!(
+            "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
+        ));
+    }
+    Ok(())
 }

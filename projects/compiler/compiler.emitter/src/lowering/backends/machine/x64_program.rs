@@ -17,8 +17,9 @@ use super::{
         X64Reg, argument_register, emit_add_rax_imm32, emit_add_rdx_imm32, emit_call_import_placeholder, emit_call_placeholder,
         emit_copy_bytes, emit_divide_by_ten, emit_function_return, emit_jump_if_zero_placeholder, emit_jump_placeholder,
         emit_lea_rax_from_frame, emit_lea_rip_placeholder, emit_load_byte_from_rax, emit_load_descriptor_length, emit_load_from_rax,
-        emit_mov_from_frame, emit_mov_imm64, emit_mov_to_frame, emit_neg_rax, emit_prologue, emit_store_byte_at_rax_from_rdx,
-        emit_store_dword_imm_to_rax, emit_store_dword_rcx_to_rax, emit_store_rax_to_rcx, emit_store_rax_to_stack, emit_store_rcx_to_rax,
+        emit_load_indexed_from_rax_rcx, emit_mov_from_frame, emit_mov_imm64, emit_mov_to_frame, emit_neg_rax, emit_prologue,
+        emit_shift_left_rax_imm8, emit_store_byte_at_rax_from_rdx, emit_store_dword_imm_to_rax, emit_store_dword_rcx_to_rax,
+        emit_store_indexed_rdx_to_rax_rcx, emit_store_rax_to_rcx, emit_store_rax_to_stack, emit_store_rcx_to_rax, emit_store_rdx_to_rax,
         emit_sub_rax_imm32, emit_syscall_write, emit_trap, emit_zero_stack_arg, encode_operator, patch_rel32,
     },
     x86_64::X86_64OperatorCode,
@@ -107,6 +108,21 @@ pub fn encode_x64_program_with_dependencies(
     if functions.is_empty() {
         return Err("native text program has no functions".to_string());
     }
+    // 编码器按指令事实补齐导入表：`CallImport` 是唯一权威，调用方声明只是补充
+    // （适配器预置的导入名可能与指令重复）。缺失会让容器在 `.idata`/GOT 里找不到
+    // 槽位，所以在布局前统一去重合并，不要求每个调用点与声明表手工同步。
+    let mut imports = imports.to_vec();
+    for function in functions {
+        for instruction in &function.instructions {
+            if let X64TextInstruction::CallImport { module, field } = instruction {
+                let entry = (module.clone(), field.clone());
+                if !imports.contains(&entry) {
+                    imports.push(entry);
+                }
+            }
+        }
+    }
+    let imports = imports.as_slice();
     // SysV64 的导入按全局符号解析，不存在模块装载概念：`module` 必须为空。
     if abi != X64CallConv::Win64
         && let Some((module, _)) = imports.iter().find(|(module, _)| !module.is_empty())
@@ -249,6 +265,10 @@ pub fn encode_x64_program_with_dependencies(
                 X64TextInstruction::StoreDwordImmediateToRax(value) => emit_store_dword_imm_to_rax(&mut text, *value),
                 X64TextInstruction::StoreDwordRcxToRax => emit_store_dword_rcx_to_rax(&mut text),
                 X64TextInstruction::LoadSlotToRdx(slot) => emit_mov_from_frame(&mut text, X64Reg::Rdx, *slot),
+                X64TextInstruction::ShiftLeftRaxImmediate(bits) => emit_shift_left_rax_imm8(&mut text, *bits),
+                X64TextInstruction::StoreRdxToRax => emit_store_rdx_to_rax(&mut text),
+                X64TextInstruction::LoadIndexedFromRaxRcx => emit_load_indexed_from_rax_rcx(&mut text),
+                X64TextInstruction::StoreIndexedRdxToRaxRcx => emit_store_indexed_rdx_to_rax_rcx(&mut text),
                 X64TextInstruction::CopyBytes => emit_copy_bytes(&mut text),
                 X64TextInstruction::Trap => emit_trap(&mut text),
                 X64TextInstruction::Operator(code) => encode_operator(&mut text, *code),

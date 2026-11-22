@@ -239,6 +239,26 @@ pub(super) fn emit_store_rax_to_rcx(text: &mut Vec<u8>) {
     text.extend_from_slice(&[0x48, 0x89, 0x01]);
 }
 
+/// `mov [rax], rdx`。
+pub(super) fn emit_store_rdx_to_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x89, 0x10]);
+}
+
+/// `shl rax, imm8`。
+pub(super) fn emit_shift_left_rax_imm8(text: &mut Vec<u8>, bits: u8) {
+    text.extend_from_slice(&[0x48, 0xC1, 0xE0, bits]);
+}
+
+/// `mov rax, [rax + rcx*8 + 8]`：数组元素读取（8 字节槽、头部 8 字节）。
+pub(super) fn emit_load_indexed_from_rax_rcx(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x8B, 0x44, 0xC8, 0x08]);
+}
+
+/// `mov [rax + rcx*8 + 8], rdx`：数组元素写入（8 字节槽、头部 8 字节）。
+pub(super) fn emit_store_indexed_rdx_to_rax_rcx(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x48, 0x89, 0x54, 0xC8, 0x08]);
+}
+
 /// `mov dword ptr [rax], imm32`。
 pub(super) fn emit_store_dword_imm_to_rax(text: &mut Vec<u8>, value: u32) {
     text.extend_from_slice(&[0xC7, 0x00]);
