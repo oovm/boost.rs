@@ -389,7 +389,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             backend_name: "machine-code",
             interpreter: "machine.image",
             lane: TargetLane::MachineCode,
-            input_kind: Some(BackendInputKind::PeImage),
+            input_kind: Some(BackendInputKind::MachineImage),
             target_family: TargetFamily::MachineCode,
             supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             reference_management: ReferenceManagement::PerceusRc,
