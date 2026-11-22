@@ -1,6 +1,5 @@
 //! `legion plan`：只做 workspace 解析与 build plan，**不**进入 Compiler。
 use crate::legion::{
-    CanonicalTarget,
     cmds::error::{LegionError, LegionResult},
 };
 use std::{path::Path, process::ExitCode};
@@ -15,8 +14,8 @@ use crate::legion::{
 pub struct PlanArgs {
     /// 项目目录。
     pub project_dir: std::path::PathBuf,
-    /// 目标平台。
-    pub target: CanonicalTarget,
+    /// 已冻结的解析目标（平台身份 + 产物/宿主合同）。
+    pub resolved: crate::legion::ResolvedTarget,
 }
 
 /// 执行 `legion plan`（安全：不调用 `compile_plan`）。
@@ -29,7 +28,7 @@ pub fn run(args: &PlanArgs) -> LegionResult<ExitCode> {
 
 fn run_inner(args: &PlanArgs) -> LegionResult<ExitCode> {
     let project_input = resolve_project_path(&args.project_dir)?;
-    let build_plan = plan(PlanRequest { project_dir: project_input, target: args.target.clone(), output_dir: None })?;
+    let build_plan = plan(PlanRequest { project_dir: project_input, resolved: args.resolved.clone(), output_dir: None })?;
     if !build_plan.is_compilable() {
         return Err(LegionError::Planner(crate::legion::workspace::planner::PlannerError::NoSourceFiles));
     }

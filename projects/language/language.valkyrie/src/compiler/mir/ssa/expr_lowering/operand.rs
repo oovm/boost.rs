@@ -282,7 +282,7 @@ impl MirBuilder {
                             return operand;
                         }
                         if let Some((sum_type, type_args, variant, payload_type, payloads, multi_field)) =
-                            sum_new_parts_from_constructor(call, &arguments, &self.sum_types)
+                            sum_new_parts_from_constructor(call, &arguments, &self.sum_types, expected_type)
                         {
                             let value = self.next_value(MirValueOrigin::CallResult);
                             let Some((owner, variant_declaration)) = call.sum_owner.zip(call.sum_variant)
@@ -518,7 +518,7 @@ impl MirBuilder {
                     if call.domain == HirCallableDomain::Constructor {
                         if let Some((owner, variant_declaration)) = call.sum_owner.zip(call.sum_variant) {
                             let value = self.next_value(MirValueOrigin::CallResult);
-                            let ctor_return = call.return_type.clone();
+                            let ctor_return = concretize_variant_constructor_types(&call.return_type, None, expected_type).0;
                             let type_args = type_args_from_sum_shaped(&ctor_return);
                             // 实例化实参必须是 HIR 已结算的完整事实：数量与声明 binder 表
                             // 不一致即缺事实，带 source/span 结构化诊断拒绝，禁止从 binder 表合成。

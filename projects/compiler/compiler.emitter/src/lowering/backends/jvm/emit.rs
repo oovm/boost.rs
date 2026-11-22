@@ -842,6 +842,24 @@ fn jvm_local_kind(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<Jv
     JvmSlotKind::of(&jvm_parameter_descriptor(layouts, ty)?)
 }
 
+/// `Cast` 的整数表示：位宽 + 符号性（`Character` 是 32 位无符号码位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct JvmIntShape {
+    bits: u8,
+    signed: bool,
+}
+
+fn jvm_int_shape(ty: &SemanticType) -> Option<JvmIntShape> {
+    Some(match ty {
+        SemanticType::Integer8 { signed } => JvmIntShape { bits: 8, signed: *signed },
+        SemanticType::Integer16 { signed } => JvmIntShape { bits: 16, signed: *signed },
+        SemanticType::Integer32 { signed } => JvmIntShape { bits: 32, signed: *signed },
+        SemanticType::Integer64 { signed } => JvmIntShape { bits: 64, signed: *signed },
+        SemanticType::Character => JvmIntShape { bits: 32, signed: false },
+        _ => return None,
+    })
+}
+
 struct JvmMethodEmitter<'a> {
     submission: &'a FragmentSubmission,
     internal_name: &'a str,
@@ -984,6 +1002,19 @@ impl JvmMethodEmitter<'_> {
                 let (slot, kind) = self.require_output(instruction)?;
                 self.emit_operand(source, Some(kind))?;
                 self.instructions.push(kind.store(slot));
+            }
+            InstructionKind::Cast { source, ty } => {
+                // 语言层 `as` 是表示转换：源/目标位宽与符号性只由冻结的 `SemanticType`
+                // 决定，不得退化成 Copy（`i2l`/`l2i` 与窄化规范化必须显式发射）。
+                let (slot, target_kind) = self.require_output(instruction)?;
+                let source_ty = self.operand_semantic_type(source)?;
+                let source_kind = match source {
+                    Operand::Value(value) => self.value_slot(*value)?.1,
+                    _ => jvm_local_kind(self.submission.backend_plan.aggregate_layouts(), &source_ty)?,
+                };
+                self.emit_operand(source, Some(source_kind))?;
+                self.emit_cast_conversion(&source_ty, ty, source_kind, target_kind)?;
+                self.instructions.push(target_kind.store(slot));
             }
             InstructionKind::StoreVar { value, .. } => {
                 let output = self.output_of(instruction)?;
@@ -1537,6 +1568,18 @@ impl JvmMethodEmitter<'_> {
                 self.instructions.push(JvmInstruction::IConst(i32::from(*value)));
                 Ok(())
             }
+            // `T?` 的空值就是 JVM `null` 引用；只有引用槽能承载。
+            // 可空标量在类型合同已拒绝（需要 sum 表示），这里不为其静默装箱。
+            Constant::Null => match expected {
+                None | Some(JvmSlotKind::Reference) => {
+                    self.instructions.push(JvmInstruction::AConstNull);
+                    Ok(())
+                }
+                Some(other) => Err(format!(
+                    "JVM 最小 lowering：空值常量不能进入 {other:?} 槽（可空标量需要 sum 表示，不得静默装箱）: function={}",
+                    self.function.symbol
+                )),
+            },
             other => Err(format!("JVM 最小 lowering 尚不支持常量 `{other:?}`：缺少 JVM 常量池载体合同，function={}", self.function.symbol)),
         }
     }
@@ -1550,6 +1593,101 @@ impl JvmMethodEmitter<'_> {
             Some(JvmSlotKind::Long | JvmSlotKind::Double) => {
                 Err(format!("JVM 最小 lowering：丢弃 2 槽值需要 `pop2` 编码，当前 JVM 指令模型不提供: function={}", self.function.symbol))
             }
+        }
+    }
+
+    /// 操作数在计划中冻结的语义类型（`Cast` 的转换语义必须由此决定）。
+    fn operand_semantic_type(&self, operand: &Operand) -> Result<SemanticType> {
+        match operand {
+            Operand::Value(value) => self
+                .function
+                .value_types
+                .get(value)
+                .cloned()
+                .ok_or_else(|| format!("JVM `Cast` 源 SSA 值 {value:?} 缺少冻结语义类型: function={}", self.function.symbol)),
+            Operand::Constant(constant) => match constant {
+                Constant::Int(_) => Ok(SemanticType::Integer64 { signed: true }),
+                Constant::Bool(_) => Ok(SemanticType::Boolean),
+                Constant::Float64(_) => Ok(SemanticType::Float64),
+                Constant::Utf8(_) => Ok(SemanticType::Utf8),
+                Constant::Utf16(_) => Ok(SemanticType::Utf16),
+                Constant::Unit => Ok(SemanticType::Unit),
+                Constant::Null => Err(format!("JVM `Cast` 的空值操作数没有源类型: function={}", self.function.symbol)),
+            },
+            Operand::Symbol(path) => Err(format!("JVM `Cast` 源操作数不支持符号引用 {path:?}: function={}", self.function.symbol)),
+            Operand::Item(instance) => Err(format!("JVM `Cast` 源操作数不支持可调用身份 {instance:?}: function={}", self.function.symbol)),
+        }
+    }
+
+    /// 语言层 `as` 的整数表示转换（`int`/`long` 操作数栈）。
+    fn emit_cast_conversion(
+        &mut self,
+        source: &SemanticType,
+        target: &SemanticType,
+        source_kind: JvmSlotKind,
+        target_kind: JvmSlotKind,
+    ) -> Result<()> {
+        if source == target {
+            return Ok(());
+        }
+        if source.is_float() || target.is_float() {
+            return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的浮点 cast 尚未闭合: function={}", self.function.symbol));
+        }
+        if source_kind == JvmSlotKind::Reference || target_kind == JvmSlotKind::Reference {
+            return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的引用 cast 缺少目标合同: function={}", self.function.symbol));
+        }
+        let (Some(source_shape), Some(target_shape)) = (jvm_int_shape(source), jvm_int_shape(target))
+        else {
+            return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的 cast 缺少整数表示合同: function={}", self.function.symbol));
+        };
+        // 源在 int 载体上先按源位宽/符号性规范化（8/16 位可能带着越界高位）。
+        if source_kind == JvmSlotKind::Int {
+            self.emit_int_normalize(source_shape);
+        }
+        match (source_kind, target_kind) {
+            (JvmSlotKind::Int, JvmSlotKind::Long) => {
+                self.instructions.push(JvmInstruction::I2L);
+                if !source_shape.signed && source_shape.bits == 32 {
+                    // `i2l` 对 32 位做符号扩展；u32 必须再抹掉高 32 位。
+                    self.instructions.push(JvmInstruction::LdcLong(0xFFFF_FFFF));
+                    self.instructions.push(JvmInstruction::LAnd);
+                }
+            }
+            (JvmSlotKind::Long, JvmSlotKind::Int) => {
+                self.instructions.push(JvmInstruction::L2I);
+            }
+            _ => {}
+        }
+        if target_kind == JvmSlotKind::Int {
+            self.emit_int_normalize(target_shape);
+        }
+        Ok(())
+    }
+
+    /// 把 `int` 载体上的值按位宽/符号性规范化（8/16 位用移位或掩码）。
+    fn emit_int_normalize(&mut self, shape: JvmIntShape) {
+        match (shape.bits, shape.signed) {
+            (8, true) => {
+                self.instructions.push(JvmInstruction::IConst(24));
+                self.instructions.push(JvmInstruction::IShl);
+                self.instructions.push(JvmInstruction::IConst(24));
+                self.instructions.push(JvmInstruction::IShr);
+            }
+            (16, true) => {
+                self.instructions.push(JvmInstruction::IConst(16));
+                self.instructions.push(JvmInstruction::IShl);
+                self.instructions.push(JvmInstruction::IConst(16));
+                self.instructions.push(JvmInstruction::IShr);
+            }
+            (8, false) => {
+                self.instructions.push(JvmInstruction::IConst(0xFF));
+                self.instructions.push(JvmInstruction::IAnd);
+            }
+            (16, false) => {
+                self.instructions.push(JvmInstruction::IConst(0xFFFF));
+                self.instructions.push(JvmInstruction::IAnd);
+            }
+            _ => {}
         }
     }
 

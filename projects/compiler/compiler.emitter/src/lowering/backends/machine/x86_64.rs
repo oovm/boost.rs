@@ -110,6 +110,22 @@ pub enum X86_64OperatorCode {
     I32CompareGreaterThan,
     /// `cmp` + `setge`：32 位有符号大于等于比较，结果 0/1。
     I32CompareGreaterOrEqual,
+    /// `cqo` + `idiv rcx`：64 位有符号除法（商留在 `rax`）。
+    I64Divide,
+    /// `cqo` + `idiv rcx` + `mov rax, rdx`：64 位有符号取余。
+    I64Remainder,
+    /// `cdq` + `idiv ecx`：32 位有符号除法（商零扩展到 64 位槽）。
+    I32Divide,
+    /// `cdq` + `idiv ecx` + `mov eax, edx`：32 位有符号取余。
+    I32Remainder,
+    /// `xor edx, edx` + `div rcx`：64 位无符号除法。
+    I64DivideUnsigned,
+    /// `xor edx, edx` + `div rcx` + `mov rax, rdx`：64 位无符号取余。
+    I64RemainderUnsigned,
+    /// `xor edx, edx` + `div ecx`：32 位无符号除法。
+    I32DivideUnsigned,
+    /// `xor edx, edx` + `div ecx` + `mov eax, edx`：32 位无符号取余。
+    I32RemainderUnsigned,
     /// `shr rax, cl`：64 位逻辑右移（无符号）。
     I64ShiftRightUnsigned,
     /// `shr eax, cl`：32 位逻辑右移（无符号）。
@@ -155,6 +171,10 @@ impl X86_64OperatorCode {
             | Self::I32ShiftLeft
             | Self::I32ShiftRight
             | Self::I32ShiftRightUnsigned
+            | Self::I32Divide
+            | Self::I32Remainder
+            | Self::I32DivideUnsigned
+            | Self::I32RemainderUnsigned
             | Self::I32CompareEqual
             | Self::I32CompareNotEqual
             | Self::I32CompareLessThan
@@ -524,6 +544,16 @@ impl FunctionLowerer<'_> {
                 self.push(X64TextInstruction::StoreSlot(local));
                 Ok(())
             }
+            InstructionKind::Cast { source, ty } => {
+                // 语言层 `as` 是表示转换：转换语义只由计划冻结的两端 `SemanticType`
+                // 决定（槽位宽与符号性无法从 64 位帧槽反推），不得退化为 Copy。
+                let local = self.require_output_local(instruction)?;
+                let source_ty = self.operand_semantic_type(source)?;
+                self.emit_operand_to_rax(source)?;
+                self.emit_cast_conversion(&source_ty, ty)?;
+                self.push(X64TextInstruction::StoreSlot(local));
+                Ok(())
+            }
             InstructionKind::Call { callee, arguments } => self.emit_call(instruction, callee, arguments),
             other => Err(format!("x86_64 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol)),
         }
@@ -550,6 +580,12 @@ impl FunctionLowerer<'_> {
             }
             Terminator::Unreachable => {
                 // `ud2`：到达即故障，不伪造返回。
+                self.push(X64TextInstruction::Trap);
+                Ok(())
+            }
+            Terminator::Raise { .. } => {
+                // 无人接手的 `raise`（panic 路径）：原生没有 effect 运行时，与 wasm 同构
+                // 以 `ud2` 终止；不伪造返回，也不尝试格式化消息（原生文本载体尚未冻结）。
                 self.push(X64TextInstruction::Trap);
                 Ok(())
             }
@@ -816,6 +852,80 @@ impl FunctionLowerer<'_> {
         }
     }
 
+    /// 操作数在计划中冻结的语义类型。
+    ///
+    /// `Cast` 的转换语义必须由此决定：`Integer32{signed}` 与 `Integer32{signed:false}`
+    /// 占用同一 8 字节帧槽，只有冻结类型能区分符号扩展方向。
+    fn operand_semantic_type(&self, operand: &Operand) -> Result<SemanticType> {
+        match operand {
+            Operand::Value(value) => self
+                .function
+                .value_types
+                .get(value)
+                .cloned()
+                .ok_or_else(|| format!("x86_64 `Cast` 源 SSA 值 {value:?} 缺少冻结语义类型：function={}", self.function.symbol)),
+            Operand::Constant(constant) => match constant {
+                Constant::Int(_) => Ok(SemanticType::Integer64 { signed: true }),
+                Constant::Bool(_) => Ok(SemanticType::Boolean),
+                Constant::Float64(_) => Ok(SemanticType::Float64),
+                Constant::Utf8(_) => Ok(SemanticType::Utf8),
+                Constant::Utf16(_) => Ok(SemanticType::Utf16),
+                Constant::Unit => Ok(SemanticType::Unit),
+                Constant::Null => Err(format!("x86_64 `Cast` 的空值操作数没有源类型，无法确定转换语义：function={}", self.function.symbol)),
+            },
+            Operand::Symbol(path) => Err(format!("x86_64 `Cast` 源操作数不支持符号引用 {path:?}：function={}", self.function.symbol)),
+            Operand::Item(instance) => {
+                Err(format!("x86_64 `Cast` 源操作数不支持可调用身份 {instance:?}：function={}", self.function.symbol))
+            }
+        }
+    }
+
+    /// 语言层 `as` 的整数表示转换（`rax` 载体，结果回写 64 位帧槽）。
+    ///
+    /// 帧槽不保证处于规范形态：常量以完整 `i64` 落入，32 位运算零扩展结果。
+    /// 因此这里**不假设**高位正确，而是显式「按源位宽/符号性规范化 → 按目标位宽/符号性收窄」。
+    /// 浮点没有 x86-64 冻结载体，任何浮点参与一律结构化失败，禁止用整数位模式冒充。
+    fn emit_cast_conversion(&mut self, source: &SemanticType, target: &SemanticType) -> Result<()> {
+        if source == target {
+            return Ok(());
+        }
+        if source.is_float() || target.is_float() {
+            return Err(format!(
+                "x86_64 后端没有 `{source}` → `{target}` 的浮点载体：f32/f64 尚未进入 x86-64 冻结集，function={}",
+                self.function.symbol
+            ));
+        }
+        if matches!(target, SemanticType::Boolean) {
+            self.push(X64TextInstruction::ToBool);
+            return Ok(());
+        }
+        let (Some(source_shape), Some(target_shape)) = (x64_int_shape(source), x64_int_shape(target))
+        else {
+            return Err(format!(
+                "x86_64 后端没有 `{source}` → `{target}` 的确定转换语义：布尔/文本与数值之间的 `as` 缺少目标合同，function={}",
+                self.function.symbol
+            ));
+        };
+        if source_shape == target_shape {
+            return Ok(());
+        }
+        // 源规范化：窄整数按源符号性符号/零扩展到 64 位；64 位源已是完整值。
+        if source_shape.bits < 64 {
+            let step = narrow_normalize(source_shape.bits, source_shape.signed).ok_or_else(|| {
+                format!("x86_64 后端没有位宽 {} 的整数载体：function={}", source_shape.bits, self.function.symbol)
+            })?;
+            self.push(step);
+        }
+        // 目标表示：窄目标按目标符号性截断并规范化；64 位目标保留当前 64 位值。
+        if target_shape.bits < 64 {
+            let step = narrow_normalize(target_shape.bits, target_shape.signed).ok_or_else(|| {
+                format!("x86_64 后端没有位宽 {} 的整数载体：function={}", target_shape.bits, self.function.symbol)
+            })?;
+            self.push(step);
+        }
+        Ok(())
+    }
+
     fn output_local(&self, instruction: &MirInstruction) -> Result<Option<u16>> {
         match self.slots.instruction_output(instruction) {
             None => Ok(None),
@@ -855,6 +965,38 @@ fn is_slot_type(ty: &SemanticType) -> bool {
     )
 }
 
+/// `Cast` 的整数表示：位宽 + 符号性。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct X64IntShape {
+    bits: u8,
+    signed: bool,
+}
+
+/// 整数族（含 `Character` 的 32 位无符号码位）的表示；浮点/布尔/文本返回 `None`。
+fn x64_int_shape(ty: &SemanticType) -> Option<X64IntShape> {
+    Some(match ty {
+        SemanticType::Integer8 { signed } => X64IntShape { bits: 8, signed: *signed },
+        SemanticType::Integer16 { signed } => X64IntShape { bits: 16, signed: *signed },
+        SemanticType::Integer32 { signed } => X64IntShape { bits: 32, signed: *signed },
+        SemanticType::Integer64 { signed } => X64IntShape { bits: 64, signed: *signed },
+        SemanticType::Character => X64IntShape { bits: 32, signed: false },
+        _ => return None,
+    })
+}
+
+/// 窄整数（8/16/32）在 `rax` 上的规范化指令：有符号符号扩展、无符号零扩展。
+fn narrow_normalize(bits: u8, signed: bool) -> Option<X64TextInstruction> {
+    Some(match (bits, signed) {
+        (8, true) => X64TextInstruction::SignExtend8,
+        (16, true) => X64TextInstruction::SignExtend16,
+        (32, true) => X64TextInstruction::SignExtend32,
+        (8, false) => X64TextInstruction::ZeroExtend8,
+        (16, false) => X64TextInstruction::ZeroExtend16,
+        (32, false) => X64TextInstruction::ZeroExtend32,
+        _ => return None,
+    })
+}
+
 /// 可直接作为进程退出码的返回类型。
 fn is_exit_code_type(ty: &SemanticType) -> bool {
     matches!(ty, SemanticType::Unit | SemanticType::Bottom) || is_slot_type(ty)
@@ -863,7 +1005,7 @@ fn is_exit_code_type(ty: &SemanticType) -> bool {
 /// 唯一 x86-64 operator 配方表。未知名字返回 `None`。
 ///
 /// 与 JVM/CLR 使用同一组 provider 名（`integer.*` / `long.*`），便于 std 按目标替换
-/// 实现而不改调用点。未实现的 provider（无符号除/余、逻辑右移、浮点）返回 `None`，
+/// 实现而不改调用点。未实现的 provider（浮点、无符号大于比较）返回 `None`，
 /// 计划落 `Unfrozen`，由 emit 结构化失败，不猜编码。
 pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan<X86_64OperatorCode>> {
     let freeze = |code: X86_64OperatorCode| TargetOperatorPlan {
@@ -878,6 +1020,10 @@ pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<Targ
         "integer.add" => X86_64OperatorCode::I32Add,
         "integer.subtract" => X86_64OperatorCode::I32Subtract,
         "integer.multiply" => X86_64OperatorCode::I32Multiply,
+        "integer.divide" => X86_64OperatorCode::I32Divide,
+        "integer.remainder" => X86_64OperatorCode::I32Remainder,
+        "integer.divide_unsigned" => X86_64OperatorCode::I32DivideUnsigned,
+        "integer.remainder_unsigned" => X86_64OperatorCode::I32RemainderUnsigned,
         "integer.negate" => X86_64OperatorCode::I32Negate,
         "integer.and" => X86_64OperatorCode::I32BitAnd,
         "integer.or" => X86_64OperatorCode::I32BitOr,
@@ -896,6 +1042,10 @@ pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<Targ
         "long.add" => X86_64OperatorCode::I64Add,
         "long.subtract" => X86_64OperatorCode::I64Subtract,
         "long.multiply" => X86_64OperatorCode::I64Multiply,
+        "long.divide" => X86_64OperatorCode::I64Divide,
+        "long.remainder" => X86_64OperatorCode::I64Remainder,
+        "long.divide_unsigned" => X86_64OperatorCode::I64DivideUnsigned,
+        "long.remainder_unsigned" => X86_64OperatorCode::I64RemainderUnsigned,
         "long.negate" => X86_64OperatorCode::I64Negate,
         "long.and" => X86_64OperatorCode::I64BitAnd,
         "long.or" => X86_64OperatorCode::I64BitOr,

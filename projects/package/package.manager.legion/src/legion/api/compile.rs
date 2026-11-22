@@ -13,7 +13,6 @@ use crate::legion::{
     parse_von,
     workspace::planner::PlannerError,
 };
-use compiler_target::CanonicalTarget;
 use language_valkyrie::compiler::emitter::pipeline::CompilerCompileEvidence;
 use serde::Serialize;
 use std::{fs, path::PathBuf};
@@ -131,11 +130,11 @@ pub fn compile(plan: &LegionBuildPlan, options: CompileOptions) -> LegionResult<
 /// 规划并编译（单入口）。
 pub fn compile_project(
     project_dir: impl AsRef<std::path::Path>,
-    target: CanonicalTarget,
+    resolved: crate::legion::ResolvedTarget,
     output_dir: Option<PathBuf>,
     options: CompileOptions,
 ) -> LegionResult<LegionCompileReport> {
-    let plan = super::plan::plan(super::request::PlanRequest { project_dir: project_dir.as_ref().to_path_buf(), target, output_dir })
+    let plan = super::plan::plan(super::request::PlanRequest { project_dir: project_dir.as_ref().to_path_buf(), resolved, output_dir })
         .map_err(LegionError::Planner)?;
     compile(&plan, options)
 }

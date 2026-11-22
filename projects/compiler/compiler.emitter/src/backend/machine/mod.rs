@@ -18,8 +18,9 @@ pub use crate::lowering::backends::machine::{
     HostMethod, HostModule, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64CallConv, X64DataTarget, X64LoweredExtension, X64Platform,
     X64ProductTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction, any_returns_bool, any_returns_utf8, append_text_arena,
     compile_shared_container, encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
-    encode_x64_program_with_imports, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
-    python_module_data, python_module_exec, python_module_registration, reset_text_arena,
+    encode_x64_program_with_imports, is_c_identifier, lower_fragment_to_machine_extension, lower_resolved_fragment_to_machine_image,
+    node_addon_registration, node_method_wrapper,
+    node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration, reset_text_arena,
 };
 pub use executable::{MachineImageError, MachineImageFacts, MachineImageKind, classify_machine_executable, classify_machine_image};
 
@@ -41,6 +42,10 @@ pub struct MachineImageBackendInput {
     /// 宿主可见导出名：只由 `HostExtension` 用途的降低提交（承载服务按冻结
     /// 导出面装配）。可执行交付必须为空，用途不由导出数量反推。
     pub host_exports: Vec<String>,
+    /// 冻结的宿主类型：模块装载方式由它决定，不由产物扩展名反推。
+    ///
+    /// 普通可执行/库交付为 `None`；`HostExtension` 必须携带 `Some(..)`。
+    pub host_module: Option<HostModule>,
 }
 
 /// `Native` 二进制后端（Windows PE / Linux ELF）。
@@ -54,7 +59,9 @@ impl MachineImageBackend {
         Self {
             descriptor: BackendDescriptor {
                 name: "machine-code".to_string(),
-                input_kind: BackendInputKind::CoffObject,
+                // 驱动输入是已经链接好的机器镜像（PE / ELF），不是 COFF 目标文件；
+                // 与 `bundled_backend_capability_descriptor` 的机器码 lane 保持一致。
+                input_kind: BackendInputKind::MachineImage,
                 supported_targets: vec![
                     BinaryTarget::new(TargetFamily::MachineCode, BinaryArch::X64, BinaryFlavor::MachineCode),
                     // Arm64 仅对 ELF 共享库可识别；PE ARM64 不在解析支持集内。

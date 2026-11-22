@@ -1,6 +1,6 @@
 //! API 请求类型（无 argv）。
 
-use compiler_target::CanonicalTarget;
+use crate::legion::ResolvedTarget;
 use std::path::PathBuf;
 
 /// `plan()` 输入。
@@ -8,8 +8,11 @@ use std::path::PathBuf;
 pub struct PlanRequest {
     /// 项目目录、包根或单脚本路径。
     pub project_dir: PathBuf,
-    /// 目标平台。
-    pub target: CanonicalTarget,
+    /// 已冻结的解析目标：平台身份 + 产物/宿主合同。
+    ///
+    /// `native` / `node` / `python` 占位符必须先经统一目标解析服务展开；
+    /// 后续阶段只消费这一份事实，不再按作者面拼写二次分派。
+    pub resolved: ResolvedTarget,
     /// 可选产物目录（默认由 planner 决定）。
     pub output_dir: Option<PathBuf>,
 }

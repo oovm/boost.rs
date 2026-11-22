@@ -6,7 +6,7 @@
 use std::{path::PathBuf, thread};
 
 use crate::legion::{
-    CanonicalTarget, CompileOptions, LegionError, PlanRequest, compile_project, plan, resolve_platform_only_target,
+    CompileOptions, LegionError, PlanRequest, ResolvedTarget, compile_project, plan, resolve_platform_target,
 };
 
 /// 栈大小为产品编译线程预留的深度，避免深递归 lowering 打穿默认线程栈。
@@ -88,11 +88,11 @@ pub struct BuildOutcome {
 /// 解析 workspace 并输出 build plan（不进入编译）。
 #[must_use]
 pub fn plan_project(options: &PlanOptions) -> PlanOutcome {
-    let target = match parse_target(options.target.as_deref()) {
-        Ok(target) => target,
+    let resolved = match parse_target(options.target.as_deref()) {
+        Ok(resolved) => resolved,
         Err(error) => return PlanOutcome::failed(error),
     };
-    match plan(PlanRequest { project_dir: options.project_dir.clone(), target, output_dir: None }) {
+    match plan(PlanRequest { project_dir: options.project_dir.clone(), resolved, output_dir: None }) {
         Ok(build_plan) => {
             let compilable = build_plan.is_compilable();
             PlanOutcome {
@@ -122,8 +122,8 @@ pub fn plan_project(options: &PlanOptions) -> PlanOutcome {
 /// 编译项目并落盘产物。
 #[must_use]
 pub fn build_project(options: &BuildOptions) -> BuildOutcome {
-    let target = match parse_target(options.target.as_deref()) {
-        Ok(target) => target,
+    let resolved = match parse_target(options.target.as_deref()) {
+        Ok(resolved) => resolved,
         Err(error) => return BuildOutcome::failed(error),
     };
     let project_dir = options.project_dir.clone();
@@ -131,7 +131,7 @@ pub fn build_project(options: &BuildOptions) -> BuildOutcome {
     let worker = thread::Builder::new()
         .name("legion-build".into())
         .stack_size(WORKER_STACK_SIZE)
-        .spawn(move || compile_project(project_dir, target, output_dir, CompileOptions::default()))
+        .spawn(move || compile_project(project_dir, resolved, output_dir, CompileOptions::default()))
         .expect("failed to spawn legion build thread");
     match worker.join().expect("legion build thread panicked") {
         Ok(report) => {
@@ -162,9 +162,13 @@ pub fn build_project(options: &BuildOptions) -> BuildOutcome {
     }
 }
 
-fn parse_target(target: Option<&str>) -> Result<CanonicalTarget, String> {
+/// 解析作者面目标标签为完整冻结目标（平台身份 + 产物/宿主合同）。
+///
+/// `native` / `node` / `python` 都经同一套平台解析展开；宿主合同随结果一起进入
+/// 后续阶段，不能只取平台四元组再让下游按标签或后缀猜产物形态。
+fn parse_target(target: Option<&str>) -> Result<ResolvedTarget, String> {
     let raw = target.unwrap_or("clr");
-    resolve_platform_only_target(raw).map(|resolved| resolved.platform).map_err(|error| target_error_message(&error))
+    resolve_platform_target(raw).map_err(|error| target_error_message(&error))
 }
 
 fn target_error_message(error: &LegionError) -> String {

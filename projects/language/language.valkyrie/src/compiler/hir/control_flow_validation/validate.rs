@@ -682,6 +682,11 @@ pub fn resolve_contextual_type(ty: &ValkyrieType, state: &HirValidationState) ->
             trait_path: object.trait_path.clone(),
             type_arguments: object.type_arguments.iter().map(|arg| resolve_contextual_type(arg, state)).collect(),
         }),
+        ValkyrieType::Nominal { declaration, arguments, primitive_identity } => ValkyrieType::Nominal {
+            declaration: *declaration,
+            arguments: arguments.iter().map(|arg| resolve_contextual_type(arg, state)).collect(),
+            primitive_identity: primitive_identity.clone(),
+        },
         ValkyrieType::Associated(associated) => ValkyrieType::Associated(Box::new(crate::compiler::types::hir::AssociatedType {
             base: resolve_contextual_type(&associated.base, state),
             name: associated.name.clone(),
@@ -753,6 +758,43 @@ pub fn validate_future_control_operand(expr: &HirExpr, value: &HirExpr, state: &
     })
 }
 
+/// 用返回类型上下文补齐构造式里未绑定的泛型形参。
+///
+/// `Fine { value: ... }` / `Fail { error: ... }` 这类变体构造式只约束了 `Result`
+/// 的一个实参，另一个在无上下文时仍是 `Generic` binder；`return` 的期望类型是
+/// 已冻结的具体类型，逐位置把 expected 的实参代入 actual 的未绑定形参后再比较，
+/// 与 Rust 的 return-position 上下文推断一致。
+fn fill_unbound_generics(actual: &ValkyrieType, expected: &ValkyrieType) -> Option<ValkyrieType> {
+    match (actual, expected) {
+        (ValkyrieType::Generic(_), expected) => Some(expected.clone()),
+        (
+            ValkyrieType::Nominal { declaration, arguments, primitive_identity },
+            ValkyrieType::Nominal { declaration: expected_declaration, arguments: expected_arguments, .. },
+        ) if declaration == expected_declaration && arguments.len() == expected_arguments.len() => {
+            let filled = arguments
+                .iter()
+                .zip(expected_arguments)
+                .map(|(actual_arg, expected_arg)| fill_unbound_generics(actual_arg, expected_arg))
+                .collect::<Option<Vec<_>>>()?;
+            Some(ValkyrieType::Nominal { declaration: *declaration, arguments: filled, primitive_identity: primitive_identity.clone() })
+        }
+        (ValkyrieType::Apply(base, arguments), ValkyrieType::Apply(_, expected_arguments)) if arguments.len() == expected_arguments.len() => {
+            let filled = arguments
+                .iter()
+                .zip(expected_arguments)
+                .map(|(actual_arg, expected_arg)| fill_unbound_generics(actual_arg, expected_arg))
+                .collect::<Option<Vec<_>>>()?;
+            Some(ValkyrieType::Apply(base.clone(), filled))
+        }
+        (ValkyrieType::Tuple(items), ValkyrieType::Tuple(expected_items)) if items.len() == expected_items.len() => {
+            let filled =
+                items.iter().zip(expected_items).map(|(item, expected_item)| fill_unbound_generics(item, expected_item)).collect::<Option<Vec<_>>>()?;
+            Some(ValkyrieType::Tuple(filled))
+        }
+        _ => (actual == expected).then(|| actual.clone()),
+    }
+}
+
 pub fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &HirValidationState) -> Result<(), HirError> {
     let Some(expected_raw) = current_return_type(state)
     else {
@@ -778,6 +820,7 @@ pub fn validate_return_value(expr: &HirExpr, value: Option<&HirExpr>, state: &Hi
         return Ok(());
     };
     let actual_type = resolve_contextual_type(&actual_raw, state);
+    let actual_type = fill_unbound_generics(&actual_type, &expected_type).unwrap_or(actual_type);
     if control_flow_value_type_compatible_with_primitives(&expected_type, &actual_type, Some(state))
         || scalar_literal_binds_to(&expected_type, Some(value), state)
     {

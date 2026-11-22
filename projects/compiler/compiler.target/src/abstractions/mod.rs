@@ -133,7 +133,12 @@ pub enum BackendInputKind {
     WasmModule,
     /// `COFF` 目标文件输入。
     CoffObject,
-    /// `PE` 镜像输入。
+    /// 已链接的机器镜像输入（`PE` / `ELF`）。
+    ///
+    /// 这是跨容器族的机器码 lane 输入，不按某一容器命名；具体容器由目标四元组
+    /// 与镜像事实决定。
+    MachineImage,
+    /// `PE` 镜像输入（特指 `PE` 容器的解析/检查场景）。
     PeImage,
     /// `MSIL` 文本输入。
     MsilText,

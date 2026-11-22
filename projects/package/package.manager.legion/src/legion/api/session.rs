@@ -8,7 +8,6 @@ use crate::legion::{
     },
     workspace::planner::{PlannerError, WorkspaceResolver},
 };
-use compiler_target::CanonicalTarget;
 use std::path::PathBuf;
 
 /// 一次测试批次或 IDE 会话内可复用的解析状态。
@@ -16,8 +15,8 @@ use std::path::PathBuf;
 pub struct CompilerSession {
     /// 已发现的 workspace 根。
     pub workspace_root: PathBuf,
-    /// 默认目标（可在单次 `plan` 请求中覆盖）。
-    pub target: CanonicalTarget,
+    /// 默认目标（可在单次 `plan` 请求中覆盖）；合同与平台一起保存。
+    pub resolved: crate::legion::ResolvedTarget,
     resolver: WorkspaceResolver,
 }
 
@@ -26,7 +25,7 @@ impl CompilerSession {
     pub fn open(request: &PlanRequest) -> Result<Self, PlannerError> {
         let project_input = crate::legion::cmds::project_input::resolve_project_path(&request.project_dir)?;
         let resolver = WorkspaceResolver::discover_for_project(&project_input)?;
-        Ok(Self { workspace_root: resolver.root_dir.clone(), target: request.target.clone(), resolver })
+        Ok(Self { workspace_root: resolver.root_dir.clone(), resolved: request.resolved.clone(), resolver })
     }
 
     /// 复用已发现的 resolver 生成 plan。
@@ -34,7 +33,7 @@ impl CompilerSession {
         let project_input = crate::legion::cmds::project_input::resolve_project_path(&request.project_dir)?;
         let build_request = crate::legion::workspace::planner::BuildRequest {
             project_dir: project_input,
-            resolved: crate::legion::ResolvedTarget::platform_only(request.target),
+            resolved: request.resolved,
             output_dir: request.output_dir,
             ..Default::default()
         };

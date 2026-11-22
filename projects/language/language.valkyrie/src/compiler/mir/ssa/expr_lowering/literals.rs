@@ -90,20 +90,26 @@ pub fn unresolved_variant_labels(resolved: Option<&HirResolvedCall>) -> (String,
 }
 
 /// Map a resolved unite/enum constructor call onto `SumNew` parts.
+///
+/// `expected_type` 是调用点的上下文和类型（例如 `return` 的期望类型）。构造式只提供
+/// 部分泛型实参时（`Fine { value: ... }` 只约束 `T`），其余实参必须由上下文补齐；
+/// 否则 `SumNew.type_args` 会保留 `Generic` binder，与已具体化的结果值类型不一致。
 pub fn sum_new_parts_from_constructor(
     call: &HirResolvedCall,
     arguments: &[MirOperand],
     sum_types: &[crate::compiler::mir::ssa::MirSumDeclaration],
+    expected_type: Option<&ValkyrieType>,
 ) -> Option<(String, Vec<ValkyrieType>, String, Option<ValkyrieType>, Vec<MirOperand>, bool)> {
     let owner = call.sum_owner?;
     let variant_declaration = call.sum_variant?;
     let sum = sum_types.iter().find(|item| item.declaration == Some(owner))?;
     let variant = sum.variants.iter().find(|item| item.declaration == Some(variant_declaration))?;
-    let (sum_type, type_args) = match &call.return_type {
+    let return_type = concretize_variant_constructor_types(&call.return_type, None, expected_type).0;
+    let (sum_type, type_args) = match &return_type {
         ValkyrieType::Nominal { declaration, arguments, .. } if Some(*declaration) == sum.declaration => (sum.name.clone(), arguments.clone()),
         _ => return None,
     };
-    if call.return_type.nominal_declaration() != sum.declaration {
+    if return_type.nominal_declaration() != sum.declaration {
         return None;
     }
     // 多字段变体的 payload 是名义变体记录：全部实参按声明顺序构成记录字段，

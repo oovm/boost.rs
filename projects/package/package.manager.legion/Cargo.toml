@@ -21,7 +21,7 @@ data-binary-zip = { workspace = true }
 data-encoding = { workspace = true }
 boost-harness = { workspace = true }
 compiler-analysis = { workspace = true }
-compiler-emitter = { workspace = true }
+compiler-emitter = { workspace = true, features = ["ovm-lane"] }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
 language-valkyrie = { workspace = true }

@@ -45,7 +45,7 @@ pub struct X64LoweredExtension {
 ///
 /// `target` 必须来自统一目标解析服务的宿主合同；`module_name` 是 CPython 的
 /// 导入名（Node-API 不使用模块名，但仍参与产物身份命名）。
-pub(crate) fn lower_fragment_to_machine_extension(
+pub fn lower_fragment_to_machine_extension(
     submission: &FragmentSubmission,
     target: &X64ProductTarget,
     module_name: &str,

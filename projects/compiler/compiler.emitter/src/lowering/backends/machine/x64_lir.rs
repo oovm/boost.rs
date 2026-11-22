@@ -295,6 +295,12 @@ pub(super) fn encode_operator(text: &mut Vec<u8>, code: X86_64OperatorCode) {
         X86_64OperatorCode::I64Add => text.extend_from_slice(&[0x48, 0x01, 0xC8]),
         X86_64OperatorCode::I64Subtract => text.extend_from_slice(&[0x48, 0x29, 0xC8]),
         X86_64OperatorCode::I64Multiply => text.extend_from_slice(&[0x48, 0x0F, 0xAF, 0xC1]),
+        // `cqo` 把 rax 符号扩展到 rdx:rax；`idiv rcx` 后商在 rax、余数在 rdx。
+        X86_64OperatorCode::I64Divide => text.extend_from_slice(&[0x48, 0x99, 0x48, 0xF7, 0xF9]),
+        X86_64OperatorCode::I64Remainder => text.extend_from_slice(&[0x48, 0x99, 0x48, 0xF7, 0xF9, 0x48, 0x89, 0xD0]),
+        // 无符号除法必须先把 rdx 清零，再 `div rcx`。
+        X86_64OperatorCode::I64DivideUnsigned => text.extend_from_slice(&[0x31, 0xD2, 0x48, 0xF7, 0xF1]),
+        X86_64OperatorCode::I64RemainderUnsigned => text.extend_from_slice(&[0x31, 0xD2, 0x48, 0xF7, 0xF1, 0x48, 0x89, 0xD0]),
         X86_64OperatorCode::I64Negate => text.extend_from_slice(&[0x48, 0xF7, 0xD8]),
         X86_64OperatorCode::I64BitAnd => text.extend_from_slice(&[0x48, 0x21, 0xC8]),
         X86_64OperatorCode::I64BitOr => text.extend_from_slice(&[0x48, 0x09, 0xC8]),
@@ -311,6 +317,11 @@ pub(super) fn encode_operator(text: &mut Vec<u8>, code: X86_64OperatorCode) {
         X86_64OperatorCode::I32Add => text.extend_from_slice(&[0x01, 0xC8]),
         X86_64OperatorCode::I32Subtract => text.extend_from_slice(&[0x29, 0xC8]),
         X86_64OperatorCode::I32Multiply => text.extend_from_slice(&[0x0F, 0xAF, 0xC1]),
+        // `cdq` 把 eax 符号扩展到 edx:eax；32 位写入自动零扩展高 32 位。
+        X86_64OperatorCode::I32Divide => text.extend_from_slice(&[0x99, 0xF7, 0xF9]),
+        X86_64OperatorCode::I32Remainder => text.extend_from_slice(&[0x99, 0xF7, 0xF9, 0x89, 0xD0]),
+        X86_64OperatorCode::I32DivideUnsigned => text.extend_from_slice(&[0x31, 0xD2, 0xF7, 0xF1]),
+        X86_64OperatorCode::I32RemainderUnsigned => text.extend_from_slice(&[0x31, 0xD2, 0xF7, 0xF1, 0x89, 0xD0]),
         X86_64OperatorCode::I32Negate => text.extend_from_slice(&[0xF7, 0xD8]),
         X86_64OperatorCode::I32BitAnd => text.extend_from_slice(&[0x21, 0xC8]),
         X86_64OperatorCode::I32BitOr => text.extend_from_slice(&[0x09, 0xC8]),

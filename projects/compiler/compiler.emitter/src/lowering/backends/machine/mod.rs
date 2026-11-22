@@ -27,8 +27,7 @@ mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
-pub use extension::X64LoweredExtension;
-pub(crate) use extension::lower_fragment_to_machine_extension;
+pub use extension::{X64LoweredExtension, lower_fragment_to_machine_extension};
 
 pub use carrier::{
     HostMethod, HostProperty, HostValueKind, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool, any_returns_utf8, append_text_arena,
@@ -41,7 +40,10 @@ pub use x64_program::{
     encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies, encode_x64_program_with_imports,
 };
 
-use compiler_target::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget};
+use compiler_target::{
+    ArtifactContract, ArtifactPurpose, ResolvedTarget,
+    abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget},
+};
 
 use crate::{FragmentSubmission, Result};
 
@@ -162,6 +164,20 @@ pub enum X64TextInstruction {
     /// 正式 lane 的计划降低携带 [`x86_64::X86_64OperatorCode`] 全量算子集；
     /// 上面的固定变体是残差语言的整数便捷别名，两者经同一字节表编码。
     Operator(x86_64::X86_64OperatorCode),
+    /// `movsx rax, al`：8 位有符号拓宽到 64 位（显式 cast）。
+    SignExtend8,
+    /// `movsx rax, ax`：16 位有符号拓宽到 64 位（显式 cast）。
+    SignExtend16,
+    /// `movsxd rax, eax`：32 位有符号拓宽到 64 位（显式 cast）。
+    SignExtend32,
+    /// `movzx eax, al`：8 位无符号拓宽到 64 位（显式 cast）。
+    ZeroExtend8,
+    /// `movzx eax, ax`：16 位无符号拓宽到 64 位（显式 cast）。
+    ZeroExtend16,
+    /// `mov eax, eax`：32 位无符号拓宽到 64 位（显式 cast）。
+    ZeroExtend32,
+    /// `rax = (rax != 0)`：整数/字符转布尔。
+    ToBool,
     /// 函数内标签（数值 id）。
     Label(u32),
     /// 无条件跳转。
@@ -335,6 +351,41 @@ pub struct X64ProgramImage {
     pub data_references: Vec<(u32, u32)>,
     /// 产物声明依赖的宿主库 `SONAME`（`ELF` 写成 `DT_NEEDED`；`PE` 走导入表，忽略）。
     pub host_dependencies: Vec<String>,
+}
+
+/// 正式 lane：把已冻结目标降低为原生进程镜像。
+///
+/// 只接受进程可执行用途（`Application` / `TestBundle`）与普通原生合同：库交付与
+/// 宿主扩展分别由库 lane 与宿主扩展降低承载，在这里结构化拒绝，不把进程镜像
+/// 改标成其他产物。入口身份必须已由计划冻结；缺失时由 lowering 报错，不回填
+/// 默认名。
+pub fn lower_resolved_fragment_to_machine_image(
+    submission: &FragmentSubmission,
+    resolved: &ResolvedTarget,
+    purpose: ArtifactPurpose,
+) -> Result<X64LoweredProgram> {
+    match purpose {
+        ArtifactPurpose::Application | ArtifactPurpose::TestBundle => {}
+        ArtifactPurpose::Library => {
+            return Err("机器码库交付尚未接线：拒绝把进程镜像改标为库产物".to_string());
+        }
+        ArtifactPurpose::HostExtension => {
+            return Err("宿主扩展必须走宿主扩展降低：进程镜像不接受宿主扩展用途".to_string());
+        }
+    }
+    match &resolved.contract {
+        ArtifactContract::Native => {}
+        ArtifactContract::Platform => {
+            return Err(format!("机器码进程镜像不接受平台合同 `{}`：请使用 `native` 或显式机器目标", resolved.identity()));
+        }
+        ArtifactContract::NodeApi | ArtifactContract::Cpython(_) => {
+            return Err(format!(
+                "机器码进程镜像不接受 `{}` 宿主合同：宿主扩展必须走宿主扩展降低",
+                resolved.contract.as_str()
+            ));
+        }
+    }
+    lower_fragment_to_machine_image(submission, resolved.platform)
 }
 
 /// 按解析后的规范目标四元组降低为原生镜像。

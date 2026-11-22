@@ -1089,15 +1089,27 @@ pub fn bind_pattern_type(pattern: &HirPattern, ty: &ValkyrieType, locals: &mut B
                 .or_else(|| crate::compiler::hir::try_propagate::option_apply_payload_type(ty))
                 .or_else(|| variant.and_then(|variant| crate::compiler::hir::try_propagate::result_variant_payload_type(ty, variant)));
             if let Some(payload) = payload {
-                for (index, field) in fields.iter().enumerate() {
-                    let field_ty = match &payload {
-                        ValkyrieType::Tuple(items) => items.get(index).cloned(),
-                        ValkyrieType::LabeledTuple(items) => items.get(index).map(|field| field.ty.clone()),
-                        _ if index == 0 => Some(payload.clone()),
-                        _ => None,
+                // 单字段变体（`Fine(pair)` / `Some(x)`）绑定整个载荷本身；载荷是
+                // 元组时逐位置拆分会把绑定误成首元素（`pair` 被绑成 `char`），
+                // 后续 `pair.1` 无法解析。只有多字段模式才按位置拆元组。
+                if fields.len() == 1 {
+                    let bound = match &payload {
+                        ValkyrieType::LabeledTuple(items) if items.len() == 1 => items[0].ty.clone(),
+                        ValkyrieType::Tuple(items) if items.len() == 1 => items[0].clone(),
+                        _ => payload.clone(),
                     };
-                    if let Some(field_ty) = field_ty {
-                        bind_pattern_type(field, &field_ty, locals);
+                    bind_pattern_type(&fields[0], &bound, locals);
+                } else {
+                    for (index, field) in fields.iter().enumerate() {
+                        let field_ty = match &payload {
+                            ValkyrieType::Tuple(items) => items.get(index).cloned(),
+                            ValkyrieType::LabeledTuple(items) => items.get(index).map(|field| field.ty.clone()),
+                            _ if index == 0 => Some(payload.clone()),
+                            _ => None,
+                        };
+                        if let Some(field_ty) = field_ty {
+                            bind_pattern_type(field, &field_ty, locals);
+                        }
                     }
                 }
             }

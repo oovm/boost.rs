@@ -101,28 +101,38 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
             if request.artifact_purpose == compiler_target::ArtifactPurpose::HostExtension {
                 let product = compiler_emitter::emitter_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
                     .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
-                let lowered = compiler_emitter::testing::lower_fragment_to_machine_extension(&submission, &product, request.project_name)?;
+                let lowered = compiler_emitter::emitter_backend_machine::lower_fragment_to_machine_extension(
+                    &submission,
+                    &product,
+                    request.project_name,
+                )?;
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
                     output_dir: request.output_dir.to_path_buf(),
                     entry_symbol: lowered.entry_symbol,
                     artifact_extension: Some(lowered.artifact_extension),
                     host_exports: lowered.host_exports,
+                    host_module: product.host_module(),
                 }));
             }
-            let lowered = compiler_emitter::testing::lower_fragment_to_machine_image(&submission, request.resolved.platform.clone())?;
             let entry_symbol = self
                 .plan
                 .entry_operation()
                 .and_then(|instance| self.plan.abi_name_for_instance(instance))
-                .map(|name| name.to_string())
-                .unwrap_or_else(|| "main".to_string());
+                .and_then(|name| name.parts().last().map(|part| part.as_str().to_string()))
+                .ok_or_else(|| "原生可执行交付缺少冻结的入口身份：计划未给出入口操作的 ABI 名".to_string())?;
+            let lowered = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_machine_image(
+                &submission,
+                &request.resolved,
+                request.artifact_purpose,
+            )?;
             return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                 executable: lowered.executable,
                 output_dir: request.output_dir.to_path_buf(),
                 entry_symbol,
                 artifact_extension: None,
                 host_exports: Vec::new(),
+                host_module: None,
             }));
         }
         LoweredBackendInput::from_fragment_submission(

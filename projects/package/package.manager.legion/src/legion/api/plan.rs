@@ -78,7 +78,7 @@ pub fn plan(request: PlanRequest) -> PlannerResult<LegionBuildPlan> {
     let workspace = WorkspaceResolver::discover_for_project(&project_input)?;
     let build_request = BuildRequest {
         project_dir: project_input,
-        resolved: crate::legion::ResolvedTarget::platform_only(request.target),
+        resolved: request.resolved,
         output_dir: request.output_dir,
         ..Default::default()
     };

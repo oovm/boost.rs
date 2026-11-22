@@ -252,6 +252,15 @@ pub fn encode_x64_program_with_dependencies(
                 X64TextInstruction::CopyBytes => emit_copy_bytes(&mut text),
                 X64TextInstruction::Trap => emit_trap(&mut text),
                 X64TextInstruction::Operator(code) => encode_operator(&mut text, *code),
+                // 显式 cast：源槽的高位不可假设已规范化（常量是完整 i64，32 位运算零扩展），
+                // 因此按源/目标位宽与符号性显式补符号扩展或零扩展。
+                X64TextInstruction::SignExtend8 => text.extend_from_slice(&[0x48, 0x0F, 0xBE, 0xC0]),
+                X64TextInstruction::SignExtend16 => text.extend_from_slice(&[0x48, 0x0F, 0xBF, 0xC0]),
+                X64TextInstruction::SignExtend32 => text.extend_from_slice(&[0x48, 0x63, 0xC0]),
+                X64TextInstruction::ZeroExtend8 => text.extend_from_slice(&[0x0F, 0xB6, 0xC0]),
+                X64TextInstruction::ZeroExtend16 => text.extend_from_slice(&[0x0F, 0xB7, 0xC0]),
+                X64TextInstruction::ZeroExtend32 => text.extend_from_slice(&[0x89, 0xC0]),
+                X64TextInstruction::ToBool => text.extend_from_slice(&[0x48, 0x85, 0xC0, 0x0F, 0x95, 0xC0, 0x48, 0x0F, 0xB6, 0xC0]),
                 X64TextInstruction::SyscallWrite => {
                     if abi != X64CallConv::SystemV64 {
                         return Err(format!("{} 文本 ABI 没有 `write` syscall 合同：effect 写入必须走宿主导入", abi.name()));

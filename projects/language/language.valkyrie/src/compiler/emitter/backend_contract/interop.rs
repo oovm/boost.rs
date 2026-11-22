@@ -110,6 +110,11 @@ const JVM_OPERATOR_BINDING_ATTRIBUTE: &str = "jvm_operator";
 /// 与 `[wasm_operator]` 对称：该属性只声明 MSIL 目标 operator 助记符；助记符到
 /// 冻结配方的映射归 CLR backend 所有，声明侧不携带任何语义类别或宿主符号名。
 const CLR_OPERATOR_BINDING_ATTRIBUTE: &str = "clr_operator";
+/// x86-64 目标 operator 绑定属性（`[x86_64_operator("long.add")]`）。
+///
+/// 与其余目标 operator 对称：属性只声明 ISA 助记符；助记符到冻结配方的映射归
+/// machine backend 所有。按 ISA 声明（而非「native」），由四元组 `arch` 决定编码。
+const X86_64_OPERATOR_BINDING_ATTRIBUTE: &str = "x86_64_operator";
 
 /// 当剝外部导入链接覝求的能力标签。
 pub fn required_capability(_link: &ExternalImportLink) -> CapabilityTag {
@@ -374,6 +379,15 @@ fn attribute_to_interop_contract(attribute: &HirAttribute) -> Option<ExternalImp
             return None;
         }
         return Some(ExternalImportLink::host(Some(Identifier::new("clr-operator")), locator_segments));
+    }
+
+    if name == X86_64_OPERATOR_BINDING_ATTRIBUTE {
+        // 与其余目标 operator 同形：ISA 助记符必须恰好一段；到冻结配方的映射归
+        // machine backend 私有表所有。
+        if locator_segments.len() != 1 {
+            return None;
+        }
+        return Some(ExternalImportLink::host(Some(Identifier::new("x86_64-operator")), locator_segments));
     }
 
     if name == C_BINDING_ATTRIBUTE {

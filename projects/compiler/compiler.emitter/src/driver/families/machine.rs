@@ -33,7 +33,7 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
         if requirement.lane != TargetLane::MachineCode {
             return Err(format!("`machine-code` 后端需求 lane 不一致：requirement={:?}", requirement.lane));
         }
-        if requirement.input_kind != BackendInputKind::PeImage {
+        if requirement.input_kind != BackendInputKind::MachineImage {
             return Err(format!("`machine-code` 后端需求输入种类不一致：requirement={:?}", requirement.input_kind));
         }
         if requirement.target.family != TargetFamily::MachineCode {
@@ -58,9 +58,14 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 if input.host_exports.is_empty() {
                     return Err("native 宿主扩展缺少冻结的宿主导出面；拒绝产出无导出的扩展交付".to_string());
                 }
+                if input.host_module.is_none() {
+                    return Err("native 宿主扩展缺少冻结的宿主合同；拒绝按扩展名猜装载方式".to_string());
+                }
             }
-            compiler_target::ArtifactPurpose::Application if !input.host_exports.is_empty() => {
-                return Err("native 可执行交付不得携带宿主扩展导出面；用途与导出面必须一致".to_string());
+            compiler_target::ArtifactPurpose::Application | compiler_target::ArtifactPurpose::TestBundle
+                if !input.host_exports.is_empty() || input.host_module.is_some() =>
+            {
+                return Err("native 可执行交付不得携带宿主扩展导出面或宿主合同；用途与导出面必须一致".to_string());
             }
             _ => {}
         }
@@ -73,9 +78,10 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 .first()
                 .map(|artifact| artifact.path.clone())
                 .ok_or_else(|| "native 宿主扩展没有产出共享库镜像".to_string())?;
-            let invocation = match input.artifact_extension.as_deref() {
-                Some(".node") => "node require",
-                _ => "python import",
+            let invocation = match input.host_module {
+                Some(crate::emitter_backend_machine::HostModule::Node) => "node require",
+                Some(crate::emitter_backend_machine::HostModule::Python) => "python import",
+                None => return Err("native 宿主扩展缺少冻结的宿主合同；拒绝按扩展名猜装载方式".to_string()),
             };
             let library_exports = input
                 .host_exports

@@ -239,8 +239,16 @@ mod frozen_operator_tests {
         assert_eq!(plan.result_type, TargetOperandType::I32);
         assert_eq!(plan.encoding, X86_64OperatorCode::I32Add);
 
-        // 未实现的 provider（无符号除）：表内无配方，emit 结构化失败。
-        assert!(freeze_x86_64_operator_binding("integer.divide_unsigned").is_none(), "未实现 provider 不得冻结");
+        // 无符号除余：已冻结为 `div`/`idiv` 形态，与有符号除余同宽同载体。
+        let plan = freeze_x86_64_operator_binding("integer.divide_unsigned").expect("`integer.divide_unsigned` 必须冻结");
+        assert_eq!(plan.operand_type, TargetOperandType::I32);
+        assert_eq!(plan.encoding, X86_64OperatorCode::I32DivideUnsigned);
+        let plan = freeze_x86_64_operator_binding("long.remainder").expect("`long.remainder` 必须冻结");
+        assert_eq!(plan.operand_type, TargetOperandType::I64);
+        assert_eq!(plan.encoding, X86_64OperatorCode::I64Remainder);
+
+        // 仍未实现的 provider（浮点）不得被猜成任何指令集。
+        assert!(freeze_x86_64_operator_binding("double.add").is_none(), "未实现 provider 不得冻结");
     }
 
     /// `u64`/`u32` 无符号除、余、逻辑右移的托管目标配方：

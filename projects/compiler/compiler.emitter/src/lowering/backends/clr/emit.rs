@@ -435,6 +435,38 @@ fn msil_parameter_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Resu
     Ok(msil_type)
 }
 
+/// `Cast` 的整数表示：位宽 + 符号性（`Character` 是 32 位无符号码位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MsilIntShape {
+    bits: u8,
+    signed: bool,
+}
+
+fn msil_int_shape(ty: &SemanticType) -> Option<MsilIntShape> {
+    Some(match ty {
+        SemanticType::Integer8 { signed } => MsilIntShape { bits: 8, signed: *signed },
+        SemanticType::Integer16 { signed } => MsilIntShape { bits: 16, signed: *signed },
+        SemanticType::Integer32 { signed } => MsilIntShape { bits: 32, signed: *signed },
+        SemanticType::Integer64 { signed } => MsilIntShape { bits: 64, signed: *signed },
+        SemanticType::Character => MsilIntShape { bits: 32, signed: false },
+        _ => return None,
+    })
+}
+
+/// 按位宽/符号性把求值栈上的整数规范化成目标表示。
+fn msil_int_normalize_opcode(shape: MsilIntShape) -> MsilOpcode {
+    match (shape.bits, shape.signed) {
+        (8, true) => MsilOpcode::ConvI1,
+        (16, true) => MsilOpcode::ConvI2,
+        (32, true) => MsilOpcode::ConvI4,
+        (64, true) => MsilOpcode::ConvI8,
+        (8, false) => MsilOpcode::ConvU1,
+        (16, false) => MsilOpcode::ConvU2,
+        (32, false) => MsilOpcode::ConvU4,
+        _ => MsilOpcode::ConvU8,
+    }
+}
+
 fn msil_return_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
     msil_type(layouts, ty)
 }
@@ -849,6 +881,22 @@ impl ClrMethodEmitter<'_> {
             InstructionKind::Copy { source } => {
                 let (slot, kind) = self.require_output(instruction)?;
                 self.emit_operand(source, Some(kind))?;
+                self.store_local(slot);
+            }
+            InstructionKind::Cast { source, ty } => {
+                // 语言层 `as` 是表示转换：源/目标位宽与符号性只由冻结的 `SemanticType`
+                // 决定，必须发射真实 conv 指令，不能退化成 Copy。
+                let (slot, target_kind) = self.require_output(instruction)?;
+                let source_ty = self.operand_semantic_type(source)?;
+                let source_kind = match source {
+                    Operand::Value(value) => self.value_slot(*value)?.1,
+                    _ => ClrValueKind::of_msil_type(&msil_parameter_type(
+                        self.submission.backend_plan.aggregate_layouts(),
+                        &source_ty,
+                    )?)?,
+                };
+                self.emit_operand(source, Some(source_kind))?;
+                self.emit_cast_conversion(&source_ty, ty, source_kind, target_kind)?;
                 self.store_local(slot);
             }
             InstructionKind::StoreVar { value, .. } => {
@@ -1901,6 +1949,17 @@ impl ClrMethodEmitter<'_> {
                 }
                 Some(other) => Err(format!("CLR 最小 lowering：字符串常量不能进入 {other:?} 槽: function={}", self.function.symbol)),
             },
+            // `T?` 的空值就是 CLR `null` 引用；只有引用槽能承载，可空标量走 sum 表示。
+            Constant::Null => match expected {
+                Some(ClrValueKind::Reference) | None => {
+                    self.push_opcode(MsilOpcode::Ldnull);
+                    Ok(())
+                }
+                Some(other) => Err(format!(
+                    "CLR 最小 lowering：空值常量不能进入 {other:?} 槽（可空标量需要 sum 表示，不得静默装箱）: function={}",
+                    self.function.symbol
+                )),
+            },
             other => Err(format!("CLR 最小 lowering 尚不支持常量 `{other:?}`：缺少 CLR 常量载体合同，function={}", self.function.symbol)),
         }
     }
@@ -1935,6 +1994,59 @@ impl ClrMethodEmitter<'_> {
 
     fn emit_pop(&mut self) {
         self.push_opcode(MsilOpcode::Pop);
+    }
+
+    /// 操作数在计划中冻结的语义类型（`Cast` 的转换语义必须由此决定）。
+    fn operand_semantic_type(&self, operand: &Operand) -> Result<SemanticType> {
+        match operand {
+            Operand::Value(value) => self
+                .function
+                .value_types
+                .get(value)
+                .cloned()
+                .ok_or_else(|| format!("CLR `Cast` 源 SSA 值 {value:?} 缺少冻结语义类型: function={}", self.function.symbol)),
+            Operand::Constant(constant) => match constant {
+                Constant::Int(_) => Ok(SemanticType::Integer64 { signed: true }),
+                Constant::Bool(_) => Ok(SemanticType::Boolean),
+                Constant::Float64(_) => Ok(SemanticType::Float64),
+                Constant::Utf8(_) => Ok(SemanticType::Utf8),
+                Constant::Utf16(_) => Ok(SemanticType::Utf16),
+                Constant::Unit => Ok(SemanticType::Unit),
+                Constant::Null => Err(format!("CLR `Cast` 的空值操作数没有源类型: function={}", self.function.symbol)),
+            },
+            Operand::Symbol(path) => Err(format!("CLR `Cast` 源操作数不支持符号引用 {path:?}: function={}", self.function.symbol)),
+            Operand::Item(instance) => Err(format!("CLR `Cast` 源操作数不支持可调用身份 {instance:?}: function={}", self.function.symbol)),
+        }
+    }
+
+    /// 语言层 `as` 的整数表示转换（`int32`/`int64` 求值栈）。
+    fn emit_cast_conversion(
+        &mut self,
+        source: &SemanticType,
+        target: &SemanticType,
+        source_kind: ClrValueKind,
+        target_kind: ClrValueKind,
+    ) -> Result<()> {
+        if source == target {
+            return Ok(());
+        }
+        if source.is_float() || target.is_float() {
+            return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的浮点 cast 尚未闭合: function={}", self.function.symbol));
+        }
+        if source_kind == ClrValueKind::Reference || target_kind == ClrValueKind::Reference {
+            return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的引用 cast 缺少目标合同: function={}", self.function.symbol));
+        }
+        let (Some(source_shape), Some(target_shape)) = (msil_int_shape(source), msil_int_shape(target))
+        else {
+            return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的 cast 缺少整数表示合同: function={}", self.function.symbol));
+        };
+        // 先把源在 int32 载体上的越界高位裁掉（8/16 位必须显式符号/零扩展）。
+        if source_kind == ClrValueKind::Int32 {
+            self.push_opcode(msil_int_normalize_opcode(source_shape));
+        }
+        // 再按目标位宽/符号性转换（int64 目标用 `conv.i8`/`conv.u8`）。
+        self.push_opcode(msil_int_normalize_opcode(target_shape));
+        Ok(())
     }
 
     fn output_of(&self, instruction: &MirInstruction) -> Result<Option<(u16, ClrValueKind)>> {
