@@ -21,9 +21,9 @@ use crate::{FragmentSubmission, Result, backend_plan_views::SemanticType, emitte
 use compiler_types::ItemInstanceId;
 
 use super::{
-    HostMethod, HostModule, HostValueKind, X64Platform, X64ProductTarget, any_returns_bool, append_text_arena, compile_shared_container,
-    is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper, python_module_data,
-    python_module_exec, python_module_registration,
+    HostMethod, HostModule, HostParameterKind, HostValueKind, X64Platform, X64ProductTarget, any_returns_bool, append_text_arena,
+    compile_shared_container, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
+    python_module_data, python_module_exec, python_module_registration,
     x64_program::encode_x64_program_with_dependencies,
     x86_64::{collect_reachable_functions, lower_function_to_text_program},
 };
@@ -167,26 +167,50 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
                 target.name()
             ));
         }
+        // 实参载体：完整 `i64`，或声明为宿主序列投影的 `[i64]` 堆数组。
+        // 数组按本 lane 的冻结表示逐元素编组，集合语义仍留在 std。
+        let mut parameter_kinds = Vec::with_capacity(function.param_types.len());
         for parameter in &function.param_types {
-            if !matches!(parameter, SemanticType::Integer64 { signed: true }) {
-                return Err(format!("宿主边界只闭合完整 `i64` 整数实参：`{export_name}` 的形参类型 `{parameter}` 没有无损宿主载体，拒绝写出"));
-            }
+            parameter_kinds.push(match parameter {
+                SemanticType::Integer64 { signed: true } => HostParameterKind::Int64,
+                SemanticType::Array(element) if matches!(element.as_ref(), SemanticType::Integer64 { signed: true }) => {
+                    HostParameterKind::Int64Array
+                }
+                other => {
+                    return Err(format!(
+                        "宿主边界只闭合完整 `i64` 与 `[i64]` 实参：`{export_name}` 的形参类型 `{other}` 没有无损宿主载体，拒绝写出"
+                    ));
+                }
+            });
+        }
+        // CPython 边界的 `PyArg_ParseTuple` 只闭合 64 位整数：数组投影只在 Node-API
+        // 的序列编组里实现，不能把同一个导出悄悄降级成不完整的宿主载体。
+        if target.host_module() == Some(HostModule::Python)
+            && parameter_kinds.iter().any(|kind| !matches!(kind, HostParameterKind::Int64))
+        {
+            return Err(format!("CPython 宿主边界只闭合 `i64` 实参：`{export_name}` 的导出面需要 Node-API 序列编组，拒绝写出"));
         }
         // 返回与实参共用同一符号合同：`u64` 的 `2^63..2^64-1` 段没有有符号
         // `i64` 载体可无损承载，在 BigInt 载体接入前与窄整数一样写出前拒绝。
         let returns = match &function.return_type {
             SemanticType::Integer64 { signed: true } => HostValueKind::Int64,
             SemanticType::Boolean => HostValueKind::Bool,
+            SemanticType::Unit => {
+                if target.host_module() == Some(HostModule::Python) {
+                    return Err(format!("CPython 宿主边界尚未闭合 `unit` 返回：`{export_name}` 拒绝写出"));
+                }
+                HostValueKind::Unit
+            }
             other => {
                 return Err(format!(
-                    "宿主边界尚未闭合返回载体 `{other}`：`{export_name}` 只接受有符号 `i64` 或 `bool` 返回（无符号 `u64` 需 BigInt 无损载体），拒绝写出"
+                    "宿主边界尚未闭合返回载体 `{other}`：`{export_name}` 只接受有符号 `i64`、`bool` 或 `unit` 返回（无符号 `u64` 需 BigInt 无损载体），拒绝写出"
                 ));
             }
         };
         methods.push(HostMethod {
             name: export_name.clone(),
             symbol: sanitize_symbol(export_name),
-            parameters: function.param_types.len(),
+            parameters: parameter_kinds,
             returns,
         });
     }
@@ -245,6 +269,11 @@ fn node_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<(S
     let mut imports = vec![(dll.to_string(), "napi_set_named_property".to_string()), (dll.to_string(), "napi_create_int64".to_string())];
     if !methods.is_empty() {
         for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
+            imports.push((dll.to_string(), symbol.to_string()));
+        }
+    }
+    if methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Int64Array))) {
+        for symbol in ["napi_is_array", "napi_get_array_length", "napi_get_element", "napi_set_element"] {
             imports.push((dll.to_string(), symbol.to_string()));
         }
     }

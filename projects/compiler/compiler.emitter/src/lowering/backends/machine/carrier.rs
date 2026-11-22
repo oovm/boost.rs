@@ -31,6 +31,21 @@ pub enum HostValueKind {
     Bool,
     /// 镜像字符串描述符 → 宿主字符串。
     Utf8,
+    /// 无返回值（宿主得到 `undefined` / `None`）。
+    Unit,
+}
+
+/// 宿主边界实参种类。
+///
+/// 目前只闭合两类无损载体：完整 `i64` 与 `[i64]`（宿主序列）。数组按本 lane 的
+/// 堆数组表示编组：`[0]` 是元素个数，元素从 `+8` 起按 8 字节槽排列；调用结束后
+/// 把元素写回宿主数组，因此原地修改对宿主可见。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostParameterKind {
+    /// 完整 `i64` 域整数。
+    Int64,
+    /// `[i64]` 宿主数组（逐元素读取，调用后逐元素写回）。
+    Int64Array,
 }
 
 /// 一个模块级属性导出：宿主读取 `<module>.<name>` 时得到 `symbol` 的返回值。
@@ -54,8 +69,8 @@ pub struct HostMethod {
     /// 与 [`Self::name`] 分离，使语言适配器可以暴露任意导出名（例如限定名），
     /// 由适配器自己给出已冻结的镜像符号，承载服务不再假设两者同名。
     pub symbol: String,
-    /// 整数形参个数。
-    pub parameters: usize,
+    /// 形参载体序列（按位置一一对应）。
+    pub parameters: Vec<HostParameterKind>,
     /// 返回载体。
     pub returns: HostValueKind,
 }
@@ -189,7 +204,8 @@ pub fn python_module_data(
         push_cstring(&mut data, &method.name);
         // `PyArg_ParseTuple` 的 `n` 是 `Py_ssize_t`（两侧平台都是 8 字节有符号），
         // 与残差的 `i64` 载体一一对应；`:<name>` 让宿主错误信息带上方法名。
-        let format = format!("{}:{}", "n".repeat(method.parameters), method.name);
+        // CPython 边界由 `frozen_host_methods` 拒绝数组实参，这里只会看到 `Int64`。
+        let format = format!("{}:{}", "n".repeat(method.parameters.len()), method.name);
         format_offsets.push(data.len() as u32);
         push_cstring(&mut data, &format);
     }
@@ -237,7 +253,7 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     const FIRST_ARGUMENT_SLOT: u16 = 3;
     const FAIL_LABEL: u32 = 0;
     let argument_slot = |index: usize| FIRST_ARGUMENT_SLOT + index as u16;
-    let descriptor_slot = FIRST_ARGUMENT_SLOT + method.parameters as u16;
+    let descriptor_slot = FIRST_ARGUMENT_SLOT + method.parameters.len() as u16;
     let pointer_slot = descriptor_slot + 1;
     let length_slot = descriptor_slot + 2;
 
@@ -253,7 +269,7 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
         Lir::StoreSlot(FORMAT_SLOT),
         Lir::LoadSlotToArg { slot: FORMAT_SLOT, index: 1 },
     ]);
-    for index in 0..method.parameters {
+    for index in 0..method.parameters.len() {
         // `PyArg_ParseTuple` 把第 index 个 `long` 写入该帧槽的地址。
         instructions.push(Lir::LoadSlotAddress(argument_slot(index)));
         instructions.push(Lir::StoreSlot(TEMP_SLOT));
@@ -262,7 +278,7 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyArg_ParseTuple".to_string() });
     // 返回 0 = 解析失败（异常已由宿主设置）。
     instructions.push(Lir::JumpIfZero(FAIL_LABEL));
-    for index in 0..method.parameters {
+    for index in 0..method.parameters.len() {
         instructions.push(Lir::LoadSlotToArg { slot: argument_slot(index), index: index as u8 });
     }
     instructions.push(Lir::Call(method.symbol.clone()));
@@ -296,6 +312,7 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
             instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() });
             instructions.push(Lir::Return);
         }
+        HostValueKind::Unit => unreachable!("CPython 边界由 frozen_host_methods 拒绝 unit 返回"),
     }
     instructions.push(Lir::Label(FAIL_LABEL));
     instructions.push(Lir::LoadI64(0));
@@ -540,7 +557,21 @@ pub fn node_method_wrapper(
     let argv_slot = |index: usize| ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1 - index as u16;
     let out_slot = |index: usize| OUT_FIRST_SLOT + index as u16;
     let continue_label = |index: usize| 2 + index as u32;
-    let parameters = method.parameters;
+    let parameters = method.parameters.len();
+    // 每个 `[i64]` 实参占用 8 个互不重叠的帧槽：计数、游标、长度出参、布尔出参、
+    // 元素句柄、元素值、循环条件与堆句柄。
+    let array_slot_base = STRING_SLOT + 1;
+    let array_slot = |index: usize, offset: u16| array_slot_base + 8 * index as u16 + offset;
+    const ARRAY_COUNT: u16 = 0;
+    const ARRAY_INDEX: u16 = 1;
+    const ARRAY_LENGTH: u16 = 2;
+    const ARRAY_BOOL: u16 = 3;
+    const ARRAY_ELEMENT: u16 = 4;
+    const ARRAY_VALUE: u16 = 5;
+    const ARRAY_CONDITION: u16 = 6;
+    const ARRAY_HEAP: u16 = 7;
+    let array_count = method.parameters.iter().filter(|kind| matches!(kind, HostParameterKind::Int64Array)).count();
+    let slot_count = array_slot_base + 8 * array_count as u16;
 
     let mut instructions = vec![
         Lir::LoadParam { index: 0, slot: ENV_SLOT },
@@ -588,28 +619,188 @@ pub fn node_method_wrapper(
         Lir::Eq,
         Lir::JumpIfZero(FAIL_LABEL),
     ]);
-    for index in 0..parameters {
-        // `napi_get_value_int64(env, argv[index], &out)`。
-        instructions.extend([
-            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-            Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
-            Lir::LoadSlotAddress(out_slot(index)),
-            Lir::StoreSlot(TEMP_SLOT),
-            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-            Lir::CallImport { module: dll.to_string(), field: "napi_get_value_int64".to_string() },
-            Lir::JumpIfZero(continue_label(index)),
-            Lir::Jump(FAIL_LABEL),
-            Lir::Label(continue_label(index)),
-        ]);
+    for (index, kind) in method.parameters.iter().enumerate() {
+        match kind {
+            HostParameterKind::Int64 => {
+                // `napi_get_value_int64(env, argv[index], &out)`。
+                instructions.extend([
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+                    Lir::LoadSlotAddress(out_slot(index)),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_int64".to_string() },
+                    Lir::JumpIfZero(continue_label(index)),
+                    Lir::Jump(FAIL_LABEL),
+                    Lir::Label(continue_label(index)),
+                ]);
+            }
+            HostParameterKind::Int64Array => {
+                // 标签段按实参位置隔离，避免同一包装体内多数组实参互相跳转。
+                let label_base = 100 + index as u32 * 10;
+                let length_ok = label_base;
+                let fill_loop = label_base + 1;
+                let fill_end = label_base + 2;
+                let element_ok = label_base + 3;
+                let integer_ok = label_base + 4;
+                instructions.extend([
+                    // 必须是宿主数组。
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+                    Lir::LoadSlotAddress(array_slot(index, ARRAY_BOOL)),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_is_array".to_string() },
+                    Lir::LoadSlotAddress(array_slot(index, ARRAY_BOOL)),
+                    Lir::LoadByteFromRax,
+                    Lir::JumpIfZero(FAIL_LABEL),
+                    // `napi_get_array_length` 写 `uint32_t`：先清零整个 8 字节槽。
+                    Lir::LoadI64(0),
+                    Lir::StoreSlot(array_slot(index, ARRAY_LENGTH)),
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+                    Lir::LoadSlotAddress(array_slot(index, ARRAY_LENGTH)),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_array_length".to_string() },
+                    Lir::JumpIfZero(length_ok),
+                    Lir::Jump(FAIL_LABEL),
+                    Lir::Label(length_ok),
+                    Lir::LoadSlot(array_slot(index, ARRAY_LENGTH)),
+                    Lir::StoreSlot(array_slot(index, ARRAY_COUNT)),
+                    // 分配 `8 + 8 * count` 字节的冻结数组表示。
+                    Lir::LoadSlot(array_slot(index, ARRAY_COUNT)),
+                    Lir::ShiftLeftRaxImmediate(3),
+                    Lir::AddRaxImmediate(8),
+                    Lir::StoreSlot(array_slot(index, ARRAY_VALUE)),
+                    Lir::CallImport { module: "kernel32.dll".to_string(), field: "GetProcessHeap".to_string() },
+                    Lir::StoreSlot(array_slot(index, ARRAY_HEAP)),
+                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_HEAP), index: 0 },
+                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_VALUE), index: 2 },
+                    Lir::LoadI64(0x0000_0008),
+                    Lir::StoreSlot(array_slot(index, ARRAY_VALUE)),
+                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_VALUE), index: 1 },
+                    Lir::CallImport { module: "kernel32.dll".to_string(), field: "HeapAlloc".to_string() },
+                    Lir::LoadSlotToRcx(array_slot(index, ARRAY_COUNT)),
+                    Lir::StoreRcxToRax,
+                    Lir::StoreSlot(out_slot(index)),
+                    // `index = 0`。
+                    Lir::LoadI64(0),
+                    Lir::StoreSlot(array_slot(index, ARRAY_INDEX)),
+                    Lir::LoadSlot(array_slot(index, ARRAY_INDEX)),
+                    Lir::LoadSlotToRcx(array_slot(index, ARRAY_COUNT)),
+                    Lir::Lt,
+                    Lir::StoreSlot(array_slot(index, ARRAY_CONDITION)),
+                    Lir::LoadSlot(array_slot(index, ARRAY_CONDITION)),
+                    Lir::JumpIfZero(fill_end),
+                    Lir::Label(fill_loop),
+                    // `napi_get_element(env, array, index, &element)`。
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_INDEX), index: 2 },
+                    Lir::LoadSlotAddress(array_slot(index, ARRAY_ELEMENT)),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_element".to_string() },
+                    Lir::JumpIfZero(element_ok),
+                    Lir::Jump(FAIL_LABEL),
+                    Lir::Label(element_ok),
+                    // `napi_get_value_int64(env, element, &value)`。
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_ELEMENT), index: 1 },
+                    Lir::LoadSlotAddress(array_slot(index, ARRAY_VALUE)),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_int64".to_string() },
+                    Lir::JumpIfZero(integer_ok),
+                    Lir::Jump(FAIL_LABEL),
+                    Lir::Label(integer_ok),
+                    // `array[index] = value`。
+                    Lir::LoadSlotToRcx(array_slot(index, ARRAY_INDEX)),
+                    Lir::LoadSlotToRdx(array_slot(index, ARRAY_VALUE)),
+                    Lir::LoadSlot(out_slot(index)),
+                    Lir::StoreIndexedRdxToRaxRcx,
+                    // `index += 1`，条件与入口一致。
+                    Lir::LoadSlot(array_slot(index, ARRAY_INDEX)),
+                    Lir::AddRaxImmediate(1),
+                    Lir::StoreSlot(array_slot(index, ARRAY_INDEX)),
+                    Lir::LoadSlot(array_slot(index, ARRAY_INDEX)),
+                    Lir::LoadSlotToRcx(array_slot(index, ARRAY_COUNT)),
+                    Lir::Lt,
+                    Lir::StoreSlot(array_slot(index, ARRAY_CONDITION)),
+                    Lir::LoadSlot(array_slot(index, ARRAY_CONDITION)),
+                    Lir::JumpIfZero(fill_end),
+                    Lir::Jump(fill_loop),
+                    Lir::Label(fill_end),
+                ]);
+            }
+        }
     }
-    for index in 0..parameters {
-        instructions.push(Lir::LoadSlotToArg { slot: out_slot(index), index: index as u8 });
+    for (index, kind) in method.parameters.iter().enumerate() {
+        let slot = match kind {
+            HostParameterKind::Int64 | HostParameterKind::Int64Array => out_slot(index),
+        };
+        instructions.push(Lir::LoadSlotToArg { slot, index: index as u8 });
     }
     instructions.push(Lir::Call(method.symbol.clone()));
+    // 返回值先落槽：数组写回会借用 `rax` 作循环载体，不能把返回寄存器留到最后。
+    if !matches!(method.returns, HostValueKind::Unit) {
+        instructions.push(Lir::StoreSlot(RESULT_SLOT));
+    }
+    // 数组实参的原地修改对宿主可见：调用后逐元素写回。
+    for (index, kind) in method.parameters.iter().enumerate() {
+        if !matches!(kind, HostParameterKind::Int64Array) {
+            continue;
+        }
+        let label_base = 100 + index as u32 * 10;
+        let writeback_loop = label_base + 5;
+        let writeback_end = label_base + 6;
+        instructions.extend([
+            Lir::LoadI64(0),
+            Lir::StoreSlot(array_slot(index, ARRAY_INDEX)),
+            Lir::LoadSlot(array_slot(index, ARRAY_INDEX)),
+            Lir::LoadSlotToRcx(array_slot(index, ARRAY_COUNT)),
+            Lir::Lt,
+            Lir::StoreSlot(array_slot(index, ARRAY_CONDITION)),
+            Lir::LoadSlot(array_slot(index, ARRAY_CONDITION)),
+            Lir::JumpIfZero(writeback_end),
+            Lir::Label(writeback_loop),
+            // `value = array[index]`。
+            Lir::LoadSlotToRcx(array_slot(index, ARRAY_INDEX)),
+            Lir::LoadSlot(out_slot(index)),
+            Lir::LoadIndexedFromRaxRcx,
+            Lir::StoreSlot(array_slot(index, ARRAY_VALUE)),
+            // `napi_create_int64(env, value, &element)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_VALUE), index: 1 },
+            Lir::LoadSlotAddress(array_slot(index, ARRAY_ELEMENT)),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
+            // `napi_set_element(env, array, index, element)`。
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+            Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_INDEX), index: 2 },
+            Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_ELEMENT), index: 3 },
+            Lir::CallImport { module: dll.to_string(), field: "napi_set_element".to_string() },
+            Lir::LoadSlot(array_slot(index, ARRAY_INDEX)),
+            Lir::AddRaxImmediate(1),
+            Lir::StoreSlot(array_slot(index, ARRAY_INDEX)),
+            Lir::LoadSlot(array_slot(index, ARRAY_INDEX)),
+            Lir::LoadSlotToRcx(array_slot(index, ARRAY_COUNT)),
+            Lir::Lt,
+            Lir::StoreSlot(array_slot(index, ARRAY_CONDITION)),
+            Lir::LoadSlot(array_slot(index, ARRAY_CONDITION)),
+            Lir::JumpIfZero(writeback_end),
+            Lir::Jump(writeback_loop),
+            Lir::Label(writeback_end),
+        ]);
+    }
     match method.returns {
         HostValueKind::Utf8 => {
             // 镜像内字符串描述符 → Node 字符串；描述符永不释放，无需所有权转移。
             instructions.extend([
+                Lir::LoadSlot(RESULT_SLOT),
                 Lir::StoreSlot(DESCRIPTOR_SLOT),
                 Lir::LoadSlot(DESCRIPTOR_SLOT),
                 Lir::AddRaxImmediate(8),
@@ -633,10 +824,9 @@ pub fn node_method_wrapper(
             let field = match method.returns {
                 HostValueKind::Bool => "napi_get_boolean",
                 HostValueKind::Int64 => "napi_create_int64",
-                HostValueKind::Utf8 => unreachable!("matched above"),
+                HostValueKind::Utf8 | HostValueKind::Unit => unreachable!("matched above"),
             };
             instructions.extend([
-                Lir::StoreSlot(RESULT_SLOT),
                 // `napi_create_int64(env, value, &result)` / `napi_get_boolean(env, value, &result)`。
                 Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
                 Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
@@ -647,6 +837,10 @@ pub fn node_method_wrapper(
                 Lir::LoadSlot(RESULT_SLOT),
                 Lir::Return,
             ]);
+        }
+        HostValueKind::Unit => {
+            // 回调返回 `NULL`：Node-API 把 `undefined` 交给调用方，不伪造值。
+            instructions.extend([Lir::LoadI64(0), Lir::Return]);
         }
     }
     // `napi_throw_type_error(env, NULL, message)`。
@@ -662,5 +856,5 @@ pub fn node_method_wrapper(
         Lir::Return,
     ]);
 
-    X64ProgramFunction { name: node_wrapper_name(&method.symbol), slot_count: STRING_SLOT + 1, instructions }
+    X64ProgramFunction { name: node_wrapper_name(&method.symbol), slot_count, instructions }
 }
