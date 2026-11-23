@@ -966,6 +966,7 @@ impl<'config> TypeScriptBuilder<'config> {
     }
 }
 
+/// 解码字符串字面量的源文本:去除两侧引号并处理转义,返回字面量内容。
 pub fn decode_string_literal_text(raw: &str) -> Result<String, TextError> {
     let text = raw.trim();
     let text = if text.len() >= 2 && matches!(text.as_bytes()[0], b'"' | b'\'') && text.as_bytes().last() != text.as_bytes().first() {

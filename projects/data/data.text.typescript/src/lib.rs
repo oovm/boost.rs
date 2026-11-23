@@ -1,8 +1,8 @@
 #![doc = include_str!("readme.md")]
-#![feature(new_range_api)]
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 
-mod printer;
+/// AST 打印器:将类型语法树还原为可重新解析的 TypeScript 文本。
+pub mod printer;
 
 /// AST module for TypeScript.
 pub mod ast;

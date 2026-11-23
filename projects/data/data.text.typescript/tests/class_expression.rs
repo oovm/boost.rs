@@ -169,5 +169,3 @@ fn named_class_declaration_regression() {
     assert_eq!(declaration.body.len(), 1);
     assert!(matches!(&declaration.body[0], ClassMember::Property { name, initializer: Some(_), .. } if name == "a"));
 }
-
-

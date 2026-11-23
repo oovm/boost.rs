@@ -515,11 +515,86 @@ impl<'config> TypeScriptBuilder<'config> {
                             if leaf.kind == TypeScriptTokenType::Declare {
                                 modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span))
                             }
+                            // 解析器把枚举名作为叶子令牌保留,这里补取名称。
+                            else if leaf.kind == TypeScriptTokenType::IdentifierName && name.is_empty() {
+                                name = source.get_text_in(leaf.span.into()).to_string();
+                                name_span = Some(leaf.span.into());
+                            }
+                        }
+                    }
+                }
+                // 解析器不产出 EnumMember 元素,成员以语句形态嵌套在 BlockStatement 子节点内,
+                // 这里把 `A` 与 `B = 2` 两类语句还原为枚举成员。
+                for child in node.children() {
+                    let RedTree::Node(child_node) = child
+                    else {
+                        continue;
+                    };
+                    if child_node.green.kind != TypeScriptElementType::BlockStatement {
+                        continue;
+                    }
+                    for sub in child_node.children() {
+                        let RedTree::Node(sub_node) = sub
+                        else {
+                            continue;
+                        };
+                        let Some(Statement::ExpressionStatement(es)) = self.build_statement(&sub_node, source)?
+                        else {
+                            continue;
+                        };
+                        match es.expression.kind.as_ref() {
+                            ExpressionKind::Identifier(member_name) => {
+                                members.push(EnumMember { name: member_name.clone(), initializer: None, span: es.expression.span.clone() });
+                            }
+                            ExpressionKind::AssignmentExpression { left, operator, right } if operator == "=" => {
+                                if let ExpressionKind::Identifier(member_name) = left.kind.as_ref() {
+                                    members.push(EnumMember {
+                                        name: member_name.clone(),
+                                        initializer: Some((**right).clone()),
+                                        span: es.expression.span.clone(),
+                                    });
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
                 let name_span = name_span.unwrap_or_else(|| Range { start: span.start, end: span.start });
                 Ok(Some(Statement::Enum(EnumDeclaration { decorators, modifiers, name, name_span, members, span: span.into() })))
+            }
+            TypeScriptElementType::NamespaceDeclaration => {
+                let mut name = String::new();
+                let mut body = Vec::new();
+                let mut modifiers: Vec<Modifier> = Vec::new();
+                for child in node.children() {
+                    match child {
+                        RedTree::Node(child_node) => {
+                            if child_node.green.kind == TypeScriptElementType::BlockStatement {
+                                for sub in child_node.children() {
+                                    if let RedTree::Node(sub_node) = sub {
+                                        if let Some(stmt) = self.build_statement(&sub_node, source)? {
+                                            body.push(stmt)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        RedTree::Leaf(leaf) => {
+                            if leaf.kind == TypeScriptTokenType::Declare {
+                                modifiers.push(Modifier::new(ModifierKind::Declare, leaf.span))
+                            }
+                            else if leaf.kind == TypeScriptTokenType::IdentifierName && name.is_empty() {
+                                name = source.get_text_in(leaf.span.into()).to_string();
+                            }
+                        }
+                    }
+                }
+                if name.is_empty() {
+                    Ok(None)
+                }
+                else {
+                    Ok(Some(Statement::Namespace(NamespaceDeclaration { decorators: Vec::new(), modifiers, name, body, span: span.into() })))
+                }
             }
             TypeScriptElementType::BlockStatement => {
                 let mut statements = Vec::new();

@@ -1,6 +1,9 @@
 //! TypeScript expression → canonical text.
 
-use crate::ast::{Expression, ExpressionKind, FunctionParam, ObjectProperty, Statement, TypeAnnotation};
+use crate::ast::{
+    Expression, ExpressionKind, FunctionParam, ModifierKind, ObjectProperty, Statement, TemplateElement, TypeAnnotation, TypeParameter,
+    has_modifier,
+};
 
 /// Print one expression node.
 pub fn print_expression(expr: &Expression) -> Option<String> {
@@ -38,7 +41,8 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
         ExpressionKind::BooleanLiteral(b) => Some(if *b { "true" } else { "false" }.into()),
         ExpressionKind::NullLiteral => Some("null".into()),
         ExpressionKind::RegexLiteral(s) => Some(s.clone()),
-        ExpressionKind::TemplateString(s) => Some(format!("`{s}`")),
+        // 构建器保存的是含反引号与占位符的原始文本,直接原样输出即可等价重解析。
+        ExpressionKind::TemplateString(s) => Some(s.clone()),
         ExpressionKind::UnaryExpression { operator, argument } => {
             let inner = print_expr(argument, Prec::Unary)?;
             let text = if operator == "typeof" || operator == "void" || operator == "delete" {
@@ -58,8 +62,9 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
             let (prec, right_prec) = binary_prec(operator)?;
             let left_s = if operator == "**" { print_expr(left, Prec::Unary)? } else { print_expr(left, prec)? };
             let right_s = print_expr(right, right_prec)?;
-            let spaced = if operator == "," { format!("{left_s},{right_s}") } else { format!("{left_s} {operator} {right_s}") };
-            wrap_prec(spaced, prec, min_prec)
+            // 逗号运算加括号输出,保证重解析后仍是单一序列表达式而非多个声明。
+            let spaced = if operator == "," { format!("({left_s},{right_s})") } else { format!("{left_s} {operator} {right_s}") };
+            wrap_prec(spaced, if operator == "," { Prec::Primary } else { prec }, min_prec)
         }
         ExpressionKind::ConditionalExpression { test, consequent, alternate } => {
             let test_s = print_expr(test, Prec::Or)?;
@@ -69,7 +74,6 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
         }
         ExpressionKind::MemberExpression { object, property, computed, optional } => {
             let obj = print_expr(object, Prec::Call)?;
-            let opt = if *optional { "?." } else { "." };
             let prop = if *computed {
                 format!("[{}]", print_expr(property, Prec::Lowest)?)
             }
@@ -79,7 +83,17 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
             else {
                 format!("[{}]", print_expr(property, Prec::Lowest)?)
             };
-            wrap_prec(format!("{obj}{opt}{prop}"), Prec::Call, min_prec)
+            // 计算访问用 `[...]`,不需要点分隔符;可选链才输出 `?.`。
+            let sep = if *computed {
+                ""
+            }
+            else if *optional {
+                "?."
+            }
+            else {
+                "."
+            };
+            wrap_prec(format!("{obj}{sep}{prop}"), Prec::Call, min_prec)
         }
         ExpressionKind::MetaProperty { meta, property } => wrap_prec(format!("{meta}.{property}"), Prec::Primary, min_prec),
         ExpressionKind::CallExpression { func, args } => {
@@ -124,7 +138,8 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
             for e in elements {
                 parts.push(print_expr(e, Prec::Assign)?);
             }
-            wrap_prec(parts.join(", "), Prec::Lowest, min_prec)
+            // 逗号序列始终以括号输出,避免在变量初始化等上下文被重新解析为多个声明。
+            wrap_prec(format!("({})", parts.join(", ")), Prec::Primary, min_prec)
         }
         ExpressionKind::ObjectLiteral { properties } => {
             let mut parts = Vec::with_capacity(properties.len());
@@ -145,11 +160,16 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
         ExpressionKind::ImportExpression { module_specifier } => {
             wrap_prec(format!("import({})", print_expr(module_specifier, Prec::Lowest)?), Prec::Call, min_prec)
         }
-        ExpressionKind::ArrowFunction { params, body, async_, .. } => {
+        ExpressionKind::ArrowFunction { params, body, async_, type_params, return_type } => {
             let prefix = if *async_ { "async " } else { "" };
+            let type_params_s = print_type_params(type_params)?;
             let params_s = print_params(params)?;
+            let ret = match return_type {
+                Some(t) => format!(": {}", print_type_annotation(t)?),
+                None => String::new(),
+            };
             let body_s = print_arrow_body(body)?;
-            wrap_prec(format!("{prefix}{params_s} => {body_s}"), Prec::Assign, min_prec)
+            wrap_prec(format!("{prefix}{type_params_s}{params_s}{ret} => {body_s}"), Prec::Assign, min_prec)
         }
         ExpressionKind::AsExpression { expression, type_annotation }
         | ExpressionKind::TypeAssertionExpression { expression, type_annotation } => {
@@ -163,14 +183,38 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
             wrap_prec(format!("{expr_s} satisfies {ty}"), Prec::Unary, min_prec)
         }
         ExpressionKind::NonNullExpression(inner) => wrap_prec(format!("{}!", print_expr(inner, Prec::Postfix)?), Prec::Postfix, min_prec),
-        ExpressionKind::FunctionExpression { .. } | ExpressionKind::TaggedTemplateExpression { .. } => None,
+        ExpressionKind::FunctionExpression { name, type_params, params, return_type, body, async_, generator } => {
+            let async_kw = if *async_ { "async " } else { "" };
+            let star = if *generator { "*" } else { "" };
+            let type_params_s = print_type_params(type_params)?;
+            let name = match name.as_deref() {
+                Some(n) if !n.is_empty() => format!(" {n}"),
+                _ => String::new(),
+            };
+            let params_s = print_params(params)?;
+            let ret = match return_type {
+                Some(t) => format!(": {}", print_type_annotation(t)?),
+                None => String::new(),
+            };
+            let body_s = super::stmt::print_block_body(body)?;
+            wrap_prec(format!("{async_kw}function{star}{name}{type_params_s}{params_s}{ret} {body_s}"), Prec::Primary, min_prec)
+        }
+        ExpressionKind::TaggedTemplateExpression { tag, template } => {
+            let tag_s = print_expr(tag, Prec::Call)?;
+            let template_s = print_expr(template, Prec::Primary)?;
+            wrap_prec(format!("{tag_s}{template_s}"), Prec::Call, min_prec)
+        }
         ExpressionKind::ClassExpression { name, type_params, extends, implements, body } => {
-            if !type_params.is_empty() || !implements.is_empty() {
-                return None;
-            }
+            let type_params_s = print_type_params(type_params)?;
             let extends = match extends {
                 Some(ty) => format!(" extends {}", print_type_annotation(ty)?),
                 None => String::new(),
+            };
+            let implements = if implements.is_empty() {
+                String::new()
+            }
+            else {
+                format!(" implements {}", implements.iter().map(print_type_annotation).collect::<Option<Vec<_>>>()?.join(", "))
             };
             let mut members = Vec::with_capacity(body.len());
             for member in body {
@@ -181,7 +225,7 @@ fn print_expr(expr: &Expression, min_prec: Prec) -> Option<String> {
                 Some(n) => format!(" {n}"),
                 None => String::new(),
             };
-            wrap_prec(format!("class{name}{extends} {{{body_text}}}"), Prec::Primary, min_prec)
+            wrap_prec(format!("class{name}{type_params_s}{extends}{implements} {{{body_text}}}"), Prec::Primary, min_prec)
         }
         ExpressionKind::JsxElement(element) => wrap_prec(super::jsx::print_jsx_element(element)?, Prec::Primary, min_prec),
         ExpressionKind::JsxFragment(fragment) => wrap_prec(super::jsx::print_jsx_fragment(fragment)?, Prec::Primary, min_prec),
@@ -219,11 +263,47 @@ fn print_object_prop(prop: &ObjectProperty) -> Option<String> {
             }
             Some(format!("{}: {}", name, print_expr(value, Prec::Assign)?))
         }
-        // Methods are function boundaries; this expression printer does not
-        // emit function bodies (mirrors `ExpressionKind::FunctionExpression`).
-        ObjectProperty::Method { .. } => None,
+        ObjectProperty::Method { name, params, return_type, body, modifiers, generator, .. } => {
+            let async_kw = if has_modifier(modifiers, ModifierKind::Async) { "async " } else { "" };
+            let accessor = if has_modifier(modifiers, ModifierKind::Get) {
+                "get "
+            }
+            else if has_modifier(modifiers, ModifierKind::Set) {
+                "set "
+            }
+            else {
+                ""
+            };
+            let star = if *generator { "*" } else { "" };
+            let params_s = print_params(params)?;
+            let ret = match return_type {
+                Some(t) => format!(": {}", print_type_annotation(t)?),
+                None => String::new(),
+            };
+            let body_s = super::stmt::print_block_body(body)?;
+            Some(format!("{async_kw}{accessor}{star}{name}{params_s}{ret} {body_s}"))
+        }
         ObjectProperty::Spread(expr) => Some(format!("...{}", print_expr(expr, Prec::Unary)?)),
     }
+}
+
+/// 打印泛型参数列表 `<T extends U = V>`;空列表返回空字符串。
+pub(super) fn print_type_params(params: &[TypeParameter]) -> Option<String> {
+    if params.is_empty() {
+        return Some(String::new());
+    }
+    let mut parts = Vec::with_capacity(params.len());
+    for param in params {
+        let mut text = param.name.clone();
+        if let Some(constraint) = &param.constraint {
+            text.push_str(&format!(" extends {}", print_type_annotation(constraint)?));
+        }
+        if let Some(default) = &param.default {
+            text.push_str(&format!(" = {}", print_type_annotation(default)?));
+        }
+        parts.push(text);
+    }
+    Some(format!("<{}>", parts.join(", ")))
 }
 
 pub(super) fn print_params(params: &[FunctionParam]) -> Option<String> {
@@ -232,6 +312,7 @@ pub(super) fn print_params(params: &[FunctionParam]) -> Option<String> {
     }
     let mut parts = Vec::with_capacity(params.len());
     for p in params {
+        // 参数装饰器(构造器注入)暂不支持输出:该形态极少见且无法保证等价重解析。
         if !p.decorators.is_empty() {
             return None;
         }
@@ -290,11 +371,12 @@ pub(super) fn print_type_annotation(ty: &TypeAnnotation) -> Option<String> {
                 Some(format!("{}<{}>", name, args.iter().map(print_type_annotation).collect::<Option<Vec<_>>>()?.join(", ")))
             }
         }
-        TypeAnnotation::Array(inner) => Some(format!("{}[]", print_type_annotation(inner)?)),
+        TypeAnnotation::Array(inner) => Some(format!("{}[]", print_type_operand(inner)?)),
         TypeAnnotation::Tuple(items) => Some(format!("[{}]", items.iter().map(print_type_annotation).collect::<Option<Vec<_>>>()?.join(", "))),
-        TypeAnnotation::Union(items) => Some(items.iter().map(print_type_annotation).collect::<Option<Vec<_>>>()?.join(" | ")),
-        TypeAnnotation::Intersection(items) => Some(items.iter().map(print_type_annotation).collect::<Option<Vec<_>>>()?.join(" & ")),
-        TypeAnnotation::Function { args, return_type, .. } => {
+        TypeAnnotation::Union(items) => Some(items.iter().map(|t| print_type_member(t, false)).collect::<Option<Vec<_>>>()?.join(" | ")),
+        TypeAnnotation::Intersection(items) => Some(items.iter().map(|t| print_type_member(t, true)).collect::<Option<Vec<_>>>()?.join(" & ")),
+        TypeAnnotation::Function { type_params, args, return_type } => {
+            let type_params_s = print_type_params(type_params)?;
             let params = args
                 .iter()
                 .map(|arg| {
@@ -303,23 +385,76 @@ pub(super) fn print_type_annotation(ty: &TypeAnnotation) -> Option<String> {
                 })
                 .collect::<Option<Vec<_>>>()?
                 .join(", ");
-            Some(format!("({params}) => {}", print_type_annotation(return_type)?))
+            Some(format!("{type_params_s}({params}) => {}", print_type_annotation(return_type)?))
         }
         TypeAnnotation::Object(members) => {
-            let properties = members
-                .iter()
-                .map(|member| match member {
-                    crate::ast::ClassMember::Property { name, ty, optional_marker, .. } => {
-                        let ty = print_type_annotation(ty.as_ref()?)?;
-                        Some(format!("{}{}: {}", name, if optional_marker.is_some() { "?" } else { "" }, ty))
-                    }
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(format!("{{ {} }}", properties.join("; ")))
+            let properties = members.iter().map(super::stmt::print_member_signature).collect::<Option<Vec<_>>>()?;
+            Some(format!("{{ {} }}", properties.join(" ")))
         }
+        TypeAnnotation::Query(name) => Some(format!("typeof {name}")),
+        TypeAnnotation::KeyOf(inner) => Some(format!("keyof {}", print_type_operand(inner)?)),
+        TypeAnnotation::Conditional { check_type, extends_type, true_type, false_type } => {
+            let check = print_type_operand(check_type)?;
+            let extends = print_type_annotation(extends_type)?;
+            let true_s = print_type_conditional_branch(true_type)?;
+            let false_s = print_type_conditional_branch(false_type)?;
+            Some(format!("{check} extends {extends} ? {true_s} : {false_s}"))
+        }
+        TypeAnnotation::Mapped { key_name, key_type, value_type, readonly, optional } => {
+            let readonly_kw = match readonly {
+                Some(true) => "readonly ",
+                Some(false) => "-readonly ",
+                None => "",
+            };
+            let optional_kw = match optional {
+                Some(true) => "?",
+                Some(false) => "-?",
+                None => "",
+            };
+            Some(format!(
+                "{{ {readonly_kw}[{key_name} in {}]{optional_kw}: {} }}",
+                print_type_annotation(key_type)?,
+                print_type_annotation(value_type)?
+            ))
+        }
+        TypeAnnotation::TemplateLiteral(elements) => {
+            let mut out = String::from("`");
+            for element in elements {
+                match element {
+                    TemplateElement::String(s) => out.push_str(s),
+                    TemplateElement::Type(t) => out.push_str(&format!("${{{}}}", print_type_annotation(t)?)),
+                }
+            }
+            out.push('`');
+            Some(out)
+        }
+        TypeAnnotation::Infer(name) => Some(format!("infer {name}")),
         _ => None,
     }
+}
+
+/// 打印带后缀/前缀操作符(`[]`、`keyof`)的操作数,联合等复合类型加括号保序。
+fn print_type_operand(ty: &TypeAnnotation) -> Option<String> {
+    let text = print_type_annotation(ty)?;
+    let needs_parens = matches!(
+        ty,
+        TypeAnnotation::Union(_) | TypeAnnotation::Intersection(_) | TypeAnnotation::Function { .. } | TypeAnnotation::Conditional { .. }
+    );
+    Some(if needs_parens { format!("({text})") } else { text })
+}
+
+/// 打印联合/交叉成员:函数与条件类型始终加括号,联合成员在交叉类型中加括号。
+fn print_type_member(ty: &TypeAnnotation, in_intersection: bool) -> Option<String> {
+    let text = print_type_annotation(ty)?;
+    let needs_parens = matches!(ty, TypeAnnotation::Function { .. } | TypeAnnotation::Conditional { .. })
+        || (in_intersection && matches!(ty, TypeAnnotation::Union(_)));
+    Some(if needs_parens { format!("({text})") } else { text })
+}
+
+/// 打印条件类型的真/假分支,嵌套条件类型加括号避免歧义。
+fn print_type_conditional_branch(ty: &TypeAnnotation) -> Option<String> {
+    let text = print_type_annotation(ty)?;
+    Some(if matches!(ty, TypeAnnotation::Conditional { .. }) { format!("({text})") } else { text })
 }
 
 pub(super) fn print_string(s: &str) -> String {
