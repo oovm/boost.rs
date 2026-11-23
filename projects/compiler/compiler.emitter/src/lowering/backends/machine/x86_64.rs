@@ -919,6 +919,8 @@ impl FunctionLowerer<'_> {
                 Ok(())
             }
             InstructionKind::StructNew { nominal, fields } => self.emit_struct_new(instruction, *nominal, fields),
+            InstructionKind::TupleNew { layout_id, fields } => self.emit_tuple_new(instruction, *layout_id, fields),
+            InstructionKind::TupleGet { object, layout_id, index } => self.emit_tuple_get(instruction, object, *layout_id, *index),
             InstructionKind::FieldGet { object, field } => self.emit_field_get(instruction, object, *field),
             InstructionKind::FieldSet { object, field, value } => self.emit_field_set(instruction, object, *field, value),
             InstructionKind::SumNew { nominal, variant, payload } => self.emit_sum_new(instruction, *nominal, *variant, payload.as_ref()),
@@ -1694,6 +1696,116 @@ impl FunctionLowerer<'_> {
         Ok(())
     }
 
+    /// 一个元组元素槽的物理合同：偏移 8 字节对齐、与下一元素不重叠、
+    /// 载体宽度与类型一致。
+    ///
+    /// 元组 SSA 值的载体是堆对象指针（8 字节），元素一律按 8 字节槽存取：
+    /// 4 字节标量（`bool`/`char`/窄整数）在槽内按本 lane 的帧槽表示加宽，
+    /// 高位置零由分配实现保证。浮点元素（载体寄存器类不同）与值存储聚合
+    /// （没有内联槽合同）首期不开放，调用点结构化失败。
+    fn tuple_field_offset(&self, layout_id: compiler_types::LayoutId, index: usize, operation: &str) -> Result<u32> {
+        let layout = self.layouts.layout(layout_id).ok_or_else(|| {
+            format!("x86_64 lowering：{operation} 的布局 {layout_id:?} 缺少物理解析：function={}", self.function.symbol)
+        })?;
+        let field = layout.fields.get(index).ok_or_else(|| {
+            format!(
+                "x86_64 lowering：{operation} 元素槽 {index} 超出布局字段数 {}：function={}",
+                layout.fields.len(),
+                self.function.symbol
+            )
+        })?;
+        if field.offset % 8 != 0 {
+            return Err(format!(
+                "x86_64 lowering：{operation} 元素 {index} 偏移 {} 不是 8 字节对齐：function={}",
+                field.offset, self.function.symbol
+            ));
+        }
+        if let Some(next) = layout.fields.get(index + 1) && next.offset < field.offset + 8 {
+            return Err(format!(
+                "x86_64 lowering：{operation} 元素 {index} 的 8 字节槽与下一元素重叠（offset={} next={}）：function={}",
+                field.offset,
+                next.offset,
+                self.function.symbol
+            ));
+        }
+        let width_ok = match &field.ty {
+            SemanticType::Boolean | SemanticType::Character | SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } => field.size == 4,
+            SemanticType::Integer64 { .. }
+            | SemanticType::Array(_)
+            | SemanticType::Utf8
+            | SemanticType::Utf16
+            | SemanticType::Union(_)
+            | SemanticType::Nullable(_)
+            | SemanticType::Nominal { .. }
+            | SemanticType::Apply(..) => field.size == 8,
+            other => {
+                return Err(format!(
+                    "x86_64 lowering：{operation} 元素 {index} 类型 `{other}` 没有本 lane 开放的元组槽合同：function={}",
+                    self.function.symbol
+                ));
+            }
+        };
+        if !width_ok {
+            return Err(format!(
+                "x86_64 lowering：{operation} 元素 {index} 宽度 {} 与类型载体不符：function={}",
+                field.size, self.function.symbol
+            ));
+        }
+        Ok(field.offset)
+    }
+
+    /// `TupleNew`：分配零初始化的元组堆对象，按冻结偏移逐元素写入 8 字节槽。
+    fn emit_tuple_new(&mut self, instruction: &MirInstruction, layout_id: compiler_types::LayoutId, fields: &[Operand]) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let field_count = self
+            .layouts
+            .layout(layout_id)
+            .ok_or_else(|| format!("x86_64 lowering：`TupleNew` 的布局 {layout_id:?} 缺少物理解析：function={}", self.function.symbol))?
+            .fields
+            .len();
+        if field_count != fields.len() {
+            return Err(format!(
+                "x86_64 lowering：`TupleNew` 元素个数 {} 与布局字段数 {field_count} 不符：function={}",
+                fields.len(),
+                self.function.symbol
+            ));
+        }
+        let mut offsets = Vec::with_capacity(fields.len());
+        for index in 0..fields.len() {
+            offsets.push(self.tuple_field_offset(layout_id, index, "`TupleNew`")?);
+        }
+        let object_bytes = offsets.iter().copied().max().map(|offset| offset + 8).unwrap_or(8);
+        let base = self.reserve_temps(4);
+        let pointer_slot = self.temp_slot(base, 0)?;
+        let size_slot = self.temp_slot(base, 1)?;
+        let auxiliary = self.temp_slot(base, 2)?;
+        let condition = self.temp_slot(base, 3)?;
+        self.push(X64TextInstruction::LoadI64(object_bytes as i64));
+        self.uses_failure_exit = true;
+        for item in array_runtime::object_allocate(self.allocator, size_slot, auxiliary, condition, self.failure_label) {
+            self.push(item);
+        }
+        self.push(X64TextInstruction::StoreSlot(pointer_slot));
+        for (index, value) in fields.iter().enumerate() {
+            self.emit_operand_to_rdx(value)?;
+            self.push(X64TextInstruction::LoadSlot(pointer_slot));
+            self.push(X64TextInstruction::StoreRdxToRaxDisplacement(offsets[index] as i32));
+        }
+        self.push(X64TextInstruction::LoadSlot(pointer_slot));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
+    /// `TupleGet`：按冻结偏移读取一个 8 字节元素槽。
+    fn emit_tuple_get(&mut self, instruction: &MirInstruction, object: &Operand, layout_id: compiler_types::LayoutId, index: u32) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let offset = self.tuple_field_offset(layout_id, index as usize, "`TupleGet`")?;
+        self.emit_operand_to_rax(object)?;
+        self.push(X64TextInstruction::LoadFromRaxDisplacement(offset as i32));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
     /// `SumNew`：分配 `{u32 tag, i64 payload}` 载体并写入 variant。
     fn emit_sum_new(
         &mut self,
@@ -2066,6 +2178,9 @@ impl FunctionLowerer<'_> {
             SemanticType::Nullable(inner) => {
                 self.is_local_carrier(inner) || matches!(**inner, SemanticType::Array(_) | SemanticType::Utf8 | SemanticType::Utf16)
             }
+            // 元组：本 lane 以堆对象指针承载（元素槽合同见 `tuple_field_offset`，
+            // 构造/读取在 `TupleNew`/`TupleGet` 发射点逐项校验）。
+            SemanticType::Tuple(_) => true,
             _ => false,
         }
     }
