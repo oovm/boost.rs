@@ -11,8 +11,9 @@
 //! - 导出实参闭合完整 `i64`（Node-API 按 `napi_get_value_bigint_int64` 只接受
 //!   JS `bigint` 并用 `lossless` 检查 `i64` 域；CPython 按 `PyArg_ParseTuple("n")`
 //!   接收完整 `i64`）、`[i64]` 序列投影（Node-API 逐元素编组并写回；CPython 不
-//!   提供该载体）与 `utf8` 文本（Node-API 按 UTF-8 字节复制，CPython 按 `s#`
-//!   保留原始字节）。窄整数没有无损载体，拒绝而不是静默扩展；
+//!   提供该载体）与 `utf8` 文本（Node-API 按 UTF-8 字节复制；CPython 按 `O` 收对象
+//!   再经 `PyUnicode_AsUTF8AndSize` 取字节与长度，保留内嵌 NUL）。窄整数没有无损
+//!   载体，拒绝而不是静默扩展；
 //! - 导出返回闭合 `Integer64 → Int64`、`Boolean → Bool`、`Utf8 → 宿主字符串`
 //!   与 `[i64] → 宿主序列`（序列复制只收 Node-API；guest 数组归语言值图，桥在
 //!   调用返回后复制、不释放）。其余返回载体仍写出前拒绝；
@@ -404,6 +405,9 @@ fn python_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<
     }
     if any_returns_utf8(methods) {
         imports.push((dll.to_string(), "PyUnicode_FromStringAndSize".to_string()));
+    }
+    if methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Utf8))) {
+        imports.push((dll.to_string(), "PyUnicode_AsUTF8AndSize".to_string()));
     }
     if bool_exports {
         imports.push((dll.to_string(), "PyBool_FromLong".to_string()));

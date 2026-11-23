@@ -255,14 +255,16 @@ pub fn python_module_data(
         method_name_offsets.push(data.len() as u32);
         push_cstring(&mut data, &method.name);
         // `PyArg_ParseTuple` 的 `n` 是 `Py_ssize_t`（两侧平台都是 8 字节有符号），
-        // 与残差的 `i64` 载体一一对应；`s#` 接收 UTF-8 字符串并另写入字节长度
-        // （`Py_ssize_t`），保住内嵌 NUL 与原始字节。`:<name>` 让宿主错误信息带上
-        // 方法名。CPython 边界由 `frozen_host_methods` 拒绝数组实参/返回。
+        // 与残差的 `i64` 载体一一对应；`utf8` 按 `O` 接收对象后再调
+        // `PyUnicode_AsUTF8AndSize` 取字节指针与长度——`#` 系格式要求调用方在
+        // 编译期定义 `PY_SSIZE_T_CLEAN`，而本 lane 不链接 Python.h，运行时会直接
+        // 拒绝；`O` + 显式长度同时保住内嵌 NUL 与原始字节。`:<name>` 让宿主错误
+        // 信息带上方法名。CPython 边界由 `frozen_host_methods` 拒绝数组实参/返回。
         let mut conversions = String::new();
         for kind in &method.parameters {
             match kind {
                 HostParameterKind::Int64 => conversions.push('n'),
-                HostParameterKind::Utf8 => conversions.push_str("s#"),
+                HostParameterKind::Utf8 => conversions.push('O'),
                 HostParameterKind::Int64Array => unreachable!("CPython 边界拒绝数组实参"),
             }
         }
@@ -318,14 +320,14 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     const ALLOC_FAIL_LABEL: u32 = 3;
     // 文本实参编组失败：先释放已建立的临时副本，再按 SystemError 通道返回 NULL。
     const PARAM_ALLOC_FAIL_LABEL: u32 = 4;
-    // 每个形参占用的转换槽：`n` 一个（Py_ssize_t），`s#` 两个（字节指针 + 长度）。
+    // 每个形参占用的转换槽：`n` 一个（Py_ssize_t），`O` 一个（PyObject*）。
     let mut parameter_slots = Vec::with_capacity(method.parameters.len());
     let mut next_slot = FIRST_ARGUMENT_SLOT;
     for kind in &method.parameters {
         parameter_slots.push(next_slot);
         next_slot += match kind {
             HostParameterKind::Int64 => 1,
-            HostParameterKind::Utf8 => 2,
+            HostParameterKind::Utf8 => 1,
             HostParameterKind::Int64Array => 1,
         };
     }
@@ -349,6 +351,8 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     const PP_INDEX: u16 = 12;
     const PP_ELEMENT: u16 = 13;
     const PP_CURSOR: u16 = 14;
+    // `PyUnicode_AsUTF8AndSize` 写回的字节长度（`Py_ssize_t`）。
+    const PP_LEN: u16 = 15;
     // 文本 gather 帧槽：数组指针、计数、分配字节数、分配辅助、条件、暂存缓冲、
     // 游标、下标、字节周转。
     let text_slot_base = parameter_text_base + 16 * text_param_count as u16;
@@ -414,8 +418,7 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     for (index, kind) in method.parameters.iter().enumerate() {
         // `PyArg_ParseTuple` 按转换顺序写入出参地址。
         let slots = match kind {
-            HostParameterKind::Int64 => 1,
-            HostParameterKind::Utf8 => 2,
+            HostParameterKind::Int64 | HostParameterKind::Utf8 => 1,
             HostParameterKind::Int64Array => 0,
         };
         for offset in 0..slots {
@@ -441,8 +444,19 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
             instructions.push(Lir::LoadI64(0));
             instructions.push(Lir::StoreSlot(text_param_slot(index, flag)));
         }
-        // 字节数组：count = 长度。
-        instructions.push(Lir::LoadSlot(parameter_slots[index] + 1));
+        instructions.extend([
+            // `PyUnicode_AsUTF8AndSize(obj, &len)`：非 `str` 由宿主设置 `TypeError`。
+            Lir::LoadSlotToArg { slot: parameter_slots[index], index: 0 },
+            Lir::LoadSlotAddress(text_param_slot(index, PP_LEN)),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 1 },
+            Lir::CallImport { module: dll.to_string(), field: "PyUnicode_AsUTF8AndSize".to_string() },
+            Lir::StoreSlot(text_param_slot(index, PP_CURSOR)),
+            Lir::LoadSlot(text_param_slot(index, PP_CURSOR)),
+            Lir::JumpIfZero(FAIL_LABEL),
+            // 字节数组：count = 字节长度。
+            Lir::LoadSlot(text_param_slot(index, PP_LEN)),
+        ]);
         instructions.extend(array_runtime::array_allocate(
             allocator,
             ArrayAllocationSlots {
@@ -477,14 +491,12 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
             Lir::LoadSlotToRcx(text_param_slot(index, PP_ARRAY)),
             Lir::LoadSlot(text_param_slot(index, PP_OBJECT)),
             Lir::StoreRcxToRaxDisplacement(array_runtime::ARRAY_ELEMENT_OFFSET as i32),
-            // 逐字节分散到 8 字节槽。
-            Lir::LoadSlot(parameter_slots[index]),
-            Lir::StoreSlot(text_param_slot(index, PP_CURSOR)),
+            // 逐字节分散到 8 字节槽（游标已在取字节指针时写好）。
             Lir::LoadI64(0),
             Lir::StoreSlot(text_param_slot(index, PP_INDEX)),
             Lir::Label(copy_loop),
             Lir::LoadSlot(text_param_slot(index, PP_INDEX)),
-            Lir::LoadSlotToRcx(parameter_slots[index] + 1),
+            Lir::LoadSlotToRcx(text_param_slot(index, PP_LEN)),
             Lir::Lt,
             Lir::StoreSlot(text_param_slot(index, PP_ARRAY_COND)),
             Lir::LoadSlot(text_param_slot(index, PP_ARRAY_COND)),
@@ -1879,15 +1891,16 @@ mod tests {
         assert!(max_referenced_slot(&wrapper) < wrapper.slot_count);
     }
 
-    /// CPython 的 `utf8` 实参按 `s#` 接收原始字节与长度，保留内嵌 NUL。
+    /// CPython 的 `utf8` 实参按 `O` 接收对象，再显式取 UTF-8 字节指针与长度；
+    /// `#` 系格式要求 `PY_SSIZE_T_CLEAN`，本 lane 不链接 Python.h，不能使用。
     #[test]
-    fn python_utf8_parameter_uses_s_hash_conversion() {
+    fn python_utf8_parameter_uses_object_conversion() {
         let method =
             HostMethod { name: "echo".to_string(), symbol: "echo".to_string(), parameters: vec![HostParameterKind::Utf8], returns: HostValueKind::Utf8 };
         let (data, _, _, format_offsets) = python_module_data("probe", &[], &[method]);
         let start = format_offsets[0] as usize;
         let end = data[start..].iter().position(|byte| *byte == 0).map(|offset| start + offset).expect("format string");
-        assert_eq!(std::str::from_utf8(&data[start..end]).expect("format text"), "s#:echo");
+        assert_eq!(std::str::from_utf8(&data[start..end]).expect("format text"), "O:echo");
     }
 
     /// 静态字符串描述符的长度字段按 UTF-8 字节数编码（`é中` = 5 字节，不是 2 个码元）。
