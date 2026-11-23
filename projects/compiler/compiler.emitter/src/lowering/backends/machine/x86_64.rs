@@ -368,6 +368,20 @@ pub(crate) struct X64ArrayOperatorPlan {
     pub operation: X64ArrayOperation,
 }
 
+/// 已冻结的 x86-64 控制台 operator 身份。
+///
+/// `console.write(handle, message)` 把 `Utf8Text` 对象按冻结的数组合同 gather 成
+/// 连续 UTF-8 字节后写出：Win64 走 `GetStdHandle` 伪句柄（-11 标准输出 / -12 标准
+/// 错误）+ `WriteFile`，写出前设 `SetConsoleOutputCP(65001)`；SysV64/Linux 把
+/// `handle` 直接当文件描述符走 `write(2)`。两条路径都只写 UTF-8 原始字节，
+/// 重定向管道与控制台句柄共用同一写出通道。写出失败不伪造错误通道（unit 返回，
+/// 与多数运行时的尽力写出一致）；staging 副本在写出后立即释放。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum X64ConsoleOperation {
+    /// `console.write(handle: i64, message: utf8) -> unit`。
+    Write,
+}
+
 /// 可执行文件容器：决定入口接收方式与最终字节格式。
 /// 容器选择来自规范目标的 `os`，不由 `arch` 推断。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -611,6 +625,7 @@ pub(super) fn lower_function_to_text_program(
         temps_used: 0,
         instructions: Vec::new(),
         failure_label,
+        next_label: failure_label + 1,
         uses_failure_exit: false,
     };
     lowerer.store_entry_parameters()?;
@@ -664,6 +679,8 @@ struct FunctionLowerer<'a> {
     instructions: Vec<X64TextInstruction>,
     /// 数组失败出口标签（块标签之后的一个保留编号）。
     failure_label: u32,
+    /// 动态标签分配游标（失败出口之后起，供展开循环等按调用点取唯一标签）。
+    next_label: u32,
     /// 是否已经发射过数组失败分支（决定是否需要失败出口）。
     uses_failure_exit: bool,
 }
@@ -684,6 +701,13 @@ impl FunctionLowerer<'_> {
     fn temp_slot(&self, base: u16, index: usize) -> Result<u16> {
         base.checked_add(u16::try_from(index).map_err(|_| "x86_64 lowering：临时槽序号溢出".to_string())?)
             .ok_or_else(|| "x86_64 lowering：临时槽溢出帧槽编号".to_string())
+    }
+
+    /// 分配一个函数内唯一标签（失败出口之后起，同函数多次展开调用互不冲突）。
+    fn fresh_label(&mut self) -> u32 {
+        let label = self.next_label;
+        self.next_label += 1;
+        label
     }
 
     fn store_entry_parameters(&mut self) -> Result<()> {
@@ -1246,6 +1270,7 @@ impl FunctionLowerer<'_> {
         };
         let plan = match binding {
             X86OperatorBinding::Array(plan) => return self.emit_array_operator_call(instruction, plan, arguments),
+            X86OperatorBinding::Console(operation) => return self.emit_console_write(instruction, operation, arguments),
             X86OperatorBinding::Frozen(plan) => plan,
             X86OperatorBinding::Unfrozen => {
                 return Err(format!(
@@ -2089,6 +2114,138 @@ impl FunctionLowerer<'_> {
         Ok(())
     }
 
+    /// 发射控制台 operator：把 `Utf8Text` 对象的 `_repr` 数组 gather 成连续 UTF-8
+    /// 字节后按目标平台的句柄通道写出。
+    ///
+    /// staging 副本复用数组运行时的分配/释放合同（同一分配器、同一定义失败出口），
+    /// 写出后立即释放，有效期就是这一次调用。写出本身是尽力而为（unit 返回、无错误
+    /// 通道），但分配失败仍走定义好的失败出口，不拿后续故障充当错误。
+    fn emit_console_write(
+        &mut self,
+        instruction: &MirInstruction,
+        operation: X64ConsoleOperation,
+        arguments: &[Operand],
+    ) -> Result<()> {
+        match operation {
+            X64ConsoleOperation::Write => {}
+        }
+        if arguments.len() != 2 {
+            return Err(format!(
+                "x86_64 控制台 operator 实参数量与冻结 arity 不符: function={} expected=2 actual={}",
+                self.function.symbol,
+                arguments.len()
+            ));
+        }
+        if self.output_local(instruction)?.is_some() {
+            return Err(format!("x86_64 lowering：控制台 `write` 不得绑定结果槽：function={}", self.function.symbol));
+        }
+        let base = self.reserve_temps(13);
+        let handle_slot = self.temp_slot(base, 0)?;
+        let obj_slot = self.temp_slot(base, 1)?;
+        let array_slot = self.temp_slot(base, 2)?;
+        let count_slot = self.temp_slot(base, 3)?;
+        let bytes_slot = self.temp_slot(base, 4)?;
+        let aux_slot = self.temp_slot(base, 5)?;
+        let cond_slot = self.temp_slot(base, 6)?;
+        let buf_slot = self.temp_slot(base, 7)?;
+        let index_slot = self.temp_slot(base, 8)?;
+        let cursor_slot = self.temp_slot(base, 9)?;
+        let byte_slot = self.temp_slot(base, 10)?;
+        let written_slot = self.temp_slot(base, 11)?;
+        let zero_slot = self.temp_slot(base, 12)?;
+        let slots = array_runtime::ArrayAllocationSlots { count: count_slot, bytes: bytes_slot, auxiliary: aux_slot, condition: cond_slot };
+        // 物化句柄与消息对象指针。
+        self.emit_operand_to_rax(&arguments[0])?;
+        self.push(X64TextInstruction::StoreSlot(handle_slot));
+        self.emit_operand_to_rax(&arguments[1])?;
+        self.push(X64TextInstruction::StoreSlot(obj_slot));
+        // `Utf8Text` 对象字段 0 是 `_repr` 数组，数组头部第 0 格是字节个数。
+        self.push(X64TextInstruction::LoadSlot(obj_slot));
+        self.push(X64TextInstruction::LoadFromRax);
+        self.push(X64TextInstruction::StoreSlot(array_slot));
+        self.push(X64TextInstruction::LoadSlot(array_slot));
+        self.push(X64TextInstruction::LoadFromRax);
+        self.push(X64TextInstruction::StoreSlot(count_slot));
+        // staging：按同一数组合同分配 `count` 个元素槽（每槽只用低字节，连续写出）。
+        self.push(X64TextInstruction::LoadSlot(count_slot));
+        self.uses_failure_exit = true;
+        for item in array_runtime::array_allocate(self.allocator, slots, self.failure_label) {
+            self.push(item);
+        }
+        self.push(X64TextInstruction::StoreSlot(buf_slot));
+        // gather：`[array + 16 + 8*i]` 的低字节写入 `[buf + 16 + i]`。
+        let loop_label = self.fresh_label();
+        let end_label = self.fresh_label();
+        self.push(X64TextInstruction::LoadI64(0));
+        self.push(X64TextInstruction::StoreSlot(index_slot));
+        self.push(X64TextInstruction::LoadSlot(buf_slot));
+        self.push(X64TextInstruction::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET));
+        self.push(X64TextInstruction::StoreSlot(cursor_slot));
+        self.push(X64TextInstruction::Label(loop_label));
+        self.push(X64TextInstruction::LoadSlot(index_slot));
+        self.push(X64TextInstruction::LoadSlotToRcx(count_slot));
+        self.push(X64TextInstruction::Operator(X86_64OperatorCode::I64CompareLessThan));
+        self.push(X64TextInstruction::JumpIfZero(end_label));
+        self.push(X64TextInstruction::LoadSlot(array_slot));
+        self.push(X64TextInstruction::LoadSlotToRcx(index_slot));
+        self.push(X64TextInstruction::LoadIndexedFromRaxRcx);
+        self.push(X64TextInstruction::StoreSlot(byte_slot));
+        self.push(X64TextInstruction::LoadSlot(cursor_slot));
+        self.push(X64TextInstruction::LoadSlotToRdx(byte_slot));
+        self.push(X64TextInstruction::StoreByteAtRaxFromRdx);
+        self.push(X64TextInstruction::LoadSlot(cursor_slot));
+        self.push(X64TextInstruction::AddRaxImmediate(1));
+        self.push(X64TextInstruction::StoreSlot(cursor_slot));
+        self.push(X64TextInstruction::LoadSlot(index_slot));
+        self.push(X64TextInstruction::AddRaxImmediate(1));
+        self.push(X64TextInstruction::StoreSlot(index_slot));
+        self.push(X64TextInstruction::Jump(loop_label));
+        self.push(X64TextInstruction::Label(end_label));
+        match self.allocator {
+            array_runtime::ArrayAllocator::WindowsProcessHeap => {
+                // `SetConsoleOutputCP(CP_UTF8)`：控制台句柄按 UTF-8 呈现；重定向管道不受影响。
+                self.push(X64TextInstruction::LoadI64(65001));
+                self.push(X64TextInstruction::StoreSlot(aux_slot));
+                self.push(X64TextInstruction::LoadSlotToArg { slot: aux_slot, index: 0 });
+                self.push(X64TextInstruction::CallImport { module: "kernel32.dll".to_string(), field: "SetConsoleOutputCP".to_string() });
+                // `GetStdHandle(nStdHandle)`：-11 标准输出 / -12 标准错误伪句柄。
+                self.push(X64TextInstruction::LoadSlotToArg { slot: handle_slot, index: 0 });
+                self.push(X64TextInstruction::CallImport { module: "kernel32.dll".to_string(), field: "GetStdHandle".to_string() });
+                self.push(X64TextInstruction::StoreSlot(handle_slot));
+                // `WriteFile(hFile, buf, count, &written, NULL)`：对管道与控制台句柄统一按 UTF-8 字节写出。
+                self.push(X64TextInstruction::LoadSlotToArg { slot: handle_slot, index: 0 });
+                self.push(X64TextInstruction::LoadSlot(buf_slot));
+                self.push(X64TextInstruction::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET));
+                self.push(X64TextInstruction::StoreSlot(aux_slot));
+                self.push(X64TextInstruction::LoadSlotToArg { slot: aux_slot, index: 1 });
+                self.push(X64TextInstruction::LoadSlotToArg { slot: count_slot, index: 2 });
+                self.push(X64TextInstruction::LoadSlotAddress(written_slot));
+                self.push(X64TextInstruction::StoreSlot(aux_slot));
+                self.push(X64TextInstruction::LoadSlotToArg { slot: aux_slot, index: 3 });
+                self.push(X64TextInstruction::ZeroStackArg(0));
+                self.push(X64TextInstruction::CallImport { module: "kernel32.dll".to_string(), field: "WriteFile".to_string() });
+            }
+            array_runtime::ArrayAllocator::LinuxMmap => {
+                // `write(fd, buf, count)`：句柄即文件描述符（1 标准输出 / 2 标准错误）。
+                self.push(X64TextInstruction::LoadSlotToArg { slot: handle_slot, index: 0 });
+                self.push(X64TextInstruction::LoadSlot(buf_slot));
+                self.push(X64TextInstruction::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET));
+                self.push(X64TextInstruction::StoreSlot(aux_slot));
+                self.push(X64TextInstruction::LoadSlotToArg { slot: aux_slot, index: 1 });
+                self.push(X64TextInstruction::LoadSlotToArg { slot: count_slot, index: 2 });
+                self.push(X64TextInstruction::SyscallWrite);
+            }
+        }
+        // staging 是一次性副本：写出后立即释放。
+        self.push(X64TextInstruction::LoadI64(0));
+        self.push(X64TextInstruction::StoreSlot(zero_slot));
+        self.push(X64TextInstruction::LoadSlot(buf_slot));
+        for item in array_runtime::array_free(self.allocator, slots, zero_slot) {
+            self.push(item);
+        }
+        Ok(())
+    }
+
     /// 操作数在计划中冻结的语义类型。
     ///
     /// `Cast` 的转换语义必须由此决定：`Integer32{signed}` 与 `Integer32{signed:false}`
@@ -2504,6 +2661,8 @@ pub(crate) enum X86OperatorBinding {
     Frozen(TargetOperatorPlan<X86_64OperatorCode>),
     /// 已冻结的 x86-64 数组 operator 计划（机械堆数组操作）。
     Array(X64ArrayOperatorPlan),
+    /// 已冻结的 x86-64 控制台 operator（UTF-8 字节写出）。
+    Console(X64ConsoleOperation),
     /// 声明了 x86-64 operator，但没有可编码配方；emit 必须结构化失败。
     Unfrozen,
 }
@@ -2522,6 +2681,9 @@ pub(crate) fn freeze_x86_64_operator(
     };
     if let Some(plan) = freeze_x86_64_array_operator(mnemonic, instance, symbol, parameter_types, return_type)? {
         return Ok(Some(X86OperatorBinding::Array(plan)));
+    }
+    if let Some(operation) = freeze_x86_64_console_operator(mnemonic, instance, symbol, parameter_types, return_type)? {
+        return Ok(Some(X86OperatorBinding::Console(operation)));
     }
     let Some(plan) = freeze_x86_64_operator_binding(mnemonic)
     else {
@@ -2624,6 +2786,44 @@ fn freeze_x86_64_array_operator(
         }
     }
     Ok(Some(X64ArrayOperatorPlan { arity, operation }))
+}
+
+/// 按声明签名冻结 x86-64 控制台 operator。
+///
+/// 控制台 operator 的载体既不是纯标量也不是数组头：`handle` 是平台解释的 64 位
+/// 整数（Win64 伪句柄 / Linux fd），`message` 是 `Utf8Text` 对象指针。形状在此
+/// 一次冻结，emit 不再按名字猜。未知助记符返回 `None` 交回标量表。
+fn freeze_x86_64_console_operator(
+    mnemonic: &str,
+    instance: compiler_types::ItemInstanceId,
+    symbol: &str,
+    parameter_types: &[compiler_types::SemanticType],
+    return_type: &compiler_types::SemanticType,
+) -> crate::Result<Option<X64ConsoleOperation>> {
+    let operation = match mnemonic {
+        "console.write" => X64ConsoleOperation::Write,
+        _ => return Ok(None),
+    };
+    let failure = |reason: String| {
+        Err(format!("x86_64 控制台 operator `{mnemonic}` {reason}: function={symbol} instance={instance:?}"))
+    };
+    match operation {
+        X64ConsoleOperation::Write => {
+            if parameter_types.len() != 2 {
+                return failure(format!("声明 arity 与冻结计划不符: expected=2 actual={}", parameter_types.len()));
+            }
+            if !matches!(parameter_types[0], compiler_types::SemanticType::Integer64 { signed: true }) {
+                return failure(format!("句柄参数类型 `{}` 不是有符号 64 位整数", parameter_types[0]));
+            }
+            if !matches!(parameter_types[1], compiler_types::SemanticType::Utf8) {
+                return failure(format!("消息参数类型 `{}` 不是 utf8 文本", parameter_types[1]));
+            }
+            if !return_type.is_unitish() {
+                return failure(format!("返回类型 `{return_type}` 必须是 unit"));
+            }
+        }
+    }
+    Ok(Some(operation))
 }
 
 /// `array.new` 的返回必须是元素可承载的堆数组。
