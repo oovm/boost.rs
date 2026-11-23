@@ -103,6 +103,34 @@ pub struct AggregateLayoutPlan {
     /// 目标层据此把 `Reference` 存储聚合投影为序列视图；不在集合内的布局维持
     /// 既有存储语义，形状只用于在已声明类型内部定位 items/length 槽位。
     pub host_sequence_projections: BTreeSet<LayoutId>,
+    /// 冻结的 `SemanticType → LayoutId` 索引（含闭合 `Apply` 的结算键与契约归一键）。
+    ///
+    /// 这是闭合泛型实例在描述符层的唯一布局身份来源：`Apply` 不携带 `LayoutId`，
+    /// 目标后端不得按名字或基结构回查。开放泛型没有登记，因此自然查不到。
+    pub layout_by_semantic_type: BTreeMap<SemanticType, LayoutId>,
+}
+
+impl AggregateLayoutPlan {
+    /// 按冻结身份查布局定义。
+    pub fn layout(&self, id: LayoutId) -> Option<&AggregateLayout> {
+        self.layouts.iter().find(|layout| layout.id == id)
+    }
+
+    /// 冻结类型（含闭合 `Apply`）的布局身份。
+    ///
+    /// `Nominal` 自带身份；其余形态只查冻结索引（先原键、后 [`SemanticType::contract_key`]
+    /// 归一）。开放泛型没有登记，因此返回 `None`，由调用点结构化失败。
+    pub fn frozen_layout_id(&self, ty: &SemanticType) -> Option<LayoutId> {
+        if let SemanticType::Nominal { layout, .. } = ty {
+            return Some(*layout);
+        }
+        self.layout_by_semantic_type.get(ty).or_else(|| self.layout_by_semantic_type.get(&ty.contract_key())).copied()
+    }
+
+    /// 冻结类型（含闭合 `Apply`）的布局定义。
+    pub fn frozen_layout(&self, ty: &SemanticType) -> Option<&AggregateLayout> {
+        self.frozen_layout_id(ty).and_then(|id| self.layout(id))
+    }
 }
 
 /// Sum type variant layout for nominal lowering.

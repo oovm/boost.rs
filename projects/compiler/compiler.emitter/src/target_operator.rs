@@ -247,8 +247,17 @@ mod frozen_operator_tests {
         assert_eq!(plan.operand_type, TargetOperandType::I64);
         assert_eq!(plan.encoding, X86_64OperatorCode::I64Remainder);
 
-        // 仍未实现的 provider（浮点）不得被猜成任何指令集。
-        assert!(freeze_x86_64_operator_binding("double.add").is_none(), "未实现 provider 不得冻结");
+        // 浮点载体已进入 x86-64 冻结集：`double.*` / `float.*` 冻结为 SSE2 码。
+        let plan = freeze_x86_64_operator_binding("double.add").expect("`double.add` 必须冻结");
+        assert_eq!(plan.operand_type, TargetOperandType::F64);
+        assert_eq!(plan.result_type, TargetOperandType::F64);
+        assert_eq!(plan.encoding, X86_64OperatorCode::F64Add);
+        let plan = freeze_x86_64_operator_binding("float.compare_less_than").expect("`float.compare_less_than` 必须冻结");
+        assert_eq!(plan.operand_type, TargetOperandType::F32);
+        assert_eq!(plan.result_type, TargetOperandType::I32);
+        assert_eq!(plan.encoding, X86_64OperatorCode::F32CompareLessThan);
+        // 未冻结的助记符仍不得被猜成任何指令集。
+        assert!(freeze_x86_64_operator_binding("half.add").is_none(), "未实现 provider 不得冻结");
     }
 
     /// `u64`/`u32` 无符号除、余、逻辑右移的托管目标配方：

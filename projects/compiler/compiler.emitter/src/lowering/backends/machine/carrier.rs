@@ -11,25 +11,38 @@
 //!
 //! 宿主边界合同（所有权、错误与生命周期）：
 //!
-//! - 整数按完整 `i64` 域跨越边界（`napi_create_int64` / `PyLong_FromLongLong`），
-//!   不经过 32 位 C `long` 或 JS number 截断；
+//! - Node-API 的 `i64` 以 JS `bigint` 为载体：入参用 `napi_get_value_bigint_int64`
+//!   并把 `lossless` 出参当失败通道（`false` 即超出 `i64` 域，抛 `RangeError`），
+//!   返回值用 `napi_create_bigint_int64`，数组元素共用同一规则。JS `number`
+//!   不参与 `i64` 编组：它只有 53 位安全整数，且本 lane 的文本 LIR 没有双精度
+//!   范围/小数检查能力；为拒绝静默截断，`number` 实参一律抛 `TypeError`
+//!   （见 [`node_method_wrapper`] 的错误消息）。
+//! - CPython 的 `i64` 走 `PyLong_FromLongLong` / `PyArg_ParseTuple("n")`，同样
+//!   是完整 `i64` 域，不经过 32 位 C `long`；
 //! - 布尔按宿主原生布尔类型跨越（`napi_get_boolean` / `PyBool_FromLong`），
 //!   不与整数混为同一返回类别；
-//! - 字符串返回携带镜像内描述符，宿主侧复制成原生字符串；描述符属于镜像、
-//!   永不单独释放，不存在跨 CRT 的所有权转移；
+//! - 字符串返回携带镜像内描述符，宿主侧以 `napi_create_string_utf8` 复制成原生
+//!   字符串；长度字段是**UTF-8 字节数**（不是 JS 的 UTF-16 码元数），描述符属于
+//!   镜像、永不单独释放，不存在跨 CRT 的所有权转移；
+//! - 字符串实参与对象实参尚未冻结载体：正式 lane 在写出前结构化拒绝，不在运行期
+//!   用别的类型冒充；
 //! - 实参解析失败不静默成 `0`：Node 抛 `TypeError`、CPython 原样传播宿主异常，
 //!   `PyModuleDef_Init` / 装箱失败按宿主错误返回。
 
-use super::{X64DataTarget, X64ProgramFunction, X64TextInstruction, host::X64Platform};
+use super::{
+    X64DataTarget, X64ProgramFunction, X64TextInstruction,
+    array_runtime::{self, ArrayAllocationSlots, ArrayAllocator},
+    host::X64Platform,
+};
 
 /// 宿主边界值种类：每个宿主闭合的编组能力在这里显式建模。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostValueKind {
-    /// 完整 `i64` 域整数。
+    /// 完整 `i64` 域整数；Node-API 侧以 JS `bigint` 承载。
     Int64,
     /// 原生布尔。
     Bool,
-    /// 镜像字符串描述符 → 宿主字符串。
+    /// 镜像字符串描述符 → 宿主字符串（UTF-8 字节长度）。
     Utf8,
     /// 无返回值（宿主得到 `undefined` / `None`）。
     Unit,
@@ -37,12 +50,28 @@ pub enum HostValueKind {
 
 /// 宿主边界实参种类。
 ///
-/// 目前只闭合两类无损载体：完整 `i64` 与 `[i64]`（宿主序列）。数组按本 lane 的
-/// 堆数组表示编组：`[0]` 是元素个数，元素从 `+8` 起按 8 字节槽排列；调用结束后
-/// 把元素写回宿主数组，因此原地修改对宿主可见。
+/// 目前只闭合两类无损实参载体：完整 `i64`（Node-API 以 `bigint` 承载）与
+/// `[i64]`（宿主序列）。数组按数组运行时合同的堆表示编组（`[0]` 元素个数、
+/// `[8]` 分配字节数、元素从 `+16` 起按 8 字节槽排列）；调用结束后把元素写回
+/// 宿主数组，因此原地修改对宿主可见。
+///
+/// 可变数组合同（`[i64]`）：
+///
+/// - **实参复制**：调用开始时按宿主数组长度逐元素复制到镜像侧堆数组，宿主数组
+///   与镜像副本互不共享存储；
+/// - **别名**：同一个 JS 数组作为多个形参传入时，每个形参各得到一份独立副本；
+///   调用成功后按形参顺序逐一写回，后写副本整段覆盖先写副本，宿主不得依赖
+///   跨形参的同一性；
+/// - **写回时点**：只有 guest 调用成功后，才在返回前统一写回全部元素；参数
+///   编组失败不会调用 guest，也不会写回任何元素；
+/// - **失败清理**：本次调用已分配的镜像副本在抛出宿主错误前逐个释放；部分
+///   编组失败不泄漏、不写回半成品；
+/// - **生命周期**：镜像侧副本只在本次宿主调用内有效——包装体在写回后立即释放
+///   它。guest 若把该副本保存到调用之外，属于违反宿主边界合同（native lane
+///   没有逃逸分析，释放责任固定在包装体一侧）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostParameterKind {
-    /// 完整 `i64` 域整数。
+    /// 完整 `i64` 域整数；Node-API 侧只接受 JS `bigint`。
     Int64,
     /// `[i64]` 宿主数组（逐元素读取，调用后逐元素写回）。
     Int64Array,
@@ -404,21 +433,39 @@ pub fn python_module_exec(properties: &[HostProperty], property_name_offsets: &[
 }
 
 /// Node-API 数据段：属性名、错误消息与各方法名（全部 NUL 结尾）。
-pub fn node_module_data(properties: &[HostProperty], methods: &[HostMethod]) -> (Vec<u8>, Vec<u32>, Vec<u32>, u32) {
+///
+/// 返回 `(数据块, 属性名偏移, 方法名偏移, 类型错误消息偏移, 越界错误消息偏移,
+/// 数组分配失败消息偏移)`。三条消息分开：类型不符、`bigint` 超出 `i64` 域与
+/// 资源失败不是同一个宿主错误类别。
+pub fn node_module_data(
+    properties: &[HostProperty],
+    methods: &[HostMethod],
+) -> (Vec<u8>, Vec<u32>, Vec<u32>, u32, u32, u32) {
     let mut data = Vec::new();
     let mut property_name_offsets = Vec::with_capacity(properties.len());
     for property in properties {
         property_name_offsets.push(data.len() as u32);
         push_cstring(&mut data, &property.name);
     }
+    // 类型错误：Node-API 侧 `i64` 的唯一载体是 `bigint`；`number` 只有 53 位安全
+    // 整数，接受它就必须先做双精度范围与小数检查，而当前 LIR 没有该能力。宁可
+    // 显式拒绝，也不静默截断成 32 位或丢精度。
     let error_message_offset = data.len() as u32;
-    push_cstring(&mut data, "expected integer arguments");
+    push_cstring(
+        &mut data,
+        "expected bigint arguments: i64 crosses the Node-API boundary as BigInt; JS number is rejected to avoid precision loss",
+    );
+    // `napi_get_value_bigint_int64` 的 `lossless` 为 false：值超出 `i64` 域。
+    let range_error_offset = data.len() as u32;
+    push_cstring(&mut data, "bigint argument out of i64 range");
+    let allocation_error_offset = data.len() as u32;
+    push_cstring(&mut data, "array allocation failed");
     let mut method_name_offsets = Vec::with_capacity(methods.len());
     for method in methods {
         method_name_offsets.push(data.len() as u32);
         push_cstring(&mut data, &method.name);
     }
-    (data, property_name_offsets, method_name_offsets, error_message_offset)
+    (data, property_name_offsets, method_name_offsets, error_message_offset, range_error_offset, allocation_error_offset)
 }
 
 /// `napi_register_module_v1(env, exports)` 入口：把每个属性的零参符号结果写成
@@ -457,7 +504,8 @@ pub fn node_addon_registration(
         instructions.extend([
             Lir::Call(property.symbol.clone()),
             Lir::StoreSlot(VALUE_SLOT),
-            // `napi_create_int64(env, value, &out)` / `napi_get_boolean(env, value, &out)`。
+            // `napi_create_bigint_int64(env, value, &out)` / `napi_get_boolean(env, value, &out)`。
+            // `i64` 属性与返回值共用 bigint 载体，避免 53 位以上的值在导出时丢精度。
             Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
             Lir::LoadSlotToArg { slot: VALUE_SLOT, index: 1 },
             Lir::LoadSlotAddress(OUT_SLOT),
@@ -467,7 +515,7 @@ pub fn node_addon_registration(
                 module: dll.to_string(),
                 field: match property.returns {
                     HostValueKind::Bool => "napi_get_boolean",
-                    _ => "napi_create_int64",
+                    _ => "napi_create_bigint_int64",
                 }
                 .to_string(),
             },
@@ -526,13 +574,21 @@ pub fn node_addon_registration(
 
 /// `napi_value wrapper(napi_env env, napi_callback_info info)`：把 Node 实参解析成
 /// `i64` 后调用同名符号，结果按类型化载体跨越边界：
-/// `Int64 → napi_create_int64`（完整 i64 域，不经过 JS number 截断）、
-/// `Bool → napi_get_boolean`、`Utf8 → napi_create_string_utf8`。
+/// `Int64 → napi_create_bigint_int64`（完整 i64 域，以 JS `bigint` 承载）、
+/// `Bool → napi_get_boolean`、`Utf8 → napi_create_string_utf8`（UTF-8 字节长度）。
 ///
-/// 参数个数不符或不是整数时抛 `TypeError` 并返回 `NULL`，不把错误静默成 0。
+/// `i64` 入参只接受 JS `bigint`：`napi_get_value_bigint_int64` 的 `lossless` 为
+/// false 时抛 `RangeError`；非 `bigint`（包括 `number`）抛 `TypeError`。参数个数
+/// 不符同样抛 `TypeError`，不把错误静默成 0。数百万个 `i64` 值不会经过 JS
+/// `number`，因此不存在 53 位精度上限。
+///
+/// 数组合同见 [`HostParameterKind::Int64Array`]：先复制、调用成功后统一写回、
+/// 失败时释放本次调用已分配的镜像副本。
 pub fn node_method_wrapper(
     method: &HostMethod,
     error_message_offset: u32,
+    range_error_offset: u32,
+    allocation_error_offset: u32,
     platform: X64Platform,
     dll: &str,
     arena: Option<u32>,
@@ -552,16 +608,26 @@ pub fn node_method_wrapper(
     const POINTER_SLOT: u16 = 19;
     const LENGTH_SLOT: u16 = 20;
     const STRING_SLOT: u16 = 21;
+    // `napi_get_value_bigint_int64` 的 `bool* lossless` 出参；每次调用前清零。
+    const BIGINT_LOSSLESS_SLOT: u16 = 22;
     const FAIL_LABEL: u32 = 0;
     const CALLBACK_OK_LABEL: u32 = 1;
     let argv_slot = |index: usize| ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1 - index as u16;
     let out_slot = |index: usize| OUT_FIRST_SLOT + index as u16;
     let continue_label = |index: usize| 2 + index as u32;
     let parameters = method.parameters.len();
-    // 每个 `[i64]` 实参占用 8 个互不重叠的帧槽：计数、游标、长度出参、布尔出参、
-    // 元素句柄、元素值、循环条件与堆句柄。
-    let array_slot_base = STRING_SLOT + 1;
-    let array_slot = |index: usize, offset: u16| array_slot_base + 8 * index as u16 + offset;
+    // 数组运行时合同按平台身份选择分配/释放实现（Win64 进程堆 / Linux mmap）。
+    let allocator = ArrayAllocator::for_platform(platform);
+    // 越界与分配失败出口：排在参数继续标签之后，避免与 `2 + index` 或数组循环标签冲突。
+    // 类型错误走 `FAIL_LABEL`；这三个出口都会先释放本次调用已分配的镜像副本。
+    let range_failure_label = 2 + parameters as u32;
+    let allocation_failure_label = 3 + parameters as u32;
+    // 每个 `[i64]` 实参占用 9 个互不重叠的帧槽：计数、游标、长度出参、布尔出参、
+    // 元素句柄、元素值（分配期间兼作字节数）、循环条件、分配句柄、已分配标记。
+    // 槽位按“数组序号”排列，不能按形参下标，否则标量在数组之前时会越出帧大小。
+    let array_slot_base = BIGINT_LOSSLESS_SLOT + 1;
+    let array_ordinal = |index: usize| method.parameters[..index].iter().filter(|kind| matches!(kind, HostParameterKind::Int64Array)).count() as u16;
+    let array_slot = |index: usize, offset: u16| array_slot_base + 9 * array_ordinal(index) + offset;
     const ARRAY_COUNT: u16 = 0;
     const ARRAY_INDEX: u16 = 1;
     const ARRAY_LENGTH: u16 = 2;
@@ -570,8 +636,36 @@ pub fn node_method_wrapper(
     const ARRAY_VALUE: u16 = 5;
     const ARRAY_CONDITION: u16 = 6;
     const ARRAY_HEAP: u16 = 7;
+    const ARRAY_ALLOCATED: u16 = 8;
     let array_count = method.parameters.iter().filter(|kind| matches!(kind, HostParameterKind::Int64Array)).count();
-    let slot_count = array_slot_base + 8 * array_count as u16;
+    let slot_count = array_slot_base + 9 * array_count as u16;
+
+    // 失败清理：只释放本次调用真正分配成功过的镜像副本（标记在分配后置 1），
+    // 因此部分编组失败不会泄漏，也不会写回半成品。
+    let emit_free_allocated = |instructions: &mut Vec<Lir>, seed: u32| {
+        for (index, kind) in method.parameters.iter().enumerate() {
+            if !matches!(kind, HostParameterKind::Int64Array) {
+                continue;
+            }
+            let skip = seed + index as u32;
+            instructions.push(Lir::LoadSlot(array_slot(index, ARRAY_ALLOCATED)));
+            instructions.push(Lir::JumpIfZero(skip));
+            instructions.push(Lir::LoadI64(0));
+            instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_VALUE)));
+            instructions.push(Lir::LoadSlot(out_slot(index)));
+            instructions.extend(array_runtime::array_free(
+                allocator,
+                ArrayAllocationSlots {
+                    count: array_slot(index, ARRAY_COUNT),
+                    bytes: array_slot(index, ARRAY_VALUE),
+                    auxiliary: array_slot(index, ARRAY_HEAP),
+                    condition: array_slot(index, ARRAY_CONDITION),
+                },
+                array_slot(index, ARRAY_VALUE),
+            ));
+            instructions.push(Lir::Label(skip));
+        }
+    };
 
     let mut instructions = vec![
         Lir::LoadParam { index: 0, slot: ENV_SLOT },
@@ -582,6 +676,13 @@ pub fn node_method_wrapper(
         Lir::LoadI64(0),
         Lir::StoreSlot(ZERO_SLOT),
     ];
+    // 先清零所有镜像副本的分配标记：失败出口可能在任何分配之前到达。
+    for (index, kind) in method.parameters.iter().enumerate() {
+        if matches!(kind, HostParameterKind::Int64Array) {
+            instructions.push(Lir::LoadI64(0));
+            instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_ALLOCATED)));
+        }
+    }
     if let Some(arena) = arena {
         instructions.extend(reset_text_arena(TEMP_SLOT, arena));
     }
@@ -622,17 +723,26 @@ pub fn node_method_wrapper(
     for (index, kind) in method.parameters.iter().enumerate() {
         match kind {
             HostParameterKind::Int64 => {
-                // `napi_get_value_int64(env, argv[index], &out)`。
+                // `napi_get_value_bigint_int64(env, argv[index], &out, &lossless)`：
+                // 只接受 JS `bigint`，`lossless == false` 表示超出 i64 域。
                 instructions.extend([
                     Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
                     Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
                     Lir::LoadSlotAddress(out_slot(index)),
                     Lir::StoreSlot(TEMP_SLOT),
                     Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_int64".to_string() },
+                    Lir::LoadI64(0),
+                    Lir::StoreSlot(BIGINT_LOSSLESS_SLOT),
+                    Lir::LoadSlotAddress(BIGINT_LOSSLESS_SLOT),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_bigint_int64".to_string() },
                     Lir::JumpIfZero(continue_label(index)),
                     Lir::Jump(FAIL_LABEL),
                     Lir::Label(continue_label(index)),
+                    Lir::LoadSlotAddress(BIGINT_LOSSLESS_SLOT),
+                    Lir::LoadByteFromRax,
+                    Lir::JumpIfZero(range_failure_label),
                 ]);
             }
             HostParameterKind::Int64Array => {
@@ -668,22 +778,24 @@ pub fn node_method_wrapper(
                     Lir::Label(length_ok),
                     Lir::LoadSlot(array_slot(index, ARRAY_LENGTH)),
                     Lir::StoreSlot(array_slot(index, ARRAY_COUNT)),
-                    // 分配 `8 + 8 * count` 字节的冻结数组表示。
-                    Lir::LoadSlot(array_slot(index, ARRAY_COUNT)),
-                    Lir::ShiftLeftRaxImmediate(3),
-                    Lir::AddRaxImmediate(8),
-                    Lir::StoreSlot(array_slot(index, ARRAY_VALUE)),
-                    Lir::CallImport { module: "kernel32.dll".to_string(), field: "GetProcessHeap".to_string() },
-                    Lir::StoreSlot(array_slot(index, ARRAY_HEAP)),
-                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_HEAP), index: 0 },
-                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_VALUE), index: 2 },
-                    Lir::LoadI64(0x0000_0008),
-                    Lir::StoreSlot(array_slot(index, ARRAY_VALUE)),
-                    Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_VALUE), index: 1 },
-                    Lir::CallImport { module: "kernel32.dll".to_string(), field: "HeapAlloc".to_string() },
-                    Lir::LoadSlotToRcx(array_slot(index, ARRAY_COUNT)),
-                    Lir::StoreRcxToRax,
-                    Lir::StoreSlot(out_slot(index)),
+                ]);
+                // 分配冻结表示：字节数换算、分配实现与失败出口统一来自数组运行时合同。
+                instructions.push(Lir::LoadSlot(array_slot(index, ARRAY_COUNT)));
+                instructions.extend(array_runtime::array_allocate(
+                    allocator,
+                    ArrayAllocationSlots {
+                        count: array_slot(index, ARRAY_COUNT),
+                        bytes: array_slot(index, ARRAY_VALUE),
+                        auxiliary: array_slot(index, ARRAY_HEAP),
+                        condition: array_slot(index, ARRAY_CONDITION),
+                    },
+                    allocation_failure_label,
+                ));
+                instructions.push(Lir::StoreSlot(out_slot(index)));
+                // 分配成功后才置标记：失败清理只释放真正分配过的镜像副本。
+                instructions.push(Lir::LoadI64(1));
+                instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_ALLOCATED)));
+                instructions.extend([
                     // `index = 0`。
                     Lir::LoadI64(0),
                     Lir::StoreSlot(array_slot(index, ARRAY_INDEX)),
@@ -705,16 +817,24 @@ pub fn node_method_wrapper(
                     Lir::JumpIfZero(element_ok),
                     Lir::Jump(FAIL_LABEL),
                     Lir::Label(element_ok),
-                    // `napi_get_value_int64(env, element, &value)`。
+                    // `napi_get_value_bigint_int64(env, element, &value, &lossless)`。
                     Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
                     Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_ELEMENT), index: 1 },
                     Lir::LoadSlotAddress(array_slot(index, ARRAY_VALUE)),
                     Lir::StoreSlot(TEMP_SLOT),
                     Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_int64".to_string() },
+                    Lir::LoadI64(0),
+                    Lir::StoreSlot(BIGINT_LOSSLESS_SLOT),
+                    Lir::LoadSlotAddress(BIGINT_LOSSLESS_SLOT),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_bigint_int64".to_string() },
                     Lir::JumpIfZero(integer_ok),
                     Lir::Jump(FAIL_LABEL),
                     Lir::Label(integer_ok),
+                    Lir::LoadSlotAddress(BIGINT_LOSSLESS_SLOT),
+                    Lir::LoadByteFromRax,
+                    Lir::JumpIfZero(range_failure_label),
                     // `array[index] = value`。
                     Lir::LoadSlotToRcx(array_slot(index, ARRAY_INDEX)),
                     Lir::LoadSlotToRdx(array_slot(index, ARRAY_VALUE)),
@@ -770,13 +890,13 @@ pub fn node_method_wrapper(
             Lir::LoadSlot(out_slot(index)),
             Lir::LoadIndexedFromRaxRcx,
             Lir::StoreSlot(array_slot(index, ARRAY_VALUE)),
-            // `napi_create_int64(env, value, &element)`。
+            // `napi_create_bigint_int64(env, value, &element)`。
             Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
             Lir::LoadSlotToArg { slot: array_slot(index, ARRAY_VALUE), index: 1 },
             Lir::LoadSlotAddress(array_slot(index, ARRAY_ELEMENT)),
             Lir::StoreSlot(TEMP_SLOT),
             Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
-            Lir::CallImport { module: dll.to_string(), field: "napi_create_int64".to_string() },
+            Lir::CallImport { module: dll.to_string(), field: "napi_create_bigint_int64".to_string() },
             // `napi_set_element(env, array, index, element)`。
             Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
             Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
@@ -795,6 +915,26 @@ pub fn node_method_wrapper(
             Lir::Jump(writeback_loop),
             Lir::Label(writeback_end),
         ]);
+    }
+    // 释放镜像侧数组副本：生命周期就是本次宿主调用，写回已经完成。
+    // guest 数组值图的分配不在这里回收（native lane 没有逃逸分析或 GC）。
+    for (index, kind) in method.parameters.iter().enumerate() {
+        if !matches!(kind, HostParameterKind::Int64Array) {
+            continue;
+        }
+        instructions.push(Lir::LoadI64(0));
+        instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_VALUE)));
+        instructions.push(Lir::LoadSlot(out_slot(index)));
+        instructions.extend(array_runtime::array_free(
+            allocator,
+            ArrayAllocationSlots {
+                count: array_slot(index, ARRAY_COUNT),
+                bytes: array_slot(index, ARRAY_VALUE),
+                auxiliary: array_slot(index, ARRAY_HEAP),
+                condition: array_slot(index, ARRAY_CONDITION),
+            },
+            array_slot(index, ARRAY_VALUE),
+        ));
     }
     match method.returns {
         HostValueKind::Utf8 => {
@@ -823,11 +963,11 @@ pub fn node_method_wrapper(
         HostValueKind::Bool | HostValueKind::Int64 => {
             let field = match method.returns {
                 HostValueKind::Bool => "napi_get_boolean",
-                HostValueKind::Int64 => "napi_create_int64",
+                HostValueKind::Int64 => "napi_create_bigint_int64",
                 HostValueKind::Utf8 | HostValueKind::Unit => unreachable!("matched above"),
             };
             instructions.extend([
-                // `napi_create_int64(env, value, &result)` / `napi_get_boolean(env, value, &result)`。
+                // `napi_create_bigint_int64(env, value, &result)` / `napi_get_boolean(env, value, &result)`。
                 Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
                 Lir::LoadSlotToArg { slot: RESULT_SLOT, index: 1 },
                 Lir::LoadSlotAddress(RESULT_SLOT),
@@ -843,9 +983,10 @@ pub fn node_method_wrapper(
             instructions.extend([Lir::LoadI64(0), Lir::Return]);
         }
     }
-    // `napi_throw_type_error(env, NULL, message)`。
+    // 类型错误出口：先释放本次调用已分配的镜像副本，再 `napi_throw_type_error`。
+    instructions.push(Lir::Label(FAIL_LABEL));
+    emit_free_allocated(&mut instructions, 300);
     instructions.extend([
-        Lir::Label(FAIL_LABEL),
         Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
         Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
         Lir::LoadDataAddress(error_message_offset),
@@ -855,6 +996,162 @@ pub fn node_method_wrapper(
         Lir::LoadI64(0),
         Lir::Return,
     ]);
+    // `bigint` 超出 `i64` 域：释放副本后抛 `RangeError`。
+    instructions.push(Lir::Label(range_failure_label));
+    emit_free_allocated(&mut instructions, 400);
+    instructions.extend([
+        Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+        Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
+        Lir::LoadDataAddress(range_error_offset),
+        Lir::StoreSlot(TEMP_SLOT),
+        Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+        Lir::CallImport { module: dll.to_string(), field: "napi_throw_range_error".to_string() },
+        Lir::LoadI64(0),
+        Lir::Return,
+    ]);
+    if array_count > 0 {
+        // 数组分配失败（容量溢出或分配实现报错）走宿主 error，而不是 Type 错误；
+        // 仍先释放此前已分配成功的镜像副本。
+        instructions.push(Lir::Label(allocation_failure_label));
+        emit_free_allocated(&mut instructions, 500);
+        instructions.extend([
+            Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+            Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
+            Lir::LoadDataAddress(allocation_error_offset),
+            Lir::StoreSlot(TEMP_SLOT),
+            Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+            Lir::CallImport { module: dll.to_string(), field: "napi_throw_error".to_string() },
+            Lir::LoadI64(0),
+            Lir::Return,
+        ]);
+    }
 
     X64ProgramFunction { name: node_wrapper_name(&method.symbol), slot_count, instructions }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lowering::backends::machine::{X64CallConv, x64_program::encode_x64_program};
+
+    fn array_method() -> HostMethod {
+        HostMethod {
+            name: "mutate".to_string(),
+            symbol: "mutate".to_string(),
+            parameters: vec![HostParameterKind::Int64Array],
+            returns: HostValueKind::Int64,
+        }
+    }
+
+    fn import_fields(wrapper: &X64ProgramFunction) -> Vec<&str> {
+        wrapper
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                X64TextInstruction::CallImport { field, .. } => Some(field.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Node-API 的 `i64` 只走 bigint：不得再出现截断的 `napi_get_value_int64`。
+    #[test]
+    fn node_wrapper_marshals_i64_as_bigint_only() {
+        let wrapper = node_method_wrapper(&array_method(), 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let fields = import_fields(&wrapper);
+        assert!(!fields.contains(&"napi_get_value_int64"), "i64 入参不得回落到 number 载体");
+        assert!(fields.contains(&"napi_get_value_bigint_int64"), "i64 入参必须走 bigint + lossless");
+        assert!(fields.contains(&"napi_create_bigint_int64"), "i64 返回值与数组写回必须走 bigint");
+        assert!(fields.contains(&"napi_throw_range_error"), "lossless 失败必须是 RangeError");
+    }
+
+    /// 标量位于数组之前时，数组槽仍必须落在帧内（槽位按数组序号而非形参下标）。
+    #[test]
+    fn array_slots_stay_within_frame_when_scalar_precedes_array() {
+        let method = HostMethod {
+            name: "mixed".to_string(),
+            symbol: "mixed".to_string(),
+            parameters: vec![HostParameterKind::Int64, HostParameterKind::Int64Array],
+            returns: HostValueKind::Int64,
+        };
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let debug = format!("{:?}", wrapper.instructions);
+        let mut max_slot = 0u16;
+        for needle in ["slot: ", "LoadSlot(", "StoreSlot(", "LoadSlotAddress(", "LoadSlotToRcx("] {
+            let mut rest = debug.as_str();
+            while let Some(position) = rest.find(needle) {
+                rest = &rest[position + needle.len()..];
+                let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+                if let Ok(slot) = digits.parse::<u16>() {
+                    max_slot = max_slot.max(slot);
+                }
+            }
+        }
+        assert!(
+            max_slot < wrapper.slot_count,
+            "最大引用槽 {max_slot} 必须落在帧大小 {} 之内",
+            wrapper.slot_count
+        );
+    }
+
+    /// 部分编组失败：类型错误出口必须先释放已分配的镜像副本，再抛宿主错误。
+    #[test]
+    fn type_failure_frees_allocated_array_mirrors_before_throwing() {
+        let wrapper = node_method_wrapper(&array_method(), 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let fail_label = wrapper
+            .instructions
+            .iter()
+            .position(|instruction| matches!(instruction, X64TextInstruction::Label(0)))
+            .expect("type failure label");
+        let throw = wrapper
+            .instructions
+            .iter()
+            .position(|instruction| {
+                matches!(
+                    instruction,
+                    X64TextInstruction::CallImport { field, .. } if field == "napi_throw_type_error"
+                )
+            })
+            .expect("type error throw");
+        assert!(fail_label < throw);
+        assert!(
+            wrapper.instructions[fail_label..throw].iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    X64TextInstruction::CallImport { field, .. } if field == "HeapFree"
+                )
+            }),
+            "失败清理必须在抛错前释放镜像副本"
+        );
+    }
+
+    /// 字符串返回使用 UTF-8 载体，不经过 UTF-16 码元。
+    #[test]
+    fn string_return_uses_utf8_bytes() {
+        let method = HostMethod { name: "text".to_string(), symbol: "text".to_string(), parameters: Vec::new(), returns: HostValueKind::Utf8 };
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let fields = import_fields(&wrapper);
+        assert!(fields.contains(&"napi_create_string_utf8"));
+        assert!(!fields.contains(&"napi_create_string_utf16"), "字符串长度必须是 UTF-8 字节而不是 UTF-16 码元");
+    }
+
+    /// 静态字符串描述符的长度字段按 UTF-8 字节数编码（`é中` = 5 字节，不是 2 个码元）。
+    #[test]
+    fn static_string_descriptor_length_is_utf8_byte_count() {
+        let value = "é中";
+        let program = X64ProgramFunction {
+            name: "main".to_string(),
+            slot_count: 1,
+            instructions: vec![X64TextInstruction::LoadString(value.to_string()), X64TextInstruction::Return],
+        };
+        let image = encode_x64_program(&[program], X64CallConv::Win64).expect("encode static string probe");
+        let bytes = value.as_bytes();
+        assert_eq!(bytes.len(), 5);
+        let position = image.text.windows(bytes.len()).position(|window| window == bytes).expect("utf-8 bytes in .text");
+        assert_eq!(
+            &image.text[position - 4..position],
+            &(bytes.len() as u32).to_le_bytes(),
+            "描述符长度必须是 UTF-8 字节数"
+        );
+    }
 }

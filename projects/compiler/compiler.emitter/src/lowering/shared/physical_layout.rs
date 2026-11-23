@@ -32,6 +32,9 @@ impl LayoutPolicy {
 
     /// Odin VM 策略。
     pub(crate) const OVM: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
+
+    /// 原生 x86-64 策略：引用/句柄与文本描述符都是 8 字节槽。
+    pub(crate) const X64: Self = Self { reference_extent: (8, 8), text_extent: (8, 8) };
 }
 
 /// 已解析的字段物理布局。

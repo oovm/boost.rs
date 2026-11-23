@@ -18,6 +18,7 @@
 //! Node `.node` / Python `.pyd` 只是同一 ISA 上的宿主装载与 ABI 包装形态，不是独立
 //! 指令集；宿主调用属于导入合同，不属于算子编码。
 
+mod array_runtime;
 mod carrier;
 mod container;
 mod extension;
@@ -77,6 +78,16 @@ impl X64CallConv {
         }
     }
 
+    /// 寄存器可承载的浮点实参上限（`xmm0..`；超出必须走栈，本 lane 尚未实现栈传参）。
+    ///
+    /// 浮点实参按独立的 `xmm` 序列编号，不与整数实参共享序位。
+    pub fn float_argument_limit(self) -> usize {
+        match self {
+            Self::Win64 => 4,
+            Self::SystemV64 => 8,
+        }
+    }
+
     /// 帧底必须为调用约定预留的字节数。
     ///
     /// Win64 的 32 字节 shadow space 同时充当块参数周转区；SysV64 没有 shadow
@@ -106,6 +117,27 @@ pub struct X64LoweredProgram {
     pub entry_offset: u32,
     /// 文本节原始长度（未按文件对齐填充）。
     pub text_len: usize,
+}
+
+/// 浮点表示转换（SSE2 单指令；源与结果寄存器由变体名固定）。
+///
+/// 整数侧统一按 64 位有符号值转换：调用方先把窄整数按自身符号性规范化到
+/// 64 位，再选择这里的变体；浮点转整数使用向零截断，越界/NaN 得到 x86 的
+/// 64 位不定值 `0x8000_0000_0000_0000`（ISA 冻结行为，不做饱和伪装）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum X64FloatCast {
+    /// `cvtsi2sd xmm0, rax`：`i64`/已规范化的窄整数 → `f64`。
+    I64ToF64,
+    /// `cvtsi2ss xmm0, rax`：`i64`/已规范化的窄整数 → `f32`（按目标精度舍入）。
+    I64ToF32,
+    /// `cvttsd2si rax, xmm0`：`f64` → 64 位有符号整数（向零截断）。
+    F64ToI64,
+    /// `cvttss2si rax, xmm0`：`f32` → 64 位有符号整数（向零截断）。
+    F32ToI64,
+    /// `cvtss2sd xmm0, xmm0`：`f32` → `f64`（精确提升）。
+    F32ToF64,
+    /// `cvtsd2ss xmm0, xmm0`：`f64` → `f32`（按目标精度舍入，保留 `-0.0`/NaN 符号）。
+    F64ToF32,
 }
 
 /// 适配器可以提交的原生文本 LIR 指令。
@@ -139,6 +171,52 @@ pub enum X64TextInstruction {
         /// 实参序号（按 ABI 寄存器序；超过上限即失败）。
         index: u8,
     },
+    /// 把目标 ABI 的浮点形参 `index`（`xmm{index}`）存入帧槽 `slot`。
+    LoadParamXmm {
+        /// 浮点形参序号（独立于整数序；超过该 ABI 的 `xmm` 上限即失败）。
+        index: u8,
+        /// 帧槽。
+        slot: u16,
+        /// 宽度：`true` 为 `f32`（`movss`），`false` 为 `f64`（`movsd`）。
+        single: bool,
+    },
+    /// 把帧槽 `slot` 装入目标 ABI 的浮点实参寄存器 `xmm{index}`（调用前）。
+    LoadSlotToXmmArg {
+        /// 帧槽。
+        slot: u16,
+        /// 浮点实参序号（独立于整数序；超过上限即失败）。
+        index: u8,
+        /// 宽度：`true` 为 `f32`（`movss`），`false` 为 `f64`（`movsd`）。
+        single: bool,
+    },
+    /// `movsd/movss xmm0, [slot]`：浮点算子左操作数。
+    LoadSlotToXmm0 {
+        /// 帧槽。
+        slot: u16,
+        /// 宽度：`true` 为 `f32`（`movss`），`false` 为 `f64`（`movsd`）。
+        single: bool,
+    },
+    /// `movsd/movss xmm1, [slot]`：浮点算子右操作数。
+    LoadSlotToXmm1 {
+        /// 帧槽。
+        slot: u16,
+        /// 宽度：`true` 为 `f32`（`movss`），`false` 为 `f64`（`movsd`）。
+        single: bool,
+    },
+    /// `movsd/movss [slot], xmm0`：浮点结果落槽 / 浮点返回装载。
+    StoreXmm0ToSlot {
+        /// 帧槽。
+        slot: u16,
+        /// 宽度：`true` 为 `f32`（`movss`），`false` 为 `f64`（`movsd`）。
+        single: bool,
+    },
+    /// 把 `rax` 中的浮点位模式搬进 `xmm0`（浮点转换的源装载）。
+    LoadRaxToXmm0 {
+        /// 宽度：`true` 为 `f32`（`movd`），`false` 为 `f64`（`movq`）。
+        single: bool,
+    },
+    /// 显式浮点表示转换（源在 `rax` 或 `xmm0`，结果按变体约定）。
+    CastFloat(X64FloatCast),
     /// `mov [slot], rax`。
     StoreSlot(u16),
     /// `rax = rax + rcx`。
@@ -231,6 +309,14 @@ pub enum X64TextInstruction {
     /// `rdi`/`rsi`/`rdx`；Win64 没有对应的 syscall 合同，遇到该指令显式失败，
     /// Windows 的 effect 写入必须走 `CallImport` 的 IAT。
     SyscallWrite,
+    /// SysV64/Linux `mmap(2)`：长度取自 `rax`，返回地址（失败为负 errno）写回 `rax`。
+    ///
+    /// 只归数组运行时使用；Win64 没有对应合同，遇到该指令显式失败。
+    SyscallMmap,
+    /// SysV64/Linux `munmap(2)`：地址在 `rax`、长度在 `rcx`；返回值忽略。
+    ///
+    /// 只归数组运行时使用；Win64 遇到该指令显式失败。
+    SyscallMunmap,
     /// 把 Win64 栈上第 `index` 个额外实参（`[rsp + 32 + 8*index]`）置零。
     ///
     /// 用于第 5 个及以后的整数实参（前 4 个走 rcx/rdx/r8/r9）。这是 Win64
@@ -278,6 +364,14 @@ pub enum X64TextInstruction {
     LoadFromRax,
     /// `mov [rax], rcx`：把 `rcx` 写入 `rax` 指向的机器字（arena 游标更新）。
     StoreRcxToRax,
+    /// `mov [rax + disp32], rcx`：把 `rcx` 写入 `rax + disp32`（数组头部的分配字节数）。
+    StoreRcxToRaxDisplacement(i32),
+    /// `mov rax, [rax + disp32]`：读取 `rax + disp32` 处的机器字（数组头部的分配字节数）。
+    LoadFromRaxDisplacement(i32),
+    /// `mov [rax + disp32], rdx`：把 `rdx` 写入 `rax + disp32`（对象字段 / sum 载荷）。
+    StoreRdxToRaxDisplacement(i32),
+    /// `mov eax, [rax]`：读取 32 位并零扩展到 `rax`（sum tag）。
+    LoadDwordFromRax,
     /// `mov [rcx], rax`：把 `rax` 写入 `rcx` 指向的机器字（入口处重置游标）。
     StoreRaxToRcx,
     /// `mov dword ptr [rax], imm32`：写描述符里的自相对指针字段。
@@ -290,13 +384,14 @@ pub enum X64TextInstruction {
     ShiftLeftRaxImmediate(u8),
     /// `mov [rax], rdx`：把 `rdx` 写入 `rax` 指向的机器字（数组头部长度）。
     StoreRdxToRax,
-    /// `mov rax, [rax + rcx*8 + 8]`：按 `rcx` 索引读取数组元素。
+    /// `mov rax, [rax + rcx*8 + 16]`：按 `rcx` 索引读取数组元素。
     ///
-    /// 数组表示由本 lane 冻结：`[0]` 是 `i64` 元素个数，元素从 `+8` 起按 8 字节槽
-    /// 连续排列（见 `x86_64` 的数组合同）。读取不做越界检查，边界由语言合同的
-    /// `Cardinal` 前置判定承担。
+    /// 数组表示由数组运行时合同冻结：`[0]` 是 `i64` 元素个数、`[8]` 是分配字节数，
+    /// 元素从 `+16` 起按 8 字节槽连续排列（见 [`array_runtime`]）。本指令不隐式
+    /// 检查越界；两个访问入口都必须先经过 [`array_runtime::array_bounds_check`]，
+    /// 或携带可验证的范围证明（常量下标 / 以长度为界的循环）。
     LoadIndexedFromRaxRcx,
-    /// `mov [rax + rcx*8 + 8], rdx`：按 `rcx` 索引写入数组元素。
+    /// `mov [rax + rcx*8 + 16], rdx`：按 `rcx` 索引写入数组元素（同一检查前提）。
     StoreIndexedRdxToRaxRcx,
     /// 复制字节：`rax` = 目标、`rcx` = 源、`rdx` = 长度。
     ///

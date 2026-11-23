@@ -15,12 +15,14 @@ use super::{
     X64CallConv, X64DataTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction,
     x64_lir::{
         X64Reg, argument_register, emit_add_rax_imm32, emit_add_rdx_imm32, emit_call_import_placeholder, emit_call_placeholder,
-        emit_copy_bytes, emit_divide_by_ten, emit_function_return, emit_jump_if_zero_placeholder, emit_jump_placeholder,
-        emit_lea_rax_from_frame, emit_lea_rip_placeholder, emit_load_byte_from_rax, emit_load_descriptor_length, emit_load_from_rax,
-        emit_load_indexed_from_rax_rcx, emit_mov_from_frame, emit_mov_imm64, emit_mov_to_frame, emit_neg_rax, emit_prologue,
-        emit_shift_left_rax_imm8, emit_store_byte_at_rax_from_rdx, emit_store_dword_imm_to_rax, emit_store_dword_rcx_to_rax,
-        emit_store_indexed_rdx_to_rax_rcx, emit_store_rax_to_rcx, emit_store_rax_to_stack, emit_store_rcx_to_rax, emit_store_rdx_to_rax,
-        emit_sub_rax_imm32, emit_syscall_write, emit_trap, emit_zero_stack_arg, encode_operator, patch_rel32,
+        emit_copy_bytes, emit_divide_by_ten, emit_float_from_frame, emit_float_to_frame, emit_function_return, emit_jump_if_zero_placeholder,
+        emit_jump_placeholder, emit_lea_rax_from_frame, emit_lea_rip_placeholder, emit_load_byte_from_rax, emit_load_descriptor_length,
+        emit_load_dword_from_rax, emit_load_from_rax, emit_load_from_rax_displacement, emit_load_indexed_from_rax_rcx, emit_mov_from_frame,
+        emit_mov_imm64, emit_mov_to_frame, emit_neg_rax, emit_prologue, emit_shift_left_rax_imm8, emit_store_byte_at_rax_from_rdx,
+        emit_store_dword_imm_to_rax, emit_store_dword_rcx_to_rax, emit_store_indexed_rdx_to_rax_rcx, emit_store_rax_to_rcx,
+        emit_store_rax_to_stack, emit_store_rcx_to_rax, emit_store_rcx_to_rax_displacement, emit_store_rdx_to_rax,
+        emit_store_rdx_to_rax_displacement, emit_sub_rax_imm32, emit_syscall_mmap, emit_syscall_munmap, emit_syscall_write, emit_trap,
+        emit_zero_stack_arg, emit_rax_bits_to_xmm0, encode_float_cast, encode_operator, patch_rel32,
     },
     x86_64::X86_64OperatorCode,
 };
@@ -195,6 +197,29 @@ pub fn encode_x64_program_with_dependencies(
                     let register = argument_register(abi, *index).ok_or_else(|| argument_out_of_range(abi, *index, "实参"))?;
                     emit_mov_from_frame(&mut text, register, *slot);
                 }
+                X64TextInstruction::LoadParamXmm { index, slot, single } => {
+                    if usize::from(*index) >= abi.float_argument_limit() {
+                        return Err(argument_out_of_range(abi, *index, "浮点形参"));
+                    }
+                    emit_float_to_frame(&mut text, *index, *slot, *single);
+                }
+                X64TextInstruction::LoadSlotToXmmArg { slot, index, single } => {
+                    if usize::from(*index) >= abi.float_argument_limit() {
+                        return Err(argument_out_of_range(abi, *index, "浮点实参"));
+                    }
+                    emit_float_from_frame(&mut text, *index, *slot, *single);
+                }
+                X64TextInstruction::LoadSlotToXmm0 { slot, single } => {
+                    emit_float_from_frame(&mut text, 0, *slot, *single);
+                }
+                X64TextInstruction::LoadSlotToXmm1 { slot, single } => {
+                    emit_float_from_frame(&mut text, 1, *slot, *single);
+                }
+                X64TextInstruction::StoreXmm0ToSlot { slot, single } => {
+                    emit_float_to_frame(&mut text, 0, *slot, *single);
+                }
+                X64TextInstruction::CastFloat(cast) => encode_float_cast(&mut text, *cast),
+                X64TextInstruction::LoadRaxToXmm0 { single } => emit_rax_bits_to_xmm0(&mut text, *single),
                 X64TextInstruction::StoreSlot(slot) => emit_mov_to_frame(&mut text, X64Reg::Rax, *slot),
                 X64TextInstruction::Label(id) => {
                     labels.insert(*id, text.len());
@@ -261,6 +286,14 @@ pub fn encode_x64_program_with_dependencies(
                 X64TextInstruction::LoadByteFromRax => emit_load_byte_from_rax(&mut text),
                 X64TextInstruction::LoadFromRax => emit_load_from_rax(&mut text),
                 X64TextInstruction::StoreRcxToRax => emit_store_rcx_to_rax(&mut text),
+                X64TextInstruction::LoadFromRaxDisplacement(displacement) => emit_load_from_rax_displacement(&mut text, *displacement),
+                X64TextInstruction::StoreRcxToRaxDisplacement(displacement) => {
+                    emit_store_rcx_to_rax_displacement(&mut text, *displacement)
+                }
+                X64TextInstruction::StoreRdxToRaxDisplacement(displacement) => {
+                    emit_store_rdx_to_rax_displacement(&mut text, *displacement)
+                }
+                X64TextInstruction::LoadDwordFromRax => emit_load_dword_from_rax(&mut text),
                 X64TextInstruction::StoreRaxToRcx => emit_store_rax_to_rcx(&mut text),
                 X64TextInstruction::StoreDwordImmediateToRax(value) => emit_store_dword_imm_to_rax(&mut text, *value),
                 X64TextInstruction::StoreDwordRcxToRax => emit_store_dword_rcx_to_rax(&mut text),
@@ -286,6 +319,18 @@ pub fn encode_x64_program_with_dependencies(
                         return Err(format!("{} 文本 ABI 没有 `write` syscall 合同：effect 写入必须走宿主导入", abi.name()));
                     }
                     emit_syscall_write(&mut text);
+                }
+                X64TextInstruction::SyscallMmap => {
+                    if abi != X64CallConv::SystemV64 {
+                        return Err(format!("{} 文本 ABI 没有 `mmap` syscall 合同：数组分配必须走进程堆导入", abi.name()));
+                    }
+                    emit_syscall_mmap(&mut text);
+                }
+                X64TextInstruction::SyscallMunmap => {
+                    if abi != X64CallConv::SystemV64 {
+                        return Err(format!("{} 文本 ABI 没有 `munmap` syscall 合同：数组释放必须走进程堆导入", abi.name()));
+                    }
+                    emit_syscall_munmap(&mut text);
                 }
                 X64TextInstruction::CallImport { module, field } => {
                     // 两种 ABI 的指令相同，修复去向不同。

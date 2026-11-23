@@ -31,15 +31,19 @@ use crate::{
     contracts::{ArrayInitialization, Constant, InstructionKind, Operand, Terminator},
     emitter_backend_machine::{MachineImageKind, classify_machine_image},
     lowering::shared::executable::{collect_reachable_blocks, slots::ExecutableSlotPlan},
+    lowering::shared::physical_layout::{LayoutPolicy, ResolvedLayoutPlan, resolve_physical_layouts},
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::pe::{NativePeImage, NativePeWriter},
 };
 use compiler_target::abstractions::BinaryArch;
-use compiler_types::ItemInstanceId;
+use compiler_types::{ItemInstanceId, StorageKind};
 
 use data_binary_pe::elf::{NativeElfImage, NativeElfWriter};
 
-use super::{X64CallConv, X64LoweredProgram, X64ProgramFunction, X64TextInstruction, encode_x64_program, x64_lir};
+use super::{
+    X64CallConv, X64FloatCast, X64LoweredProgram, X64Platform, X64ProgramFunction, X64TextInstruction, array_runtime,
+    array_runtime::{ArrayAllocationSlots, ArrayAllocator}, encode_x64_program, x64_lir,
+};
 
 /// 已冻结的 x86-64 operator 编码。
 ///
@@ -134,6 +138,50 @@ pub enum X86_64OperatorCode {
     I64CompareLessThanUnsigned,
     /// `cmp` + `setb`：32 位无符号小于比较，结果 0/1。
     I32CompareLessThanUnsigned,
+    /// `addsd xmm0, xmm1`：64 位浮点加法。
+    F64Add,
+    /// `subsd xmm0, xmm1`：64 位浮点减法。
+    F64Subtract,
+    /// `mulsd xmm0, xmm1`：64 位浮点乘法。
+    F64Multiply,
+    /// `divsd xmm0, xmm1`：64 位浮点除法。
+    F64Divide,
+    /// 64 位浮点取负：翻转符号位，保留 `-0.0` 与 NaN 载荷。
+    F64Negate,
+    /// `ucomisd` + 组合条件：64 位浮点相等（无序为假）。
+    F64CompareEqual,
+    /// `ucomisd` + 组合条件：64 位浮点不等（无序为真）。
+    F64CompareNotEqual,
+    /// `ucomisd` + 组合条件：64 位浮点小于（无序为假）。
+    F64CompareLessThan,
+    /// `ucomisd` + 组合条件：64 位浮点小于等于（无序为假）。
+    F64CompareLessOrEqual,
+    /// `ucomisd` + 组合条件：64 位浮点大于（无序为假）。
+    F64CompareGreaterThan,
+    /// `ucomisd` + 组合条件：64 位浮点大于等于（无序为假）。
+    F64CompareGreaterOrEqual,
+    /// `addss xmm0, xmm1`：32 位浮点加法。
+    F32Add,
+    /// `subss xmm0, xmm1`：32 位浮点减法。
+    F32Subtract,
+    /// `mulss xmm0, xmm1`：32 位浮点乘法。
+    F32Multiply,
+    /// `divss xmm0, xmm1`：32 位浮点除法。
+    F32Divide,
+    /// 32 位浮点取负：翻转符号位，保留 `-0.0` 与 NaN 载荷。
+    F32Negate,
+    /// `ucomiss` + 组合条件：32 位浮点相等（无序为假）。
+    F32CompareEqual,
+    /// `ucomiss` + 组合条件：32 位浮点不等（无序为真）。
+    F32CompareNotEqual,
+    /// `ucomiss` + 组合条件：32 位浮点小于（无序为假）。
+    F32CompareLessThan,
+    /// `ucomiss` + 组合条件：32 位浮点小于等于（无序为假）。
+    F32CompareLessOrEqual,
+    /// `ucomiss` + 组合条件：32 位浮点大于（无序为假）。
+    F32CompareGreaterThan,
+    /// `ucomiss` + 组合条件：32 位浮点大于等于（无序为假）。
+    F32CompareGreaterOrEqual,
 }
 
 impl X86_64OperatorCode {
@@ -155,12 +203,93 @@ impl X86_64OperatorCode {
                 | Self::I32CompareGreaterOrEqual
                 | Self::I64CompareLessThanUnsigned
                 | Self::I32CompareLessThanUnsigned
+                | Self::F64CompareEqual
+                | Self::F64CompareNotEqual
+                | Self::F64CompareLessThan
+                | Self::F64CompareLessOrEqual
+                | Self::F64CompareGreaterThan
+                | Self::F64CompareGreaterOrEqual
+                | Self::F32CompareEqual
+                | Self::F32CompareNotEqual
+                | Self::F32CompareLessThan
+                | Self::F32CompareLessOrEqual
+                | Self::F32CompareGreaterThan
+                | Self::F32CompareGreaterOrEqual
+        )
+    }
+
+    /// 该编码是否为浮点编码（操作数在 `xmm0`/`xmm1`）。
+    pub fn is_float(self) -> bool {
+        matches!(
+            self,
+            Self::F64Add
+                | Self::F64Subtract
+                | Self::F64Multiply
+                | Self::F64Divide
+                | Self::F64Negate
+                | Self::F64CompareEqual
+                | Self::F64CompareNotEqual
+                | Self::F64CompareLessThan
+                | Self::F64CompareLessOrEqual
+                | Self::F64CompareGreaterThan
+                | Self::F64CompareGreaterOrEqual
+                | Self::F32Add
+                | Self::F32Subtract
+                | Self::F32Multiply
+                | Self::F32Divide
+                | Self::F32Negate
+                | Self::F32CompareEqual
+                | Self::F32CompareNotEqual
+                | Self::F32CompareLessThan
+                | Self::F32CompareLessOrEqual
+                | Self::F32CompareGreaterThan
+                | Self::F32CompareGreaterOrEqual
+        )
+    }
+
+    /// 该编码是否为单精度浮点（`f32`，`movss`/`addss` 族）。
+    pub fn is_single_precision(self) -> bool {
+        matches!(
+            self,
+            Self::F32Add
+                | Self::F32Subtract
+                | Self::F32Multiply
+                | Self::F32Divide
+                | Self::F32Negate
+                | Self::F32CompareEqual
+                | Self::F32CompareNotEqual
+                | Self::F32CompareLessThan
+                | Self::F32CompareLessOrEqual
+                | Self::F32CompareGreaterThan
+                | Self::F32CompareGreaterOrEqual
         )
     }
 
     /// 该编码的操作数载体。
     pub fn operand_type(self) -> TargetOperandType {
         match self {
+            Self::F64Add
+            | Self::F64Subtract
+            | Self::F64Multiply
+            | Self::F64Divide
+            | Self::F64Negate
+            | Self::F64CompareEqual
+            | Self::F64CompareNotEqual
+            | Self::F64CompareLessThan
+            | Self::F64CompareLessOrEqual
+            | Self::F64CompareGreaterThan
+            | Self::F64CompareGreaterOrEqual => TargetOperandType::F64,
+            Self::F32Add
+            | Self::F32Subtract
+            | Self::F32Multiply
+            | Self::F32Divide
+            | Self::F32Negate
+            | Self::F32CompareEqual
+            | Self::F32CompareNotEqual
+            | Self::F32CompareLessThan
+            | Self::F32CompareLessOrEqual
+            | Self::F32CompareGreaterThan
+            | Self::F32CompareGreaterOrEqual => TargetOperandType::F32,
             Self::I32Add
             | Self::I32Subtract
             | Self::I32Multiply
@@ -194,7 +323,7 @@ impl X86_64OperatorCode {
     /// 该编码冻结的实参个数（只有取负是一元）。
     pub fn arity(self) -> usize {
         match self {
-            Self::I64Negate | Self::I32Negate => 1,
+            Self::I64Negate | Self::I32Negate | Self::F64Negate | Self::F32Negate => 1,
             _ => 2,
         }
     }
@@ -202,9 +331,9 @@ impl X86_64OperatorCode {
 
 /// x86-64 数组 operator 的冻结操作。
 ///
-/// 数组表示由本 lane 冻结（与 wasm-gc 的宿主 arraytype 表无关）：
-/// `[T]` 是宿主堆上的一块连续内存，`[0]` 为 `i64` 元素个数，元素从 `+8` 起
-/// 按 8 字节槽排列。集合语义（越界、初始化前沿）全部留在 Valkyrie 标准库；
+/// 数组的物理表示、分配/释放实现、边界检查位置与失败出口全部由
+/// [`super::array_runtime`] 冻结（`[0]` 元素个数、`[8]` 分配字节数、元素从 `+16`
+/// 起按 8 字节槽排列）；集合语义（初始化前沿、有效窗口）仍留在 Valkyrie 标准库。
 /// 这里只编码已经解析并绑定的四类机械操作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum X64ArrayOperation {
@@ -218,10 +347,19 @@ pub(crate) enum X64ArrayOperation {
     Set,
 }
 
+/// 调用实参的寄存器类别与序位：整数与浮点各自独立编号。
+#[derive(Debug, Clone, Copy)]
+enum FloatPlacement {
+    /// 整数寄存器序列第 `index` 个。
+    Integer { index: usize },
+    /// 浮点 `xmm` 序列第 `index` 个；`single` 决定 `movss`/`movsd`。
+    Float { index: usize, single: bool },
+}
+
 /// 已冻结的 x86-64 数组 operator 计划。
 ///
-/// 只冻结 arity 与操作身份：数组元素类型不进入计划，元素宽度由本 lane 的
-/// 「统一 8 字节槽」表示固定，调用点先按声明签名校验后再发射。
+/// 物理布局、分配/释放实现与失败出口由 [`super::array_runtime`] 唯一冻结；本计划
+/// 只固定操作身份与调用点 arity，不复制第二套数组表示。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct X64ArrayOperatorPlan {
     /// 冻结的实参个数；编码前必须与调用实参个数一致。
@@ -229,17 +367,6 @@ pub(crate) struct X64ArrayOperatorPlan {
     /// 冻结的数组操作身份。
     pub operation: X64ArrayOperation,
 }
-
-/// 数组分配的宿主导入模块（Win64 `.idata`）。
-const KERNEL32_DLL: &str = "kernel32.dll";
-/// 取进程默认堆句柄。
-const GET_PROCESS_HEAP: &str = "GetProcessHeap";
-/// 从默认堆分配内存。
-const HEAP_ALLOC: &str = "HeapAlloc";
-/// `HeapAlloc` 的 `HEAP_ZERO_MEMORY` 标志（分配后全零）。
-const HEAP_ZERO_MEMORY: i64 = 0x0000_0008;
-/// 数组头部长度字段的字节宽度。
-const ARRAY_HEADER_BYTES: i64 = 8;
 
 /// 可执行文件容器：决定入口接收方式与最终字节格式。
 /// 容器选择来自规范目标的 `os`，不由 `arch` 推断。
@@ -289,10 +416,26 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: X64CallConv, container: Co
     validate_entry(&entry_view.function, container)?;
 
     let names = exe_symbol_names(&reachable);
+    // 容器与调用约定由规范目标一次冻结；数组运行时按同一平台身份选择分配/释放实现。
+    let platform = match container {
+        ContainerKind::Pe => X64Platform::windows_x64(),
+        ContainerKind::Elf => X64Platform::linux_x64(),
+    };
+    if platform.abi() != abi {
+        return Err(format!(
+            "x86_64 lowering：容器 {} 的冻结 ABI `{}` 与调用约定 `{}` 不一致",
+            container.name(),
+            platform.abi().name(),
+            abi.name()
+        ));
+    }
     let mut functions = Vec::with_capacity(reachable.len());
+    // 物理布局按规范平台的引用/文本槽策略一次解析；对象字段偏移只来自这里。
+    let layouts = resolve_physical_layouts(plan.aggregate_layouts(), LayoutPolicy::X64)
+        .map_err(|reason| format!("x86_64 lowering：物理布局解析失败：{reason}"))?;
     for instance in &reachable {
         let view = plan.get_function(instance).ok_or_else(|| format!("x86_64 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
-        functions.push(lower_function_to_text_program(instance, submission, &view.function, &reachable, &names, abi)?);
+        functions.push(lower_function_to_text_program(instance, submission, &view.function, &reachable, &names, platform, &layouts)?);
     }
 
     // 唯一程序装配器：帧、符号布局、`rel32` 回填与导入/数据装配不再各写一遍。
@@ -441,12 +584,35 @@ pub(super) fn lower_function_to_text_program(
     function: &MirFunction,
     reachable: &[ItemInstanceId],
     names: &BTreeMap<ItemInstanceId, String>,
-    abi: X64CallConv,
+    platform: X64Platform,
+    layouts: &ResolvedLayoutPlan,
 ) -> Result<X64ProgramFunction> {
     let slots = ExecutableSlotPlan::plan_semantic(function);
     let local_count = u16::try_from(slots.local_types.len()).map_err(|_| "x86_64 lowering：局部槽数量超出 `u16`".to_string())?;
-    let mut lowerer =
-        FunctionLowerer { submission, function, slots, reachable, names, abi, local_count, temps_used: 0, instructions: Vec::new() };
+    // 数组失败出口使用块标签之后的保留标签，避免与 MIR 块编号冲突。
+    let failure_label = function
+        .blocks
+        .iter()
+        .map(|block| block.id.0)
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| "x86_64 lowering：块标签编号已耗尽，无法分配数组失败出口".to_string())?;
+    let mut lowerer = FunctionLowerer {
+        submission,
+        function,
+        slots,
+        reachable,
+        names,
+        abi: platform.abi(),
+        allocator: ArrayAllocator::for_platform(platform),
+        layouts,
+        local_count,
+        temps_used: 0,
+        instructions: Vec::new(),
+        failure_label,
+        uses_failure_exit: false,
+    };
     lowerer.store_entry_parameters()?;
 
     let mut order = vec![function.entry];
@@ -461,6 +627,13 @@ pub(super) fn lower_function_to_text_program(
             return Err(format!("x86_64 lowering：函数 `{}` 引用了不存在的块 {:?}", function.symbol, block_id));
         };
         lowerer.lower_block(block)?;
+    }
+
+    if lowerer.uses_failure_exit {
+        // 定义好的数组失败出口：显式陷入，不伪造返回、不把空指针留到后续故障。
+        for instruction in array_runtime::array_failure_exit(lowerer.failure_label) {
+            lowerer.push(instruction);
+        }
     }
 
     let temps = u16::try_from(lowerer.temps_used).map_err(|_| "x86_64 lowering：临时槽数量超出 `u16`".to_string())?;
@@ -480,11 +653,19 @@ struct FunctionLowerer<'a> {
     names: &'a BTreeMap<ItemInstanceId, String>,
     /// 由规范目标 `os`/`abi` 冻结的调用约定。
     abi: X64CallConv,
+    /// 由同一平台身份冻结的数组分配/释放实现。
+    allocator: ArrayAllocator,
+    /// 目标已解析的物理布局：对象尺寸与字段偏移只来自这里。
+    layouts: &'a ResolvedLayoutPlan,
     /// 局部槽数量；临时槽从该编号起分配。
     local_count: u16,
     /// 本函数同时需要的最大临时槽数。
     temps_used: usize,
     instructions: Vec<X64TextInstruction>,
+    /// 数组失败出口标签（块标签之后的一个保留编号）。
+    failure_label: u32,
+    /// 是否已经发射过数组失败分支（决定是否需要失败出口）。
+    uses_failure_exit: bool,
 }
 
 impl FunctionLowerer<'_> {
@@ -519,15 +700,19 @@ impl FunctionLowerer<'_> {
                 self.function.param_types.len()
             ));
         }
-        if entry_block.parameters.len() > self.abi.integer_argument_limit() {
+        if entry_block.parameters.len() > self.abi.integer_argument_limit() + self.abi.float_argument_limit() {
             return Err(format!(
-                "x86_64 lowering：函数 `{}` 有 {} 个形参，超过 {} 寄存器传参上限 {}（栈上传参未实现）",
+                "x86_64 lowering：函数 `{}` 有 {} 个形参，超过 {} 寄存器传参上限（整数 {} + 浮点 {}；栈上传参未实现）",
                 self.function.symbol,
                 entry_block.parameters.len(),
                 self.abi.name(),
-                self.abi.integer_argument_limit()
+                self.abi.integer_argument_limit(),
+                self.abi.float_argument_limit()
             ));
         }
+        // 整数与浮点实参按各自独立的寄存器序列编号；混合签名不得把浮点挤进整数序。
+        let mut integer_index = 0u8;
+        let mut float_index = 0u8;
         for (index, parameter) in entry_block.parameters.iter().enumerate() {
             let local = self
                 .slots
@@ -535,12 +720,42 @@ impl FunctionLowerer<'_> {
                 .get(&(self.function.entry, index))
                 .copied()
                 .ok_or_else(|| format!("x86_64 lowering：函数 `{}` 入口形参 {index} 缺少局部槽", self.function.symbol))?;
-            if let Some(ty) = self.function.value_types.get(parameter)
-                && !is_local_carrier_type(ty)
+            let ty = self
+                .function
+                .value_types
+                .get(parameter)
+                .or_else(|| self.function.param_types.get(index))
+                .cloned();
+            if let Some(ty) = &ty
+                && !self.is_local_carrier(ty)
             {
-                return Err(format!("x86_64 lowering：函数 `{}` 的形参类型 `{ty}` 没有 x86_64 标量载体", self.function.symbol));
+                return Err(format!("x86_64 lowering：函数 `{}` 的形参类型 `{ty}` 没有 x86_64 槽载体", self.function.symbol));
             }
-            self.push(X64TextInstruction::LoadParam { index: index as u8, slot: local });
+            if matches!(ty, Some(SemanticType::Float32 | SemanticType::Float64)) {
+                let single = matches!(ty, Some(SemanticType::Float32));
+                if usize::from(float_index) >= self.abi.float_argument_limit() {
+                    return Err(format!(
+                        "x86_64 lowering：函数 `{}` 的浮点形参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
+                        self.function.symbol,
+                        self.abi.name(),
+                        self.abi.float_argument_limit()
+                    ));
+                }
+                self.push(X64TextInstruction::LoadParamXmm { index: float_index, slot: local, single });
+                float_index += 1;
+            }
+            else {
+                if usize::from(integer_index) >= self.abi.integer_argument_limit() {
+                    return Err(format!(
+                        "x86_64 lowering：函数 `{}` 的整数形参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
+                        self.function.symbol,
+                        self.abi.name(),
+                        self.abi.integer_argument_limit()
+                    ));
+                }
+                self.push(X64TextInstruction::LoadParam { index: integer_index, slot: local });
+                integer_index += 1;
+            }
         }
         Ok(())
     }
@@ -564,6 +779,15 @@ impl FunctionLowerer<'_> {
         match &instruction.kind {
             InstructionKind::LoadConstant { constant, .. } => {
                 let local = self.require_output_local(instruction)?;
+                // 浮点常量按结果槽的冻结宽度落位：`f64` 常量进 `f32` 槽时按目标精度
+                // 舍入，避免把 64 位位模式原样塞进 32 位语义的槽。
+                if let Constant::Float64(value) = constant {
+                    let single = matches!(self.slots.local_types.get(local as usize), Some(SemanticType::Float32));
+                    let bits = if single { u64::from((value.0 as f32).to_bits()) } else { value.0.to_bits() };
+                    self.push(X64TextInstruction::LoadI64(bits as i64));
+                    self.push(X64TextInstruction::StoreSlot(local));
+                    return Ok(());
+                }
                 self.emit_constant_to_rax(constant)?;
                 self.push(X64TextInstruction::StoreSlot(local));
                 Ok(())
@@ -591,7 +815,13 @@ impl FunctionLowerer<'_> {
                 let source_ty = self.operand_semantic_type(source)?;
                 self.emit_operand_to_rax(source)?;
                 self.emit_cast_conversion(&source_ty, ty)?;
-                self.push(X64TextInstruction::StoreSlot(local));
+                if matches!(ty, SemanticType::Float32 | SemanticType::Float64) {
+                    // 浮点目标的结果在 `xmm0`（整数目标在 `rax`）。
+                    self.push(X64TextInstruction::StoreXmm0ToSlot { slot: local, single: matches!(ty, SemanticType::Float32) });
+                }
+                else {
+                    self.push(X64TextInstruction::StoreSlot(local));
+                }
                 Ok(())
             }
             InstructionKind::Call { callee, arguments } => self.emit_call(instruction, callee, arguments),
@@ -599,7 +829,7 @@ impl FunctionLowerer<'_> {
                 let element = heap_array_element_type(array_type).ok_or_else(|| {
                     format!("x86_64 lowering：`ArrayNew` 的类型 `{array_type}` 不是堆数组 `[T]`：function={}", self.function.symbol)
                 })?;
-                if !is_slot_type(element) {
+                if !self.is_local_carrier(element) {
                     return Err(format!(
                         "x86_64 lowering：数组元素类型 `{element}` 没有 8 字节槽载体：function={}",
                         self.function.symbol
@@ -629,7 +859,7 @@ impl FunctionLowerer<'_> {
                         self.function.symbol
                     )
                 })?;
-                if !is_slot_type(element) {
+                if !self.is_local_carrier(element) {
                     return Err(format!(
                         "x86_64 lowering：数组元素类型 `{element}` 没有 8 字节槽载体：function={}",
                         self.function.symbol
@@ -641,6 +871,7 @@ impl FunctionLowerer<'_> {
                 self.emit_array_allocation(&Operand::Constant(Constant::Int(count)))?;
                 self.push(X64TextInstruction::StoreSlot(local));
                 // 逐元素写入：值先落临时槽，避免常量求值借用 `rax` 覆盖数组指针。
+                // 下标是编译期常量且恒小于刚分配的元素个数，范围证明成立，无需运行时检查。
                 let base = self.reserve_temps(2);
                 let value_slot = self.temp_slot(base, 0)?;
                 let index_slot = self.temp_slot(base, 1)?;
@@ -667,6 +898,7 @@ impl FunctionLowerer<'_> {
             InstructionKind::ArrayGet { array, index } => {
                 let local = self.require_output_local(instruction)?;
                 self.require_heap_array_operand(array)?;
+                self.emit_array_bounds_check(array, index)?;
                 // 下标先装载：常量下标会借用 `rax` 作暂存，数组指针必须最后装入。
                 self.emit_operand_to_rcx(index)?;
                 self.emit_operand_to_rax(array)?;
@@ -679,10 +911,59 @@ impl FunctionLowerer<'_> {
                     return Err(format!("x86_64 lowering：`ArraySet` 不得绑定结果槽：function={}", self.function.symbol));
                 }
                 self.require_heap_array_operand(array)?;
+                self.emit_array_bounds_check(array, index)?;
                 self.emit_operand_to_rcx(index)?;
                 self.emit_operand_to_rdx(value)?;
                 self.emit_operand_to_rax(array)?;
                 self.push(X64TextInstruction::StoreIndexedRdxToRaxRcx);
+                Ok(())
+            }
+            InstructionKind::StructNew { nominal, fields } => self.emit_struct_new(instruction, *nominal, fields),
+            InstructionKind::FieldGet { object, field } => self.emit_field_get(instruction, object, *field),
+            InstructionKind::FieldSet { object, field, value } => self.emit_field_set(instruction, object, *field, value),
+            InstructionKind::SumNew { nominal, variant, payload } => self.emit_sum_new(instruction, *nominal, *variant, payload.as_ref()),
+            InstructionKind::SumVariantIs { nominal, variant, object } => {
+                self.emit_sum_variant_is(instruction, *nominal, *variant, object)
+            }
+            InstructionKind::SumPayloadGet { nominal, variant, object } => {
+                self.emit_sum_payload_get(instruction, *nominal, *variant, object)
+            }
+            InstructionKind::NullIsNull { value } => {
+                let local = self.require_output_local(instruction)?;
+                let base = self.reserve_temps(2);
+                let value_slot = self.temp_slot(base, 0)?;
+                let zero_slot = self.temp_slot(base, 1)?;
+                self.emit_operand_to_rax(value)?;
+                self.push(X64TextInstruction::StoreSlot(value_slot));
+                self.push(X64TextInstruction::LoadI64(0));
+                self.push(X64TextInstruction::StoreSlot(zero_slot));
+                self.push(X64TextInstruction::LoadSlot(value_slot));
+                self.push(X64TextInstruction::LoadSlotToRcx(zero_slot));
+                self.push(X64TextInstruction::Operator(X86_64OperatorCode::I64CompareEqual));
+                self.push(X64TextInstruction::StoreSlot(local));
+                Ok(())
+            }
+            InstructionKind::NullUnwrap { value } => {
+                let local = self.require_output_local(instruction)?;
+                let ty = self.operand_semantic_type(value)?;
+                match &ty {
+                    SemanticType::Nullable(inner)
+                        if matches!(
+                            **inner,
+                            SemanticType::Nominal { .. } | SemanticType::Apply(..) | SemanticType::Array(_) | SemanticType::Union(_)
+                                | SemanticType::Utf8
+                                | SemanticType::Utf16
+                        ) => {}
+                    _ => {
+                        return Err(format!(
+                            "x86_64 lowering：`NullUnwrap` 首期只开放引用可空（值可空需要装箱合同）：type={ty} function={}",
+                            self.function.symbol
+                        ));
+                    }
+                }
+                // 引用可空：非空值就是同一个指针，语言已保证非空。
+                self.emit_operand_to_rax(value)?;
+                self.push(X64TextInstruction::StoreSlot(local));
                 Ok(())
             }
             other => Err(format!("x86_64 lowering 尚不支持指令 `{}`：function={}", instruction_kind_name(other), self.function.symbol)),
@@ -734,7 +1015,16 @@ impl FunctionLowerer<'_> {
             (Some(Operand::Constant(Constant::Unit)), false) => {
                 return Err(format!("x86_64 lowering：非 void 函数 `{}` 返回了 unit 常量", self.function.symbol));
             }
-            (Some(operand), false) => self.emit_operand_to_rax(operand)?,
+            (Some(operand), false) => {
+                if matches!(self.function.return_type, SemanticType::Float32 | SemanticType::Float64) {
+                    let single = matches!(self.function.return_type, SemanticType::Float32);
+                    let slot = self.emit_float_return_value(operand, single)?;
+                    self.push(X64TextInstruction::LoadSlotToXmm0 { slot, single });
+                }
+                else {
+                    self.emit_operand_to_rax(operand)?;
+                }
+            }
             (Some(_), true) => {
                 return Err(format!("x86_64 lowering：函数 `{}` 返回了值但签名是 unit", self.function.symbol));
             }
@@ -817,14 +1107,47 @@ impl FunctionLowerer<'_> {
                 arguments.len()
             ));
         }
-        if arguments.len() > self.abi.integer_argument_limit() {
+        if arguments.len() > self.abi.integer_argument_limit() + self.abi.float_argument_limit() {
             return Err(format!(
-                "x86_64 lowering：调用 `{}` 传递 {} 个实参，超过 {} 寄存器传参上限 {}（栈上传参未实现）",
+                "x86_64 lowering：调用 `{}` 传递 {} 个实参，超过 {} 寄存器传参上限（整数 {} + 浮点 {}；栈上传参未实现）",
                 callee_function.symbol,
                 arguments.len(),
                 self.abi.name(),
-                self.abi.integer_argument_limit()
+                self.abi.integer_argument_limit(),
+                self.abi.float_argument_limit()
             ));
+        }
+        // 整数与浮点实参按各自独立的寄存器序列编号，与入口形参同一规则。
+        let mut placements = Vec::with_capacity(arguments.len());
+        let mut integer_index = 0usize;
+        let mut float_index = 0usize;
+        for (index, argument) in arguments.iter().enumerate() {
+            let ty = callee_function.param_types.get(index).cloned();
+            if matches!(ty, Some(SemanticType::Float32 | SemanticType::Float64)) {
+                let single = matches!(ty, Some(SemanticType::Float32));
+                if float_index >= self.abi.float_argument_limit() {
+                    return Err(format!(
+                        "x86_64 lowering：调用 `{}` 的浮点实参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
+                        callee_function.symbol,
+                        self.abi.name(),
+                        self.abi.float_argument_limit()
+                    ));
+                }
+                placements.push(FloatPlacement::Float { index: float_index, single });
+                float_index += 1;
+            }
+            else {
+                if integer_index >= self.abi.integer_argument_limit() {
+                    return Err(format!(
+                        "x86_64 lowering：调用 `{}` 的整数实参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
+                        callee_function.symbol,
+                        self.abi.name(),
+                        self.abi.integer_argument_limit()
+                    ));
+                }
+                placements.push(FloatPlacement::Integer { index: integer_index });
+                integer_index += 1;
+            }
         }
         let name = self
             .names
@@ -834,13 +1157,27 @@ impl FunctionLowerer<'_> {
         // 与块参数周转同理：先全部落临时槽，再按序装入实参寄存器。
         let base = self.reserve_temps(arguments.len());
         for (index, argument) in arguments.iter().enumerate() {
-            self.emit_operand_to_rax(argument)?;
             let slot = self.temp_slot(base, index)?;
+            // 浮点常量按目标宽度落位模式；其余操作数按统一路径搬运。
+            if let (FloatPlacement::Float { single, .. }, Operand::Constant(Constant::Float64(value))) = (&placements[index], argument) {
+                let bits = if *single { u64::from((value.0 as f32).to_bits()) } else { value.0.to_bits() };
+                self.push(X64TextInstruction::LoadI64(bits as i64));
+            }
+            else {
+                self.emit_operand_to_rax(argument)?;
+            }
             self.push(X64TextInstruction::StoreSlot(slot));
         }
-        for index in 0..arguments.len() {
-            let slot = self.temp_slot(base, index)?;
-            self.push(X64TextInstruction::LoadSlotToArg { slot, index: index as u8 });
+        for (slot_index, placement) in placements.iter().enumerate() {
+            let slot = self.temp_slot(base, slot_index)?;
+            match placement {
+                FloatPlacement::Integer { index } => {
+                    self.push(X64TextInstruction::LoadSlotToArg { slot, index: *index as u8 });
+                }
+                FloatPlacement::Float { index, single } => {
+                    self.push(X64TextInstruction::LoadSlotToXmmArg { slot, index: *index as u8, single: *single });
+                }
+            }
         }
         self.push(X64TextInstruction::Call(name));
 
@@ -854,13 +1191,19 @@ impl FunctionLowerer<'_> {
             return Ok(());
         }
         let local = self.require_output_local(instruction)?;
-        self.push(X64TextInstruction::StoreSlot(local));
+        if matches!(callee_function.return_type, SemanticType::Float32 | SemanticType::Float64) {
+            let single = matches!(callee_function.return_type, SemanticType::Float32);
+            self.push(X64TextInstruction::StoreXmm0ToSlot { slot: local, single });
+        }
+        else {
+            self.push(X64TextInstruction::StoreSlot(local));
+        }
         Ok(())
     }
 
     /// `[native_operator(...)]` 冻结绑定：只机械展开计划冻结的编码。
     fn emit_operator_call(&mut self, instruction: &MirInstruction, instance: ItemInstanceId, arguments: &[Operand]) -> Result<()> {
-        let (binding, link) = {
+        let (binding, link, array_element) = {
             let import = self
                 .submission
                 .backend_plan
@@ -869,8 +1212,28 @@ impl FunctionLowerer<'_> {
                 .ok_or_else(|| format!("x86_64 lowering：导入实例 `{instance:?}` 缺失: function={}", self.function.symbol))?;
             let symbol = self.submission.backend_plan.abi_name_for_instance(instance).map(|name| name.to_string()).unwrap_or_default();
             let binding = freeze_x86_64_operator(&import.link, instance, &symbol, &import.parameter_types, &import.return_type)?;
-            (binding, import.link.clone())
+            // 数组 operator 的元素载体必须由计划裁决：值存储聚合等虽然形状像指针，
+            // 在本 lane 没有内联槽合同，不能当元素搬运。
+            let array_element = match &binding {
+                Some(X86OperatorBinding::Array(plan)) => {
+                    let ty = match plan.operation {
+                        X64ArrayOperation::New => &import.return_type,
+                        X64ArrayOperation::Length | X64ArrayOperation::Get | X64ArrayOperation::Set => &import.parameter_types[0],
+                    };
+                    heap_array_element_type(ty).cloned()
+                }
+                _ => None,
+            };
+            (binding, import.link.clone(), array_element)
         };
+        if let Some(element) = &array_element
+            && !self.is_local_carrier(element)
+        {
+            return Err(format!(
+                "x86_64 lowering：数组 operator 元素类型 `{element}` 没有 8 字节槽载体：function={}",
+                self.function.symbol
+            ));
+        }
         let Some(binding) = binding
         else {
             return Err(format!(
@@ -918,6 +1281,23 @@ impl FunctionLowerer<'_> {
             ));
         }
         let local = self.require_output_local(instruction)?;
+        if code.is_float() {
+            // 浮点载体：操作数在 `xmm0`/`xmm1`，比较结果回到 `rax` 的 0/1，
+            // 其余结果留在 `xmm0` 并按其宽度写回 8 字节槽。
+            let single = code.is_single_precision();
+            self.emit_float_operand_to_xmm(0, &arguments[0], single)?;
+            if plan.arity == 2 {
+                self.emit_float_operand_to_xmm(1, &arguments[1], single)?;
+            }
+            self.push(X64TextInstruction::Operator(code));
+            if code.is_comparison() {
+                self.push(X64TextInstruction::StoreSlot(local));
+            }
+            else {
+                self.push(X64TextInstruction::StoreXmm0ToSlot { slot: local, single });
+            }
+            return Ok(());
+        }
         self.emit_operand_to_rax(&arguments[0])?;
         if plan.arity == 2 {
             self.emit_operand_to_rcx(&arguments[1])?;
@@ -927,10 +1307,69 @@ impl FunctionLowerer<'_> {
         Ok(())
     }
 
+    /// 把浮点操作数装入 `xmm0`/`xmm1`。
+    ///
+    /// 常量按冻结宽度落成位模式：`f32` 目标把 `f64` 常量窄化到目标精度（与显式
+    /// `as f32` 的舍入一致），`f64` 目标保留原始位模式。
+    fn emit_float_operand_to_xmm(&mut self, register: u8, operand: &Operand, single: bool) -> Result<()> {
+        let slot = match operand {
+            Operand::Value(value) => self.value_local(*value)?,
+            Operand::Constant(Constant::Float64(value)) => {
+                let bits = if single { u64::from((value.0 as f32).to_bits()) } else { value.0.to_bits() };
+                self.push(X64TextInstruction::LoadI64(bits as i64));
+                let base = self.reserve_temps(1);
+                let slot = self.temp_slot(base, 0)?;
+                self.push(X64TextInstruction::StoreSlot(slot));
+                slot
+            }
+            other => {
+                return Err(format!(
+                    "x86_64 lowering 尚不支持浮点操作数 `{other:?}`：缺少 x86_64 浮点常量载体合同，function={}",
+                    self.function.symbol
+                ));
+            }
+        };
+        match register {
+            0 => self.push(X64TextInstruction::LoadSlotToXmm0 { slot, single }),
+            1 => self.push(X64TextInstruction::LoadSlotToXmm1 { slot, single }),
+            other => {
+                return Err(format!(
+                    "x86_64 lowering：浮点算子只使用 xmm0/xmm1，收到 xmm{other}: function={}",
+                    self.function.symbol
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// 浮点返回值落槽：值操作数直接复用其局部槽，常量按宽度落临时槽。
+    fn emit_float_return_value(&mut self, operand: &Operand, single: bool) -> Result<u16> {
+        match operand {
+            Operand::Value(value) => self.value_local(*value),
+            Operand::Constant(Constant::Float64(value)) => {
+                let bits = if single { u64::from((value.0 as f32).to_bits()) } else { value.0.to_bits() };
+                self.push(X64TextInstruction::LoadI64(bits as i64));
+                let base = self.reserve_temps(1);
+                let slot = self.temp_slot(base, 0)?;
+                self.push(X64TextInstruction::StoreSlot(slot));
+                Ok(slot)
+            }
+            other => Err(format!(
+                "x86_64 lowering 尚不支持浮点返回值操作数 `{other:?}`：缺少 x86_64 浮点常量载体合同，function={}",
+                self.function.symbol
+            )),
+        }
+    }
+
     fn emit_constant_to_rax(&mut self, constant: &Constant) -> Result<()> {
         match constant {
             Constant::Int(value) => {
                 self.push(X64TextInstruction::LoadI64(*value));
+                Ok(())
+            }
+            Constant::Float64(value) => {
+                // 浮点常量以位模式进入通用寄存器槽；消费方按宽度用 `movsd/movss` 装载。
+                self.push(X64TextInstruction::LoadI64(value.0.to_bits() as i64));
                 Ok(())
             }
             Constant::Bool(value) => {
@@ -941,6 +1380,11 @@ impl FunctionLowerer<'_> {
             // 因为本 lane 尚未闭合任何真实的 UTF-16 消费路径（见 `is_local_carrier_type`）。
             Constant::Utf8(value) | Constant::Utf16(value) => {
                 self.push(X64TextInstruction::LoadString(value.clone()));
+                Ok(())
+            }
+            // 引用可空的空值就是空指针；标量可空没有内联载体，仍需装箱合同。
+            Constant::Null => {
+                self.push(X64TextInstruction::LoadI64(0));
                 Ok(())
             }
             other => Err(format!("x86_64 lowering 尚不支持常量 `{other:?}`：缺少 x86_64 常量载体合同，function={}", self.function.symbol)),
@@ -1032,39 +1476,352 @@ impl FunctionLowerer<'_> {
         Ok(())
     }
 
-    /// 分配 `length` 个 8 字节元素槽的数组；`rax` 返回数组指针。
-    ///
-    /// 布局：`[0] = i64 元素个数`，元素 `i` 位于 `[8 + 8*i]`。分配走 Win64 默认堆
-    /// （`GetProcessHeap` + `HeapAlloc(HEAP_ZERO_MEMORY)`），元素槽初始为零。
-    /// 这是本 lane 的数组运行时；分配失败没有异常通道，由后续访问自然故障闭合。
-    fn emit_array_allocation(&mut self, length: &Operand) -> Result<()> {
-        let base = self.reserve_temps(3);
-        let count_slot = self.temp_slot(base, 0)?;
+    /// 字段的冻结归属：布局身份、物理偏移与槽宽。
+    fn field_physical(&self, field: compiler_types::FieldId) -> Result<(compiler_types::LayoutId, u32, u32)> {
+        let (layout_id, slot) = self
+            .submission
+            .backend_plan
+            .aggregate_layout_by_field()
+            .get(&field)
+            .ok_or_else(|| format!("x86_64 lowering：字段 {field:?} 缺少冻结布局绑定：function={}", self.function.symbol))?;
+        let layout = self
+            .layouts
+            .layout(*layout_id)
+            .ok_or_else(|| format!("x86_64 lowering：字段 {field:?} 的布局 {layout_id:?} 缺少物理解析：function={}", self.function.symbol))?;
+        let field_layout = layout
+            .fields
+            .get(*slot as usize)
+            .ok_or_else(|| format!("x86_64 lowering：字段 {field:?} 的槽 {slot} 超出布局字段数：function={}", self.function.symbol))?;
+        Ok((*layout_id, field_layout.offset, field_layout.size))
+    }
+
+    /// 引用存储聚合的物理布局；值存储聚合首期没有内联槽合同。
+    fn reference_layout(
+        &self,
+        layout_id: compiler_types::LayoutId,
+        operation: &str,
+    ) -> Result<(u32, StorageKind, Vec<u32>)> {
+        let layout = self.layouts.layout(layout_id).ok_or_else(|| {
+            format!("x86_64 lowering：{operation} 的布局 {layout_id:?} 缺少物理解析：function={}", self.function.symbol)
+        })?;
+        if !layout.storage.is_reference() {
+            return Err(format!(
+                "x86_64 lowering：{operation} 首期只开放引用存储聚合（值存储需要内联槽合同）：layout={} function={}",
+                layout.name, self.function.symbol
+            ));
+        }
+        Ok((layout.size, layout.storage, layout.fields.iter().map(|field| field.offset).collect()))
+    }
+
+    /// 操作数静态类型解析出的冻结聚合身份（引用/值存储都可能是聚合）。
+    fn operand_layout_id(&self, operand: &Operand) -> Result<Option<compiler_types::LayoutId>> {
+        let ty = self.operand_semantic_type(operand)?;
+        Ok(self.submission.backend_plan.aggregate_layouts().frozen_layout_id(&ty))
+    }
+
+    /// 冻结 sum 表示里的平台 tag；只接受本 lane 的 4 字节 tag。
+    fn sum_variant_tag(
+        &self,
+        nominal: compiler_types::NominalInstanceId,
+        variant: compiler_types::VariantId,
+        operation: &str,
+    ) -> Result<(u32, bool)> {
+        let rep = self.submission.backend_plan.sum_representations().get(&nominal).ok_or_else(|| {
+            format!("x86_64 lowering：{operation} 的 sum 实例 {nominal:?} 缺少冻结表示：function={}", self.function.symbol)
+        })?;
+        if rep.tag_width != 4 {
+            return Err(format!(
+                "x86_64 lowering：{operation} 的 sum tag 宽度 {} 不是本 lane 冻结的 4 字节：function={}",
+                rep.tag_width, self.function.symbol
+            ));
+        }
+        let variant_rep = rep.variants.get(&variant).ok_or_else(|| {
+            format!("x86_64 lowering：{operation} 的 variant {variant:?} 不在 sum 表示内：function={}", self.function.symbol)
+        })?;
+        Ok((variant_rep.tag, variant_rep.payload_type.is_some()))
+    }
+
+    /// `StructNew`：按物理布局分配零初始化对象，再逐字段写入。
+    fn emit_struct_new(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: compiler_types::NominalInstanceId,
+        fields: &[(compiler_types::FieldId, Operand)],
+    ) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let layout_id = *self
+            .submission
+            .backend_plan
+            .aggregate_layout_by_nominal()
+            .get(&nominal)
+            .ok_or_else(|| {
+                format!("x86_64 lowering：`StructNew` 的名义实例 {nominal:?} 缺少冻结布局身份：function={}", self.function.symbol)
+            })?;
+        let (size, _, offsets) = self.reference_layout(layout_id, "`StructNew`")?;
+        // 引用存储布局的 `size` 是「作为字段/句柄时占用的引用槽」，不是堆对象 body
+        // 大小（共享解析合同，见 physical_layout 的自引用测试）。堆对象的实际字节数
+        // 必须由字段物理区间的末端决定，否则多字段对象只分到 8 字节、字段写入即越界。
+        let object_bytes = offsets.iter().copied().max().map(|offset| offset.max(8) + 8).unwrap_or(8);
+        debug_assert!(object_bytes >= size || size == 8, "引用布局对象字节数不应小于引用槽");
+        if offsets.iter().any(|offset| offset % 8 != 0) {
+            return Err(format!(
+                "x86_64 lowering：`StructNew` 布局 {layout_id:?} 含非 8 字节对齐字段，首期只开放 8 字节槽：function={}",
+                self.function.symbol
+            ));
+        }
+        if let Some(offset) = offsets.iter().find(|offset| **offset as u64 + 8 > object_bytes as u64) {
+            return Err(format!(
+                "x86_64 lowering：`StructNew` 布局 {layout_id:?} 的字段偏移 {offset} 越过对象大小 {object_bytes}：function={}",
+                self.function.symbol
+            ));
+        }
+        let mut slot_values: Vec<Option<Operand>> = vec![None; offsets.len()];
+        for (field, value) in fields {
+            let (owner, _, width) = self.field_physical(*field)?;
+            if owner != layout_id {
+                return Err(format!(
+                    "x86_64 lowering：`StructNew` 字段 {field:?} 属于布局 {owner:?}，与构造布局 {layout_id:?} 冲突：function={}",
+                    self.function.symbol
+                ));
+            }
+            if width != 8 {
+                return Err(format!(
+                    "x86_64 lowering：`StructNew` 字段 {field:?} 宽 {width} 字节，首期只开放 8 字节槽字段：function={}",
+                    self.function.symbol
+                ));
+            }
+            let (_, layout_slot) = self
+                .submission
+                .backend_plan
+                .aggregate_layout_by_field()
+                .get(field)
+                .copied()
+                .ok_or_else(|| format!("x86_64 lowering：字段 {field:?} 缺少冻结槽位：function={}", self.function.symbol))?;
+            let target = slot_values.get_mut(layout_slot as usize).ok_or_else(|| {
+                format!(
+                    "x86_64 lowering：`StructNew` 字段 {field:?} 的槽 {layout_slot} 越界（布局 {layout_id:?} 有 {} 个字段）：function={}",
+                    offsets.len(),
+                    self.function.symbol
+                )
+            })?;
+            if target.replace(value.clone()).is_some() {
+                return Err(format!("x86_64 lowering：`StructNew` 字段 {field:?} 重复初始化：function={}", self.function.symbol));
+            }
+        }
+        if let Some(index) = slot_values.iter().position(Option::is_none) {
+            return Err(format!(
+                "x86_64 lowering：`StructNew` 缺少字段槽 {index} 的初始化值（不静默补默认值）：layout={layout_id:?} function={}",
+                self.function.symbol
+            ));
+        }
+        let base = self.reserve_temps(4);
+        let pointer_slot = self.temp_slot(base, 0)?;
         let size_slot = self.temp_slot(base, 1)?;
-        let heap_slot = self.temp_slot(base, 2)?;
+        let auxiliary = self.temp_slot(base, 2)?;
+        let condition = self.temp_slot(base, 3)?;
+        self.push(X64TextInstruction::LoadI64(object_bytes as i64));
+        self.uses_failure_exit = true;
+        for item in array_runtime::object_allocate(self.allocator, size_slot, auxiliary, condition, self.failure_label) {
+            self.push(item);
+        }
+        self.push(X64TextInstruction::StoreSlot(pointer_slot));
+        for (index, value) in slot_values.iter().enumerate() {
+            let value = value.as_ref().expect("字段完整性已校验");
+            self.emit_operand_to_rdx(value)?;
+            self.push(X64TextInstruction::LoadSlot(pointer_slot));
+            self.push(X64TextInstruction::StoreRdxToRaxDisplacement(offsets[index] as i32));
+        }
+        self.push(X64TextInstruction::LoadSlot(pointer_slot));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
 
-        // 元素个数落槽后换算字节数：8（头部）+ 8 * count。
+    /// `FieldGet`：按冻结字段偏移读取一个 8 字节槽。
+    fn emit_field_get(&mut self, instruction: &MirInstruction, object: &Operand, field: compiler_types::FieldId) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let (layout_id, offset, width) = self.field_physical(field)?;
+        self.reference_layout(layout_id, "`FieldGet`")?;
+        if width != 8 {
+            return Err(format!(
+                "x86_64 lowering：`FieldGet` 字段 {field:?} 宽 {width} 字节，首期只开放 8 字节槽字段：function={}",
+                self.function.symbol
+            ));
+        }
+        if let Some(object_layout) = self.operand_layout_id(object)?
+            && object_layout != layout_id
+        {
+            return Err(format!(
+                "x86_64 lowering：`FieldGet` 字段 {field:?} 属于布局 {layout_id:?}，对象布局却是 {object_layout:?}：function={}",
+                self.function.symbol
+            ));
+        }
+        self.emit_operand_to_rax(object)?;
+        self.push(X64TextInstruction::LoadFromRaxDisplacement(offset as i32));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
+    /// `FieldSet`：按冻结字段偏移写入一个 8 字节槽（`mut self` 修改同一实例）。
+    fn emit_field_set(
+        &mut self,
+        instruction: &MirInstruction,
+        object: &Operand,
+        field: compiler_types::FieldId,
+        value: &Operand,
+    ) -> Result<()> {
+        if self.output_local(instruction)?.is_some() {
+            return Err(format!("x86_64 lowering：`FieldSet` 不得绑定结果槽：function={}", self.function.symbol));
+        }
+        let (layout_id, offset, width) = self.field_physical(field)?;
+        self.reference_layout(layout_id, "`FieldSet`")?;
+        if width != 8 {
+            return Err(format!(
+                "x86_64 lowering：`FieldSet` 字段 {field:?} 宽 {width} 字节，首期只开放 8 字节槽字段：function={}",
+                self.function.symbol
+            ));
+        }
+        if let Some(object_layout) = self.operand_layout_id(object)?
+            && object_layout != layout_id
+        {
+            return Err(format!(
+                "x86_64 lowering：`FieldSet` 字段 {field:?} 属于布局 {layout_id:?}，对象布局却是 {object_layout:?}：function={}",
+                self.function.symbol
+            ));
+        }
+        self.emit_operand_to_rdx(value)?;
+        self.emit_operand_to_rax(object)?;
+        self.push(X64TextInstruction::StoreRdxToRaxDisplacement(offset as i32));
+        Ok(())
+    }
+
+    /// `SumNew`：分配 `{u32 tag, i64 payload}` 载体并写入 variant。
+    fn emit_sum_new(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: compiler_types::NominalInstanceId,
+        variant: compiler_types::VariantId,
+        payload: Option<&Operand>,
+    ) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let (tag, has_payload) = self.sum_variant_tag(nominal, variant, "`SumNew`")?;
+        if payload.is_some() != has_payload {
+            return Err(format!(
+                "x86_64 lowering：`SumNew` variant {variant:?} 的载荷事实与冻结表示不一致（payload={} expected={has_payload}）：function={}",
+                payload.is_some(),
+                self.function.symbol
+            ));
+        }
+        let base = self.reserve_temps(4);
+        let pointer_slot = self.temp_slot(base, 0)?;
+        let size_slot = self.temp_slot(base, 1)?;
+        let auxiliary = self.temp_slot(base, 2)?;
+        let condition = self.temp_slot(base, 3)?;
+        self.push(X64TextInstruction::LoadI64(array_runtime::SUM_CARRIER_BYTES));
+        self.uses_failure_exit = true;
+        for item in array_runtime::object_allocate(self.allocator, size_slot, auxiliary, condition, self.failure_label) {
+            self.push(item);
+        }
+        self.push(X64TextInstruction::StoreSlot(pointer_slot));
+        self.push(X64TextInstruction::LoadI64(tag as i64));
+        self.push(X64TextInstruction::StoreSlot(condition));
+        self.push(X64TextInstruction::LoadSlotToRcx(condition));
+        self.push(X64TextInstruction::LoadSlot(pointer_slot));
+        self.push(X64TextInstruction::StoreDwordRcxToRax);
+        if let Some(payload) = payload {
+            self.emit_operand_to_rdx(payload)?;
+            self.push(X64TextInstruction::LoadSlot(pointer_slot));
+            self.push(X64TextInstruction::StoreRdxToRaxDisplacement(array_runtime::SUM_PAYLOAD_OFFSET));
+        }
+        self.push(X64TextInstruction::LoadSlot(pointer_slot));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
+    /// `SumVariantIs`：比较当前 tag 与冻结 discriminant。
+    fn emit_sum_variant_is(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: compiler_types::NominalInstanceId,
+        variant: compiler_types::VariantId,
+        object: &Operand,
+    ) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let (tag, _) = self.sum_variant_tag(nominal, variant, "`SumVariantIs`")?;
+        let base = self.reserve_temps(2);
+        let value_slot = self.temp_slot(base, 0)?;
+        let expected_slot = self.temp_slot(base, 1)?;
+        self.emit_operand_to_rax(object)?;
+        self.push(X64TextInstruction::LoadDwordFromRax);
+        self.push(X64TextInstruction::StoreSlot(value_slot));
+        self.push(X64TextInstruction::LoadI64(tag as i64));
+        self.push(X64TextInstruction::StoreSlot(expected_slot));
+        self.push(X64TextInstruction::LoadSlot(value_slot));
+        self.push(X64TextInstruction::LoadSlotToRcx(expected_slot));
+        self.push(X64TextInstruction::Operator(X86_64OperatorCode::I64CompareEqual));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
+    /// `SumPayloadGet`：按冻结偏移读取载荷。
+    fn emit_sum_payload_get(
+        &mut self,
+        instruction: &MirInstruction,
+        nominal: compiler_types::NominalInstanceId,
+        variant: compiler_types::VariantId,
+        object: &Operand,
+    ) -> Result<()> {
+        let local = self.require_output_local(instruction)?;
+        let (_, has_payload) = self.sum_variant_tag(nominal, variant, "`SumPayloadGet`")?;
+        if !has_payload {
+            return Err(format!(
+                "x86_64 lowering：`SumPayloadGet` 的 variant {variant:?} 没有载荷：function={}",
+                self.function.symbol
+            ));
+        }
+        self.emit_operand_to_rax(object)?;
+        self.push(X64TextInstruction::LoadFromRaxDisplacement(array_runtime::SUM_PAYLOAD_OFFSET));
+        self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
+    /// 分配 `length` 个元素槽；`rax` 返回数组指针。
+    ///
+    /// 字节数换算、分配实现、失败出口与头部写入全部来自 [`array_runtime`]：
+    /// guest lowering 不再自己算字节数、写数组头或直接调用 `HeapAlloc`。
+    /// 元素个数先求值进 `rax`；容量乘加溢出与分配失败都跳到本函数的定义失败出口。
+    fn emit_array_allocation(&mut self, length: &Operand) -> Result<()> {
+        let base = self.reserve_temps(4);
+        let slots = ArrayAllocationSlots {
+            count: self.temp_slot(base, 0)?,
+            bytes: self.temp_slot(base, 1)?,
+            auxiliary: self.temp_slot(base, 2)?,
+            condition: self.temp_slot(base, 3)?,
+        };
         self.emit_operand_to_rax(length)?;
-        self.push(X64TextInstruction::StoreSlot(count_slot));
-        self.push(X64TextInstruction::ShiftLeftRaxImmediate(3));
-        self.push(X64TextInstruction::AddRaxImmediate(ARRAY_HEADER_BYTES as i32));
-        self.push(X64TextInstruction::StoreSlot(size_slot));
+        self.uses_failure_exit = true;
+        for instruction in array_runtime::array_allocate(self.allocator, slots, self.failure_label) {
+            self.push(instruction);
+        }
+        Ok(())
+    }
 
-        // GetProcessHeap()：无参数，句柄在 `rax`。
-        self.push(X64TextInstruction::CallImport { module: KERNEL32_DLL.to_string(), field: GET_PROCESS_HEAP.to_string() });
-        self.push(X64TextInstruction::StoreSlot(heap_slot));
-
-        // HeapAlloc(hHeap, HEAP_ZERO_MEMORY, bytes)：rcx/rdx/r8（Win64）。
-        self.push(X64TextInstruction::LoadSlotToArg { slot: heap_slot, index: 0 });
-        self.push(X64TextInstruction::LoadSlotToArg { slot: size_slot, index: 2 });
-        self.push(X64TextInstruction::LoadI64(HEAP_ZERO_MEMORY));
-        self.push(X64TextInstruction::StoreSlot(size_slot));
-        self.push(X64TextInstruction::LoadSlotToArg { slot: size_slot, index: 1 });
-        self.push(X64TextInstruction::CallImport { module: KERNEL32_DLL.to_string(), field: HEAP_ALLOC.to_string() });
-
-        // 写头部元素个数：`[rax] = count`。
-        self.push(X64TextInstruction::LoadSlotToRcx(count_slot));
-        self.push(X64TextInstruction::StoreRcxToRax);
+    /// `array.get` / `array.set` 的唯一定义边界检查：下标必须落在 `[0, [0])`。
+    ///
+    /// 这是两个访问入口（MIR `ArrayGet/Set` 与 provider `array.get/set`）共同经过的
+    /// 检查；失败跳到本函数的数组失败出口，不把越界访问留成后续内存故障。
+    fn emit_array_bounds_check(&mut self, array: &Operand, index: &Operand) -> Result<()> {
+        let base = self.reserve_temps(3);
+        let array_slot = self.temp_slot(base, 0)?;
+        let index_slot = self.temp_slot(base, 1)?;
+        let condition = self.temp_slot(base, 2)?;
+        self.emit_operand_to_rax(array)?;
+        self.push(X64TextInstruction::StoreSlot(array_slot));
+        self.emit_operand_to_rax(index)?;
+        self.push(X64TextInstruction::StoreSlot(index_slot));
+        self.uses_failure_exit = true;
+        for instruction in array_runtime::array_bounds_check(array_slot, index_slot, condition, self.failure_label) {
+            self.push(instruction);
+        }
         Ok(())
     }
 
@@ -1097,6 +1854,7 @@ impl FunctionLowerer<'_> {
             }
             X64ArrayOperation::Get => {
                 let local = self.require_output_local(instruction)?;
+                self.emit_array_bounds_check(&arguments[0], &arguments[1])?;
                 self.emit_operand_to_rcx(&arguments[1])?;
                 self.emit_operand_to_rax(&arguments[0])?;
                 self.push(X64TextInstruction::LoadIndexedFromRaxRcx);
@@ -1106,6 +1864,7 @@ impl FunctionLowerer<'_> {
                 if self.output_local(instruction)?.is_some() {
                     return Err(format!("x86_64 lowering：数组 `set` 不得绑定结果槽：function={}", self.function.symbol));
                 }
+                self.emit_array_bounds_check(&arguments[0], &arguments[1])?;
                 self.emit_operand_to_rcx(&arguments[1])?;
                 self.emit_operand_to_rdx(&arguments[2])?;
                 self.emit_operand_to_rax(&arguments[0])?;
@@ -1143,20 +1902,17 @@ impl FunctionLowerer<'_> {
         }
     }
 
-    /// 语言层 `as` 的整数表示转换（`rax` 载体，结果回写 64 位帧槽）。
+    /// 语言层 `as` 的表示转换（整数走 `rax`，浮点走 `xmm0`，结果回写 64 位帧槽）。
     ///
     /// 帧槽不保证处于规范形态：常量以完整 `i64` 落入，32 位运算零扩展结果。
     /// 因此这里**不假设**高位正确，而是显式「按源位宽/符号性规范化 → 按目标位宽/符号性收窄」。
-    /// 浮点没有 x86-64 冻结载体，任何浮点参与一律结构化失败，禁止用整数位模式冒充。
+    /// 浮点参与走 [`Self::emit_float_cast_conversion`] 的 SSE2 单指令转换。
     fn emit_cast_conversion(&mut self, source: &SemanticType, target: &SemanticType) -> Result<()> {
         if source == target {
             return Ok(());
         }
         if source.is_float() || target.is_float() {
-            return Err(format!(
-                "x86_64 后端没有 `{source}` → `{target}` 的浮点载体：f32/f64 尚未进入 x86-64 冻结集，function={}",
-                self.function.symbol
-            ));
+            return self.emit_float_cast_conversion(source, target);
         }
         if matches!(target, SemanticType::Boolean) {
             self.push(X64TextInstruction::ToBool);
@@ -1189,6 +1945,80 @@ impl FunctionLowerer<'_> {
         Ok(())
     }
 
+    /// 浮点参与的 `as`：f32/f64 互转、整数 ↔ 浮点与显式截断语义。
+    ///
+    /// 整数侧先按自身符号性规范化到 64 位再转换；`u64` 与浮点互转缺少单指令合同
+    /// （`cvtsi2sd` 只按有符号解释），结构化失败，不用错误符号性冒充。
+    fn emit_float_cast_conversion(&mut self, source: &SemanticType, target: &SemanticType) -> Result<()> {
+        let source_float = matches!(source, SemanticType::Float32 | SemanticType::Float64);
+        let target_float = matches!(target, SemanticType::Float32 | SemanticType::Float64);
+        let target_single = matches!(target, SemanticType::Float32);
+        if source_float {
+            // 源位模式已由 `emit_operand_to_rax` 搬进 `rax`；SSE 转换统一从 `xmm0` 取源。
+            self.push(X64TextInstruction::LoadRaxToXmm0 { single: matches!(source, SemanticType::Float32) });
+        }
+        if source_float && target_float {
+            return match (source, target) {
+                (SemanticType::Float32, SemanticType::Float64) => {
+                    self.push(X64TextInstruction::CastFloat(X64FloatCast::F32ToF64));
+                    Ok(())
+                }
+                (SemanticType::Float64, SemanticType::Float32) => {
+                    self.push(X64TextInstruction::CastFloat(X64FloatCast::F64ToF32));
+                    Ok(())
+                }
+                _ => Ok(()),
+            };
+        }
+        if source_float {
+            let target_shape = x64_int_shape(target).ok_or_else(|| {
+                format!(
+                    "x86_64 后端没有 `{source}` → `{target}` 的确定转换语义：浮点只转换为整数族，function={}",
+                    self.function.symbol
+                )
+            })?;
+            if target_shape.bits == 64 && !target_shape.signed {
+                return Err(format!(
+                    "x86_64 后端不支持 `{source}` → `{target}`：`cvttsd2si` 只产生有符号 64 位值，`u64` 目标缺少饱和/检查合同，function={}",
+                    self.function.symbol
+                ));
+            }
+            self.push(X64TextInstruction::CastFloat(if matches!(source, SemanticType::Float32) {
+                X64FloatCast::F32ToI64
+            }
+            else {
+                X64FloatCast::F64ToI64
+            }));
+            if target_shape.bits < 64 {
+                let step = narrow_normalize(target_shape.bits, target_shape.signed).ok_or_else(|| {
+                    format!("x86_64 后端没有位宽 {} 的整数载体：function={}", target_shape.bits, self.function.symbol)
+                })?;
+                self.push(step);
+            }
+            return Ok(());
+        }
+        let source_shape = x64_int_shape(source).ok_or_else(|| {
+            format!(
+                "x86_64 后端没有 `{source}` → `{target}` 的确定转换语义：浮点目标只接受整数族源，function={}",
+                self.function.symbol
+            )
+        })?;
+        if source_shape.bits == 64 && !source_shape.signed {
+            return Err(format!(
+                "x86_64 后端不支持 `{source}` → `{target}`：`cvtsi2sd` 只按有符号解释 `rax`，`u64` 源缺少无符号转换合同，function={}",
+                self.function.symbol
+            ));
+        }
+        if source_shape.bits < 64 {
+            let step = narrow_normalize(source_shape.bits, source_shape.signed).ok_or_else(|| {
+                format!("x86_64 后端没有位宽 {} 的整数载体：function={}", source_shape.bits, self.function.symbol)
+            })?;
+            self.push(step);
+        }
+        self.push(X64TextInstruction::CastFloat(if target_single { X64FloatCast::I64ToF32 } else { X64FloatCast::I64ToF64 }));
+        Ok(())
+    }
+
     fn output_local(&self, instruction: &MirInstruction) -> Result<Option<u16>> {
         match self.slots.instruction_output(instruction) {
             None => Ok(None),
@@ -1207,15 +2037,44 @@ impl FunctionLowerer<'_> {
             .get(&value)
             .ok_or_else(|| format!("x86_64 lowering：SSA 值 {:?} 缺少规划的局部槽: function={}", value, self.function.symbol))?;
         if let Some(ty) = self.slots.local_types.get(local as usize)
-            && !is_local_carrier_type(ty)
+            && !self.is_local_carrier(ty)
         {
-            return Err(format!("x86_64 lowering：SSA 值 {:?} 的类型 `{ty}` 没有 x86_64 标量载体: function={}", value, self.function.symbol));
+            return Err(format!("x86_64 lowering：SSA 值 {:?} 的类型 `{ty}` 没有 x86_64 槽载体: function={}", value, self.function.symbol));
         }
         Ok(local)
+    }
+
+    /// 帧槽可承载的类型。
+    ///
+    /// 在标量/数组/文本之外，x86-64 引用对象、unite（sum）与引用可空都是 8 字节
+    /// 指针载体；值存储聚合没有内联槽合同，仍在这里结构化失败。
+    fn is_local_carrier(&self, ty: &SemanticType) -> bool {
+        if is_local_carrier_type(ty) {
+            return true;
+        }
+        let plan = &self.submission.backend_plan;
+        match ty {
+            SemanticType::Nominal { .. } | SemanticType::Apply(..) => {
+                if let Some(layout) = plan.aggregate_layouts().frozen_layout(ty) {
+                    return layout.storage.is_reference();
+                }
+                // 闭合 unite 实例：物理载体是 sum 对象指针（`{u32 tag, i64 payload}`）。
+                plan.sum_layout_by_semantic_type().contains_key(ty)
+                    || plan.sum_layout_by_semantic_type().contains_key(&ty.contract_key())
+            }
+            SemanticType::Union(_) => true,
+            SemanticType::Nullable(inner) => {
+                self.is_local_carrier(inner) || matches!(**inner, SemanticType::Array(_) | SemanticType::Utf8 | SemanticType::Utf16)
+            }
+            _ => false,
+        }
     }
 }
 
 /// 可作为 native 8 字节标量槽的类型。
+///
+/// 浮点与整数共用 8 字节槽，但**载体语义不同**：整数读写走 `rax`，浮点读写走
+/// `xmm` 的 `movsd/movss`；槽里保存的是位模式，`f32` 有效位在低 32 位。
 fn is_slot_type(ty: &SemanticType) -> bool {
     matches!(
         ty,
@@ -1225,7 +2084,26 @@ fn is_slot_type(ty: &SemanticType) -> bool {
             | SemanticType::Integer16 { .. }
             | SemanticType::Integer32 { .. }
             | SemanticType::Integer64 { .. }
+            | SemanticType::Float32
+            | SemanticType::Float64
     )
+}
+
+/// 数组元素的结构候选：标量，或本 lane 以 8 字节指针承载的引用/聚合/sum/数组。
+///
+/// 这里只做「形状可能」的冻结前筛查；值存储聚合等需要计划才能判定的类型
+/// 由调用点的 [`FunctionLowerer::is_local_carrier`] 再裁决，避免把内联值
+/// 当成指针搬运。
+fn is_array_element_carrier_candidate(ty: &SemanticType) -> bool {
+    is_slot_type(ty)
+        || matches!(
+            ty,
+            SemanticType::Nominal { .. }
+                | SemanticType::Apply(..)
+                | SemanticType::Union(_)
+                | SemanticType::Nullable(_)
+                | SemanticType::Array(_)
+        )
 }
 
 /// 帧槽可承载的类型：标量值、堆数组指针（`[T]` 的物理载体是 8 字节指针），
@@ -1289,9 +2167,9 @@ fn is_exit_code_type(ty: &SemanticType) -> bool {
 
 /// 唯一 x86-64 operator 配方表。未知名字返回 `None`。
 ///
-/// 与 JVM/CLR 使用同一组 provider 名（`integer.*` / `long.*`），便于 std 按目标替换
-/// 实现而不改调用点。未实现的 provider（浮点、无符号大于比较）返回 `None`，
-/// 计划落 `Unfrozen`，由 emit 结构化失败，不猜编码。
+/// 与 JVM/CLR 使用同一组 provider 名（`integer.*` / `long.*` / `double.*` / `float.*`），
+/// 便于 std 按目标替换实现而不改调用点。整数、浮点与无符号比较都已冻结；未实现的
+/// provider 返回 `None`，计划落 `Unfrozen`，由 emit 结构化失败，不猜编码。
 pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan<X86_64OperatorCode>> {
     let freeze = |code: X86_64OperatorCode| TargetOperatorPlan {
         arity: code.arity(),
@@ -1345,6 +2223,30 @@ pub(crate) fn freeze_x86_64_operator_binding(operator_name: &str) -> Option<Targ
         "long.compare_greater_than" => X86_64OperatorCode::I64CompareGreaterThan,
         "long.compare_greater_or_equal" => X86_64OperatorCode::I64CompareGreaterOrEqual,
         "long.compare_less_than_unsigned" => X86_64OperatorCode::I64CompareLessThanUnsigned,
+        // 64 位浮点：`xmm0/xmm1` 载体，结果留在 `xmm0`；比较归一为 0/1。
+        "double.add" => X86_64OperatorCode::F64Add,
+        "double.subtract" => X86_64OperatorCode::F64Subtract,
+        "double.multiply" => X86_64OperatorCode::F64Multiply,
+        "double.divide" => X86_64OperatorCode::F64Divide,
+        "double.negate" => X86_64OperatorCode::F64Negate,
+        "double.compare_equal" => X86_64OperatorCode::F64CompareEqual,
+        "double.compare_not_equal" => X86_64OperatorCode::F64CompareNotEqual,
+        "double.compare_less_than" => X86_64OperatorCode::F64CompareLessThan,
+        "double.compare_less_or_equal" => X86_64OperatorCode::F64CompareLessOrEqual,
+        "double.compare_greater_than" => X86_64OperatorCode::F64CompareGreaterThan,
+        "double.compare_greater_or_equal" => X86_64OperatorCode::F64CompareGreaterOrEqual,
+        // 32 位浮点：与 `f64` 同构，宽度由 `movss`/`addss` 族承载。
+        "float.add" => X86_64OperatorCode::F32Add,
+        "float.subtract" => X86_64OperatorCode::F32Subtract,
+        "float.multiply" => X86_64OperatorCode::F32Multiply,
+        "float.divide" => X86_64OperatorCode::F32Divide,
+        "float.negate" => X86_64OperatorCode::F32Negate,
+        "float.compare_equal" => X86_64OperatorCode::F32CompareEqual,
+        "float.compare_not_equal" => X86_64OperatorCode::F32CompareNotEqual,
+        "float.compare_less_than" => X86_64OperatorCode::F32CompareLessThan,
+        "float.compare_less_or_equal" => X86_64OperatorCode::F32CompareLessOrEqual,
+        "float.compare_greater_than" => X86_64OperatorCode::F32CompareGreaterThan,
+        "float.compare_greater_or_equal" => X86_64OperatorCode::F32CompareGreaterOrEqual,
         _ => return None,
     }))
 }
@@ -1458,9 +2360,9 @@ fn freeze_x86_64_array_operator(
                 "x86_64 数组 operator `{mnemonic}` 的参数 {index} 类型 `{ty}` 不是堆数组 `[T]`: function={symbol} instance={instance:?}"
             ));
         };
-        if !is_slot_type(element) {
+        if !is_array_element_carrier_candidate(element) {
             return Err(format!(
-                "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
+                "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 不在首批开放的 8 字节元素载体白名单内: function={symbol} instance={instance:?}"
             ));
         }
         Ok(element)
@@ -1519,9 +2421,9 @@ fn require_array_return(
             "x86_64 数组 operator `{mnemonic}` 的返回类型 `{return_type}` 不是堆数组 `[T]`: function={symbol} instance={instance:?}"
         ));
     };
-    if !is_slot_type(element) {
+    if !is_array_element_carrier_candidate(element) {
         return Err(format!(
-            "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
+            "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 不在首批开放的 8 字节元素载体白名单内: function={symbol} instance={instance:?}"
         ));
     }
     Ok(())

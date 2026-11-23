@@ -229,9 +229,32 @@ pub(super) fn emit_load_from_rax(text: &mut Vec<u8>) {
     text.extend_from_slice(&[0x48, 0x8B, 0x00]);
 }
 
+/// `mov rax, [rax + disp32]`：带位移的机器字读取（数组头部的分配字节数）。
+pub(super) fn emit_load_from_rax_displacement(text: &mut Vec<u8>, displacement: i32) {
+    text.extend_from_slice(&[0x48, 0x8B, 0x80]);
+    text.extend_from_slice(&displacement.to_le_bytes());
+}
+
 /// `mov [rax], rcx`。
 pub(super) fn emit_store_rcx_to_rax(text: &mut Vec<u8>) {
     text.extend_from_slice(&[0x48, 0x89, 0x08]);
+}
+
+/// `mov [rax + disp32], rcx`：带位移的机器字写入（数组头部的分配字节数）。
+pub(super) fn emit_store_rcx_to_rax_displacement(text: &mut Vec<u8>, displacement: i32) {
+    text.extend_from_slice(&[0x48, 0x89, 0x88]);
+    text.extend_from_slice(&displacement.to_le_bytes());
+}
+
+/// `mov [rax + disp32], rdx`：对象字段 / sum 载荷写入。
+pub(super) fn emit_store_rdx_to_rax_displacement(text: &mut Vec<u8>, displacement: i32) {
+    text.extend_from_slice(&[0x48, 0x89, 0x90]);
+    text.extend_from_slice(&displacement.to_le_bytes());
+}
+
+/// `mov eax, [rax]`：读取 32 位 tag 并零扩展。
+pub(super) fn emit_load_dword_from_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x8B, 0x00]);
 }
 
 /// `mov [rcx], rax`。
@@ -249,14 +272,14 @@ pub(super) fn emit_shift_left_rax_imm8(text: &mut Vec<u8>, bits: u8) {
     text.extend_from_slice(&[0x48, 0xC1, 0xE0, bits]);
 }
 
-/// `mov rax, [rax + rcx*8 + 8]`：数组元素读取（8 字节槽、头部 8 字节）。
+/// `mov rax, [rax + rcx*8 + 16]`：数组元素读取（8 字节槽、16 字节头部）。
 pub(super) fn emit_load_indexed_from_rax_rcx(text: &mut Vec<u8>) {
-    text.extend_from_slice(&[0x48, 0x8B, 0x44, 0xC8, 0x08]);
+    text.extend_from_slice(&[0x48, 0x8B, 0x44, 0xC8, 0x10]);
 }
 
-/// `mov [rax + rcx*8 + 8], rdx`：数组元素写入（8 字节槽、头部 8 字节）。
+/// `mov [rax + rcx*8 + 16], rdx`：数组元素写入（8 字节槽、16 字节头部）。
 pub(super) fn emit_store_indexed_rdx_to_rax_rcx(text: &mut Vec<u8>) {
-    text.extend_from_slice(&[0x48, 0x89, 0x54, 0xC8, 0x08]);
+    text.extend_from_slice(&[0x48, 0x89, 0x54, 0xC8, 0x10]);
 }
 
 /// `mov dword ptr [rax], imm32`。
@@ -291,6 +314,24 @@ pub(super) fn emit_syscall_write(text: &mut Vec<u8>) {
 /// Linux `exit(2)`：退出码取自 `rax`（前置 `mov rdi, rax` 由调用方发射）。
 pub(super) fn emit_syscall_exit(text: &mut Vec<u8>) {
     text.extend_from_slice(&[0xB8, 0x3C, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+}
+
+/// Linux `mmap(NULL, len, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)`。
+///
+/// 长度取自 `rax`；返回值（地址或负 errno）写回 `rax`。匿名映射天然按页对齐且
+/// 清零，满足数组元素槽的零初始化与 8 字节对齐要求。
+pub(super) fn emit_syscall_mmap(text: &mut Vec<u8>) {
+    // mov rsi, rax；xor edi, edi；mov edx, 3；mov r10d, 0x22；
+    text.extend_from_slice(&[0x48, 0x89, 0xC6, 0x31, 0xFF, 0xBA, 0x03, 0x00, 0x00, 0x00]);
+    text.extend_from_slice(&[0x41, 0xBA, 0x22, 0x00, 0x00, 0x00, 0x49, 0xC7, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF]);
+    // xor r9d, r9d；mov eax, 9（SYS_mmap）；syscall。
+    text.extend_from_slice(&[0x45, 0x31, 0xC9, 0xB8, 0x09, 0x00, 0x00, 0x00, 0x0F, 0x05]);
+}
+
+/// Linux `munmap(ptr, len)`：地址取自 `rax`、长度取自 `rcx`；返回值忽略。
+pub(super) fn emit_syscall_munmap(text: &mut Vec<u8>) {
+    // mov rdi, rax；mov rsi, rcx；mov eax, 11（SYS_munmap）；syscall。
+    text.extend_from_slice(&[0x48, 0x89, 0xC7, 0x48, 0x89, 0xCE, 0xB8, 0x0B, 0x00, 0x00, 0x00, 0x0F, 0x05]);
 }
 
 /// `mov rdi, rax`。
@@ -359,6 +400,30 @@ pub(super) fn encode_operator(text: &mut Vec<u8>, code: X86_64OperatorCode) {
         // `setb` = 无符号小于（CF=1）。
         X86_64OperatorCode::I64CompareLessThanUnsigned => encode_compare_i64(text, 0x92),
         X86_64OperatorCode::I32CompareLessThanUnsigned => encode_compare_i32(text, 0x92),
+        // 浮点算术：操作数在 xmm0/xmm1，结果留在 xmm0。
+        X86_64OperatorCode::F64Add => text.extend_from_slice(&[0xF2, 0x0F, 0x58, 0xC1]),
+        X86_64OperatorCode::F64Subtract => text.extend_from_slice(&[0xF2, 0x0F, 0x5C, 0xC1]),
+        X86_64OperatorCode::F64Multiply => text.extend_from_slice(&[0xF2, 0x0F, 0x59, 0xC1]),
+        X86_64OperatorCode::F64Divide => text.extend_from_slice(&[0xF2, 0x0F, 0x5E, 0xC1]),
+        X86_64OperatorCode::F64Negate => encode_float_negate(text, false),
+        X86_64OperatorCode::F32Add => text.extend_from_slice(&[0xF3, 0x0F, 0x58, 0xC1]),
+        X86_64OperatorCode::F32Subtract => text.extend_from_slice(&[0xF3, 0x0F, 0x5C, 0xC1]),
+        X86_64OperatorCode::F32Multiply => text.extend_from_slice(&[0xF3, 0x0F, 0x59, 0xC1]),
+        X86_64OperatorCode::F32Divide => text.extend_from_slice(&[0xF3, 0x0F, 0x5E, 0xC1]),
+        X86_64OperatorCode::F32Negate => encode_float_negate(text, true),
+        // 浮点比较：`ucomis{s,d}` 后按 IEEE 无序语义归一为 0/1。
+        X86_64OperatorCode::F64CompareEqual => encode_float_compare(text, false, FloatCompareKind::Equal),
+        X86_64OperatorCode::F64CompareNotEqual => encode_float_compare(text, false, FloatCompareKind::NotEqual),
+        X86_64OperatorCode::F64CompareLessThan => encode_float_compare(text, false, FloatCompareKind::LessThan),
+        X86_64OperatorCode::F64CompareLessOrEqual => encode_float_compare(text, false, FloatCompareKind::LessOrEqual),
+        X86_64OperatorCode::F64CompareGreaterThan => encode_float_compare(text, false, FloatCompareKind::GreaterThan),
+        X86_64OperatorCode::F64CompareGreaterOrEqual => encode_float_compare(text, false, FloatCompareKind::GreaterOrEqual),
+        X86_64OperatorCode::F32CompareEqual => encode_float_compare(text, true, FloatCompareKind::Equal),
+        X86_64OperatorCode::F32CompareNotEqual => encode_float_compare(text, true, FloatCompareKind::NotEqual),
+        X86_64OperatorCode::F32CompareLessThan => encode_float_compare(text, true, FloatCompareKind::LessThan),
+        X86_64OperatorCode::F32CompareLessOrEqual => encode_float_compare(text, true, FloatCompareKind::LessOrEqual),
+        X86_64OperatorCode::F32CompareGreaterThan => encode_float_compare(text, true, FloatCompareKind::GreaterThan),
+        X86_64OperatorCode::F32CompareGreaterOrEqual => encode_float_compare(text, true, FloatCompareKind::GreaterOrEqual),
     }
 }
 
@@ -374,4 +439,129 @@ fn encode_compare_i32(text: &mut Vec<u8>, setcc: u8) {
     text.extend_from_slice(&[0x39, 0xC8]);
     text.extend_from_slice(&[0x0F, setcc, 0xC0]);
     text.extend_from_slice(&[0x0F, 0xB6, 0xC0]);
+}
+
+/// `[rbp + disp32]` 的 ModRM 字节（`mod=10`、`rm=101`，`reg` 为宽度选择的寄存器）。
+fn frame_modrm(register: u8) -> u8 {
+    0x85 | (register << 3)
+}
+
+/// `movsd/movss xmm{register}, [rbp - 8 * (slot + 1)]`。
+pub(super) fn emit_float_from_frame(text: &mut Vec<u8>, register: u8, slot: u16, single: bool) {
+    let opcode = if single { [0xF3, 0x0F, 0x10, frame_modrm(register)] } else { [0xF2, 0x0F, 0x10, frame_modrm(register)] };
+    text.extend_from_slice(&opcode);
+    text.extend_from_slice(&frame_disp(slot).to_le_bytes());
+}
+
+/// `movsd/movss [rbp - 8 * (slot + 1)], xmm{register}`。
+pub(super) fn emit_float_to_frame(text: &mut Vec<u8>, register: u8, slot: u16, single: bool) {
+    let opcode = if single { [0xF3, 0x0F, 0x11, frame_modrm(register)] } else { [0xF2, 0x0F, 0x11, frame_modrm(register)] };
+    text.extend_from_slice(&opcode);
+    text.extend_from_slice(&frame_disp(slot).to_le_bytes());
+}
+
+/// 浮点表示转换编码（源/结果寄存器由变体固定）。
+pub(super) fn encode_float_cast(text: &mut Vec<u8>, cast: super::X64FloatCast) {
+    use super::X64FloatCast;
+    match cast {
+        // cvtsi2sd/cvtsi2ss xmm0, rax
+        X64FloatCast::I64ToF64 => text.extend_from_slice(&[0xF2, 0x48, 0x0F, 0x2A, 0xC0]),
+        X64FloatCast::I64ToF32 => text.extend_from_slice(&[0xF3, 0x48, 0x0F, 0x2A, 0xC0]),
+        // cvttsd2si/cvttss2si rax, xmm0
+        X64FloatCast::F64ToI64 => text.extend_from_slice(&[0xF2, 0x48, 0x0F, 0x2C, 0xC0]),
+        X64FloatCast::F32ToI64 => text.extend_from_slice(&[0xF3, 0x48, 0x0F, 0x2C, 0xC0]),
+        // cvtss2sd/cvtsd2ss xmm0, xmm0
+        X64FloatCast::F32ToF64 => text.extend_from_slice(&[0xF3, 0x0F, 0x5A, 0xC0]),
+        X64FloatCast::F64ToF32 => text.extend_from_slice(&[0xF2, 0x0F, 0x5A, 0xC0]),
+    }
+}
+
+/// `movq rax, xmm0`。
+fn emit_movq_rax_from_xmm0(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x66, 0x48, 0x0F, 0x7E, 0xC0]);
+}
+
+/// `movq xmm0, rax`。
+fn emit_movq_xmm0_from_rax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x66, 0x48, 0x0F, 0x6E, 0xC0]);
+}
+
+/// 把 `rax` 中的浮点位模式搬进 `xmm0`。
+pub(super) fn emit_rax_bits_to_xmm0(text: &mut Vec<u8>, single: bool) {
+    if single {
+        emit_movd_xmm0_from_eax(text);
+    }
+    else {
+        emit_movq_xmm0_from_rax(text);
+    }
+}
+
+/// `movd eax, xmm0`。
+fn emit_movd_eax_from_xmm0(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x66, 0x0F, 0x7E, 0xC0]);
+}
+
+/// `movd xmm0, eax`。
+fn emit_movd_xmm0_from_eax(text: &mut Vec<u8>) {
+    text.extend_from_slice(&[0x66, 0x0F, 0x6E, 0xC0]);
+}
+
+/// 浮点取负：翻转符号位，保留 `-0.0` 与 NaN 载荷（单/双精度各自位宽）。
+fn encode_float_negate(text: &mut Vec<u8>, single: bool) {
+    if single {
+        emit_movd_eax_from_xmm0(text);
+        // `btc eax, 31`
+        text.extend_from_slice(&[0x0F, 0xBA, 0xF8, 0x1F]);
+        emit_movd_xmm0_from_eax(text);
+    }
+    else {
+        emit_movq_rax_from_xmm0(text);
+        // `btc rax, 63`
+        text.extend_from_slice(&[0x48, 0x0F, 0xBA, 0xF8, 0x3F]);
+        emit_movq_xmm0_from_rax(text);
+    }
+}
+
+/// 浮点比较后的布尔归一：`setcc al` + 额外谓词 + `movzx eax, al`，结果 0/1。
+fn encode_float_compare(text: &mut Vec<u8>, single: bool, kind: FloatCompareKind) {
+    text.extend_from_slice(if single {
+        &[0x0F, 0x2E, 0xC1][..]
+    }
+    else {
+        &[0x66, 0x0F, 0x2E, 0xC1][..]
+    });
+    match kind {
+        // 相等：`sete al && setnp cl`。
+        FloatCompareKind::Equal => {
+            text.extend_from_slice(&[0x0F, 0x94, 0xC0, 0x0F, 0x9B, 0xC1, 0x20, 0xC8]);
+        }
+        // 不等：`setne al || setp cl`。
+        FloatCompareKind::NotEqual => {
+            text.extend_from_slice(&[0x0F, 0x95, 0xC0, 0x0F, 0x9A, 0xC1, 0x08, 0xC8]);
+        }
+        // 小于：`setb al && setnp cl`。
+        FloatCompareKind::LessThan => {
+            text.extend_from_slice(&[0x0F, 0x92, 0xC0, 0x0F, 0x9B, 0xC1, 0x20, 0xC8]);
+        }
+        // 小于等于：`setbe al && setnp cl`。
+        FloatCompareKind::LessOrEqual => {
+            text.extend_from_slice(&[0x0F, 0x96, 0xC0, 0x0F, 0x9B, 0xC1, 0x20, 0xC8]);
+        }
+        // 大于：`seta al`（无序时 `CF=1` 已为假）。
+        FloatCompareKind::GreaterThan => text.extend_from_slice(&[0x0F, 0x97, 0xC0]),
+        // 大于等于：`setae al`（无序时 `CF=1` 已为假）。
+        FloatCompareKind::GreaterOrEqual => text.extend_from_slice(&[0x0F, 0x93, 0xC0]),
+    }
+    text.extend_from_slice(&[0x0F, 0xB6, 0xC0]);
+}
+
+/// 浮点比较的谓词族。
+#[derive(Debug, Clone, Copy)]
+enum FloatCompareKind {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
 }

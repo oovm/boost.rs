@@ -167,6 +167,11 @@ impl TargetExecutionPlan {
     /// 这里不做语义推断，只把已冻结的目标事实收进计划；缺少的事实由适配器
     /// 在其自己的验证门里失败。
     pub fn from_prepared_input(input: TargetPlanInput) -> Self {
+        // 布局定义表同时携带 `SemanticType → LayoutId` 索引：后端与共享 lowering
+        // 只拿到 `aggregate_layouts()` 时也必须能结算闭合 `Apply`，不允许再有一份
+        // 只在部分调用点可见的旁路索引。
+        let mut aggregate_layouts = input.aggregate_layouts;
+        aggregate_layouts.layout_by_semantic_type = input.aggregate_layout_by_semantic_type.clone();
         Self {
             module_name: input.module_name,
             fragment_id: input.fragment_id,
@@ -178,7 +183,7 @@ impl TargetExecutionPlan {
             external_import_links: input.external_import_links,
             external_call_edges: input.external_call_edges,
             internal_call_edges: input.internal_call_edges,
-            aggregate_layouts: input.aggregate_layouts,
+            aggregate_layouts,
             aggregate_layout_by_nominal: input.aggregate_layout_by_nominal,
             aggregate_layout_by_field: input.aggregate_layout_by_field,
             field_type_layouts: input.field_type_layouts,
@@ -301,7 +306,9 @@ impl TargetExecutionPlan {
         if !self.aggregate_layouts.layouts.iter().any(|item| item.id == layout_id) {
             self.aggregate_layouts.layouts.push(layout);
         }
-        self.aggregate_layout_by_semantic_type.insert(ty, layout_id);
+        self.aggregate_layout_by_semantic_type.insert(ty.clone(), layout_id);
+        // 布局定义表自带的索引是后端唯一可见的结算入口，测试夹具也必须同步。
+        self.aggregate_layouts.layout_by_semantic_type.insert(ty, layout_id);
         self
     }
 
