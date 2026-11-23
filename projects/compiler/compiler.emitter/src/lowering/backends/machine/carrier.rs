@@ -44,6 +44,12 @@ pub enum HostValueKind {
     Bool,
     /// 镜像字符串描述符 → 宿主字符串（UTF-8 字节长度）。
     Utf8,
+    /// `[i64]` 堆数组 → 宿主序列（逐元素 `bigint`）。
+    ///
+    /// guest 返回值归语言值图（native lane 没有回收通道）：桥在调用返回后按
+    /// 数组头 `[0]` 逐元素复制到宿主序列，**不释放** guest 数组。返回数组若与
+    /// 某个实参镜像别名，桥先完成复制、再释放镜像副本，因此宿主看到的是稳定副本。
+    Int64Array,
     /// 无返回值（宿主得到 `undefined` / `None`）。
     Unit,
 }
@@ -75,6 +81,13 @@ pub enum HostParameterKind {
     Int64,
     /// `[i64]` 宿主数组（逐元素读取，调用后逐元素写回）。
     Int64Array,
+    /// `utf8` 文本实参：宿主字符串 → 镜像侧 `Utf8Text` 对象。
+    ///
+    /// 桥按 UTF-8 字节构造 `{ [0] = _repr 数组 }`（数组每字节占一个 8 字节槽，
+    /// 与编译期文本常量同一载体），字节内容复制后与宿主字符串互不共享。对象与
+    /// 字节数组都是本次调用的**桥侧临时副本**，返回前释放；guest 把它们保存到
+    /// 调用之外属于违反宿主边界合同。
+    Utf8,
 }
 
 /// 一个模块级属性导出：宿主读取 `<module>.<name>` 时得到 `symbol` 的返回值。
@@ -179,6 +192,16 @@ pub fn any_returns_utf8(methods: &[HostMethod]) -> bool {
     methods.iter().any(|method| method.returns == HostValueKind::Utf8)
 }
 
+/// 任一导出是否返回 `[i64]` 堆数组（决定宿主序列构造导入）。
+pub fn any_returns_int64_array(methods: &[HostMethod]) -> bool {
+    methods.iter().any(|method| method.returns == HostValueKind::Int64Array)
+}
+
+/// 任一导出是否接收 `utf8` 文本实参（决定宿主字符串读取导入）。
+pub fn any_takes_utf8(methods: &[HostMethod]) -> bool {
+    methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Utf8)))
+}
+
 fn python_wrapper_name(method: &str) -> String {
     format!("__nyar_py_wrap_{method}")
 }
@@ -232,9 +255,18 @@ pub fn python_module_data(
         method_name_offsets.push(data.len() as u32);
         push_cstring(&mut data, &method.name);
         // `PyArg_ParseTuple` 的 `n` 是 `Py_ssize_t`（两侧平台都是 8 字节有符号），
-        // 与残差的 `i64` 载体一一对应；`:<name>` 让宿主错误信息带上方法名。
-        // CPython 边界由 `frozen_host_methods` 拒绝数组实参，这里只会看到 `Int64`。
-        let format = format!("{}:{}", "n".repeat(method.parameters.len()), method.name);
+        // 与残差的 `i64` 载体一一对应；`s#` 接收 UTF-8 字符串并另写入字节长度
+        // （`Py_ssize_t`），保住内嵌 NUL 与原始字节。`:<name>` 让宿主错误信息带上
+        // 方法名。CPython 边界由 `frozen_host_methods` 拒绝数组实参/返回。
+        let mut conversions = String::new();
+        for kind in &method.parameters {
+            match kind {
+                HostParameterKind::Int64 => conversions.push('n'),
+                HostParameterKind::Utf8 => conversions.push_str("s#"),
+                HostParameterKind::Int64Array => unreachable!("CPython 边界拒绝数组实参"),
+            }
+        }
+        let format = format!("{conversions}:{}", method.name);
         format_offsets.push(data.len() as u32);
         push_cstring(&mut data, &format);
     }
@@ -284,13 +316,87 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     const GATHER_LOOP_LABEL: u32 = 1;
     const GATHER_END_LABEL: u32 = 2;
     const ALLOC_FAIL_LABEL: u32 = 3;
-    let argument_slot = |index: usize| FIRST_ARGUMENT_SLOT + index as u16;
+    // 文本实参编组失败：先释放已建立的临时副本，再按 SystemError 通道返回 NULL。
+    const PARAM_ALLOC_FAIL_LABEL: u32 = 4;
+    // 每个形参占用的转换槽：`n` 一个（Py_ssize_t），`s#` 两个（字节指针 + 长度）。
+    let mut parameter_slots = Vec::with_capacity(method.parameters.len());
+    let mut next_slot = FIRST_ARGUMENT_SLOT;
+    for kind in &method.parameters {
+        parameter_slots.push(next_slot);
+        next_slot += match kind {
+            HostParameterKind::Int64 => 1,
+            HostParameterKind::Utf8 => 2,
+            HostParameterKind::Int64Array => 1,
+        };
+    }
+    let text_param_count = method.parameters.iter().filter(|kind| matches!(kind, HostParameterKind::Utf8)).count();
+    let text_param_ordinal =
+        |index: usize| method.parameters[..index].iter().filter(|kind| matches!(kind, HostParameterKind::Utf8)).count() as u16;
+    let parameter_text_base = next_slot;
+    let text_param_slot = |index: usize, offset: u16| parameter_text_base + 16 * text_param_ordinal(index) + offset;
+    const PP_ARRAY: u16 = 0;
+    const PP_ARRAY_COUNT: u16 = 1;
+    const PP_ARRAY_BYTES: u16 = 2;
+    const PP_ARRAY_AUX: u16 = 3;
+    const PP_ARRAY_COND: u16 = 4;
+    const PP_ARRAY_FLAG: u16 = 5;
+    const PP_OBJECT: u16 = 6;
+    const PP_OBJECT_COUNT: u16 = 7;
+    const PP_OBJECT_BYTES: u16 = 8;
+    const PP_OBJECT_AUX: u16 = 9;
+    const PP_OBJECT_COND: u16 = 10;
+    const PP_OBJECT_FLAG: u16 = 11;
+    const PP_INDEX: u16 = 12;
+    const PP_ELEMENT: u16 = 13;
+    const PP_CURSOR: u16 = 14;
     // 文本 gather 帧槽：数组指针、计数、分配字节数、分配辅助、条件、暂存缓冲、
     // 游标、下标、字节周转。
-    let text_slot_base = FIRST_ARGUMENT_SLOT + method.parameters.len() as u16;
+    let text_slot_base = parameter_text_base + 16 * text_param_count as u16;
     let text_slot = |offset: u16| text_slot_base + offset;
     let allocator = array_runtime::ArrayAllocator::for_platform(platform);
-    let slot_count = text_slot_base + if method.returns == HostValueKind::Utf8 { 10 } else { 0 };
+    // 编组好的宿主对象先落独立槽：释放文本临时副本后再统一返回。
+    let result_slot = text_slot_base + if method.returns == HostValueKind::Utf8 { 10 } else { 0 };
+    let slot_count = result_slot + 1;
+    let emit_free_text_temporaries = |instructions: &mut Vec<Lir>, seed: u32| {
+        for (index, kind) in method.parameters.iter().enumerate() {
+            if !matches!(kind, HostParameterKind::Utf8) {
+                continue;
+            }
+            let ordinal = text_param_ordinal(index);
+            let allocations = [
+                (
+                    text_param_slot(index, PP_ARRAY_FLAG),
+                    text_param_slot(index, PP_ARRAY),
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, PP_ARRAY_COUNT),
+                        bytes: text_param_slot(index, PP_ARRAY_BYTES),
+                        auxiliary: text_param_slot(index, PP_ARRAY_AUX),
+                        condition: text_param_slot(index, PP_ARRAY_COND),
+                    },
+                ),
+                (
+                    text_param_slot(index, PP_OBJECT_FLAG),
+                    text_param_slot(index, PP_OBJECT),
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, PP_OBJECT_COUNT),
+                        bytes: text_param_slot(index, PP_OBJECT_BYTES),
+                        auxiliary: text_param_slot(index, PP_OBJECT_AUX),
+                        condition: text_param_slot(index, PP_OBJECT_COND),
+                    },
+                ),
+            ];
+            for (slot, (flag, pointer, allocation)) in allocations.into_iter().enumerate() {
+                let skip = seed + u32::from(ordinal) * 2 + slot as u32;
+                instructions.push(Lir::LoadSlot(flag));
+                instructions.push(Lir::JumpIfZero(skip));
+                instructions.push(Lir::LoadI64(0));
+                instructions.push(Lir::StoreSlot(text_param_slot(index, PP_ELEMENT)));
+                instructions.push(Lir::LoadSlot(pointer));
+                instructions.extend(array_runtime::array_free(allocator, allocation, text_param_slot(index, PP_ELEMENT)));
+                instructions.push(Lir::Label(skip));
+            }
+        }
+    };
 
     let mut instructions = Vec::new();
     if let Some(arena) = arena {
@@ -304,17 +410,113 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
         Lir::StoreSlot(FORMAT_SLOT),
         Lir::LoadSlotToArg { slot: FORMAT_SLOT, index: 1 },
     ]);
-    for index in 0..method.parameters.len() {
-        // `PyArg_ParseTuple` 把第 index 个 `long` 写入该帧槽的地址。
-        instructions.push(Lir::LoadSlotAddress(argument_slot(index)));
-        instructions.push(Lir::StoreSlot(TEMP_SLOT));
-        instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: (2 + index) as u8 });
+    let mut conversion_index = 2u8;
+    for (index, kind) in method.parameters.iter().enumerate() {
+        // `PyArg_ParseTuple` 按转换顺序写入出参地址。
+        let slots = match kind {
+            HostParameterKind::Int64 => 1,
+            HostParameterKind::Utf8 => 2,
+            HostParameterKind::Int64Array => 0,
+        };
+        for offset in 0..slots {
+            instructions.push(Lir::LoadSlotAddress(parameter_slots[index] + offset));
+            instructions.push(Lir::StoreSlot(TEMP_SLOT));
+            instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: conversion_index });
+            conversion_index += 1;
+        }
     }
     instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyArg_ParseTuple".to_string() });
     // 返回 0 = 解析失败（异常已由宿主设置）。
     instructions.push(Lir::JumpIfZero(FAIL_LABEL));
-    for index in 0..method.parameters.len() {
-        instructions.push(Lir::LoadSlotToArg { slot: argument_slot(index), index: index as u8 });
+    // 文本实参：按 `(char* ptr, Py_ssize_t len)` 建立 `Utf8Text` 对象。
+    for (index, kind) in method.parameters.iter().enumerate() {
+        if !matches!(kind, HostParameterKind::Utf8) {
+            continue;
+        }
+        let ordinal = text_param_ordinal(index);
+        // 标签段避开解析/分配出口（0/3/4）与清理种子（20/40/60）。
+        let copy_loop = 100u32 + u32::from(ordinal) * 10;
+        let copy_end = copy_loop + 1;
+        for flag in [PP_ARRAY_FLAG, PP_OBJECT_FLAG] {
+            instructions.push(Lir::LoadI64(0));
+            instructions.push(Lir::StoreSlot(text_param_slot(index, flag)));
+        }
+        // 字节数组：count = 长度。
+        instructions.push(Lir::LoadSlot(parameter_slots[index] + 1));
+        instructions.extend(array_runtime::array_allocate(
+            allocator,
+            ArrayAllocationSlots {
+                count: text_param_slot(index, PP_ARRAY_COUNT),
+                bytes: text_param_slot(index, PP_ARRAY_BYTES),
+                auxiliary: text_param_slot(index, PP_ARRAY_AUX),
+                condition: text_param_slot(index, PP_ARRAY_COND),
+            },
+            PARAM_ALLOC_FAIL_LABEL,
+        ));
+        instructions.extend([
+            Lir::StoreSlot(text_param_slot(index, PP_ARRAY)),
+            Lir::LoadI64(1),
+            Lir::StoreSlot(text_param_slot(index, PP_ARRAY_FLAG)),
+            // 对象块：count = 1，元素区 8 字节存放 `_repr` 指针。
+            Lir::LoadI64(1),
+        ]);
+        instructions.extend(array_runtime::array_allocate(
+            allocator,
+            ArrayAllocationSlots {
+                count: text_param_slot(index, PP_OBJECT_COUNT),
+                bytes: text_param_slot(index, PP_OBJECT_BYTES),
+                auxiliary: text_param_slot(index, PP_OBJECT_AUX),
+                condition: text_param_slot(index, PP_OBJECT_COND),
+            },
+            PARAM_ALLOC_FAIL_LABEL,
+        ));
+        instructions.extend([
+            Lir::StoreSlot(text_param_slot(index, PP_OBJECT)),
+            Lir::LoadI64(1),
+            Lir::StoreSlot(text_param_slot(index, PP_OBJECT_FLAG)),
+            Lir::LoadSlotToRcx(text_param_slot(index, PP_ARRAY)),
+            Lir::LoadSlot(text_param_slot(index, PP_OBJECT)),
+            Lir::StoreRcxToRaxDisplacement(array_runtime::ARRAY_ELEMENT_OFFSET as i32),
+            // 逐字节分散到 8 字节槽。
+            Lir::LoadSlot(parameter_slots[index]),
+            Lir::StoreSlot(text_param_slot(index, PP_CURSOR)),
+            Lir::LoadI64(0),
+            Lir::StoreSlot(text_param_slot(index, PP_INDEX)),
+            Lir::Label(copy_loop),
+            Lir::LoadSlot(text_param_slot(index, PP_INDEX)),
+            Lir::LoadSlotToRcx(parameter_slots[index] + 1),
+            Lir::Lt,
+            Lir::StoreSlot(text_param_slot(index, PP_ARRAY_COND)),
+            Lir::LoadSlot(text_param_slot(index, PP_ARRAY_COND)),
+            Lir::JumpIfZero(copy_end),
+            Lir::LoadSlot(text_param_slot(index, PP_CURSOR)),
+            Lir::LoadByteFromRax,
+            Lir::StoreSlot(text_param_slot(index, PP_ELEMENT)),
+            Lir::LoadSlot(text_param_slot(index, PP_ARRAY)),
+            Lir::LoadSlotToRdx(text_param_slot(index, PP_ELEMENT)),
+            Lir::LoadSlotToRcx(text_param_slot(index, PP_INDEX)),
+            Lir::StoreIndexedRdxToRaxRcx,
+            Lir::LoadSlot(text_param_slot(index, PP_CURSOR)),
+            Lir::AddRaxImmediate(1),
+            Lir::StoreSlot(text_param_slot(index, PP_CURSOR)),
+            Lir::LoadSlot(text_param_slot(index, PP_INDEX)),
+            Lir::AddRaxImmediate(1),
+            Lir::StoreSlot(text_param_slot(index, PP_INDEX)),
+            Lir::Jump(copy_loop),
+            Lir::Label(copy_end),
+        ]);
+    }
+    for (index, kind) in method.parameters.iter().enumerate() {
+        match kind {
+            HostParameterKind::Int64 => instructions.push(Lir::LoadSlotToArg { slot: parameter_slots[index], index: index as u8 }),
+            HostParameterKind::Utf8 => {
+                instructions.push(Lir::LoadSlot(text_param_slot(index, PP_OBJECT)));
+                instructions.push(Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET));
+                instructions.push(Lir::StoreSlot(TEMP_SLOT));
+                instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: index as u8 });
+            }
+            HostParameterKind::Int64Array => unreachable!("CPython 边界拒绝数组实参"),
+        }
     }
     instructions.push(Lir::Call(method.symbol.clone()));
     match method.returns {
@@ -385,27 +587,38 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
                 ArrayAllocationSlots { count: text_slot(1), bytes: text_slot(2), auxiliary: text_slot(3), condition: text_slot(4) },
                 text_slot(9),
             ));
-            instructions.extend([Lir::LoadSlot(text_slot(8)), Lir::Return]);
+            instructions.extend([Lir::LoadSlot(text_slot(8)), Lir::StoreSlot(result_slot)]);
         }
         HostValueKind::Bool => {
             instructions.push(Lir::StoreSlot(TEMP_SLOT));
             instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
             instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyBool_FromLong".to_string() });
-            instructions.push(Lir::Return);
+            instructions.push(Lir::StoreSlot(result_slot));
         }
         HostValueKind::Int64 => {
             instructions.push(Lir::StoreSlot(TEMP_SLOT));
             instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 0 });
             instructions.push(Lir::CallImport { module: dll.to_string(), field: "PyLong_FromLongLong".to_string() });
-            instructions.push(Lir::Return);
+            instructions.push(Lir::StoreSlot(result_slot));
         }
+        HostValueKind::Int64Array => unreachable!("CPython 边界由 frozen_host_methods 拒绝数组返回"),
         HostValueKind::Unit => unreachable!("CPython 边界由 frozen_host_methods 拒绝 unit 返回"),
     }
+    // 宿主对象已经建立：释放文本实参的临时副本，再交出结果。
+    emit_free_text_temporaries(&mut instructions, 20);
+    instructions.extend([Lir::LoadSlot(result_slot), Lir::Return]);
+    // 解析失败：宿主已设置异常，直接返回 `NULL`，此时没有任何编组分配。
     instructions.push(Lir::Label(FAIL_LABEL));
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
-    // 暂存缓冲分配失败：返回 `NULL`，由宿主按 SystemError 通道报告。
+    // 文本实参编组失败：先释放已建立的临时副本。
+    instructions.push(Lir::Label(PARAM_ALLOC_FAIL_LABEL));
+    emit_free_text_temporaries(&mut instructions, 40);
+    instructions.push(Lir::LoadI64(0));
+    instructions.push(Lir::Return);
+    // 返回文本的暂存缓冲分配失败：释放实参临时副本后按 SystemError 通道返回 `NULL`。
     instructions.push(Lir::Label(ALLOC_FAIL_LABEL));
+    emit_free_text_temporaries(&mut instructions, 60);
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
 
@@ -700,12 +913,53 @@ pub fn node_method_wrapper(
     const ARRAY_HEAP: u16 = 7;
     const ARRAY_ALLOCATED: u16 = 8;
     let array_count = method.parameters.iter().filter(|kind| matches!(kind, HostParameterKind::Int64Array)).count();
+    // `utf8` 实参的编组区：每个文本实参独立一段，排在数组区之后。
+    // 偏移：长度、暂存缓冲指针/计数/字节数/辅助/条件/分配标记、字节数组
+    // 指针/计数/字节数/辅助/条件/分配标记、对象块指针/计数/字节数/辅助/条件/
+    // 分配标记、下标、元素、字节游标。
+    let text_param_count = method.parameters.iter().filter(|kind| matches!(kind, HostParameterKind::Utf8)).count();
+    let text_param_base = array_slot_base + 9 * array_count as u16;
+    let text_param_ordinal =
+        |index: usize| method.parameters[..index].iter().filter(|kind| matches!(kind, HostParameterKind::Utf8)).count() as u16;
+    let text_param_slot = |index: usize, offset: u16| text_param_base + 22 * text_param_ordinal(index) + offset;
+    const TP_LEN: u16 = 0;
+    const TP_SCRATCH: u16 = 1;
+    const TP_SCRATCH_COUNT: u16 = 2;
+    const TP_SCRATCH_BYTES: u16 = 3;
+    const TP_SCRATCH_AUX: u16 = 4;
+    const TP_SCRATCH_COND: u16 = 5;
+    const TP_SCRATCH_FLAG: u16 = 6;
+    const TP_ARRAY: u16 = 7;
+    const TP_ARRAY_COUNT: u16 = 8;
+    const TP_ARRAY_BYTES: u16 = 9;
+    const TP_ARRAY_AUX: u16 = 10;
+    const TP_ARRAY_COND: u16 = 11;
+    const TP_ARRAY_FLAG: u16 = 12;
+    const TP_OBJECT: u16 = 13;
+    const TP_OBJECT_COUNT: u16 = 14;
+    const TP_OBJECT_BYTES: u16 = 15;
+    const TP_OBJECT_AUX: u16 = 16;
+    const TP_OBJECT_COND: u16 = 17;
+    const TP_OBJECT_FLAG: u16 = 18;
+    const TP_INDEX: u16 = 19;
+    const TP_ELEMENT: u16 = 20;
+    const TP_CURSOR: u16 = 21;
     // 文本返回的 gather 帧槽：数组指针、计数、分配字节数、分配辅助、条件、
-    // 暂存缓冲、游标、下标、字节周转——排在数组编组区之后，互不重叠。
+    // 暂存缓冲、游标、下标、字节周转——排在文本实参区之后，互不重叠。
     let returns_text = method.returns == HostValueKind::Utf8;
-    let text_slot_base = array_slot_base + 9 * array_count as u16;
+    let text_slot_base = text_param_base + 22 * text_param_count as u16;
     let text_slot = |offset: u16| text_slot_base + offset;
-    let slot_count = text_slot_base + if returns_text { 9 } else { 0 };
+    // `[i64]` 返回的复制区：宿主序列句柄、元素个数、下标、元素值、元素句柄、条件。
+    let returns_array = method.returns == HostValueKind::Int64Array;
+    let array_return_base = text_slot_base + if returns_text { 9 } else { 0 };
+    let array_return_slot = |offset: u16| array_return_base + offset;
+    const AR_JS_ARRAY: u16 = 0;
+    const AR_COUNT: u16 = 1;
+    const AR_INDEX: u16 = 2;
+    const AR_VALUE: u16 = 3;
+    const AR_ELEMENT: u16 = 4;
+    const AR_CONDITION: u16 = 5;
+    let slot_count = array_return_base + if returns_array { 6 } else { 0 };
 
     // 失败清理：只释放本次调用真正分配成功过的镜像副本（标记在分配后置 1），
     // 因此部分编组失败不会泄漏，也不会写回半成品。
@@ -733,6 +987,58 @@ pub fn node_method_wrapper(
             instructions.push(Lir::Label(skip));
         }
     };
+    // 文本实参的桥侧临时副本：暂存缓冲、字节数组、`Utf8Text` 对象块，各自按
+    // 分配标记释放。返回与失败出口共用这一段，避免部分编组泄漏。
+    let emit_free_text_temporaries = |instructions: &mut Vec<Lir>, seed: u32| {
+        for (index, kind) in method.parameters.iter().enumerate() {
+            if !matches!(kind, HostParameterKind::Utf8) {
+                continue;
+            }
+            let ordinal = text_param_ordinal(index);
+            let allocations = [
+                (
+                    text_param_slot(index, TP_SCRATCH_FLAG),
+                    text_param_slot(index, TP_SCRATCH),
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, TP_SCRATCH_COUNT),
+                        bytes: text_param_slot(index, TP_SCRATCH_BYTES),
+                        auxiliary: text_param_slot(index, TP_SCRATCH_AUX),
+                        condition: text_param_slot(index, TP_SCRATCH_COND),
+                    },
+                ),
+                (
+                    text_param_slot(index, TP_ARRAY_FLAG),
+                    text_param_slot(index, TP_ARRAY),
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, TP_ARRAY_COUNT),
+                        bytes: text_param_slot(index, TP_ARRAY_BYTES),
+                        auxiliary: text_param_slot(index, TP_ARRAY_AUX),
+                        condition: text_param_slot(index, TP_ARRAY_COND),
+                    },
+                ),
+                (
+                    text_param_slot(index, TP_OBJECT_FLAG),
+                    text_param_slot(index, TP_OBJECT),
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, TP_OBJECT_COUNT),
+                        bytes: text_param_slot(index, TP_OBJECT_BYTES),
+                        auxiliary: text_param_slot(index, TP_OBJECT_AUX),
+                        condition: text_param_slot(index, TP_OBJECT_COND),
+                    },
+                ),
+            ];
+            for (slot, (flag, pointer, allocation)) in allocations.into_iter().enumerate() {
+                let skip = seed + u32::from(ordinal) * 3 + slot as u32;
+                instructions.push(Lir::LoadSlot(flag));
+                instructions.push(Lir::JumpIfZero(skip));
+                instructions.push(Lir::LoadI64(0));
+                instructions.push(Lir::StoreSlot(text_param_slot(index, TP_ELEMENT)));
+                instructions.push(Lir::LoadSlot(pointer));
+                instructions.extend(array_runtime::array_free(allocator, allocation, text_param_slot(index, TP_ELEMENT)));
+                instructions.push(Lir::Label(skip));
+            }
+        }
+    };
 
     let mut instructions = vec![
         Lir::LoadParam { index: 0, slot: ENV_SLOT },
@@ -748,6 +1054,12 @@ pub fn node_method_wrapper(
         if matches!(kind, HostParameterKind::Int64Array) {
             instructions.push(Lir::LoadI64(0));
             instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_ALLOCATED)));
+        }
+        if matches!(kind, HostParameterKind::Utf8) {
+            for flag in [TP_SCRATCH_FLAG, TP_ARRAY_FLAG, TP_OBJECT_FLAG] {
+                instructions.push(Lir::LoadI64(0));
+                instructions.push(Lir::StoreSlot(text_param_slot(index, flag)));
+            }
         }
     }
     if let Some(arena) = arena {
@@ -921,11 +1233,163 @@ pub fn node_method_wrapper(
                     Lir::Label(fill_end),
                 ]);
             }
+            HostParameterKind::Utf8 => {
+                // 字符串 → `Utf8Text` 对象：与编译期文本常量同一载体
+                // （`{ [0] = _repr }`，字节逐槽 8 字节）。先探长度，再用
+                // 连续暂存缓冲接收 UTF-8 字节，最后分散进字节数组。
+                let ordinal = text_param_ordinal(index);
+                let label_base = 700u32 + u32::from(ordinal) * 10;
+                let length_ok = label_base;
+                let copy_ok = label_base + 1;
+                let copy_loop = label_base + 2;
+                let copy_end = label_base + 3;
+                let mut block = vec![
+                    Lir::LoadI64(0),
+                    Lir::StoreSlot(text_param_slot(index, TP_LEN)),
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+                    Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 2 },
+                    Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 3 },
+                ];
+                if platform.is_windows() {
+                    block.push(Lir::StoreSlotAddressToStackArg { slot: text_param_slot(index, TP_LEN), index: 0 });
+                }
+                else {
+                    block.push(Lir::LoadSlotAddress(text_param_slot(index, TP_LEN)));
+                    block.push(Lir::StoreSlot(TEMP_SLOT));
+                    block.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 4 });
+                }
+                block.extend([
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_string_utf8".to_string() },
+                    // 非字符串返回 `napi_string_expected`；按类型错误报告。
+                    Lir::JumpIfZero(length_ok),
+                    Lir::Jump(FAIL_LABEL),
+                    Lir::Label(length_ok),
+                    // 暂存缓冲：count = 字节数 + 1（尾部留给 NUL），payload 为 8 字节槽。
+                    Lir::LoadSlot(text_param_slot(index, TP_LEN)),
+                    Lir::AddRaxImmediate(1),
+                ]);
+                block.extend(array_runtime::array_allocate(
+                    allocator,
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, TP_SCRATCH_COUNT),
+                        bytes: text_param_slot(index, TP_SCRATCH_BYTES),
+                        auxiliary: text_param_slot(index, TP_SCRATCH_AUX),
+                        condition: text_param_slot(index, TP_SCRATCH_COND),
+                    },
+                    allocation_failure_label,
+                ));
+                block.extend([
+                    Lir::StoreSlot(text_param_slot(index, TP_SCRATCH)),
+                    Lir::LoadI64(1),
+                    Lir::StoreSlot(text_param_slot(index, TP_SCRATCH_FLAG)),
+                    // 复制：`napi_get_value_string_utf8(env, argv, buf, bufsize, &written)`。
+                    Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                    Lir::LoadSlotToArg { slot: argv_slot(index), index: 1 },
+                    Lir::LoadSlot(text_param_slot(index, TP_SCRATCH)),
+                    Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                    Lir::LoadSlot(text_param_slot(index, TP_SCRATCH_BYTES)),
+                    Lir::SubRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                    Lir::StoreSlot(TEMP_SLOT),
+                    Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
+                ]);
+                if platform.is_windows() {
+                    block.push(Lir::StoreSlotAddressToStackArg { slot: text_param_slot(index, TP_INDEX), index: 0 });
+                }
+                else {
+                    block.push(Lir::LoadSlotAddress(text_param_slot(index, TP_INDEX)));
+                    block.push(Lir::StoreSlot(TEMP_SLOT));
+                    block.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 4 });
+                }
+                block.extend([
+                    Lir::CallImport { module: dll.to_string(), field: "napi_get_value_string_utf8".to_string() },
+                    Lir::JumpIfZero(copy_ok),
+                    // 已分配暂存缓冲：走分配失败出口，先释放再报错。
+                    Lir::Jump(allocation_failure_label),
+                    Lir::Label(copy_ok),
+                    // 字节数组：count = 字节数。
+                    Lir::LoadSlot(text_param_slot(index, TP_LEN)),
+                ]);
+                block.extend(array_runtime::array_allocate(
+                    allocator,
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, TP_ARRAY_COUNT),
+                        bytes: text_param_slot(index, TP_ARRAY_BYTES),
+                        auxiliary: text_param_slot(index, TP_ARRAY_AUX),
+                        condition: text_param_slot(index, TP_ARRAY_COND),
+                    },
+                    allocation_failure_label,
+                ));
+                block.extend([
+                    Lir::StoreSlot(text_param_slot(index, TP_ARRAY)),
+                    Lir::LoadI64(1),
+                    Lir::StoreSlot(text_param_slot(index, TP_ARRAY_FLAG)),
+                    // 对象块：count = 1，借用元素区 8 字节存放 `_repr` 指针。
+                    Lir::LoadI64(1),
+                ]);
+                block.extend(array_runtime::array_allocate(
+                    allocator,
+                    ArrayAllocationSlots {
+                        count: text_param_slot(index, TP_OBJECT_COUNT),
+                        bytes: text_param_slot(index, TP_OBJECT_BYTES),
+                        auxiliary: text_param_slot(index, TP_OBJECT_AUX),
+                        condition: text_param_slot(index, TP_OBJECT_COND),
+                    },
+                    allocation_failure_label,
+                ));
+                block.extend([
+                    Lir::StoreSlot(text_param_slot(index, TP_OBJECT)),
+                    Lir::LoadI64(1),
+                    Lir::StoreSlot(text_param_slot(index, TP_OBJECT_FLAG)),
+                    // `object[0] = byte_array`。
+                    Lir::LoadSlotToRcx(text_param_slot(index, TP_ARRAY)),
+                    Lir::LoadSlot(text_param_slot(index, TP_OBJECT)),
+                    Lir::StoreRcxToRaxDisplacement(array_runtime::ARRAY_ELEMENT_OFFSET as i32),
+                    // 字节游标与下标。
+                    Lir::LoadSlot(text_param_slot(index, TP_SCRATCH)),
+                    Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                    Lir::StoreSlot(text_param_slot(index, TP_CURSOR)),
+                    Lir::LoadI64(0),
+                    Lir::StoreSlot(text_param_slot(index, TP_INDEX)),
+                    Lir::Label(copy_loop),
+                    Lir::LoadSlot(text_param_slot(index, TP_INDEX)),
+                    Lir::LoadSlotToRcx(text_param_slot(index, TP_LEN)),
+                    Lir::Lt,
+                    Lir::StoreSlot(text_param_slot(index, TP_ARRAY_COND)),
+                    Lir::LoadSlot(text_param_slot(index, TP_ARRAY_COND)),
+                    Lir::JumpIfZero(copy_end),
+                    Lir::LoadSlot(text_param_slot(index, TP_CURSOR)),
+                    Lir::LoadByteFromRax,
+                    Lir::StoreSlot(text_param_slot(index, TP_ELEMENT)),
+                    Lir::LoadSlot(text_param_slot(index, TP_ARRAY)),
+                    Lir::LoadSlotToRdx(text_param_slot(index, TP_ELEMENT)),
+                    Lir::LoadSlotToRcx(text_param_slot(index, TP_INDEX)),
+                    Lir::StoreIndexedRdxToRaxRcx,
+                    Lir::LoadSlot(text_param_slot(index, TP_CURSOR)),
+                    Lir::AddRaxImmediate(1),
+                    Lir::StoreSlot(text_param_slot(index, TP_CURSOR)),
+                    Lir::LoadSlot(text_param_slot(index, TP_INDEX)),
+                    Lir::AddRaxImmediate(1),
+                    Lir::StoreSlot(text_param_slot(index, TP_INDEX)),
+                    Lir::Jump(copy_loop),
+                    Lir::Label(copy_end),
+                ]);
+                instructions.extend(block);
+            }
         }
     }
     for (index, kind) in method.parameters.iter().enumerate() {
         let slot = match kind {
             HostParameterKind::Int64 | HostParameterKind::Int64Array => out_slot(index),
+            // 文本实参传对象块地址（`_repr` 字段在对象首地址）。
+            HostParameterKind::Utf8 => {
+                instructions.push(Lir::LoadSlot(text_param_slot(index, TP_OBJECT)));
+                instructions.push(Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET));
+                instructions.push(Lir::StoreSlot(TEMP_SLOT));
+                TEMP_SLOT
+            }
         };
         instructions.push(Lir::LoadSlotToArg { slot, index: index as u8 });
     }
@@ -983,28 +1447,12 @@ pub fn node_method_wrapper(
             Lir::Label(writeback_end),
         ]);
     }
-    // 释放镜像侧数组副本：生命周期就是本次宿主调用，写回已经完成。
-    // guest 数组值图的分配不在这里回收（native lane 没有逃逸分析或 GC）。
-    for (index, kind) in method.parameters.iter().enumerate() {
-        if !matches!(kind, HostParameterKind::Int64Array) {
-            continue;
-        }
-        instructions.push(Lir::LoadI64(0));
-        instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_VALUE)));
-        instructions.push(Lir::LoadSlot(out_slot(index)));
-        instructions.extend(array_runtime::array_free(
-            allocator,
-            ArrayAllocationSlots {
-                count: array_slot(index, ARRAY_COUNT),
-                bytes: array_slot(index, ARRAY_VALUE),
-                auxiliary: array_slot(index, ARRAY_HEAP),
-                condition: array_slot(index, ARRAY_CONDITION),
-            },
-            array_slot(index, ARRAY_VALUE),
-        ));
-    }
+    // 返回值先编组到宿主值，再释放镜像副本：guest 可以原样返回某个实参镜像
+    // （文本或数组），复制必须先于释放。各分支只写结果槽，不提前返回。
     match method.returns {
         HostValueKind::Utf8 => {
+            // 构造失败时保持 `undefined`，不读未初始化的帧槽。
+            instructions.extend([Lir::LoadI64(0), Lir::StoreSlot(STRING_SLOT)]);
             // guest 文本值是 `Utf8Text` 对象：`{ [0] = _repr 数组 }`，数组逐字节占
             // 一个 8 字节槽（数组运行时合同）。桥把字节 gather 进一段连续暂存缓冲
             // （同一分配/释放实现），`napi_create_string_utf8` 复制后立即释放——
@@ -1074,13 +1522,78 @@ pub fn node_method_wrapper(
                 ArrayAllocationSlots { count: text_slot(1), bytes: text_slot(2), auxiliary: text_slot(3), condition: text_slot(4) },
                 ZERO_SLOT,
             ));
-            instructions.extend([Lir::LoadSlot(STRING_SLOT), Lir::Return]);
+        }
+        HostValueKind::Int64Array => {
+            // guest 返回 `[i64]` 堆数组：`[0]` 元素个数，元素从 `+16` 起按 8 字节槽。
+            // 逐元素复制为 JS `bigint` 序列；guest 数组归语言值图，桥不释放。
+            instructions.extend([Lir::LoadI64(0), Lir::StoreSlot(array_return_slot(AR_JS_ARRAY))]);
+            instructions.extend([
+                Lir::LoadSlot(RESULT_SLOT),
+                Lir::LoadFromRaxDisplacement(0),
+                Lir::StoreSlot(array_return_slot(AR_COUNT)),
+                // 个数必须落在 `[0, ARRAY_MAX_ELEMENTS]`；否则宿主值无法物化。
+                Lir::LoadI64(0),
+                Lir::StoreSlot(array_return_slot(AR_CONDITION)),
+                Lir::LoadSlot(array_return_slot(AR_COUNT)),
+                Lir::LoadSlotToRcx(array_return_slot(AR_CONDITION)),
+                Lir::Ge,
+                Lir::StoreSlot(array_return_slot(AR_CONDITION)),
+                Lir::LoadSlot(array_return_slot(AR_CONDITION)),
+                Lir::JumpIfZero(allocation_failure_label),
+                Lir::LoadI64(array_runtime::ARRAY_MAX_ELEMENTS),
+                Lir::StoreSlot(array_return_slot(AR_CONDITION)),
+                Lir::LoadSlot(array_return_slot(AR_COUNT)),
+                Lir::LoadSlotToRcx(array_return_slot(AR_CONDITION)),
+                Lir::Le,
+                Lir::StoreSlot(array_return_slot(AR_CONDITION)),
+                Lir::LoadSlot(array_return_slot(AR_CONDITION)),
+                Lir::JumpIfZero(allocation_failure_label),
+                // `napi_create_array_with_length(env, count, &array)`。
+                Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                Lir::LoadSlotToArg { slot: array_return_slot(AR_COUNT), index: 1 },
+                Lir::LoadSlotAddress(array_return_slot(AR_JS_ARRAY)),
+                Lir::StoreSlot(TEMP_SLOT),
+                Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                Lir::CallImport { module: dll.to_string(), field: "napi_create_array_with_length".to_string() },
+                Lir::LoadI64(0),
+                Lir::StoreSlot(array_return_slot(AR_INDEX)),
+                Lir::Label(900),
+                Lir::LoadSlot(array_return_slot(AR_INDEX)),
+                Lir::LoadSlotToRcx(array_return_slot(AR_COUNT)),
+                Lir::Lt,
+                Lir::StoreSlot(array_return_slot(AR_CONDITION)),
+                Lir::LoadSlot(array_return_slot(AR_CONDITION)),
+                Lir::JumpIfZero(901),
+                // `value = result[index]`。
+                Lir::LoadSlot(RESULT_SLOT),
+                Lir::LoadSlotToRcx(array_return_slot(AR_INDEX)),
+                Lir::LoadIndexedFromRaxRcx,
+                Lir::StoreSlot(array_return_slot(AR_VALUE)),
+                // `napi_create_bigint_int64(env, value, &element)`。
+                Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                Lir::LoadSlotToArg { slot: array_return_slot(AR_VALUE), index: 1 },
+                Lir::LoadSlotAddress(array_return_slot(AR_ELEMENT)),
+                Lir::StoreSlot(TEMP_SLOT),
+                Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
+                Lir::CallImport { module: dll.to_string(), field: "napi_create_bigint_int64".to_string() },
+                // `napi_set_element(env, array, index, element)`。
+                Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
+                Lir::LoadSlotToArg { slot: array_return_slot(AR_JS_ARRAY), index: 1 },
+                Lir::LoadSlotToArg { slot: array_return_slot(AR_INDEX), index: 2 },
+                Lir::LoadSlotToArg { slot: array_return_slot(AR_ELEMENT), index: 3 },
+                Lir::CallImport { module: dll.to_string(), field: "napi_set_element".to_string() },
+                Lir::LoadSlot(array_return_slot(AR_INDEX)),
+                Lir::AddRaxImmediate(1),
+                Lir::StoreSlot(array_return_slot(AR_INDEX)),
+                Lir::Jump(900),
+                Lir::Label(901),
+            ]);
         }
         HostValueKind::Bool | HostValueKind::Int64 => {
             let field = match method.returns {
                 HostValueKind::Bool => "napi_get_boolean",
                 HostValueKind::Int64 => "napi_create_bigint_int64",
-                HostValueKind::Utf8 | HostValueKind::Unit => unreachable!("matched above"),
+                HostValueKind::Utf8 | HostValueKind::Int64Array | HostValueKind::Unit => unreachable!("matched above"),
             };
             instructions.extend([
                 // `napi_create_bigint_int64(env, value, &result)` / `napi_get_boolean(env, value, &result)`。
@@ -1090,18 +1603,46 @@ pub fn node_method_wrapper(
                 Lir::StoreSlot(TEMP_SLOT),
                 Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 2 },
                 Lir::CallImport { module: dll.to_string(), field: field.to_string() },
-                Lir::LoadSlot(RESULT_SLOT),
-                Lir::Return,
             ]);
         }
         HostValueKind::Unit => {
             // 回调返回 `NULL`：Node-API 把 `undefined` 交给调用方，不伪造值。
-            instructions.extend([Lir::LoadI64(0), Lir::Return]);
+            instructions.extend([Lir::LoadI64(0), Lir::StoreSlot(RESULT_SLOT)]);
         }
     }
+    // 释放镜像侧数组副本与文本临时副本：生命周期就是本次宿主调用。
+    // guest 数组值图的分配不在这里回收（native lane 没有逃逸分析或 GC）。
+    for (index, kind) in method.parameters.iter().enumerate() {
+        if !matches!(kind, HostParameterKind::Int64Array) {
+            continue;
+        }
+        instructions.push(Lir::LoadI64(0));
+        instructions.push(Lir::StoreSlot(array_slot(index, ARRAY_VALUE)));
+        instructions.push(Lir::LoadSlot(out_slot(index)));
+        instructions.extend(array_runtime::array_free(
+            allocator,
+            ArrayAllocationSlots {
+                count: array_slot(index, ARRAY_COUNT),
+                bytes: array_slot(index, ARRAY_VALUE),
+                auxiliary: array_slot(index, ARRAY_HEAP),
+                condition: array_slot(index, ARRAY_CONDITION),
+            },
+            array_slot(index, ARRAY_VALUE),
+        ));
+    }
+    emit_free_text_temporaries(&mut instructions, 800);
+    instructions.extend([
+        Lir::LoadSlot(match method.returns {
+            HostValueKind::Utf8 => STRING_SLOT,
+            HostValueKind::Int64Array => array_return_slot(AR_JS_ARRAY),
+            HostValueKind::Bool | HostValueKind::Int64 | HostValueKind::Unit => RESULT_SLOT,
+        }),
+        Lir::Return,
+    ]);
     // 类型错误出口：先释放本次调用已分配的镜像副本，再 `napi_throw_type_error`。
     instructions.push(Lir::Label(FAIL_LABEL));
     emit_free_allocated(&mut instructions, 300);
+    emit_free_text_temporaries(&mut instructions, 810);
     instructions.extend([
         Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
         Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
@@ -1115,6 +1656,7 @@ pub fn node_method_wrapper(
     // `bigint` 超出 `i64` 域：释放副本后抛 `RangeError`。
     instructions.push(Lir::Label(range_failure_label));
     emit_free_allocated(&mut instructions, 400);
+    emit_free_text_temporaries(&mut instructions, 820);
     instructions.extend([
         Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
         Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
@@ -1125,11 +1667,12 @@ pub fn node_method_wrapper(
         Lir::LoadI64(0),
         Lir::Return,
     ]);
-    if array_count > 0 {
-        // 数组分配失败（容量溢出或分配实现报错）走宿主 error，而不是 Type 错误；
+    if array_count > 0 || text_param_count > 0 || returns_array {
+        // 宿主载体分配失败（容量溢出或分配实现报错）走宿主 error，而不是 Type 错误；
         // 仍先释放此前已分配成功的镜像副本。
         instructions.push(Lir::Label(allocation_failure_label));
         emit_free_allocated(&mut instructions, 500);
+        emit_free_text_temporaries(&mut instructions, 830);
         instructions.extend([
             Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
             Lir::LoadSlotToArg { slot: ZERO_SLOT, index: 1 },
@@ -1249,6 +1792,80 @@ mod tests {
         let fields = import_fields(&wrapper);
         assert!(fields.contains(&"napi_create_string_utf8"));
         assert!(!fields.contains(&"napi_create_string_utf16"), "字符串长度必须是 UTF-8 字节而不是 UTF-16 码元");
+    }
+
+    fn max_referenced_slot(program: &X64ProgramFunction) -> u16 {
+        let debug = format!("{:?}", program.instructions);
+        let mut max_slot = 0u16;
+        for needle in ["slot: ", "LoadSlot(", "StoreSlot(", "LoadSlotAddress(", "LoadSlotToRcx("] {
+            let mut rest = debug.as_str();
+            while let Some(position) = rest.find(needle) {
+                rest = &rest[position + needle.len()..];
+                let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+                if let Ok(slot) = digits.parse::<u16>() {
+                    max_slot = max_slot.max(slot);
+                }
+            }
+        }
+        max_slot
+    }
+
+    /// `utf8` 实参：按 UTF-8 字节复制到 `Utf8Text` 对象，三段桥侧临时副本都要释放。
+    #[test]
+    fn utf8_parameter_copies_bytes_and_releases_temporaries() {
+        let method =
+            HostMethod { name: "echo".to_string(), symbol: "echo".to_string(), parameters: vec![HostParameterKind::Utf8], returns: HostValueKind::Utf8 };
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let fields = import_fields(&wrapper);
+        assert!(fields.contains(&"napi_get_value_string_utf8"), "文本实参必须走 UTF-8 字节查询与复制");
+        assert!(fields.contains(&"napi_create_string_utf8"), "文本返回必须走 UTF-8 字节");
+        let frees = wrapper
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, X64TextInstruction::CallImport { field, .. } if field == "HeapFree"))
+            .count();
+        assert!(frees >= 3, "暂存缓冲、字节数组、对象块都必须释放（实际 {frees} 次）");
+        assert!(max_referenced_slot(&wrapper) < wrapper.slot_count, "文本编组槽必须落在帧内");
+    }
+
+    /// `[i64]` 返回：先把 guest 数组复制成宿主序列，再释放实参镜像副本。
+    #[test]
+    fn int64_array_return_is_copied_before_mirror_release() {
+        let method = HostMethod {
+            name: "round_trip".to_string(),
+            symbol: "round_trip".to_string(),
+            parameters: vec![HostParameterKind::Int64Array],
+            returns: HostValueKind::Int64Array,
+        };
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let fields = import_fields(&wrapper);
+        assert!(fields.contains(&"napi_create_array_with_length"));
+        assert!(fields.contains(&"napi_set_element"));
+        let marshal = wrapper
+            .instructions
+            .iter()
+            .position(|instruction| {
+                matches!(instruction, X64TextInstruction::CallImport { field, .. } if field == "napi_create_array_with_length")
+            })
+            .expect("array return marshalling");
+        let release = wrapper
+            .instructions
+            .iter()
+            .position(|instruction| matches!(instruction, X64TextInstruction::CallImport { field, .. } if field == "HeapFree"))
+            .expect("mirror release");
+        assert!(marshal < release, "返回数组可能与实参镜像别名：复制必须先于释放");
+        assert!(max_referenced_slot(&wrapper) < wrapper.slot_count);
+    }
+
+    /// CPython 的 `utf8` 实参按 `s#` 接收原始字节与长度，保留内嵌 NUL。
+    #[test]
+    fn python_utf8_parameter_uses_s_hash_conversion() {
+        let method =
+            HostMethod { name: "echo".to_string(), symbol: "echo".to_string(), parameters: vec![HostParameterKind::Utf8], returns: HostValueKind::Utf8 };
+        let (data, _, _, format_offsets) = python_module_data("probe", &[], &[method]);
+        let start = format_offsets[0] as usize;
+        let end = data[start..].iter().position(|byte| *byte == 0).map(|offset| start + offset).expect("format string");
+        assert_eq!(std::str::from_utf8(&data[start..end]).expect("format text"), "s#:echo");
     }
 
     /// 静态字符串描述符的长度字段按 UTF-8 字节数编码（`é中` = 5 字节，不是 2 个码元）。

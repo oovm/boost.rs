@@ -8,12 +8,14 @@
 //!
 //! 宿主边界能力在这里闭合，未闭合的组合在写出前结构化拒绝：
 //!
-//! - 导出实参必须是完整 `i64` 整数（Node-API 按 `napi_get_value_bigint_int64`
-//!   只接受 JS `bigint` 并用 `lossless` 检查 `i64` 域；`number` 因无法在本 lane
-//!   内做安全整数/小数检查而显式拒绝；CPython 按 `PyArg_ParseTuple("n")` 接收
-//!   完整 `i64`）；窄整数没有无损载体，拒绝而不是静默扩展；
-//! - 导出返回只闭合 `Integer64 → Int64` 与 `Boolean → Bool`；字符串需要镜像
-//!   描述符事实，正式 lane 尚未降低字符串常量，同样拒绝；
+//! - 导出实参闭合完整 `i64`（Node-API 按 `napi_get_value_bigint_int64` 只接受
+//!   JS `bigint` 并用 `lossless` 检查 `i64` 域；CPython 按 `PyArg_ParseTuple("n")`
+//!   接收完整 `i64`）、`[i64]` 序列投影（Node-API 逐元素编组并写回；CPython 不
+//!   提供该载体）与 `utf8` 文本（Node-API 按 UTF-8 字节复制，CPython 按 `s#`
+//!   保留原始字节）。窄整数没有无损载体，拒绝而不是静默扩展；
+//! - 导出返回闭合 `Integer64 → Int64`、`Boolean → Bool`、`Utf8 → 宿主字符串`
+//!   与 `[i64] → 宿主序列`（序列复制只收 Node-API；guest 数组归语言值图，桥在
+//!   调用返回后复制、不释放）。其余返回载体仍写出前拒绝；
 //! - 宿主扩展不接受进程入口：程序有入口与程序公开若干函数是两个独立事实；
 //! - Windows CPython 的导入 DLL 名必须由构建环境提供，版本相关名不能由编译器猜。
 
@@ -26,7 +28,8 @@ use crate::{
 use compiler_types::ItemInstanceId;
 
 use super::{
-    HostMethod, HostModule, HostParameterKind, HostValueKind, X64Platform, X64ProductTarget, any_returns_bool, append_text_arena,
+    HostMethod, HostModule, HostParameterKind, HostValueKind, X64Platform, X64ProductTarget, any_returns_bool, any_returns_int64_array,
+    any_returns_utf8, append_text_arena,
     compile_shared_container, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
     python_module_data, python_module_exec, python_module_registration,
     x64_program::encode_x64_program_with_dependencies,
@@ -245,7 +248,7 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
                 target.name()
             ));
         }
-        // 实参载体：完整 `i64`，或声明为宿主序列投影的 `[i64]` 堆数组。
+        // 实参载体：完整 `i64`、宿主序列投影的 `[i64]` 堆数组，或 `utf8` 文本。
         // 数组按本 lane 的冻结表示逐元素编组，集合语义仍留在 std。
         let mut parameter_kinds = Vec::with_capacity(function.param_types.len());
         for parameter in &function.param_types {
@@ -254,25 +257,34 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
                 SemanticType::Array(element) if matches!(element.as_ref(), SemanticType::Integer64 { signed: true }) => {
                     HostParameterKind::Int64Array
                 }
+                SemanticType::Utf8 => HostParameterKind::Utf8,
                 other => {
                     return Err(format!(
-                        "宿主边界只闭合完整 `i64` 与 `[i64]` 实参：`{export_name}` 的形参类型 `{other}` 没有无损宿主载体，拒绝写出"
+                        "宿主边界只闭合完整 `i64`、`[i64]` 与 `utf8` 实参：`{export_name}` 的形参类型 `{other}` 没有无损宿主载体，拒绝写出"
                     ));
                 }
             });
         }
-        // CPython 边界的 `PyArg_ParseTuple` 只闭合 64 位整数：数组投影只在 Node-API
-        // 的序列编组里实现，不能把同一个导出悄悄降级成不完整的宿主载体。
+        // CPython 边界的 `PyArg_ParseTuple` 闭合 64 位整数与 UTF-8 字符串：数组投影
+        // 只在 Node-API 的序列编组里实现，不能把同一个导出悄悄降级成不完整的宿主载体。
         if target.host_module() == Some(HostModule::Python)
-            && parameter_kinds.iter().any(|kind| !matches!(kind, HostParameterKind::Int64))
+            && parameter_kinds.iter().any(|kind| matches!(kind, HostParameterKind::Int64Array))
         {
-            return Err(format!("CPython 宿主边界只闭合 `i64` 实参：`{export_name}` 的导出面需要 Node-API 序列编组，拒绝写出"));
+            return Err(format!("CPython 宿主边界只闭合 `i64` 与 `utf8` 实参：`{export_name}` 的导出面需要 Node-API 序列编组，拒绝写出"));
         }
         // 返回与实参共用同一符号合同：`u64` 的 `2^63..2^64-1` 段没有有符号
         // `i64` 载体可无损承载，在 BigInt 载体接入前与窄整数一样写出前拒绝。
         let returns = match &function.return_type {
             SemanticType::Integer64 { signed: true } => HostValueKind::Int64,
             SemanticType::Boolean => HostValueKind::Bool,
+            SemanticType::Utf8 => HostValueKind::Utf8,
+            SemanticType::Array(element) if matches!(element.as_ref(), SemanticType::Integer64 { signed: true }) => {
+                // 序列返回只在 Node-API 侧物化；CPython 的列表载体尚未定案，显式拒绝。
+                if target.host_module() == Some(HostModule::Python) {
+                    return Err(format!("CPython 宿主边界尚未闭合 `[i64]` 返回：`{export_name}` 的序列载体只在 Node-API 侧实现，拒绝写出"));
+                }
+                HostValueKind::Int64Array
+            }
             SemanticType::Unit => {
                 if target.host_module() == Some(HostModule::Python) {
                     return Err(format!("CPython 宿主边界尚未闭合 `unit` 返回：`{export_name}` 拒绝写出"));
@@ -281,7 +293,7 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
             }
             other => {
                 return Err(format!(
-                    "宿主边界尚未闭合返回载体 `{other}`：`{export_name}` 只接受有符号 `i64`、`bool` 或 `unit` 返回（无符号 `u64` 需 BigInt 无损载体），拒绝写出"
+                    "宿主边界尚未闭合返回载体 `{other}`：`{export_name}` 只接受有符号 `i64`、`bool`、`utf8`、`[i64]` 或 `unit` 返回（其余嵌套序列与无符号 `u64` 尚无无损载体），拒绝写出"
                 ));
             }
         };
@@ -353,8 +365,24 @@ fn node_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<(S
             imports.push((dll.to_string(), symbol.to_string()));
         }
     }
-    if methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Int64Array))) {
+    let takes_array = methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Int64Array)));
+    if takes_array {
         for symbol in ["napi_is_array", "napi_get_array_length", "napi_get_element", "napi_set_element", "napi_throw_error"] {
+            imports.push((dll.to_string(), symbol.to_string()));
+        }
+    }
+    if methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Utf8))) {
+        imports.push((dll.to_string(), "napi_get_value_string_utf8".to_string()));
+        // 文本实参的临时副本分配失败走宿主 error 通道。
+        if !takes_array {
+            imports.push((dll.to_string(), "napi_throw_error".to_string()));
+        }
+    }
+    if any_returns_utf8(methods) {
+        imports.push((dll.to_string(), "napi_create_string_utf8".to_string()));
+    }
+    if any_returns_int64_array(methods) {
+        for symbol in ["napi_create_array_with_length", "napi_set_element", "napi_throw_error"] {
             imports.push((dll.to_string(), symbol.to_string()));
         }
     }
@@ -373,6 +401,9 @@ fn python_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<
     ];
     if !methods.is_empty() {
         imports.push((dll.to_string(), "PyArg_ParseTuple".to_string()));
+    }
+    if any_returns_utf8(methods) {
+        imports.push((dll.to_string(), "PyUnicode_FromStringAndSize".to_string()));
     }
     if bool_exports {
         imports.push((dll.to_string(), "PyBool_FromLong".to_string()));
