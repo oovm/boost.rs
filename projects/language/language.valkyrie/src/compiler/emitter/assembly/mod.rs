@@ -119,6 +119,8 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                         .map(|export| compiler_emitter::emitter_backend_machine::MachineHostExport {
                             source_name: export.source_name,
                             public_name: export.public_name,
+                            parameters: export.parameters,
+                            returns: export.returns,
                         })
                         .collect(),
                     host_module: None,

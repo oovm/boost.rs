@@ -24,8 +24,8 @@
 //! - 字符串返回携带镜像内描述符，宿主侧以 `napi_create_string_utf8` 复制成原生
 //!   字符串；长度字段是**UTF-8 字节数**（不是 JS 的 UTF-16 码元数），描述符属于
 //!   镜像、永不单独释放，不存在跨 CRT 的所有权转移；
-//! - 字符串实参与对象实参尚未冻结载体：正式 lane 在写出前结构化拒绝，不在运行期
-//!   用别的类型冒充；
+//! - 字符串实参与 `[i64]` 实参按各自载体编组（见 [`HostParameterKind`]）；
+//!   未冻结的对象/嵌套序列仍在写出前结构化拒绝，不在运行期用别的类型冒充；
 //! - 实参解析失败不静默成 `0`：Node 抛 `TypeError`、CPython 原样传播宿主异常，
 //!   `PyModuleDef_Init` / 装箱失败按宿主错误返回。
 
@@ -52,6 +52,19 @@ pub enum HostValueKind {
     Int64Array,
     /// 无返回值（宿主得到 `undefined` / `None`）。
     Unit,
+}
+
+impl HostValueKind {
+    /// 清单载体标签：跨仓消费（执行清单 → runner）的稳定字符串，不是调试文本。
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Int64 => "i64",
+            Self::Bool => "bool",
+            Self::Utf8 => "utf8",
+            Self::Int64Array => "i64[]",
+            Self::Unit => "unit",
+        }
+    }
 }
 
 /// 宿主边界实参种类。
@@ -88,6 +101,17 @@ pub enum HostParameterKind {
     /// 字节数组都是本次调用的**桥侧临时副本**，返回前释放；guest 把它们保存到
     /// 调用之外属于违反宿主边界合同。
     Utf8,
+}
+
+impl HostParameterKind {
+    /// 清单载体标签：跨仓消费（执行清单 → runner）的稳定字符串，不是调试文本。
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Int64 => "i64",
+            Self::Int64Array => "i64[]",
+            Self::Utf8 => "utf8",
+        }
+    }
 }
 
 /// 一个模块级属性导出：宿主读取 `<module>.<name>` 时得到 `symbol` 的返回值。

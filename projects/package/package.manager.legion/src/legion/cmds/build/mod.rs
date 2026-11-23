@@ -755,6 +755,8 @@ fn write_execution_manifest(
             invocation: export.invocation.clone(),
             abi_digest: export.abi_digest.clone(),
             abi: export.abi.clone(),
+            parameters: export.parameters.clone(),
+            returns: export.returns.clone(),
         })
         .collect::<Vec<_>>();
     ExecutionManifest::from_build_plan(plan, output_dir, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)

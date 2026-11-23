@@ -50,6 +50,9 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
                     invocation: "wasm callExport".to_string(),
                     abi_digest: abi_digest.clone(),
                     abi: "wasm".to_string(),
+                    // wasm 导出面的载体签名由 ABI schema 承载，清单不重复投影。
+                    parameters: Vec::new(),
+                    returns: String::new(),
                 })
                 .collect()
         }

@@ -127,6 +127,14 @@ pub struct LibraryExportIndexEntry {
     /// 旧 manifest 缺少该字段时按空串读取。
     #[serde(default)]
     pub abi: String,
+    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；lane 尚未冻结
+    /// 该事实或旧 manifest 缺少该字段时为空列表。
+    #[serde(default)]
+    pub parameters: Vec<String>,
+    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；lane 尚未
+    /// 冻结该事实或旧 manifest 缺少该字段时为空串。
+    #[serde(default)]
+    pub returns: String,
 }
 
 /// execution manifest：记录构建输入/产物摘要与运行契约，供 `run` 判断产物是否新鲜。

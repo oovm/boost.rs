@@ -69,6 +69,9 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                         invocation: "ovm run --entry".to_string(),
                         abi_digest: contract.digest.clone(),
                         abi: "ovm".to_string(),
+                        // OVM 导出面的载体签名由 ABI sidecar 承载，清单不重复投影。
+                        parameters: Vec::new(),
+                        returns: String::new(),
                     })
                     .collect();
             }

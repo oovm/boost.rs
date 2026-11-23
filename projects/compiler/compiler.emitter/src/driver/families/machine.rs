@@ -108,6 +108,8 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     invocation: invocation.to_string(),
                     abi_digest: String::new(),
                     abi: abi.to_string(),
+                    parameters: export.parameters.clone(),
+                    returns: export.returns.clone(),
                 })
                 .collect();
             return Ok(DriverCompileReport {
@@ -141,6 +143,8 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     invocation: invocation.to_string(),
                     abi_digest: String::new(),
                     abi: "c-abi".to_string(),
+                    parameters: export.parameters.clone(),
+                    returns: export.returns.clone(),
                 })
                 .collect();
             return Ok(DriverCompileReport {

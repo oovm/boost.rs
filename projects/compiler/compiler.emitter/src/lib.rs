@@ -809,6 +809,12 @@ pub struct DriverLibraryExport {
     pub abi_digest: String,
     /// 目标 ABI 合同标签（`node-api` / `cpython` / `c-abi` / `wasm` / `ovm` / `jvm-managed` / `clr-managed`）。
     pub abi: String,
+    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；lane 尚未冻结
+    /// 该事实时为空列表。
+    pub parameters: Vec<String>,
+    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；lane 尚未
+    /// 冻结该事实时为空串。
+    pub returns: String,
 }
 
 /// 驱动层编译结果。

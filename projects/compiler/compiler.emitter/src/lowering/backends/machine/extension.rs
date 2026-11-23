@@ -60,6 +60,11 @@ pub struct MachineHostExport {
     pub source_name: String,
     /// 目标命名合同投影后的宿主公开名。
     pub public_name: String,
+    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；由冻结签名导出，
+    /// 供执行清单的宿主消费者区分整数、序列与文本，不在消费侧重新猜测。
+    pub parameters: Vec<String>,
+    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
+    pub returns: String,
 }
 
 /// 把已冻结的目标计划降低为宿主扩展共享库。
@@ -180,17 +185,21 @@ pub fn lower_fragment_to_machine_extension(
     let executable = compile_shared_container(platform, &image)?;
     verify_shared_image(&executable, platform)?;
 
-    // 宿主导出面按冻结顺序（与 methods 一致按公开名排序）携带源码名 + 公开名。
-    let mut host_exports: Vec<MachineHostExport> = submission
-        .backend_plan
-        .export_names()
+    // 宿主导出面按冻结顺序（与 methods 一致按公开名排序）携带源码名 + 公开名 +
+    // 载体签名：签名只来自上面已闭合的 `HostMethod`，不在清单消费侧重新推导。
+    let mut source_names: BTreeMap<String, String> = BTreeMap::new();
+    for (instance, source_name) in submission.backend_plan.export_names() {
+        source_names.insert(host_export_public_name(&submission.backend_plan, instance, host), source_name.clone());
+    }
+    let host_exports: Vec<MachineHostExport> = methods
         .iter()
-        .map(|(instance, source_name)| MachineHostExport {
-            source_name: source_name.clone(),
-            public_name: host_export_public_name(&submission.backend_plan, instance, host),
+        .map(|method| MachineHostExport {
+            source_name: source_names.get(&method.name).cloned().unwrap_or_default(),
+            public_name: method.name.clone(),
+            parameters: method.parameters.iter().map(|kind| kind.tag().to_string()).collect(),
+            returns: method.returns.tag().to_string(),
         })
         .collect();
-    host_exports.sort_by(|left, right| left.public_name.cmp(&right.public_name));
 
     Ok(X64LoweredExtension {
         executable,

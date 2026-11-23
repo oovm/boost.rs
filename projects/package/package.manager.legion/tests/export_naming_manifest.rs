@@ -113,6 +113,8 @@ fn plain_dll_export_index_uses_source_names_and_ignores_case_annotation() {
     let move_zeroes = export_of(&manifest, "move_zeroes");
     assert_eq!(move_zeroes.logical_name, "move_zeroes", "C ABI 公开名就是源码名");
     assert_eq!(move_zeroes.abi, "c-abi");
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "C ABI 清单记录冻结形参载体");
+    assert_eq!(move_zeroes.returns, "i64", "C ABI 清单记录冻结返回载体");
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "two_sum", "C ABI 忽略 `case:` 注解改名");
     assert_eq!(two_sum.abi, "c-abi");
@@ -127,6 +129,8 @@ fn node_extension_export_index_projects_camel_case_and_honors_annotation() {
     let move_zeroes = export_of(&manifest, "move_zeroes");
     assert_eq!(move_zeroes.logical_name, "moveZeroes", "Node 无注解时按 camelCase 投影源码名");
     assert_eq!(move_zeroes.abi, "node-api");
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "Node-API 清单记录冻结形参载体");
+    assert_eq!(move_zeroes.returns, "i64", "Node-API 清单记录冻结返回载体");
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "twoSum", "Node 有注解时用注解名（兼容旧行为）");
     assert_eq!(two_sum.abi, "node-api");

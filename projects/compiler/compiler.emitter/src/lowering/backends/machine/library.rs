@@ -45,6 +45,24 @@ pub struct MachineLibraryExport {
     pub source_name: String,
     /// C ABI 公开符号名（本 lane 合同下等于源码名）。
     pub public_name: String,
+    /// 形参载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；来自冻结签名，
+    /// 供外部 C 消费者按清单装载与调用，不在消费侧重新猜测。
+    pub parameters: Vec<String>,
+    /// 返回载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
+    pub returns: String,
+}
+
+/// 语义类型 → 清单载体标签；未闭合载体保留语义类型文本，避免伪装成已定案 ABI。
+fn library_type_tag(ty: &crate::backend_plan_views::SemanticType) -> String {
+    use crate::backend_plan_views::SemanticType;
+    match ty {
+        SemanticType::Integer64 { signed: true } => "i64".to_string(),
+        SemanticType::Boolean => "bool".to_string(),
+        SemanticType::Utf8 => "utf8".to_string(),
+        SemanticType::Unit => "unit".to_string(),
+        SemanticType::Array(element) if matches!(element.as_ref(), SemanticType::Integer64 { signed: true }) => "i64[]".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// 把已冻结的目标计划降低为普通共享库。
@@ -75,7 +93,24 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
         if names.insert(*instance, export_name.clone()).is_some() {
             return Err(format!("普通共享库导出名 `{export_name}` 重复：不得用同名导出覆盖", ));
         }
-        exports.push(MachineLibraryExport { source_name: export_name.clone(), public_name: export_name.clone() });
+        // 载体签名来自冻结函数类型；缺函数体时留空标签，消费侧按未知处理，
+        // 不用默认值伪造已定案签名。
+        let (parameters, returns) = submission
+            .backend_plan
+            .get_function(instance)
+            .map(|view| {
+                (
+                    view.function.param_types.iter().map(library_type_tag).collect(),
+                    library_type_tag(&view.function.return_type),
+                )
+            })
+            .unwrap_or_default();
+        exports.push(MachineLibraryExport {
+            source_name: export_name.clone(),
+            public_name: export_name.clone(),
+            parameters,
+            returns,
+        });
     }
     if exports.is_empty() {
         return Err(format!(
