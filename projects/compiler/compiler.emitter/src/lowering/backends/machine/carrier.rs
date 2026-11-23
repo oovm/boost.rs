@@ -274,17 +274,23 @@ pub fn python_module_data(
 ///
 /// `PyArg_ParseTuple` 返回 0 表示解析失败（类型/个数不符），此时宿主已经设置异常，
 /// 包装体原样返回 `NULL`，不伪造结果。
-pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str, arena: Option<u32>) -> X64ProgramFunction {
+pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str, arena: Option<u32>, platform: X64Platform) -> X64ProgramFunction {
     use X64TextInstruction as Lir;
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
     const TEMP_SLOT: u16 = 2;
     const FIRST_ARGUMENT_SLOT: u16 = 3;
     const FAIL_LABEL: u32 = 0;
+    const GATHER_LOOP_LABEL: u32 = 1;
+    const GATHER_END_LABEL: u32 = 2;
+    const ALLOC_FAIL_LABEL: u32 = 3;
     let argument_slot = |index: usize| FIRST_ARGUMENT_SLOT + index as u16;
-    let descriptor_slot = FIRST_ARGUMENT_SLOT + method.parameters.len() as u16;
-    let pointer_slot = descriptor_slot + 1;
-    let length_slot = descriptor_slot + 2;
+    // 文本 gather 帧槽：数组指针、计数、分配字节数、分配辅助、条件、暂存缓冲、
+    // 游标、下标、字节周转。
+    let text_slot_base = FIRST_ARGUMENT_SLOT + method.parameters.len() as u16;
+    let text_slot = |offset: u16| text_slot_base + offset;
+    let allocator = array_runtime::ArrayAllocator::for_platform(platform);
+    let slot_count = text_slot_base + if method.returns == HostValueKind::Utf8 { 10 } else { 0 };
 
     let mut instructions = Vec::new();
     if let Some(arena) = arena {
@@ -313,21 +319,73 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     instructions.push(Lir::Call(method.symbol.clone()));
     match method.returns {
         HostValueKind::Utf8 => {
-            // 符号返回的是镜像内字符串描述符地址；宿主侧复制成 `str`，描述符本身
-            // 属于镜像、永不释放，因此不需要跨 CRT 的所有权转移。
+            // guest 文本值是 `Utf8Text` 对象：`{ [0] = _repr 数组 }`，数组逐字节占
+            // 一个 8 字节槽（数组运行时合同）。桥把字节 gather 进连续暂存缓冲，
+            // `PyUnicode_FromStringAndSize` 复制后立即释放；分配失败返回 `NULL`
+            // （宿主按 SystemError 通道报告，不伪造结果、不崩溃）。
             instructions.extend([
-                Lir::StoreSlot(descriptor_slot),
-                Lir::LoadSlot(descriptor_slot),
-                Lir::AddRaxImmediate(8),
-                Lir::StoreSlot(pointer_slot),
-                Lir::LoadSlot(descriptor_slot),
-                Lir::LoadDescriptorLength,
-                Lir::StoreSlot(length_slot),
-                Lir::LoadSlotToArg { slot: pointer_slot, index: 0 },
-                Lir::LoadSlotToArg { slot: length_slot, index: 1 },
-                Lir::CallImport { module: dll.to_string(), field: "PyUnicode_FromStringAndSize".to_string() },
-                Lir::Return,
+                Lir::StoreSlot(text_slot(0)),
+                Lir::LoadSlot(text_slot(0)),
+                Lir::LoadFromRaxDisplacement(0),
+                Lir::StoreSlot(text_slot(0)),
+                Lir::LoadSlot(text_slot(0)),
+                Lir::LoadFromRaxDisplacement(0),
+                Lir::StoreSlot(text_slot(1)),
             ]);
+            // 暂存缓冲：`array_allocate(count)`。
+            instructions.push(Lir::LoadSlot(text_slot(1)));
+            instructions.extend(array_runtime::array_allocate(
+                allocator,
+                ArrayAllocationSlots { count: text_slot(1), bytes: text_slot(2), auxiliary: text_slot(3), condition: text_slot(4) },
+                ALLOC_FAIL_LABEL,
+            ));
+            instructions.extend([
+                Lir::StoreSlot(text_slot(5)),
+                Lir::LoadI64(0),
+                Lir::StoreSlot(text_slot(6)),
+                Lir::LoadSlot(text_slot(5)),
+                Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                Lir::StoreSlot(text_slot(7)),
+                Lir::Label(GATHER_LOOP_LABEL),
+                Lir::LoadSlot(text_slot(6)),
+                Lir::LoadSlotToRcx(text_slot(1)),
+                Lir::Lt,
+                Lir::StoreSlot(text_slot(4)),
+                Lir::LoadSlot(text_slot(4)),
+                Lir::JumpIfZero(GATHER_END_LABEL),
+                Lir::LoadSlot(text_slot(0)),
+                Lir::LoadSlotToRcx(text_slot(6)),
+                Lir::LoadIndexedFromRaxRcx,
+                Lir::StoreSlot(text_slot(8)),
+                Lir::LoadSlot(text_slot(7)),
+                Lir::LoadSlotToRdx(text_slot(8)),
+                Lir::StoreByteAtRaxFromRdx,
+                Lir::LoadSlot(text_slot(7)),
+                Lir::AddRaxImmediate(1),
+                Lir::StoreSlot(text_slot(7)),
+                Lir::LoadSlot(text_slot(6)),
+                Lir::AddRaxImmediate(1),
+                Lir::StoreSlot(text_slot(6)),
+                Lir::Jump(GATHER_LOOP_LABEL),
+                Lir::Label(GATHER_END_LABEL),
+                Lir::LoadSlot(text_slot(5)),
+                Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                Lir::StoreSlot(text_slot(8)),
+                Lir::LoadSlotToArg { slot: text_slot(8), index: 0 },
+                Lir::LoadSlotToArg { slot: text_slot(1), index: 1 },
+                Lir::CallImport { module: dll.to_string(), field: "PyUnicode_FromStringAndSize".to_string() },
+                // 复制已完成：先保存 `PyObject*`，释放暂存缓冲，再返回。
+                Lir::StoreSlot(text_slot(8)),
+                Lir::LoadI64(0),
+                Lir::StoreSlot(text_slot(9)),
+                Lir::LoadSlot(text_slot(5)),
+            ]);
+            instructions.extend(array_runtime::array_free(
+                allocator,
+                ArrayAllocationSlots { count: text_slot(1), bytes: text_slot(2), auxiliary: text_slot(3), condition: text_slot(4) },
+                text_slot(9),
+            ));
+            instructions.extend([Lir::LoadSlot(text_slot(8)), Lir::Return]);
         }
         HostValueKind::Bool => {
             instructions.push(Lir::StoreSlot(TEMP_SLOT));
@@ -346,8 +404,12 @@ pub fn python_method_wrapper(method: &HostMethod, format_offset: u32, dll: &str,
     instructions.push(Lir::Label(FAIL_LABEL));
     instructions.push(Lir::LoadI64(0));
     instructions.push(Lir::Return);
+    // 暂存缓冲分配失败：返回 `NULL`，由宿主按 SystemError 通道报告。
+    instructions.push(Lir::Label(ALLOC_FAIL_LABEL));
+    instructions.push(Lir::LoadI64(0));
+    instructions.push(Lir::Return);
 
-    X64ProgramFunction { name: python_wrapper_name(&method.symbol), slot_count: length_slot + 1, instructions }
+    X64ProgramFunction { name: python_wrapper_name(&method.symbol), slot_count, instructions }
 }
 
 /// `PyInit_<module>` 入口：多阶段初始化返回经 `PyModuleDef_Init` 初始化的定义地址。
@@ -604,14 +666,14 @@ pub fn node_method_wrapper(
     const RESULT_SLOT: u16 = 11;
     const OUT_FIRST_SLOT: u16 = 12;
     // 字符串返回的额外帧槽：`argv`/out 区最多到 17，以下从 18 起，互不重叠。
-    const DESCRIPTOR_SLOT: u16 = 18;
-    const POINTER_SLOT: u16 = 19;
-    const LENGTH_SLOT: u16 = 20;
     const STRING_SLOT: u16 = 21;
     // `napi_get_value_bigint_int64` 的 `bool* lossless` 出参；每次调用前清零。
     const BIGINT_LOSSLESS_SLOT: u16 = 22;
     const FAIL_LABEL: u32 = 0;
     const CALLBACK_OK_LABEL: u32 = 1;
+    // 文本 gather 循环标签：避开参数继续标签（`2 + index`）与清理种子（300/400/500）。
+    const GATHER_LOOP_LABEL: u32 = 600;
+    const GATHER_END_LABEL: u32 = 601;
     let argv_slot = |index: usize| ARGV_FIRST_SLOT + NODE_METHOD_MAX_PARAMETERS as u16 - 1 - index as u16;
     let out_slot = |index: usize| OUT_FIRST_SLOT + index as u16;
     let continue_label = |index: usize| 2 + index as u32;
@@ -638,7 +700,12 @@ pub fn node_method_wrapper(
     const ARRAY_HEAP: u16 = 7;
     const ARRAY_ALLOCATED: u16 = 8;
     let array_count = method.parameters.iter().filter(|kind| matches!(kind, HostParameterKind::Int64Array)).count();
-    let slot_count = array_slot_base + 9 * array_count as u16;
+    // 文本返回的 gather 帧槽：数组指针、计数、分配字节数、分配辅助、条件、
+    // 暂存缓冲、游标、下标、字节周转——排在数组编组区之后，互不重叠。
+    let returns_text = method.returns == HostValueKind::Utf8;
+    let text_slot_base = array_slot_base + 9 * array_count as u16;
+    let text_slot = |offset: u16| text_slot_base + offset;
+    let slot_count = text_slot_base + if returns_text { 9 } else { 0 };
 
     // 失败清理：只释放本次调用真正分配成功过的镜像副本（标记在分配后置 1），
     // 因此部分编组失败不会泄漏，也不会写回半成品。
@@ -938,27 +1005,76 @@ pub fn node_method_wrapper(
     }
     match method.returns {
         HostValueKind::Utf8 => {
-            // 镜像内字符串描述符 → Node 字符串；描述符永不释放，无需所有权转移。
+            // guest 文本值是 `Utf8Text` 对象：`{ [0] = _repr 数组 }`，数组逐字节占
+            // 一个 8 字节槽（数组运行时合同）。桥把字节 gather 进一段连续暂存缓冲
+            // （同一分配/释放实现），`napi_create_string_utf8` 复制后立即释放——
+            // 暂存缓冲的有效期就是这一次调用。
             instructions.extend([
                 Lir::LoadSlot(RESULT_SLOT),
-                Lir::StoreSlot(DESCRIPTOR_SLOT),
-                Lir::LoadSlot(DESCRIPTOR_SLOT),
-                Lir::AddRaxImmediate(8),
-                Lir::StoreSlot(POINTER_SLOT),
-                Lir::LoadSlot(DESCRIPTOR_SLOT),
-                Lir::LoadDescriptorLength,
-                Lir::StoreSlot(LENGTH_SLOT),
-                // `napi_create_string_utf8(env, ptr, len, &out)`。
+                Lir::LoadFromRaxDisplacement(0),
+                Lir::StoreSlot(text_slot(0)),
+                Lir::LoadSlot(text_slot(0)),
+                Lir::LoadFromRaxDisplacement(0),
+                Lir::StoreSlot(text_slot(1)),
+            ]);
+            // 暂存缓冲：`array_allocate(count)`（头部之外按 8 字节槽留足字节）。
+            instructions.push(Lir::LoadSlot(text_slot(1)));
+            instructions.extend(array_runtime::array_allocate(
+                allocator,
+                ArrayAllocationSlots { count: text_slot(1), bytes: text_slot(2), auxiliary: text_slot(3), condition: text_slot(4) },
+                allocation_failure_label,
+            ));
+            instructions.extend([
+                Lir::StoreSlot(text_slot(5)),
+                Lir::LoadI64(0),
+                Lir::StoreSlot(text_slot(6)),
+                Lir::LoadSlot(text_slot(5)),
+                Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                Lir::StoreSlot(text_slot(7)),
+                Lir::Label(GATHER_LOOP_LABEL),
+                // `index < count`。
+                Lir::LoadSlot(text_slot(6)),
+                Lir::LoadSlotToRcx(text_slot(1)),
+                Lir::Lt,
+                Lir::StoreSlot(text_slot(4)),
+                Lir::LoadSlot(text_slot(4)),
+                Lir::JumpIfZero(GATHER_END_LABEL),
+                // `*cursor = array[index]`（低字节）。
+                Lir::LoadSlot(text_slot(0)),
+                Lir::LoadSlotToRcx(text_slot(6)),
+                Lir::LoadIndexedFromRaxRcx,
+                Lir::StoreSlot(text_slot(8)),
+                Lir::LoadSlot(text_slot(7)),
+                Lir::LoadSlotToRdx(text_slot(8)),
+                Lir::StoreByteAtRaxFromRdx,
+                Lir::LoadSlot(text_slot(7)),
+                Lir::AddRaxImmediate(1),
+                Lir::StoreSlot(text_slot(7)),
+                Lir::LoadSlot(text_slot(6)),
+                Lir::AddRaxImmediate(1),
+                Lir::StoreSlot(text_slot(6)),
+                Lir::Jump(GATHER_LOOP_LABEL),
+                Lir::Label(GATHER_END_LABEL),
+                // `napi_create_string_utf8(env, bytes, count, &out)`。
                 Lir::LoadSlotToArg { slot: ENV_SLOT, index: 0 },
-                Lir::LoadSlotToArg { slot: POINTER_SLOT, index: 1 },
-                Lir::LoadSlotToArg { slot: LENGTH_SLOT, index: 2 },
+                Lir::LoadSlot(text_slot(5)),
+                Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
+                Lir::StoreSlot(text_slot(8)),
+                Lir::LoadSlotToArg { slot: text_slot(8), index: 1 },
+                Lir::LoadSlotToArg { slot: text_slot(1), index: 2 },
                 Lir::LoadSlotAddress(STRING_SLOT),
                 Lir::StoreSlot(TEMP_SLOT),
                 Lir::LoadSlotToArg { slot: TEMP_SLOT, index: 3 },
                 Lir::CallImport { module: dll.to_string(), field: "napi_create_string_utf8".to_string() },
-                Lir::LoadSlot(STRING_SLOT),
-                Lir::Return,
+                // 释放暂存缓冲；创建失败也走同一释放（`out` 保持未写入，返回 `NULL`）。
+                Lir::LoadSlot(text_slot(5)),
             ]);
+            instructions.extend(array_runtime::array_free(
+                allocator,
+                ArrayAllocationSlots { count: text_slot(1), bytes: text_slot(2), auxiliary: text_slot(3), condition: text_slot(4) },
+                ZERO_SLOT,
+            ));
+            instructions.extend([Lir::LoadSlot(STRING_SLOT), Lir::Return]);
         }
         HostValueKind::Bool | HostValueKind::Int64 => {
             let field = match method.returns {

@@ -1379,9 +1379,11 @@ impl FunctionLowerer<'_> {
                 self.push(X64TextInstruction::LoadI64(i64::from(*value)));
                 Ok(())
             }
-            // 编译期文本落成程序内联的自相对描述符；`utf16` 复用同一物理载体，
-            // 因为本 lane 尚未闭合任何真实的 UTF-16 消费路径（见 `is_local_carrier_type`）。
-            Constant::Utf8(value) | Constant::Utf16(value) => {
+            // 编译期文本物化为真实 `Utf8Text` 对象（见 `emit_text_constant`）。
+            Constant::Utf8(value) => self.emit_text_constant(value),
+            // `utf16` 复用静态描述符：本 lane 尚未闭合任何真实的 UTF-16 消费路径
+            // （见 `is_local_carrier_type`），语言值图里不会出现读取其内容的边。
+            Constant::Utf16(value) => {
                 self.push(X64TextInstruction::LoadString(value.clone()));
                 Ok(())
             }
@@ -1392,6 +1394,49 @@ impl FunctionLowerer<'_> {
             }
             other => Err(format!("x86_64 lowering 尚不支持常量 `{other:?}`：缺少 x86_64 常量载体合同，function={}", self.function.symbol)),
         }
+    }
+
+    /// 把编译期文本物化为 `Utf8Text` 对象：`{ [0] = _repr 数组指针 }`，数组按
+    /// `[u8]` 合同逐字节占一个 8 字节槽（见 `array_runtime`）。
+    ///
+    /// 这是 guest 里语言文本值的唯一载体：std 的内容路径（`FieldGet _repr`、
+    /// `equals_repr`、`byte_at`）都按对象读取，静态 `{self_rel,len}` 描述符只
+    /// 留给宿主桥的镜像文本，不再充当语言值。分配失败走统一定义好的失败出口。
+    fn emit_text_constant(&mut self, value: &str) -> Result<()> {
+        let bytes = value.as_bytes();
+        let base = self.reserve_temps(5);
+        let count_slot = self.temp_slot(base, 0)?;
+        let size_slot = self.temp_slot(base, 1)?;
+        let auxiliary = self.temp_slot(base, 2)?;
+        let condition = self.temp_slot(base, 3)?;
+        let array_slot = self.temp_slot(base, 4)?;
+        self.push(X64TextInstruction::LoadI64(bytes.len() as i64));
+        self.uses_failure_exit = true;
+        for item in array_runtime::array_allocate(
+            self.allocator,
+            array_runtime::ArrayAllocationSlots { count: count_slot, bytes: size_slot, auxiliary, condition },
+            self.failure_label,
+        ) {
+            self.push(item);
+        }
+        self.push(X64TextInstruction::StoreSlot(array_slot));
+        // 逐字节写入 8 字节元素槽（常量长度编译期已知，直接展开）。
+        for (index, byte) in bytes.iter().enumerate() {
+            self.push(X64TextInstruction::LoadI64(i64::from(*byte)));
+            self.push(X64TextInstruction::StoreSlot(condition));
+            self.push(X64TextInstruction::LoadSlot(array_slot));
+            self.push(X64TextInstruction::LoadSlotToRdx(condition));
+            self.push(X64TextInstruction::StoreRdxToRaxDisplacement(array_runtime::ARRAY_ELEMENT_OFFSET + 8 * index as i32));
+        }
+        // 对象只有一个字段：偏移 0 指向 `_repr` 数组（与 `StructNew` 的引用布局一致）。
+        self.push(X64TextInstruction::LoadI64(array_runtime::ARRAY_ELEMENT_BYTES));
+        for item in array_runtime::object_allocate(self.allocator, size_slot, auxiliary, condition, self.failure_label) {
+            self.push(item);
+        }
+        // `rax` 是对象指针，`rcx` 装入数组指针后写入字段 0。
+        self.push(X64TextInstruction::LoadSlotToRcx(array_slot));
+        self.push(X64TextInstruction::StoreRcxToRax);
+        Ok(())
     }
 
     fn emit_operand_to_rax(&mut self, operand: &Operand) -> Result<()> {
@@ -1447,7 +1492,8 @@ impl FunctionLowerer<'_> {
                 Ok(())
             }
             Operand::Constant(constant) => {
-                if !matches!(constant, Constant::Int(_) | Constant::Bool(_)) {
+                // `Utf8` 常量物化为 `Utf8Text` 对象指针（8 字节槽载体），与值操作数同形。
+                if !matches!(constant, Constant::Int(_) | Constant::Bool(_) | Constant::Utf8(_)) {
                     return Err(format!(
                         "x86_64 lowering 尚不支持常量 `{constant:?}` 作为数组元素：缺少 x86_64 常量载体合同，function={}",
                         self.function.symbol
@@ -2278,13 +2324,13 @@ fn is_array_element_carrier_candidate(ty: &SemanticType) -> bool {
         )
 }
 
-/// 帧槽可承载的类型：标量值、堆数组指针（`[T]` 的物理载体是 8 字节指针），
-/// 以及编译期文本的描述符指针。
+/// 帧槽可承载的类型：标量值、堆数组指针（`[T]` 的物理载体是 8 字节指针）、
+/// 元组堆对象指针，以及文本对象指针。
 ///
-/// 文本只在「不读取内容」的路径上出现（例如 `panic` 的消息实参，原生以 `ud2`
-/// 终止而不格式化），物理载体是程序装配器内联的自相对描述符
-/// `{ i32 self_relative_ptr; u32 len }`——与宿主扩展复用同一载体，不引入第二套
-/// 字符串布局。真正消费文本的宿主边界仍由扩展 lane 负责。
+/// `utf8` 语言值统一物化为 `Utf8Text` 对象 `{ [0] = _repr 数组 }`（见
+/// `emit_text_constant`），std 的内容路径按对象读取。`utf16` 仍复用静态自相对
+/// 描述符 `{ i32 self_relative_ptr; u32 len }`：本 lane 尚未闭合任何真实的
+/// UTF-16 内容消费路径，语言值图里不会出现读取其内容的边。
 fn is_local_carrier_type(ty: &SemanticType) -> bool {
     is_slot_type(ty) || heap_array_element_type(ty).is_some() || matches!(ty, SemanticType::Utf8 | SemanticType::Utf16)
 }

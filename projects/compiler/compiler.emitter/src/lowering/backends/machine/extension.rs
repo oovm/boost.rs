@@ -144,7 +144,7 @@ pub fn lower_fragment_to_machine_extension(
             let arena_offset = Some(append_text_arena(&mut data));
             let bool_exports = any_returns_bool(properties, &methods);
             for (method, format_offset) in methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(method, format_offset, &host_library, arena_offset));
+                functions.push(python_method_wrapper(method, format_offset, &host_library, arena_offset, platform));
             }
             functions.push(python_module_exec(properties, &property_name_offsets, &host_library, arena_offset));
             functions.push(python_module_registration(module_name, &host_library));
