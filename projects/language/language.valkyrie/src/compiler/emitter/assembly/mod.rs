@@ -98,6 +98,25 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
         if request.backend_family == compiler_target::TargetBackendFamily::MachineCode {
             // 原生镜像由 机器码 lane 的 LIR/编码服务产出；适配器只提交目标输入
             // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
+            if request.artifact_purpose == compiler_target::ArtifactPurpose::Library {
+                // 普通共享库：导出面就是交付合同，没有进程入口，也不绑定宿主模块。
+                let product = compiler_emitter::emitter_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
+                    .map_err(|error| format!("普通共享库目标不合法：{error}"))?;
+                let lowered =
+                    compiler_emitter::emitter_backend_machine::lower_fragment_to_machine_library(&submission, product.platform())?;
+                let entry_symbol = lowered
+                    .entry_symbol
+                    .clone()
+                    .ok_or_else(|| "普通共享库缺少导出身份：适配器不得产出无导出面的库交付".to_string())?;
+                return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
+                    executable: lowered.executable,
+                    output_dir: request.output_dir.to_path_buf(),
+                    entry_symbol,
+                    artifact_extension: Some(lowered.artifact_extension),
+                    host_exports: lowered.exports,
+                    host_module: None,
+                }));
+            }
             if request.artifact_purpose == compiler_target::ArtifactPurpose::HostExtension {
                 let product = compiler_emitter::emitter_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
                     .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;

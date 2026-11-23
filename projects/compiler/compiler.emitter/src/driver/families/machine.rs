@@ -49,7 +49,17 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
         // 包装层不得把可执行镜像改标为库或扩展。
         match request.purpose {
             compiler_target::ArtifactPurpose::Library => {
-                return Err("`machine-code` 库交付尚未接线；拒绝把可执行镜像改标为库产物".to_string());
+                // 普通共享库：导出面就是交付合同；镜像必须是共享容器（扩展名门
+                // 已保证），没有进程入口，也不得携带宿主模块绑定。
+                if input.artifact_extension.is_none() {
+                    return Err("native 共享库输入缺少产物扩展名（`.dll`/`.so`）；拒绝写出不具名的共享库交付".to_string());
+                }
+                if input.host_exports.is_empty() {
+                    return Err("native 共享库缺少冻结的导出面；拒绝产出无导出的库交付".to_string());
+                }
+                if input.host_module.is_some() {
+                    return Err("native 共享库不得绑定宿主模块；宿主交付请改用扩展用途".to_string());
+                }
             }
             compiler_target::ArtifactPurpose::HostExtension => {
                 if input.artifact_extension.is_none() {
@@ -82,6 +92,37 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 Some(crate::emitter_backend_machine::HostModule::Node) => "node require",
                 Some(crate::emitter_backend_machine::HostModule::Python) => "python import",
                 None => return Err("native 宿主扩展缺少冻结的宿主合同；拒绝按扩展名猜装载方式".to_string()),
+            };
+            let library_exports = input
+                .host_exports
+                .iter()
+                .map(|name| crate::DriverLibraryExport {
+                    logical_name: name.clone(),
+                    physical_artifact: physical_artifact.clone(),
+                    invocation: invocation.to_string(),
+                    abi_digest: String::new(),
+                })
+                .collect();
+            return Ok(DriverCompileReport {
+                artifacts,
+                entry_symbol: Some(entry_symbol),
+                run_contracts: Vec::new(),
+                managed_abi: Vec::new(),
+                ovm_abi: Vec::new(),
+                library_exports,
+            });
+        }
+        // 普通共享库同样没有进程入口：交付事实是按系统加载器调用的 C ABI 导出索引
+        // （`LoadLibrary`/`dlopen` 按名取符号），运行合同为空是用途语义而非缺失。
+        if request.purpose == compiler_target::ArtifactPurpose::Library {
+            let physical_artifact = artifacts
+                .artifacts
+                .first()
+                .map(|artifact| artifact.path.clone())
+                .ok_or_else(|| "native 共享库没有产出共享镜像".to_string())?;
+            let invocation = match input.artifact_extension.as_deref() {
+                Some(".dll") => "LoadLibraryW + GetProcAddress",
+                _ => "dlopen + dlsym",
             };
             let library_exports = input
                 .host_exports

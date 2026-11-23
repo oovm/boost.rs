@@ -15,10 +15,12 @@ use compiler_target::{
 };
 
 pub use crate::lowering::backends::machine::{
-    HostMethod, HostModule, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64CallConv, X64DataTarget, X64LoweredExtension, X64Platform,
+    HostMethod, HostModule, HostProperty, HostValueKind, X64_TEXT_ARENA_CAPACITY, X64CallConv, X64DataTarget, X64LoweredExtension,
+    X64LoweredLibrary, X64Platform,
     X64ProductTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction, any_returns_bool, any_returns_utf8, append_text_arena,
     compile_shared_container, encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
-    encode_x64_program_with_imports, is_c_identifier, lower_fragment_to_machine_extension, lower_resolved_fragment_to_machine_image,
+    encode_x64_program_with_imports, is_c_identifier, lower_fragment_to_machine_extension, lower_fragment_to_machine_library,
+    lower_resolved_fragment_to_machine_image,
     node_addon_registration, node_method_wrapper,
     node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration, reset_text_arena,
 };
@@ -39,8 +41,8 @@ pub struct MachineImageBackendInput {
     /// 扩展名只决定产物文件身份与 `ArtifactKind`，不改变镜像字节或语言语义；
     /// 非共享镜像不得声明共享库扩展名。
     pub artifact_extension: Option<String>,
-    /// 宿主可见导出名：只由 `HostExtension` 用途的降低提交（承载服务按冻结
-    /// 导出面装配）。可执行交付必须为空，用途不由导出数量反推。
+    /// 宿主可见导出名：由 `HostExtension` 或 `Library` 用途的降低提交（承载服务按
+    /// 冻结导出面装配）。可执行交付必须为空，用途不由导出数量反推。
     pub host_exports: Vec<String>,
     /// 冻结的宿主类型：模块装载方式由它决定，不由产物扩展名反推。
     ///

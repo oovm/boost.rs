@@ -23,12 +23,14 @@ mod carrier;
 mod container;
 mod extension;
 mod host;
+mod library;
 mod x64_lir;
 mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
 pub use extension::{X64LoweredExtension, lower_fragment_to_machine_extension};
+pub use library::{X64LoweredLibrary, lower_fragment_to_machine_library};
 
 pub use carrier::{
     HostMethod, HostParameterKind, HostProperty, HostValueKind, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool, any_returns_utf8,

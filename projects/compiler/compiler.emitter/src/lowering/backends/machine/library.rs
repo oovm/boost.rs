@@ -1,0 +1,109 @@
+//! 普通原生共享库降低（`artifact: "library"` + 机器码目标）。
+//!
+//! 复用与可执行/宿主扩展相同的执行链：计划事实 → 文本 LIR（[`super::x86_64`]）
+//! → 唯一程序装配器（[`super::x64_program`]）→ 共享库容器
+//! （[`super::container`]）。本模块只把**已冻结的导出面**映射成共享库符号，
+//! 不合成进程入口、不绑定任何宿主模块合同。
+//!
+//! 共享库不接受进程入口：入口是应用交付事实，与导出面互相独立。
+//! 导出名必须是合法 C 标识符，外部消费者（C/Python ctypes/其他宿主）按名装载。
+
+use std::collections::BTreeMap;
+
+use crate::{
+    FragmentSubmission, Result,
+    lowering::shared::physical_layout::{LayoutPolicy, resolve_physical_layouts},
+};
+use compiler_types::ItemInstanceId;
+
+use super::{
+    X64Platform, compile_shared_container, extension::verify_shared_image, is_c_identifier,
+    x64_program::encode_x64_program_with_dependencies,
+    x86_64::{collect_reachable_functions, lower_function_to_text_program},
+};
+
+/// 普通共享库降低结果：完整共享库镜像与导出事实。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct X64LoweredLibrary {
+    /// 共享库镜像字节（`PE32+` DLL 或 `ELF64 ET_DYN`）。
+    pub executable: Vec<u8>,
+    /// 首个导出符号（用于记录产物入口身份；库没有进程入口）。
+    pub entry_symbol: Option<String>,
+    /// 对外可见导出名（按冻结导出面顺序）。
+    pub exports: Vec<String>,
+    /// 产物扩展名（含点）：`.dll` / `.so`。
+    pub artifact_extension: String,
+}
+
+/// 把已冻结的目标计划降低为普通共享库。
+pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platform: X64Platform) -> Result<X64LoweredLibrary> {
+    if let Some(entry) = submission.backend_plan.entry_operation() {
+        return Err(format!(
+            "普通共享库不接受进程入口（`{entry:?}`）：入口是应用交付事实，库交付只公开导出面，target={}",
+            platform.name()
+        ));
+    }
+
+    let reachable = collect_reachable_functions(submission);
+    if reachable.is_empty() {
+        return Err(format!("普通共享库没有可达函数：冻结导出面为空，拒绝产出空库，target={}", platform.name()));
+    }
+
+    // 导出名必须是 C 标识符：外部消费者按名 `GetProcAddress` / `dlsym` 装载。
+    let mut names: BTreeMap<ItemInstanceId, String> = BTreeMap::new();
+    let mut exports = Vec::new();
+    for (instance, export_name) in submission.backend_plan.export_names() {
+        if !is_c_identifier(export_name) {
+            return Err(format!(
+                "普通共享库导出名 `{export_name}` 不是合法 C 标识符：外部消费者按名装载，target={}",
+                platform.name()
+            ));
+        }
+        if names.insert(*instance, export_name.clone()).is_some() {
+            return Err(format!("普通共享库导出名 `{export_name}` 重复：不得用同名导出覆盖", ));
+        }
+        exports.push(export_name.clone());
+    }
+    if exports.is_empty() {
+        return Err(format!(
+            "普通共享库必须至少公开一个 `[export]` 函数：无导出面拒绝产出库产物，target={}",
+            platform.name()
+        ));
+    }
+
+    // 内部闭包函数取确定性的私有符号名，不占用公开导出名。
+    for (index, instance) in reachable.iter().enumerate() {
+        if names.contains_key(instance) {
+            continue;
+        }
+        names.insert(*instance, format!("__nyar_library_internal_{index}"));
+    }
+
+    // 与可执行/扩展 lane 使用同一物理布局策略：库对象的字段偏移不得另算一套。
+    let layouts = resolve_physical_layouts(submission.backend_plan.aggregate_layouts(), LayoutPolicy::X64)
+        .map_err(|reason| format!("普通共享库降低：物理布局解析失败：{reason}"))?;
+    let mut functions = Vec::with_capacity(reachable.len());
+    for instance in &reachable {
+        let view = submission
+            .backend_plan
+            .get_function(instance)
+            .ok_or_else(|| format!("普通共享库降低：可达操作 `{instance:?}` 缺少函数体"))?;
+        functions.push(lower_function_to_text_program(
+            instance,
+            submission,
+            &view.function,
+            &reachable,
+            &names,
+            platform,
+            &layouts,
+        )?);
+    }
+
+    // 普通库不绑定宿主模块：没有导入面、没有宿主依赖、没有文本数据段。
+    let image = encode_x64_program_with_dependencies(&functions, &[], platform.abi(), &[], &[], &[])?;
+    let executable = compile_shared_container(platform, &image)?;
+    verify_shared_image(&executable, platform)?;
+
+    let artifact_extension = if platform.is_windows() { ".dll".to_string() } else { ".so".to_string() };
+    Ok(X64LoweredLibrary { executable, entry_symbol: exports.first().cloned(), exports, artifact_extension })
+}
