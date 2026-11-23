@@ -553,12 +553,24 @@ fn jvm_layout_field_ref(layout: &AggregateLayout, slot: usize, descriptor: JvmTy
 /// 类名只由 layout 身份派生；JVM 没有内联结构体，逐字段复制只能走
 /// `AggregateCopy`。零字段值存储布局与块 2 的载体拒绝保持同一合同。
 fn build_layout_classes(layouts: &AggregateLayoutPlan) -> Result<Vec<JvmClassFile>> {
+    // 第一遍：先为全部可达布局登记目标类型身份（类名只由布局身份派生）。
+    // 递归引用因此总能命中已注册的载体，不依赖布局遍历顺序。
     let mut classes = Vec::new();
+    let mut class_index_by_layout = BTreeMap::new();
     for layout in &layouts.layouts {
         if !(layout.storage.is_reference() || !layout.fields.is_empty()) {
             continue;
         }
-        let mut class_file = JvmClassFile::new(jvm_layout_class_name(layout));
+        class_index_by_layout.insert(layout.id, classes.len());
+        classes.push(JvmClassFile::new(jvm_layout_class_name(layout)));
+    }
+    // 第二遍：在同一份冻结计划上解析字段与引用（含闭合 `Apply` 的布局映射）。
+    for layout in &layouts.layouts {
+        let Some(&class_index) = class_index_by_layout.get(&layout.id)
+        else {
+            continue;
+        };
+        let class_file = &mut classes[class_index];
         for (slot, field) in layout.fields.iter().enumerate() {
             class_file.fields.push(JvmFieldSignature {
                 name: jvm_layout_field_name(slot),
@@ -567,7 +579,6 @@ fn build_layout_classes(layouts: &AggregateLayoutPlan) -> Result<Vec<JvmClassFil
             });
         }
         class_file.methods.push(jvm_default_constructor());
-        classes.push(class_file);
     }
     Ok(classes)
 }
@@ -752,12 +763,20 @@ fn jvm_array_element_descriptor(layouts: &AggregateLayoutPlan, element: &Semanti
                 return Err(format!("JVM 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 JVM 载体合同"));
             }
         }
-        // 泛型实例必须携带 canonical 冻结的实例级布局；计划边界会把它结算成
-        // `Nominal`。走到这里的 `Apply` 说明实例表示未结算，禁止按引用擦除掩盖缺口。
+        // 闭合泛型实例的布局身份只来自计划冻结的 `SemanticType → LayoutId` 索引；
+        // 缺映射或映射悬空都回到计划生产者修，开放泛型仍在这里失败。
         SemanticType::Apply(..) => {
-            return Err(format!(
-                "JVM 最小 lowering：泛型实例 `{element}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
-            ));
+            let Some(layout) = layouts.frozen_layout(element) else {
+                return Err(format!(
+                    "JVM 最小 lowering：泛型实例 `{element}` 缺少冻结布局映射：计划未把该闭合实例登记到 `SemanticType → LayoutId`（开放泛型不得进入发射）"
+                ));
+            };
+            if layout.storage.is_reference() {
+                JvmTypeDescriptor::Object(jvm_layout_class_name(layout))
+            }
+            else {
+                return Err(format!("JVM 最小 lowering 不支持值存储泛型实例 `{element}` 作为数组元素：缺少单槽 JVM 载体合同"));
+            }
         }
         SemanticType::Array(inner) | SemanticType::FixedArray { element: inner, .. } => {
             JvmTypeDescriptor::array(jvm_array_element_descriptor(layouts, inner)?)
@@ -812,10 +831,20 @@ pub(crate) fn jvm_type_descriptor(layouts: &AggregateLayoutPlan, ty: &SemanticTy
                 return Err(format!("JVM 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
             }
         }
-        // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
-        // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
+        // 闭合泛型实例的布局身份只来自计划冻结的 `SemanticType → LayoutId` 索引。
+        // 与 `Nominal` 分支同一存储规则；缺映射、悬空或身份冲突回计划生产者修。
         SemanticType::Apply(..) => {
-            return Err(format!("JVM 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"));
+            let Some(layout) = layouts.frozen_layout(ty) else {
+                return Err(format!(
+                    "JVM 最小 lowering：泛型实例 `{ty}` 缺少冻结布局映射：计划未把该闭合实例登记到 `SemanticType → LayoutId`（开放泛型不得进入发射）"
+                ));
+            };
+            if layout.storage.is_reference() || !layout.fields.is_empty() {
+                JvmTypeDescriptor::Object(jvm_layout_class_name(layout))
+            }
+            else {
+                return Err(format!("JVM 最小 lowering 不支持零字段值存储泛型实例 `{ty}`：缺少单槽 JVM 载体合同"));
+            }
         }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // companion 布局类。JVM 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
@@ -2309,5 +2338,76 @@ fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
         InstructionKind::ArrayLength { .. } => "ArrayLength",
         InstructionKind::NullIsNull { .. } => "NullIsNull",
         InstructionKind::NullUnwrap { .. } => "NullUnwrap",
+    }
+}
+
+#[cfg(test)]
+mod apply_layout_tests {
+    use super::*;
+    use compiler_target::Identifier;
+    use compiler_types::{FieldLayout, StorageKind};
+
+    fn closed_apply() -> SemanticType {
+        SemanticType::Apply(
+            Box::new(SemanticType::Named(Identifier::new("std::collection::ArrayList"))),
+            vec![SemanticType::Integer64 { signed: true }],
+        )
+    }
+
+    fn plan_with_closed_apply(register: bool) -> AggregateLayoutPlan {
+        let apply = closed_apply();
+        let outer = AggregateLayout {
+            id: 0,
+            name: "Holder".to_string(),
+            namespace: String::new(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: vec![FieldLayout { name: "items".to_string(), ty: apply.clone() }],
+        };
+        let inner = AggregateLayout {
+            id: 1,
+            name: "ArrayList".to_string(),
+            namespace: String::new(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: vec![FieldLayout { name: "len".to_string(), ty: SemanticType::Integer64 { signed: true } }],
+        };
+        let mut plan = AggregateLayoutPlan { layouts: vec![outer, inner], ..Default::default() };
+        if register {
+            plan.layout_by_semantic_type.insert(apply, 1);
+        }
+        plan
+    }
+
+    #[test]
+    fn closed_apply_resolves_to_frozen_companion_class() {
+        let plan = plan_with_closed_apply(true);
+        let descriptor = jvm_type_descriptor(&plan, &closed_apply()).expect("闭合 Apply 必须由冻结索引结算");
+        assert_eq!(descriptor, JvmTypeDescriptor::Object(jvm_layout_class_name(&plan.layouts[1])));
+    }
+
+    #[test]
+    fn layout_classes_register_identity_before_resolving_fields() {
+        let plan = plan_with_closed_apply(true);
+        let classes = build_layout_classes(&plan).expect("字段引用必须命中已登记载体");
+        assert_eq!(classes.len(), 2);
+        assert_eq!(classes[0].fields[0].descriptor, JvmTypeDescriptor::Object(jvm_layout_class_name(&plan.layouts[1])));
+    }
+
+    #[test]
+    fn missing_apply_mapping_fails_closed() {
+        let plan = plan_with_closed_apply(false);
+        let error = jvm_type_descriptor(&plan, &closed_apply()).expect_err("缺少映射必须失败");
+        assert!(error.contains("缺少冻结布局映射"), "got: {error}");
+    }
+
+    #[test]
+    fn open_generic_apply_fails_closed() {
+        let open = SemanticType::Apply(
+            Box::new(SemanticType::Named(Identifier::new("ArrayList"))),
+            vec![SemanticType::Named(Identifier::new("T"))],
+        );
+        let error = jvm_type_descriptor(&AggregateLayoutPlan::default(), &open).expect_err("开放泛型不得发射");
+        assert!(error.contains("缺少冻结布局映射"), "got: {error}");
     }
 }

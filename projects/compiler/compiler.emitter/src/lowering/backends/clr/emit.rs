@@ -524,23 +524,35 @@ fn clr_instance_constructor(type_name: &str) -> MsilMethodBody {
 /// 规则与块 2 的 `msil_type` 载体分类一致：引用存储或非零字段布局才需要类型定义；
 /// 零字段值存储布局继续在载体层结构化拒绝。
 fn build_layout_types(layouts: &AggregateLayoutPlan) -> Result<Vec<MsilTypeDef>> {
+    // 第一遍：先为全部可达布局登记目标类型身份（类型名只由布局身份派生）。
+    // 递归引用因此总能命中已注册的类型定义，不依赖布局遍历顺序。
     let mut types = Vec::new();
+    let mut type_index_by_layout = BTreeMap::new();
     for layout in &layouts.layouts {
         if !(layout.storage.is_reference() || !layout.fields.is_empty()) {
             continue;
         }
         let type_name = clr_layout_type_name(layout);
-        let mut fields = Vec::with_capacity(layout.fields.len());
-        for (slot, field) in layout.fields.iter().enumerate() {
-            fields.push(MsilField { name: clr_layout_field_name(slot), ty: msil_type(layouts, &field.ty)?, is_static: false });
-        }
+        type_index_by_layout.insert(layout.id, types.len());
         types.push(MsilTypeDef {
             methods: vec![clr_instance_constructor(&type_name)],
             full_name: type_name,
             namespace: String::new(),
-            fields,
+            fields: Vec::new(),
             is_value_type: false,
         });
+    }
+    // 第二遍：在同一份冻结计划上解析字段与引用（含闭合 `Apply` 的布局映射）。
+    for layout in &layouts.layouts {
+        let Some(&type_index) = type_index_by_layout.get(&layout.id)
+        else {
+            continue;
+        };
+        let mut fields = Vec::with_capacity(layout.fields.len());
+        for (slot, field) in layout.fields.iter().enumerate() {
+            fields.push(MsilField { name: clr_layout_field_name(slot), ty: msil_type(layouts, &field.ty)?, is_static: false });
+        }
+        types[type_index].fields = fields;
     }
     Ok(types)
 }
@@ -646,12 +658,20 @@ fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &SemanticType
         SemanticType::Float32 => MsilType::Float32,
         SemanticType::Float64 => MsilType::Float64,
         SemanticType::Utf8 | SemanticType::Utf16 => MsilType::String,
-        // 泛型实例必须携带 canonical 冻结的实例级布局；计划边界会把它结算成
-        // `Nominal`。走到这里的 `Apply` 说明实例表示未结算，禁止按引用擦除掩盖缺口。
+        // 闭合泛型实例的布局身份只来自计划冻结的 `SemanticType → LayoutId` 索引；
+        // 缺映射或映射悬空都回到计划生产者修，开放泛型仍在这里失败。
         SemanticType::Apply(..) => {
-            return Err(format!(
-                "CLR 最小 lowering：泛型实例 `{element}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"
-            ));
+            let Some(layout) = layouts.frozen_layout(element) else {
+                return Err(format!(
+                    "CLR 最小 lowering：泛型实例 `{element}` 缺少冻结布局映射：计划未把该闭合实例登记到 `SemanticType → LayoutId`（开放泛型不得进入发射）"
+                ));
+            };
+            if layout.storage.is_reference() {
+                MsilType::Named(clr_layout_type_name(layout))
+            }
+            else {
+                return Err(format!("CLR 最小 lowering 不支持值存储泛型实例 `{element}` 作为数组元素：缺少单槽 CLR 载体合同"));
+            }
         }
         // 名义布局按冻结身份取类型定义名；值存储聚合没有单槽 CLR 载体。
         SemanticType::Nominal { layout, spelling } => {
@@ -722,10 +742,20 @@ pub(crate) fn msil_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Res
                 return Err(format!("CLR 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
             }
         }
-        // 泛型实例的实例表示必须在计划边界结算为携带布局身份的 `Nominal`；
-        // 缺少冻结布局身份即缺载体合同，禁止按引用擦除。
+        // 闭合泛型实例的布局身份只来自计划冻结的 `SemanticType → LayoutId` 索引。
+        // 与 `Nominal` 分支同一存储规则；缺映射、悬空或身份冲突回计划生产者修。
         SemanticType::Apply(..) => {
-            return Err(format!("CLR 最小 lowering：泛型实例 `{ty}` 缺少实例级布局结算：canonical 未冻结该实例的布局身份，拒绝按引用擦除"));
+            let Some(layout) = layouts.frozen_layout(ty) else {
+                return Err(format!(
+                    "CLR 最小 lowering：泛型实例 `{ty}` 缺少冻结布局映射：计划未把该闭合实例登记到 `SemanticType → LayoutId`（开放泛型不得进入发射）"
+                ));
+            };
+            if layout.storage.is_reference() || !layout.fields.is_empty() {
+                MsilType::Named(clr_layout_type_name(layout))
+            }
+            else {
+                return Err(format!("CLR 最小 lowering 不支持零字段值存储泛型实例 `{ty}`：缺少单槽 CLR 载体合同"));
+            }
         }
         // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
         // 布局类型定义。CLR 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
@@ -2105,5 +2135,76 @@ fn instruction_kind_name(kind: &InstructionKind) -> &'static str {
         InstructionKind::ArrayLength { .. } => "ArrayLength",
         InstructionKind::NullIsNull { .. } => "NullIsNull",
         InstructionKind::NullUnwrap { .. } => "NullUnwrap",
+    }
+}
+
+#[cfg(test)]
+mod apply_layout_tests {
+    use super::*;
+    use compiler_target::Identifier;
+    use compiler_types::{FieldLayout, StorageKind};
+
+    fn closed_apply() -> SemanticType {
+        SemanticType::Apply(
+            Box::new(SemanticType::Named(Identifier::new("std::collection::ArrayList"))),
+            vec![SemanticType::Integer64 { signed: true }],
+        )
+    }
+
+    fn plan_with_closed_apply(register: bool) -> AggregateLayoutPlan {
+        let apply = closed_apply();
+        let outer = AggregateLayout {
+            id: 0,
+            name: "Holder".to_string(),
+            namespace: String::new(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: vec![FieldLayout { name: "items".to_string(), ty: apply.clone() }],
+        };
+        let inner = AggregateLayout {
+            id: 1,
+            name: "ArrayList".to_string(),
+            namespace: String::new(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: vec![FieldLayout { name: "len".to_string(), ty: SemanticType::Integer64 { signed: true } }],
+        };
+        let mut plan = AggregateLayoutPlan { layouts: vec![outer, inner], ..Default::default() };
+        if register {
+            plan.layout_by_semantic_type.insert(apply, 1);
+        }
+        plan
+    }
+
+    #[test]
+    fn closed_apply_resolves_to_frozen_type_definition() {
+        let plan = plan_with_closed_apply(true);
+        let ty = msil_type(&plan, &closed_apply()).expect("闭合 Apply 必须由冻结索引结算");
+        assert_eq!(ty, MsilType::Named(clr_layout_type_name(&plan.layouts[1])));
+    }
+
+    #[test]
+    fn layout_types_register_identity_before_resolving_fields() {
+        let plan = plan_with_closed_apply(true);
+        let types = build_layout_types(&plan).expect("字段引用必须命中已登记类型定义");
+        assert_eq!(types.len(), 2);
+        assert_eq!(types[0].fields[0].ty, MsilType::Named(clr_layout_type_name(&plan.layouts[1])));
+    }
+
+    #[test]
+    fn missing_apply_mapping_fails_closed() {
+        let plan = plan_with_closed_apply(false);
+        let error = msil_type(&plan, &closed_apply()).expect_err("缺少映射必须失败");
+        assert!(error.contains("缺少冻结布局映射"), "got: {error}");
+    }
+
+    #[test]
+    fn open_generic_apply_fails_closed() {
+        let open = SemanticType::Apply(
+            Box::new(SemanticType::Named(Identifier::new("ArrayList"))),
+            vec![SemanticType::Named(Identifier::new("T"))],
+        );
+        let error = msil_type(&AggregateLayoutPlan::default(), &open).expect_err("开放泛型不得发射");
+        assert!(error.contains("缺少冻结布局映射"), "got: {error}");
     }
 }
