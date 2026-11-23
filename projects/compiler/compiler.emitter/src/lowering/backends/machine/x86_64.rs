@@ -921,6 +921,7 @@ impl FunctionLowerer<'_> {
             InstructionKind::StructNew { nominal, fields } => self.emit_struct_new(instruction, *nominal, fields),
             InstructionKind::TupleNew { layout_id, fields } => self.emit_tuple_new(instruction, *layout_id, fields),
             InstructionKind::TupleGet { object, layout_id, index } => self.emit_tuple_get(instruction, object, *layout_id, *index),
+            InstructionKind::AggregateCopy { layout_id, source, dest } => self.emit_aggregate_copy(instruction, *layout_id, source, dest),
             InstructionKind::FieldGet { object, field } => self.emit_field_get(instruction, object, *field),
             InstructionKind::FieldSet { object, field, value } => self.emit_field_set(instruction, object, *field, value),
             InstructionKind::SumNew { nominal, variant, payload } => self.emit_sum_new(instruction, *nominal, *variant, payload.as_ref()),
@@ -1803,6 +1804,58 @@ impl FunctionLowerer<'_> {
         self.emit_operand_to_rax(object)?;
         self.push(X64TextInstruction::LoadFromRaxDisplacement(offset as i32));
         self.push(X64TextInstruction::StoreSlot(local));
+        Ok(())
+    }
+
+    /// `AggregateCopy`：按冻结布局把聚合逐 8 字节槽复制进一个新堆对象。
+    ///
+    /// 值复制语义：结果指针指向新对象，与源不共享可变存储；元素槽合同与
+    /// `tuple_field_offset` 一致（8 字节对齐、不重叠、宽度匹配），不满足的
+    /// 布局（浮点、值存储内联体）结构化失败，不做按位浅拷贝冒充。
+    fn emit_aggregate_copy(&mut self, instruction: &MirInstruction, layout_id: compiler_types::LayoutId, source: &Operand, dest: &Operand) -> Result<()> {
+        if self.output_local(instruction)?.is_some() {
+            return Err(format!("x86_64 lowering：`AggregateCopy` 不得绑定结果槽：function={}", self.function.symbol));
+        }
+        let field_count = self
+            .layouts
+            .layout(layout_id)
+            .ok_or_else(|| format!("x86_64 lowering：`AggregateCopy` 的布局 {layout_id:?} 缺少物理解析：function={}", self.function.symbol))?
+            .fields
+            .len();
+        let mut offsets = Vec::with_capacity(field_count);
+        for index in 0..field_count {
+            offsets.push(self.tuple_field_offset(layout_id, index, "`AggregateCopy`")?);
+        }
+        let object_bytes = offsets.iter().copied().max().map(|offset| offset + 8).unwrap_or(8);
+        let Operand::Value(dest_value) = dest else {
+            return Err(format!("x86_64 lowering：`AggregateCopy` 目标必须是局部槽：function={}", self.function.symbol));
+        };
+        let dest_local = self.value_local(*dest_value)?;
+        let base = self.reserve_temps(6);
+        let source_slot = self.temp_slot(base, 0)?;
+        let pointer_slot = self.temp_slot(base, 1)?;
+        let size_slot = self.temp_slot(base, 2)?;
+        let auxiliary = self.temp_slot(base, 3)?;
+        let condition = self.temp_slot(base, 4)?;
+        let field_slot = self.temp_slot(base, 5)?;
+        self.emit_operand_to_rax(source)?;
+        self.push(X64TextInstruction::StoreSlot(source_slot));
+        self.push(X64TextInstruction::LoadI64(object_bytes as i64));
+        self.uses_failure_exit = true;
+        for item in array_runtime::object_allocate(self.allocator, size_slot, auxiliary, condition, self.failure_label) {
+            self.push(item);
+        }
+        self.push(X64TextInstruction::StoreSlot(pointer_slot));
+        for offset in &offsets {
+            self.push(X64TextInstruction::LoadSlot(source_slot));
+            self.push(X64TextInstruction::LoadFromRaxDisplacement(*offset as i32));
+            self.push(X64TextInstruction::StoreSlot(field_slot));
+            self.push(X64TextInstruction::LoadSlot(pointer_slot));
+            self.push(X64TextInstruction::LoadSlotToRdx(field_slot));
+            self.push(X64TextInstruction::StoreRdxToRaxDisplacement(*offset as i32));
+        }
+        self.push(X64TextInstruction::LoadSlot(pointer_slot));
+        self.push(X64TextInstruction::StoreSlot(dest_local));
         Ok(())
     }
 
