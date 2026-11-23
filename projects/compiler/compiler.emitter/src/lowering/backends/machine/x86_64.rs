@@ -1813,8 +1813,14 @@ impl FunctionLowerer<'_> {
     /// `tuple_field_offset` 一致（8 字节对齐、不重叠、宽度匹配），不满足的
     /// 布局（浮点、值存储内联体）结构化失败，不做按位浅拷贝冒充。
     fn emit_aggregate_copy(&mut self, instruction: &MirInstruction, layout_id: compiler_types::LayoutId, source: &Operand, dest: &Operand) -> Result<()> {
-        if self.output_local(instruction)?.is_some() {
-            return Err(format!("x86_64 lowering：`AggregateCopy` 不得绑定结果槽：function={}", self.function.symbol));
+        // 目标槽与结果槽至少有一个：两者都绑定时写入同一个新对象指针（与 OVM 一致）。
+        let output_local = self.output_local(instruction)?;
+        let dest_local = match dest {
+            Operand::Value(value) => Some(self.value_local(*value)?),
+            Operand::Constant(_) | Operand::Item(_) | Operand::Symbol(_) => None,
+        };
+        if output_local.is_none() && dest_local.is_none() {
+            return Err(format!("x86_64 lowering：`AggregateCopy` 没有可写目标（目标与结果槽均缺失）：function={}", self.function.symbol));
         }
         let field_count = self
             .layouts
@@ -1827,10 +1833,6 @@ impl FunctionLowerer<'_> {
             offsets.push(self.tuple_field_offset(layout_id, index, "`AggregateCopy`")?);
         }
         let object_bytes = offsets.iter().copied().max().map(|offset| offset + 8).unwrap_or(8);
-        let Operand::Value(dest_value) = dest else {
-            return Err(format!("x86_64 lowering：`AggregateCopy` 目标必须是局部槽：function={}", self.function.symbol));
-        };
-        let dest_local = self.value_local(*dest_value)?;
         let base = self.reserve_temps(6);
         let source_slot = self.temp_slot(base, 0)?;
         let pointer_slot = self.temp_slot(base, 1)?;
@@ -1854,8 +1856,10 @@ impl FunctionLowerer<'_> {
             self.push(X64TextInstruction::LoadSlotToRdx(field_slot));
             self.push(X64TextInstruction::StoreRdxToRaxDisplacement(*offset as i32));
         }
-        self.push(X64TextInstruction::LoadSlot(pointer_slot));
-        self.push(X64TextInstruction::StoreSlot(dest_local));
+        for local in dest_local.into_iter().chain(output_local) {
+            self.push(X64TextInstruction::LoadSlot(pointer_slot));
+            self.push(X64TextInstruction::StoreSlot(local));
+        }
         Ok(())
     }
 
