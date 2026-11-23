@@ -2355,12 +2355,56 @@ impl FunctionLowerer<'_> {
                     self.function.symbol
                 ));
             }
-            self.push(X64TextInstruction::CastFloat(if matches!(source, SemanticType::Float32) {
-                X64FloatCast::F32ToI64
-            }
-            else {
-                X64FloatCast::F64ToI64
-            }));
+            // 越界与 NaN 走定义好的失败出口：`cvttsi2sd` 族的非值（INT64_MIN）不得
+            // 冒充合法转换结果。边界都是 2 的幂，在 `f32`/`f64` 下精确可表示。
+            let single = matches!(source, SemanticType::Float32);
+            let base = self.reserve_temps(2);
+            let src_slot = self.temp_slot(base, 0)?;
+            let bound_slot = self.temp_slot(base, 1)?;
+            // `rax` 仍持有源位模式（`LoadRaxToXmm0` 不破坏它），先落槽供逐次比较。
+            self.push(X64TextInstruction::StoreSlot(src_slot));
+            let failure = self.failure_label;
+            self.uses_failure_exit = true;
+            let (lower, upper) = float_int_target_bounds(&target_shape);
+            let encode_bound = |value: f64| -> i64 {
+                if single { u64::from((value as f32).to_bits()) as i64 } else { value.to_bits() as i64 }
+            };
+            let (ne_code, lt_code, ge_code) = if single {
+                (X86_64OperatorCode::F32CompareNotEqual, X86_64OperatorCode::F32CompareLessThan, X86_64OperatorCode::F32CompareGreaterOrEqual)
+            } else {
+                (X86_64OperatorCode::F64CompareNotEqual, X86_64OperatorCode::F64CompareLessThan, X86_64OperatorCode::F64CompareGreaterOrEqual)
+            };
+            // NaN：`x != x` 为真。
+            let not_nan_label = self.fresh_label();
+            self.push(X64TextInstruction::LoadSlotToXmm0 { slot: src_slot, single });
+            self.push(X64TextInstruction::LoadSlotToXmm1 { slot: src_slot, single });
+            self.push(X64TextInstruction::Operator(ne_code));
+            self.push(X64TextInstruction::JumpIfZero(not_nan_label));
+            self.push(X64TextInstruction::Jump(failure));
+            self.push(X64TextInstruction::Label(not_nan_label));
+            // 下界：`x < lower` 越界。
+            let above_lower_label = self.fresh_label();
+            self.push(X64TextInstruction::LoadI64(encode_bound(lower)));
+            self.push(X64TextInstruction::StoreSlot(bound_slot));
+            self.push(X64TextInstruction::LoadSlotToXmm0 { slot: src_slot, single });
+            self.push(X64TextInstruction::LoadSlotToXmm1 { slot: bound_slot, single });
+            self.push(X64TextInstruction::Operator(lt_code));
+            self.push(X64TextInstruction::JumpIfZero(above_lower_label));
+            self.push(X64TextInstruction::Jump(failure));
+            self.push(X64TextInstruction::Label(above_lower_label));
+            // 上界：`x >= upper` 越界（上界为排他边界）。
+            let below_upper_label = self.fresh_label();
+            self.push(X64TextInstruction::LoadI64(encode_bound(upper)));
+            self.push(X64TextInstruction::StoreSlot(bound_slot));
+            self.push(X64TextInstruction::LoadSlotToXmm0 { slot: src_slot, single });
+            self.push(X64TextInstruction::LoadSlotToXmm1 { slot: bound_slot, single });
+            self.push(X64TextInstruction::Operator(ge_code));
+            self.push(X64TextInstruction::JumpIfZero(below_upper_label));
+            self.push(X64TextInstruction::Jump(failure));
+            self.push(X64TextInstruction::Label(below_upper_label));
+            // 源重新装入 `xmm0` 后按截断转换。
+            self.push(X64TextInstruction::LoadSlotToXmm0 { slot: src_slot, single });
+            self.push(X64TextInstruction::CastFloat(if single { X64FloatCast::F32ToI64 } else { X64FloatCast::F64ToI64 }));
             if target_shape.bits < 64 {
                 let step = narrow_normalize(target_shape.bits, target_shape.signed).ok_or_else(|| {
                     format!("x86_64 后端没有位宽 {} 的整数载体：function={}", target_shape.bits, self.function.symbol)
@@ -2520,6 +2564,19 @@ fn x64_int_shape(ty: &SemanticType) -> Option<X64IntShape> {
         SemanticType::Character => X64IntShape { bits: 32, signed: false },
         _ => return None,
     })
+}
+
+/// 浮点转整数的排他区间 `[lower, upper)`：两端都是 2 的幂，`f32`/`f64` 下精确可表示。
+///
+/// 有符号目标为 `[-2^(bits-1), 2^(bits-1))`，无符号目标为 `[0, 2^bits)`。
+/// `u64` 目标在上游已结构化拒绝，这里只会收到可转换的形状。
+fn float_int_target_bounds(shape: &X64IntShape) -> (f64, f64) {
+    if shape.signed {
+        let magnitude = (1u64 << (shape.bits - 1)) as f64;
+        (-magnitude, magnitude)
+    } else {
+        (0.0, (1u128 << shape.bits) as f64)
+    }
 }
 
 /// 窄整数（8/16/32）在 `rax` 上的规范化指令：有符号符号扩展、无符号零扩展。
