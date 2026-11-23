@@ -1667,7 +1667,7 @@ pub fn node_method_wrapper(
         Lir::LoadI64(0),
         Lir::Return,
     ]);
-    if array_count > 0 || text_param_count > 0 || returns_array {
+    if array_count > 0 || text_param_count > 0 || returns_array || returns_text {
         // 宿主载体分配失败（容量溢出或分配实现报错）走宿主 error，而不是 Type 错误；
         // 仍先释放此前已分配成功的镜像副本。
         instructions.push(Lir::Label(allocation_failure_label));
@@ -1826,6 +1826,28 @@ mod tests {
             .count();
         assert!(frees >= 3, "暂存缓冲、字节数组、对象块都必须释放（实际 {frees} 次）");
         assert!(max_referenced_slot(&wrapper) < wrapper.slot_count, "文本编组槽必须落在帧内");
+    }
+
+    /// 只有文本返回、没有任何实参编组时，暂存缓冲的分配失败出口也必须定义。
+    #[test]
+    fn text_return_only_defines_every_jump_label() {
+        let method =
+            HostMethod { name: "greeting".to_string(), symbol: "greeting".to_string(), parameters: vec![], returns: HostValueKind::Utf8 };
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None);
+        let mut defined = std::collections::BTreeSet::new();
+        let mut referenced = Vec::new();
+        for instruction in &wrapper.instructions {
+            match instruction {
+                X64TextInstruction::Label(label) => {
+                    defined.insert(*label);
+                }
+                X64TextInstruction::Jump(label) | X64TextInstruction::JumpIfZero(label) => referenced.push(*label),
+                _ => {}
+            }
+        }
+        for label in referenced {
+            assert!(defined.contains(&label), "跳转目标 {label} 未定义");
+        }
     }
 
     /// `[i64]` 返回：先把 guest 数组复制成宿主序列，再释放实参镜像副本。
