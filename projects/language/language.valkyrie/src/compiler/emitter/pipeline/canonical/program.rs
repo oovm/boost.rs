@@ -169,8 +169,10 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Valkyri
     }
     for export in &module.exports {
         let symbol = export.symbol.to_string();
+        // `ExportRecord` 只携带语言侧冻结的源码名；注解改名随片段的
+        // `export_annotations` 透传，由各目标所有者投影。
         let instance = export.instance.ok_or_else(|| error(module, "CAN036", format!("导出 `{symbol}` 缺少 Compiler callable identity")))?;
-        if linked.exports.insert(instance, ExportRecord { exported_name: export.exported_name.clone() }).is_some() {
+        if linked.exports.insert(instance, ExportRecord { source_name: export.source_name.clone() }).is_some() {
             return Err(error(module, "CAN037", format!("callable `{symbol}` 存在重复导出合同")));
         }
     }

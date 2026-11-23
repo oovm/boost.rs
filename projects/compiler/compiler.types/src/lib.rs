@@ -63,6 +63,8 @@ mod external_import;
 pub mod layout;
 /// 链接完成的语义程序与稳定身份记录（中立事实，不含语言 IR）。
 pub mod linked;
+/// 目标命名投影的共享纯函数（camelCase 等大小写规则的唯一实现）。
+pub mod naming;
 /// 前端、规划器、emitter 与运行时共享的中立可审计合同。
 pub mod neutral_contract;
 /// 可扩展属性 / 运算符注册表。

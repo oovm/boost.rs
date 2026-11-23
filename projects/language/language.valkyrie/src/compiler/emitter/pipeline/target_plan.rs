@@ -309,6 +309,7 @@ fn build_plan(
         theory_bundle,
         entry_operation: fragment.entry_operation,
         export_names: fragment.export_names.clone(),
+        export_annotations: fragment.export_annotations.clone(),
         external_import_links: fragment.external_imports.clone(),
         external_call_edges: fragment.external_call_edges.clone(),
         internal_call_edges: fragment.internal_call_edges.clone(),

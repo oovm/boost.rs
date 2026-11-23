@@ -40,10 +40,22 @@ pub struct X64LoweredExtension {
     pub executable: Vec<u8>,
     /// 宿主装载入口符号（`napi_register_module_v1` / `PyInit_<module>`）。
     pub entry_symbol: String,
-    /// 宿主可见导出名（按冻结导出面顺序）。
-    pub host_exports: Vec<String>,
+    /// 宿主可见导出面（源码名 + 本目标命名合同投影后的公开名，按冻结导出面顺序）。
+    pub host_exports: Vec<MachineHostExport>,
     /// 产物扩展名（含点）：`.node` / `.pyd` / `.so`。
     pub artifact_extension: String,
+}
+
+/// 机器码交付的一条宿主导出：语言侧源码名与目标公开名。
+///
+/// Node 扩展的命名合同是「有注解用注解名，否则源码名自动 camelCase 投影」；
+/// CPython 的命名合同是源码名。公开名是宿主装载面，源码名保留用于跨目标追溯。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MachineHostExport {
+    /// 语言侧冻结的源码声明名。
+    pub source_name: String,
+    /// 目标命名合同投影后的宿主公开名。
+    pub public_name: String,
 }
 
 /// 把已冻结的目标计划降低为宿主扩展共享库。
@@ -78,7 +90,7 @@ pub fn lower_fragment_to_machine_extension(
     }
 
     // 符号名：导出函数取冻结导出名的合法符号，内部闭包函数取实例身份名。
-    let names = extension_symbol_names(submission, &reachable, &methods)?;
+    let names = extension_symbol_names(submission, target, &reachable, &methods)?;
     // 与可执行 lane 使用同一物理布局策略：宿主扩展的对象字段偏移不得另算一套。
     let layouts = resolve_physical_layouts(submission.backend_plan.aggregate_layouts(), LayoutPolicy::X64)
         .map_err(|reason| format!("宿主扩展降低：物理布局解析失败：{reason}"))?;
@@ -164,19 +176,60 @@ pub fn lower_fragment_to_machine_extension(
     let executable = compile_shared_container(platform, &image)?;
     verify_shared_image(&executable, platform)?;
 
+    // 宿主导出面按冻结顺序（与 methods 一致按公开名排序）携带源码名 + 公开名。
+    let mut host_exports: Vec<MachineHostExport> = submission
+        .backend_plan
+        .export_names()
+        .iter()
+        .map(|(instance, source_name)| MachineHostExport {
+            source_name: source_name.clone(),
+            public_name: host_export_public_name(&submission.backend_plan, instance, host),
+        })
+        .collect();
+    host_exports.sort_by(|left, right| left.public_name.cmp(&right.public_name));
+
     Ok(X64LoweredExtension {
         executable,
         entry_symbol,
-        host_exports: methods.iter().map(|method| method.name.clone()).collect(),
+        host_exports,
         artifact_extension,
     })
 }
 
+/// 机器码宿主扩展的命名合同：取实例的目标公开名。
+///
+/// - Node 有 `name:` / `case:` 注解：公开名就是注解解析名；
+/// - Node 无注解：源码名自动 camelCase 投影（`move_zeroes` → `moveZeroes`）；
+/// - CPython：源码名原样（Python 命名就是 snake_case，忽略注解改名）。
+fn host_export_public_name(plan: &crate::TargetExecutionPlan, instance: &ItemInstanceId, host: HostModule) -> String {
+    if host != HostModule::Python {
+        if let Some(annotation) = plan.export_annotations().get(instance) {
+            return annotation.clone();
+        }
+    }
+    let source = plan.export_names().get(instance).cloned().unwrap_or_default();
+    match host {
+        HostModule::Node => compiler_types::naming::snake_case_to_camel_case(&source),
+        HostModule::Python => source,
+    }
+}
+
 /// 从冻结导出面构造类型化宿主方法事实；未闭合的载体在写出前拒绝。
+///
+/// 公开名按本目标命名合同投影；投影后两个不同源码名得到同一公开名（如 `foo_bar`
+/// 与 `fooBar` 都落到 `fooBar`）在写出前 fail-closed，诊断同时列出两处源码名与实例身份。
 fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarget, reachable: &[ItemInstanceId]) -> Result<Vec<HostMethod>> {
+    let host = target.host_module().unwrap_or(HostModule::Node);
     let limit = target.method_parameter_limit();
     let mut methods = Vec::new();
-    for (instance, export_name) in submission.backend_plan.export_names() {
+    let mut projected: BTreeMap<String, (String, ItemInstanceId)> = BTreeMap::new();
+    for (instance, source_name) in submission.backend_plan.export_names() {
+        let export_name = host_export_public_name(&submission.backend_plan, instance, host);
+        if let Some((previous_source, previous_instance)) = projected.insert(export_name.clone(), (source_name.clone(), *instance)) {
+            return Err(format!(
+                "宿主扩展：源码名 `{previous_source}`（`{previous_instance:?}`）与 `{source_name}`（`{instance:?}`）投影为同一宿主公开名 `{export_name}`，拒绝产出互相覆盖的导出面"
+            ));
+        }
         if !reachable.contains(instance) {
             return Err(format!("宿主扩展：导出实例 `{instance:?}`（`{export_name}`）不在可达函数集中"));
         }
@@ -234,7 +287,7 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
         };
         methods.push(HostMethod {
             name: export_name.clone(),
-            symbol: sanitize_symbol(export_name),
+            symbol: sanitize_symbol(&export_name),
             parameters: parameter_kinds,
             returns,
         });
@@ -243,12 +296,14 @@ fn frozen_host_methods(submission: &FragmentSubmission, target: &X64ProductTarge
     Ok(methods)
 }
 
-/// 镜像符号名表：导出函数按冻结导出名，内部函数按实例身份。
+/// 镜像符号名表：导出函数按目标公开名规约的符号，内部函数按实例身份。
 fn extension_symbol_names(
     submission: &FragmentSubmission,
+    target: &X64ProductTarget,
     reachable: &[ItemInstanceId],
     methods: &[HostMethod],
 ) -> Result<BTreeMap<ItemInstanceId, String>> {
+    let host = target.host_module().unwrap_or(HostModule::Node);
     let mut names = BTreeMap::new();
     let mut used: BTreeMap<&str, &str> = BTreeMap::new();
     for method in methods {
@@ -258,8 +313,9 @@ fn extension_symbol_names(
     }
     for instance in reachable {
         let name = match submission.backend_plan.export_names().get_key_value(instance) {
-            Some((_, export_name)) => {
-                let method = methods.iter().find(|method| method.name == *export_name).expect("导出实例已构造方法事实");
+            Some((_, _)) => {
+                let export_name = host_export_public_name(&submission.backend_plan, instance, host);
+                let method = methods.iter().find(|method| method.name == export_name).expect("导出实例已构造方法事实");
                 method.symbol.clone()
             }
             None => format!("__nyar_fn_{}", instance.index()),

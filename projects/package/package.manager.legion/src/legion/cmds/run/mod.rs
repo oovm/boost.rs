@@ -37,10 +37,11 @@ const BACKEND_RESULT_SNAPSHOT_FILE_NAME: &str = "backend-result.txt";
 #[doc(hidden)]
 pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// execution manifest 的 schema 版本；`1` 起 manifest 记录 `artifact_kind` 与
-/// 库导出索引，`0` 旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)`
+/// 库导出索引，`2` 起库导出索引携带 `source_name` 与 `abi` 命名合同事实，
+/// 更早的旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)`
 /// 兼容缺少新字段的旧文件。
 #[doc(hidden)]
-pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 2;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -109,8 +110,12 @@ impl From<&language_valkyrie::compiler::emitter::pipeline::CompilerCompileEviden
 /// 可被外部宿主按名调用的导出，不要求存在可由 `legion run` 直接执行的入口。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LibraryExportIndexEntry {
-    /// 逻辑导出名（`[export]` 名称）。
+    /// 逻辑导出名（目标命名合同投影后的公开名）。
     pub logical_name: String,
+    /// 语言侧冻结的源码声明名；改名由各目标所有者的命名合同决定。
+    /// 旧 manifest 缺少该字段时按空串读取。
+    #[serde(default)]
+    pub source_name: String,
     /// 物理产物（相对输出目录的文件名）。
     pub physical_artifact: String,
     /// 调用方式（lane 的稳定调用合同，例如 `wasm callExport` / `ovm run --entry`）。
@@ -118,6 +123,10 @@ pub struct LibraryExportIndexEntry {
     /// 该导出的 ABI digest；lane 暂无 ABI 载体合同时为空串。
     #[serde(default)]
     pub abi_digest: String,
+    /// 目标 ABI 合同标签（`node-api` / `cpython` / `c-abi` / `wasm` / `ovm` / `jvm-managed` / `clr-managed`）。
+    /// 旧 manifest 缺少该字段时按空串读取。
+    #[serde(default)]
+    pub abi: String,
 }
 
 /// execution manifest：记录构建输入/产物摘要与运行契约，供 `run` 判断产物是否新鲜。

@@ -253,8 +253,10 @@ pub struct MirExportContract {
     pub instance: Option<ItemInstanceId>,
     /// 已解析的 callable 符号；Canonical producer 只用它查 Compiler identity。
     pub symbol: NamePath,
-    /// 公开 ABI 名称。
-    pub exported_name: String,
+    /// 语言侧冻结的源码声明名；导出改名是各目标所有者的命名合同，不在 MIR 提前应用。
+    pub source_name: String,
+    /// `[export(name:)]` / `[export(case:)]` 注解解析出的公开名；无注解改名时为 `None`。
+    pub annotation_name: Option<String>,
     /// 由声明合同确定的目标分区。
     pub partition: String,
 }

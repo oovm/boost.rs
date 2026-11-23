@@ -93,14 +93,21 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 Some(crate::emitter_backend_machine::HostModule::Python) => "python import",
                 None => return Err("native 宿主扩展缺少冻结的宿主合同；拒绝按扩展名猜装载方式".to_string()),
             };
+            let abi = match input.host_module {
+                Some(crate::emitter_backend_machine::HostModule::Node) => "node-api",
+                Some(crate::emitter_backend_machine::HostModule::Python) => "cpython",
+                None => return Err("native 宿主扩展缺少冻结的宿主合同；拒绝按扩展名猜装载方式".to_string()),
+            };
             let library_exports = input
                 .host_exports
                 .iter()
-                .map(|name| crate::DriverLibraryExport {
-                    logical_name: name.clone(),
+                .map(|export| crate::DriverLibraryExport {
+                    logical_name: export.public_name.clone(),
+                    source_name: export.source_name.clone(),
                     physical_artifact: physical_artifact.clone(),
                     invocation: invocation.to_string(),
                     abi_digest: String::new(),
+                    abi: abi.to_string(),
                 })
                 .collect();
             return Ok(DriverCompileReport {
@@ -127,11 +134,13 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
             let library_exports = input
                 .host_exports
                 .iter()
-                .map(|name| crate::DriverLibraryExport {
-                    logical_name: name.clone(),
+                .map(|export| crate::DriverLibraryExport {
+                    logical_name: export.public_name.clone(),
+                    source_name: export.source_name.clone(),
                     physical_artifact: physical_artifact.clone(),
                     invocation: invocation.to_string(),
                     abi_digest: String::new(),
+                    abi: "c-abi".to_string(),
                 })
                 .collect();
             return Ok(DriverCompileReport {

@@ -162,10 +162,15 @@ pub(super) fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportCon
     fn visit_function(module: &HirModule, function: &HirFunction, exports: &mut Vec<MirExportContract>, entries: &mut Vec<MirEntryContract>) {
         let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, function);
         if let Some(spec) = parse_export_spec_from_annotations(&function.annotations) {
+            // MIR 只冻结源码名；`name:` / `case:` 是注解合同，随注解名单独携带，
+            // 由各目标所有者按自己的命名合同投影，不在收集期提前改名。
+            let annotation_name =
+                (spec.export_name.is_some() || spec.export_case.is_some()).then(|| spec.resolve_exported_name(&function.name));
             exports.push(MirExportContract {
                 instance: function.instance,
                 symbol: symbol.clone(),
-                exported_name: spec.resolve_exported_name(&function.name),
+                source_name: function.name.as_str().to_string(),
+                annotation_name,
                 partition: spec.primary_partition(),
             });
         }
@@ -175,7 +180,8 @@ pub(super) fn collect_surface_contracts(module: &HirModule) -> (Vec<MirExportCon
             exports.push(MirExportContract {
                 instance: function.instance,
                 symbol: symbol.clone(),
-                exported_name: function.name.as_str().to_string(),
+                source_name: function.name.as_str().to_string(),
+                annotation_name: None,
                 partition: "default".to_string(),
             });
         }
@@ -253,6 +259,7 @@ pub(super) fn collect_semantic_fragments(
             entry_operation: None,
             rewrite_theory: RewriteTheory::default(),
             export_names: BTreeMap::new(),
+            export_annotations: BTreeMap::new(),
         });
         if !fragment.exported_operations.contains(&instance) {
             fragment.exported_operations.push(instance);
@@ -261,7 +268,10 @@ pub(super) fn collect_semantic_fragments(
             fragment.entry_operation = Some(instance);
         }
         if let Some(export) = export {
-            fragment.export_names.insert(instance, export.exported_name.clone());
+            fragment.export_names.insert(instance, export.source_name.clone());
+            if let Some(annotation) = &export.annotation_name {
+                fragment.export_annotations.insert(instance, annotation.clone());
+            }
         }
         // suspend 能力只由真正的挂起效果（yield/await/awake/block_on）决定。
         // 未捕获 `raise` 现在在 MIR 里直接终止为 `Unreachable`（目标后端落 trap），
@@ -299,6 +309,7 @@ pub(super) fn collect_semantic_fragments(
                 entry_operation: None,
                 rewrite_theory: RewriteTheory::default(),
                 export_names: BTreeMap::new(),
+                export_annotations: BTreeMap::new(),
             },
         );
     }

@@ -500,7 +500,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &utf8_host_handle_materialize,
         )?));
         mir_wasm_functions.push((wasm_index, full.clone()));
-        if let Some(public_name) = submission.backend_plan.export_names().get(instance) {
+        // wasm 命名合同：有注解用注解名，否则源码名。
+        if let Some(public_name) = submission.backend_plan.export_public_name(instance) {
             exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), wasm_index));
         }
         else if submission.backend_plan.entry_operation() == Some(*instance) {
@@ -762,8 +763,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             code_bodies.push(wasm_function_body(wrapper_body));
             let public_name = submission
                 .backend_plan
-                .export_names()
-                .get(&instance)
+                .export_public_name(&instance)
                 .cloned()
                 .ok_or_else(|| format!("库导出 `{instance}` 物化配方缺少公开导出名"))?;
             let mut redirected = false;

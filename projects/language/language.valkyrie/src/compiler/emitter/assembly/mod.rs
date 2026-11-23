@@ -113,7 +113,14 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                     output_dir: request.output_dir.to_path_buf(),
                     entry_symbol,
                     artifact_extension: Some(lowered.artifact_extension),
-                    host_exports: lowered.exports,
+                    host_exports: lowered
+                        .exports
+                        .into_iter()
+                        .map(|export| compiler_emitter::emitter_backend_machine::MachineHostExport {
+                            source_name: export.source_name,
+                            public_name: export.public_name,
+                        })
+                        .collect(),
                     host_module: None,
                 }));
             }

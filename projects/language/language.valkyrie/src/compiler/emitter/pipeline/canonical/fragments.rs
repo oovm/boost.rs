@@ -26,6 +26,7 @@ pub fn canonical_fragments(
         // 「`Function` 不许过边界」而误报。
         let exported_operations = fragment.exported_operations.clone();
         let export_names = fragment.export_names.clone();
+        let export_annotations = fragment.export_annotations.clone();
         for instance in &exported_operations {
             if !linked.item_instances.contains_key(instance) {
                 return Err(error(module, "CAN042", format!("片段 {} 的操作缺少 callable 合同", fragment.id)));
@@ -115,6 +116,7 @@ pub fn canonical_fragments(
                     external_call_edges,
                     internal_call_edges,
                     export_names,
+                    export_annotations,
                 },
             )
             .is_some()

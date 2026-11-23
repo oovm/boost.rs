@@ -90,8 +90,11 @@ pub struct CanonicalFragment {
     pub external_call_edges: Vec<CanonicalExternalCallEdge>,
     /// 已绑定身份的内部调用边。
     pub internal_call_edges: Vec<CanonicalCallEdge>,
-    /// callable identity 到公开 ABI 名称的映射（目标中立；wasm lane 直接用作导出名）。
+    /// callable identity 到语言侧冻结源码名的映射（目标中立；改名由各目标所有者的命名合同决定）。
     pub export_names: BTreeMap<ItemInstanceId, String>,
+    /// callable identity 到 `[export(name:)]` / `[export(case:)]` 注解解析名的映射；
+    /// 只有显式注解改名的实例才有 entry，无注解的实例由目标合同自行投影。
+    pub export_annotations: BTreeMap<ItemInstanceId, String>,
 }
 
 /// Canonical 片段内的内部调用边。
@@ -117,8 +120,8 @@ pub struct CanonicalExternalCallEdge {
 /// 一个已链接 callable 的公开导出合同。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportRecord {
-    /// 公开 ABI 名称，仅用于互操作边界。
-    pub exported_name: String,
+    /// 语言侧冻结的源码声明名；各目标的公开名由自己的命名合同投影。
+    pub source_name: String,
 }
 
 /// 一个已链接 callable 的程序入口合同。

@@ -29,10 +29,22 @@ pub struct X64LoweredLibrary {
     pub executable: Vec<u8>,
     /// 首个导出符号（用于记录产物入口身份；库没有进程入口）。
     pub entry_symbol: Option<String>,
-    /// 对外可见导出名（按冻结导出面顺序）。
-    pub exports: Vec<String>,
+    /// 对外可见导出面（源码名 + 公开名，按冻结导出面顺序）。
+    pub exports: Vec<MachineLibraryExport>,
     /// 产物扩展名（含点）：`.dll` / `.so`。
     pub artifact_extension: String,
+}
+
+/// 普通共享库的一条 C ABI 导出：语言侧源码名与目标公开名。
+///
+/// C ABI 的命名合同就是源码名（忽略 `name:` / `case:` 注解改名）；公开名当前
+/// 恒等于源码名，保留双字段是为了与宿主扩展/wasm 交付同一清单合同形状。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MachineLibraryExport {
+    /// 语言侧冻结的源码声明名。
+    pub source_name: String,
+    /// C ABI 公开符号名（本 lane 合同下等于源码名）。
+    pub public_name: String,
 }
 
 /// 把已冻结的目标计划降低为普通共享库。
@@ -50,6 +62,7 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
     }
 
     // 导出名必须是 C 标识符：外部消费者按名 `GetProcAddress` / `dlsym` 装载。
+    // C ABI 命名合同 = 源码名，注解改名在本 lane 被忽略。
     let mut names: BTreeMap<ItemInstanceId, String> = BTreeMap::new();
     let mut exports = Vec::new();
     for (instance, export_name) in submission.backend_plan.export_names() {
@@ -62,7 +75,7 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
         if names.insert(*instance, export_name.clone()).is_some() {
             return Err(format!("普通共享库导出名 `{export_name}` 重复：不得用同名导出覆盖", ));
         }
-        exports.push(export_name.clone());
+        exports.push(MachineLibraryExport { source_name: export_name.clone(), public_name: export_name.clone() });
     }
     if exports.is_empty() {
         return Err(format!(
@@ -105,5 +118,6 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
     verify_shared_image(&executable, platform)?;
 
     let artifact_extension = if platform.is_windows() { ".dll".to_string() } else { ".so".to_string() };
-    Ok(X64LoweredLibrary { executable, entry_symbol: exports.first().cloned(), exports, artifact_extension })
+    let entry_symbol = exports.first().map(|export| export.public_name.clone());
+    Ok(X64LoweredLibrary { executable, entry_symbol, exports, artifact_extension })
 }

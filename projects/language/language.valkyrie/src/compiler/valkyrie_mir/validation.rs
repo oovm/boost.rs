@@ -24,8 +24,8 @@ impl ValkyrieMir {
             if !linked.item_instances.contains_key(function) || !self.functions.contains_key(function) {
                 return Err(ValkyrieMirError::MissingSurfaceBody { function: *function });
             }
-            if !export_names.insert(&export.exported_name) {
-                return Err(ValkyrieMirError::DuplicateExportName { name: export.exported_name.clone() });
+            if !export_names.insert(&export.source_name) {
+                return Err(ValkyrieMirError::DuplicateExportName { name: export.source_name.clone() });
             }
         }
         for function in linked.entries.keys() {

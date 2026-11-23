@@ -107,8 +107,11 @@ pub struct SemanticFragment {
     pub entry_operation: Option<compiler_types::ItemInstanceId>,
     /// 片段等式理论。
     pub rewrite_theory: RewriteTheory,
-    /// 实例到公开 ABI 名称的映射。
+    /// 实例到语言侧冻结源码名的映射。
     pub export_names: BTreeMap<compiler_types::ItemInstanceId, String>,
+    /// 实例到 `[export(name:)]` / `[export(case:)]` 注解解析名的映射；
+    /// 只有显式注解改名的实例才有 entry，由各目标所有者按合同投影。
+    pub export_annotations: BTreeMap<compiler_types::ItemInstanceId, String>,
 }
 
 /// 从 Canonical 闭包派生的优化器事实视图，不是前端成功合同。
@@ -340,7 +343,7 @@ fn canonical_optimizer_input(
         .iter()
         .map(|(instance, record)| {
             Ok(compiler_analysis::ExportContract {
-                exported_name: Identifier::new(&record.exported_name),
+                exported_name: Identifier::new(&record.source_name),
                 local_name: callable_name(*instance)?,
                 partition: None,
             })

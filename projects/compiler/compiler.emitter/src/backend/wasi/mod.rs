@@ -73,10 +73,22 @@ pub struct WasmBinaryBackendInput {
     pub package_as_wasi_command: bool,
     /// WASI package-train selection (`wasip2` / `wasip3`). Ignored for JS glue.
     pub wasi_preview: WasiPreview,
-    /// 显式 `[export]` 公开名列表；library 模式允许无 `main` / `_start`。
-    pub library_wasm_exports: Vec<String>,
+    /// 显式 `[export]` 导出面（源码名 + wasm 命名合同投影后的公开名）；library 模式允许无 `main` / `_start`。
+    pub library_wasm_exports: Vec<WasmLibraryExport>,
     /// Manifest-selected wasm package mode (`binary` vs `library`).
     pub wasm_package_kind: WasmPackageKind,
+}
+
+/// wasm library 交付的一条导出：语言侧源码名与目标公开名。
+///
+/// wasm 的命名合同是「有 `name:` / `case:` 注解用注解名，否则源码名」；
+/// 清单与宿主调用面记录公开名，源码名保留用于跨目标追溯。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WasmLibraryExport {
+    /// 语言侧冻结的源码声明名。
+    pub source_name: String,
+    /// wasm 命名合同投影后的公开导出名。
+    pub public_name: String,
 }
 
 /// `WebAssembly` 二进制后端（覆盖 `WasmJsGlue` 与 `WasiComponent` 宿主边界）。
@@ -136,7 +148,7 @@ impl WasmBinaryBackend {
             _ => unreachable!(),
         };
         if !exports.contains(required_entry) {
-            if !input.library_wasm_exports.is_empty() && input.library_wasm_exports.iter().all(|name| exports.contains(name)) {
+            if !input.library_wasm_exports.is_empty() && input.library_wasm_exports.iter().all(|export| exports.contains(&export.public_name)) {
                 return Ok(());
             }
             return Err(format!("WASM pre-emission verifier: required `{required_entry}` function export is absent"));

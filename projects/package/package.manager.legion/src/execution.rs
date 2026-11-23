@@ -29,7 +29,7 @@ pub struct ManifestView {
     pub target: String,
     /// 产物种类：`binary` / `library`。
     pub artifact_kind: String,
-    /// 库导出索引（逻辑名 + 物理产物）；非库产物为空。
+    /// 库导出索引（逻辑公开名 + 源码名 + 物理产物 + ABI 合同标签）；非库产物为空。
     pub library_exports: Vec<LibraryExportIndexEntry>,
     /// 语义闭包哈希。
     pub semantic_closure_hash: Option<String>,

@@ -43,11 +43,13 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
             input
                 .library_wasm_exports
                 .iter()
-                .map(|name| DriverLibraryExport {
-                    logical_name: name.clone(),
+                .map(|export| DriverLibraryExport {
+                    logical_name: export.public_name.clone(),
+                    source_name: export.source_name.clone(),
                     physical_artifact: format!("{physical_name}.wasm"),
                     invocation: "wasm callExport".to_string(),
                     abi_digest: abi_digest.clone(),
+                    abi: "wasm".to_string(),
                 })
                 .collect()
         }

@@ -750,9 +750,11 @@ fn write_execution_manifest(
         .iter()
         .map(|export| crate::legion::cmds::run::LibraryExportIndexEntry {
             logical_name: export.logical_name.clone(),
+            source_name: export.source_name.clone(),
             physical_artifact: export.physical_artifact.clone(),
             invocation: export.invocation.clone(),
             abi_digest: export.abi_digest.clone(),
+            abi: export.abi.clone(),
         })
         .collect::<Vec<_>>();
     ExecutionManifest::from_build_plan(plan, output_dir, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)

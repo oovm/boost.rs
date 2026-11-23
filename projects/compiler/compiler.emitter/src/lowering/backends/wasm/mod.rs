@@ -91,8 +91,8 @@ pub fn lower_fragment_to_wasm_module_for(
     }
     // 导出名只是符号选择：声明的 `[export]` 名优先，否则用 boundary 入口名。
     // 它不参与宿主模式推断——`wasi_mode` 只来自显式 `host_boundary`。
-    let export_name = if let Some(name) = submission.backend_plan.export_names().values().next() {
-        name.as_str()
+    let export_name = if let Some(instance) = submission.backend_plan.export_names().keys().next() {
+        submission.backend_plan.export_public_name(instance).expect("导出实例必有公开名").as_str()
     }
     else {
         if submission.backend_plan.entry_operation().is_none() {

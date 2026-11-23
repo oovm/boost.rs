@@ -256,7 +256,7 @@ impl CompiledValkyrieProgram {
         let canonical = self.mir_program();
         let mut parts = vec![canonical.mir.module_name.clone(), "surface-v1".to_string()];
         for (instance, export) in canonical.linked.exports.iter() {
-            parts.push(format!("export:{}:{}", export.exported_name, instance.index()));
+            parts.push(format!("export:{}:{}", export.source_name, instance.index()));
         }
         for instance in canonical.linked.entries.keys() {
             parts.push(format!("entry:{}", instance.index()));

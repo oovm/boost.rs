@@ -157,7 +157,9 @@ pub(super) fn append_library_invoke_section(
     )?;
     let mut invoke_exports = serde_json::Map::new();
 
-    for (instance, public_name) in plan.export_names() {
+    // wasm 的命名合同：有 `name:` / `case:` 注解用注解名，否则用源码名。
+    for instance in plan.export_names().keys() {
+        let public_name = plan.export_public_name(instance).expect("导出实例必有公开名").clone();
         let function = plan.get_function(instance).ok_or_else(|| format!("库导出 `{instance}` 缺少 Compiler 函数体"))?.function;
         let abi = super::wasm_library_export_abi(plan, instance).map_err(|reason| {
             format!("库导出 `{instance}`（公开名 `{public_name}`）没有可用的 ABI 载体合同；backend 不得自行推导 carrier: {reason}")

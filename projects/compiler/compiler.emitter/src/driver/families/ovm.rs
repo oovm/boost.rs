@@ -63,9 +63,12 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                     .iter()
                     .map(|entry| DriverLibraryExport {
                         logical_name: entry.clone(),
+                        // ovm lane 没有注解改名合同，公开名就是源码名。
+                        source_name: entry.clone(),
                         physical_artifact: format!("{}.odin", request.artifact_name),
                         invocation: "ovm run --entry".to_string(),
                         abi_digest: contract.digest.clone(),
+                        abi: "ovm".to_string(),
                     })
                     .collect();
             }

@@ -797,14 +797,18 @@ pub struct DriverRunContract {
 /// `abi_digest` 在 lane 尚无 ABI 载体合同时为空串。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DriverLibraryExport {
-    /// 逻辑导出名。
+    /// 逻辑导出名（目标命名合同投影后的公开名）。
     pub logical_name: String,
+    /// 语言侧冻结的源码声明名；改名由各目标所有者的命名合同决定。
+    pub source_name: String,
     /// 物理产物（文件名）。
     pub physical_artifact: String,
     /// 调用方式。
     pub invocation: String,
     /// ABI digest。
     pub abi_digest: String,
+    /// 目标 ABI 合同标签（`node-api` / `cpython` / `c-abi` / `wasm` / `ovm` / `jvm-managed` / `clr-managed`）。
+    pub abi: String,
 }
 
 /// 驱动层编译结果。

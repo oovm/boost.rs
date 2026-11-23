@@ -269,6 +269,13 @@ pub fn merge_entry_group_surface(consumer: &mut MirModule, entry: &MirModule) ->
                 return Err(ParseError::Invalid { message: format!("片段 `{}` 的导出名冲突", fragment.id), span: None });
             }
         }
+        for (instance, name) in &fragment.export_annotations {
+            if let Some(previous) = existing.export_annotations.insert(*instance, name.clone())
+                && previous != *name
+            {
+                return Err(ParseError::Invalid { message: format!("片段 `{}` 的导出注解名冲突", fragment.id), span: None });
+            }
+        }
         match (existing.entry_operation, fragment.entry_operation) {
             (Some(previous), Some(next)) if previous != next => {
                 return Err(ParseError::Invalid { message: format!("片段 `{}` 包含多个入口 operation", fragment.id), span: None });

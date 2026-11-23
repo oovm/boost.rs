@@ -21,6 +21,7 @@ pub struct TargetExecutionPlan {
     theory_bundle: compiler_target::TheoryBundle,
     entry_operation: Option<ItemInstanceId>,
     export_names: BTreeMap<ItemInstanceId, String>,
+    export_annotations: BTreeMap<ItemInstanceId, String>,
     external_import_links: BTreeMap<ItemInstanceId, compiler_target::ExternalImportLink>,
     external_call_edges: Vec<compiler_types::CanonicalExternalCallEdge>,
     internal_call_edges: Vec<compiler_types::CanonicalCallEdge>,
@@ -123,8 +124,10 @@ pub struct TargetPlanInput {
     pub theory_bundle: compiler_target::TheoryBundle,
     /// 入口 callable 实例。
     pub entry_operation: Option<ItemInstanceId>,
-    /// callable 到公开导出名的映射。
+    /// callable 到语言侧冻结源码名的映射。
     pub export_names: BTreeMap<ItemInstanceId, String>,
+    /// callable 到 `[export(name:)]` / `[export(case:)]` 注解解析名的映射。
+    pub export_annotations: BTreeMap<ItemInstanceId, String>,
     /// 外部导入链接映射。
     pub external_import_links: BTreeMap<ItemInstanceId, compiler_target::ExternalImportLink>,
     /// 外部调用边。
@@ -180,6 +183,7 @@ impl TargetExecutionPlan {
             theory_bundle: input.theory_bundle,
             entry_operation: input.entry_operation,
             export_names: input.export_names,
+            export_annotations: input.export_annotations,
             external_import_links: input.external_import_links,
             external_call_edges: input.external_call_edges,
             internal_call_edges: input.internal_call_edges,
@@ -242,6 +246,12 @@ impl TargetExecutionPlan {
     #[doc(hidden)]
     pub fn testing_export_names_mut(&mut self) -> &mut BTreeMap<ItemInstanceId, String> {
         &mut self.export_names
+    }
+
+    /// 返回可写导出注解名表（集成测试专用）。
+    #[doc(hidden)]
+    pub fn testing_export_annotations_mut(&mut self) -> &mut BTreeMap<ItemInstanceId, String> {
+        &mut self.export_annotations
     }
 
     /// 返回可写导出实例表（集成测试专用）。
@@ -363,9 +373,19 @@ impl TargetExecutionPlan {
         self.entry_operation
     }
 
-    /// 返回公开导出名映射。
+    /// 返回语言侧冻结源码名映射。
     pub fn export_names(&self) -> &BTreeMap<ItemInstanceId, String> {
         &self.export_names
+    }
+
+    /// 返回导出注解解析名映射（`name:` / `case:` 显式改名的实例）。
+    pub fn export_annotations(&self) -> &BTreeMap<ItemInstanceId, String> {
+        &self.export_annotations
+    }
+
+    /// 按「有注解用注解名，否则源码名」合同取实例的公开导出名。
+    pub fn export_public_name(&self, instance: &ItemInstanceId) -> Option<&String> {
+        self.export_annotations.get(instance).or_else(|| self.export_names.get(instance))
     }
 
     /// 返回外部导入链接映射。

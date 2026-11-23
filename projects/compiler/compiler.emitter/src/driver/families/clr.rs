@@ -107,9 +107,12 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                         .iter()
                         .map(|entry| DriverLibraryExport {
                             logical_name: entry.logical_entry.clone(),
+                            // clr lane 没有注解改名合同，公开名就是源码名。
+                            source_name: entry.logical_entry.clone(),
                             physical_artifact: artifact_file.clone(),
                             invocation: "dotnet".to_string(),
                             abi_digest: contract.contract_digest.clone(),
+                            abi: "clr-managed".to_string(),
                         })
                         .collect()
                 })

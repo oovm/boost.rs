@@ -164,7 +164,15 @@ fn build_driver_input(
                 imports,
                 package_as_wasi_command,
                 wasi_preview,
-                library_wasm_exports: submission.backend_plan.export_names().values().cloned().collect(),
+                library_wasm_exports: submission
+                    .backend_plan
+                    .export_names()
+                    .keys()
+                    .map(|instance| crate::emitter_backend_wasi::WasmLibraryExport {
+                        source_name: submission.backend_plan.export_names()[instance].clone(),
+                        public_name: submission.backend_plan.export_public_name(instance).expect("导出实例必有公开名").clone(),
+                    })
+                    .collect(),
                 wasm_package_kind,
             }))
         }

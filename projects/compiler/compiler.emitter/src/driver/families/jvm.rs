@@ -107,9 +107,12 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                         .iter()
                         .map(|entry| DriverLibraryExport {
                             logical_name: entry.logical_entry.clone(),
+                            // jvm lane 没有注解改名合同，公开名就是源码名。
+                            source_name: entry.logical_entry.clone(),
                             physical_artifact: format!("{}.jar", request.artifact_name),
                             invocation: "java".to_string(),
                             abi_digest: contract.contract_digest.clone(),
+                            abi: "jvm-managed".to_string(),
                         })
                         .collect()
                 })
