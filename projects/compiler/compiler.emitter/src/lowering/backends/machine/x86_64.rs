@@ -724,7 +724,12 @@ impl FunctionLowerer<'_> {
                 self.function.param_types.len()
             ));
         }
-        if entry_block.parameters.len() > self.abi.integer_argument_limit() + self.abi.float_argument_limit() {
+        let register_limit = if self.abi.shares_register_files() {
+            self.abi.integer_argument_limit().max(self.abi.float_argument_limit())
+        } else {
+            self.abi.integer_argument_limit() + self.abi.float_argument_limit()
+        };
+        if entry_block.parameters.len() > register_limit {
             return Err(format!(
                 "x86_64 lowering：函数 `{}` 有 {} 个形参，超过 {} 寄存器传参上限（整数 {} + 浮点 {}；栈上传参未实现）",
                 self.function.symbol,
@@ -734,7 +739,9 @@ impl FunctionLowerer<'_> {
                 self.abi.float_argument_limit()
             ));
         }
-        // 整数与浮点实参按各自独立的寄存器序列编号；混合签名不得把浮点挤进整数序。
+        // Win64 按形参位置同时消耗整数与浮点寄存器序位（第 i 个形参用 `rcx+i`
+        // 或 `xmm0+i`）；SysV64 两个寄存器文件各自独立编号。混合签名不得按类别另算序位。
+        let shared_files = self.abi.shares_register_files();
         let mut integer_index = 0u8;
         let mut float_index = 0u8;
         for (index, parameter) in entry_block.parameters.iter().enumerate() {
@@ -757,7 +764,12 @@ impl FunctionLowerer<'_> {
             }
             if matches!(ty, Some(SemanticType::Float32 | SemanticType::Float64)) {
                 let single = matches!(ty, Some(SemanticType::Float32));
-                if usize::from(float_index) >= self.abi.float_argument_limit() {
+                let register_index = if shared_files {
+                    u8::try_from(index).map_err(|_| "x86_64 lowering：入口形参序位溢出 u8".to_string())?
+                } else {
+                    float_index
+                };
+                if usize::from(register_index) >= self.abi.float_argument_limit() {
                     return Err(format!(
                         "x86_64 lowering：函数 `{}` 的浮点形参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
                         self.function.symbol,
@@ -765,11 +777,16 @@ impl FunctionLowerer<'_> {
                         self.abi.float_argument_limit()
                     ));
                 }
-                self.push(X64TextInstruction::LoadParamXmm { index: float_index, slot: local, single });
+                self.push(X64TextInstruction::LoadParamXmm { index: register_index, slot: local, single });
                 float_index += 1;
             }
             else {
-                if usize::from(integer_index) >= self.abi.integer_argument_limit() {
+                let register_index = if shared_files {
+                    u8::try_from(index).map_err(|_| "x86_64 lowering：入口形参序位溢出 u8".to_string())?
+                } else {
+                    integer_index
+                };
+                if usize::from(register_index) >= self.abi.integer_argument_limit() {
                     return Err(format!(
                         "x86_64 lowering：函数 `{}` 的整数形参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
                         self.function.symbol,
@@ -777,7 +794,7 @@ impl FunctionLowerer<'_> {
                         self.abi.integer_argument_limit()
                     ));
                 }
-                self.push(X64TextInstruction::LoadParam { index: integer_index, slot: local });
+                self.push(X64TextInstruction::LoadParam { index: register_index, slot: local });
                 integer_index += 1;
             }
         }
@@ -1134,7 +1151,12 @@ impl FunctionLowerer<'_> {
                 arguments.len()
             ));
         }
-        if arguments.len() > self.abi.integer_argument_limit() + self.abi.float_argument_limit() {
+        let register_limit = if self.abi.shares_register_files() {
+            self.abi.integer_argument_limit().max(self.abi.float_argument_limit())
+        } else {
+            self.abi.integer_argument_limit() + self.abi.float_argument_limit()
+        };
+        if arguments.len() > register_limit {
             return Err(format!(
                 "x86_64 lowering：调用 `{}` 传递 {} 个实参，超过 {} 寄存器传参上限（整数 {} + 浮点 {}；栈上传参未实现）",
                 callee_function.symbol,
@@ -1144,7 +1166,9 @@ impl FunctionLowerer<'_> {
                 self.abi.float_argument_limit()
             ));
         }
-        // 整数与浮点实参按各自独立的寄存器序列编号，与入口形参同一规则。
+        // 整数与浮点实参的寄存器序位与入口形参同一规则：Win64 按形参位置共享
+        // 序位，SysV64 各自独立编号。
+        let shared_files = self.abi.shares_register_files();
         let mut placements = Vec::with_capacity(arguments.len());
         let mut integer_index = 0usize;
         let mut float_index = 0usize;
@@ -1152,7 +1176,8 @@ impl FunctionLowerer<'_> {
             let ty = callee_function.param_types.get(index).cloned();
             if matches!(ty, Some(SemanticType::Float32 | SemanticType::Float64)) {
                 let single = matches!(ty, Some(SemanticType::Float32));
-                if float_index >= self.abi.float_argument_limit() {
+                let register_index = if shared_files { index } else { float_index };
+                if register_index >= self.abi.float_argument_limit() {
                     return Err(format!(
                         "x86_64 lowering：调用 `{}` 的浮点实参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
                         callee_function.symbol,
@@ -1160,11 +1185,12 @@ impl FunctionLowerer<'_> {
                         self.abi.float_argument_limit()
                     ));
                 }
-                placements.push(FloatPlacement::Float { index: float_index, single });
+                placements.push(FloatPlacement::Float { index: register_index, single });
                 float_index += 1;
             }
             else {
-                if integer_index >= self.abi.integer_argument_limit() {
+                let register_index = if shared_files { index } else { integer_index };
+                if register_index >= self.abi.integer_argument_limit() {
                     return Err(format!(
                         "x86_64 lowering：调用 `{}` 的整数实参超过 {} 寄存器传参上限 {}（栈上传参未实现）",
                         callee_function.symbol,
@@ -1172,7 +1198,7 @@ impl FunctionLowerer<'_> {
                         self.abi.integer_argument_limit()
                     ));
                 }
-                placements.push(FloatPlacement::Integer { index: integer_index });
+                placements.push(FloatPlacement::Integer { index: register_index });
                 integer_index += 1;
             }
         }

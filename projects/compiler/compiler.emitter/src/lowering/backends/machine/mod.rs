@@ -82,11 +82,25 @@ impl X64CallConv {
 
     /// 寄存器可承载的浮点实参上限（`xmm0..`；超出必须走栈，本 lane 尚未实现栈传参）。
     ///
-    /// 浮点实参按独立的 `xmm` 序列编号，不与整数实参共享序位。
+    /// Win64 调用约定按 Microsoft x64 规则为每个形参同时占用整数与浮点寄存器
+    /// 文件的同一序位（第 i 个形参：`rcx+i` 与 `xmm0+i` 一并分配），因此浮点
+    /// 实参的寄存器序位 = 形参位置；SysV64 两个寄存器文件各自独立编号。
     pub fn float_argument_limit(self) -> usize {
         match self {
             Self::Win64 => 4,
             Self::SystemV64 => 8,
+        }
+    }
+
+    /// 整数与浮点实参寄存器是否按形参位置共享序位。
+    ///
+    /// Win64 调用约定按 Microsoft x64 规则为每个形参同时占用整数与浮点寄存器
+    /// 文件的同一序位（第 i 个形参：`rcx+i` 与 `xmm0+i` 一并分配）；SysV64
+    /// 两个寄存器文件各自独立编号。
+    pub fn shares_register_files(self) -> bool {
+        match self {
+            Self::Win64 => true,
+            Self::SystemV64 => false,
         }
     }
 
