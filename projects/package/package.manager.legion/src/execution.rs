@@ -9,12 +9,15 @@ use crate::legion::{
     cmds::{
         error::LegionResult,
         run::{
-            ExecutionManifest, ManifestVerdict, ManifestVerificationContext, ManifestVerificationLevel, collect_execution_input_digests,
-            expected_resolver_compile_evidence,
+            ExecutionManifest, LibraryExportIndexEntry, ManifestVerdict, ManifestVerificationContext, ManifestVerificationLevel,
+            collect_execution_input_digests, expected_resolver_compile_evidence,
         },
     },
     resolve_platform_only_target,
-    workspace::planner::{BuildRequest, WorkspaceResolver},
+    workspace::{
+        manifest::ProjectArtifactKind,
+        planner::{BuildRequest, WorkspaceResolver},
+    },
 };
 
 /// execution manifest 的宿主友好摘要。
@@ -24,6 +27,10 @@ pub struct ManifestView {
     pub schema_version: u32,
     /// canonical target 字符串。
     pub target: String,
+    /// 产物种类：`binary` / `library`。
+    pub artifact_kind: String,
+    /// 库导出索引（逻辑名 + 物理产物）；非库产物为空。
+    pub library_exports: Vec<LibraryExportIndexEntry>,
     /// 语义闭包哈希。
     pub semantic_closure_hash: Option<String>,
     /// 规范表面哈希。
@@ -58,6 +65,11 @@ pub fn read_manifest(output_dir: &Path) -> Option<ManifestView> {
     Some(ManifestView {
         schema_version: manifest.schema_version,
         target: manifest.target,
+        artifact_kind: match manifest.artifact_kind {
+            ProjectArtifactKind::Binary => "binary".to_string(),
+            ProjectArtifactKind::Library => "library".to_string(),
+        },
+        library_exports: manifest.library_exports,
         semantic_closure_hash: evidence.map(|evidence| evidence.semantic_closure_hash.clone()),
         canonical_surface_hash: evidence.map(|evidence| evidence.canonical_surface_hash.clone()),
         host_provider_binding_hash: evidence.map(|evidence| evidence.host_provider_binding_hash.clone()),

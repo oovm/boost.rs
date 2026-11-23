@@ -527,13 +527,19 @@ pub fn enforce_resolved_host_contract_bindings(
                     for operand in std::iter::once(callee).chain(arguments.iter()) {
                         if let MirOperand::Callable(instance) = operand {
                             if let Some(fact) = unpaired.get(instance) {
-                                return Err(ParseError::Invalid { message: unpaired_contract_message(fact, *instance), span: None });
+                                return Err(ParseError::Invalid {
+                                    message: format!("{}; function `{}`", unpaired_contract_message(fact, *instance), function.symbol),
+                                    span: None,
+                                });
                             }
                             let Some(contract) = unbound.get(instance)
                             else {
                                 continue;
                             };
-                            return Err(ParseError::Invalid { message: unbound_contract_message(contract, *instance, gated_out), span: None });
+                            return Err(ParseError::Invalid {
+                                message: format!("{}; function `{}`", unbound_contract_message(contract, *instance, gated_out), function.symbol),
+                                span: None,
+                            });
                         }
                     }
                 }
@@ -617,8 +623,34 @@ fn remap_bound_host_contracts(
     let modules: Vec<&MirModule> = std::iter::once(&*module).chain(dependency_mirs.iter()).collect();
     let mut plans = Vec::new();
 
-    for binding in bindings {
-        if !binding.contract_instances.iter().any(|instance| callable_present(&modules, *instance)) {
+    // provider 只在合同**真的被调用**时安装：源码闭包里的声明/未调用导入本身不算
+    // 需求。否则一个声明了但从未调用的宿主合同（如 Windows 控制台）会连坐它
+    // 自己的 provider 体，把 provider 体内的未绑定合同变成无关构建失败。
+    // 从已链接模块的真实调用点出发求闭包；安装的 provider 体内部的调用会把
+    // 下一层绑定一并拉入，直到不再增长。
+    let mut called = collect_called_instances(module.functions.iter());
+    let mut selected = vec![false; bindings.len()];
+    loop {
+        let mut changed = false;
+        for (index, binding) in bindings.iter().enumerate() {
+            if selected[index] || !binding.contract_instances.iter().any(|instance| called.contains(instance)) {
+                continue;
+            }
+            selected[index] = true;
+            changed = true;
+            for provider_instance in binding.provider_pairs.values() {
+                if let Some(function) = find_function(&modules, *provider_instance) {
+                    called.extend(collect_called_instances(std::iter::once(function)));
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    for (index, binding) in bindings.iter().enumerate() {
+        if !selected[index] {
             continue;
         }
         let mut provider_functions = Vec::new();
@@ -720,6 +752,29 @@ fn retire_bound_host_contracts(module: &mut MirModule, retired_contracts: &BTree
         // 与 provider 表示不一致即被拒绝）。
         module.functions.retain(|function| function.instance != Some(*contract_instance));
     }
+}
+
+fn find_function<'a>(modules: &[&'a MirModule], instance: ItemInstanceId) -> Option<&'a MirFunction> {
+    modules.iter().flat_map(|module| module.functions.iter()).find(|function| function.instance == Some(instance))
+}
+
+/// 收集函数体内全部作为 callee 或实参出现的可调用实例身份。
+fn collect_called_instances<'a>(functions: impl IntoIterator<Item = &'a MirFunction>) -> BTreeSet<ItemInstanceId> {
+    let mut called = BTreeSet::new();
+    for function in functions {
+        for block in &function.blocks {
+            for instruction in &block.instructions {
+                if let MirOperation::Call { callee, arguments } = &instruction.kind {
+                    for operand in std::iter::once(callee).chain(arguments.iter()) {
+                        if let MirOperand::Callable(instance) = operand {
+                            called.insert(*instance);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    called
 }
 
 fn callable_present(modules: &[&MirModule], instance: ItemInstanceId) -> bool {

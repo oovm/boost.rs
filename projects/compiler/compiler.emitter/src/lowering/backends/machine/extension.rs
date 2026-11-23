@@ -8,8 +8,10 @@
 //!
 //! 宿主边界能力在这里闭合，未闭合的组合在写出前结构化拒绝：
 //!
-//! - 导出实参必须是完整 `i64` 整数（宿主按 `napi_get_value_int64` /
-//!   `PyArg_ParseTuple("n")` 编组；窄整数没有无损载体，拒绝而不是静默扩展）；
+//! - 导出实参必须是完整 `i64` 整数（Node-API 按 `napi_get_value_bigint_int64`
+//!   只接受 JS `bigint` 并用 `lossless` 检查 `i64` 域；`number` 因无法在本 lane
+//!   内做安全整数/小数检查而显式拒绝；CPython 按 `PyArg_ParseTuple("n")` 接收
+//!   完整 `i64`）；窄整数没有无损载体，拒绝而不是静默扩展；
 //! - 导出返回只闭合 `Integer64 → Int64` 与 `Boolean → Bool`；字符串需要镜像
 //!   描述符事实，正式 lane 尚未降低字符串常量，同样拒绝；
 //! - 宿主扩展不接受进程入口：程序有入口与程序公开若干函数是两个独立事实；
@@ -17,7 +19,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::{FragmentSubmission, Result, backend_plan_views::SemanticType, emitter_backend_machine::HostProperty, lowering::sanitize_symbol};
+use crate::{
+    FragmentSubmission, Result, backend_plan_views::SemanticType, emitter_backend_machine::HostProperty, lowering::sanitize_symbol,
+    lowering::shared::physical_layout::{LayoutPolicy, resolve_physical_layouts},
+};
 use compiler_types::ItemInstanceId;
 
 use super::{
@@ -74,10 +79,21 @@ pub fn lower_fragment_to_machine_extension(
 
     // 符号名：导出函数取冻结导出名的合法符号，内部闭包函数取实例身份名。
     let names = extension_symbol_names(submission, &reachable, &methods)?;
+    // 与可执行 lane 使用同一物理布局策略：宿主扩展的对象字段偏移不得另算一套。
+    let layouts = resolve_physical_layouts(submission.backend_plan.aggregate_layouts(), LayoutPolicy::X64)
+        .map_err(|reason| format!("宿主扩展降低：物理布局解析失败：{reason}"))?;
     let mut functions = Vec::with_capacity(reachable.len() + methods.len() + 2);
     for instance in &reachable {
         let view = submission.backend_plan.get_function(instance).ok_or_else(|| format!("宿主扩展降低：可达操作 `{instance:?}` 缺少函数体"))?;
-        functions.push(lower_function_to_text_program(instance, submission, &view.function, &reachable, &names, abi)?);
+        functions.push(lower_function_to_text_program(
+            instance,
+            submission,
+            &view.function,
+            &reachable,
+            &names,
+            platform,
+            &layouts,
+        )?);
     }
 
     let host_library = host_import_library(target, platform)?;
@@ -90,12 +106,21 @@ pub fn lower_fragment_to_machine_extension(
 
     let (image, entry_symbol, artifact_extension) = match host {
         HostModule::Node => {
-            let (node_data, property_name_offsets, method_name_offsets, error_message_offset) = node_module_data(properties, &methods);
+            let (node_data, property_name_offsets, method_name_offsets, error_message_offset, range_error_offset, allocation_error_offset) =
+                node_module_data(properties, &methods);
             let mut data = node_data;
             let arena_offset = Some(append_text_arena(&mut data));
             let bool_exports = any_returns_bool(properties, &methods);
             for method in &methods {
-                functions.push(node_method_wrapper(method, error_message_offset, platform, &host_library, arena_offset));
+                functions.push(node_method_wrapper(
+                    method,
+                    error_message_offset,
+                    range_error_offset,
+                    allocation_error_offset,
+                    platform,
+                    &host_library,
+                    arena_offset,
+                ));
             }
             functions.push(node_addon_registration(
                 properties,
@@ -266,14 +291,14 @@ fn host_import_library(target: &X64ProductTarget, platform: X64Platform) -> Resu
 
 /// Node-API 导入面：注册与方法回调实际引用的符号。
 fn node_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<(String, String)> {
-    let mut imports = vec![(dll.to_string(), "napi_set_named_property".to_string()), (dll.to_string(), "napi_create_int64".to_string())];
+    let mut imports = vec![(dll.to_string(), "napi_set_named_property".to_string()), (dll.to_string(), "napi_create_bigint_int64".to_string())];
     if !methods.is_empty() {
-        for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_int64", "napi_throw_type_error"] {
+        for symbol in ["napi_create_function", "napi_get_cb_info", "napi_get_value_bigint_int64", "napi_throw_type_error", "napi_throw_range_error"] {
             imports.push((dll.to_string(), symbol.to_string()));
         }
     }
     if methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Int64Array))) {
-        for symbol in ["napi_is_array", "napi_get_array_length", "napi_get_element", "napi_set_element"] {
+        for symbol in ["napi_is_array", "napi_get_array_length", "napi_get_element", "napi_set_element", "napi_throw_error"] {
             imports.push((dll.to_string(), symbol.to_string()));
         }
     }
@@ -300,7 +325,7 @@ fn python_imports(methods: &[HostMethod], bool_exports: bool, dll: &str) -> Vec<
 }
 
 /// 自检：产物必须是与平台身份一致的共享库镜像。
-fn verify_shared_image(executable: &[u8], platform: X64Platform) -> Result<()> {
+pub(super) fn verify_shared_image(executable: &[u8], platform: X64Platform) -> Result<()> {
     use crate::emitter_backend_machine::{MachineImageKind, classify_machine_image};
     let facts = classify_machine_image(executable).map_err(|error| format!("宿主扩展产物自检失败：{error}"))?;
     if !facts.shared {
