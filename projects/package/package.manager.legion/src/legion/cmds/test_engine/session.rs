@@ -34,8 +34,6 @@ use super::{
 pub enum ExternalRunFailure {
     /// runner 命令未安装或不在 `PATH` 上，无法启动。
     RuntimeNotInstalled,
-    /// 产物扩展名与目标 profile 声明的主产物格式不一致，拒绝启动 runner。
-    ArtifactFormatMismatch,
     /// 执行超过时限，进程已被终止。
     ExecutionTimeout,
     /// 进程以非零退出码结束，或退出码为零但 `stderr` 非空。
@@ -53,7 +51,6 @@ impl ExternalRunFailure {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::RuntimeNotInstalled => "runtime-not-installed",
-            Self::ArtifactFormatMismatch => "artifact-format-mismatch",
             Self::ExecutionTimeout => "execution-timeout",
             Self::NonZeroExit => "non-zero-exit",
             Self::ExecutionSuspended => "execution-suspended",
@@ -156,42 +153,20 @@ pub fn run_external_test_in_session(
     let command = expand_placeholders(&template.command, &placeholders);
     let args: Vec<String> = template.args.iter().map(|a| expand_placeholders(a, &placeholders)).collect();
 
-    // 格式门以目标 profile 的主产物扩展名为唯一事实源，不按标签字符串猜测每个 lane 的产物形态。
-    let expected_extension = platform.to_profile(None).artifact_policy.primary_extension;
-    execute_external_runner(&command, &args, &artifact, &expected_extension, EXTERNAL_RUNNER_TIMEOUT, verbose)
+    execute_external_runner(&command, &args, EXTERNAL_RUNNER_TIMEOUT, verbose)
 }
 
 /// 外部 runner 默认执行时限。
 pub const EXTERNAL_RUNNER_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// fail-closed 执行外部 runner：格式门 → 启动分类 → 超时轮询 → 退出码分类。
+/// fail-closed 执行外部 runner：启动分类 → 超时轮询 → 退出码分类。
 ///
-/// 四类运行期失败各自返回 `ExternalRunFailure` 结构化分类与可诊断文本，
-/// 绝不把「未安装/超时/格式不符」静默折叠成通过或无差别失败。
-pub fn execute_external_runner(
-    command: &str,
-    args: &[String],
-    artifact: &Path,
-    expected_extension: &str,
-    timeout: Duration,
-    verbose: bool,
-) -> RunOutcome {
-    let expected = expected_extension.trim_start_matches('.').to_ascii_lowercase();
-    if !expected.is_empty() {
-        let actual = artifact.extension().map(|ext| ext.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-        if actual != expected {
-            return RunOutcome {
-                success: false,
-                is_compile_error: false,
-                failure: Some(ExternalRunFailure::ArtifactFormatMismatch),
-                error: Some(format!(
-                    "产物格式不匹配: `{}` 扩展名 `{actual}` 与目标主产物格式 `.{expected}` 不一致，拒绝启动 runner",
-                    artifact.display()
-                )),
-            };
-        }
-    }
-
+/// 产物格式由运行合同与产物集合共同冻结，不再按目标主产物扩展名二次判定：
+/// `node` 测试启动器是 `.mjs`、`WASI` 组件是 `.wasi`，它们都不是目标的主产物。
+///
+/// 三类运行期失败各自返回 `ExternalRunFailure` 结构化分类与可诊断文本，
+/// 绝不把「未安装/超时/非零退出」静默折叠成通过或无差别失败。
+pub fn execute_external_runner(command: &str, args: &[String], timeout: Duration, verbose: bool) -> RunOutcome {
     let mut child = match Command::new(command).args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(child) => child,
         Err(error) => {
