@@ -1,5 +1,5 @@
-use crate::{EmitterError, Result};
-use compiler_target::{BackendCandidate, BackendSelector, PartitionBackendRequirement};
+use crate::{EmitterError, Result, bundled_backend_capability_descriptor};
+use compiler_target::{BackendCandidate, BackendSelector, PartitionBackendRequirement, TargetBackendFamily};
 
 use crate::{DriverCompileReport, DriverCompileRequest};
 
@@ -17,6 +17,7 @@ trait BundledBackendCompiler: Sync {
 
 struct DriverCompilerRegistration {
     name: &'static str,
+    family: TargetBackendFamily,
     priority: u16,
     supports: fn(&PartitionBackendRequirement) -> bool,
     compiler: &'static dyn BundledBackendCompiler,
@@ -41,19 +42,67 @@ static OVM_COMPILER: ovm::OvmFamilyCompiler = ovm::OvmFamilyCompiler;
 
 #[cfg(feature = "ovm-lane")]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 5] = [
-    DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
-    DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: machine::supports_requirement, compiler: &MACHINE_COMPILER },
-    DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
-    DriverCompilerRegistration { name: "ovm", priority: 100, supports: ovm::supports_requirement, compiler: &OVM_COMPILER },
+    DriverCompilerRegistration {
+        name: "clr-binary",
+        family: TargetBackendFamily::Clr,
+        priority: 100,
+        supports: clr::supports_requirement,
+        compiler: &CLR_COMPILER,
+    },
+    DriverCompilerRegistration {
+        name: "jvm-jar",
+        family: TargetBackendFamily::Jvm,
+        priority: 100,
+        supports: jvm::supports_requirement,
+        compiler: &JVM_COMPILER,
+    },
+    DriverCompilerRegistration {
+        name: "machine-code",
+        family: TargetBackendFamily::MachineCode,
+        priority: 100,
+        supports: machine::supports_requirement,
+        compiler: &MACHINE_COMPILER,
+    },
+    DriverCompilerRegistration {
+        name: "wasm-binary",
+        family: TargetBackendFamily::Wasm,
+        priority: 100,
+        supports: wasm::supports_requirement,
+        compiler: &WASM_COMPILER,
+    },
+    DriverCompilerRegistration { name: "ovm", family: TargetBackendFamily::Ovm, priority: 100, supports: ovm::supports_requirement, compiler: &OVM_COMPILER },
 ];
 
 #[cfg(not(feature = "ovm-lane"))]
 static DRIVER_COMPILERS: [DriverCompilerRegistration; 4] = [
-    DriverCompilerRegistration { name: "clr-binary", priority: 100, supports: clr::supports_requirement, compiler: &CLR_COMPILER },
-    DriverCompilerRegistration { name: "jvm-jar", priority: 100, supports: jvm::supports_requirement, compiler: &JVM_COMPILER },
-    DriverCompilerRegistration { name: "machine-code", priority: 100, supports: machine::supports_requirement, compiler: &MACHINE_COMPILER },
-    DriverCompilerRegistration { name: "wasm-binary", priority: 100, supports: wasm::supports_requirement, compiler: &WASM_COMPILER },
+    DriverCompilerRegistration {
+        name: "clr-binary",
+        family: TargetBackendFamily::Clr,
+        priority: 100,
+        supports: clr::supports_requirement,
+        compiler: &CLR_COMPILER,
+    },
+    DriverCompilerRegistration {
+        name: "jvm-jar",
+        family: TargetBackendFamily::Jvm,
+        priority: 100,
+        supports: jvm::supports_requirement,
+        compiler: &JVM_COMPILER,
+    },
+    DriverCompilerRegistration {
+        name: "machine-code",
+        family: TargetBackendFamily::MachineCode,
+        priority: 100,
+        supports: machine::supports_requirement,
+        compiler: &MACHINE_COMPILER,
+    },
+    DriverCompilerRegistration {
+        name: "wasm-binary",
+        family: TargetBackendFamily::Wasm,
+        priority: 100,
+        supports: wasm::supports_requirement,
+        compiler: &WASM_COMPILER,
+    },
 ];
 
 /// 返回 bundled driver 编译器注册名（集成测试专用）。
@@ -69,7 +118,7 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
     for registration in DRIVER_COMPILERS.iter() {
         if let Some(candidate) = registration.candidate(&request.requirement) {
             selector.register(candidate);
-            matched_compilers.push((registration.name, registration.compiler));
+            matched_compilers.push(registration);
         }
     }
 
@@ -77,11 +126,21 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
     else {
         return Err(format!("`emitter` 找不到满足需求的 backend 编译器：{:?}", request.requirement));
     };
-    let Some((_, compiler)) = matched_compilers.into_iter().find(|(name, _)| *name == selected.name)
+    let Some(registration) = matched_compilers.into_iter().find(|registration| registration.name == selected.name)
     else {
         return Err(format!("选中的 backend `{}` 没有关联 driver compiler", selected.name));
     };
-    let report = compiler.compile(request)?;
+    // 用途承载能力只有 descriptor 一处声明；这里在 lane 写出任何产物之前统一
+    // 裁决，lane 不再各自维护用途黑名单，新增用途时也不会漏掉某个 lane。
+    let purpose_supported = bundled_backend_capability_descriptor(registration.family)
+        .is_some_and(|descriptor| descriptor.supports_purpose(request.purpose, request.requirement.host_boundary));
+    if !purpose_supported {
+        return Err(format!(
+            "后端 `{}`（家族 `{:?}`）不承载产物用途 `{:?}`（宿主边界 `{:?}`）；拒绝写出无法装载或无法逐入口调用的产物",
+            registration.name, registration.family, request.purpose, request.requirement.host_boundary
+        ));
+    }
+    let report = registration.compiler.compile(request)?;
     validate_export_surface(purpose, &report)?;
     validate_run_contract_surface(&report)?;
     Ok(report)
@@ -371,5 +430,50 @@ mod run_contract_surface_tests {
         report.entry_symbol = Some("  ".to_string());
         let error = validate_run_contract_surface(&report).expect_err("空入口符号必须失败");
         assert!(error.contains("入口符号是空串"), "{error}");
+    }
+}
+
+/// 用途承载能力必须来自 descriptor 这一处声明，并且每个已注册后端都能查到。
+#[cfg(test)]
+mod purpose_capability_tests {
+    use super::*;
+    use crate::bundled_backend_capability_descriptor;
+    use compiler_target::{ArtifactPurpose, HostProjectionBoundary};
+
+    fn descriptor(family: TargetBackendFamily) -> crate::BundledBackendCapabilityDescriptor {
+        bundled_backend_capability_descriptor(family).expect("已注册的后端家族必须有 descriptor")
+    }
+
+    #[test]
+    fn every_registered_compiler_family_declares_a_descriptor() {
+        for registration in DRIVER_COMPILERS.iter() {
+            assert_eq!(descriptor(registration.family).backend_name, registration.name);
+        }
+    }
+
+    #[test]
+    fn managed_families_carry_app_library_and_tests_but_not_host_extensions() {
+        for family in [TargetBackendFamily::Clr, TargetBackendFamily::Jvm] {
+            let descriptor = descriptor(family);
+            for purpose in [ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::TestBundle] {
+                assert!(descriptor.supports_purpose(purpose, descriptor.supported_host_boundaries[0]), "{family:?} 应承载 {purpose:?}");
+            }
+            assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension, descriptor.supported_host_boundaries[0]));
+        }
+    }
+
+    #[test]
+    fn machine_family_carries_host_extensions_but_not_test_bundles() {
+        let descriptor = descriptor(TargetBackendFamily::MachineCode);
+        assert!(descriptor.supports_purpose(ArtifactPurpose::HostExtension, HostProjectionBoundary::MachineCode));
+        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle, HostProjectionBoundary::MachineCode));
+    }
+
+    #[test]
+    fn wasm_test_bundle_support_depends_on_the_host_boundary() {
+        let descriptor = descriptor(TargetBackendFamily::Wasm);
+        assert!(descriptor.supports_purpose(ArtifactPurpose::TestBundle, HostProjectionBoundary::WasmJsGlue));
+        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle, HostProjectionBoundary::WasiComponent));
+        assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension, HostProjectionBoundary::WasmJsGlue));
     }
 }

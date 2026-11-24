@@ -24,11 +24,8 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
         else {
             return Err("`ovm` 家族请求必须携带 `OvmBackendInput`".to_string());
         };
-        // 未实现的用途组合必须在写出前拒绝：`.odin` 产物没有宿主模块装载合同，
-        // 宿主扩展用途无法给出装载方式；先写产物再报错只会留下无法装载的文件。
-        if request.purpose == compiler_target::ArtifactPurpose::HostExtension {
-            return Err("`ovm` lane 不支持宿主扩展用途：`.odin` 产物没有宿主模块装载合同；请改用共享库或应用用途".to_string());
-        }
+        // 用途承载能力在驱动层按 descriptor 统一裁决（见 families::compile），
+        // 这里只按已裁决的用途决定容器与导出面。
 
         let mut artifacts = ArtifactSet::default();
         let mut entry_symbol = None;

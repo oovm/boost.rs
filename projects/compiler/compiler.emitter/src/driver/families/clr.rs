@@ -55,11 +55,8 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         if requirement.host_boundary != HostProjectionBoundary::Clr {
             return Err(format!("`CLR` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
         }
-        // 未实现的用途组合必须在写出前拒绝：managed 产物没有宿主模块装载合同，
-        // 宿主扩展用途无法给出装载方式，先写镜像再报错只会留下无法装载的产物。
-        if request.purpose == compiler_target::ArtifactPurpose::HostExtension {
-            return Err("`clr` lane 不支持宿主扩展用途：managed 产物没有宿主模块装载合同；请改用共享库或应用用途".to_string());
-        }
+        // 用途承载能力在驱动层按 descriptor 统一裁决（见 families::compile）；这里只
+        // 处理 clr 用途自身的语义前提：应用必须已有冻结程序入口。
         let has_entry_point = input.module.global_methods.iter().any(|method| method.is_entry_point);
         let provided_contracts = std::mem::take(&mut input.run_contracts);
         let mut managed_abi = input.managed_abi.take();

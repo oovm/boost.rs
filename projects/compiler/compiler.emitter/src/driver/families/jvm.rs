@@ -36,11 +36,8 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         if requirement.host_boundary != HostProjectionBoundary::Jvm {
             return Err(format!("`JVM` 后端输入宿主与规划需求不一致：requirement={:?}", requirement.host_boundary));
         }
-        // 未实现的用途组合必须在写出前拒绝：managed 产物没有宿主模块装载合同，
-        // 宿主扩展用途无法给出装载方式，先写 jar 再报错只会留下无法装载的产物。
-        if request.purpose == compiler_target::ArtifactPurpose::HostExtension {
-            return Err("`jvm` lane 不支持宿主扩展用途：managed 产物没有宿主模块装载合同；请改用共享库或应用用途".to_string());
-        }
+        // 用途承载能力在驱动层按 descriptor 统一裁决（见 families::compile）；这里只
+        // 处理 jvm 用途自身的语义前提：应用必须有冻结入口 launcher，库必须有导出面。
         let entry_launcher = input.entry_launcher.clone();
         let provided_contracts = std::mem::take(&mut input.run_contracts);
         // 可执行产物必须消费 lowering 冻结的入口 launcher；入口无法包装为
