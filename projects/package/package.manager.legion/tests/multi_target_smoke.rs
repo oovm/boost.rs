@@ -7,7 +7,13 @@
 use std::{fs, path::PathBuf, process::Command};
 
 use package_manager_legion::{
-    legion::cmds::run::ExecutionManifest,
+    legion::{
+        BuildRequest,
+        cmds::build::compile_plan,
+        cmds::run::ExecutionManifest,
+        cmds::test_engine::parse_target_label,
+        workspace::WorkspaceResolver,
+    },
     product::{BuildOptions, BuildOutcome, build_project},
 };
 
@@ -149,4 +155,87 @@ fn ovm_lane_builds_the_same_program() {
     assert!(!launch.is_empty(), "ovm 运行合同必须冻结入口 argv");
     assert!(outcome.artifacts.iter().any(|artifact| artifact.ends_with(".odin")), "ovm 产物必须是 `.odin` 字节码: {:?}", outcome.artifacts);
     let _ = fs::remove_dir_all(&root);
+}
+
+/// `[test]` 测试包必须在每个承载测试用途的 target 上编译并真实运行。
+///
+/// OVM 由 legion 内置解释器进程内按入口调用，运行合同只冻结模块入口；CLR/JVM
+/// 由外部 runner 按冻结 argv 启动。wasm 家族当前不承载测试包（逐 `[test]` 导出
+/// 尚未实现），因此不在本用例内。
+#[test]
+fn test_bundles_compile_and_run_on_every_supported_target() {
+    for label in ["legion", "clr", "jvm"] {
+        let root = std::env::temp_dir().join(format!("legion-multi-target-tests-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let project_dir = write_project(&root, "wasm-node", SOURCE);
+        let test_dir = project_dir.join("test");
+        fs::create_dir_all(&test_dir).unwrap();
+        fs::write(
+            test_dir.join("basic.v"),
+            concat!("namespace tests;\n", "\n", "[test]\n", "micro test_passes() -> bool {\n", "    return true\n", "}\n"),
+        )
+        .unwrap();
+
+        let (output_dir, manifest) = compile_test_bundle(&project_dir, label);
+        assert_eq!(manifest.run_contracts.len(), 1, "{label}: 每个 `[test]` 必须恰好一条运行合同: {:?}", manifest.run_contracts);
+        let contract = &manifest.run_contracts[0];
+        assert_eq!(contract.logical_entry, "test_passes", "{label}: 合同必须按测试名冻结");
+        if label == "legion" {
+            assert!(output_dir.exists(), "{label}: 测试包必须真实写出到输出目录");
+            continue;
+        }
+        let artifact = find_artifact(&output_dir, &contract.physical_entry);
+        let launch: Vec<String> = contract.launch.iter().map(|part| part.replace("{artifact}", &artifact)).collect();
+        let output = Command::new(&launch[0])
+            .args(&launch[1..])
+            .output()
+            .unwrap_or_else(|error| panic!("{label}: 无法启动 `{launch:?}`: {error}"));
+        assert!(
+            output.status.success(),
+            "{label}: 测试必须通过: exit={:?} stdout={:?} stderr={:?}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+}
+
+/// 只做「计划 → 编译 → 读取 manifest」的最小驱动。
+///
+/// 不走 `run_tests_for_project` 的正式复用校验：`NYAR_COMPILER_BUILD_ID` 是构建期
+/// 注入的，`cargo test` 下为 `unknown`，正式复用会被拒绝；这里要验证的是每个
+/// target 的测试包发射与入口调用，而不是复用合同。
+fn compile_test_bundle(project_dir: &std::path::Path, label: &str) -> (PathBuf, ExecutionManifest) {
+    let workspace = WorkspaceResolver::discover(project_dir).expect("workspace 必须可解析");
+    let request = BuildRequest {
+        project_dir: project_dir.to_path_buf(),
+        resolved: parse_target_label(label).expect("目标标签必须可解析"),
+        output_dir: Some(project_dir.join(".cache").join("test").join(label)),
+        ..Default::default()
+    };
+    let (plan, _mode) = workspace.build_test_plan(&request).expect("测试包计划必须可解析");
+    compile_plan(&plan, false).expect("测试包必须编译成功");
+    let manifest =
+        ExecutionManifest::read_from_output_dir(&plan.output_dir).expect("manifest 可读").expect("测试包必须产出 execution manifest");
+    (plan.output_dir, manifest)
+}
+
+/// 在输出目录中按物理入口文件名查找真实产物。
+fn find_artifact(output_dir: &std::path::Path, physical_entry: &str) -> String {
+    let name = std::path::Path::new(physical_entry).file_name().and_then(|name| name.to_str()).unwrap_or(physical_entry);
+    let mut pending = vec![output_dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            }
+            else if path.file_name().and_then(|candidate| candidate.to_str()) == Some(name) {
+                return path.to_string_lossy().into_owned();
+            }
+        }
+    }
+    panic!("运行合同指向 `{physical_entry}`，但输出目录没有同名产物");
 }
