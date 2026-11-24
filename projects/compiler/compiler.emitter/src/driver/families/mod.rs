@@ -83,7 +83,61 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
     };
     let report = compiler.compile(request)?;
     validate_export_surface(purpose, &report)?;
+    validate_run_contract_surface(&report)?;
     Ok(report)
+}
+
+/// 本次报告真实产出的产物文件名集合。
+///
+/// 跨字段校验（导出索引、运行合同）只按文件名比对：各 lane 的产物路径有的用
+/// 相对名、有的用完整路径，但同一产物在清单与产物集合中的文件名必须一致。
+fn produced_artifact_file_names(report: &DriverCompileReport) -> std::collections::BTreeSet<String> {
+    report
+        .artifacts
+        .artifacts
+        .iter()
+        .filter_map(|artifact| std::path::Path::new(&artifact.path).file_name().map(|name| name.to_string_lossy().into_owned()))
+        .collect()
+}
+
+/// 运行合同的共享后置条件。
+///
+/// 各 lane 自己构造 `run_contracts`，但「合同指向的物理入口必须是本次真实产出的
+/// 产物文件」以及「入口身份字段不得用空串冒充」只在这里统一判定。否则某个 lane
+/// 改了产物命名之后，合同会继续指向不存在的文件，问题从构建期漂移到运行期。
+/// 多测试入口的逐条合同同样经过这里：每条合同的物理入口都必须真实存在。
+fn validate_run_contract_surface(report: &DriverCompileReport) -> Result<()> {
+    if let Some(symbol) = &report.entry_symbol {
+        if symbol.trim().is_empty() {
+            return Err("入口符号是空串；缺失入口身份必须用 `None` 表达，不得用空串冒充".to_string());
+        }
+    }
+    if report.run_contracts.is_empty() {
+        return Ok(());
+    }
+    let produced = produced_artifact_file_names(report);
+    for contract in &report.run_contracts {
+        if contract.logical_entry.trim().is_empty() {
+            return Err(format!("运行合同缺少逻辑入口名（物理入口 `{}`）", contract.physical_entry));
+        }
+        if contract.physical_entry.trim().is_empty() {
+            return Err(format!("运行合同 `{}` 缺少物理入口", contract.logical_entry));
+        }
+        if contract.invocation.trim().is_empty() {
+            return Err(format!("运行合同 `{}` 缺少调用命令", contract.logical_entry));
+        }
+        if contract.validate.trim().is_empty() {
+            return Err(format!("运行合同 `{}` 缺少校验命令", contract.logical_entry));
+        }
+        let named = std::path::Path::new(&contract.physical_entry).file_name().map(|name| name.to_string_lossy().into_owned());
+        if !matches!(named.as_deref(), Some(name) if produced.contains(name)) {
+            return Err(format!(
+                "运行合同 `{}` 指向物理入口 `{}`，但本次产物集合没有同名文件",
+                contract.logical_entry, contract.physical_entry
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// 库/扩展导出面的共享后置条件。
@@ -155,12 +209,7 @@ fn validate_export_surface(purpose: compiler_target::ArtifactPurpose, report: &D
     // 导出索引必须指向本次真实产出的产物文件。只校验「非空字符串」会让清单在产物
     // 改名或换 lane 之后继续指向不存在的文件而无人发现；这里按文件名判定，因为各
     // lane 的 `physical_artifact` 有的是相对名、有的是完整路径。
-    let produced: std::collections::BTreeSet<String> = report
-        .artifacts
-        .artifacts
-        .iter()
-        .filter_map(|artifact| std::path::Path::new(&artifact.path).file_name().map(|name| name.to_string_lossy().into_owned()))
-        .collect();
+    let produced = produced_artifact_file_names(report);
     for export in &report.library_exports {
         let named = std::path::Path::new(&export.physical_artifact).file_name().map(|name| name.to_string_lossy().into_owned());
         if !matches!(named.as_deref(), Some(name) if produced.contains(name)) {
@@ -245,5 +294,69 @@ mod export_surface_tests {
         duplicate.parameter_names = Some(vec!["value".to_string(), "value".to_string()]);
         let error = validate_export_surface(ArtifactPurpose::Library, &report(vec![duplicate])).expect_err("重复形参名必须失败");
         assert!(error.contains("重复"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod run_contract_surface_tests {
+    use super::*;
+    use crate::DriverRunContract;
+
+    fn contract(entry: &str, physical: &str) -> DriverRunContract {
+        DriverRunContract {
+            logical_entry: entry.to_string(),
+            physical_entry: physical.to_string(),
+            invocation: "node".to_string(),
+            validate: "node --check".to_string(),
+        }
+    }
+
+    /// 产物集合里真实存在同名文件时，运行合同必须通过。
+    fn report_with_artifact(path: &str, contracts: Vec<DriverRunContract>) -> DriverCompileReport {
+        let artifact = compiler_target::packaging::ArtifactDescriptor {
+            name: "app".to_string(),
+            path: path.to_string(),
+            kind: compiler_target::ArtifactKind::Executable,
+            format: compiler_target::ArtifactFormat::RawBinary,
+            target: compiler_target::BinaryTarget::new(
+                compiler_target::TargetFamily::Wasm,
+                compiler_target::BinaryArch::Any,
+                compiler_target::BinaryFlavor::Mixed,
+            ),
+            lane: compiler_target::TargetLane::Wasm,
+        };
+        let mut report = DriverCompileReport::default();
+        report.artifacts.artifacts.push(artifact);
+        report.run_contracts = contracts;
+        report
+    }
+
+    #[test]
+    fn contract_pointing_to_produced_artifact_is_accepted() {
+        validate_run_contract_surface(&report_with_artifact("dist/app.mjs", vec![contract("main", "app.mjs")]))
+            .expect("合同指向真实产物时不应失败");
+    }
+
+    #[test]
+    fn contract_pointing_to_unknown_artifact_is_rejected() {
+        let error = validate_run_contract_surface(&report_with_artifact("dist/app.mjs", vec![contract("main", "missing.mjs")]))
+            .expect_err("合同指向不存在产物必须失败");
+        assert!(error.contains("没有同名文件"), "{error}");
+        assert!(error.contains("missing.mjs"), "{error}");
+    }
+
+    #[test]
+    fn contract_with_blank_fields_is_rejected() {
+        let error = validate_run_contract_surface(&report_with_artifact("dist/app.mjs", vec![contract("main", "  ")]))
+            .expect_err("空物理入口必须失败");
+        assert!(error.contains("缺少物理入口"), "{error}");
+    }
+
+    #[test]
+    fn empty_entry_symbol_is_rejected() {
+        let mut report = report_with_artifact("dist/app.mjs", Vec::new());
+        report.entry_symbol = Some("  ".to_string());
+        let error = validate_run_contract_surface(&report).expect_err("空入口符号必须失败");
+        assert!(error.contains("入口符号是空串"), "{error}");
     }
 }
