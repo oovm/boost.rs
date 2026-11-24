@@ -143,12 +143,81 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         };
         let method = method_plans.get(instance).cloned().ok_or_else(|| format!("CLR 最小 lowering：可达操作 `{instance:?}` 缺少方法计划"))?;
         // 有导出面时 PE 入口由合成的 `managed_entry` 独占；单个导出方法不能再标入口。
-        let is_entry_point = entry_operation == Some(*instance) && plan.export_names().is_empty();
-        module.global_methods.push(lower_function(submission, &view.function, &method, &method_plans, &operator_by_instance, is_entry_point)?);
+        // 语言入口返回 `i64` 时 CLR `Main` 不能直接承载，改由下面的入口投影桩标入口。
+        let direct_entry = entry_operation == Some(*instance)
+            && plan.export_names().is_empty()
+            && matches!(method.signature.return_type, MsilType::Void | MsilType::Int32 { signed: true });
+        module.global_methods.push(lower_function(submission, &view.function, &method, &method_plans, &operator_by_instance, direct_entry)?);
+    }
+    if plan.export_names().is_empty() {
+        if let Some(method) = entry_operation.and_then(|entry| method_plans.get(&entry)) {
+            if !matches!(method.signature.return_type, MsilType::Void | MsilType::Int32 { signed: true }) {
+                let stub = build_entry_projection_stub(method, &mut used_names)?;
+                module.global_methods.push(stub);
+            }
+        }
     }
 
     let managed_abi = build_managed_abi_surface(&mut module, plan, plan.export_names(), &method_plans)?;
     Ok(ClrLoweredFragment { module, managed_abi })
+}
+
+/// 为 CLR 入口投影语言入口的返回值。
+///
+/// CLR `Main` 只能返回 `void` / `int32`，而语言入口可以返回 `i64`（进程退出码）。
+/// 这里合成一个只做调用的入口桩：`i64` 在宿主边界按 Windows 退出码宽度截断成
+/// `int32`。其它非 `void`/`int32` 返回没有宿主投影合同，失败闭合，不得用
+/// `ldc.i4.0` 冒充成功。
+fn build_entry_projection_stub(entry: &ClrMethodPlan, used_names: &mut BTreeMap<String, ()>) -> Result<MsilMethodBody> {
+    if !matches!(entry.signature.return_type, MsilType::Int64 { signed: true }) {
+        return Err(format!(
+            "CLR 入口返回类型 `{}` 没有宿主投影合同：只支持 `void`/`int32` 直接入口与 `i64` 退出码截断投影",
+            entry.signature.return_type
+        ));
+    }
+    let parameters_ok = match entry.signature.parameter_types.as_slice() {
+        [] => true,
+        [MsilType::SzArray(element)] => matches!(element.as_ref(), MsilType::String),
+        _ => false,
+    };
+    if !parameters_ok {
+        return Err(format!(
+            "CLR 入口形参 `{}` 不符合 CLR entry 合同（只接受无参或 `string[]`）",
+            entry.signature.parameter_list_text()
+        ));
+    }
+    let stub_name = unique_method_name(format!("{}__entry", entry.name), used_names);
+    let mut instructions = Vec::new();
+    if !entry.signature.parameter_types.is_empty() {
+        instructions.push(ldarg0());
+    }
+    instructions.push(call_instruction(MsilMethodRef { owner: None, name: entry.name.clone(), signature: entry.signature.clone() }));
+    instructions.push(opcode_instruction(MsilOpcode::ConvI4));
+    instructions.push(opcode_instruction(MsilOpcode::Ret));
+    Ok(MsilMethodBody {
+        method: MsilMethodRef {
+            owner: None,
+            name: stub_name,
+            signature: MsilMethodSignature::new(MsilType::Int32 { signed: true }, entry.signature.parameter_types.clone()),
+        },
+        locals: Vec::new(),
+        instructions,
+        max_stack: 1,
+        is_entry_point: true,
+        is_async: false,
+    })
+}
+
+/// 在已有名字集合里取一个不冲突的方法名，并登记占用。
+fn unique_method_name(base: String, used_names: &mut BTreeMap<String, ()>) -> String {
+    let mut name = base.clone();
+    let mut suffix = 0usize;
+    while used_names.contains_key(&name) {
+        suffix += 1;
+        name = format!("{base}__{suffix}");
+    }
+    used_names.insert(name.clone(), ());
+    name
 }
 
 /// 为导出入口生成 managed ABI 契约，并仅为 argv 可表达的入口合成分发入口
