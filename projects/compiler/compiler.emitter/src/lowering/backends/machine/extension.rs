@@ -231,16 +231,35 @@ pub fn lower_fragment_to_machine_extension(
         }
         source_names.insert(public, source_name.clone());
     }
-    let host_exports: Vec<MachineHostExport> = methods
-        .iter()
-        .map(|method| MachineHostExport {
-            source_name: source_names.get(&method.name).cloned().unwrap_or_default(),
+    // 每个宿主导出都必须同时拿到源码名与形参声明名：清单里 `parameters` 与
+    // `parameter_names` 按合同等长，缺身份时结构化失败，不写空名冒充无参数。
+    let mut host_exports = Vec::with_capacity(methods.len());
+    for method in &methods {
+        let source_name = source_names
+            .get(&method.name)
+            .cloned()
+            .ok_or_else(|| format!("宿主扩展导出 `{}` 缺少冻结源码名：清单必须同时记录源码名与公开名", method.name))?;
+        let names = parameter_names
+            .get(&method.name)
+            .cloned()
+            .ok_or_else(|| format!("宿主扩展导出 `{}` 缺少冻结形参声明名，无法与载体签名对齐", method.name))?;
+        let parameters: Vec<String> = method.parameters.iter().map(|kind| kind.tag().to_string()).collect();
+        if names.len() != parameters.len() {
+            return Err(format!(
+                "宿主扩展导出 `{}` 的形参声明名 {} 个与载体 {} 个不一致",
+                method.name,
+                names.len(),
+                parameters.len()
+            ));
+        }
+        host_exports.push(MachineHostExport {
+            source_name,
             public_name: method.name.clone(),
-            parameters: method.parameters.iter().map(|kind| kind.tag().to_string()).collect(),
-            parameter_names: parameter_names.get(&method.name).cloned().unwrap_or_default(),
+            parameters,
+            parameter_names: names,
             returns: method.returns.tag().to_string(),
-        })
-        .collect();
+        });
+    }
 
     Ok(X64LoweredExtension {
         executable,
