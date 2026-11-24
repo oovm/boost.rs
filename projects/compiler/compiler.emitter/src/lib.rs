@@ -825,6 +825,9 @@ pub struct DriverLibraryExport {
     /// `Some([])` 是已冻结的零形参签名，`None` 是该 lane 尚未提供签名事实；
     /// 两者必须可区分，消费侧不得把 `None` 当零形参编组。
     pub parameters: Option<Vec<String>>,
+    /// 形参声明名（按形参顺序，与 `parameters` 等长）；`None` 表示签名不可用。
+    /// 消费侧按名绑定用例字段，禁止依赖 JSON 对象键序。
+    pub parameter_names: Option<Vec<String>>,
     /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；
     /// `None` 表示该 lane 尚未提供签名事实。
     pub returns: Option<String>,

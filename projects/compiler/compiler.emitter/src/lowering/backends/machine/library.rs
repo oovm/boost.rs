@@ -48,6 +48,8 @@ pub struct MachineLibraryExport {
     /// 形参载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；来自冻结签名，
     /// 供外部 C 消费者按清单装载与调用，不在消费侧重新猜测。
     pub parameters: Vec<String>,
+    /// 形参声明名（按形参顺序，与 `parameters` 等长）；消费侧按名绑定用例字段。
+    pub parameter_names: Vec<String>,
     /// 返回载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
     pub returns: String,
 }
@@ -94,21 +96,26 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
             return Err(format!("普通共享库导出名 `{export_name}` 重复：不得用同名导出覆盖", ));
         }
         // 载体签名来自冻结函数类型；缺函数体时留空标签，消费侧按未知处理，
-        // 不用默认值伪造已定案签名。
-        let (parameters, returns) = submission
+        // 不用默认值伪造已定案签名。参数名是绑定用例字段的唯一依据，缺失即失败。
+        let (parameters, parameter_names, returns) = submission
             .backend_plan
             .get_function(instance)
             .map(|view| {
-                (
-                    view.function.param_types.iter().map(library_type_tag).collect(),
+                let names = crate::abi_structure::canonical_parameter_identities(export_name, &view.function)
+                    .map(|identities| identities.into_iter().map(|(_, name)| name.to_string()).collect::<Vec<_>>())?;
+                Ok::<_, String>((
+                    view.function.param_types.iter().map(library_type_tag).collect::<Vec<_>>(),
+                    names,
                     library_type_tag(&view.function.return_type),
-                )
+                ))
             })
+            .transpose()?
             .unwrap_or_default();
         exports.push(MachineLibraryExport {
             source_name: export_name.clone(),
             public_name: export_name.clone(),
             parameters,
+            parameter_names,
             returns,
         });
     }

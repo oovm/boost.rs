@@ -137,6 +137,9 @@ pub struct LibraryExportIndexEntry {
     /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）。
     #[serde(default)]
     pub parameters: Vec<String>,
+    /// 形参声明名（按形参顺序，与 `parameters` 等长）；消费侧按名绑定用例字段。
+    #[serde(default)]
+    pub parameter_names: Vec<String>,
     /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
     #[serde(default)]
     pub returns: String,

@@ -120,6 +120,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                             source_name: export.source_name,
                             public_name: export.public_name,
                             parameters: export.parameters,
+                            parameter_names: export.parameter_names,
                             returns: export.returns,
                         })
                         .collect(),

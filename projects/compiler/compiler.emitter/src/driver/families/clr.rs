@@ -116,6 +116,7 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                             // 托管载体签名由 managed ABI 合同承载；本 lane 尚未把该
                             // 事实投影到清单，`None` 表示签名不可用（区别于零形参的 `Some([])`）。
                             parameters: None,
+                            parameter_names: None,
                             returns: None,
                         })
                         .collect()

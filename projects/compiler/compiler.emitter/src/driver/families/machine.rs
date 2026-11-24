@@ -109,6 +109,7 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     abi_digest: String::new(),
                     abi: abi.to_string(),
                     parameters: Some(export.parameters.clone()),
+                    parameter_names: Some(export.parameter_names.clone()),
                     returns: Some(export.returns.clone()),
                 })
                 .collect();
@@ -144,6 +145,7 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     abi_digest: String::new(),
                     abi: "c-abi".to_string(),
                     parameters: Some(export.parameters.clone()),
+                    parameter_names: Some(export.parameter_names.clone()),
                     returns: Some(export.returns.clone()),
                 })
                 .collect();

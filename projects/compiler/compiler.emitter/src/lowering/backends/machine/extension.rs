@@ -83,6 +83,9 @@ pub struct MachineHostExport {
     /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；由冻结签名导出，
     /// 供执行清单的宿主消费者区分整数、序列与文本，不在消费侧重新猜测。
     pub parameters: Vec<String>,
+    /// 形参声明名（按形参顺序，与 `parameters` 等长）；消费侧按名绑定用例字段，
+    /// 不依赖 JSON 对象键序。空列表表示该导出没有形参或名称事实不可用。
+    pub parameter_names: Vec<String>,
     /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
     pub returns: String,
 }
@@ -213,10 +216,20 @@ pub fn lower_fragment_to_machine_extension(
     verify_shared_image(&executable, platform)?;
 
     // 宿主导出面按冻结顺序（与 methods 一致按公开名排序）携带源码名 + 公开名 +
-    // 载体签名：签名只来自上面已闭合的 `HostMethod`，不在清单消费侧重新推导。
+    // 载体签名 + 形参声明名：签名只来自上面已闭合的 `HostMethod`，参数名来自
+    // 入口参数的 canonical 身份，消费侧不在清单之外重新推导或依赖 JSON 键序。
     let mut source_names: BTreeMap<String, String> = BTreeMap::new();
+    let mut parameter_names: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (instance, source_name) in submission.backend_plan.export_names() {
-        source_names.insert(host_export_public_name(&submission.backend_plan, instance, host), source_name.clone());
+        let public = host_export_public_name(&submission.backend_plan, instance, host);
+        if let Some(view) = submission.backend_plan.get_function(instance) {
+            let names = crate::abi_structure::canonical_parameter_identities(source_name, &view.function)?
+                .into_iter()
+                .map(|(_, name)| name.to_string())
+                .collect::<Vec<_>>();
+            parameter_names.insert(public.clone(), names);
+        }
+        source_names.insert(public, source_name.clone());
     }
     let host_exports: Vec<MachineHostExport> = methods
         .iter()
@@ -224,6 +237,7 @@ pub fn lower_fragment_to_machine_extension(
             source_name: source_names.get(&method.name).cloned().unwrap_or_default(),
             public_name: method.name.clone(),
             parameters: method.parameters.iter().map(|kind| kind.tag().to_string()).collect(),
+            parameter_names: parameter_names.get(&method.name).cloned().unwrap_or_default(),
             returns: method.returns.tag().to_string(),
         })
         .collect();

@@ -771,6 +771,7 @@ fn write_execution_manifest(
             abi: export.abi.clone(),
             signature_available: export.parameters.is_some() && export.returns.is_some(),
             parameters: export.parameters.clone().unwrap_or_default(),
+            parameter_names: export.parameter_names.clone().unwrap_or_default(),
             returns: export.returns.clone().unwrap_or_default(),
         })
         .collect::<Vec<_>>();

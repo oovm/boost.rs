@@ -72,6 +72,7 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                         // OVM 导出面的载体签名由 ABI sidecar 承载；本 lane 尚未把该
                         // 事实投影到清单，`None` 表示签名不可用（区别于零形参的 `Some([])`）。
                         parameters: None,
+                        parameter_names: None,
                         returns: None,
                     })
                     .collect();
