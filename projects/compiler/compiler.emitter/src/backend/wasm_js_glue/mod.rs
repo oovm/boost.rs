@@ -51,6 +51,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             library_mode,
             library_invoke.as_deref(),
             context.host_entry_export,
+            context.test_entry_exports,
         )?;
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
@@ -731,12 +732,30 @@ pub fn try_build_node_launcher(
     library_mode: bool,
     library_invoke: Option<&str>,
     host_entry_export: Option<&str>,
+    test_entry_exports: &[crate::emitter_backend_wasi::WasmTestEntryExport],
 ) -> Result<String> {
     // 二进制启动壳没有「可选入口」：缺冻结入口名时生成只加载不调用的壳会静默
     // 退出 0，把「入口没被调用」伪装成成功。
     if !library_mode && host_entry_export.is_none() {
         return Err("wasm 二进制启动壳缺少冻结入口导出名：拒绝生成只加载模块、不调用入口的启动壳".to_string());
     }
+    // 测试包启动壳按冻结映射分发 argv；该分发复用了库包的 `callExport` 编组，
+    // 因此测试包必须是 library 包合同，否则会生成一个没有分发入口的壳。
+    if !test_entry_exports.is_empty() && !library_mode {
+        return Err("wasm 测试包启动壳必须使用 library 包合同以复用导出编组".to_string());
+    }
+    let test_entries_json = if test_entry_exports.is_empty() {
+        String::new()
+    }
+    else {
+        let mut entries = std::collections::BTreeMap::new();
+        for entry in test_entry_exports {
+            if entries.insert(entry.logical_name.as_str(), entry.export_name.as_str()).is_some() {
+                return Err(format!("wasm 测试包启动壳的逻辑测试名 `{}` 重复", entry.logical_name));
+            }
+        }
+        serde_json::to_string(&entries).expect("测试入口映射必须能编码为 JSON 对象")
+    };
     let utf8_literals_json = serde_json::to_string(utf8_literals).unwrap_or_else(|_| "[]".to_string());
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
@@ -871,6 +890,48 @@ if (command === "build") {
     }
     else {
         ""
+    };
+
+    // 测试包分发：argv 逻辑名只经冻结映射查表；缺失、未知或映射到的导出不存在
+    // 都以非零退出码 + stderr 失败，绝不回退到第一个导出或按名字猜。
+    let test_dispatch = if test_entry_exports.is_empty() {
+        String::new()
+    }
+    else {
+        format!(
+            r#"
+const TEST_EXPORT_ENTRIES = {test_entries_json};
+const testName = process.argv[2];
+if (typeof testName !== "string" || testName.length === 0) {{
+    process.stderr.write("[wasm-js-glue] test bundle requires a test name: node <artifact> <test-name>\n");
+    process.exit(2);
+}}
+const testExportName = Object.prototype.hasOwnProperty.call(TEST_EXPORT_ENTRIES, testName) ? TEST_EXPORT_ENTRIES[testName] : undefined;
+if (typeof testExportName !== "string") {{
+    process.stderr.write("[wasm-js-glue] unknown test entry " + JSON.stringify(testName) + "; declared tests: " + Object.keys(TEST_EXPORT_ENTRIES).join(", ") + "\n");
+    process.exit(2);
+}}
+if (!exports) {{
+    wasmInstance = await wasmResolveInstance(wasmBytes, importObject);
+    exports = wasmInstance.exports;
+}}
+const testExport = exports[testExportName];
+if (typeof testExport !== "function") {{
+    process.stderr.write("[wasm-js-glue] test entry " + JSON.stringify(testName) + " maps to missing wasm export " + JSON.stringify(testExportName) + "\n");
+    process.exit(2);
+}}
+try {{
+    // 测试通过判定与其它 target 共用同一条合同：入口无运行时错误即通过，返回值
+    // 不参与判定（jvm/clr 只看退出码，ovm 只看 Completed）。这里不检查 bool 结果，
+    // 否则同一个 `[test] -> bool` 会在 wasm 上与其它 target 得出相反结论。
+    await callExport(testExportName);
+}} catch (error) {{
+    process.stderr.write("[wasm-js-glue] test " + JSON.stringify(testName) + " failed: " + ((error && error.message) || String(error)) + "\n");
+    process.exit(1);
+}}
+process.exit(0);
+"#
+        )
     };
 
     Ok(format!(
@@ -1233,7 +1294,7 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
         else {
             String::new()
         },
-        cli_dispatch = if library_mode { "" } else { cli_dispatch },
+        cli_dispatch = if library_mode { test_dispatch.as_str() } else { cli_dispatch },
         executable_tail = if library_mode {
             String::new()
         }
@@ -1279,8 +1340,9 @@ pub fn build_node_launcher(
     library_mode: bool,
     library_invoke: Option<&str>,
     host_entry_export: Option<&str>,
+    test_entry_exports: &[crate::emitter_backend_wasi::WasmTestEntryExport],
 ) -> String {
-    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke, host_entry_export)
+    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke, host_entry_export, test_entry_exports)
         .unwrap_or_else(|error| panic!("{error}"))
 }
 
@@ -1311,6 +1373,50 @@ mod tests {
         let path = std::env::temp_dir().join(format!("nyar-wasm-glue-{}-missing", std::process::id())).join("lib.wasm");
         assert!(read_wasm_utf8_literals(&path).is_err());
         assert!(read_library_invoke_spec(&path).is_err());
+    }
+
+    /// 测试包启动壳只按冻结映射分发 argv，并把未知测试名交给显式失败路径。
+    #[test]
+    fn test_bundle_launcher_dispatches_by_frozen_map() {
+        let entries = vec![crate::emitter_backend_wasi::WasmTestEntryExport {
+            logical_name: "tests::a".to_string(),
+            export_name: "tests_a".to_string(),
+        }];
+        let launcher = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &entries)
+            .expect("测试包启动壳必须能生成");
+        assert!(launcher.contains(r#"const TEST_EXPORT_ENTRIES = {"tests::a":"tests_a"};"#), "{launcher}");
+        assert!(launcher.contains("callExport(testExportName)"), "{launcher}");
+        assert!(launcher.contains("process.exit(2)"), "{launcher}");
+    }
+
+    /// 测试包不自带导出编组时拒绝生成一个没有分发入口的壳。
+    #[test]
+    fn test_bundle_requires_library_contract() {
+        let entries = vec![crate::emitter_backend_wasi::WasmTestEntryExport {
+            logical_name: "tests::a".to_string(),
+            export_name: "tests_a".to_string(),
+        }];
+        let error = try_build_node_launcher("app", &[], &[], false, None, Some("main"), &entries)
+            .expect_err("二进制合同不得承载测试包启动壳");
+        assert!(error.contains("library"), "{error}");
+    }
+
+    /// 重复逻辑测试名无法形成单值映射，必须失败闭合。
+    #[test]
+    fn duplicate_test_entry_names_fail_closed() {
+        let entries = vec![
+            crate::emitter_backend_wasi::WasmTestEntryExport {
+                logical_name: "tests::a".to_string(),
+                export_name: "tests_a".to_string(),
+            },
+            crate::emitter_backend_wasi::WasmTestEntryExport {
+                logical_name: "tests::a".to_string(),
+                export_name: "tests_b".to_string(),
+            },
+        ];
+        let error = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &entries)
+            .expect_err("重复逻辑名必须失败");
+        assert!(error.contains("重复"), "{error}");
     }
 }
 

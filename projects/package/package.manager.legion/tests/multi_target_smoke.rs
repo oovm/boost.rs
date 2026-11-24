@@ -160,11 +160,11 @@ fn ovm_lane_builds_the_same_program() {
 /// `[test]` 测试包必须在每个承载测试用途的 target 上编译并真实运行。
 ///
 /// OVM 由 legion 内置解释器进程内按入口调用，运行合同只冻结模块入口；CLR/JVM
-/// 由外部 runner 按冻结 argv 启动。wasm 家族当前不承载测试包（逐 `[test]` 导出
-/// 尚未实现），因此不在本用例内。
+/// 由外部 runner 按冻结 argv 启动；wasm-node 的启动壳按 argv 里冻结的测试名从
+/// lowering 冻结的「逻辑名 → wasm 导出名」映射中选择导出。
 #[test]
 fn test_bundles_compile_and_run_on_every_supported_target() {
-    for label in ["legion", "clr", "jvm"] {
+    for label in ["legion", "clr", "jvm", "wasm-node"] {
         let root = std::env::temp_dir().join(format!("legion-multi-target-tests-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let project_dir = write_project(&root, "wasm-node", SOURCE);
@@ -186,6 +186,13 @@ fn test_bundles_compile_and_run_on_every_supported_target() {
         }
         let artifact = find_artifact(&output_dir, &contract.physical_entry);
         let launch: Vec<String> = contract.launch.iter().map(|part| part.replace("{artifact}", &artifact)).collect();
+        if label == "wasm-node" {
+            assert_eq!(
+                launch.last().map(String::as_str),
+                Some(contract.logical_entry.as_str()),
+                "{label}: 启动 argv 必须以冻结的测试名结尾: {launch:?}"
+            );
+        }
         let output = Command::new(&launch[0])
             .args(&launch[1..])
             .output()
@@ -197,6 +204,17 @@ fn test_bundles_compile_and_run_on_every_supported_target() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        if label == "wasm-node" {
+            // 负例：argv 里的名字不在冻结映射内时启动壳必须非零退出并写 stderr，
+            // 不得回退到第一个导出或按名字猜。
+            let unknown = Command::new(&launch[0])
+                .args(&launch[1..launch.len() - 1])
+                .arg("test_does_not_exist")
+                .output()
+                .unwrap_or_else(|error| panic!("{label}: 无法启动未知测试名 `{launch:?}`: {error}"));
+            assert!(!unknown.status.success(), "{label}: 未知测试名必须非零退出: {:?}", unknown.status);
+            assert!(!unknown.stderr.is_empty(), "{label}: 未知测试名必须在 stderr 说明原因");
+        }
         let _ = fs::remove_dir_all(&root);
     }
 }

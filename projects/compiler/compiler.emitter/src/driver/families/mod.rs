@@ -132,8 +132,8 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
     };
     // 用途承载能力只有 descriptor 一处声明；这里在 lane 写出任何产物之前统一
     // 裁决，lane 不再各自维护用途黑名单，新增用途时也不会漏掉某个 lane。
-    let purpose_supported =
-        bundled_backend_capability_descriptor(registration.family).is_some_and(|descriptor| descriptor.supports_purpose(request.purpose));
+    let purpose_supported = bundled_backend_capability_descriptor(registration.family)
+        .is_some_and(|descriptor| descriptor.supports_purpose_on_boundary(request.purpose, request.requirement.host_boundary));
     if !purpose_supported {
         return Err(format!(
             "后端 `{}`（家族 `{:?}`）不承载产物用途 `{:?}`（宿主边界 `{:?}`）；拒绝写出无法装载或无法逐入口调用的产物",
@@ -470,11 +470,17 @@ mod purpose_capability_tests {
     }
 
     #[test]
-    fn wasm_family_does_not_claim_test_bundles_before_per_test_exports_exist() {
+    fn wasm_family_carries_test_bundles_only_on_js_glue() {
         let descriptor = descriptor(TargetBackendFamily::Wasm);
         assert!(descriptor.supports_purpose(ArtifactPurpose::Application));
         assert!(descriptor.supports_purpose(ArtifactPurpose::Library));
-        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle));
+        assert!(descriptor.supports_purpose(ArtifactPurpose::TestBundle), "测试包由 wasm 家族承载");
         assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension));
+        // `WasiComponent` 没有按测试名启动的形状：例外只有 descriptor 一处。
+        assert!(descriptor.supports_purpose_on_boundary(ArtifactPurpose::TestBundle, compiler_target::HostProjectionBoundary::WasmJsGlue));
+        assert!(!descriptor.supports_purpose_on_boundary(
+            ArtifactPurpose::TestBundle,
+            compiler_target::HostProjectionBoundary::WasiComponent
+        ));
     }
 }

@@ -316,6 +316,12 @@ pub struct BundledBackendCapabilityDescriptor {
     /// 语义前提（应用必须带入口、库必须带导出面）仍由 lane 自己判定，这里只回答
     /// 「这个家族是否承载该用途」。
     pub supported_purposes: &'static [ArtifactPurpose],
+    /// 家族承载该用途时仍不成立的宿主边界例外。
+    ///
+    /// 用途是家族级交付能力，但少数宿主边界不具备该用途所需的启动形状。例外只在
+    /// 这里声明一份，驱动层与分区编排都通过 `supports_purpose_on_boundary` 消费，
+    /// lane 不再各写黑名单。
+    pub purpose_boundary_exceptions: &'static [(ArtifactPurpose, HostProjectionBoundary)],
     /// 默认引用管理策略。
     pub reference_management: ReferenceManagement,
     /// 可接受的动态分发路由。
@@ -338,6 +344,13 @@ impl BundledBackendCapabilityDescriptor {
     /// 分区编排都消费它来在写出前拒绝不支持的组合，lane 不再各自维护用途黑名单。
     pub fn supports_purpose(&self, purpose: ArtifactPurpose) -> bool {
         self.supported_purposes.contains(&purpose)
+    }
+
+    /// 判断该后端能否在指定宿主边界上承载产物用途。
+    ///
+    /// 承载能力 = 家族级用途能力 − 该边界的显式例外；例外只有 descriptor 一份。
+    pub fn supports_purpose_on_boundary(&self, purpose: ArtifactPurpose, boundary: HostProjectionBoundary) -> bool {
+        self.supports_purpose(purpose) && !self.purpose_boundary_exceptions.contains(&(purpose, boundary))
     }
 
     /// 将 descriptor 转成 backend 注册项。
@@ -378,11 +391,16 @@ const VM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::
 /// 宿主扩展不在其中：这些产物没有宿主模块装载合同，无法给出装载方式。
 const MANAGED_PURPOSES: &[ArtifactPurpose] =
     &[ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::TestBundle];
-/// wasm 家族承载的用途：应用与库交付。
+/// wasm 家族承载的用途：应用、库与测试包。
 ///
-/// 测试包不在其中：逐 `[test]` 入口的导出与启动器尚未实现（二进制包只冻结单一
-/// 宿主入口），先按能力事实拒绝，不得产出无法按测试名调用的模块。
-const WASM_PURPOSES: &[ArtifactPurpose] = &[ArtifactPurpose::Application, ArtifactPurpose::Library];
+/// 测试包只在 JS-glue 边界成立：模块按 `[test]` 冻结公开名逐个导出，启动壳按
+/// argv 选择导出并逐测试产出运行合同。`WasiComponent` 没有该启动形状，因此以
+/// descriptor 的边界例外表达，而非在 lane 里另写黑名单。
+const WASM_PURPOSES: &[ArtifactPurpose] =
+    &[ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::TestBundle];
+/// wasm 家族承载测试包时仍不成立的宿主边界。
+const WASM_PURPOSE_BOUNDARY_EXCEPTIONS: &[(ArtifactPurpose, HostProjectionBoundary)] =
+    &[(ArtifactPurpose::TestBundle, HostProjectionBoundary::WasiComponent)];
 /// 机器码家族承载应用、库与宿主扩展；测试包要求逐 `[test]` 独立运行合同，
 /// 而原生交付只有单一进程入口，因此不在支持面内。
 const MACHINE_PURPOSES: &[ArtifactPurpose] =
@@ -402,6 +420,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Jvm,
             supported_host_boundaries: JVM_HOST_BOUNDARIES,
             supported_purposes: MANAGED_PURPOSES,
+            purpose_boundary_exceptions: &[],
 
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
@@ -415,6 +434,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Clr,
             supported_host_boundaries: CLR_HOST_BOUNDARIES,
             supported_purposes: MANAGED_PURPOSES,
+            purpose_boundary_exceptions: &[],
 
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
@@ -428,6 +448,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::MachineCode,
             supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             supported_purposes: MACHINE_PURPOSES,
+            purpose_boundary_exceptions: &[],
 
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
@@ -441,6 +462,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Wasm,
             supported_host_boundaries: WASM_HOST_BOUNDARIES,
             supported_purposes: WASM_PURPOSES,
+            purpose_boundary_exceptions: WASM_PURPOSE_BOUNDARY_EXCEPTIONS,
 
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::WitnessCapable,
@@ -454,6 +476,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Gpu,
             supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             supported_purposes: NO_PURPOSES,
+            purpose_boundary_exceptions: &[],
 
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
@@ -468,6 +491,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Ovm,
             supported_host_boundaries: VM_HOST_BOUNDARIES,
             supported_purposes: MANAGED_PURPOSES,
+            purpose_boundary_exceptions: &[],
 
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::Full,
@@ -993,8 +1017,8 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         // 用途承载能力只有一处声明：descriptor 的 `supported_purposes` 与边界例外表。
         // 这里在语言→目标适配与写出之前拒绝不支持的组合，避免先产出无法装载或
         // 无法按 `[test]` 名字逐条调用的文件。
-        let purpose_supported =
-            bundled_backend_capability_descriptor(backend_family).is_some_and(|descriptor| descriptor.supports_purpose(purpose));
+        let purpose_supported = bundled_backend_capability_descriptor(backend_family)
+            .is_some_and(|descriptor| descriptor.supports_purpose_on_boundary(purpose, partition.host_boundary));
         if !purpose_supported {
             return Err(format!(
                 "分区 `{}` 的后端家族 `{backend_family:?}` 不承载产物用途 `{purpose:?}`（宿主边界 `{:?}`）；拒绝降级成平台产物",
@@ -1048,96 +1072,30 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
     Ok(report)
 }
 
-/// 为每个 `[test]` 入口生成独立 run contract。
+/// 校验测试包的逐入口运行合同。
 ///
-/// 每个测试必须有各自可执行的物理入口，否则会被静默跳过或假通过。
-/// 机制按后端合同家族分流，不按目标标签字符串猜测：
-/// - Node/wasm glue：所有测试共享同一份 library glue，直接 `node` 运行不执行任何导出，
-///   由 emitter 为每个测试生成独立 launcher；
-/// - VM 后端（ovm）：driver 已按导出入口逐条生成 `--entry` 合同，
-///   emitter 只校验每个 `[test]` 入口被唯一非 node 合同覆盖，并把运行合同收敛为测试集合。
-/// launcher 只按声明名调用导出的测试函数，不拼接入口名或回退 `main`。
+/// 每个测试必须有各自可执行、且物理产物真实存在的入口合同，否则会被静默跳过
+/// 或假通过。合同由各后端按冻结事实逐条给出：managed 家族来自逐入口 ABI，
+/// wasm JS-glue 来自 lowering 冻结的「逻辑测试名 → wasm 导出名」映射。emitter
+/// 只验证覆盖关系并收敛到测试集合，不再合成 launcher、不按名字猜导出。
 fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, test_entry_names: &[String]) -> Result<()> {
-    let is_glue = |contract: &DriverRunContract| contract.boundary == HostProjectionBoundary::WasmJsGlue;
-    if report.run_contracts.iter().any(|contract| !is_glue(contract)) {
-        for test_name in test_entry_names {
-            let matches: Vec<&DriverRunContract> =
-                report.run_contracts.iter().filter(|contract| !is_glue(contract) && &contract.logical_entry == test_name).collect();
-            let [contract] = matches.as_slice()
-            else {
-                return Err(format!("测试入口 `{test_name}` 必须由后端提供唯一执行合同，实际 {} 条；拒绝静默跳过测试入口", matches.len()));
-            };
-            let artifact_present = Path::new(&contract.physical_entry).is_file() || output_dir.join(&contract.physical_entry).is_file();
-            if !artifact_present {
-                return Err(format!("测试入口 `{test_name}` 的合同指向不存在的产物 `{}`", contract.physical_entry));
-            }
+    // 前端冻结的每个 `[test]` 必须由后端给出的逐入口运行合同唯一覆盖。这里只
+    // 校验覆盖关系与物理产物是否真实存在，不合成启动器、不按名字猜导出：wasm
+    // 家族按 descriptor 冻结的测试入口映射逐条给出合同，managed 家族同理。
+    for test_name in test_entry_names {
+        let matches: Vec<&DriverRunContract> =
+            report.run_contracts.iter().filter(|contract| &contract.logical_entry == test_name).collect();
+        let [contract] = matches.as_slice()
+        else {
+            return Err(format!("测试入口 `{test_name}` 必须由后端提供唯一执行合同，实际 {} 条；拒绝静默跳过测试入口", matches.len()));
+        };
+        let artifact_present = Path::new(&contract.physical_entry).is_file() || output_dir.join(&contract.physical_entry).is_file();
+        if !artifact_present {
+            return Err(format!("测试入口 `{test_name}` 的合同指向不存在的产物 `{}`", contract.physical_entry));
         }
-        report.run_contracts.retain(|contract| !is_glue(contract) && test_entry_names.contains(&contract.logical_entry));
-        return Ok(());
     }
-
-    let Some(glue) = report.run_contracts.iter().find(|contract| is_glue(contract)).map(|contract| contract.physical_entry.clone())
-    else {
-        return Err("测试构建没有可调用的执行合同（node glue 或后端逐入口合同）：拒绝静默跳过测试入口".to_string());
-    };
-    let stem = glue.strip_suffix(".mjs").ok_or_else(|| format!("node glue 产物 `{glue}` 不是 `.mjs`"))?;
-    // 启动器是真实写出的物理产物：它必须登记到产物集合，否则只遍历 artifacts 的
-    // 打包/归档/清理路径会漏掉它，运行合同与产物声明就此分叉。
-    let glue_artifact = report
-        .artifacts
-        .artifacts
-        .iter()
-        .find(|artifact| artifact.path == glue || std::path::Path::new(&artifact.path).file_name().and_then(|name| name.to_str()) == Some(glue.as_str()))
-        .cloned()
-        .ok_or_else(|| format!("node glue 产物 `{glue}` 没有登记在产物集合中；拒绝生成未登记物理产物的测试启动器"))?;
-    if !(Path::new(&glue).is_file() || output_dir.join(&glue).is_file()) {
-        return Err(format!("node glue 产物 `{glue}` 不存在；拒绝为不存在的宿主壳生成测试启动器"));
-    }
-    std::fs::create_dir_all(output_dir).map_err(|error| format!("创建测试 launcher 目录失败: {}: {error}", output_dir.display()))?;
-    let mut contracts = Vec::with_capacity(test_entry_names.len());
-    for (index, test_name) in test_entry_names.iter().enumerate() {
-        let launcher_name = format!("{stem}__test{index}.mjs");
-        let launcher_path = output_dir.join(&launcher_name);
-        let content = format!(
-            "import {{ callExport }} from {};\nawait callExport({});\n",
-            js_string_literal(&format!("./{glue}")),
-            js_string_literal(test_name),
-        );
-        std::fs::write(&launcher_path, content).map_err(|error| format!("写入测试 launcher 失败 {}: {error}", launcher_path.display()))?;
-        // 每个启动器都是一份真实物理产物，登记进产物集合以维持
-        // 「运行合同的 physical_entry 集 ⊆ artifacts」这一交叉不变量。
-        let mut launcher_artifact = glue_artifact.clone();
-        launcher_artifact.name = launcher_name.clone();
-        launcher_artifact.path = launcher_name.clone();
-        report.artifacts.artifacts.push(launcher_artifact);
-        contracts.push(DriverRunContract {
-            logical_entry: test_name.clone(),
-            physical_entry: launcher_name.clone(),
-            boundary: HostProjectionBoundary::WasmJsGlue,
-            launch: vec!["node".to_string(), "{artifact}".to_string()],
-            // 校验命令只做语法检查：`validate` 不得执行测试，否则构建期会跑测试并吞掉失败。
-            validate: format!("node --check {launcher_name}"),
-        });
-    }
-    report.run_contracts = contracts;
+    report.run_contracts.retain(|contract| test_entry_names.contains(&contract.logical_entry));
     Ok(())
-}
-
-/// JS 字符串字面量：测试名可能包含空格、引号与非 ASCII 字符，必须转义而不是拼接。
-fn js_string_literal(value: &str) -> String {
-    let mut literal = String::with_capacity(value.len() + 2);
-    literal.push('"');
-    for character in value.chars() {
-        match character {
-            '\\' => literal.push_str("\\\\"),
-            '"' => literal.push_str("\\\""),
-            '\n' => literal.push_str("\\n"),
-            '\r' => literal.push_str("\\r"),
-            _ => literal.push(character),
-        }
-    }
-    literal.push('"');
-    literal
 }
 
 fn entry_artifact_name(entry_operation: &QualifiedName) -> Option<String> {

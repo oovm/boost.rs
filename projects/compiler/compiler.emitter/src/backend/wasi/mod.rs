@@ -82,6 +82,23 @@ pub struct WasmBinaryBackendInput {
     /// 入口名由 lowering 按宿主边界冻结，宿主绑定生成器只消费、不按 `main` /
     /// `_start` 重新猜测。
     pub host_entry_export: Option<String>,
+    /// 测试包逐入口映射：逻辑 `[test]` 名 → wasm 导出名。
+    ///
+    /// 映射只在 lowering 由 `TargetExecutionPlan` 的冻结公开名生成；JS 启动壳按
+    /// argv 查表选择导出，绝不重新推导、也不回退到第一个导出。非测试包为空。
+    pub test_entry_exports: Vec<WasmTestEntryExport>,
+}
+
+/// 测试包启动壳的一条冻结入口：逻辑测试名与其 wasm 导出名。
+///
+/// 两者都由 `TargetExecutionPlan::export_names` / `export_public_name` 冻结，
+/// 启动壳只按 argv 逻辑名查表，不按名字猜导出。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WasmTestEntryExport {
+    /// 运行合同冻结的逻辑测试名（`[test]` 声明名）。
+    pub logical_name: String,
+    /// 该测试在 wasm 模块里的导出名。
+    pub export_name: String,
 }
 
 /// wasm library 交付的一条导出：语言侧源码名、目标公开名与冻结的载体签名。
@@ -158,6 +175,19 @@ impl WasmBinaryBackend {
             }
         }
         let exports: BTreeSet<_> = parse_export_section(&decoded).into_iter().map(|item| item.name).collect();
+        // 测试包没有单一 `main`：每个 `[test]` 的导出名由 lowering 冻结。这里按
+        // 冻结事实逐个校验，缺任何一个都失败闭合，不回退到 `main` 或第一个导出。
+        if input.host_boundary == HostProjectionBoundary::WasmJsGlue && !input.test_entry_exports.is_empty() {
+            for entry in &input.test_entry_exports {
+                if !exports.contains(&entry.export_name) {
+                    return Err(format!(
+                        "WASM pre-emission verifier: test entry `{}` maps to absent export `{}`",
+                        entry.logical_name, entry.export_name
+                    ));
+                }
+            }
+            return Ok(());
+        }
         let required_entry = match input.host_boundary {
             HostProjectionBoundary::WasmJsGlue => "main",
             HostProjectionBoundary::WasiComponent if input.package_as_wasi_command => "_start",
@@ -246,6 +276,7 @@ impl WasmBinaryBackend {
                 wasi_preview: input.wasi_preview,
                 wasm_package_kind: input.wasm_package_kind,
                 host_entry_export: input.host_entry_export.as_deref(),
+                test_entry_exports: &input.test_entry_exports,
             },
         )?;
         for artifact in binding_artifacts {

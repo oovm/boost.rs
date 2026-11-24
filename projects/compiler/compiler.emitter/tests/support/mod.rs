@@ -265,6 +265,7 @@ pub fn demo_wasm_input_with_preview(
         wasi_preview,
         library_wasm_exports: Vec::new(),
         wasm_package_kind: compiler_emitter::emitter_backend_wasi::WasmPackageKind::Binary,
+        test_entry_exports: Vec::new(),
     })
 }
 
@@ -302,5 +303,6 @@ pub fn demo_wasm_input_with_imports(
         wasi_preview: compiler_emitter::emitter_backend_wasi::WasiPreview::Preview2,
         library_wasm_exports: Vec::new(),
         wasm_package_kind: compiler_emitter::emitter_backend_wasi::WasmPackageKind::Binary,
+        test_entry_exports: Vec::new(),
     })
 }

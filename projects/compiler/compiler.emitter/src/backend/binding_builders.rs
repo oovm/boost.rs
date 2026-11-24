@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::Result;
 use compiler_target::{BinaryTarget, HostProjectionBoundary, packaging::ArtifactDescriptor};
 
-use crate::emitter_backend_wasi::{WasiPreview, WasmPackageKind};
+use crate::emitter_backend_wasi::{WasiPreview, WasmPackageKind, WasmTestEntryExport};
 
 /// 宿主绑定生成阶段共享的输入上下文。
 pub(crate) struct BindingGenerationContext<'a> {
@@ -26,6 +26,8 @@ pub(crate) struct BindingGenerationContext<'a> {
     pub wasm_package_kind: WasmPackageKind,
     /// 二进制包启动壳必须调用的冻结入口导出名。
     pub host_entry_export: Option<&'a str>,
+    /// 测试包逐入口映射（逻辑测试名 → wasm 导出名）；非测试包为空。
+    pub test_entry_exports: &'a [WasmTestEntryExport],
 }
 
 /// 宿主绑定生成器的最小接口。

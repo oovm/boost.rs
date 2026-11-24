@@ -1,8 +1,11 @@
 use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result,
-    bundled_backend_capability_descriptor, emitter_backend_wasi::WasmBinaryBackend,
+    bundled_backend_capability_descriptor,
+    emitter_backend_wasi::{WasmBinaryBackend, WasmTestEntryExport},
 };
-use compiler_target::{HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend};
+use compiler_target::{
+    ArtifactPurpose, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend,
+};
 
 use super::BundledBackendCompiler;
 
@@ -34,7 +37,10 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         backend.validate(&input).map_err(|error| error.to_string())?;
         let package_as_wasi_command = input.package_as_wasi_command;
         let wasi_preview = input.wasi_preview;
-        let library_surface = request.purpose == compiler_target::ArtifactPurpose::Library;
+        let library_surface = request.purpose == ArtifactPurpose::Library;
+        // 测试包的启动身份只来自 lowering 冻结的逐入口映射；这里按条生成运行合同，
+        // 不扫描 wasm 导出段、不按名字猜。
+        let test_entry_exports = input.test_entry_exports.clone();
         // `artifact: library`：导出通过 glue 的 `callExport` 调用，不产生可执行
         // run contract；同时记录每个导出的物理产物与 ABI digest。
         //
@@ -77,6 +83,11 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         let run_contracts = if library_surface {
             Vec::new()
         }
+        else if request.purpose == ArtifactPurpose::TestBundle {
+            // 测试包的辅助分区（只承载程序入口、没有冻结测试导出）不产出运行
+            // 合同；是否有测试入口缺失由测试构建的覆盖校验统一失败闭合。
+            test_entry_exports.iter().map(|entry| wasm_test_run_contract(request.artifact_name, entry)).collect()
+        }
         else {
             match request.requirement.host_boundary {
                 HostProjectionBoundary::WasiComponent if !package_as_wasi_command => Vec::new(),
@@ -84,6 +95,19 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
             }
         };
         Ok(DriverCompileReport { artifacts, entry_symbol: None, run_contracts, managed_abi: Vec::new(), ovm_abi: Vec::new(), library_exports })
+    }
+}
+
+/// 一条测试包的运行合同：逻辑入口是冻结的测试名，物理入口是同次写出的 `.mjs`
+/// 启动壳，argv 把冻结的逻辑名交给启动壳查表。
+fn wasm_test_run_contract(artifact_name: &str, entry: &WasmTestEntryExport) -> DriverRunContract {
+    let physical_name = wasm_physical_artifact_name(artifact_name);
+    DriverRunContract {
+        logical_entry: entry.logical_name.clone(),
+        physical_entry: format!("{}.mjs", physical_name),
+        boundary: HostProjectionBoundary::WasmJsGlue,
+        launch: vec!["node".to_string(), "{artifact}".to_string(), entry.logical_name.clone()],
+        validate: format!("node --check {}.mjs", physical_name),
     }
 }
 
@@ -239,5 +263,21 @@ mod tests {
         let mut module = crate::emitter_backend_wasi::WasmBinaryModule::new();
         module.push_custom_section("nyar.library_invoke", br#"{"version":0,"abi_digest":"sha256-abc"}"#.to_vec());
         assert_eq!(required_library_invoke_digest(&module), Ok("sha256-abc".to_string()));
+    }
+
+    /// 测试包的运行合同按冻结入口逐条产出：逻辑入口是测试名，物理入口是同一次
+    /// 写出的 `.mjs` 启动壳，argv 把冻结测试名交给启动壳查表。
+    #[test]
+    fn test_bundle_contracts_use_frozen_entry_names() {
+        let entry = crate::emitter_backend_wasi::WasmTestEntryExport {
+            logical_name: "tests::passes".to_string(),
+            export_name: "tests_passes".to_string(),
+        };
+        let contract = wasm_test_run_contract("app", &entry);
+        assert_eq!(contract.logical_entry, "tests::passes");
+        assert_eq!(contract.physical_entry, "app.mjs");
+        assert_eq!(contract.boundary, HostProjectionBoundary::WasmJsGlue);
+        assert_eq!(contract.launch, vec!["node".to_string(), "{artifact}".to_string(), "tests::passes".to_string()]);
+        assert_eq!(contract.validate, "node --check app.mjs");
     }
 }

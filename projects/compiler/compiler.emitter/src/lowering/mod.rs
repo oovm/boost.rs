@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     EmitterError, Result,
-    emitter_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule},
+    emitter_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule, WasmTestEntryExport},
 };
 use compiler_target::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily};
 #[cfg(feature = "ovm-lane")]
@@ -151,7 +151,20 @@ fn build_driver_input(
     match backend_family {
         TargetBackendFamily::Wasm => {
             let wasi_preview = crate::emitter_backend_wasi::WasiPreview::from_host_flavor(host_flavor);
-            let (module, imports) = wasm::lower_fragment_to_wasm_module_for(submission, host_boundary, wasi_preview, wasm_package_kind)?;
+            // 测试包可能一并编译只承载程序入口、没有冻结 `[test]` 导出的辅助分区
+            // （例如同包的 `[main]` 片段）。这类分区按二进制形状编译，绝不产出测试
+            // 运行合同；只有承载测试导出的分区保持库形状。
+            let effective_package_kind = if artifact_purpose == ArtifactPurpose::TestBundle
+                && submission.backend_plan.export_names().is_empty()
+                && submission.backend_plan.entry_operation().is_some()
+            {
+                crate::emitter_backend_wasi::WasmPackageKind::Binary
+            }
+            else {
+                wasm_package_kind
+            };
+            let (module, imports) =
+                wasm::lower_fragment_to_wasm_module_for(submission, host_boundary, wasi_preview, effective_package_kind)?;
             // WASI command world 由冻结的产物用途决定：只有进程镜像（`Application` /
             // `TestBundle`）打包为 command component，`Library` 打包为库组件。
             // 禁止按「是否存在函数实例」猜测 command——库片段同样有函数实例。
@@ -183,6 +196,28 @@ fn build_driver_input(
                     });
                 }
             }
+            // 测试包：每个 `[test]` 的启动身份只来自计划冻结的公开名。这里只把
+            // 「逻辑测试名 → wasm 导出名」原样冻结进目标输入，JS 启动壳按 argv 查表，
+            // 不在壳里重新推导或回退到第一个导出。
+            let test_entry_exports = if artifact_purpose == ArtifactPurpose::TestBundle
+                && host_boundary == HostProjectionBoundary::WasmJsGlue
+            {
+                submission
+                    .backend_plan
+                    .export_names()
+                    .keys()
+                    .map(|instance| {
+                        let public_name = submission
+                            .backend_plan
+                            .export_public_name(instance)
+                            .ok_or_else(|| format!("测试入口实例 `{instance}` 缺少冻结公开名"))?;
+                        Ok(WasmTestEntryExport { logical_name: public_name.clone(), export_name: public_name.clone() })
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            }
+            else {
+                Vec::new()
+            };
             Ok(DriverBackendInput::Wasm(WasmBinaryBackendInput {
                 module,
                 output_dir,
@@ -191,13 +226,14 @@ fn build_driver_input(
                 package_as_wasi_command,
                 wasi_preview,
                 library_wasm_exports,
-                wasm_package_kind,
+                wasm_package_kind: effective_package_kind,
                 // 二进制 JS-glue 包的启动壳必须调用冻结的入口导出名；库包暴露导出面，
                 // WASI 由 wasmtime 直接启动 `_start`，都不经启动壳猜入口。
-                host_entry_export: (wasm_package_kind == crate::emitter_backend_wasi::WasmPackageKind::Binary
+                host_entry_export: (effective_package_kind == crate::emitter_backend_wasi::WasmPackageKind::Binary
                     && host_boundary == HostProjectionBoundary::WasmJsGlue)
                     .then(|| wasm::host_entry_export_name(host_boundary).map(str::to_string))
                     .transpose()?,
+                test_entry_exports,
             }))
         }
         #[cfg(feature = "ovm-lane")]
