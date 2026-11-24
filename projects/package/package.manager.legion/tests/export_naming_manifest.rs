@@ -113,6 +113,7 @@ fn plain_dll_export_index_uses_source_names_and_ignores_case_annotation() {
     let move_zeroes = export_of(&manifest, "move_zeroes");
     assert_eq!(move_zeroes.logical_name, "move_zeroes", "C ABI 公开名就是源码名");
     assert_eq!(move_zeroes.abi, "c-abi");
+    assert!(move_zeroes.signature_available, "C ABI 导出带冻结签名");
     assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "C ABI 清单记录冻结形参载体");
     assert_eq!(move_zeroes.returns, "i64", "C ABI 清单记录冻结返回载体");
     let two_sum = export_of(&manifest, "two_sum");
@@ -129,6 +130,7 @@ fn node_extension_export_index_projects_camel_case_and_honors_annotation() {
     let move_zeroes = export_of(&manifest, "move_zeroes");
     assert_eq!(move_zeroes.logical_name, "moveZeroes", "Node 无注解时按 camelCase 投影源码名");
     assert_eq!(move_zeroes.abi, "node-api");
+    assert!(move_zeroes.signature_available, "Node-API 导出带冻结签名");
     assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "Node-API 清单记录冻结形参载体");
     assert_eq!(move_zeroes.returns, "i64", "Node-API 清单记录冻结返回载体");
     let two_sum = export_of(&manifest, "two_sum");
@@ -145,6 +147,9 @@ fn wasm_library_export_index_applies_annotation_contract() {
     let move_zeroes = export_of(&manifest, "move_zeroes");
     assert_eq!(move_zeroes.logical_name, "move_zeroes", "wasm 无注解时导出源码名");
     assert_eq!(move_zeroes.abi, "wasm");
+    assert!(!move_zeroes.signature_available, "wasm lane 尚未投影载体签名：必须是不可用而不是零形参");
+    assert!(move_zeroes.parameters.is_empty(), "wasm lane 的形参标签不可用");
+    assert!(move_zeroes.returns.is_empty(), "wasm lane 的返回标签不可用");
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "twoSum", "wasm 有注解时导出注解名");
     assert_eq!(two_sum.abi, "wasm");

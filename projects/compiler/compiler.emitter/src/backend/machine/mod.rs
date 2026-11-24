@@ -18,7 +18,7 @@ pub use crate::lowering::backends::machine::{
     HostMethod, HostModule, HostProperty, HostValueKind, MachineHostExport, MachineLibraryExport, X64_TEXT_ARENA_CAPACITY, X64CallConv,
     X64DataTarget, X64LoweredExtension, X64LoweredLibrary, X64Platform,
     X64ProductTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction, any_returns_bool, any_returns_utf8, append_text_arena,
-    compile_shared_container, encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
+    compile_shared_container, cpython_module_name, encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
     encode_x64_program_with_imports, is_c_identifier, lower_fragment_to_machine_extension, lower_fragment_to_machine_library,
     lower_resolved_fragment_to_machine_image,
     node_addon_registration, node_method_wrapper,

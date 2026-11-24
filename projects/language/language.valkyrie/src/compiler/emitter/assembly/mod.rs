@@ -141,7 +141,10 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                     artifact_extension: Some(lowered.artifact_extension),
                     host_exports: lowered.host_exports,
                     host_module: product.host_module(),
-                }));
+                })
+                // CPython 产物基名取归一化模块名：文件名、`PyInit_<module>`、
+                // 清单与宿主 `import` 同值；工程名本身保持不变。
+                .with_artifact_base_name(lowered.module_name));
             }
             let entry_symbol = self
                 .plan

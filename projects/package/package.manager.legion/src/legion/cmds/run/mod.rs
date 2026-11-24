@@ -38,10 +38,10 @@ const BACKEND_RESULT_SNAPSHOT_FILE_NAME: &str = "backend-result.txt";
 pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// execution manifest 的 schema 版本；`1` 起 manifest 记录 `artifact_kind` 与
 /// 库导出索引，`2` 起库导出索引携带 `source_name` 与 `abi` 命名合同事实，
-/// 更早的旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)`
-/// 兼容缺少新字段的旧文件。
+/// `3` 起 `parameters`/`returns` 以可空载体签名表示「不可用」与「零形参」的区别。
+/// 更早的旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)` 兼容缺少新字段的旧文件。
 #[doc(hidden)]
-pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 2;
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 3;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -127,12 +127,17 @@ pub struct LibraryExportIndexEntry {
     /// 旧 manifest 缺少该字段时按空串读取。
     #[serde(default)]
     pub abi: String,
-    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；lane 尚未冻结
-    /// 该事实或旧 manifest 缺少该字段时为空列表。
+    /// 该导出是否携带已冻结的载体签名。
+    ///
+    /// `false` 表示 lane 尚未提供签名事实，此时 `parameters`/`returns` 无意义，
+    /// 消费侧必须在编组前拒绝；`true` 且 `parameters` 为空表示已冻结的零形参
+    /// 签名，两者的区别不能被压平成同一种状态。
+    #[serde(default)]
+    pub signature_available: bool,
+    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）。
     #[serde(default)]
     pub parameters: Vec<String>,
-    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；lane 尚未
-    /// 冻结该事实或旧 manifest 缺少该字段时为空串。
+    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
     #[serde(default)]
     pub returns: String,
 }

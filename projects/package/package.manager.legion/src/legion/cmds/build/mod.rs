@@ -138,29 +138,43 @@ fn run_inner(args: &BuildArgs) -> LegionResult<ExitCode> {
 fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
     let workspace = WorkspaceResolver::discover_for_project(&args.project_dir)?;
     let requested_target = args.resolved.clone();
-    let members = workspace
-        .legions_member_dirs()
-        .into_iter()
-        .filter(|project_dir| {
-            let request = BuildRequest {
-                project_dir: project_dir.clone(),
-                resolved: requested_target.clone(),
-                output_dir: args.output_dir.clone(),
-                ..Default::default()
-            };
-            match workspace.build_plan(&request) {
-                Ok(_) => true,
-                Err(crate::legion::workspace::planner::PlannerError::MissingBuildTarget { .. }) => {
-                    eprintln!("workspace: skipping {} (target not declared)", project_dir.display());
-                    false
+    let members_dirs = workspace.legions_member_dirs();
+    let mut members = Vec::with_capacity(members_dirs.len());
+    // CPython 模块名由工程名归一化而来：同一输出目录里两个成员归一到同名会互相
+    // 覆盖 `.pyd`/`PyInit_`，必须在写出前拒绝并同时指名两个工程。
+    let mut cpython_modules: Vec<(String, String)> = Vec::new();
+    for project_dir in members_dirs {
+        let request = BuildRequest {
+            project_dir: project_dir.clone(),
+            resolved: requested_target.clone(),
+            output_dir: args.output_dir.clone(),
+            ..Default::default()
+        };
+        match workspace.build_plan(&request) {
+            Ok(plan) => {
+                if matches!(plan.project.resolved.contract, ArtifactContract::Cpython(_)) {
+                    let module = compiler_emitter::emitter_backend_machine::cpython_module_name(&plan.project.name)
+                        .map_err(|error| LegionError::msg(report!("{error}")))?;
+                    if let Some((previous_module, previous_project)) =
+                        cpython_modules.iter().find(|(name, project)| name == &module && project != &plan.project.name)
+                    {
+                        return Err(LegionError::msg(report!(
+                            "CPython 模块名碰撞：工程 `{previous_project}` 与 `{}` 归一到同一模块名 `{module}`（此前为 `{previous_module}`），拒绝互相覆盖的扩展产物",
+                            plan.project.name
+                        )));
+                    }
+                    cpython_modules.push((module, plan.project.name.clone()));
                 }
-                Err(error) => {
-                    eprintln!("workspace: skipping {} (planner error: {})", project_dir.display(), error);
-                    false
-                }
+                members.push(project_dir);
             }
-        })
-        .collect::<Vec<_>>();
+            Err(crate::legion::workspace::planner::PlannerError::MissingBuildTarget { .. }) => {
+                eprintln!("workspace: skipping {} (target not declared)", project_dir.display());
+            }
+            Err(error) => {
+                eprintln!("workspace: skipping {} (planner error: {})", project_dir.display(), error);
+            }
+        }
+    }
     if members.is_empty() {
         return Err(LegionError::msg(report!("workspace 没有可构建成员")));
     }
@@ -755,8 +769,9 @@ fn write_execution_manifest(
             invocation: export.invocation.clone(),
             abi_digest: export.abi_digest.clone(),
             abi: export.abi.clone(),
-            parameters: export.parameters.clone(),
-            returns: export.returns.clone(),
+            signature_available: export.parameters.is_some() && export.returns.is_some(),
+            parameters: export.parameters.clone().unwrap_or_default(),
+            returns: export.returns.clone().unwrap_or_default(),
         })
         .collect::<Vec<_>>();
     ExecutionManifest::from_build_plan(plan, output_dir, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)

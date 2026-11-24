@@ -709,6 +709,17 @@ impl LoweredBackendInput {
         Self::new(DriverBackendInput::Machine(input))
     }
 
+    /// 覆盖产物基名（默认是工程名）。
+    ///
+    /// CPython 扩展的工程名与可导入模块名是两个事实：文件名、`PyInit_<module>`、
+    /// 执行清单与宿主 `import` 必须共用归一化后的模块名。
+    pub fn with_artifact_base_name(mut self, artifact_base_name: Option<String>) -> Self {
+        if artifact_base_name.is_some() {
+            self.entry_artifact_name = artifact_base_name;
+        }
+        self
+    }
+
     /// 直接提交 `ovm` backend 输入。
     pub fn ovm(input: OvmBackendInput) -> Self {
         Self::new(DriverBackendInput::Ovm(input))
@@ -809,12 +820,14 @@ pub struct DriverLibraryExport {
     pub abi_digest: String,
     /// 目标 ABI 合同标签（`node-api` / `cpython` / `c-abi` / `wasm` / `ovm` / `jvm-managed` / `clr-managed`）。
     pub abi: String,
-    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；lane 尚未冻结
-    /// 该事实时为空列表。
-    pub parameters: Vec<String>,
-    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；lane 尚未
-    /// 冻结该事实时为空串。
-    pub returns: String,
+    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）。
+    ///
+    /// `Some([])` 是已冻结的零形参签名，`None` 是该 lane 尚未提供签名事实；
+    /// 两者必须可区分，消费侧不得把 `None` 当零形参编组。
+    pub parameters: Option<Vec<String>>,
+    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；
+    /// `None` 表示该 lane 尚未提供签名事实。
+    pub returns: Option<String>,
 }
 
 /// 驱动层编译结果。

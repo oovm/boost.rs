@@ -13,7 +13,7 @@ use compiler_emitter::{
     contracts::{Block, BlockRef, ExecutableFunction, Operand, Terminator, Value, ValueOrigin, ValueRef},
     emitter_backend_machine::{
         HostModule, MachineHostExport, MachineLibraryExport, X64LoweredExtension, X64LoweredLibrary, X64Platform, X64ProductTarget,
-        lower_fragment_to_machine_library,
+        cpython_module_name, lower_fragment_to_machine_library,
     },
     testing::lower_fragment_to_machine_extension,
 };
@@ -122,6 +122,27 @@ fn node_projection_collision_is_rejected_with_both_source_names() {
     let error = lower_fragment_to_machine_extension(&submission, &target, "app").expect_err("投影碰撞必须写出前拒绝");
     assert!(error.contains("foo_bar"), "诊断应列出源码名 foo_bar：{error}");
     assert!(error.contains("fooBar"), "诊断应列出源码名 fooBar：{error}");
+}
+
+#[test]
+fn cpython_module_name_normalizes_project_and_drives_entry_symbol() {
+    // 工程名保留仓库身份，模块名是确定性的合法标识符：文件名、`PyInit_`、
+    // 清单与宿主 `import` 必须共用同一个值。
+    assert_eq!(cpython_module_name("leetcode-multiply-strings").unwrap(), "leetcode_multiply_strings");
+    assert_eq!(cpython_module_name("app").unwrap(), "app");
+    assert_eq!(cpython_module_name("9lives").unwrap(), "_9lives");
+    assert!(cpython_module_name("").is_err(), "空工程名无法归一化成合法模块名");
+
+    let submission = submission_for(&["move_zeroes"], &[]);
+    let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python);
+    let lowered = lower_fragment_to_machine_extension(&submission, &target, "leetcode-multiply-strings").expect("CPython 模块名归一化");
+    assert_eq!(lowered.module_name.as_deref(), Some("leetcode_multiply_strings"));
+    assert_eq!(lowered.entry_symbol, "PyInit_leetcode_multiply_strings");
+    assert_eq!(lowered.artifact_extension, ".so");
+
+    let node = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
+    let node_lowered = lower_fragment_to_machine_extension(&submission, &node, "leetcode-multiply-strings").expect("Node 扩展降低成功");
+    assert_eq!(node_lowered.module_name, None, "Node 扩展不使用 CPython 模块名");
 }
 
 #[test]

@@ -48,6 +48,26 @@ pub struct X64LoweredExtension {
     pub host_exports: Vec<MachineHostExport>,
     /// 产物扩展名（含点）：`.node` / `.pyd` / `.so`。
     pub artifact_extension: String,
+    /// CPython 导入模块名；文件名、`PyInit_<module>`、执行清单与宿主 `import`
+    /// 共用这一个值。Node 扩展不使用模块名，为 `None`。
+    pub module_name: Option<String>,
+}
+
+/// CPython 扩展的导入模块名：工程名与模块名是两个独立事实。
+///
+/// 工程名保留仓库/题库身份（例如 `leetcode-multiply-strings`），模块名必须是
+/// 合法 Python/C 标识符（例如 `leetcode_multiply_strings`）。归一化确定性：
+/// 非 `[A-Za-z0-9_]` 字符替换为 `_`，首字符为数字时前置 `_`，结果为空则拒绝。
+pub fn cpython_module_name(project_name: &str) -> Result<String> {
+    let mut name: String =
+        project_name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    if name.is_empty() {
+        return Err(format!("CPython 扩展模块名不能为空（工程名 `{project_name}` 归一化后为空）"));
+    }
+    if name.as_bytes()[0].is_ascii_digit() {
+        name.insert(0, '_');
+    }
+    Ok(name)
 }
 
 /// 机器码交付的一条宿主导出：语言侧源码名与目标公开名。
@@ -69,8 +89,9 @@ pub struct MachineHostExport {
 
 /// 把已冻结的目标计划降低为宿主扩展共享库。
 ///
-/// `target` 必须来自统一目标解析服务的宿主合同；`module_name` 是 CPython 的
-/// 导入名（Node-API 不使用模块名，但仍参与产物身份命名）。
+/// `target` 必须来自统一目标解析服务的宿主合同；`module_name` 是工程名
+/// （Node-API 不使用模块名，但仍参与产物身份命名；CPython 由 [`cpython_module_name`]
+/// 归一化为合法导入名，工程名本身保持不变）。
 pub fn lower_fragment_to_machine_extension(
     submission: &FragmentSubmission,
     target: &X64ProductTarget,
@@ -81,6 +102,11 @@ pub fn lower_fragment_to_machine_extension(
         X64ProductTarget::Library(_) => return Err("目标不是宿主扩展合同；普通共享库交付尚未接线".to_string()),
     };
     let abi = platform.abi();
+    // CPython 的模块名先行归一化：文件名、`PyInit_`、清单与 `import` 必须同值。
+    let python_module = match host {
+        HostModule::Python => Some(cpython_module_name(module_name)?),
+        HostModule::Node => None,
+    };
 
     // 宿主扩展不接受进程入口：入口是应用交付事实，与导出面互相独立。
     if let Some(entry) = submission.backend_plan.entry_operation() {
@@ -157,10 +183,11 @@ pub fn lower_fragment_to_machine_extension(
             (image, "napi_register_module_v1".to_string(), ".node".to_string())
         }
         HostModule::Python => {
-            if !is_c_identifier(module_name) {
-                return Err(format!("CPython 扩展模块名 `{module_name}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"));
+            let module = python_module.as_deref().expect("Python 分支已冻结模块名");
+            if !is_c_identifier(module) {
+                return Err(format!("CPython 扩展模块名 `{module}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"));
             }
-            let (definition, relocations, property_name_offsets, format_offsets) = python_module_data(module_name, properties, &methods);
+            let (definition, relocations, property_name_offsets, format_offsets) = python_module_data(module, properties, &methods);
             let mut data = definition;
             let arena_offset = Some(append_text_arena(&mut data));
             let bool_exports = any_returns_bool(properties, &methods);
@@ -168,10 +195,10 @@ pub fn lower_fragment_to_machine_extension(
                 functions.push(python_method_wrapper(method, format_offset, &host_library, arena_offset, platform));
             }
             functions.push(python_module_exec(properties, &property_name_offsets, &host_library, arena_offset));
-            functions.push(python_module_registration(module_name, &host_library));
+            functions.push(python_module_registration(module, &host_library));
             let imports = python_imports(&methods, bool_exports, &host_library);
             let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &relocations, &host_dependencies)?;
-            let entry_symbol = format!("PyInit_{module_name}");
+            let entry_symbol = format!("PyInit_{module}");
             // 扩展后缀优先取解析服务冻结/探测的宿主 ABI 事实；无配置时才按平台
             // 规范名回落（`.pyd` / `.so`），产物身份差异由 ResolvedTarget::identity 承载。
             let extension = target
@@ -206,6 +233,7 @@ pub fn lower_fragment_to_machine_extension(
         entry_symbol,
         host_exports,
         artifact_extension,
+        module_name: python_module,
     })
 }
 
