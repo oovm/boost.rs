@@ -11,10 +11,11 @@
 #   OVM  freeze_ovm_operator_binding   (compiler.emitter/src/lowering/backends/ovm/mir.rs)
 #
 # 配方缺口（不编造助记符）：
-#   * CLR 无 `f64.rem`（.NET 没有与 Java `%`/fmod 语义一致的 IL 指令，
-#     `Math.IEEERemainder` 是 IEEE 754 remainder，语义不同）；
-#   * Wasm 无 `f64.rem`（wasm 只有整数 rem，没有浮点余数指令）；
-#   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术与比较头码。
+#   * CLR 无 `f32.*`：MSIL 模型缺 `ldc.r4`，`float32` 槽收不了浮点常量，emit 对
+#     f32 常量明确失败闭合（`f64.rem` 已可编码为 IL `rem`）；
+#   * Wasm 无 `f64.rem` / `f32.rem`（wasm 只有整数 rem，没有浮点余数指令）；
+#   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术与比较头码；u32 的 `/`、`%`
+#     也没有无符号除余头码（`i32.div`/`i32.rem` 都是有符号）；f32 只有 `eq`、`lt`。
 # 因此某些 (类型, 运算, target) 组合不会出现该 target 的注解。
 
 namespace std.primitive;
@@ -106,6 +107,93 @@ structure i32 {
     micro `>=`(self: i32, other: i32) -> bool;
 }
 
+# 无符号 32 位：加减乘与有符号同形（二进制补码），除/余与有序比较必须用无符号助记符。
+# OVM 没有无符号除余头码，故 `/`、`%` 不声明 ovm 绑定。
+[primitive("std::primitive::u32")]
+structure u32 {
+    [infix]
+    [jvm_operator("integer.add")]
+    [clr_operator("i32.add")]
+    [wasm_operator("i32.add")]
+    [ovm_operator("i32.add")]
+    micro `+`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.subtract")]
+    [clr_operator("i32.sub")]
+    [wasm_operator("i32.sub")]
+    [ovm_operator("i32.sub")]
+    micro `-`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.multiply")]
+    [clr_operator("i32.mul")]
+    [wasm_operator("i32.mul")]
+    [ovm_operator("i32.mul")]
+    micro `*`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.divide_unsigned")]
+    [clr_operator("i32.div.un")]
+    [wasm_operator("i32.div_u")]
+    micro `/`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.remainder_unsigned")]
+    [clr_operator("i32.rem.un")]
+    [wasm_operator("i32.rem_u")]
+    micro `%`(self: u32, other: u32) -> u32;
+
+    [prefix]
+    [jvm_operator("integer.negate")]
+    [clr_operator("i32.neg")]
+    [wasm_operator("i32.neg")]
+    [ovm_operator("i32.neg")]
+    micro `-`(self: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.compare_equal")]
+    [clr_operator("i32.eq")]
+    [wasm_operator("i32.eq")]
+    [ovm_operator("i32.eq")]
+    micro `==`(self: u32, other: u32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_not_equal")]
+    [clr_operator("i32.ne")]
+    [wasm_operator("i32.ne")]
+    [ovm_operator("i32.ne")]
+    micro `!=`(self: u32, other: u32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_less_than_unsigned")]
+    [clr_operator("i32.lt.un")]
+    [wasm_operator("i32.lt_u")]
+    [ovm_operator("i32.lt_u")]
+    micro `<`(self: u32, other: u32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_less_or_equal_unsigned")]
+    [clr_operator("i32.le.un")]
+    [wasm_operator("i32.le_u")]
+    [ovm_operator("i32.le_u")]
+    micro `<=`(self: u32, other: u32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_than_unsigned")]
+    [clr_operator("i32.gt.un")]
+    [wasm_operator("i32.gt_u")]
+    [ovm_operator("i32.gt_u")]
+    micro `>`(self: u32, other: u32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_or_equal_unsigned")]
+    [clr_operator("i32.ge.un")]
+    [wasm_operator("i32.ge_u")]
+    [ovm_operator("i32.ge_u")]
+    micro `>=`(self: u32, other: u32) -> bool;
+}
+
 [primitive("std::primitive::i64")]
 structure i64 {
     [infix]
@@ -179,6 +267,82 @@ structure i64 {
     [clr_operator("i64.ge")]
     [wasm_operator("i64.ge_s")]
     micro `>=`(self: i64, other: i64) -> bool;
+}
+
+# 无符号 64 位：OVM 没有任何 i64 头码，因此不含 ovm 绑定。
+[primitive("std::primitive::u64")]
+structure u64 {
+    [infix]
+    [jvm_operator("long.add")]
+    [clr_operator("i64.add")]
+    [wasm_operator("i64.add")]
+    micro `+`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.subtract")]
+    [clr_operator("i64.sub")]
+    [wasm_operator("i64.sub")]
+    micro `-`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.multiply")]
+    [clr_operator("i64.mul")]
+    [wasm_operator("i64.mul")]
+    micro `*`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.divide_unsigned")]
+    [clr_operator("i64.div.un")]
+    [wasm_operator("i64.div_u")]
+    micro `/`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.remainder_unsigned")]
+    [clr_operator("i64.rem.un")]
+    [wasm_operator("i64.rem_u")]
+    micro `%`(self: u64, other: u64) -> u64;
+
+    [prefix]
+    [jvm_operator("long.negate")]
+    [clr_operator("i64.neg")]
+    [wasm_operator("i64.neg")]
+    micro `-`(self: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.compare_equal")]
+    [clr_operator("i64.eq")]
+    [wasm_operator("i64.eq")]
+    micro `==`(self: u64, other: u64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_not_equal")]
+    [clr_operator("i64.ne")]
+    [wasm_operator("i64.ne")]
+    micro `!=`(self: u64, other: u64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_less_than_unsigned")]
+    [clr_operator("i64.lt.un")]
+    [wasm_operator("i64.lt_u")]
+    micro `<`(self: u64, other: u64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_less_or_equal_unsigned")]
+    [clr_operator("i64.le.un")]
+    [wasm_operator("i64.le_u")]
+    micro `<=`(self: u64, other: u64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_greater_than_unsigned")]
+    [clr_operator("i64.gt.un")]
+    [wasm_operator("i64.gt_u")]
+    micro `>`(self: u64, other: u64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_greater_or_equal_unsigned")]
+    [clr_operator("i64.ge.un")]
+    [wasm_operator("i64.ge_u")]
+    micro `>=`(self: u64, other: u64) -> bool;
 }
 
 [primitive("std::primitive::f64")]

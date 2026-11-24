@@ -155,6 +155,8 @@ micro add(a: i32, b: i32) -> i32 { return a + b }
 micro less(a: i32, b: i32) -> bool { return a < b }
 [export(name: "less_or_equal")]
 micro less_or_equal(a: i32, b: i32) -> bool { return a <= b }
+[export(name: "wide_ge")]
+micro wide_ge(a: u32, b: u32) -> bool { return a >= b }
 [export(name: "negate")]
 micro negate(a: i32) -> i32 { return -a }
 "#;
@@ -237,6 +239,15 @@ micro negate(a: i32) -> i32 { return -a }
                 vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }]
             );
             assert_eq!(less_or_equal.return_type, SemanticType::Boolean);
+
+            // 无符号载体不是新语义类别：`u32` 的有序比较仍解析成普通成员调用，
+            // 只是目标绑定助记符换成无符号裁决。
+            let unsigned = by_segment("integer.compare_greater_or_equal_unsigned");
+            assert_eq!(
+                unsigned.parameter_types,
+                vec![SemanticType::Integer32 { signed: false }, SemanticType::Integer32 { signed: false }]
+            );
+            assert_eq!(unsigned.return_type, SemanticType::Boolean);
 
             let negate = by_segment("integer.negate");
             assert_eq!(negate.parameter_types, vec![SemanticType::Integer32 { signed: true }]);
