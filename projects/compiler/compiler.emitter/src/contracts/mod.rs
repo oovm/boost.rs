@@ -34,6 +34,9 @@ pub enum ReceiverPassingKind {
 }
 
 /// Primary SSA result of an instruction (`results[0]`), replacing deleted `Instruction.output`.
+///
+/// 这个抽象成立的前提是「每指令至多一个结果」；该前提由 Semantic MIR 边界合同
+/// （`SMIR011`）统一拒绝，各后端不再各自处理多结果。
 #[inline]
 pub fn instruction_primary_result(instruction: &Instruction) -> Option<ValueRef> {
     instruction.results.first().copied()

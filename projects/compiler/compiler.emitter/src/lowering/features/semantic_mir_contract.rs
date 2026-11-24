@@ -433,6 +433,9 @@ pub fn validate_function(function: &ExecutableFunction) -> Result<(), SemanticMi
             }
         }
         for (index, instruction) in block.instructions.iter().enumerate() {
+            if let Some(error) = multi_result_error(&function.symbol, format!("block {} instruction {index}", block.id.0), instruction) {
+                return Err(error);
+            }
             if let Some(output) = crate::contracts::instruction_primary_result(instruction) {
                 if !function.value_types.contains_key(&output) {
                     return Err(SemanticMirContractError {
@@ -678,4 +681,57 @@ fn validate_terminator(function: &ExecutableFunction, block: &crate::contracts::
         _ => {}
     }
     Ok(())
+}
+
+/// 每指令至多一个结果的边界前提。
+///
+/// 各后端共同只消费 `results[0]`（[`crate::contracts::instruction_primary_result`]）；
+/// 多结果没有任何已冻结的载体与 ABI 语义。这里统一失败闭合，而不是让各 lane 各自
+/// 拒绝、或更糟地静默丢弃主结果之外的值。
+fn multi_result_error(
+    function: &str,
+    location: String,
+    instruction: &crate::contracts::Instruction,
+) -> Option<SemanticMirContractError> {
+    (instruction.results.len() > 1).then(|| SemanticMirContractError {
+        code: "SMIR011",
+        function: function.to_string(),
+        location,
+        detail: format!(
+            "instruction carries {} results but the Semantic MIR boundary admits at most one primary result: kind={:?}",
+            instruction.results.len(),
+            instruction.kind
+        ),
+    })
+}
+
+#[cfg(test)]
+mod result_arity_tests {
+    use super::*;
+    use crate::contracts::{Constant, Instruction, InstructionKind, Operand, ValueRef};
+
+    fn copy_with_results(count: u32) -> Instruction {
+        let mut instruction = Instruction::from_kind(InstructionKind::Copy { source: Operand::Constant(Constant::Unit) });
+        instruction.results = (0..count).map(ValueRef).collect();
+        instruction
+    }
+
+    #[test]
+    fn multiple_results_fail_closed_at_the_semantic_boundary() {
+        let error = multi_result_error("example", "block 0 instruction 0".to_string(), &copy_with_results(2))
+            .expect("two results must be rejected");
+        assert_eq!(error.code, "SMIR011");
+        assert_eq!(error.function, "example");
+        assert!(error.location.contains("instruction"));
+    }
+
+    #[test]
+    fn zero_or_one_result_is_the_admitted_shape() {
+        for count in [0, 1] {
+            assert!(
+                multi_result_error("example", "block 0 instruction 0".to_string(), &copy_with_results(count)).is_none(),
+                "{count} results must be admitted"
+            );
+        }
+    }
 }
