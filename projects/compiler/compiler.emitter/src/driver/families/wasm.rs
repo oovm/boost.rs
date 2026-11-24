@@ -74,8 +74,13 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         };
         if library_surface {
             // 装载方式由用途决定：库交付的产物身份是宿主按导出名调用的模块。
+            // 只有模块产物本身是库；同次写出的 `.mjs` 启动壳与组件绑定文件仍按
+            // 各自真实角色标注，不能整批改标成 Library 误导下游打包器。
+            let module_artifact_name = wasm_physical_artifact_name(request.artifact_name);
             for artifact in &mut artifacts.artifacts {
-                artifact.kind = compiler_target::ArtifactKind::Library;
+                if artifact.name == module_artifact_name {
+                    artifact.kind = compiler_target::ArtifactKind::Library;
+                }
             }
         }
         let run_contracts = if library_surface {
