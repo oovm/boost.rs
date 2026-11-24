@@ -175,10 +175,10 @@ fn wasm_library_export_index_applies_annotation_contract() {
     let move_zeroes = export_of(&manifest, "move_zeroes");
     assert_eq!(move_zeroes.logical_name, "move_zeroes", "wasm 无注解时导出源码名");
     assert_eq!(move_zeroes.abi, "wasm");
-    assert!(!move_zeroes.signature_available, "wasm lane 尚未投影载体签名：必须是不可用而不是零形参");
-    assert!(move_zeroes.parameters.is_empty(), "wasm lane 的形参标签不可用");
-    assert!(move_zeroes.parameter_names.is_empty(), "wasm lane 的形参名不可用");
-    assert!(move_zeroes.returns.is_empty(), "wasm lane 的返回标签不可用");
+    assert!(move_zeroes.signature_available, "wasm 导出已带冻结载体签名");
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "wasm 清单记录冻结形参载体");
+    assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "wasm 清单记录形参声明名");
+    assert_eq!(move_zeroes.returns, "i64", "wasm 清单记录冻结返回载体");
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "twoSum", "wasm 有注解时导出注解名");
     assert_eq!(two_sum.abi, "wasm");
