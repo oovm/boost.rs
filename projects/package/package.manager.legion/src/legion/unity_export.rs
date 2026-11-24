@@ -35,7 +35,12 @@ struct ValkyrieExportEntry {
     assembly: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     r#type: String,
-    method: String,
+    /// 入口方法名。
+    ///
+    /// 只来自编译报告冻结的入口身份；managed 库产物没有单一进程入口时为 `None`
+    /// 并整体省略，绝不用默认 `main` 冒充消费者可调用的方法名。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    method: Option<String>,
 }
 
 /// `valkyrie-export.json` 中的单条 MSIL 分区产物记录。
@@ -105,14 +110,17 @@ pub fn export_unity_project(plan: &BuildPlan, report: &DriverCompileReport, plug
         .map_err(|e| LegionError::msg(format!("读取项目清单失败：{}: {e}", plan.project.manifest_path.display())))?;
     let project_manifest = ProjectManifest::parse(&manifest_source)?;
 
-    let entry_method = report.entry_symbol.clone().unwrap_or_else(|| "main".to_string());
+    // Unity 清单的入口方法只能来自编译报告冻结的入口身份。managed 库产物没有
+    // 单一进程入口（`entry_symbol` 为 `None`）时整体省略方法字段，由消费者按
+    // 导出面或程序集身份装载；不得再写默认 `main` 冒充已冻结入口。
+    let entry_method = report.entry_symbol.clone();
     let export = ValkyrieExportManifest {
         version: if partition_artifacts.is_empty() { 1 } else { 2 },
         entry: Some(ValkyrieExportEntry { assembly: entry_assembly.clone(), r#type: String::new(), method: entry_method.clone() }),
         artifacts: partition_artifacts,
         entry_assembly: Some(entry_assembly),
-        entry_type: Some(String::new()),
-        entry_method: Some(entry_method),
+        entry_type: entry_method.as_ref().map(|_| String::new()),
+        entry_method,
         target: plan.project.build_target.target.to_string(),
         publish: plan.project.build_target.publish.clone(),
         sdk_version: project_manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
@@ -300,4 +308,42 @@ fn read_json_string_field(json: &str, key: &str) -> Option<String> {
     let start = json[colon..].find('"')? + colon + 1;
     let end = json[start..].find('"')? + start;
     Some(json[start..end].to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest(entry_symbol: Option<&str>) -> ValkyrieExportManifest {
+        let method = entry_symbol.map(str::to_string);
+        ValkyrieExportManifest {
+            version: 1,
+            entry: Some(ValkyrieExportEntry { assembly: "app.dll".to_string(), r#type: String::new(), method: method.clone() }),
+            artifacts: Vec::new(),
+            entry_assembly: Some("app.dll".to_string()),
+            entry_type: method.as_ref().map(|_| String::new()),
+            entry_method: method,
+            target: "clr".to_string(),
+            publish: Vec::new(),
+            sdk_version: "0.1.0".to_string(),
+        }
+    }
+
+    /// 没有冻结入口身份时不得伪造方法名：方法相关字段应整体省略。
+    #[test]
+    fn unity_export_omits_entry_method_without_frozen_identity() {
+        let json = serde_json::to_string(&manifest(None)).expect("序列化导出清单");
+        assert!(!json.contains("\"method\""), "{json}");
+        assert!(!json.contains("entry_method"), "{json}");
+        assert!(!json.contains("entry_type"), "{json}");
+        assert!(json.contains("\"entry_assembly\":\"app.dll\""), "{json}");
+    }
+
+    /// 有冻结入口身份时原样投影，不做任何改写。
+    #[test]
+    fn unity_export_projects_frozen_entry_method() {
+        let json = serde_json::to_string(&manifest(Some("run"))).expect("序列化导出清单");
+        assert!(json.contains("\"method\":\"run\""), "{json}");
+        assert!(json.contains("\"entry_method\":\"run\""), "{json}");
+    }
 }
