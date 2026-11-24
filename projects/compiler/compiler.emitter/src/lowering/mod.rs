@@ -160,25 +160,28 @@ fn build_driver_input(
             // 库导出签名只从已冻结事实派生：载体来自 `freeze_wasm_export_abi`（与
             // `nyar.library_invoke` 消费的槽位同源），形参名来自 canonical 参数身份。
             // 缺函数体或参数身份不合法都是结构化失败，不写 `None` 冒充未投影。
+            // 只有库用途消费导出面；应用/测试镜像不得因库专属的载体约束而失败。
             let mut library_wasm_exports = Vec::new();
-            for (instance, source_name) in submission.backend_plan.export_names() {
-                let public_name = submission.backend_plan.export_public_name(instance).expect("导出实例必有公开名").clone();
-                let view = submission
-                    .backend_plan
-                    .get_function(instance)
-                    .ok_or_else(|| format!("Wasm 库导出 `{public_name}` 缺少 Compiler 函数体，无法冻结导出签名"))?;
-                let abi = backends::wasm::abi::freeze_wasm_export_abi(&view.function)?;
-                let parameter_names = crate::abi_structure::canonical_parameter_identities(&public_name, &view.function)?
-                    .into_iter()
-                    .map(|(_, name)| name.to_string())
-                    .collect::<Vec<_>>();
-                library_wasm_exports.push(crate::emitter_backend_wasi::WasmLibraryExport {
-                    source_name: source_name.clone(),
-                    public_name,
-                    parameters: abi.params.iter().map(|carrier| carrier.as_str().to_string()).collect(),
-                    parameter_names,
-                    returns: abi.returns.as_str().to_string(),
-                });
+            if matches!(artifact_purpose, ArtifactPurpose::Library) {
+                for (instance, source_name) in submission.backend_plan.export_names() {
+                    let public_name = submission.backend_plan.export_public_name(instance).expect("导出实例必有公开名").clone();
+                    let view = submission
+                        .backend_plan
+                        .get_function(instance)
+                        .ok_or_else(|| format!("Wasm 库导出 `{public_name}` 缺少 Compiler 函数体，无法冻结导出签名"))?;
+                    let abi = backends::wasm::abi::freeze_wasm_export_abi(&view.function)?;
+                    let parameter_names = crate::abi_structure::canonical_parameter_identities(&public_name, &view.function)?
+                        .into_iter()
+                        .map(|(_, name)| name.to_string())
+                        .collect::<Vec<_>>();
+                    library_wasm_exports.push(crate::emitter_backend_wasi::WasmLibraryExport {
+                        source_name: source_name.clone(),
+                        public_name,
+                        parameters: abi.params.iter().map(|carrier| carrier.as_str().to_string()).collect(),
+                        parameter_names,
+                        returns: abi.returns.as_str().to_string(),
+                    });
+                }
             }
             Ok(DriverBackendInput::Wasm(WasmBinaryBackendInput {
                 module,
