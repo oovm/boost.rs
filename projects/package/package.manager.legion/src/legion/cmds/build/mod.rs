@@ -155,15 +155,7 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
                 if matches!(plan.project.resolved.contract, ArtifactContract::Cpython(_)) {
                     let module = compiler_emitter::emitter_backend_machine::cpython_module_name(&plan.project.name)
                         .map_err(|error| LegionError::msg(report!("{error}")))?;
-                    if let Some((previous_module, previous_project)) =
-                        cpython_modules.iter().find(|(name, project)| name == &module && project != &plan.project.name)
-                    {
-                        return Err(LegionError::msg(report!(
-                            "CPython 模块名碰撞：工程 `{previous_project}` 与 `{}` 归一到同一模块名 `{module}`（此前为 `{previous_module}`），拒绝互相覆盖的扩展产物",
-                            plan.project.name
-                        )));
-                    }
-                    cpython_modules.push((module, plan.project.name.clone()));
+                    ensure_cpython_module_unique(&mut cpython_modules, module, &plan.project.name)?;
                 }
                 members.push(project_dir);
             }
@@ -205,6 +197,48 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
             eprintln!("workspace build failure: {failure}");
         }
         Ok(ExitCode::FAILURE)
+    }
+}
+
+/// 记录一个 CPython 成员的归一化模块名；同名但不同工程即在写出前拒绝。
+fn ensure_cpython_module_unique(
+    modules: &mut Vec<(String, String)>,
+    module: String,
+    project: &str,
+) -> LegionResult<()> {
+    if let Some((previous_module, previous_project)) =
+        modules.iter().find(|(name, owner)| name == &module && owner != project)
+    {
+        return Err(LegionError::msg(report!(
+            "CPython 模块名碰撞：工程 `{previous_project}` 与 `{project}` 归一到同一模块名 `{module}`（此前为 `{previous_module}`），拒绝互相覆盖的扩展产物"
+        )));
+    }
+    modules.push((module, project.to_string()));
+    Ok(())
+}
+
+#[cfg(test)]
+mod cpython_module_collision_tests {
+    use super::ensure_cpython_module_unique;
+
+    #[test]
+    fn duplicate_module_for_different_projects_is_rejected() {
+        let mut modules = vec![("leetcode_foo_bar".to_string(), "leetcode-foo-bar".to_string())];
+        let error = ensure_cpython_module_unique(&mut modules, "leetcode_foo_bar".to_string(), "leetcode_foo_bar")
+            .expect_err("不同工程归一到同名模块必须拒绝");
+        let text = format!("{error}");
+        assert!(text.contains("leetcode-foo-bar"), "{text}");
+        assert!(text.contains("leetcode_foo_bar"), "{text}");
+    }
+
+    #[test]
+    fn same_project_reentry_and_distinct_modules_are_allowed() {
+        let mut modules = vec![
+            ("leetcode_foo".to_string(), "leetcode-foo".to_string()),
+            ("leetcode_foo".to_string(), "leetcode-foo".to_string()),
+        ];
+        ensure_cpython_module_unique(&mut modules, "leetcode_bar".to_string(), "leetcode-bar")
+            .expect("不同模块名不应碰撞");
     }
 }
 
