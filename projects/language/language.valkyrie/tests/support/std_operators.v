@@ -11,8 +11,6 @@
 #   OVM  freeze_ovm_operator_binding   (compiler.emitter/src/lowering/backends/ovm/mir.rs)
 #
 # 配方缺口（不编造助记符）：
-#   * JVM 无 `double.compare_less_or_equal` / `compare_greater_than` /
-#     `compare_greater_or_equal`（夹具未声明这些成员）；
 #   * CLR 无 `f64.rem`（.NET 没有与 Java `%`/fmod 语义一致的 IL 指令，
 #     `Math.IEEERemainder` 是 IEEE 754 remainder，语义不同）；
 #   * Wasm 无 `f64.rem`（wasm 只有整数 rem，没有浮点余数指令）；
@@ -85,6 +83,27 @@ structure i32 {
     [wasm_operator("i32.lt_s")]
     [ovm_operator("i32.lt")]
     micro `<`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_less_or_equal")]
+    [clr_operator("i32.le")]
+    [wasm_operator("i32.le_s")]
+    [ovm_operator("i32.le")]
+    micro `<=`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_than")]
+    [clr_operator("i32.gt")]
+    [wasm_operator("i32.gt_s")]
+    [ovm_operator("i32.gt")]
+    micro `>`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_or_equal")]
+    [clr_operator("i32.ge")]
+    [wasm_operator("i32.ge_s")]
+    [ovm_operator("i32.ge")]
+    micro `>=`(self: i32, other: i32) -> bool;
 }
 
 [primitive("std::primitive::i64")]
@@ -142,6 +161,24 @@ structure i64 {
     [clr_operator("i64.lt")]
     [wasm_operator("i64.lt_s")]
     micro `<`(self: i64, other: i64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_less_or_equal")]
+    [clr_operator("i64.le")]
+    [wasm_operator("i64.le_s")]
+    micro `<=`(self: i64, other: i64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_greater_than")]
+    [clr_operator("i64.gt")]
+    [wasm_operator("i64.gt_s")]
+    micro `>`(self: i64, other: i64) -> bool;
+
+    [infix]
+    [jvm_operator("long.compare_greater_or_equal")]
+    [clr_operator("i64.ge")]
+    [wasm_operator("i64.ge_s")]
+    micro `>=`(self: i64, other: i64) -> bool;
 }
 
 [primitive("std::primitive::f64")]
@@ -197,6 +234,24 @@ structure f64 {
     [clr_operator("f64.lt")]
     [wasm_operator("f64.lt")]
     micro `<`(self: f64, other: f64) -> bool;
+
+    [infix]
+    [jvm_operator("double.compare_less_or_equal")]
+    [clr_operator("f64.le")]
+    [wasm_operator("f64.le")]
+    micro `<=`(self: f64, other: f64) -> bool;
+
+    [infix]
+    [jvm_operator("double.compare_greater_than")]
+    [clr_operator("f64.gt")]
+    [wasm_operator("f64.gt")]
+    micro `>`(self: f64, other: f64) -> bool;
+
+    [infix]
+    [jvm_operator("double.compare_greater_or_equal")]
+    [clr_operator("f64.ge")]
+    [wasm_operator("f64.ge")]
+    micro `>=`(self: f64, other: f64) -> bool;
 }
 
 [primitive("std::primitive::bool")]

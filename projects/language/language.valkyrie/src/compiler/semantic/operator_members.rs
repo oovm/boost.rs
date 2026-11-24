@@ -153,6 +153,8 @@ namespace app;
 micro add(a: i32, b: i32) -> i32 { return a + b }
 [export(name: "less")]
 micro less(a: i32, b: i32) -> bool { return a < b }
+[export(name: "less_or_equal")]
+micro less_or_equal(a: i32, b: i32) -> bool { return a <= b }
 [export(name: "negate")]
 micro negate(a: i32) -> i32 { return -a }
 "#;
@@ -226,6 +228,15 @@ micro negate(a: i32) -> i32 { return -a }
             let less = by_segment("integer.compare_less_than");
             assert_eq!(less.parameter_types, vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }]);
             assert_eq!(less.return_type, SemanticType::Boolean);
+
+            // 有序比较的另一半（`<=`）也必须从同一份声明解析成普通成员调用，
+            // 而不是靠后端名字猜测；这里只核对语言侧落进计划的签名。
+            let less_or_equal = by_segment("integer.compare_less_or_equal");
+            assert_eq!(
+                less_or_equal.parameter_types,
+                vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }]
+            );
+            assert_eq!(less_or_equal.return_type, SemanticType::Boolean);
 
             let negate = by_segment("integer.negate");
             assert_eq!(negate.parameter_types, vec![SemanticType::Integer32 { signed: true }]);
