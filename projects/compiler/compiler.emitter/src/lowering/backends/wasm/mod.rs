@@ -84,24 +84,38 @@ pub fn lower_fragment_to_wasm_module_for(
             return Err(format!("WASM callable `{operation}` has no Compiler-owned executable body"));
         }
     }
-    if wasm_package_kind == WasmPackageKind::Library {
-        if submission.backend_plan.export_names().is_empty() {
-            return Err(format!("library wasm package requires at least one `[export]` symbol"));
+    match wasm_package_kind {
+        WasmPackageKind::Library => {
+            if submission.backend_plan.export_names().is_empty() {
+                return Err("library wasm package requires at least one `[export]` symbol".to_string());
+            }
+        }
+        WasmPackageKind::Binary => {
+            let entry = submission
+                .backend_plan
+                .entry_operation()
+                .ok_or_else(|| "WASM binary package requires a Compiler-resolved entry".to_string())?;
+            // 宿主入口名是 lane 保留符号：其它导出的公开名不得占用，否则入口导出与
+            // `[export]` 导出会写进同一个名字，产出重复导出名的非法模块。
+            if let Some(instance) = submission.backend_plan.export_names().keys().copied().find(|instance| {
+                *instance != entry
+                    && submission
+                        .backend_plan
+                        .export_public_name(instance)
+                        .is_some_and(|name| name.as_str() == boundary_entry_name)
+            }) {
+                return Err(format!(
+                    "WASM binary package: `[export]` 实例 `{instance}` 的公开名与宿主入口符号 `{boundary_entry_name}` 冲突"
+                ));
+            }
         }
     }
-    // 导出名只是符号选择：声明的 `[export]` 名优先，否则用 boundary 入口名。
-    // 它不参与宿主模式推断——`wasi_mode` 只来自显式 `host_boundary`。
-    let export_name = if let Some(instance) = submission.backend_plan.export_names().keys().next() {
-        submission.backend_plan.export_public_name(instance).expect("导出实例必有公开名").as_str()
-    }
-    else {
-        if submission.backend_plan.entry_operation().is_none() {
-            return Err(format!("WASM binary package requires a Compiler-resolved entry"));
-        }
-        boundary_entry_name
-    };
+    // 入口导出名只由宿主边界的冻结词汇决定（`main` / `_start`）。`[export]` 公开名
+    // 属于另一个命名面，不能借给入口函数：否则入口会冒用导出名，或与同名导出一起
+    // 产出重复导出名的非法模块。入口命名不参与宿主模式推断。
+    let entry_export_name = boundary_entry_name;
     let (mut module, imports) =
-        mir::lower_fragment_mir_to_wasm_module_for(submission, export_name, host_boundary, wasi_preview, wasm_package_kind)?;
+        mir::lower_fragment_mir_to_wasm_module_for(submission, entry_export_name, host_boundary, wasi_preview, wasm_package_kind)?;
 
     prepend_nyar_custom_sections(&mut module, submission);
     mir::singleton::append_singleton_metadata_sections(&mut module, submission);

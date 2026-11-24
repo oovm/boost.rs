@@ -102,7 +102,9 @@ pub(crate) fn lower_fragment_mir_to_wasm_module(
     )
 }
 
-/// 宿主模式只由显式 `host_boundary` 决定；`export_name` 只是符号，不参与运行环境推断。
+/// 宿主模式只由显式 `host_boundary` 决定；`export_name` 是入口函数的导出符号，
+/// 由宿主边界的冻结词汇给出（`main` / `_start`），不取自 `[export]` 公开名。
+/// `export_name` 不参与运行环境推断。
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     submission: &FragmentSubmission,
     export_name: &str,
