@@ -150,10 +150,13 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
     Ok(ClrLoweredFragment { module, managed_abi })
 }
 
-/// 为导出入口生成 managed ABI 契约，并合成唯一的 argv 分发入口 `managed_entry`。
+/// 为导出入口生成 managed ABI 契约，并仅为 argv 可表达的入口合成分发入口
+/// `managed_entry`。
 ///
-/// 每个导出入口必须已作为全局方法落库；参数/返回必须是 `i64` / `i32` / `f64` /
-/// `bool` / `void` 标量，其它载体返回结构化错误，不发明入口或默认值。
+/// 每个导出入口都无条件记录为 ABI 事实：`parameter_types` / `return_type` 来自
+/// 托管 ABI 词汇表，数组、引用、unsigned 都是合法库签名。argv launcher 是宿主
+/// 命令行能力，只覆盖可无损解析的标量子集；不可表达时 `launcher_class` 为
+/// `None`，既不合成分发分支，也不因此让整个模块失败。
 fn build_managed_abi_surface(
     module: &mut MsilModule,
     plan: &crate::TargetExecutionPlan,
@@ -163,15 +166,9 @@ fn build_managed_abi_surface(
     if export_names.is_empty() {
         return Ok(None);
     }
-    if let Some(existing) = module.global_methods.iter().find(|method| method.is_entry_point) {
-        return Err(format!("CLR managed ABI：模块已有可执行入口 `{}`，拒绝再合成 `managed_entry` 造成双入口", existing.method.name));
-    }
-    if module.global_methods.iter().any(|method| method.method.name == MANAGED_ENTRY_METHOD) {
-        return Err(format!("CLR managed ABI：已有全局方法 `{MANAGED_ENTRY_METHOD}`，拒绝复用该名字"));
-    }
 
     let mut entries = Vec::with_capacity(export_names.len());
-    let mut dispatch_targets = Vec::with_capacity(export_names.len());
+    let mut dispatch_targets = Vec::new();
     for (instance, logical_entry) in export_names {
         let method = method_plans
             .get(instance)
@@ -190,29 +187,59 @@ fn build_managed_abi_surface(
             .into_iter()
             .map(|(_, name)| name.to_string())
             .collect::<Vec<_>>();
-        let parameter_types = method.signature.parameter_types.iter().map(managed_scalar_type_name).collect::<Result<Vec<_>>>()?;
-        let return_type = managed_scalar_type_name(&method.signature.return_type)?;
+        let parameter_types = method.signature.parameter_types.iter().map(managed_abi_type_name).collect::<Result<Vec<_>>>()?;
+        let return_type = managed_abi_type_name(&method.signature.return_type)?;
+        // 「事实」与「能力」分离：入口签名无条件记录，argv launcher 只覆盖可无损编组子集。
+        let argv_expressible =
+            parameter_types.iter().all(|ty| managed_argv_expressible(ty)) && managed_argv_expressible(&return_type);
+        let launcher_class = argv_expressible.then(|| MANAGED_ENTRY_METHOD.to_string());
+        if argv_expressible {
+            // 目标下标取自 `entries` 的当前长度，过滤只影响是否 push，不会与入口错位。
+            dispatch_targets.push(ManagedDispatchTarget {
+                entry_index: entries.len(),
+                signature: body.method.signature.clone(),
+                parameter_types: parameter_types.clone(),
+                return_type: return_type.clone(),
+            });
+        }
         entries.push(ManagedAbiEntry {
             logical_entry: logical_entry.clone(),
             owner: GLOBAL_METHODS_TYPE.to_string(),
             method: method.name.clone(),
             signature: method.signature.to_string(),
-            parameter_types: parameter_types.clone(),
+            parameter_types,
             parameter_names,
             return_type,
-            launcher_class: Some(MANAGED_ENTRY_METHOD.to_string()),
+            launcher_class,
         });
-        dispatch_targets.push((
-            body.method.signature.clone(),
-            parameter_types.clone(),
-            managed_scalar_type_name(&method.signature.return_type)?,
-        ));
     }
 
-    let entry_method = build_managed_entry_method(&entries, &dispatch_targets)?;
-    module.global_methods.push(entry_method);
+    if !dispatch_targets.is_empty() {
+        // 只在真正合成 `managed_entry` 时检查双入口/重名：没有 argv 目标就不需要该入口。
+        if let Some(existing) = module.global_methods.iter().find(|method| method.is_entry_point) {
+            return Err(format!("CLR managed ABI：模块已有可执行入口 `{}`，拒绝再合成 `managed_entry` 造成双入口", existing.method.name));
+        }
+        if module.global_methods.iter().any(|method| method.method.name == MANAGED_ENTRY_METHOD) {
+            return Err(format!("CLR managed ABI：已有全局方法 `{MANAGED_ENTRY_METHOD}`，拒绝复用该名字"));
+        }
+        let entry_method = build_managed_entry_method(&entries, &dispatch_targets)?;
+        module.global_methods.push(entry_method);
+    }
     // 产物文件名由驱动层最终确定；这里先留空，桥接层负责补全并刷新摘要。
     Ok(Some(ManagedAbiContract::new("clr", String::new(), entries)))
+}
+
+/// 单个 argv 分发目标：显式携带 `entries` 下标，禁止依赖并行 push 后的位置假设。
+#[derive(Debug, Clone)]
+struct ManagedDispatchTarget {
+    /// 对应 [`ManagedAbiEntry`] 在入口列表中的下标。
+    entry_index: usize,
+    /// 被分发方法的冻结签名。
+    signature: MsilMethodSignature,
+    /// 形参的托管 ABI 逻辑类型名。
+    parameter_types: Vec<String>,
+    /// 返回值的托管 ABI 逻辑类型名。
+    return_type: String,
 }
 
 /// CLI 分发入口名，同时作为 ABI 的 `launcher_class` 标识。
@@ -228,28 +255,61 @@ const SYSTEM_DOUBLE: &str = "[mscorlib]System.Double";
 const SYSTEM_BOOLEAN: &str = "[mscorlib]System.Boolean";
 const SYSTEM_CONSOLE: &str = "[mscorlib]System.Console";
 
-/// managed ABI 只接受冻结的标量类型：`i64` / `i32` / `f64` / `bool` / `void`。
-fn managed_scalar_type_name(ty: &MsilType) -> Result<String> {
+/// 托管 ABI 逻辑类型名：由冻结载体投影出的「入口事实」，供库宿主按名绑定。
+///
+/// 这里只回答「签名是什么」，与宿主能否经 argv 编组无关；数组、引用、unsigned
+/// 都是合法入口事实。缺少载体合同（`Object`/`Named`/`IntPtr` 等）时结构化失败，
+/// 不猜名字、不静默回退。
+fn managed_abi_type_name(ty: &MsilType) -> Result<String> {
     Ok(match ty {
-        MsilType::Int64 { signed: true } => "i64",
-        MsilType::Int32 { signed: true } => "i32",
-        MsilType::Float64 => "f64",
-        MsilType::Bool => "bool",
         MsilType::Void => "void",
+        MsilType::Bool => "bool",
+        // 本 lane 的 `msil_type` 把 V 的 `Character`（u32 码位）固定映射为
+        // `Int32 { signed: false }`，实际载体词汇是 `u32`；此分支仅覆盖直接携带
+        // 宿主 16 位字符的冻结载体。
+        MsilType::Char => "char",
+        MsilType::Int8 { signed: true } => "i8",
+        MsilType::Int8 { signed: false } => "u8",
+        MsilType::Int16 { signed: true } => "i16",
+        MsilType::Int16 { signed: false } => "u16",
+        MsilType::Int32 { signed: true } => "i32",
+        MsilType::Int32 { signed: false } => "u32",
+        MsilType::Int64 { signed: true } => "i64",
+        MsilType::Int64 { signed: false } => "u64",
+        MsilType::Float32 => "f32",
+        MsilType::Float64 => "f64",
+        MsilType::String => "string",
+        MsilType::SzArray(item) => return Ok(format!("{}[]", managed_abi_type_name(item)?)),
         other => {
-            return Err(format!("CLR managed ABI 不支持类型 `{other}`：managed 标量只接受 `i64`/`i32`/`f64`/`bool`/`void`"));
+            return Err(format!(
+                "CLR managed ABI：类型 `{other}` 缺少托管载体合同（`Object`/`Named`/`IntPtr` 等未冻结为可绑定逻辑类型），拒绝猜名字或回退"
+            ));
         }
     }
     .to_string())
 }
 
+/// argv 可表达性子集：只承认宿主命令行能无损解析的标量。
+///
+/// 这是「能力」判定而非「事实」判定：无符号、`i8`/`i16`、`f32`、`string`、数组
+/// 仍是合法库签名，只是不生成 argv launcher；这里不发明任何解析语法。
+fn managed_argv_expressible(managed_type: &str) -> bool {
+    matches!(managed_type, "void" | "bool" | "i32" | "i64" | "f64")
+}
+
 /// 合成 `int32(string[])` argv 分发入口：`args[0]` 是逻辑入口名，其余按声明类型解析。
+///
+/// 只消费过滤后的分发目标，每个目标经显式 `entry_index` 取回入口事实，
+/// 因此入口列表与目标列表的过滤不会造成错位。
 fn build_managed_entry_method(
     entries: &[ManagedAbiEntry],
-    dispatch_targets: &[(MsilMethodSignature, Vec<String>, String)],
+    dispatch_targets: &[ManagedDispatchTarget],
 ) -> Result<MsilMethodBody> {
     let mut instructions = Vec::new();
-    for (index, (entry, (signature, parameter_types, return_type))) in entries.iter().zip(dispatch_targets).enumerate() {
+    for (index, target) in dispatch_targets.iter().enumerate() {
+        let entry = entries.get(target.entry_index).ok_or_else(|| {
+            format!("CLR managed ABI：分发目标下标 {} 越界（入口列表长度 {}）", target.entry_index, entries.len())
+        })?;
         let next_label = format!("managed_entry_next_{index}");
         instructions.push(ldarg0());
         instructions.push(ldc_i4_0());
@@ -258,16 +318,16 @@ fn build_managed_entry_method(
         instructions.push(call_instruction(string_equality_reference()));
         instructions.push(branch_instruction(MsilOpcode::Brfalse, next_label.clone()));
 
-        for (parameter_index, parameter_type) in parameter_types.iter().enumerate() {
+        for (parameter_index, parameter_type) in target.parameter_types.iter().enumerate() {
             instructions.push(ldarg0());
             instructions
                 .push(msil_instruction(MsilOpcode::LdcI4, Some(MsilInstructionOperand::Integer(i64::from(parameter_index as u32) + 1))));
             instructions.push(opcode_instruction(MsilOpcode::LdelemRef));
             instructions.push(call_instruction(argument_parse_reference(parameter_type)?));
         }
-        instructions.push(call_instruction(MsilMethodRef { owner: None, name: entry.method.clone(), signature: signature.clone() }));
-        if return_type != "void" {
-            instructions.push(call_instruction(result_print_reference(return_type)?));
+        instructions.push(call_instruction(MsilMethodRef { owner: None, name: entry.method.clone(), signature: target.signature.clone() }));
+        if target.return_type != "void" {
+            instructions.push(call_instruction(result_print_reference(&target.return_type)?));
         }
         instructions.push(ldc_i4_0());
         instructions.push(opcode_instruction(MsilOpcode::Ret));
@@ -285,7 +345,7 @@ fn build_managed_entry_method(
 
     let max_stack = dispatch_targets
         .iter()
-        .map(|(_, parameter_types, _)| u16::try_from(parameter_types.len()).unwrap_or(u16::MAX))
+        .map(|target| u16::try_from(target.parameter_types.len()).unwrap_or(u16::MAX))
         .max()
         .unwrap_or(0)
         .saturating_add(2);
@@ -2217,5 +2277,43 @@ mod apply_layout_tests {
         );
         let error = msil_type(&AggregateLayoutPlan::default(), &open).expect_err("开放泛型不得发射");
         assert!(error.contains("缺少冻结布局映射"), "got: {error}");
+    }
+}
+
+#[cfg(test)]
+mod managed_abi_vocabulary_tests {
+    use super::*;
+
+    #[test]
+    fn abi_vocabulary_keeps_frozen_carrier_names() {
+        let array = MsilType::sz_array(MsilType::Int64 { signed: true });
+        assert_eq!(managed_abi_type_name(&array).expect("数组是合法 ABI 事实"), "i64[]");
+        assert_eq!(managed_abi_type_name(&MsilType::String).expect("string 载体"), "string");
+        assert_eq!(managed_abi_type_name(&MsilType::Int32 { signed: false }).expect("无符号 int32 载体"), "u32");
+        assert_eq!(managed_abi_type_name(&MsilType::Float32).expect("float32 载体"), "f32");
+    }
+
+    #[test]
+    fn abi_vocabulary_rejects_carriers_without_contract() {
+        for ty in [MsilType::Object, MsilType::Named("Some.Type".to_string()), MsilType::IntPtr { signed: true }] {
+            let error = managed_abi_type_name(&ty).expect_err("缺少托管载体合同必须结构化失败");
+            assert!(error.contains("缺少托管载体合同"), "got: {error}");
+        }
+    }
+
+    #[test]
+    fn argv_subset_rejects_non_argv_carriers() {
+        let array = managed_abi_type_name(&MsilType::sz_array(MsilType::Int64 { signed: true })).expect("数组 ABI 事实");
+        assert!(!managed_argv_expressible(&array));
+        assert!(!managed_argv_expressible("u32"));
+        assert!(!managed_argv_expressible("string"));
+        assert!(!managed_argv_expressible("f32"));
+    }
+
+    #[test]
+    fn argv_subset_admits_lossless_scalars() {
+        for ty in ["void", "bool", "i32", "i64", "f64"] {
+            assert!(managed_argv_expressible(ty), "`{ty}` 应可 argv 表达");
+        }
     }
 }
