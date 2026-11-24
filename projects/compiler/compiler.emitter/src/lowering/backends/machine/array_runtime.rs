@@ -4,7 +4,7 @@
 //! guest lowering（[`super::x86_64`]）与 Node 桥（[`super::carrier`]）都只消费这里的
 //! 发射序列，不再各自计算字节数、写数组头或直接调用 `HeapAlloc`。
 //!
-//! 布局（首批只开放已验证的 8 字节标量元素）：
+//! 布局（元素槽固定 8 字节，元素类型必须是有 8 字节槽载体的类型）：
 //!
 //! ```text
 //! [0]   i64 元素个数（语言可见长度，也是边界检查的唯一上界）
@@ -13,8 +13,13 @@
 //! [16 + 8*i]  元素 i
 //! ```
 //!
-//! 元素槽由分配实现整体零初始化；`ArrayStorage` 的「初始化前沿」仍归 Valkyrie
-//! 标准库，未初始化槽不因零值而变成有效元素。定长值聚合 `[T; N]` 不走本表示。
+//! 元素载体由 [`super::x86_64`] 的槽载体合同裁决（`is_local_carrier`），不在本模块
+//! 另立类型白名单：整数/布尔/字符按各自位宽落在 8 字节槽，浮点按位模式落槽（`f32`
+//! 只保证低 32 位有效），文本/数组/元组/sum/引用聚合落 8 字节指针。分配实现整体
+//! 零初始化，于是默认值就是各自类型的零表示（`0`、`0.0`、空引用）。
+//!
+//! `ArrayStorage` 的「初始化前沿」仍归 Valkyrie 标准库，未初始化槽不因零值而变成
+//! 有效元素。定长值聚合 `[T; N]` 不走本表示。
 //!
 //! 失败语义（三条都走显式分支，不用空指针的后续故障充当错误通道）：
 //!
@@ -33,7 +38,7 @@ pub(super) const ARRAY_HEADER_BYTES: i64 = 16;
 pub(super) const ARRAY_COUNT_OFFSET: i32 = 0;
 /// 分配字节数在头部内的偏移（释放实现读回原长度）。
 pub(super) const ARRAY_ALLOCATION_BYTES_OFFSET: i32 = 8;
-/// 元素槽字节宽度（首批只开放 8 字节标量元素）。
+/// 元素槽字节宽度（元素载体必须落进单个 8 字节槽）。
 pub(super) const ARRAY_ELEMENT_BYTES: i64 = 8;
 /// 首个元素相对数组指针的偏移。
 pub(super) const ARRAY_ELEMENT_OFFSET: i32 = 16;
@@ -56,42 +61,6 @@ const _: () = {
     assert!(ARRAY_ELEMENT_OFFSET as i64 == ARRAY_HEADER_BYTES);
     assert!(ARRAY_ELEMENT_ALIGNMENT == ARRAY_ELEMENT_BYTES);
 };
-
-/// 首批开放给 `[T]` 的元素载体。
-///
-/// 只有能放进单个 8 字节帧槽、且默认值就是全零位的标量才进入白名单。浮点、
-/// 文本与聚合元素尚未冻结表示，调用点在计划阶段结构化拒绝，不做位模式冒充。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ArrayElementKind {
-    /// 布尔（0/1）。
-    Boolean,
-    /// 字符（码位）。
-    Character,
-    /// 8 位整数。
-    Integer8 { signed: bool },
-    /// 16 位整数。
-    Integer16 { signed: bool },
-    /// 32 位整数。
-    Integer32 { signed: bool },
-    /// 64 位整数。
-    Integer64 { signed: bool },
-}
-
-impl ArrayElementKind {
-    /// 冻结元素载体：不在白名单内的类型返回 `None`。
-    pub(super) fn from_semantic_type(ty: &crate::backend_plan_views::SemanticType) -> Option<Self> {
-        use crate::backend_plan_views::SemanticType;
-        Some(match ty {
-            SemanticType::Boolean => Self::Boolean,
-            SemanticType::Character => Self::Character,
-            SemanticType::Integer8 { signed } => Self::Integer8 { signed: *signed },
-            SemanticType::Integer16 { signed } => Self::Integer16 { signed: *signed },
-            SemanticType::Integer32 { signed } => Self::Integer32 { signed: *signed },
-            SemanticType::Integer64 { signed } => Self::Integer64 { signed: *signed },
-            _ => return None,
-        })
-    }
-}
 
 /// `GetProcessHeap`（Win64 默认堆句柄）。
 const GET_PROCESS_HEAP: &str = "GetProcessHeap";
