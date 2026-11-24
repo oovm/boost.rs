@@ -35,6 +35,16 @@ micro two_sum(a: i64, b: i64) -> i64 {
 }
 "#;
 
+/// 数组形参导出：托管 lane 的入口 ABI 事实不再被 argv 编组能力限制。
+/// 入口仍然冻结签名，只是不生成 argv launcher。
+const ARRAY_SOURCE: &str = r#"namespace app;
+
+[export]
+micro first_or_zero(xs: [i64]) -> i64 {
+    return 0
+}
+"#;
+
 /// `foo_bar` 与 `fooBar` 在 Node camelCase 投影下撞同一公开名。
 const COLLISION_SOURCE: &str = r#"namespace app;
 
@@ -256,6 +266,34 @@ fn clr_library_export_index_projects_managed_signature() {
     assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "CLR 清单记录冻结形参载体");
     assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "CLR 清单记录形参声明名");
     assert_eq!(move_zeroes.returns, "i64", "CLR 清单记录冻结返回载体");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn jvm_array_parameter_export_projects_frozen_carrier_without_argv_launcher() {
+    let (outcome, root) = build_library("jvm-array", ARRAY_SOURCE, "jvm");
+    assert!(outcome.ok, "JVM 数组形参库构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let export = export_of(&manifest, "first_or_zero");
+    assert_eq!(export.abi, "jvm-managed");
+    assert!(export.signature_available, "数组形参入口仍是合法库 ABI 事实");
+    assert_eq!(export.parameters, vec!["i64[]".to_string()], "JVM 清单冻结数组载体");
+    assert_eq!(export.parameter_names, vec!["xs".to_string()], "JVM 清单记录形参声明名");
+    assert_eq!(export.returns, "i64");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn clr_array_parameter_export_projects_frozen_carrier_without_argv_launcher() {
+    let (outcome, root) = build_library("clr-array", ARRAY_SOURCE, "clr");
+    assert!(outcome.ok, "CLR 数组形参库构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let export = export_of(&manifest, "first_or_zero");
+    assert_eq!(export.abi, "clr-managed");
+    assert!(export.signature_available, "数组形参入口仍是合法库 ABI 事实");
+    assert_eq!(export.parameters, vec!["i64[]".to_string()], "CLR 清单冻结数组载体");
+    assert_eq!(export.parameter_names, vec!["xs".to_string()], "CLR 清单记录形参声明名");
+    assert_eq!(export.returns, "i64");
     let _ = fs::remove_dir_all(&root);
 }
 
