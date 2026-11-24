@@ -5,7 +5,8 @@ use crate::{
     bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module, ovm_abi::OvmAbiContract,
 };
 use compiler_target::{
-    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane,
+    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
+    TargetLane,
 };
 use data_binary_odin::{OdinExportKind, OdinModuleData, decode_module};
 
@@ -153,7 +154,14 @@ fn ovm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
     DriverRunContract {
         logical_entry: entry.to_string(),
         physical_entry: format!("{artifact_name}.odin"),
-        invocation: "ovm".to_string(),
+        boundary: HostProjectionBoundary::Vm,
+        launch: vec![
+            "ovm".to_string(),
+            "run".to_string(),
+            "{artifact}".to_string(),
+            "--entry".to_string(),
+            entry.to_string(),
+        ],
         validate: format!("ovm run {artifact_name}.odin --entry {entry}"),
     }
 }

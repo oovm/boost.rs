@@ -38,8 +38,9 @@ pub struct CachedRunContract {
     pub logical_entry: String,
     /// Physical entry file.
     pub physical_entry: String,
-    /// Invocation command.
-    pub invocation: String,
+    /// Frozen launch argv (element 0 is the program, `{artifact}` is expanded by consumers).
+    #[serde(default)]
+    pub launch: Vec<String>,
     /// Validation command.
     pub validate: String,
 }
@@ -49,22 +50,12 @@ impl From<&DriverRunContract> for CachedRunContract {
         Self {
             logical_entry: value.logical_entry.clone(),
             physical_entry: value.physical_entry.clone(),
-            invocation: value.invocation.clone(),
+            launch: value.launch.clone(),
             validate: value.validate.clone(),
         }
     }
 }
 
-impl From<&CachedRunContract> for DriverRunContract {
-    fn from(value: &CachedRunContract) -> Self {
-        Self {
-            logical_entry: value.logical_entry.clone(),
-            physical_entry: value.physical_entry.clone(),
-            invocation: value.invocation.clone(),
-            validate: value.validate.clone(),
-        }
-    }
-}
 
 /// 编译器构建身份：`build.rs` 生成的 Git 修订（tracked 改动时带 `-dirty<内容摘要>`，
 /// 不同 dirty 内容身份不同），或构建时注入的 `NYAR_COMPILER_BUILD_ID`。同版本不同

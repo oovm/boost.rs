@@ -790,7 +790,7 @@ fn write_execution_manifest(
         .map(|spec| RunContract {
             logical_entry: spec.logical_entry.clone(),
             physical_entry: spec.physical_entry.clone(),
-            invocation: spec.invocation.clone(),
+            launch: spec.launch.clone(),
             validate: spec.validate.clone(),
         })
         .collect::<Vec<_>>();

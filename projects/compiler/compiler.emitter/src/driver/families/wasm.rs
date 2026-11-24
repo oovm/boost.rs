@@ -106,7 +106,8 @@ fn wasm_run_contract(
         HostProjectionBoundary::WasmJsGlue => DriverRunContract {
             logical_entry: "main".to_string(),
             physical_entry: format!("{}.mjs", physical_name),
-            invocation: "node".to_string(),
+            boundary: HostProjectionBoundary::WasmJsGlue,
+            launch: vec!["node".to_string(), "{artifact}".to_string()],
             validate: format!("node {}.mjs", physical_name),
         },
         HostProjectionBoundary::WasiComponent => {
@@ -118,10 +119,24 @@ fn wasm_run_contract(
             // 语义前提，`-W max-memory-size` 是产品内存上限。`wmemcheck` 是
             // 诊断开关（stock wasmtime 默认未编译该特性），不能进入默认运行路径，
             // 否则声明的契约在标准宿主上直接失败。
+            let mut launch = vec![
+                "wasmtime".to_string(),
+                "run".to_string(),
+                "-W".to_string(),
+                "gc".to_string(),
+                "-W".to_string(),
+                "max-memory-size=16777216".to_string(),
+            ];
+            if wasi_preview == crate::emitter_backend_wasi::WasiPreview::Preview3 {
+                launch.push("-S".to_string());
+                launch.push("p3".to_string());
+            }
+            launch.push("{artifact}".to_string());
             DriverRunContract {
                 logical_entry: "_start".to_string(),
                 physical_entry: format!("{}.wasi", physical_name),
-                invocation: "wasmtime".to_string(),
+                boundary: HostProjectionBoundary::WasiComponent,
+                launch,
                 validate: format!("wasmtime run -W gc -W max-memory-size=16777216{p3_flag} {}.wasi", physical_name),
             }
         }

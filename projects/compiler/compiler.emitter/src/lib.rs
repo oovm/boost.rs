@@ -790,14 +790,22 @@ pub(crate) struct DriverCompileRequest<'a> {
 }
 
 /// 驱动层运行契约。
+///
+/// 消费侧只按本结构冻结的事实启动产物：`boundary` 给出宿主边界身份，
+/// `launch` 给出可执行 argv，`validate` 给出人类/CI 可读的校验命令行。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DriverRunContract {
     /// 逻辑入口名。
     pub logical_entry: String,
     /// 物理入口文件。
     pub physical_entry: String,
-    /// 调用命令。
-    pub invocation: String,
+    /// 产物唯一的宿主边界身份；消费侧据此选择宿主，不按命令名或扩展名猜测。
+    pub boundary: HostProjectionBoundary,
+    /// 冻结的启动 argv：第 0 项是可执行文件，其余是参数。
+    ///
+    /// 只允许 `{artifact}` 占位符（由消费侧展开为解析后的物理入口路径）；
+    /// 入口符号等 lane 专属事实必须在此写入具体值，不再留给消费侧猜。
+    pub launch: Vec<String>,
     /// 校验命令。
     pub validate: String,
 }
@@ -1000,10 +1008,11 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
 ///   emitter 只校验每个 `[test]` 入口被唯一非 node 合同覆盖，并把运行合同收敛为测试集合。
 /// launcher 只按声明名调用导出的测试函数，不拼接入口名或回退 `main`。
 fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, test_entry_names: &[String]) -> Result<()> {
-    if report.run_contracts.iter().any(|contract| contract.invocation != "node") {
+    let is_glue = |contract: &DriverRunContract| contract.boundary == HostProjectionBoundary::WasmJsGlue;
+    if report.run_contracts.iter().any(|contract| !is_glue(contract)) {
         for test_name in test_entry_names {
             let matches: Vec<&DriverRunContract> =
-                report.run_contracts.iter().filter(|contract| contract.invocation != "node" && &contract.logical_entry == test_name).collect();
+                report.run_contracts.iter().filter(|contract| !is_glue(contract) && &contract.logical_entry == test_name).collect();
             let [contract] = matches.as_slice()
             else {
                 return Err(format!("测试入口 `{test_name}` 必须由后端提供唯一执行合同，实际 {} 条；拒绝静默跳过测试入口", matches.len()));
@@ -1013,11 +1022,11 @@ fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, 
                 return Err(format!("测试入口 `{test_name}` 的合同指向不存在的产物 `{}`", contract.physical_entry));
             }
         }
-        report.run_contracts.retain(|contract| contract.invocation != "node" && test_entry_names.contains(&contract.logical_entry));
+        report.run_contracts.retain(|contract| !is_glue(contract) && test_entry_names.contains(&contract.logical_entry));
         return Ok(());
     }
 
-    let Some(glue) = report.run_contracts.iter().find(|contract| contract.invocation == "node").map(|contract| contract.physical_entry.clone())
+    let Some(glue) = report.run_contracts.iter().find(|contract| is_glue(contract)).map(|contract| contract.physical_entry.clone())
     else {
         return Err("测试构建没有可调用的执行合同（node glue 或后端逐入口合同）：拒绝静默跳过测试入口".to_string());
     };
@@ -1054,7 +1063,8 @@ fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, 
         contracts.push(DriverRunContract {
             logical_entry: test_name.clone(),
             physical_entry: launcher_name.clone(),
-            invocation: "node".to_string(),
+            boundary: HostProjectionBoundary::WasmJsGlue,
+            launch: vec!["node".to_string(), "{artifact}".to_string()],
             // 校验命令只做语法检查：`validate` 不得执行测试，否则构建期会跑测试并吞掉失败。
             validate: format!("node --check {launcher_name}"),
         });

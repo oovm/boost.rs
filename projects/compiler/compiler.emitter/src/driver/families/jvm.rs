@@ -87,7 +87,8 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
             vec![DriverRunContract {
                 logical_entry: "main".to_string(),
                 physical_entry: format!("{}.jar", request.artifact_name),
-                invocation: "java".to_string(),
+                boundary: HostProjectionBoundary::Jvm,
+                launch: vec!["java".to_string(), "-jar".to_string(), "{artifact}".to_string()],
                 validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
             }]
         }
@@ -101,7 +102,15 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                     Some(DriverRunContract {
                         logical_entry: entry.logical_entry.clone(),
                         physical_entry: format!("{}.jar", request.artifact_name),
-                        invocation: "java".to_string(),
+                        boundary: HostProjectionBoundary::Jvm,
+                        // 逐入口启动的 argv 是 launcher 类：`java -jar` 只会启动
+                        // manifest 里的 Main-Class，无法按测试名选择入口。
+                        launch: vec![
+                            "java".to_string(),
+                            "-cp".to_string(),
+                            "{artifact}".to_string(),
+                            launcher.replace('/', "."),
+                        ],
                         validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
                     })
                 })

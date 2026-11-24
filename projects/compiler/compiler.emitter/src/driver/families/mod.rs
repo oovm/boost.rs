@@ -123,8 +123,11 @@ fn validate_run_contract_surface(report: &DriverCompileReport) -> Result<()> {
         if contract.physical_entry.trim().is_empty() {
             return Err(format!("运行合同 `{}` 缺少物理入口", contract.logical_entry));
         }
-        if contract.invocation.trim().is_empty() {
-            return Err(format!("运行合同 `{}` 缺少调用命令", contract.logical_entry));
+        if contract.launch.is_empty() {
+            return Err(format!("运行合同 `{}` 缺少启动 argv", contract.logical_entry));
+        }
+        if contract.launch.iter().any(|part| part.trim().is_empty()) {
+            return Err(format!("运行合同 `{}` 的启动 argv 含空项", contract.logical_entry));
         }
         if contract.validate.trim().is_empty() {
             return Err(format!("运行合同 `{}` 缺少校验命令", contract.logical_entry));
@@ -306,7 +309,8 @@ mod run_contract_surface_tests {
         DriverRunContract {
             logical_entry: entry.to_string(),
             physical_entry: physical.to_string(),
-            invocation: "node".to_string(),
+            boundary: compiler_target::HostProjectionBoundary::WasmJsGlue,
+            launch: vec!["node".to_string(), "{artifact}".to_string()],
             validate: "node --check".to_string(),
         }
     }
@@ -350,6 +354,15 @@ mod run_contract_surface_tests {
         let error = validate_run_contract_surface(&report_with_artifact("dist/app.mjs", vec![contract("main", "  ")]))
             .expect_err("空物理入口必须失败");
         assert!(error.contains("缺少物理入口"), "{error}");
+    }
+
+    #[test]
+    fn contract_without_launch_argv_is_rejected() {
+        let mut entry = contract("main", "app.mjs");
+        entry.launch = Vec::new();
+        let error = validate_run_contract_surface(&report_with_artifact("dist/app.mjs", vec![entry]))
+            .expect_err("缺少启动 argv 必须失败");
+        assert!(error.contains("缺少启动 argv"), "{error}");
     }
 
     #[test]

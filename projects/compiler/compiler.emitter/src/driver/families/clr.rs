@@ -112,7 +112,10 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                     Some(DriverRunContract {
                         logical_entry: entry.logical_entry.clone(),
                         physical_entry: artifact_file.clone(),
-                        invocation: "dotnet".to_string(),
+                        boundary: HostProjectionBoundary::Clr,
+                        // `managed_entry` 按 `args[0]` 分派入口名，逐入口合同必须把
+                        // 逻辑入口作为 argv 传给镜像，不能只启动镜像本身。
+                        launch: vec!["dotnet".to_string(), "exec".to_string(), "{artifact}".to_string(), entry.logical_entry.clone()],
                         validate: format!("dotnet exec {} {}", artifact_file, entry.logical_entry),
                     })
                 })
@@ -122,7 +125,8 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
             vec![DriverRunContract {
                 logical_entry: "main".to_string(),
                 physical_entry: artifact_file.clone(),
-                invocation: "dotnet".to_string(),
+                boundary: HostProjectionBoundary::Clr,
+                launch: vec!["dotnet".to_string(), "exec".to_string(), "{artifact}".to_string()],
                 validate: format!("dotnet exec {}", artifact_file),
             }]
         }

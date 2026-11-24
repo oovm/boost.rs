@@ -74,8 +74,14 @@ pub struct RunContract {
     pub logical_entry: String,
     /// 物理入口（产物中的文件名或符号）。
     pub physical_entry: String,
-    /// 调用入口的命令模板。
-    pub invocation: String,
+    /// 冻结的启动 argv：第 0 项是可执行文件，其余是参数。
+    ///
+    /// 只允许 `{artifact}` 占位符（由消费侧展开为解析后的物理入口路径）。
+    /// 入口符号等 lane 专属事实在编译期已写成具体值，消费侧不得再按入口名、
+    /// 扩展名或目标家族猜一次调用方式。旧 manifest 缺少该字段时为空，只能回退
+    /// 到目标家族的通用模板。
+    #[serde(default)]
+    pub launch: Vec<String>,
     /// 校验入口可用的命令模板。
     pub validate: String,
 }
