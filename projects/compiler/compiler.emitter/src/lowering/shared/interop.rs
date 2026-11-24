@@ -1,21 +1,6 @@
 use compiler_target::ExternalImportLink;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ClrHostMethodTarget<'a> {
-    pub assembly: &'a str,
-    pub owner: &'a str,
-    pub method: &'a str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct JvmHostPrintTarget<'a> {
-    pub field_owner: &'a str,
-    pub field_name: &'a str,
-    pub stream_owner: &'a str,
-    pub method_name: &'a str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WasmHostImportTarget<'a> {
     pub module: &'a str,
     pub field: &'a str,
@@ -33,17 +18,6 @@ pub(crate) struct Win32HostImportTarget<'a> {
     pub symbol: &'a str,
 }
 
-pub(crate) fn clr_host_method_target(link: &ExternalImportLink) -> Option<ClrHostMethodTarget<'_>> {
-    if !link.matches_boundary("host") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [assembly, owner, method, ..] => Some(ClrHostMethodTarget { assembly, owner, method }),
-        _ => None,
-    }
-}
-
 /// How to repair the evaluation stack after a BCL call whose MSIL return differs from the
 /// frontend/host-contract desired type (flatten often copies the contract return onto the FFI).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,20 +28,6 @@ pub(crate) enum ClrHostReturnAdapt {
     DiscardRef { push_true: bool },
     /// BCL returns void; push `ldc.i4.1` so a bool contract/local gets a value.
     PushTrue,
-}
-
-pub(crate) fn jvm_host_print_target(link: &ExternalImportLink) -> Option<JvmHostPrintTarget<'_>> {
-    if !link.matches_boundary("host") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [stream_owner, method_name] => {
-            Some(JvmHostPrintTarget { field_owner: "java/lang/System", field_name: "out", stream_owner, method_name })
-        }
-        [field_owner, field_name, stream_owner, method_name] => Some(JvmHostPrintTarget { field_owner, field_name, stream_owner, method_name }),
-        _ => None,
-    }
 }
 
 pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
