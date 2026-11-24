@@ -822,7 +822,9 @@ pub struct DriverLibraryExport {
     pub abi: String,
     /// 形参载体标签（按形参顺序），词汇表由各 lane 的冻结 ABI 决定：
     /// `c-abi` 用 `i64` / `i64[]` / `utf8` 等，`wasm` 用 `i32` / `i64` / `f32` /
-    /// `f64` / `handle`，托管 lane 用其 managed 标量名，`ovm` 用其 carrier 名。
+    /// `f64` / `handle`，托管 lane 用 `void` / `bool` / `char` / `i8`…`u64` /
+    /// `f32` / `f64` / `string` 及其 `T[]` 数组形式，`ovm` 用其 carrier 名。
+    /// 托管 lane 的这些标签是入口 ABI 事实，与能否用 argv 编组无关。
     ///
     /// `Some([])` 是已冻结的零形参签名，`None` 是该 lane 不提供签名事实；
     /// 两者必须可区分，消费侧不得把 `None` 当零形参编组。
