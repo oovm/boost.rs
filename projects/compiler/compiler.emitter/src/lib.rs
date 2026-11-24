@@ -316,8 +316,6 @@ pub struct BundledBackendCapabilityDescriptor {
     /// 语义前提（应用必须带入口、库必须带导出面）仍由 lane 自己判定，这里只回答
     /// 「这个家族是否承载该用途」。
     pub supported_purposes: &'static [ArtifactPurpose],
-    /// 用途与宿主边界的显式例外：同一家族内不同容器能力不同时只登记差异。
-    pub unsupported_purpose_boundaries: &'static [(ArtifactPurpose, HostProjectionBoundary)],
     /// 默认引用管理策略。
     pub reference_management: ReferenceManagement,
     /// 可接受的动态分发路由。
@@ -334,12 +332,12 @@ impl BundledBackendCapabilityDescriptor {
             && requirement.reference_management == self.reference_management
     }
 
-    /// 判断该后端能否承载指定产物用途与宿主边界。
+    /// 判断该后端能否承载指定产物用途。
     ///
     /// 产物用途与「本后端已实现什么」是同一份能力事实，只有这里声明；驱动层与
     /// 分区编排都消费它来在写出前拒绝不支持的组合，lane 不再各自维护用途黑名单。
-    pub fn supports_purpose(&self, purpose: ArtifactPurpose, host_boundary: HostProjectionBoundary) -> bool {
-        self.supported_purposes.contains(&purpose) && !self.unsupported_purpose_boundaries.contains(&(purpose, host_boundary))
+    pub fn supports_purpose(&self, purpose: ArtifactPurpose) -> bool {
+        self.supported_purposes.contains(&purpose)
     }
 
     /// 将 descriptor 转成 backend 注册项。
@@ -380,19 +378,17 @@ const VM_HOST_BOUNDARIES: &[HostProjectionBoundary] = &[HostProjectionBoundary::
 /// 宿主扩展不在其中：这些产物没有宿主模块装载合同，无法给出装载方式。
 const MANAGED_PURPOSES: &[ArtifactPurpose] =
     &[ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::TestBundle];
-/// wasm 家族承载的用途：JS glue 与应用/库/测试包交付。
-const WASM_PURPOSES: &[ArtifactPurpose] = &[ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::TestBundle];
-/// `WasiComponent` 的 command 世界只有 `_start`，无法按 `[test]` 名字逐条调用。
-const WASM_PURPOSE_BOUNDARY_EXCEPTIONS: &[(ArtifactPurpose, HostProjectionBoundary)] =
-    &[(ArtifactPurpose::TestBundle, HostProjectionBoundary::WasiComponent)];
+/// wasm 家族承载的用途：应用与库交付。
+///
+/// 测试包不在其中：逐 `[test]` 入口的导出与启动器尚未实现（二进制包只冻结单一
+/// 宿主入口），先按能力事实拒绝，不得产出无法按测试名调用的模块。
+const WASM_PURPOSES: &[ArtifactPurpose] = &[ArtifactPurpose::Application, ArtifactPurpose::Library];
 /// 机器码家族承载应用、库与宿主扩展；测试包要求逐 `[test]` 独立运行合同，
 /// 而原生交付只有单一进程入口，因此不在支持面内。
 const MACHINE_PURPOSES: &[ArtifactPurpose] =
     &[ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::HostExtension];
 /// 未登记 bundled driver 编译器的家族不承载任何用途。
 const NO_PURPOSES: &[ArtifactPurpose] = &[];
-/// 无边界级用途例外的家族。
-const NO_PURPOSE_BOUNDARY_EXCEPTIONS: &[(ArtifactPurpose, HostProjectionBoundary)] = &[];
 
 /// 返回 bundled backend family 对应的显式 capability 描述。
 pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily) -> Option<BundledBackendCapabilityDescriptor> {
@@ -406,7 +402,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Jvm,
             supported_host_boundaries: JVM_HOST_BOUNDARIES,
             supported_purposes: MANAGED_PURPOSES,
-            unsupported_purpose_boundaries: NO_PURPOSE_BOUNDARY_EXCEPTIONS,
+
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
         }),
@@ -419,7 +415,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Clr,
             supported_host_boundaries: CLR_HOST_BOUNDARIES,
             supported_purposes: MANAGED_PURPOSES,
-            unsupported_purpose_boundaries: NO_PURPOSE_BOUNDARY_EXCEPTIONS,
+
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::StaticOnly,
         }),
@@ -432,7 +428,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::MachineCode,
             supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             supported_purposes: MACHINE_PURPOSES,
-            unsupported_purpose_boundaries: NO_PURPOSE_BOUNDARY_EXCEPTIONS,
+
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
         }),
@@ -445,7 +441,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Wasm,
             supported_host_boundaries: WASM_HOST_BOUNDARIES,
             supported_purposes: WASM_PURPOSES,
-            unsupported_purpose_boundaries: WASM_PURPOSE_BOUNDARY_EXCEPTIONS,
+
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::WitnessCapable,
         }),
@@ -458,7 +454,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Gpu,
             supported_host_boundaries: MACHINE_CODE_HOST_BOUNDARIES,
             supported_purposes: NO_PURPOSES,
-            unsupported_purpose_boundaries: NO_PURPOSE_BOUNDARY_EXCEPTIONS,
+
             reference_management: ReferenceManagement::PerceusRc,
             backend_route: BackendRoute::StaticOnly,
         }),
@@ -472,7 +468,7 @@ pub fn bundled_backend_capability_descriptor(backend_family: TargetBackendFamily
             target_family: TargetFamily::Ovm,
             supported_host_boundaries: VM_HOST_BOUNDARIES,
             supported_purposes: MANAGED_PURPOSES,
-            unsupported_purpose_boundaries: NO_PURPOSE_BOUNDARY_EXCEPTIONS,
+
             reference_management: ReferenceManagement::HostGc,
             backend_route: BackendRoute::Full,
         }),
@@ -997,8 +993,8 @@ fn compile_partitions_with_bundled_backends(request: DriverPartitionCompileReque
         // 用途承载能力只有一处声明：descriptor 的 `supported_purposes` 与边界例外表。
         // 这里在语言→目标适配与写出之前拒绝不支持的组合，避免先产出无法装载或
         // 无法按 `[test]` 名字逐条调用的文件。
-        let purpose_supported = bundled_backend_capability_descriptor(backend_family)
-            .is_some_and(|descriptor| descriptor.supports_purpose(purpose, partition.host_boundary));
+        let purpose_supported =
+            bundled_backend_capability_descriptor(backend_family).is_some_and(|descriptor| descriptor.supports_purpose(purpose));
         if !purpose_supported {
             return Err(format!(
                 "分区 `{}` 的后端家族 `{backend_family:?}` 不承载产物用途 `{purpose:?}`（宿主边界 `{:?}`）；拒绝降级成平台产物",

@@ -132,8 +132,8 @@ pub(crate) fn compile(request: DriverCompileRequest<'_>) -> Result<DriverCompile
     };
     // 用途承载能力只有 descriptor 一处声明；这里在 lane 写出任何产物之前统一
     // 裁决，lane 不再各自维护用途黑名单，新增用途时也不会漏掉某个 lane。
-    let purpose_supported = bundled_backend_capability_descriptor(registration.family)
-        .is_some_and(|descriptor| descriptor.supports_purpose(request.purpose, request.requirement.host_boundary));
+    let purpose_supported =
+        bundled_backend_capability_descriptor(registration.family).is_some_and(|descriptor| descriptor.supports_purpose(request.purpose));
     if !purpose_supported {
         return Err(format!(
             "后端 `{}`（家族 `{:?}`）不承载产物用途 `{:?}`（宿主边界 `{:?}`）；拒绝写出无法装载或无法逐入口调用的产物",
@@ -438,7 +438,7 @@ mod run_contract_surface_tests {
 mod purpose_capability_tests {
     use super::*;
     use crate::bundled_backend_capability_descriptor;
-    use compiler_target::{ArtifactPurpose, HostProjectionBoundary};
+    use compiler_target::ArtifactPurpose;
 
     fn descriptor(family: TargetBackendFamily) -> crate::BundledBackendCapabilityDescriptor {
         bundled_backend_capability_descriptor(family).expect("已注册的后端家族必须有 descriptor")
@@ -456,24 +456,25 @@ mod purpose_capability_tests {
         for family in [TargetBackendFamily::Clr, TargetBackendFamily::Jvm] {
             let descriptor = descriptor(family);
             for purpose in [ArtifactPurpose::Application, ArtifactPurpose::Library, ArtifactPurpose::TestBundle] {
-                assert!(descriptor.supports_purpose(purpose, descriptor.supported_host_boundaries[0]), "{family:?} 应承载 {purpose:?}");
+                assert!(descriptor.supports_purpose(purpose), "{family:?} 应承载 {purpose:?}");
             }
-            assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension, descriptor.supported_host_boundaries[0]));
+            assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension));
         }
     }
 
     #[test]
     fn machine_family_carries_host_extensions_but_not_test_bundles() {
         let descriptor = descriptor(TargetBackendFamily::MachineCode);
-        assert!(descriptor.supports_purpose(ArtifactPurpose::HostExtension, HostProjectionBoundary::MachineCode));
-        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle, HostProjectionBoundary::MachineCode));
+        assert!(descriptor.supports_purpose(ArtifactPurpose::HostExtension));
+        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle));
     }
 
     #[test]
-    fn wasm_test_bundle_support_depends_on_the_host_boundary() {
+    fn wasm_family_does_not_claim_test_bundles_before_per_test_exports_exist() {
         let descriptor = descriptor(TargetBackendFamily::Wasm);
-        assert!(descriptor.supports_purpose(ArtifactPurpose::TestBundle, HostProjectionBoundary::WasmJsGlue));
-        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle, HostProjectionBoundary::WasiComponent));
-        assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension, HostProjectionBoundary::WasmJsGlue));
+        assert!(descriptor.supports_purpose(ArtifactPurpose::Application));
+        assert!(descriptor.supports_purpose(ArtifactPurpose::Library));
+        assert!(!descriptor.supports_purpose(ArtifactPurpose::TestBundle));
+        assert!(!descriptor.supports_purpose(ArtifactPurpose::HostExtension));
     }
 }
