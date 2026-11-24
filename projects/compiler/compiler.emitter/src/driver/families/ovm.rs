@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, OvmAbiSidecar, Result,
-    bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module,
+    bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module, ovm_abi::OvmAbiContract,
 };
 use compiler_target::{
     ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, PartitionBackendRequirement, TargetBackendFamily, TargetLane,
@@ -61,21 +61,8 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                     input.abi_contract.as_ref().ok_or_else(|| "`artifact: library` 缺少 OVM ABI 合同；拒绝产出无合同的库导出面".to_string())?;
                 library_exports = entries
                     .iter()
-                    .map(|entry| DriverLibraryExport {
-                        logical_name: entry.clone(),
-                        // ovm lane 没有注解改名合同，公开名就是源码名。
-                        source_name: entry.clone(),
-                        physical_artifact: format!("{}.odin", request.artifact_name),
-                        invocation: "ovm run --entry".to_string(),
-                        abi_digest: contract.digest.clone(),
-                        abi: "ovm".to_string(),
-                        // OVM 导出面的载体签名由 ABI sidecar 承载；本 lane 尚未把该
-                        // 事实投影到清单，`None` 表示签名不可用（区别于零形参的 `Some([])`）。
-                        parameters: None,
-                        parameter_names: None,
-                        returns: None,
-                    })
-                    .collect();
+                    .map(|entry| library_export_from_contract(entry, request.artifact_name, contract))
+                    .collect::<Result<Vec<_>>>()?;
             }
             // sidecar 与 `.odin` 同目录落盘，每个物理产物各持一份；宿主读取时先按整份产物重算哈希。
             if let Some(contract) = input.abi_contract.as_ref() {
@@ -88,6 +75,28 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
 
         Ok(DriverCompileReport { artifacts, entry_symbol, run_contracts, managed_abi: Vec::new(), ovm_abi, library_exports })
     }
+}
+
+/// 把单个入口的冻结合同投影为驱动层库导出清单项。
+///
+/// 签名事实（形参名、形参载体、返回载体）只来自 `contract`：源码名/模块导出
+/// 不参与签名推导。入口在合同里没有对应导出时失败闭合，绝不写 `None` 或空签名。
+fn library_export_from_contract(entry: &str, artifact: &str, contract: &OvmAbiContract) -> Result<DriverLibraryExport> {
+    let export = contract.export(entry).ok_or_else(|| {
+        format!("`artifact: library` 的 OVM ABI 合同缺少导出 `{entry}` 的签名事实；拒绝产出无签名清单")
+    })?;
+    Ok(DriverLibraryExport {
+        logical_name: entry.to_string(),
+        // ovm lane 没有注解改名合同，公开名就是源码名。
+        source_name: entry.to_string(),
+        physical_artifact: format!("{artifact}.odin"),
+        invocation: "ovm run --entry".to_string(),
+        abi_digest: contract.digest.clone(),
+        abi: "ovm".to_string(),
+        parameters: Some(export.params.iter().map(|param| param.carrier.clone()).collect()),
+        parameter_names: Some(export.params.iter().map(|param| param.name.clone()).collect()),
+        returns: Some(export.returns_carrier.clone()),
+    })
 }
 
 #[doc(hidden)]
@@ -130,5 +139,69 @@ fn ovm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
         physical_entry: format!("{artifact_name}.odin"),
         invocation: "ovm".to_string(),
         validate: format!("ovm run {artifact_name}.odin --entry {entry}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ovm_abi::{OVM_ABI_SCHEMA_VERSION, OvmAbiExport, OvmAbiParam, OvmAbiType};
+
+    fn contract_with(exports: Vec<OvmAbiExport>) -> OvmAbiContract {
+        OvmAbiContract { schema_version: OVM_ABI_SCHEMA_VERSION, lane: "ovm".to_string(), exports, digest: "sha256-test".to_string() }
+    }
+
+    fn export(logical_name: &str, params: Vec<OvmAbiParam>, returns: OvmAbiType, returns_carrier: &str) -> OvmAbiExport {
+        OvmAbiExport { logical_name: logical_name.to_string(), params, returns, returns_carrier: returns_carrier.to_string() }
+    }
+
+    #[test]
+    fn library_export_projects_signature_from_contract() {
+        let contract = contract_with(vec![export(
+            "greet",
+            vec![
+                OvmAbiParam {
+                    index: 0,
+                    name: "name".to_string(),
+                    ty: OvmAbiType::Text { representation: crate::ovm_abi::OvmTextRepresentation::Raw },
+                    carrier: "text".to_string(),
+                },
+                OvmAbiParam { index: 1, name: "count".to_string(), ty: OvmAbiType::I64, carrier: "i64".to_string() },
+            ],
+            OvmAbiType::Bool,
+            "i32",
+        )]);
+
+        let projected = library_export_from_contract("greet", "app", &contract).expect("合同内有导出即可投影");
+
+        assert_eq!(projected.logical_name, "greet");
+        assert_eq!(projected.source_name, "greet");
+        assert_eq!(projected.physical_artifact, "app.odin");
+        assert_eq!(projected.abi, "ovm");
+        assert_eq!(projected.abi_digest, "sha256-test");
+        assert_eq!(projected.parameters, Some(vec!["text".to_string(), "i64".to_string()]));
+        assert_eq!(projected.parameter_names, Some(vec!["name".to_string(), "count".to_string()]));
+        assert_eq!(projected.returns, Some("i32".to_string()));
+    }
+
+    #[test]
+    fn zero_parameter_export_is_some_empty_not_none() {
+        let contract = contract_with(vec![export("tick", Vec::new(), OvmAbiType::Unit, "void")]);
+
+        let projected = library_export_from_contract("tick", "app", &contract).expect("零形参导出必须在合同中");
+
+        assert_eq!(projected.parameters, Some(Vec::new()));
+        assert_eq!(projected.parameter_names, Some(Vec::new()));
+        assert_eq!(projected.returns, Some("void".to_string()));
+    }
+
+    #[test]
+    fn missing_export_fails_closed_instead_of_empty_signature() {
+        let contract = contract_with(vec![export("greet", Vec::new(), OvmAbiType::Unit, "void")]);
+
+        let error = library_export_from_contract("absent", "app", &contract).expect_err("合同缺少导出时必须拒绝产出清单");
+
+        assert!(error.contains("缺少导出 `absent`"), "must name the missing export: {error}");
+        assert!(error.contains("拒绝产出无签名清单"), "must state refusal: {error}");
     }
 }
