@@ -45,8 +45,18 @@ pub(crate) fn merge_partition_reports(
     let mut export_owners: Vec<(String, String)> = Vec::new();
     for (partition_name, report) in reports {
         merged.artifacts.artifacts.extend(report.artifacts.artifacts);
-        if merged.entry_symbol.is_none() {
-            merged.entry_symbol = report.entry_symbol.clone();
+        // 报告只承载单一入口身份；两个分区声称不同入口符号时，任何“取第一个”
+        // 都会静默丢弃另一份事实，宿主装载哪一个是随分区顺序变化的偶然结果。
+        if let Some(symbol) = report.entry_symbol.clone() {
+            match &merged.entry_symbol {
+                None => merged.entry_symbol = Some(symbol),
+                Some(existing) if *existing == symbol => {}
+                Some(existing) => {
+                    return Err(format!(
+                        "多个分区声称不同入口符号：`{existing}` 与 `{symbol}`（分区 `{partition_name}`）；报告只承载单一入口身份，拒绝静默丢弃"
+                    ));
+                }
+            }
         }
         // 每个物理产物各持一份 managed ABI 合同；不同分区各自拥有产物是合法的，
         // 只有两个分区声称同一 `(lane, artifact)` 时才是不可合并的歧义。
@@ -135,6 +145,34 @@ mod tests {
         .expect_err("同一产物被两个分区声称必须失败");
         assert!(error.contains("managed ABI"), "{error}");
         assert!(error.contains("app.jar"), "{error}");
+    }
+
+    fn report_with_entry(symbol: &str) -> DriverCompileReport {
+        DriverCompileReport { entry_symbol: Some(symbol.to_string()), ..DriverCompileReport::default() }
+    }
+
+    /// 多个分区声称同一入口符号时可以合并为一份身份。
+    #[test]
+    fn merges_identical_entry_symbols() {
+        let merged = merge_partition_reports(
+            vec![("a".to_string(), report_with_entry("napi_register_module_v1")), ("b".to_string(), report_with_entry("napi_register_module_v1"))],
+            None,
+        )
+        .expect("相同入口符号必须可合并");
+        assert_eq!(merged.entry_symbol.as_deref(), Some("napi_register_module_v1"));
+    }
+
+    /// 不同入口符号无法在单一字段中同时表达，必须失败而不是丢弃后一个。
+    #[test]
+    fn rejects_conflicting_entry_symbols_across_partitions() {
+        let error = merge_partition_reports(
+            vec![("left".to_string(), report_with_entry("first_entry")), ("right".to_string(), report_with_entry("second_entry"))],
+            None,
+        )
+        .expect_err("不同入口符号必须失败");
+        assert!(error.contains("不同入口符号"), "{error}");
+        assert!(error.contains("first_entry"), "{error}");
+        assert!(error.contains("second_entry"), "{error}");
     }
 
     fn report_with_export(export_name: &str) -> DriverCompileReport {
