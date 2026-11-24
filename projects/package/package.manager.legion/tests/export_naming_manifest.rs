@@ -45,6 +45,16 @@ micro first_or_zero(xs: [i64]) -> i64 {
 }
 "#;
 
+/// 普通共享库的窄整型载体：`i32` 标量与 `[i32]` 数组按结构标签进入清单，
+/// 不退化为 `[i32]` 这类 Display 文本。
+const NARROW_SOURCE: &str = r#"namespace app;
+
+[export]
+micro narrow_pair(x: i32, xs: [i32]) -> i32 {
+    return x
+}
+"#;
+
 /// `foo_bar` 与 `fooBar` 在 Node camelCase 投影下撞同一公开名。
 const COLLISION_SOURCE: &str = r#"namespace app;
 
@@ -218,6 +228,19 @@ fn cpython_export_index_freezes_normalized_module_name() {
     assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()]);
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "two_sum", "CPython 忽略 `case:` 注解");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn native_library_export_index_projects_lane_carrier_vocabulary() {
+    let (outcome, root) = build_library("native-carrier", NARROW_SOURCE, "native");
+    assert!(outcome.ok, "native 库构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let export = export_of(&manifest, "narrow_pair");
+    assert_eq!(export.abi, "c-abi");
+    assert_eq!(export.parameters, vec!["i32".to_string(), "i32[]".to_string()], "native 清单按精确语言类型与结构数组标签记录形参载体");
+    assert_eq!(export.parameter_names, vec!["x".to_string(), "xs".to_string()], "native 清单按声明顺序记录形参名");
+    assert_eq!(export.returns, "i32");
     let _ = fs::remove_dir_all(&root);
 }
 
