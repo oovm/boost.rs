@@ -234,10 +234,11 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
     Ok(JvmLoweredFragment { class_file, companion_classes, managed_abi, entry_launcher })
 }
 
-/// 为每个导出入口生成 argv launcher，并汇总 managed ABI 契约。
+/// 汇总 managed ABI 契约，并只为 argv 可表达的入口生成 launcher。
 ///
-/// 入口必须已经以 `public static` 方法落在主类中；缺失方法或不可表达的标量类型
-/// 都返回结构化错误，不静默跳过入口。
+/// 入口必须已经以 `public static` 方法落在主类中；缺失方法返回结构化错误。
+/// 入口事实（逻辑类型名、描述符）与 argv 包装能力分开：数组、引用等签名仍是
+/// 合法的库入口，只是 `launcher_class = None`，不生成 companion 类。
 fn build_managed_abi_surface(
     class_file: &JvmClassFile,
     export_names: &BTreeMap<ItemInstanceId, String>,
@@ -270,20 +271,29 @@ fn build_managed_abi_surface(
         let (logical_params, logical_return) = logical_signatures
             .get(instance)
             .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少冻结逻辑签名"))?;
-        let parameter_types = logical_params.iter().map(managed_logical_type_name).collect::<Result<Vec<_>>>()?;
-        let return_type = managed_logical_type_name(logical_return)?;
+        let parameter_types = logical_params.iter().map(managed_abi_logical_type_name).collect::<Result<Vec<_>>>()?;
+        let return_type = managed_abi_logical_type_name(logical_return)?;
         // 形参声明名来自冻结签名，按声明顺序与 `parameter_types` 等长；
         // 缺失即结构化失败，不用空名字或位置猜测填补。
         let parameter_names = logical_parameter_names
             .get(instance)
             .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少冻结形参声明名"))?
             .clone();
-        let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
-        if entry.as_ref().is_some_and(|(entry_instance, _)| entry_instance == instance) {
-            // 程序入口同时是导出入口：复用该 ABI 入口的 launcher 身份。
-            entry_launcher = Some(launcher_class.clone());
+        // argv launcher 只是包装能力：只有全部形参与返回都能由宿主命令行无损
+        // 解析时才生成；否则入口照常写进契约，但 `launcher_class` 为 `None`。
+        let argv_expressible = logical_params.iter().chain(std::iter::once(logical_return)).all(|ty| argv_expressible_type_name(ty).is_ok());
+        let launcher_class = if argv_expressible {
+            let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
+            if entry.as_ref().is_some_and(|(entry_instance, _)| entry_instance == instance) {
+                // 程序入口同时是导出入口：复用该 ABI 入口的 launcher 身份。
+                entry_launcher = Some(launcher_class.clone());
+            }
+            companion_classes.push(build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?);
+            Some(launcher_class)
         }
-        let launcher = build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?;
+        else {
+            None
+        };
         entries.push(ManagedAbiEntry {
             logical_entry: logical_entry.clone(),
             owner: class_file.internal_name.clone(),
@@ -292,9 +302,8 @@ fn build_managed_abi_surface(
             parameter_types,
             parameter_names,
             return_type,
-            launcher_class: Some(launcher_class),
+            launcher_class,
         });
-        companion_classes.push(launcher);
     }
     // 程序入口 launcher：入口身份冻结在计划里，不依赖方法名扫描。
     //
@@ -312,7 +321,7 @@ fn build_managed_abi_surface(
                 .find(|candidate| candidate.name == method.name && candidate.descriptor == method.descriptor)
                 .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不在主类中", method.name))?;
             let argv_expressible = logical_signatures.get(&instance).is_some_and(|(params, return_type)| {
-                params.iter().chain(std::iter::once(return_type)).all(|ty| managed_logical_type_name(ty).is_ok())
+                params.iter().chain(std::iter::once(return_type)).all(|ty| argv_expressible_type_name(ty).is_ok())
             });
             if argv_expressible {
                 if lowered.access_flags & (JVM_ACC_PUBLIC | JVM_ACC_STATIC) != (JVM_ACC_PUBLIC | JVM_ACC_STATIC) {
@@ -334,28 +343,80 @@ fn build_managed_abi_surface(
     Ok((companion_classes, managed_abi, entry_launcher))
 }
 
-/// managed ABI 的逻辑标量类型名：只来自冻结的 `SemanticType` 签名，保留 signedness。
+/// managed ABI 的逻辑类型名：入口事实，只来自冻结的 `SemanticType` 签名。
 ///
-/// 没有 unsigned 编组能力时明确拒绝，禁止用有符号解析器冒充 unsigned；
-/// 物理 descriptor 单独保存在 `signature` 字段，不参与逻辑类型推断。
-fn managed_logical_type_name(ty: &SemanticType) -> Result<String> {
+/// 范围严格对齐本 lane 已支持的物理载体（`jvm_type_descriptor` /
+/// `jvm_array_element_descriptor` / `function_descriptor`）：标量按声明保留
+/// signedness 与宽度，数组递归到元素类型后追加 `[]`。没有物理载体合同的形状
+/// 一律结构化失败，不猜名字、不回退到擦除后的 descriptor。
+fn managed_abi_logical_type_name(ty: &SemanticType) -> Result<String> {
     Ok(match ty {
-        SemanticType::Bottom | SemanticType::Unit => "void",
-        SemanticType::Boolean => "bool",
-        SemanticType::Integer32 { signed: true } => "i32",
-        SemanticType::Integer64 { signed: true } => "i64",
-        SemanticType::Float64 => "f64",
-        SemanticType::Integer32 { signed: false } | SemanticType::Integer64 { signed: false } => {
-            return Err(format!("JVM managed ABI 没有 unsigned 编组能力（`{ty}`）：拒绝生成 argv launcher，不得用有符号解析器冒充"));
+        SemanticType::Bottom | SemanticType::Unit => "void".to_string(),
+        SemanticType::Boolean => "bool".to_string(),
+        SemanticType::Character => "char".to_string(),
+        SemanticType::Integer8 { signed: true } => "i8".to_string(),
+        SemanticType::Integer8 { signed: false } => "u8".to_string(),
+        SemanticType::Integer16 { signed: true } => "i16".to_string(),
+        SemanticType::Integer16 { signed: false } => "u16".to_string(),
+        SemanticType::Integer32 { signed: true } => "i32".to_string(),
+        SemanticType::Integer32 { signed: false } => "u32".to_string(),
+        SemanticType::Integer64 { signed: true } => "i64".to_string(),
+        SemanticType::Integer64 { signed: false } => "u64".to_string(),
+        SemanticType::Float32 => "f32".to_string(),
+        SemanticType::Float64 => "f64".to_string(),
+        SemanticType::Utf8 | SemanticType::Utf16 => "string".to_string(),
+        // 堆数组有元素载体合同；固定长度数组没有 ABI 长度事实，走下面的结构化拒绝。
+        SemanticType::Array(element) => format!("{}[]", managed_abi_logical_type_name(element)?),
+        SemanticType::Integer128 { .. } => {
+            return Err(format!("JVM managed ABI 不支持 `{ty}` 作为入口类型：缺少 128 位标量载体合同"));
         }
-        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer128 { .. } => {
-            return Err(format!("JVM managed ABI 入口不支持 `{ty}`：只接受 i32 / i64 / f64 / bool / void"));
+        SemanticType::Tuple(..) => {
+            return Err(format!("JVM managed ABI 不支持 `{ty}` 作为入口类型：裸 tuple 没有冻结布局身份，缺少 ABI 载体合同"));
+        }
+        SemanticType::Function(..) => {
+            return Err(format!("JVM managed ABI 不支持 `{ty}` 作为入口类型：函数值没有 ABI 载体合同"));
+        }
+        SemanticType::Nominal { .. } | SemanticType::Apply(..) => {
+            return Err(format!("JVM managed ABI 不支持 `{ty}` 作为入口类型：名义/泛型实例缺少 ABI 布局身份合同"));
+        }
+        SemanticType::FixedArray { .. } => {
+            return Err(format!("JVM managed ABI 不支持 `{ty}` 作为入口类型：固定长度数组缺少 ABI 长度事实"));
+        }
+        SemanticType::Nullable(..) => {
+            return Err(format!("JVM managed ABI 不支持 `{ty}` 作为入口类型：可空标量需要 sum 表示，缺少 ABI 载体合同"));
         }
         other => {
-            return Err(format!("JVM managed ABI 不支持 `{other}` 作为入口标量：缺少 managed 标量契约"));
+            return Err(format!("JVM managed ABI 不支持 `{other}` 作为入口类型：缺少该形状的 ABI 载体合同"));
         }
+    })
+}
+
+/// argv 可表达性：宿主命令行解析器真实支持的逻辑类型子集。
+///
+/// 这是「包装能力」而非「ABI 事实」：只承认 `void`、`bool`、有符号 `i32`/`i64`
+/// 与 `f64`；无符号、窄整型、`f32`、字符串与数组都没有对应解析器，结构化拒绝，
+/// 不为它们发明解析语法。
+fn argv_expressible_type_name(ty: &SemanticType) -> Result<String> {
+    match ty {
+        SemanticType::Bottom | SemanticType::Unit => Ok("void".to_string()),
+        SemanticType::Boolean => Ok("bool".to_string()),
+        SemanticType::Integer32 { signed: true } => Ok("i32".to_string()),
+        SemanticType::Integer64 { signed: true } => Ok("i64".to_string()),
+        SemanticType::Float64 => Ok("f64".to_string()),
+        SemanticType::Integer32 { signed: false } | SemanticType::Integer64 { signed: false } => {
+            Err(format!("JVM argv launcher 不支持无符号 `{ty}`：宿主解析器只有有符号解析，拒绝用有符号解析器冒充"))
+        }
+        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer128 { .. } => {
+            Err(format!("JVM argv launcher 不支持 `{ty}`：只接受有符号 i32 / i64、f64、bool 与 void"))
+        }
+        SemanticType::Float32 => Err("JVM argv launcher 不支持 `f32`：宿主只提供 `Double.parseDouble`".to_string()),
+        SemanticType::Character => Err(format!("JVM argv launcher 不支持 `{ty}`：码位到 argv 的编码合同未冻结")),
+        SemanticType::Utf8 | SemanticType::Utf16 => Err(format!("JVM argv launcher 不支持字符串 `{ty}`：argv 没有转义与编码合同")),
+        SemanticType::Array(..) | SemanticType::FixedArray { .. } => {
+            Err(format!("JVM argv launcher 不支持数组 `{ty}`：argv 没有元素分隔与长度合同"))
+        }
+        other => Err(format!("JVM argv launcher 不支持 `{other}`：argv 没有该形状的编组合同")),
     }
-    .to_string())
 }
 
 /// launcher 内部名：`nyar/invoke/{sanitize(logical_entry)}`，非字母数字转 `_`。
@@ -2433,5 +2494,67 @@ mod apply_layout_tests {
         );
         let error = jvm_type_descriptor(&AggregateLayoutPlan::default(), &open).expect_err("开放泛型不得发射");
         assert!(error.contains("缺少冻结布局映射"), "got: {error}");
+    }
+}
+
+#[cfg(test)]
+mod managed_abi_type_tests {
+    use super::*;
+
+    /// ABI 词汇表是入口事实：保留声明宽度与 signedness，数组递归到元素类型。
+    #[test]
+    fn abi_vocabulary_covers_declared_scalars_and_arrays() {
+        let i64_array = SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true }));
+        assert_eq!(managed_abi_logical_type_name(&i64_array), Ok("i64[]".to_string()));
+        assert_eq!(managed_abi_logical_type_name(&SemanticType::Utf8), Ok("string".to_string()));
+        assert_eq!(managed_abi_logical_type_name(&SemanticType::Integer32 { signed: false }), Ok("u32".to_string()));
+        assert_eq!(managed_abi_logical_type_name(&SemanticType::Float32), Ok("f32".to_string()));
+    }
+
+    /// argv 是包装能力而非 ABI 事实：数组、无符号、字符串、f32 都没有宿主解析器。
+    #[test]
+    fn argv_subset_rejects_unrepresentable_types() {
+        let unrepresentable = [
+            SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true })),
+            SemanticType::Integer32 { signed: false },
+            SemanticType::Integer64 { signed: false },
+            SemanticType::Utf8,
+            SemanticType::Float32,
+        ];
+        for ty in unrepresentable {
+            assert!(argv_expressible_type_name(&ty).is_err(), "`{ty}` 不应被 argv 表达");
+        }
+    }
+
+    /// 数组形参的导出入口仍是合法 ABI 事实，只是没有 argv launcher。
+    #[test]
+    fn array_parameter_export_keeps_entry_without_launcher() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let descriptor =
+            JvmMethodDescriptor::new(vec![JvmTypeDescriptor::array(JvmTypeDescriptor::Long), JvmTypeDescriptor::Long], JvmTypeDescriptor::Long);
+        let mut class_file = JvmClassFile::new("nyar/App");
+        class_file.push_method("twoSum", descriptor.clone());
+        let method_plans = BTreeMap::from([(instance, JvmMethodPlan { name: "twoSum".to_string(), descriptor })]);
+        let logical_signatures = BTreeMap::from([(
+            instance,
+            (
+                vec![SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true })), SemanticType::Integer64 { signed: true }],
+                SemanticType::Integer64 { signed: true },
+            ),
+        )]);
+        let logical_parameter_names = BTreeMap::from([(instance, vec!["nums".to_string(), "target".to_string()])]);
+        let export_names = BTreeMap::from([(instance, "twoSum".to_string())]);
+
+        let (companion_classes, managed_abi, entry_launcher) =
+            build_managed_abi_surface(&class_file, &export_names, &method_plans, &logical_signatures, &logical_parameter_names, None)
+                .expect("数组导出入口必须作为 ABI 事实产出");
+
+        assert!(companion_classes.is_empty(), "不可 argv 表达的入口不得生成 launcher 类");
+        assert_eq!(entry_launcher, None);
+        let contract = managed_abi.expect("导出入口必须进入契约");
+        assert_eq!(contract.entries.len(), 1);
+        assert_eq!(contract.entries[0].parameter_types, vec!["i64[]".to_string(), "i64".to_string()]);
+        assert_eq!(contract.entries[0].return_type, "i64");
+        assert_eq!(contract.entries[0].launcher_class, None);
     }
 }
