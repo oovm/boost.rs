@@ -133,18 +133,39 @@ structure i32 {
     micro `>=`(self: i32, other: i32) -> bool;
 }
 
+# 无符号载体只声明本用例用到的两项：前缀取负与无符号有序比较。
+[primitive("std::primitive::u32")]
+structure u32 {
+    [prefix]
+    [jvm_operator("integer.negate")]
+    [clr_operator("i32.neg")]
+    [wasm_operator("i32.neg")]
+    [ovm_operator("i32.neg")]
+    micro `-`(self: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_than_unsigned")]
+    [clr_operator("i32.gt.un")]
+    [wasm_operator("i32.gt_u")]
+    [ovm_operator("i32.gt_u")]
+    micro `>`(self: u32, other: u32) -> bool;
+}
+
 [primitive("std::primitive::bool")]
 structure bool { }
 "#;
 
-/// 含运算符的可观测算术入口：`mix(10, 4)` 经参数参与全部运算符后返回 6。
+/// 含运算符的可观测算术入口：`mix(10, 4) + wide_gt(1)` 返回 13。
 ///
 /// `(10 + 4) * 3 - 10 / 2 = 37`，`37 % 7 = 2`，前缀 `-` 得 -2，此时
 /// `x < negated`、`x == negated`、`x <= negated` 均不成立、`x != negated` 成立，
-/// `x > negated` 与 `x >= negated` 成立，返回 `negated + r + 6 = 6`。
+/// `x > negated` 与 `x >= negated` 成立，`mix` 返回 `negated + r + 6 = 6`。
 /// 三个有序比较各自承担不同的错误分支（`<=` 误判返回 2、`>` 误判返回 0、
-/// `>=` 误判返回 3），因此结果 6 能同时判定三者。入口不是常量字面量，
-/// 运算符调用都发生在参数上。
+/// `>=` 误判返回 3），因此结果 6 能同时判定三者。
+///
+/// `wide_gt(1)` 把 `u32` 前缀取负得到 `0xFFFF_FFFF`：无符号 `>` 判 true 返回 7，
+/// 若后端误用有符号比较则 -1 > 1 为 false 返回 2。合计期望 13，可同时区分
+/// 有符号/无符号裁决错误。
 const ARITHMETIC_SOURCE: &str = r#"namespace app;
 
 micro mix(a: i32, b: i32) -> i32 {
@@ -171,14 +192,22 @@ micro mix(a: i32, b: i32) -> i32 {
     return 0
 }
 
+micro wide_gt(a: u32) -> i32 {
+    let big = -a
+    if big > a {
+        return 7
+    }
+    return 2
+}
+
 [main]
 micro main() -> i32 {
-    return app::mix(10, 4)
+    return app::mix(10, 4) + app::wide_gt(1)
 }
 "#;
 
 /// 算术入口经四个 target 运行后期望的可观测值。
-const ARITHMETIC_EXPECTED: i32 = 6;
+const ARITHMETIC_EXPECTED: i32 = 13;
 
 const MANIFEST_TEMPLATE: &str = r#"{
     name: "app",
