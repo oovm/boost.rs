@@ -64,11 +64,14 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
         if library_surface {
             input.image_kind = Some(compiler_target::backends::clr::ClrImageKind::DynamicLibrary);
         }
+        // 可执行用途必须先证明有冻结程序入口：managed ABI 入口不再是「一定有 argv
+        // 分发入口」的充分条件（非 argv 可表达的入口没有合成 `managed_entry`），
+        // 不能因此把应用产物静默降级成库镜像。
+        else if request.purpose == compiler_target::ArtifactPurpose::Application && !has_entry_point && input.image_kind.is_none() {
+            return Err("`artifact: application` 的 `clr` 产物没有冻结程序入口；拒绝静默改发库镜像".to_string());
+        }
         else if managed_abi.is_some() && input.image_kind.is_none() {
             input.image_kind = Some(compiler_target::backends::clr::ClrImageKind::DynamicLibrary);
-        }
-        else if input.image_kind.is_none() && request.purpose == compiler_target::ArtifactPurpose::Application && !has_entry_point {
-            return Err("`artifact: application` 的 `clr` 产物没有冻结程序入口；拒绝静默改发库镜像".to_string());
         }
         let image_kind = input.image_kind.unwrap_or_else(|| compiler_target::backends::clr::ClrImageKind::infer(has_entry_point));
         let artifact_file = format!("{}.{}", request.artifact_name, image_kind.file_extension());
