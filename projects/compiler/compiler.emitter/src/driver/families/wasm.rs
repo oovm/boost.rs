@@ -34,22 +34,32 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
         let library_surface = request.purpose == compiler_target::ArtifactPurpose::Library;
         // `artifact: library`：导出通过 glue 的 `callExport` 调用，不产生可执行
         // run contract；同时记录每个导出的物理产物与 ABI digest。
-        let library_exports = if library_surface {
+        //
+        // digest 与导出面在移动输入前取自冻结事实；物理产物必须在编码完成后从
+        // 真实产物集合读取，不能按 `.wasm` 后缀手拼——`WasiComponent` 的库模块
+        // 写的是 `.core.wasm`，手拼会指向不存在的文件。
+        let library_spec = if library_surface {
             if input.library_wasm_exports.is_empty() {
                 return Err("`artifact: library` 的 `wasm` 产物没有导出面".to_string());
             }
-            let abi_digest = required_library_invoke_digest(&input.module)?;
-            let physical_name = wasm_physical_artifact_name(request.artifact_name);
-            input
-                .library_wasm_exports
-                .iter()
-                .map(|export| project_library_export(export, &physical_name, &abi_digest))
-                .collect()
+            Some((required_library_invoke_digest(&input.module)?, input.library_wasm_exports.clone()))
         }
         else {
-            Vec::new()
+            None
         };
         let mut artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
+        let library_exports = match &library_spec {
+            Some((abi_digest, exports)) => {
+                let physical_artifact = artifacts
+                    .artifacts
+                    .iter()
+                    .find(|artifact| artifact.name == wasm_physical_artifact_name(request.artifact_name))
+                    .map(|artifact| artifact.path.clone())
+                    .ok_or_else(|| "`artifact: library` 的 `wasm` 后端没有写出与产物基名一致的模块产物".to_string())?;
+                exports.iter().map(|export| project_library_export(export, &physical_artifact, abi_digest)).collect()
+            }
+            None => Vec::new(),
+        };
         if library_surface {
             // 装载方式由用途决定：库交付的产物身份是宿主按导出名调用的模块。
             for artifact in &mut artifacts.artifacts {
@@ -127,13 +137,13 @@ fn required_library_invoke_digest(module: &crate::emitter_backend_wasi::WasmBina
 /// 纯映射：`Some([])` 表示已冻结的零形参，绝不回落为 `None`。
 fn project_library_export(
     export: &crate::emitter_backend_wasi::WasmLibraryExport,
-    physical_name: &str,
+    physical_artifact: &str,
     abi_digest: &str,
 ) -> DriverLibraryExport {
     DriverLibraryExport {
         logical_name: export.public_name.clone(),
         source_name: export.source_name.clone(),
-        physical_artifact: format!("{physical_name}.wasm"),
+        physical_artifact: physical_artifact.to_string(),
         invocation: "wasm callExport".to_string(),
         abi_digest: abi_digest.to_string(),
         abi: "wasm".to_string(),
@@ -169,7 +179,7 @@ mod tests {
     /// 冻结签名必须原样投影为 `Some(...)`，不得回落为 `None`。
     #[test]
     fn library_export_projects_frozen_signature() {
-        let projected = project_library_export(&export(&["i32", "handle"], &["nums", "target"], "i64"), "app", "digest");
+        let projected = project_library_export(&export(&["i32", "handle"], &["nums", "target"], "i64"), "app.wasm", "digest");
         assert_eq!(projected.logical_name, "twoSum");
         assert_eq!(projected.source_name, "two_sum");
         assert_eq!(projected.parameters, Some(vec!["i32".to_string(), "handle".to_string()]));
@@ -182,7 +192,7 @@ mod tests {
     /// 零形参是已冻结事实 `Some([])`，不是签名缺失 `None`。
     #[test]
     fn zero_parameter_export_stays_frozen_empty_vector() {
-        let projected = project_library_export(&export(&[], &[], "void"), "lib", "");
+        let projected = project_library_export(&export(&[], &[], "void"), "lib.core.wasm", "");
         assert_eq!(projected.parameters, Some(Vec::new()));
         assert_eq!(projected.parameter_names, Some(Vec::new()));
         assert_eq!(projected.returns, Some("void".to_string()));
