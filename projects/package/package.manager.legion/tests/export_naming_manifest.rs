@@ -230,3 +230,45 @@ fn collision_sources_still_build_for_plain_library() {
     assert_eq!(manifest.library_exports.len(), 2);
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn jvm_library_export_index_projects_managed_signature() {
+    let (outcome, root) = build_library("jvm", LIB_SOURCE, "jvm");
+    assert!(outcome.ok, "JVM 库构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let move_zeroes = export_of(&manifest, "move_zeroes");
+    assert_eq!(move_zeroes.abi, "jvm-managed");
+    assert!(move_zeroes.signature_available, "JVM managed ABI 导出带冻结签名");
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "JVM 清单记录冻结形参载体");
+    assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "JVM 清单记录形参声明名");
+    assert_eq!(move_zeroes.returns, "i64", "JVM 清单记录冻结返回载体");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn clr_library_export_index_projects_managed_signature() {
+    let (outcome, root) = build_library("clr", LIB_SOURCE, "clr");
+    assert!(outcome.ok, "CLR 库构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let move_zeroes = export_of(&manifest, "move_zeroes");
+    assert_eq!(move_zeroes.abi, "clr-managed");
+    assert!(move_zeroes.signature_available, "CLR managed ABI 导出带冻结签名");
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "CLR 清单记录冻结形参载体");
+    assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "CLR 清单记录形参声明名");
+    assert_eq!(move_zeroes.returns, "i64", "CLR 清单记录冻结返回载体");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn ovm_library_export_index_projects_contract_signature() {
+    let (outcome, root) = build_library("ovm", LIB_SOURCE, "ovm");
+    assert!(outcome.ok, "OVM 库构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let move_zeroes = export_of(&manifest, "move_zeroes");
+    assert_eq!(move_zeroes.abi, "ovm");
+    assert!(move_zeroes.signature_available, "OVM ABI 合同导出带冻结签名");
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "OVM 清单记录冻结形参载体");
+    assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "OVM 清单记录形参声明名");
+    assert_eq!(move_zeroes.returns, "i64", "OVM 清单记录冻结返回载体");
+    let _ = fs::remove_dir_all(&root);
+}
