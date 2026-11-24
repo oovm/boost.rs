@@ -43,7 +43,7 @@ micro main() -> i64 {
 /// i32 运算符作为普通成员声明，助记符与 `tests/support/std_operators.v` 中已验证的一致。
 ///
 /// 只保留本用例实际用到的 i32 与比较结果载体 `bool`；`+ - * / %`、前缀 `-`、
-/// `== != <` 四个 target 的绑定都齐全，`i32.ne` 已补 CLR。
+/// `== != < <= > >=` 四个 target 的绑定都齐全。
 const OPERATOR_PRIMITIVES: &str = r#"namespace std.primitive;
 
 [primitive("std::primitive::i32")]
@@ -110,17 +110,41 @@ structure i32 {
     [wasm_operator("i32.lt_s")]
     [ovm_operator("i32.lt")]
     micro `<`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_less_or_equal")]
+    [clr_operator("i32.le")]
+    [wasm_operator("i32.le_s")]
+    [ovm_operator("i32.le")]
+    micro `<=`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_than")]
+    [clr_operator("i32.gt")]
+    [wasm_operator("i32.gt_s")]
+    [ovm_operator("i32.gt")]
+    micro `>`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_greater_or_equal")]
+    [clr_operator("i32.ge")]
+    [wasm_operator("i32.ge_s")]
+    [ovm_operator("i32.ge")]
+    micro `>=`(self: i32, other: i32) -> bool;
 }
 
 [primitive("std::primitive::bool")]
 structure bool { }
 "#;
 
-/// 含运算符的可观测算术入口：`mix(10, 4)` 经参数参与全部运算符后返回 4。
+/// 含运算符的可观测算术入口：`mix(10, 4)` 经参数参与全部运算符后返回 6。
 ///
 /// `(10 + 4) * 3 - 10 / 2 = 37`，`37 % 7 = 2`，前缀 `-` 得 -2，此时
-/// `x < negated` 与 `x == negated` 均不成立、`x != negated` 成立，返回
-/// `negated + r + 4 = 4`。入口不是常量字面量，运算符调用都发生在参数上。
+/// `x < negated`、`x == negated`、`x <= negated` 均不成立、`x != negated` 成立，
+/// `x > negated` 与 `x >= negated` 成立，返回 `negated + r + 6 = 6`。
+/// 三个有序比较各自承担不同的错误分支（`<=` 误判返回 2、`>` 误判返回 0、
+/// `>=` 误判返回 3），因此结果 6 能同时判定三者。入口不是常量字面量，
+/// 运算符调用都发生在参数上。
 const ARITHMETIC_SOURCE: &str = r#"namespace app;
 
 micro mix(a: i32, b: i32) -> i32 {
@@ -134,7 +158,15 @@ micro mix(a: i32, b: i32) -> i32 {
         return 1
     }
     if x != negated {
-        return negated + r + 4
+        if x <= negated {
+            return 2
+        }
+        if x > negated {
+            if x >= negated {
+                return negated + r + 6
+            }
+            return 3
+        }
     }
     return 0
 }
@@ -146,7 +178,7 @@ micro main() -> i32 {
 "#;
 
 /// 算术入口经四个 target 运行后期望的可观测值。
-const ARITHMETIC_EXPECTED: i32 = 4;
+const ARITHMETIC_EXPECTED: i32 = 6;
 
 const MANIFEST_TEMPLATE: &str = r#"{
     name: "app",
@@ -249,7 +281,7 @@ fn assert_reports(outcome: &BuildOutcome, expected: &str) {
 /// jvm 由 launcher 打印返回值（退出码 0），clr / wasm-node 用返回值作进程退出码，
 /// ovm 由 `interpreter-vm-ovm` 进程内装载 `.odin` 并执行构建给出的入口符号。
 /// 四个 target 的入口都是 `[main] mix(10, 4)`，表达式在形参上执行
-/// `+ - * / %`、前缀 `-` 与 `== != <`，断言的是运行结果而不是产物是否存在。
+/// `+ - * / %`、前缀 `-` 与 `== != < <= > >=`，断言的是运行结果而不是产物是否存在。
 #[test]
 fn arithmetic_operators_run_on_every_target() {
     for target in ["jvm", "clr", "wasm-node", "ovm"] {
