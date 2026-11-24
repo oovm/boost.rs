@@ -1,6 +1,6 @@
 use crate::legion::{
     cmds::error::{LegionError, LegionResult},
-    runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily},
+    runner::{RuntimeFamily, expand_args, expand_placeholders, launch_placeholders, strip_verbatim_prefix},
     workspace::{
         labeled_report_with_context,
         manifest::{ProjectArtifactKind, RunnerBinding},
@@ -8,6 +8,7 @@ use crate::legion::{
         source_snapshot::compile_source_snapshot,
     },
 };
+pub use crate::legion::runner::RunContract;
 use compiler_target::{CanonicalAbi, CanonicalTarget, RunnerFamily};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -40,9 +41,10 @@ pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// 库导出索引，`2` 起库导出索引携带 `source_name` 与 `abi` 命名合同事实，
 /// `3` 起 `parameters`/`returns` 以可空载体签名表示「不可用」与「零形参」的区别。
 /// `4` 起库导出携带 CPython 冻结模块名（`module_name`），消费侧据此导入。
-/// 更早的旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)` 兼容缺少新字段的旧文件。
+/// `5` 起运行合同携带冻结启动 argv（`launch`）：执行端只按合同启动，旧一代
+/// 产物缺少该事实一律判为不新鲜并重建。
 #[doc(hidden)]
-pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 4;
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 5;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -65,25 +67,6 @@ pub struct RunArgs {
     pub workload_json: Option<String>,
     /// 工作负载意图 JSON 文件路径（仅 `ovm`：转发给 `odin-vm --workload-file`）。
     pub workload_file: Option<PathBuf>,
-}
-
-/// 一条可执行运行契约：逻辑入口、物理入口及调用/校验命令模板。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RunContract {
-    /// 逻辑入口符号名。
-    pub logical_entry: String,
-    /// 物理入口（产物中的文件名或符号）。
-    pub physical_entry: String,
-    /// 冻结的启动 argv：第 0 项是可执行文件，其余是参数。
-    ///
-    /// 只允许 `{artifact}` 占位符（由消费侧展开为解析后的物理入口路径）。
-    /// 入口符号等 lane 专属事实在编译期已写成具体值，消费侧不得再按入口名、
-    /// 扩展名或目标家族猜一次调用方式。旧 manifest 缺少该字段时为空，只能回退
-    /// 到目标家族的通用模板。
-    #[serde(default)]
-    pub launch: Vec<String>,
-    /// 校验入口可用的命令模板。
-    pub validate: String,
 }
 
 /// Compiler 成功路径证据摘要（语义闭包 / 规范表面 / 宿主提供者绑定哈希）。
@@ -650,9 +633,9 @@ fn plan_run_command(
             .map_err(|error| report!("{error}"))?;
     let run_contract = &run_contracts[contract_index];
     let runner = resolve_runner(workspace, canonical_target, runner_target, cli_runner_overrides, Some(run_contract))?;
-    let placeholders = build_placeholders(output_dir, &artifact, runner_target, Some(run_contract))?;
+    let placeholders = launch_placeholders(output_dir, &artifact, runtime_family_for(runner_target), Some(run_contract))?;
     let command = expand_placeholders(&runner.command, &placeholders);
-    let args = expand_runner_args(&runner.args, &placeholders);
+    let args = expand_args(&runner.args, &placeholders);
 
     Ok(RunCommand { target: runner_target, artifact, command, args })
 }
@@ -764,76 +747,23 @@ fn runner_binding_matches(binding: &RunnerBinding, runner_target: RunnerFamily, 
 }
 
 fn default_runner_template(target: RunnerFamily, run_contract: Option<&RunContract>) -> RunnerTemplate {
-    let template = runtime_family_for(target).default_template(interpreter_runtime_contract(run_contract));
+    let template = runtime_family_for(target).resolve_template(run_contract);
     RunnerTemplate { target, command: template.command, args: template.args }
 }
 
-fn runner_target_for(canonical_target: &CanonicalTarget) -> RunnerFamily {
+pub(crate) fn runner_target_for(canonical_target: &CanonicalTarget) -> RunnerFamily {
     canonical_target.to_profile(None).runner_family()
 }
 
-fn runtime_family_for(target: RunnerFamily) -> InterpreterRuntimeFamily {
+pub(crate) fn runtime_family_for(target: RunnerFamily) -> RuntimeFamily {
     match target {
-        RunnerFamily::Clr => InterpreterRuntimeFamily::Clr,
-        RunnerFamily::Jvm => InterpreterRuntimeFamily::Jvm,
-        RunnerFamily::Node => InterpreterRuntimeFamily::Node,
-        RunnerFamily::Windows => InterpreterRuntimeFamily::Windows,
-        RunnerFamily::Wasi => InterpreterRuntimeFamily::Wasi,
-        RunnerFamily::Ovm => InterpreterRuntimeFamily::Ovm,
+        RunnerFamily::Clr => RuntimeFamily::Clr,
+        RunnerFamily::Jvm => RuntimeFamily::Jvm,
+        RunnerFamily::Node => RuntimeFamily::Node,
+        RunnerFamily::Windows => RuntimeFamily::Windows,
+        RunnerFamily::Wasi => RuntimeFamily::Wasi,
+        RunnerFamily::Ovm => RuntimeFamily::Ovm,
     }
-}
-
-fn interpreter_runtime_contract(run_contract: Option<&RunContract>) -> Option<InterpreterRuntimeContract<'_>> {
-    run_contract.map(|contract| InterpreterRuntimeContract {
-        logical_entry: (!contract.logical_entry.is_empty()).then_some(contract.logical_entry.as_str()),
-        physical_entry: (!contract.physical_entry.is_empty()).then_some(contract.physical_entry.as_str()),
-        wasi_p3: contract.validate.contains("-S p3") || contract.validate.contains(" p3"),
-    })
-}
-
-fn build_placeholders(
-    output_dir: &Path,
-    artifact: &Path,
-    runner_target: RunnerFamily,
-    run_contract: Option<&RunContract>,
-) -> LegionResult<BTreeMap<&'static str, String>> {
-    let mut values = BTreeMap::new();
-    let artifact_text = strip_verbatim_prefix(artifact.to_string_lossy().as_ref()).to_owned();
-    values.insert("artifact", artifact_text.clone());
-
-    let classpath = if artifact.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("jar")) {
-        artifact_text.clone()
-    }
-    else {
-        strip_verbatim_prefix(output_dir.to_string_lossy().as_ref()).to_owned()
-    };
-    values.insert("classpath", classpath);
-
-    // `{entry}` is the callable symbol. Nyar VM / JVM keep the module file in `{artifact}`
-    // (or classpath) and must not reuse `physical_entry` filenames here.
-    let entry = match run_contract {
-        Some(contract) if matches!(runner_target, RunnerFamily::Jvm | RunnerFamily::Ovm) && !contract.logical_entry.is_empty() => {
-            contract.logical_entry.clone()
-        }
-        Some(contract) if !contract.physical_entry.is_empty() => contract.physical_entry.clone(),
-        Some(contract) if !contract.logical_entry.is_empty() => contract.logical_entry.clone(),
-        _ if runner_target == RunnerFamily::Jvm => artifact
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| LegionError::msg(report!("cannot infer JVM entry from {}", artifact.display())))?,
-        _ => artifact.file_stem().and_then(|stem| stem.to_str()).unwrap_or_default().to_string(),
-    };
-    values.insert("entry", entry);
-    Ok(values)
-}
-
-fn expand_runner_args(args: &[String], placeholders: &BTreeMap<&'static str, String>) -> Vec<String> {
-    args.iter().map(|value| expand_placeholders(value, placeholders)).collect()
-}
-
-fn expand_placeholders(template: &str, placeholders: &BTreeMap<&'static str, String>) -> String {
-    placeholders.iter().fold(template.to_string(), |current, (key, value)| current.replace(&format!("{{{}}}", key), value))
 }
 
 fn collect_files(dir: &Path) -> LegionResult<Vec<PathBuf>> {
@@ -868,10 +798,6 @@ fn exit_code_from_status(code: Option<i32>) -> ExitCode {
     }
 }
 
-/// 移除 Windows extended-length path 前缀 `\\?\`，避免 Node/wasmtime 等外部工具无法解析。
-fn strip_verbatim_prefix(path: &str) -> &str {
-    path.strip_prefix(r"\\?\").unwrap_or(path)
-}
 
 #[doc(hidden)]
 pub fn collect_execution_input_digests(plan: &BuildPlan) -> LegionResult<Vec<ExecutionInputDigest>> {

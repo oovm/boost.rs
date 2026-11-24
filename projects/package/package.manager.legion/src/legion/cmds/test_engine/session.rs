@@ -1,7 +1,7 @@
 //! 测试构建与执行会话。
 use crate::legion::{
     cmds::error::{LegionError, LegionResult},
-    runner::{RuntimeContract as InterpreterRuntimeContract, RuntimeFamily as InterpreterRuntimeFamily},
+    runner::{expand_placeholders, launch_placeholders},
     workspace::{
         manifest::RunnerBinding,
         planner::{BuildRequest, WorkspaceResolver},
@@ -19,7 +19,7 @@ use std::{
 use crate::legion::cmds::{
     build::compile_plan,
     report::TestResultEntry,
-    run::{ExecutionManifest, RunContract, select_artifact},
+    run::{ExecutionManifest, RunContract, runtime_family_for, select_artifact},
 };
 
 use super::{
@@ -118,7 +118,7 @@ pub fn run_external_test_in_session(
     cli_runners: &[String],
     verbose: bool,
 ) -> RunOutcome {
-    let Some(artifact) = resolve_external_test_artifact_path(session, function_name)
+    let Some((artifact, run_contract)) = resolve_external_test_invocation(session, function_name)
     else {
         return RunOutcome {
             success: false,
@@ -144,12 +144,15 @@ pub fn run_external_test_in_session(
         return run_builtin_ovm_test(&artifact, function_name, verbose);
     }
 
-    let template = match resolve_runner_template(workspace, &platform, runner_family, cli_runners, function_name) {
+    let template = match resolve_runner_template(workspace, &platform, runner_family, cli_runners, Some(run_contract)) {
         Ok(t) => t,
         Err(error) => return RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(error.to_string()) },
     };
 
-    let placeholders = build_placeholders(&session.output_dir, &artifact, runner_family, function_name);
+    let placeholders = match launch_placeholders(&session.output_dir, &artifact, runtime_family_for(runner_family), Some(run_contract)) {
+        Ok(placeholders) => placeholders,
+        Err(error) => return RunOutcome { success: false, is_compile_error: true, failure: None, error: Some(error.to_string()) },
+    };
     let command = expand_placeholders(&template.command, &placeholders);
     let args: Vec<String> = template.args.iter().map(|a| expand_placeholders(a, &placeholders)).collect();
 
@@ -506,13 +509,20 @@ pub fn bench_project(
 }
 
 /// 只消费当前 Compiler 给出的精确测试运行合同。
-pub fn resolve_external_test_artifact_path(session: &ExternalTestSession, function_name: &str) -> Option<PathBuf> {
+///
+/// 返回测试产物与它唯一对应的运行合同：产物路径与启动方式都来自同一条合同。
+pub fn resolve_external_test_invocation<'a>(
+    session: &'a ExternalTestSession,
+    function_name: &str,
+) -> Option<(PathBuf, &'a RunContract)> {
     let mut contracts = session.run_contracts.iter().filter(|contract| contract.logical_entry == function_name);
     let contract = contracts.next()?;
     if contracts.next().is_some() {
         return None;
     }
-    select_artifact(&session.output_dir, std::iter::once(contract.physical_entry.as_str()), None).ok().map(|(artifact, _)| artifact)
+    select_artifact(&session.output_dir, std::iter::once(contract.physical_entry.as_str()), None)
+        .ok()
+        .map(|(artifact, _)| (artifact, contract))
 }
 
 fn describe_runnable_artifacts(session: &ExternalTestSession) -> String {
@@ -532,9 +542,10 @@ fn resolve_runner_template(
     canonical_target: &CanonicalTarget,
     runner_target: RunnerFamily,
     cli_runner_overrides: &[String],
-    function_name: &str,
+    run_contract: Option<&RunContract>,
 ) -> LegionResult<RunnerTemplate> {
-    let default = default_runner_template(runner_target, function_name);
+    // 启动方式的事实源是编译期冻结的运行合同；家族默认模板只在合同缺失 argv 时兜底。
+    let default = runtime_family_for(runner_target).resolve_template(run_contract);
 
     if let Some(command) = parse_runner_overrides(cli_runner_overrides)?.remove(&runner_target) {
         return Ok(RunnerTemplate { command, args: default.args });
@@ -553,7 +564,7 @@ fn resolve_runner_template(
         }
     }
 
-    Ok(default)
+    Ok(RunnerTemplate { command: default.command, args: default.args })
 }
 
 fn runner_binding_matches(binding: &RunnerBinding, runner_target: RunnerFamily, canonical_target: &CanonicalTarget) -> bool {
@@ -573,40 +584,4 @@ fn parse_runner_overrides(values: &[String]) -> LegionResult<BTreeMap<RunnerFami
     Ok(overrides)
 }
 
-fn default_runner_template(target: RunnerFamily, function_name: &str) -> RunnerTemplate {
-    let contract = InterpreterRuntimeContract { logical_entry: Some(function_name), physical_entry: Some(function_name), wasi_p3: false };
-    let family = match target {
-        RunnerFamily::Clr => InterpreterRuntimeFamily::Clr,
-        RunnerFamily::Jvm => InterpreterRuntimeFamily::Jvm,
-        RunnerFamily::Node => InterpreterRuntimeFamily::Node,
-        RunnerFamily::Windows => InterpreterRuntimeFamily::Windows,
-        RunnerFamily::Wasi => InterpreterRuntimeFamily::Wasi,
-        RunnerFamily::Ovm => InterpreterRuntimeFamily::Ovm,
-    };
-    let template = family.default_template(Some(contract));
-    RunnerTemplate { command: template.command, args: template.args }
-}
 
-fn build_placeholders(output_dir: &Path, artifact: &Path, runner_target: RunnerFamily, function_name: &str) -> BTreeMap<&'static str, String> {
-    let mut values = BTreeMap::new();
-    let artifact_text = strip_verbatim_prefix(&artifact.to_string_lossy()).to_string();
-    values.insert("artifact", artifact_text.clone());
-    let classpath = if artifact.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("jar")) {
-        artifact_text.clone()
-    }
-    else {
-        strip_verbatim_prefix(&output_dir.to_string_lossy()).to_string()
-    };
-    values.insert("classpath", classpath);
-    let entry = if runner_target == RunnerFamily::Jvm { function_name.to_string() } else { function_name.to_string() };
-    values.insert("entry", entry);
-    values
-}
-
-fn strip_verbatim_prefix(path: &str) -> &str {
-    path.strip_prefix(r"\\?\").unwrap_or(path)
-}
-
-fn expand_placeholders(template: &str, placeholders: &BTreeMap<&'static str, String>) -> String {
-    placeholders.iter().fold(template.to_string(), |current, (key, value)| current.replace(&format!("{{{key}}}"), value))
-}
