@@ -24,6 +24,8 @@ pub(crate) struct BindingGenerationContext<'a> {
     pub wasi_preview: WasiPreview,
     /// Manifest-selected wasm glue mode (`binary` auto-runs entry, `library` exposes `callExport`).
     pub wasm_package_kind: WasmPackageKind,
+    /// 二进制包启动壳必须调用的冻结入口导出名。
+    pub host_entry_export: Option<&'a str>,
 }
 
 /// 宿主绑定生成器的最小接口。

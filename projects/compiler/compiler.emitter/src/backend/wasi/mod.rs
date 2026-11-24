@@ -77,6 +77,11 @@ pub struct WasmBinaryBackendInput {
     pub library_wasm_exports: Vec<WasmLibraryExport>,
     /// Manifest-selected wasm package mode (`binary` vs `library`).
     pub wasm_package_kind: WasmPackageKind,
+    /// 启动壳必须调用的冻结入口导出名（二进制包）；库包与 WASI 为 `None`。
+    ///
+    /// 入口名由 lowering 按宿主边界冻结，宿主绑定生成器只消费、不按 `main` /
+    /// `_start` 重新猜测。
+    pub host_entry_export: Option<String>,
 }
 
 /// wasm library 交付的一条导出：语言侧源码名、目标公开名与冻结的载体签名。
@@ -240,6 +245,7 @@ impl WasmBinaryBackend {
                 imports: &input.imports,
                 wasi_preview: input.wasi_preview,
                 wasm_package_kind: input.wasm_package_kind,
+                host_entry_export: input.host_entry_export.as_deref(),
             },
         )?;
         for artifact in binding_artifacts {

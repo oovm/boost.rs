@@ -192,6 +192,12 @@ fn build_driver_input(
                 wasi_preview,
                 library_wasm_exports,
                 wasm_package_kind,
+                // 二进制 JS-glue 包的启动壳必须调用冻结的入口导出名；库包暴露导出面，
+                // WASI 由 wasmtime 直接启动 `_start`，都不经启动壳猜入口。
+                host_entry_export: (wasm_package_kind == crate::emitter_backend_wasi::WasmPackageKind::Binary
+                    && host_boundary == HostProjectionBoundary::WasmJsGlue)
+                    .then(|| wasm::host_entry_export_name(host_boundary).map(str::to_string))
+                    .transpose()?,
             }))
         }
         #[cfg(feature = "ovm-lane")]

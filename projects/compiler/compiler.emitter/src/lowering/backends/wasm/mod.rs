@@ -44,6 +44,18 @@ pub fn lower_fragment_to_wasm_module(
     lower_fragment_to_wasm_module_for(submission, host_boundary, WasiPreview::Preview2, WasmPackageKind::Binary)
 }
 
+/// 该宿主边界上程序入口的冻结导出名（lane 保留词汇）。
+///
+/// 入口名只由宿主边界决定；宿主绑定生成器必须消费这个名字，不得在运行时按
+/// `main` / `_start` 再猜一次——猜错时启动壳会静默不调用入口并退出 0。
+pub(crate) fn host_entry_export_name(host_boundary: HostProjectionBoundary) -> Result<&'static str> {
+    match host_boundary {
+        HostProjectionBoundary::WasmJsGlue => Ok("main"),
+        HostProjectionBoundary::WasiComponent => Ok("_start"),
+        other => Err(format!("WASM host boundary is not supported: {other:?}")),
+    }
+}
+
 /// 将片段降低为显式 WASI 打包链的 wasm 模块（集成测试专用）。
 ///
 /// Lower a fragment for a wasm host boundary with an explicit WASI package train.
@@ -56,11 +68,7 @@ pub fn lower_fragment_to_wasm_module_for(
     wasi_preview: WasiPreview,
     wasm_package_kind: WasmPackageKind,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
-    let boundary_entry_name = match host_boundary {
-        HostProjectionBoundary::WasmJsGlue => "main",
-        HostProjectionBoundary::WasiComponent => "_start",
-        other => return Err(format!("WASM host boundary is not supported: {other:?}")),
-    };
+    let boundary_entry_name = host_entry_export_name(host_boundary)?;
     crate::lowering::features::semantic_mir_contract::validate_submission(submission)
         .map_err(|error| format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     let physical_backend = match host_boundary {

@@ -44,7 +44,14 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
         else {
             None
         };
-        let launcher = try_build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref())?;
+        let launcher = try_build_node_launcher(
+            launcher_stem,
+            context.imports,
+            &utf8_literals,
+            library_mode,
+            library_invoke.as_deref(),
+            context.host_entry_export,
+        )?;
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
         Ok(vec![ArtifactDescriptor {
@@ -715,7 +722,7 @@ function demarshalLibraryReturn(schema, raw, path) {{
 /// 构建 `Node` 启动壳（`.mjs`），未登记的导入返回结构化错误。
 ///
 /// 启动壳只做三件事：读取 `WASM` 字节码、按声明的导入构造 `importObject`、
-/// 调用 `exports.main ?? exports._start`。不输出 banner、不解析 CLI 子命令、
+/// 调用 lowering 冻结的入口导出名。不输出 banner、不解析 CLI 子命令、
 /// 不注入伪导入，确保非 CLI 产物的 `stdout` 不被污染。
 pub fn try_build_node_launcher(
     artifact_name: &str,
@@ -723,7 +730,13 @@ pub fn try_build_node_launcher(
     utf8_literals: &[String],
     library_mode: bool,
     library_invoke: Option<&str>,
+    host_entry_export: Option<&str>,
 ) -> Result<String> {
+    // 二进制启动壳没有「可选入口」：缺冻结入口名时生成只加载不调用的壳会静默
+    // 退出 0，把「入口没被调用」伪装成成功。
+    if !library_mode && host_entry_export.is_none() {
+        return Err("wasm 二进制启动壳缺少冻结入口导出名：拒绝生成只加载模块、不调用入口的启动壳".to_string());
+    }
     let utf8_literals_json = serde_json::to_string(utf8_literals).unwrap_or_else(|_| "[]".to_string());
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
@@ -770,22 +783,24 @@ const instance = await wasmResolveInstance(wasmBytes, importObject);"#,
 
     let smoke_output_logic = if has_imports {
         r#"
+const exitCode = exitCodeOf(result);
 if (output_path && output_bytes.length > 0) {
     writeFileSync(output_path, Buffer.from(output_bytes));
     process.exit(0);
 } else if (output_bytes.length > 0) {
     process.stdout.write(Buffer.from(output_bytes));
-    if (typeof result === "number") {
-        process.exit(result);
+    if (exitCode !== undefined) {
+        process.exit(exitCode);
     }
-} else if (typeof result === "number") {
-    process.exit(result);
+} else if (exitCode !== undefined) {
+    process.exit(exitCode);
 }"#
     }
     else {
         r#"
-if (typeof result === "number") {
-    process.exit(result);
+const exitCode = exitCodeOf(result);
+if (exitCode !== undefined) {
+    process.exit(exitCode);
 }"#
     };
 
@@ -1225,12 +1240,25 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
         else {
             format!(
                 r#"const exports = instance.exports;
-const entry = exports.main ?? exports._start;
-let result;
-if (typeof entry === "function") {{
-    result = entry();
+const entryName = {entry_export};
+const entry = exports[entryName];
+if (typeof entry !== "function") {{
+    throw new Error("[wasm-js-glue] entry export `" + entryName + "` is missing from the wasm module; the module was not built for this host boundary");
 }}
+const result = entry();
+const exitCodeOf = (value) => {{
+    if (typeof value === "bigint") {{
+        // 进程退出码宽度由宿主决定（Windows 为 32 位）：i64 返回值在宿主边界截断。
+        return Number(BigInt.asIntN(32, value));
+    }}
+    if (typeof value === "number") {{
+        return value;
+    }}
+    return undefined;
+}};
 {output_logic}"#,
+                entry_export = serde_json::to_string(host_entry_export.expect("binary 模式已校验入口导出名"))
+                    .expect("入口导出名必须能编码为 JSON 字符串"),
                 output_logic = smoke_output_logic
             )
         },
@@ -1250,8 +1278,10 @@ pub fn build_node_launcher(
     utf8_literals: &[String],
     library_mode: bool,
     library_invoke: Option<&str>,
+    host_entry_export: Option<&str>,
 ) -> String {
-    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke).unwrap_or_else(|error| panic!("{error}"))
+    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke, host_entry_export)
+        .unwrap_or_else(|error| panic!("{error}"))
 }
 
 #[cfg(test)]
