@@ -146,7 +146,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
         module.global_methods.push(lower_function(submission, &view.function, &method, &method_plans, &operator_by_instance, is_entry_point)?);
     }
 
-    let managed_abi = build_managed_abi_surface(&mut module, plan.export_names(), &method_plans)?;
+    let managed_abi = build_managed_abi_surface(&mut module, plan, plan.export_names(), &method_plans)?;
     Ok(ClrLoweredFragment { module, managed_abi })
 }
 
@@ -156,6 +156,7 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
 /// `bool` / `void` 标量，其它载体返回结构化错误，不发明入口或默认值。
 fn build_managed_abi_surface(
     module: &mut MsilModule,
+    plan: &crate::TargetExecutionPlan,
     export_names: &BTreeMap<ItemInstanceId, String>,
     method_plans: &BTreeMap<ItemInstanceId, ClrMethodPlan>,
 ) -> Result<Option<ManagedAbiContract>> {
@@ -180,6 +181,15 @@ fn build_managed_abi_surface(
             .iter()
             .find(|candidate| candidate.method.name == method.name && candidate.method.signature == method.signature)
             .ok_or_else(|| format!("CLR managed ABI：导出入口 `{logical_entry}` 的方法 `{}` 不在模块中", method.name))?;
+        let view = plan
+            .get_function(instance)
+            .ok_or_else(|| format!("CLR managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少函数体"))?;
+        // 形参声明名的唯一权威是冻结的 `ValueOrigin::Parameter`；数量/下标/空名/
+        // 重名非法时结构化失败，禁止按位置或类型名猜测，也不写空名字伪造。
+        let parameter_names = crate::abi_structure::canonical_parameter_identities(logical_entry, &view.function)?
+            .into_iter()
+            .map(|(_, name)| name.to_string())
+            .collect::<Vec<_>>();
         let parameter_types = method.signature.parameter_types.iter().map(managed_scalar_type_name).collect::<Result<Vec<_>>>()?;
         let return_type = managed_scalar_type_name(&method.signature.return_type)?;
         entries.push(ManagedAbiEntry {
@@ -188,6 +198,7 @@ fn build_managed_abi_surface(
             method: method.name.clone(),
             signature: method.signature.to_string(),
             parameter_types: parameter_types.clone(),
+            parameter_names,
             return_type,
             launcher_class: MANAGED_ENTRY_METHOD.to_string(),
         });

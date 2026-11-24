@@ -5,13 +5,16 @@
 //! 静态方法、JVM 方法描述符，以及独立 launcher 类；不补造未降低的入口。
 //!
 //! `contract_digest` 覆盖 lane、产物文件名、调用约定与按 `logical_entry`
-//! 排序后的全部入口，任何入口事实变化都会改变摘要。
+//! 排序后的全部入口（含形参类型与形参声明名），任何入口事实变化都会改变摘要。
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// managed ABI 契约 schema 版本。
-pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 1;
+///
+/// 版本 2 起入口携带 `parameter_names`：消费侧按形参声明名绑定实参，禁止按
+/// 位置猜测；该事实同时进入合同摘要，因此与版本 1 的摘要不可互认。
+pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 2;
 
 /// managed ABI sidecar 文件名：每个物理产物一份，`app.jar` → `app.jar.managed-abi.json`。
 ///
@@ -73,12 +76,13 @@ impl ManagedAbiContract {
         lines.push(format!("calling_convention={}", self.calling_convention));
         for entry in &self.entries {
             lines.push(format!(
-                "{}|{}|{}|{}|{}|{}|{}",
+                "{}|{}|{}|{}|{}|{}|{}|{}",
                 entry.logical_entry,
                 entry.owner,
                 entry.method,
                 entry.signature,
                 entry.parameter_types.join(","),
+                entry.parameter_names.join(","),
                 entry.return_type,
                 entry.launcher_class,
             ));
@@ -106,6 +110,11 @@ pub struct ManagedAbiEntry {
     pub signature: String,
     /// 形参的 managed 标量类型名。
     pub parameter_types: Vec<String>,
+    /// 形参的声明名，按声明顺序排列且与 [`Self::parameter_types`] 等长。
+    ///
+    /// 名字来自语言冻结签名（`ValueOrigin::Parameter`），消费侧按名绑定实参，
+    /// 禁止按顺序猜测；缺失或非法时 lowering 结构化失败，不写空名字伪造。
+    pub parameter_names: Vec<String>,
     /// 返回值的 managed 标量类型名。
     pub return_type: String,
     /// launcher 类内部名。
@@ -122,5 +131,28 @@ mod tests {
         assert_eq!(managed_abi_sidecar_file("app.jar"), "app.jar.managed-abi.json");
         assert_eq!(managed_abi_sidecar_file("server.dll"), "server.dll.managed-abi.json");
         assert_eq!(managed_abi_sidecar_file(""), "managed-abi.json");
+    }
+
+    fn entry_with_names(names: &[&str]) -> ManagedAbiEntry {
+        ManagedAbiEntry {
+            logical_entry: "sum".to_string(),
+            owner: "nyar/App".to_string(),
+            method: "sum".to_string(),
+            signature: "(JJ)J".to_string(),
+            parameter_types: vec!["i64".to_string(), "i64".to_string()],
+            parameter_names: names.iter().map(|name| (*name).to_string()).collect(),
+            return_type: "i64".to_string(),
+            launcher_class: "nyar/invoke/sum".to_string(),
+        }
+    }
+
+    /// 形参声明名进入摘要：同名类型不同参数名必须产生不同合同摘要。
+    #[test]
+    fn digest_input_covers_parameter_names() {
+        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 2);
+        let left = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["left", "right"])]);
+        let right = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["first", "second"])]);
+        assert!(left.canonical_digest_input().contains("i64,i64|left,right|i64"), "got: {}", left.canonical_digest_input());
+        assert_ne!(left.contract_digest, right.contract_digest, "形参名变化必须改变合同摘要");
     }
 }

@@ -157,9 +157,19 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
     let mut used_names = BTreeMap::<String, ()>::new();
     let mut method_plans = BTreeMap::<ItemInstanceId, JvmMethodPlan>::new();
     let mut logical_signatures = BTreeMap::<ItemInstanceId, (Vec<SemanticType>, SemanticType)>::new();
+    let mut logical_parameter_names = BTreeMap::<ItemInstanceId, Vec<String>>::new();
     for (ordinal, instance) in operations.iter().enumerate() {
         let view = plan.get_function(instance).ok_or_else(|| format!("JVM 最小 lowering：可达操作 `{instance:?}` 缺少函数体"))?;
         logical_signatures.insert(*instance, (view.function.param_types.clone(), view.function.return_type.clone()));
+        // 导出入口的形参声明名必须从冻结的 `ValueOrigin::Parameter` 冻结；身份
+        // 不合法（数量/下标/空名/重名）直接失败，不写空名字伪造。
+        if let Some(logical_entry) = plan.export_names().get(instance) {
+            let names = crate::abi_structure::canonical_parameter_identities(logical_entry, &view.function)?
+                .into_iter()
+                .map(|(_, name)| name.to_string())
+                .collect::<Vec<_>>();
+            logical_parameter_names.insert(*instance, names);
+        }
         let base = plan
             .export_names()
             .get(instance)
@@ -201,8 +211,14 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             (entry, logical)
         })
     });
-    let (launcher_classes, managed_abi, entry_launcher) =
-        build_managed_abi_surface(&class_file, plan.export_names(), &method_plans, &logical_signatures, entry_binding)?;
+    let (launcher_classes, managed_abi, entry_launcher) = build_managed_abi_surface(
+        &class_file,
+        plan.export_names(),
+        &method_plans,
+        &logical_signatures,
+        &logical_parameter_names,
+        entry_binding,
+    )?;
     let mut companion_classes = build_layout_classes(plan.aggregate_layouts())?;
     companion_classes.extend(build_sum_classes(submission)?);
     companion_classes.extend(launcher_classes);
@@ -227,6 +243,7 @@ fn build_managed_abi_surface(
     export_names: &BTreeMap<ItemInstanceId, String>,
     method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
     logical_signatures: &BTreeMap<ItemInstanceId, (Vec<SemanticType>, SemanticType)>,
+    logical_parameter_names: &BTreeMap<ItemInstanceId, Vec<String>>,
     entry: Option<(ItemInstanceId, String)>,
 ) -> Result<(Vec<JvmClassFile>, Option<ManagedAbiContract>, Option<String>)> {
     let mut entries = Vec::with_capacity(export_names.len());
@@ -255,6 +272,12 @@ fn build_managed_abi_surface(
             .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少冻结逻辑签名"))?;
         let parameter_types = logical_params.iter().map(managed_logical_type_name).collect::<Result<Vec<_>>>()?;
         let return_type = managed_logical_type_name(logical_return)?;
+        // 形参声明名来自冻结签名，按声明顺序与 `parameter_types` 等长；
+        // 缺失即结构化失败，不用空名字或位置猜测填补。
+        let parameter_names = logical_parameter_names
+            .get(instance)
+            .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少冻结形参声明名"))?
+            .clone();
         let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
         if entry.as_ref().is_some_and(|(entry_instance, _)| entry_instance == instance) {
             // 程序入口同时是导出入口：复用该 ABI 入口的 launcher 身份。
@@ -267,6 +290,7 @@ fn build_managed_abi_surface(
             method: method.name.clone(),
             signature: method.descriptor.to_string(),
             parameter_types,
+            parameter_names,
             return_type,
             launcher_class,
         });

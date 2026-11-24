@@ -17,6 +17,25 @@ pub(super) fn supports_requirement(requirement: &PartitionBackendRequirement) ->
     bundled_backend_capability_descriptor(TargetBackendFamily::Clr).is_some_and(|descriptor| descriptor.supports_requirement(requirement))
 }
 
+/// 把 managed ABI 入口投影为驱动层库导出清单条目。
+///
+/// 签名事实（形参载体、形参声明名、返回载体）只来自 `entry`，不得用 `None`
+/// 掩盖已冻结的签名；零形参必须投影为 `Some([])`。
+fn library_export_from_entry(entry: &crate::managed_abi::ManagedAbiEntry, artifact: &str, contract_digest: &str) -> DriverLibraryExport {
+    DriverLibraryExport {
+        logical_name: entry.logical_entry.clone(),
+        // clr lane 没有注解改名合同，公开名就是源码名。
+        source_name: entry.logical_entry.clone(),
+        physical_artifact: artifact.to_string(),
+        invocation: "dotnet".to_string(),
+        abi_digest: contract_digest.to_string(),
+        abi: "clr-managed".to_string(),
+        parameters: Some(entry.parameter_types.clone()),
+        parameter_names: Some(entry.parameter_names.clone()),
+        returns: Some(entry.return_type.clone()),
+    }
+}
+
 impl BundledBackendCompiler for ClrFamilyCompiler {
     fn compile(&self, request: DriverCompileRequest<'_>) -> Result<DriverCompileReport> {
         let DriverBackendInput::Clr(mut input) = request.input
@@ -105,20 +124,7 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                     contract
                         .entries
                         .iter()
-                        .map(|entry| DriverLibraryExport {
-                            logical_name: entry.logical_entry.clone(),
-                            // clr lane 没有注解改名合同，公开名就是源码名。
-                            source_name: entry.logical_entry.clone(),
-                            physical_artifact: artifact_file.clone(),
-                            invocation: "dotnet".to_string(),
-                            abi_digest: contract.contract_digest.clone(),
-                            abi: "clr-managed".to_string(),
-                            // 托管载体签名由 managed ABI 合同承载；本 lane 尚未把该
-                            // 事实投影到清单，`None` 表示签名不可用（区别于零形参的 `Some([])`）。
-                            parameters: None,
-                            parameter_names: None,
-                            returns: None,
-                        })
+                        .map(|entry| library_export_from_entry(entry, &artifact_file, &contract.contract_digest))
                         .collect()
                 })
                 .unwrap_or_default()
@@ -134,5 +140,42 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
             ovm_abi: Vec::new(),
             library_exports,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::managed_abi::ManagedAbiEntry;
+
+    fn entry(parameter_types: &[&str], parameter_names: &[&str]) -> ManagedAbiEntry {
+        ManagedAbiEntry {
+            logical_entry: "sum".to_string(),
+            owner: "_GlobalMethods".to_string(),
+            method: "sum".to_string(),
+            signature: "(int64,int64) int64".to_string(),
+            parameter_types: parameter_types.iter().map(|ty| (*ty).to_string()).collect(),
+            parameter_names: parameter_names.iter().map(|name| (*name).to_string()).collect(),
+            return_type: "i64".to_string(),
+            launcher_class: "managed_entry".to_string(),
+        }
+    }
+
+    #[test]
+    fn projects_managed_signature_into_library_export() {
+        let export = library_export_from_entry(&entry(&["i64", "i64"], &["left", "right"]), "app.dll", "sha256-test");
+        assert_eq!(export.parameters, Some(vec!["i64".to_string(), "i64".to_string()]));
+        assert_eq!(export.parameter_names, Some(vec!["left".to_string(), "right".to_string()]));
+        assert_eq!(export.returns, Some("i64".to_string()));
+        assert_eq!(export.physical_artifact, "app.dll");
+        assert_eq!(export.abi, "clr-managed");
+        assert_eq!(export.abi_digest, "sha256-test");
+    }
+
+    #[test]
+    fn projects_zero_parameter_signature_as_some_empty() {
+        let export = library_export_from_entry(&entry(&[], &[]), "app.dll", "sha256-test");
+        assert_eq!(export.parameters, Some(Vec::new()));
+        assert_eq!(export.parameter_names, Some(Vec::new()));
     }
 }
