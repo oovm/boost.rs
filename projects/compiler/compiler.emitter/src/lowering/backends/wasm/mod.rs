@@ -108,6 +108,18 @@ pub fn lower_fragment_to_wasm_module_for(
                     "WASM binary package: `[export]` 实例 `{instance}` 的公开名与宿主入口符号 `{boundary_entry_name}` 冲突"
                 ));
             }
+            // 导出公开名是宿主装载身份，必须唯一；重复会让模块写出重复导出名。
+            // 库模式在构建 `nyar.library_invoke` 时以同一规则拒绝重复，这里覆盖二进制包。
+            let mut public_names = std::collections::BTreeSet::new();
+            for instance in submission.backend_plan.export_names().keys() {
+                let name = submission
+                    .backend_plan
+                    .export_public_name(instance)
+                    .ok_or_else(|| format!("WASM binary package: 导出实例 `{instance}` 缺少公开名"))?;
+                if !public_names.insert(name.clone()) {
+                    return Err(format!("WASM binary package: 导出公开名 `{name}` 重复"));
+                }
+            }
         }
     }
     // 入口导出名只由宿主边界的冻结词汇决定（`main` / `_start`）。`[export]` 公开名

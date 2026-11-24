@@ -202,3 +202,19 @@ fn wasm_binary_entry_uses_boundary_symbol_and_rejects_export_collision() {
     assert_eq!(names.iter().filter(|name| name.as_str() == "main").count(), 1, "入口只导出一次: {names:?}");
     assert!(names.iter().any(|name| name == "helper"), "导出面仍保留 helper: {names:?}");
 }
+
+/// 二进制包的导出公开名必须唯一，否则模块会写出重复导出名。
+#[test]
+fn wasm_binary_rejects_duplicate_export_public_names() {
+    use compiler_target::HostProjectionBoundary;
+
+    let mut plan = plan_with(&["entry_fn", "a", "b"], &[("a", "dup"), ("b", "dup")]);
+    plan.testing_entry_operation(QualifiedName::new(vec![Identifier::new("entry_fn")]));
+    let entry = plan.entry_operation().expect("入口已设置");
+    plan.testing_export_names_mut().remove(&entry);
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    let error = compiler_emitter::testing::lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue)
+        .expect_err("重复导出公开名必须拒绝");
+    assert!(error.contains("重复"), "诊断应说明重复：{error}");
+    assert!(error.contains("dup"), "诊断应指出冲突名：{error}");
+}
