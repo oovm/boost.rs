@@ -418,5 +418,77 @@ structure f64 {
     micro `>=`(self: f64, other: f64) -> bool;
 }
 
+# 单精度 32 位浮点：载体是独立的 `F32`，不得借 f64/i32 槽中转。
+# CLR 整体缺席（MSIL 模型无 `ldc.r4`）；OVM 只有 `eq`/`lt` 头码，
+# 且没有浮点余数指令；Wasm 没有 `f32.rem`。
+[primitive("std::primitive::f32")]
+structure f32 {
+    [infix]
+    [jvm_operator("float.add")]
+    [wasm_operator("f32.add")]
+    [ovm_operator("f32.add")]
+    micro `+`(self: f32, other: f32) -> f32;
+
+    [infix]
+    [jvm_operator("float.subtract")]
+    [wasm_operator("f32.sub")]
+    [ovm_operator("f32.sub")]
+    micro `-`(self: f32, other: f32) -> f32;
+
+    [infix]
+    [jvm_operator("float.multiply")]
+    [wasm_operator("f32.mul")]
+    [ovm_operator("f32.mul")]
+    micro `*`(self: f32, other: f32) -> f32;
+
+    [infix]
+    [jvm_operator("float.divide")]
+    [wasm_operator("f32.div")]
+    [ovm_operator("f32.div")]
+    micro `/`(self: f32, other: f32) -> f32;
+
+    [infix]
+    [jvm_operator("float.remainder")]
+    micro `%`(self: f32, other: f32) -> f32;
+
+    [prefix]
+    [jvm_operator("float.negate")]
+    [wasm_operator("f32.neg")]
+    [ovm_operator("f32.neg")]
+    micro `-`(self: f32) -> f32;
+
+    [infix]
+    [jvm_operator("float.compare_equal")]
+    [wasm_operator("f32.eq")]
+    [ovm_operator("f32.eq")]
+    micro `==`(self: f32, other: f32) -> bool;
+
+    [infix]
+    [jvm_operator("float.compare_not_equal")]
+    [wasm_operator("f32.ne")]
+    micro `!=`(self: f32, other: f32) -> bool;
+
+    [infix]
+    [jvm_operator("float.compare_less_than")]
+    [wasm_operator("f32.lt")]
+    [ovm_operator("f32.lt")]
+    micro `<`(self: f32, other: f32) -> bool;
+
+    [infix]
+    [jvm_operator("float.compare_less_or_equal")]
+    [wasm_operator("f32.le")]
+    micro `<=`(self: f32, other: f32) -> bool;
+
+    [infix]
+    [jvm_operator("float.compare_greater_than")]
+    [wasm_operator("f32.gt")]
+    micro `>`(self: f32, other: f32) -> bool;
+
+    [infix]
+    [jvm_operator("float.compare_greater_or_equal")]
+    [wasm_operator("f32.ge")]
+    micro `>=`(self: f32, other: f32) -> bool;
+}
+
 [primitive("std::primitive::bool")]
 structure bool { }

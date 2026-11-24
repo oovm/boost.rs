@@ -157,6 +157,8 @@ micro less(a: i32, b: i32) -> bool { return a < b }
 micro less_or_equal(a: i32, b: i32) -> bool { return a <= b }
 [export(name: "wide_ge")]
 micro wide_ge(a: u32, b: u32) -> bool { return a >= b }
+[export(name: "narrow_lt")]
+micro narrow_lt(a: f32, b: f32) -> bool { return a < b }
 [export(name: "negate")]
 micro negate(a: i32) -> i32 { return -a }
 "#;
@@ -248,6 +250,12 @@ micro negate(a: i32) -> i32 { return -a }
                 vec![SemanticType::Integer32 { signed: false }, SemanticType::Integer32 { signed: false }]
             );
             assert_eq!(unsigned.return_type, SemanticType::Boolean);
+
+            // f32 是独立载体：声明解析必须落成 `Float32`，不得被提升成 f64 或
+            // 折叠进 i32；后端各自用 `F32` 槽裁决。
+            let narrow = by_segment("float.compare_less_than");
+            assert_eq!(narrow.parameter_types, vec![SemanticType::Float32, SemanticType::Float32]);
+            assert_eq!(narrow.return_type, SemanticType::Boolean);
 
             let negate = by_segment("integer.negate");
             assert_eq!(negate.parameter_types, vec![SemanticType::Integer32 { signed: true }]);
