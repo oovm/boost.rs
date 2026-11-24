@@ -11,7 +11,7 @@ use compiler_target::{
     abstractions::ArtifactFormat,
     packaging::{ArtifactDescriptor, TargetLane},
 };
-use data_binary_wasm::{WasmBinaryModule, WasmExternalKind, parse_export_section};
+use data_binary_wasm::WasmBinaryModule;
 
 use crate::{
     backend::binding_builders::{BindingGenerationContext, HostBindingBuilder},
@@ -29,12 +29,21 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
         let launcher_stem = context.artifact_name;
         let launcher_path = context.output_dir.join(format!("{launcher_stem}.mjs"));
         let wasm_path = context.output_dir.join(format!("{launcher_stem}.wasm"));
-        let utf8_literals = read_wasm_utf8_literals(&wasm_path).unwrap_or_default();
+        let utf8_literals = read_wasm_utf8_literals(&wasm_path)?;
         let library_mode = match context.wasm_package_kind {
             WasmPackageKind::Library => true,
             WasmPackageKind::Binary => false,
         };
-        let library_invoke = if library_mode { read_library_invoke_spec(&wasm_path) } else { None };
+        // 库启动壳必须带契约段：缺 `nyar.library_invoke` 时生成的壳无法按冻结签名
+        // marshal 参数/返回值，属于宿主不可调用产物，不能静默省略。
+        let library_invoke = if library_mode {
+            Some(read_library_invoke_spec(&wasm_path)?.ok_or_else(|| {
+                format!("`wasm` 库启动壳缺少 `nyar.library_invoke` 合同段：{}", wasm_path.display())
+            })?)
+        }
+        else {
+            None
+        };
         let launcher = try_build_node_launcher(launcher_stem, context.imports, &utf8_literals, library_mode, library_invoke.as_deref())?;
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
@@ -180,30 +189,14 @@ pub fn render_import_object_literal(imports: &[(String, String)]) -> String {
     format!("{{\n{}\n}}", modules.join(",\n"))
 }
 
-fn is_library_wasm_module(wasm_path: &Path) -> bool {
-    let Ok(bytes) = fs::read(wasm_path)
-    else {
-        return false;
-    };
-    let Ok(module) = WasmBinaryModule::from_bytes(&bytes)
-    else {
-        return false;
-    };
-    let exports = parse_export_section(&module);
-    let has_entry = exports.iter().any(|item| item.name == "main" || item.name == "_start");
-    let has_named_function = exports.iter().any(|item| item.kind == WasmExternalKind::Func && item.name != "main" && item.name != "_start");
-    has_named_function && !has_entry
-}
-
-fn read_library_invoke_spec(wasm_path: &Path) -> Option<String> {
-    let bytes = fs::read(wasm_path).ok()?;
-    let module = WasmBinaryModule::from_bytes(&bytes).ok()?;
-    for section in &module.sections {
-        if section.name.as_deref() == Some("nyar.library_invoke") {
-            return Some(String::from_utf8_lossy(&section.bytes).to_string());
-        }
-    }
-    None
+fn read_library_invoke_spec(wasm_path: &Path) -> Result<Option<String>> {
+    let bytes = fs::read(wasm_path).map_err(|e| format!("读取 WASM 失败：{}: {e}", wasm_path.display()))?;
+    let module = WasmBinaryModule::from_bytes(&bytes).map_err(|error| format!("WASM 解析失败：{error}"))?;
+    Ok(module
+        .sections
+        .iter()
+        .find(|section| section.name.as_deref() == Some("nyar.library_invoke"))
+        .map(|section| String::from_utf8_lossy(&section.bytes).to_string()))
 }
 
 fn library_invoke_marshaler_js(spec_json: &str) -> String {
@@ -1259,6 +1252,36 @@ pub fn build_node_launcher(
     library_invoke: Option<&str>,
 ) -> String {
     try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke).unwrap_or_else(|error| panic!("{error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_wasm(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("nyar-wasm-glue-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("创建临时目录");
+        dir.join("lib.wasm")
+    }
+
+    /// 库契约段按原样读出，供启动壳做 marshal。
+    #[test]
+    fn library_invoke_spec_is_read_verbatim() {
+        let path = temp_wasm("invoke");
+        let mut module = WasmBinaryModule::new();
+        module.push_custom_section("nyar.library_invoke", br#"{"abi_digest":"d"}"#.to_vec());
+        std::fs::write(&path, module.to_bytes().expect("编码 wasm")).expect("写 wasm");
+        assert_eq!(read_library_invoke_spec(&path).expect("读取契约"), Some(r#"{"abi_digest":"d"}"#.to_string()));
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// 模块读不了时必须报错：空字符串表会让启动壳静默吐出错误文本。
+    #[test]
+    fn unreadable_module_is_an_error_not_empty_literals() {
+        let path = std::env::temp_dir().join(format!("nyar-wasm-glue-{}-missing", std::process::id())).join("lib.wasm");
+        assert!(read_wasm_utf8_literals(&path).is_err());
+        assert!(read_library_invoke_spec(&path).is_err());
+    }
 }
 
 /// 从 `WASM` 自定义段读取 `UTF-8` 字面量表。
