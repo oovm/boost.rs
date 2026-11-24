@@ -6,6 +6,8 @@
 
 use std::{fs, path::PathBuf, process::Command};
 
+use interpreter_vm_ovm::{OdinVm, Value};
+
 use package_manager_legion::{
     legion::{
         BuildRequest,
@@ -38,6 +40,114 @@ micro main() -> i64 {
 }
 "#;
 
+/// i32 运算符作为普通成员声明，助记符与 `tests/support/std_operators.v` 中已验证的一致。
+///
+/// 只保留本用例实际用到的 i32 与比较结果载体 `bool`；`+ - * / %`、前缀 `-`、
+/// `== != <` 四个 target 的绑定都齐全，`i32.ne` 已补 CLR。
+const OPERATOR_PRIMITIVES: &str = r#"namespace std.primitive;
+
+[primitive("std::primitive::i32")]
+structure i32 {
+    [infix]
+    [jvm_operator("integer.add")]
+    [clr_operator("i32.add")]
+    [wasm_operator("i32.add")]
+    [ovm_operator("i32.add")]
+    micro `+`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.subtract")]
+    [clr_operator("i32.sub")]
+    [wasm_operator("i32.sub")]
+    [ovm_operator("i32.sub")]
+    micro `-`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.multiply")]
+    [clr_operator("i32.mul")]
+    [wasm_operator("i32.mul")]
+    [ovm_operator("i32.mul")]
+    micro `*`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.divide")]
+    [clr_operator("i32.div")]
+    [wasm_operator("i32.div_s")]
+    [ovm_operator("i32.div")]
+    micro `/`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.remainder")]
+    [clr_operator("i32.rem")]
+    [wasm_operator("i32.rem_s")]
+    [ovm_operator("i32.rem")]
+    micro `%`(self: i32, other: i32) -> i32;
+
+    [prefix]
+    [jvm_operator("integer.negate")]
+    [clr_operator("i32.neg")]
+    [wasm_operator("i32.neg")]
+    [ovm_operator("i32.neg")]
+    micro `-`(self: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.compare_equal")]
+    [clr_operator("i32.eq")]
+    [wasm_operator("i32.eq")]
+    [ovm_operator("i32.eq")]
+    micro `==`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_not_equal")]
+    [clr_operator("i32.ne")]
+    [wasm_operator("i32.ne")]
+    [ovm_operator("i32.ne")]
+    micro `!=`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.compare_less_than")]
+    [clr_operator("i32.lt")]
+    [wasm_operator("i32.lt_s")]
+    [ovm_operator("i32.lt")]
+    micro `<`(self: i32, other: i32) -> bool;
+}
+
+[primitive("std::primitive::bool")]
+structure bool { }
+"#;
+
+/// 含运算符的可观测算术入口：`mix(10, 4)` 经参数参与全部运算符后返回 4。
+///
+/// `(10 + 4) * 3 - 10 / 2 = 37`，`37 % 7 = 2`，前缀 `-` 得 -2，此时
+/// `x < negated` 与 `x == negated` 均不成立、`x != negated` 成立，返回
+/// `negated + r + 4 = 4`。入口不是常量字面量，运算符调用都发生在参数上。
+const ARITHMETIC_SOURCE: &str = r#"namespace app;
+
+micro mix(a: i32, b: i32) -> i32 {
+    let x = (a + b) * 3 - a / 2
+    let r = x % 7
+    let negated = -r
+    if x < negated {
+        return x - negated
+    }
+    if x == negated {
+        return 1
+    }
+    if x != negated {
+        return negated + r + 4
+    }
+    return 0
+}
+
+[main]
+micro main() -> i32 {
+    return app::mix(10, 4)
+}
+"#;
+
+/// 算术入口经四个 target 运行后期望的可观测值。
+const ARITHMETIC_EXPECTED: i32 = 4;
+
 const MANIFEST_TEMPLATE: &str = r#"{
     name: "app",
     build: [
@@ -47,6 +157,10 @@ const MANIFEST_TEMPLATE: &str = r#"{
 "#;
 
 fn write_project(root: &std::path::Path, manifest_target: &str, source: &str) -> PathBuf {
+    write_project_with(root, manifest_target, source, PRIMITIVES)
+}
+
+fn write_project_with(root: &std::path::Path, manifest_target: &str, source: &str, primitives: &str) -> PathBuf {
     let source_dir = root.join("source");
     fs::create_dir_all(&source_dir).unwrap();
     fs::write(
@@ -60,7 +174,7 @@ fn write_project(root: &std::path::Path, manifest_target: &str, source: &str) ->
     .unwrap();
     fs::write(root.join("legion.von"), MANIFEST_TEMPLATE.replace("%TARGET%", manifest_target)).unwrap();
     fs::write(source_dir.join("main.v"), source).unwrap();
-    fs::write(source_dir.join("core_primitive.v"), PRIMITIVES).unwrap();
+    fs::write(source_dir.join("core_primitive.v"), primitives).unwrap();
     root.to_path_buf()
 }
 
@@ -69,6 +183,15 @@ fn build(prefix: &str, target: &str) -> (BuildOutcome, PathBuf) {
     let _ = fs::remove_dir_all(&root);
     let project_dir = write_project(&root, target, SOURCE);
     let output_dir = root.join("dist").join(prefix);
+    let outcome = build_project(&BuildOptions { project_dir, target: Some(target.to_string()), output_dir: Some(output_dir) });
+    (outcome, root)
+}
+
+fn build_arithmetic(target: &str) -> (BuildOutcome, PathBuf) {
+    let root = std::env::temp_dir().join(format!("legion-arithmetic-{target}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let project_dir = write_project_with(&root, target, ARITHMETIC_SOURCE, OPERATOR_PRIMITIVES);
+    let output_dir = root.join("dist").join(target);
     let outcome = build_project(&BuildOptions { project_dir, target: Some(target.to_string()), output_dir: Some(output_dir) });
     (outcome, root)
 }
@@ -119,6 +242,52 @@ fn assert_reports(outcome: &BuildOutcome, expected: &str) {
         code == Some(42) || stdout.contains(expected),
         "冻结入口必须报告 {expected}：exit={code:?} stdout={stdout:?} stderr={stderr:?}"
     );
+}
+
+/// 含运算符的算术项目在四个 target 上真实编译并运行，且报告同一可观测结果。
+///
+/// jvm 由 launcher 打印返回值（退出码 0），clr / wasm-node 用返回值作进程退出码，
+/// ovm 由 `interpreter-vm-ovm` 进程内装载 `.odin` 并执行构建给出的入口符号。
+/// 四个 target 的入口都是 `[main] mix(10, 4)`，表达式在形参上执行
+/// `+ - * / %`、前缀 `-` 与 `== != <`，断言的是运行结果而不是产物是否存在。
+#[test]
+fn arithmetic_operators_run_on_every_target() {
+    for target in ["jvm", "clr", "wasm-node", "ovm"] {
+        let (outcome, root) = build_arithmetic(target);
+        assert!(outcome.ok, "{target} 算术项目 build 失败: {:?}", outcome.error);
+        match target {
+            "jvm" => {
+                let (code, stdout, stderr) = run_contract(&outcome);
+                assert_eq!(code, Some(0), "jvm: 入口必须正常退出: stdout={stdout:?} stderr={stderr:?}");
+                assert_eq!(stdout.trim(), ARITHMETIC_EXPECTED.to_string(), "jvm: 必须打印算术结果: stderr={stderr:?}");
+            }
+            "clr" | "wasm-node" => {
+                let (code, stdout, stderr) = run_contract(&outcome);
+                assert_eq!(
+                    code,
+                    Some(ARITHMETIC_EXPECTED),
+                    "{target}: 退出码必须是算术结果: stdout={stdout:?} stderr={stderr:?}"
+                );
+            }
+            "ovm" => {
+                let artifact = outcome
+                    .artifacts
+                    .iter()
+                    .find(|artifact| artifact.ends_with(".odin"))
+                    .unwrap_or_else(|| panic!("ovm: 缺少 `.odin` 产物: {:?}", outcome.artifacts));
+                let bytes = fs::read(artifact).unwrap_or_else(|error| panic!("ovm: 读取 `{artifact}` 失败: {error}"));
+                let entry = outcome.entry_symbol.clone().expect("ovm: 构建结果必须给出入口符号");
+                let mut vm = OdinVm::new();
+                let loaded = vm.load(&bytes).unwrap_or_else(|error| panic!("ovm: 装载 `main.odin` 失败: {error}"));
+                let value = vm
+                    .run(&loaded, &entry, Vec::new())
+                    .unwrap_or_else(|error| panic!("ovm: 入口 `{entry}` 必须执行到完成: {error}"));
+                assert_eq!(value, Value::I32(ARITHMETIC_EXPECTED), "ovm: 入口 `{entry}` 必须完成并返回算术结果");
+            }
+            other => panic!("未知 target `{other}`"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 #[test]
