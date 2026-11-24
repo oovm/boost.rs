@@ -53,7 +53,9 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                 lane: TargetLane::Vm,
             });
 
-            entry_symbol = entries.first().cloned();
+            // 应用交付的唯一入口就是产物身份；库交付的身份是导出索引，不得拿
+            // 清单里的第一个导出冒充「入口」。
+            entry_symbol = entry_symbol_for(library_surface, &entries);
             if library_surface {
                 // 库导出面必须携带冻结的 ABI 合同；缺失即失败闭合，绝不写出
                 // 无合同的导出索引让宿主按未校验的布局解释内存。
@@ -99,9 +101,13 @@ fn library_export_from_contract(entry: &str, artifact: &str, contract: &OvmAbiCo
     })
 }
 
+/// 库交付的入口身份由导出索引承载，不取清单里的第一个导出。
+fn entry_symbol_for(library_surface: bool, entries: &[String]) -> Option<String> {
+    if library_surface { None } else { entries.first().cloned() }
+}
+
 #[doc(hidden)]
-pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[String], library_mode: bool) -> Result<Vec<String>> {
-    if library_mode && library_public_exports.is_empty() {
+pub fn resolve_entry_symbols(module: &OdinModuleData, library_public_exports: &[String], library_mode: bool) -> Result<Vec<String>> {    if library_mode && library_public_exports.is_empty() {
         return Err("`artifact: library` 要求至少一个已解析的 `[export]`；拒绝回落 `main`".to_string());
     }
     let entries = if library_public_exports.is_empty() { vec!["main".to_owned()] } else { library_public_exports.to_vec() };
@@ -153,6 +159,13 @@ mod tests {
 
     fn export(logical_name: &str, params: Vec<OvmAbiParam>, returns: OvmAbiType, returns_carrier: &str) -> OvmAbiExport {
         OvmAbiExport { logical_name: logical_name.to_string(), params, returns, returns_carrier: returns_carrier.to_string() }
+    }
+
+    #[test]
+    fn library_mode_does_not_claim_first_export_as_entry() {
+        let entries = vec!["greet".to_string(), "tick".to_string()];
+        assert_eq!(entry_symbol_for(true, &entries), None, "库交付不得拿第一个导出冒充入口");
+        assert_eq!(entry_symbol_for(false, &entries), Some("greet".to_string()), "应用交付保留唯一入口身份");
     }
 
     #[test]
