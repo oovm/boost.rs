@@ -590,13 +590,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // 这个空 `result` 里。）
             let entry_instance = submission.backend_plan.entry_operation().expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
+            // 入口形参合同只认冻结函数体：缺体时不得把「未知」当成「零形参」，
+            // 否则会发射忽略实参的 `_start` 并静默丢掉 argv。
             let entry_mir_params: Vec<SemanticType> = submission
                 .backend_plan
-                .entry_operation()
-                .as_ref()
-                .and_then(|instance| submission.backend_plan.get_function(instance))
-                .map(|view| view.function.param_types.clone())
-                .unwrap_or_default();
+                .get_function(&entry_instance)
+                .map(|view| view.function.param_types)
+                .ok_or_else(|| format!("WASI 入口 `{entry_instance}` 缺少冻结函数体：无法确认入口形参合同，拒绝按零形参处理"))?;
             let entry_wasm_params = param_types_by_function_index.get(&index).cloned().expect("WASI 入口缺少物理签名");
 
             let get_arguments_import = host_imports.iter().position(|(_, field)| field == "get-arguments").map(|index| index as u32);

@@ -38,7 +38,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
             if input.library_wasm_exports.is_empty() {
                 return Err("`artifact: library` 的 `wasm` 产物没有导出面".to_string());
             }
-            let abi_digest = library_invoke_digest(&input.module).unwrap_or_default();
+            let abi_digest = required_library_invoke_digest(&input.module)?;
             let physical_name = wasm_physical_artifact_name(request.artifact_name);
             input
                 .library_wasm_exports
@@ -111,6 +111,16 @@ fn library_invoke_digest(module: &crate::emitter_backend_wasi::WasmBinaryModule)
     payload.get("abi_digest")?.as_str().map(str::to_string)
 }
 
+/// 库交付清单要求真实的 ABI digest。
+///
+/// digest 是宿主校验 `nyar.library_invoke` 版本与形状的事实；段缺失、JSON 无效或
+/// 字段缺失时不得以空串冒充已冻结指纹——空串会被消费侧当成“没有约束”而跳过校验。
+fn required_library_invoke_digest(module: &crate::emitter_backend_wasi::WasmBinaryModule) -> Result<String> {
+    library_invoke_digest(module).ok_or_else(|| {
+        "`artifact: library` 的 `wasm` 模块缺少可解析的 `nyar.library_invoke` ABI digest：库导出清单不得以空 digest 冒充已冻结 ABI".to_string()
+    })
+}
+
 /// 将 lowering 冻结的 wasm 库导出投影为驱动层清单条目。
 ///
 /// 签名（载体标签 / 形参名 / 返回标签）已在 lowering 由冻结 ABI 定案，这里只做
@@ -176,5 +186,25 @@ mod tests {
         assert_eq!(projected.parameters, Some(Vec::new()));
         assert_eq!(projected.parameter_names, Some(Vec::new()));
         assert_eq!(projected.returns, Some("void".to_string()));
+    }
+
+    /// 库清单的 ABI digest 必须是真实事实：段缺失、字段缺失都失败闭合。
+    #[test]
+    fn missing_library_invoke_digest_fails_closed() {
+        let module = crate::emitter_backend_wasi::WasmBinaryModule::new();
+        let error = required_library_invoke_digest(&module).expect_err("缺失 `nyar.library_invoke` 不得默认空 digest");
+        assert!(error.contains("nyar.library_invoke"), "{error}");
+
+        let mut without_digest = crate::emitter_backend_wasi::WasmBinaryModule::new();
+        without_digest.push_custom_section("nyar.library_invoke", br#"{"version":0}"#.to_vec());
+        assert!(required_library_invoke_digest(&without_digest).is_err(), "缺 `abi_digest` 字段不得默认空 digest");
+    }
+
+    /// 合法段读出的 digest 原样投影，不做任何改写。
+    #[test]
+    fn library_invoke_digest_is_projected_verbatim() {
+        let mut module = crate::emitter_backend_wasi::WasmBinaryModule::new();
+        module.push_custom_section("nyar.library_invoke", br#"{"version":0,"abi_digest":"sha256-abc"}"#.to_vec());
+        assert_eq!(required_library_invoke_digest(&module), Ok("sha256-abc".to_string()));
     }
 }

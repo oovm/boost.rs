@@ -279,7 +279,13 @@ pub(super) fn build_callee_wasm_operator_index(
         else {
             continue;
         };
-        let symbol = submission.backend_plan.abi_name_for_instance(*callee).map(|name| name.to_string()).unwrap_or_default();
+        // operator 导入是按构造没有 ABI 名的外部实例（目标计划在导入分支不写
+        // `abi_names`）；这个标签只用于失败信息定位，不得写成空串冒充已冻结符号身份。
+        let symbol = submission
+            .backend_plan
+            .abi_name_for_instance(*callee)
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| format!("<wasm-operator import {callee:?}>"));
         let binding = freeze_wasm_operator_binding(*callee, &symbol, mnemonic, &import.parameter_types, &import.return_type)?
             .ok_or_else(|| format!("Wasm operator 绑定 `{mnemonic}` 缺少冻结结果: callee={callee:?}"))?;
         callee_wasm_operator.insert(*callee, (mnemonic.to_string(), binding));
