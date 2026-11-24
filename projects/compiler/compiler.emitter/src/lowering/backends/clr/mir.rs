@@ -7,10 +7,19 @@
 //!
 //! MSIL 算术/比较 opcode 不区分数值载体，助记符因此必须携带载体限定名
 //! （`i32.add` / `i64.add` / `f64.add`），冻结表按限定名给出唯一配方。
-//! 比较冻结 `eq/lt/gt` 的单 opcode（`ceq`/`clt`/`cgt`）；`ne` 在 IL 上没有独立
-//! 指令，冻结为 `ceq` 之后 `ldc.i4.0` 再 `ceq` 的取反组合（第二条 `ceq` 复用同一
-//! 比较指令，不是新指令）。`f64.rem` 保持缺口：.NET 没有与 Java `%`/fmod 语义
-//! 一致的 IL 指令，`Math.IEEERemainder` 是 IEEE 754 remainder，语义不同。
+//! 比较冻结 `eq/lt/gt` 的单 opcode（`ceq`/`clt`/`cgt`）；`ne`/`le`/`ge` 在 IL 上
+//! 没有独立指令，冻结为「一条比较 opcode + `ldc.i4.0` + `ceq`」的取反组合：
+//! 第二次判等必须用 `ceq`（0/1 与 0 判等即逻辑非），不能复用首次比较 opcode，
+//! 否则 `cgt`/`clt` 与 0 比较会得到「结果 > 0 / < 0」，把 `le`/`ge` 误算成
+//! `gt`/`lt`。
+//!
+//! 整数载体没有 NaN，`le`/`ge` 直接用有符号 `cgt`/`clt` 的取反组合。`f64` 有 NaN，
+//! IEEE 要求任一操作数为 NaN 时 `<=`/`>=` 为 false；而有符号 `cgt`/`clt` 遇 NaN 得
+//! 0，取反会错误地得到 true，因此 `f64.le`/`f64.ge` 必须使用无序变体
+//! `cgt.un`/`clt.un`（它们在无序时得 1，取反后为 0）。
+//!
+//! `f64.rem` 保持缺口：.NET 没有与 Java `%`/fmod 语义一致的 IL 指令，
+//! `Math.IEEERemainder` 是 IEEE 754 remainder，语义不同。
 
 use crate::{
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
@@ -19,15 +28,18 @@ use crate::{
 
 /// CLR operator 的冻结编码。
 ///
-/// 算术/比较多数是单条 MSIL opcode；`ne` 需要用两条 `ceq` 把 0/1 结果精确取反，
+/// 算术/比较多数是单条 MSIL opcode；`ne`/`le`/`ge` 需要把 0/1 结果精确取反，
 /// 因此编码必须显式区分「单指令」与「取反组合」，emit 只机械展开，不得按助记符
 /// 或名字前缀推断序列。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClrOperatorCode {
     /// 单条 MSIL opcode。
     Single(MsilOpcode),
-    /// 布尔取反：先执行 `compare` 得到 0/1，再压 `ldc.i4.0` 并用同一条 `compare`
-    /// 与之比较；这是取反组合，不是新指令。
+    /// 布尔取反：先执行 `compare` 得到 0/1，再压 `ldc.i4.0` 并用 `ceq` 与 0 判等。
+    ///
+    /// 取反必须用 `ceq`，不能复用 `compare`：`cgt`/`clt` 与 0 比较得到的是
+    /// 「结果 > 0 / 结果 < 0」而不是「结果 == 0」，复用会把 `le`/`ge` 误算成
+    /// `gt`/`lt`。`ceq` 对 0/1 恰是逻辑非，对任意 `compare` 都成立。
     InvertCompare(MsilOpcode),
 }
 
@@ -51,15 +63,20 @@ const fn unary(operand_type: TargetOperandType, opcode: MsilOpcode) -> TargetOpe
     }
 }
 
-/// `ne` 系列：IL 没有独立不等指令，冻结为 `ceq` 的精确逻辑取反组合。
-const fn not_equal(operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan<ClrOperatorCode> {
+/// `ne`/`le`/`ge` 系列：IL 没有独立指令，冻结为单条比较 opcode 的精确逻辑取反组合。
+const fn inverted(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan<ClrOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type,
         result_type,
-        recipe: TargetOperatorRecipe::Steps(&[TargetOperandStep::Arguments]),
-        encoding: ClrOperatorCode::InvertCompare(MsilOpcode::Ceq),
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: ClrOperatorCode::InvertCompare(opcode),
     }
+}
+
+/// `ne` 系列：IL 没有独立不等指令，冻结为 `ceq` 的精确逻辑取反组合。
+const fn not_equal(operand_type: TargetOperandType, result_type: TargetOperandType) -> TargetOperatorPlan<ClrOperatorCode> {
+    inverted(operand_type, result_type, MsilOpcode::Ceq)
 }
 
 /// `i64` 移位：MSIL `shl`/`shr` 的位移量操作数必须是 `int32`；声明签名携带 `i64`
@@ -121,23 +138,34 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "f64.mul" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Mul),
         "f64.div" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Div),
         "f64.neg" => unary(TargetOperandType::F64, MsilOpcode::Neg),
-        // 比较：结果固定为 I32（0/1）；eq/lt/gt 是单 opcode，ne 是取反组合。
+        // 比较：结果固定为 I32（0/1）；eq/lt/gt 是单 opcode，ne/le/ge 是取反组合。
         "i32.eq" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Ceq),
         "i32.ne" => not_equal(TargetOperandType::I32, TargetOperandType::I32),
         "i32.lt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Clt),
         // 无符号 `int32` 小于：MSIL 原生 `clt.un`。
         "i32.lt.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::CltUn),
         "i32.gt" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Cgt),
+        // 整数载体没有 NaN，`le = !(a > b)`、`ge = !(a < b)`，取反有符号 `cgt`/`clt`。
+        "i32.le" => inverted(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Cgt),
+        "i32.ge" => inverted(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Clt),
         "i64.eq" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Ceq),
         "i64.ne" => not_equal(TargetOperandType::I64, TargetOperandType::I32),
         "i64.lt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),
         // 无符号 `int64` 小于：MSIL `clt.un` 对宽载体同形（ECMA-335 的 `clt.un` 接受 int64）。
         "i64.lt.un" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::CltUn),
         "i64.gt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Cgt),
+        // int64 同样没有 NaN，`le`/`ge` 取反有符号 `cgt`/`clt`，结果槽仍是 I32。
+        "i64.le" => inverted(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Cgt),
+        "i64.ge" => inverted(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),
         "f64.eq" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Ceq),
         "f64.ne" => not_equal(TargetOperandType::F64, TargetOperandType::I32),
         "f64.lt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Clt),
         "f64.gt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Cgt),
+        // 浮点有 NaN：IEEE 要求任一操作数为 NaN 时 `<=`/`>=` 为 false，而有符号
+        // `cgt`/`clt` 遇 NaN 得 0、取反得 1（错误）；`cgt.un`/`clt.un` 在无序时得 1，
+        // 取反后才是 0，因此 `f64.le`/`f64.ge` 必须用无序变体。
+        "f64.le" => inverted(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::CgtUn),
+        "f64.ge" => inverted(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::CltUn),
         _ => return None,
     })
 }
@@ -183,7 +211,8 @@ mod operator_binding_tests {
     }
 
     /// 声明侧 `[clr_operator("…")]` 的真实助记符必须冻结成 MSIL opcode；
-    /// `ne` 冻结为 `ceq; ldc.i4.0; ceq` 取反组合；`f64.rem` 仍保持 Unfrozen。
+    /// `ne` 冻结为 `ceq; ldc.i4.0; ceq` 取反组合，`le`/`ge` 冻结为取反组合且浮点
+    /// 必须用无序 `cgt.un`/`clt.un`；`f64.rem` 仍保持 Unfrozen。
     #[test]
     fn scalar_operator_mnemonics_freeze_to_msil_opcodes() {
         let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
@@ -233,6 +262,27 @@ mod operator_binding_tests {
             };
             assert_eq!(plan.encoding, ClrOperatorCode::InvertCompare(MsilOpcode::Ceq), "`{mnemonic}` 编码");
             assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32);
+        }
+
+        // `le`/`ge` 没有独立 IL 指令：整数取反有符号 `cgt`/`clt`，浮点必须取反无序
+        // `cgt.un`/`clt.un`，否则 NaN 会被错误判为 true。
+        for (mnemonic, operand, result, encoding) in [
+            ("i32.le", i32_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Cgt)),
+            ("i32.ge", i32_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Clt)),
+            ("i64.le", i64_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Cgt)),
+            ("i64.ge", i64_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Clt)),
+            ("f64.le", SemanticType::Float64, SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("f64.ge", SemanticType::Float64, SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+        ] {
+            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix cmp", &[operand.clone(), operand], &result)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
+            let ClrOperatorBinding::Frozen(plan) = plan
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
+            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
         }
 
         // .NET 没有与 Java `%`/fmod 语义一致的 IL 指令：`f64.rem` 必须保持缺口。

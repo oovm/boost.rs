@@ -1456,11 +1456,13 @@ impl ClrMethodEmitter<'_> {
         self.emit_operator_operands(mnemonic, expected_kind, plan, arguments)?;
         match encoding {
             ClrOperatorCode::Single(opcode) => self.push_opcode(opcode),
-            // 布尔取反组合：`ceq` 得到 0/1，再与 `ldc.i4.0` 比较一次，精确取反。
+            // 布尔取反组合：`compare` 得到 0/1，再压 `ldc.i4.0` 并 `ceq` 判等取反。
+            // 取反固定用 `ceq`，不能复用 `compare`（`cgt`/`clt` 与 0 比较会把
+            // `le`/`ge` 误算成 `gt`/`lt`）。
             ClrOperatorCode::InvertCompare(compare) => {
                 self.push_opcode(compare);
                 self.push_opcode(MsilOpcode::LdcI4_0);
-                self.push_opcode(compare);
+                self.push_opcode(MsilOpcode::Ceq);
             }
         }
         match output {
