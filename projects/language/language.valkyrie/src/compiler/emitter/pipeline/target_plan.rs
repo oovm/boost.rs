@@ -412,8 +412,13 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
         function.value_types.keys().map(|value| Value { id: ValueRef(value.index()), origin: ValueOrigin::Temporary }).collect::<Vec<_>>();
     for (index, (value, _)) in function.parameters.iter().enumerate() {
         let row = values.iter_mut().find(|row| row.id.0 == value.index()).ok_or_else(|| format!("入口参数缺少 SSA 值合同"))?;
-        // canonical 已保留 compiler schema 的声明参数名；缺失只是防御性回落。
-        let name = function.parameter_names.get(index).cloned().unwrap_or_else(|| format!("arg{index}"));
+        // 形参声明名的唯一权威是 canonical 冻结的 `parameter_names`；缺失时不得
+        // 合成 `arg{index}` 之类名义名，否则下游会把缺失事实当成合法 ABI 名。
+        let name = function
+            .parameter_names
+            .get(index)
+            .cloned()
+            .ok_or_else(|| format!("函数实例 `{:?}` 入口参数 {index} 缺少 canonical 冻结的声明参数名", function.instance))?;
         row.origin = ValueOrigin::Parameter { index, name };
     }
     let mut callees = Vec::new();
