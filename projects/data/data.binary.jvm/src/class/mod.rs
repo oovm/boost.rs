@@ -573,6 +573,8 @@ pub enum JvmInstruction {
     InvokeVirtual(JvmMethodRef),
     /// `invokespecial` 指令，调用特殊方法（构造器、`super`、私有方法）。
     InvokeSpecial(JvmMethodRef),
+    /// `athrow` 指令，抛出栈顶 `Throwable` 引用（`opcode 0xBF`）。
+    AThrow,
     /// `ireturn` 指令，返回 `int`。
     IReturn,
     /// `lreturn` 指令，返回 `long`。
@@ -1404,6 +1406,7 @@ fn instruction_size(instruction: &JvmInstruction) -> usize {
         | JvmInstruction::FReturn
         | JvmInstruction::DReturn
         | JvmInstruction::AReturn
+        | JvmInstruction::AThrow
         | JvmInstruction::Return => 1,
         JvmInstruction::ALoad(index)
         | JvmInstruction::AStore(index)
@@ -1696,6 +1699,7 @@ fn encode_instruction(
             let methodref = pool.methodref(&method_ref.owner, &method_ref.name, &method_ref.descriptor);
             bytes.extend_from_slice(&methodref.to_be_bytes());
         }
+        JvmInstruction::AThrow => bytes.push(0xBF),
         JvmInstruction::I2L => bytes.push(0x85),
         JvmInstruction::L2I => bytes.push(0x88),
         JvmInstruction::I2D => bytes.push(0x87),

@@ -20,9 +20,12 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
     contracts::{Constant, InstructionKind, Operand, Terminator},
-    lowering::shared::{
-        executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-        value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
+    lowering::{
+        backends::argv_encoding::{ArgvKind, argv_encoding},
+        shared::{
+            executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+            value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
+        },
     },
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
@@ -288,7 +291,13 @@ fn build_managed_abi_surface(
                 // 程序入口同时是导出入口：复用该 ABI 入口的 launcher 身份。
                 entry_launcher = Some(launcher_class.clone());
             }
-            companion_classes.push(build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?);
+            companion_classes.push(build_managed_launcher_class(
+                &launcher_class,
+                &class_file.internal_name,
+                method,
+                &parameter_types,
+                &return_type,
+            )?);
             Some(launcher_class)
         }
         else {
@@ -320,15 +329,27 @@ fn build_managed_abi_surface(
                 .iter()
                 .find(|candidate| candidate.name == method.name && candidate.descriptor == method.descriptor)
                 .ok_or_else(|| format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不在主类中", method.name))?;
-            let argv_expressible = logical_signatures.get(&instance).is_some_and(|(params, return_type)| {
+            let signature = logical_signatures.get(&instance);
+            let argv_expressible = signature.is_some_and(|(params, return_type)| {
                 params.iter().chain(std::iter::once(return_type)).all(|ty| argv_expressible_type_name(ty).is_ok())
             });
             if argv_expressible {
                 if lowered.access_flags & (JVM_ACC_PUBLIC | JVM_ACC_STATIC) != (JVM_ACC_PUBLIC | JVM_ACC_STATIC) {
                     return Err(format!("JVM 程序入口 `{logical_entry}` 的方法 `{}` 不是 `public static`，拒绝生成 launcher", method.name));
                 }
+                let (params, return_type) = signature.ok_or_else(|| {
+                    format!("JVM 程序入口 `{logical_entry}` 的实例 `{instance:?}` 缺少冻结逻辑签名")
+                })?;
+                let parameter_types = params.iter().map(managed_abi_logical_type_name).collect::<Result<Vec<_>>>()?;
+                let return_type = managed_abi_logical_type_name(return_type)?;
                 let launcher_class = managed_launcher_internal_name(&logical_entry, &mut used_launcher_names)?;
-                companion_classes.push(build_managed_launcher_class(&launcher_class, &class_file.internal_name, method)?);
+                companion_classes.push(build_managed_launcher_class(
+                    &launcher_class,
+                    &class_file.internal_name,
+                    method,
+                    &parameter_types,
+                    &return_type,
+                )?);
                 entry_launcher = Some(launcher_class);
             }
         }
@@ -391,32 +412,18 @@ fn managed_abi_logical_type_name(ty: &SemanticType) -> Result<String> {
     })
 }
 
-/// argv 可表达性：宿主命令行解析器真实支持的逻辑类型子集。
+/// argv 可表达性：`SemanticType` → 载体逻辑名 → 共享编码表。
 ///
-/// 这是「包装能力」而非「ABI 事实」：只承认 `void`、`bool`、有符号 `i32`/`i64`
-/// 与 `f64`；无符号、窄整型、`f32`、字符串与数组都没有对应解析器，结构化拒绝，
-/// 不为它们发明解析语法。
+/// 「入口事实」（[`managed_abi_logical_type_name`]）与「包装能力」
+/// （[`argv_encoding`]）分离：这里只做投影，是否可表达以及拒绝理由全部来自
+/// 唯一合同表，不在此另写一份类型名单。
 fn argv_expressible_type_name(ty: &SemanticType) -> Result<String> {
-    match ty {
-        SemanticType::Bottom | SemanticType::Unit => Ok("void".to_string()),
-        SemanticType::Boolean => Ok("bool".to_string()),
-        SemanticType::Integer32 { signed: true } => Ok("i32".to_string()),
-        SemanticType::Integer64 { signed: true } => Ok("i64".to_string()),
-        SemanticType::Float64 => Ok("f64".to_string()),
-        SemanticType::Integer32 { signed: false } | SemanticType::Integer64 { signed: false } => {
-            Err(format!("JVM argv launcher 不支持无符号 `{ty}`：宿主解析器只有有符号解析，拒绝用有符号解析器冒充"))
-        }
-        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer128 { .. } => {
-            Err(format!("JVM argv launcher 不支持 `{ty}`：只接受有符号 i32 / i64、f64、bool 与 void"))
-        }
-        SemanticType::Float32 => Err("JVM argv launcher 不支持 `f32`：宿主只提供 `Double.parseDouble`".to_string()),
-        SemanticType::Character => Err(format!("JVM argv launcher 不支持 `{ty}`：码位到 argv 的编码合同未冻结")),
-        SemanticType::Utf8 | SemanticType::Utf16 => Err(format!("JVM argv launcher 不支持字符串 `{ty}`：argv 没有转义与编码合同")),
-        SemanticType::Array(..) | SemanticType::FixedArray { .. } => {
-            Err(format!("JVM argv launcher 不支持数组 `{ty}`：argv 没有元素分隔与长度合同"))
-        }
-        other => Err(format!("JVM argv launcher 不支持 `{other}`：argv 没有该形状的编组合同")),
+    if let SemanticType::Integer128 { .. } = ty {
+        return Err(format!("argv launcher 不支持 `{ty}`：128 位整型宽于宿主标量（最宽 64 位），没有对应解析器"));
     }
+    let logical = managed_abi_logical_type_name(ty)?;
+    argv_encoding(&logical)?;
+    Ok(logical)
 }
 
 /// launcher 内部名：`nyar/invoke/{sanitize(logical_entry)}`，非字母数字转 `_`。
@@ -434,12 +441,33 @@ fn managed_launcher_internal_name(logical_entry: &str, used: &mut BTreeSet<Strin
 
 /// 构造 `public static void main(String[])` argv launcher。
 ///
-/// 栈顺序：先压 `System.out`，再按声明类型解析每个 argv，调用主类静态方法，
-/// 最后用 `println` 输出返回值；`void` 入口只调用不输出。
-fn build_managed_launcher_class(launcher_internal_name: &str, owner: &str, method: &JvmMethodPlan) -> Result<JvmClassFile> {
+/// 栈顺序：先压 `System.out`，再按共享合同表逐参数解析 argv，调用主类静态方法，
+/// 最后按合同表输出返回值；`void` 入口只调用不输出。逻辑载体名与物理描述符必须
+/// 由同一合同的载体投影一致，否则结构化失败（不允许用 `f64` 顶替 `f32` 之类的漂移）。
+fn build_managed_launcher_class(
+    launcher_internal_name: &str,
+    owner: &str,
+    method: &JvmMethodPlan,
+    logical_parameter_types: &[String],
+    logical_return_type: &str,
+) -> Result<JvmClassFile> {
+    if logical_parameter_types.len() != method.descriptor.parameter_types.len() {
+        return Err(format!(
+            "JVM argv launcher：入口 `{launcher_internal_name}` 的逻辑形参数（{}）与物理描述符形参数（{}）不一致",
+            logical_parameter_types.len(),
+            method.descriptor.parameter_types.len()
+        ));
+    }
+    let return_carrier = argv_carrier_descriptor(logical_return_type)?;
+    if return_carrier != method.descriptor.return_type {
+        return Err(format!(
+            "JVM argv launcher：入口 `{launcher_internal_name}` 的返回载体 `{logical_return_type}` 合同投影 {} 与方法描述符 {} 不一致",
+            return_carrier, method.descriptor.return_type
+        ));
+    }
     let mut launcher = JvmClassFile::new(launcher_internal_name.to_string());
     let mut instructions = Vec::new();
-    let print_result = method.descriptor.return_type != JvmTypeDescriptor::Void;
+    let print_result = !matches!(argv_encoding(logical_return_type)?.kind, ArgvKind::Void);
     if print_result {
         instructions.push(JvmInstruction::GetStatic(JvmFieldRef {
             owner: "java/lang/System".to_string(),
@@ -450,10 +478,17 @@ fn build_managed_launcher_class(launcher_internal_name: &str, owner: &str, metho
     let mut argument_slots = 0u16;
     for (index, parameter) in method.descriptor.parameter_types.iter().enumerate() {
         let index = i32::try_from(index).map_err(|_| format!("JVM managed ABI launcher 形参序号超出 `int` 载体: {index}"))?;
+        let logical_parameter = &logical_parameter_types[index as usize];
+        let carrier = argv_carrier_descriptor(logical_parameter)?;
+        if carrier != *parameter {
+            return Err(format!(
+                "JVM argv launcher：入口 `{launcher_internal_name}` 的形参 `{logical_parameter}` 合同投影 {carrier} 与物理描述符 {parameter} 不一致"
+            ));
+        }
         instructions.push(JvmInstruction::ALoad0);
         instructions.push(JvmInstruction::IConst(index));
         instructions.push(JvmInstruction::AALoad);
-        instructions.push(JvmInstruction::InvokeStatic(argument_parse_method_ref(parameter)?));
+        instructions.extend(argv_parse_instructions(logical_parameter, index)?);
         argument_slots = argument_slots.saturating_add(parameter.slot_count());
     }
     instructions.push(JvmInstruction::InvokeStatic(JvmMethodRef {
@@ -462,15 +497,12 @@ fn build_managed_launcher_class(launcher_internal_name: &str, owner: &str, metho
         descriptor: method.descriptor.clone(),
     }));
     if print_result {
-        instructions.push(JvmInstruction::InvokeVirtual(JvmMethodRef {
-            owner: "java/io/PrintStream".to_string(),
-            name: "println".to_string(),
-            descriptor: JvmMethodDescriptor::new(vec![method.descriptor.return_type.clone()], JvmTypeDescriptor::Void),
-        }));
+        instructions.extend(argv_result_print_instructions(logical_return_type)?);
     }
     instructions.push(JvmInstruction::Return);
 
-    let max_stack = u16::from(print_result).saturating_add(argument_slots).saturating_add(2);
+    // 越界/非法字面量路径要构造异常对象（`new` + `dup` + `ldc`），固定额外 3 槽。
+    let max_stack = u16::from(print_result).saturating_add(argument_slots).saturating_add(3);
     launcher.methods.push(JvmMethodSignature {
         name: "main".to_string(),
         descriptor: JvmMethodDescriptor::new(
@@ -483,31 +515,234 @@ fn build_managed_launcher_class(launcher_internal_name: &str, owner: &str, metho
     Ok(launcher)
 }
 
-/// argv 解析调用：按声明标量类型选择 `Long.parseLong` / `Integer.parseInt` /
-/// `Double.parseDouble` / `Boolean.parseBoolean`。
-fn argument_parse_method_ref(descriptor: &JvmTypeDescriptor) -> Result<JvmMethodRef> {
-    let string = JvmTypeDescriptor::Object("java/lang/String".to_string());
-    let (owner, name, return_type) = match descriptor {
-        JvmTypeDescriptor::Long => ("java/lang/Long", "parseLong", JvmTypeDescriptor::Long),
-        JvmTypeDescriptor::Int | JvmTypeDescriptor::Byte | JvmTypeDescriptor::Char | JvmTypeDescriptor::Short => {
-            ("java/lang/Integer", "parseInt", JvmTypeDescriptor::Int)
+/// 共享合同表 → JVM 物理载体描述符。
+///
+/// launcher 的栈形状必须与目标方法描述符同构：无符号/窄整型落到宿主 `int`，
+/// `u64` 落到 `long`，`f32` 必须是真实 `Float`（`F`），不得升格成 `f64`。
+fn argv_carrier_descriptor(logical_type: &str) -> Result<JvmTypeDescriptor> {
+    Ok(match argv_encoding(logical_type)?.kind {
+        ArgvKind::Void => JvmTypeDescriptor::Void,
+        ArgvKind::Bool => JvmTypeDescriptor::Boolean,
+        ArgvKind::Signed { bits: 32 } | ArgvKind::Unsigned { bits: 8 | 16 | 32 } => JvmTypeDescriptor::Int,
+        ArgvKind::Signed { bits: 64 } | ArgvKind::Unsigned { bits: 64 } => JvmTypeDescriptor::Long,
+        ArgvKind::Float { bits: 32 } => JvmTypeDescriptor::Float,
+        ArgvKind::Float { bits: 64 } => JvmTypeDescriptor::Double,
+        other => {
+            return Err(format!("JVM argv launcher：载体 `{logical_type}` 的合同类别 {other:?} 没有 JVM 物理描述符"));
         }
-        JvmTypeDescriptor::Double => ("java/lang/Double", "parseDouble", JvmTypeDescriptor::Double),
-        JvmTypeDescriptor::Boolean => ("java/lang/Boolean", "parseBoolean", JvmTypeDescriptor::Boolean),
-        JvmTypeDescriptor::Float => {
-            return Err("JVM managed ABI launcher 不支持 `float` (f32) 形参".to_string());
+    })
+}
+
+/// 按共享合同表生成「弹出 argv 字符串 → 载体值」的指令序列。
+///
+/// 调用前栈顶已是 `Strings[argument_index]`；序列结束后栈顶是目标形参的 JVM
+/// 载体值，与 [`argv_carrier_descriptor`] 一致。
+fn argv_parse_instructions(logical_type: &str, argument_index: i32) -> Result<Vec<JvmInstruction>> {
+    let encoding = argv_encoding(logical_type)?;
+    let mut instructions = Vec::new();
+    match encoding.kind {
+        ArgvKind::Void => return Err(format!("JVM argv launcher 形参不能是 `void`（载体 `{logical_type}`）")),
+        ArgvKind::Bool => instructions.extend(strict_boolean_parse(argument_index)),
+        ArgvKind::Signed { bits: 32 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Integer", "parseInt", JvmTypeDescriptor::Int)));
         }
-        JvmTypeDescriptor::Object(name) => {
-            return Err(format!("JVM managed ABI launcher 不支持引用类型形参 `{name}`"));
+        ArgvKind::Signed { bits: 64 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Long", "parseLong", JvmTypeDescriptor::Long)));
         }
-        JvmTypeDescriptor::Array(item) => {
-            return Err(format!("JVM managed ABI launcher 不支持数组类型形参 `[{item}`"));
+        // 宿主没有精确的 unsigned 8/16 位解析器：用更宽的有符号解析器 + 合同表给出的
+        // 显式范围检查；越界抛出未捕获 `NumberFormatException`（宿主非零退出）。
+        ArgvKind::Unsigned { bits: 8 | 16 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Integer", "parseInt", JvmTypeDescriptor::Int)));
+            let max = encoding
+                .unsigned_max
+                .ok_or_else(|| format!("JVM argv launcher：合同表缺少 `{logical_type}` 的无符号上界"))?;
+            instructions.extend(unsigned_range_check(logical_type, argument_index, max)?);
         }
-        JvmTypeDescriptor::Void => {
-            return Err("JVM managed ABI launcher 形参不能是 `void`".to_string());
+        // 宿主无符号解析器宽度与语义宽度一致，越界由宿主直接抛 `NumberFormatException`。
+        ArgvKind::Unsigned { bits: 32 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Integer", "parseUnsignedInt", JvmTypeDescriptor::Int)));
         }
-    };
-    Ok(JvmMethodRef { owner: owner.to_string(), name: name.to_string(), descriptor: JvmMethodDescriptor::new(vec![string], return_type) })
+        ArgvKind::Unsigned { bits: 64 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Long", "parseUnsignedLong", JvmTypeDescriptor::Long)));
+        }
+        ArgvKind::Float { bits: 32 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Float", "parseFloat", JvmTypeDescriptor::Float)));
+        }
+        ArgvKind::Float { bits: 64 } => {
+            instructions.push(JvmInstruction::InvokeStatic(parse_method_ref("java/lang/Double", "parseDouble", JvmTypeDescriptor::Double)));
+        }
+        other => return Err(format!("JVM argv launcher 不支持形参载体 `{logical_type}`（合同类别 {other:?}）")),
+    }
+    Ok(instructions)
+}
+
+/// 构造接受单个 `String` 的宿主静态解析调用。
+fn parse_method_ref(owner: &str, name: &str, return_type: JvmTypeDescriptor) -> JvmMethodRef {
+    JvmMethodRef {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        descriptor: JvmMethodDescriptor::new(
+            vec![JvmTypeDescriptor::Object("java/lang/String".to_string())],
+            return_type,
+        ),
+    }
+}
+
+/// `PrintStream.println` 重载。
+fn print_method_ref(parameter: JvmTypeDescriptor) -> JvmMethodRef {
+    JvmMethodRef {
+        owner: "java/io/PrintStream".to_string(),
+        name: "println".to_string(),
+        descriptor: JvmMethodDescriptor::new(vec![parameter], JvmTypeDescriptor::Void),
+    }
+}
+
+/// 精确宿主调用：`owner.name(parameter) -> return_type`。
+fn exact_method_ref(owner: &str, name: &str, parameter: JvmTypeDescriptor, return_type: JvmTypeDescriptor) -> JvmMethodRef {
+    JvmMethodRef { owner: owner.to_string(), name: name.to_string(), descriptor: JvmMethodDescriptor::new(vec![parameter], return_type) }
+}
+
+/// 严格 `bool`：先 `trim()` 掉首尾空白，再只接受 ASCII 大小写不敏感的
+/// `true` / `false`，其余抛 `NumberFormatException`；不使用会把任意串当 `false`
+/// 的 `Boolean.parseBoolean`。
+fn strict_boolean_parse(argument_index: i32) -> Vec<JvmInstruction> {
+    let true_label = format!("argv_{argument_index}_bool_true");
+    let bad_label = format!("argv_{argument_index}_bool_bad");
+    let done_label = format!("argv_{argument_index}_bool_done");
+    let equals = exact_method_ref(
+        "java/lang/String",
+        "equalsIgnoreCase",
+        JvmTypeDescriptor::Object("java/lang/String".to_string()),
+        JvmTypeDescriptor::Boolean,
+    );
+    let mut instructions = vec![
+        JvmInstruction::InvokeVirtual(JvmMethodRef {
+            owner: "java/lang/String".to_string(),
+            name: "trim".to_string(),
+            descriptor: JvmMethodDescriptor::new(
+                Vec::new(),
+                JvmTypeDescriptor::Object("java/lang/String".to_string()),
+            ),
+        }),
+        JvmInstruction::Dup,
+        JvmInstruction::LdcString("true".to_string()),
+        JvmInstruction::InvokeVirtual(equals.clone()),
+        JvmInstruction::IfNe(true_label.clone()),
+        JvmInstruction::Dup,
+        JvmInstruction::LdcString("false".to_string()),
+        JvmInstruction::InvokeVirtual(equals),
+        JvmInstruction::IfEq(bad_label.clone()),
+        JvmInstruction::Pop,
+        JvmInstruction::IConst(0),
+        JvmInstruction::Goto(done_label.clone()),
+        JvmInstruction::Label(true_label),
+        JvmInstruction::Pop,
+        JvmInstruction::IConst(1),
+        JvmInstruction::Goto(done_label.clone()),
+        JvmInstruction::Label(bad_label),
+    ];
+    instructions.extend(throw_instructions(
+        "java/lang/NumberFormatException",
+        format!("argv 参数 {argument_index} 不是 true/false（bool 只接受 true 或 false）"),
+    ));
+    instructions.push(JvmInstruction::Label(done_label));
+    instructions
+}
+
+/// 构造并抛出 `new {class}("{message}")`；栈上只保留既有值。
+fn throw_instructions(class: &str, message: String) -> Vec<JvmInstruction> {
+    vec![
+        JvmInstruction::New(class.to_string()),
+        JvmInstruction::Dup,
+        JvmInstruction::LdcString(message),
+        JvmInstruction::InvokeSpecial(JvmMethodRef {
+            owner: class.to_string(),
+            name: "<init>".to_string(),
+            descriptor: JvmMethodDescriptor::new(
+                vec![JvmTypeDescriptor::Object("java/lang/String".to_string())],
+                JvmTypeDescriptor::Void,
+            ),
+        }),
+        JvmInstruction::AThrow,
+    ]
+}
+
+/// 无符号范围检查：`0 <= value <= max`，越界抛 `NumberFormatException`。
+fn unsigned_range_check(logical_type: &str, argument_index: i32, max: u128) -> Result<Vec<JvmInstruction>> {
+    let max = i32::try_from(max)
+        .map_err(|_| format!("JVM argv launcher：`{logical_type}` 的无符号上界 {max} 超出 `int` 载体"))?;
+    let bad_label = format!("argv_{argument_index}_range_bad");
+    let ok_label = format!("argv_{argument_index}_range_ok");
+    let mut instructions = vec![
+        JvmInstruction::Dup,
+        JvmInstruction::IfLt(bad_label.clone()),
+        JvmInstruction::Dup,
+        JvmInstruction::IConst(max),
+        JvmInstruction::IfICmpGt(bad_label.clone()),
+        JvmInstruction::Goto(ok_label.clone()),
+        JvmInstruction::Label(bad_label),
+    ];
+    instructions.extend(throw_instructions(
+        "java/lang/NumberFormatException",
+        format!("argv 参数 {argument_index} 超出 {logical_type} 范围 0..={max}"),
+    ));
+    instructions.push(JvmInstruction::Label(ok_label));
+    Ok(instructions)
+}
+
+/// 返回值输出：按合同类别选择 `println` 重载；无符号返回值先用宿主 `toUnsigned*`
+/// 转成能无损打印的载体，避免把 `u8 200` 打成 `-56`。
+fn argv_result_print_instructions(logical_type: &str) -> Result<Vec<JvmInstruction>> {
+    let encoding = argv_encoding(logical_type)?;
+    let mut instructions = Vec::new();
+    match encoding.kind {
+        ArgvKind::Void => return Err("JVM argv launcher：`void` 结果不得生成输出调用".to_string()),
+        ArgvKind::Bool => instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Boolean))),
+        ArgvKind::Signed { bits: 32 } => instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Int))),
+        ArgvKind::Signed { bits: 64 } => instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Long))),
+        ArgvKind::Unsigned { bits: 8 } => {
+            instructions.push(JvmInstruction::InvokeStatic(exact_method_ref(
+                "java/lang/Byte",
+                "toUnsignedInt",
+                JvmTypeDescriptor::Byte,
+                JvmTypeDescriptor::Int,
+            )));
+            instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Int)));
+        }
+        ArgvKind::Unsigned { bits: 16 } => {
+            instructions.push(JvmInstruction::InvokeStatic(exact_method_ref(
+                "java/lang/Short",
+                "toUnsignedInt",
+                JvmTypeDescriptor::Short,
+                JvmTypeDescriptor::Int,
+            )));
+            instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Int)));
+        }
+        ArgvKind::Unsigned { bits: 32 } => {
+            instructions.push(JvmInstruction::InvokeStatic(exact_method_ref(
+                "java/lang/Integer",
+                "toUnsignedLong",
+                JvmTypeDescriptor::Int,
+                JvmTypeDescriptor::Long,
+            )));
+            instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Long)));
+        }
+        ArgvKind::Unsigned { bits: 64 } => {
+            instructions.push(JvmInstruction::InvokeStatic(exact_method_ref(
+                "java/lang/Long",
+                "toUnsignedString",
+                JvmTypeDescriptor::Long,
+                JvmTypeDescriptor::Object("java/lang/String".to_string()),
+            )));
+            instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(
+                JvmTypeDescriptor::Object("java/lang/String".to_string()),
+            )));
+        }
+        ArgvKind::Float { bits: 32 } => instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Float))),
+        ArgvKind::Float { bits: 64 } => instructions.push(JvmInstruction::InvokeVirtual(print_method_ref(JvmTypeDescriptor::Double))),
+        other => return Err(format!("JVM argv launcher 不支持返回载体 `{logical_type}`（合同类别 {other:?}）")),
+    }
+    Ok(instructions)
 }
 
 /// 从导出面出发收集可达操作（按实例身份升序，保证稳定输出顺序）。
@@ -2511,19 +2746,128 @@ mod managed_abi_type_tests {
         assert_eq!(managed_abi_logical_type_name(&SemanticType::Float32), Ok("f32".to_string()));
     }
 
-    /// argv 是包装能力而非 ABI 事实：数组、无符号、字符串、f32 都没有宿主解析器。
+    /// argv 是包装能力而非 ABI 事实：数组、字符串、字符与宽标量仍被合同表拒绝。
     #[test]
     fn argv_subset_rejects_unrepresentable_types() {
         let unrepresentable = [
             SemanticType::Array(Box::new(SemanticType::Integer64 { signed: true })),
-            SemanticType::Integer32 { signed: false },
-            SemanticType::Integer64 { signed: false },
             SemanticType::Utf8,
-            SemanticType::Float32,
+            SemanticType::Utf16,
+            SemanticType::Character,
+            SemanticType::Integer8 { signed: true },
+            SemanticType::Integer16 { signed: true },
+            SemanticType::Integer128 { signed: true },
         ];
         for ty in unrepresentable {
             assert!(argv_expressible_type_name(&ty).is_err(), "`{ty}` 不应被 argv 表达");
         }
+    }
+
+    /// `f32` 与无符号整型由共享合同表列入可表达集：宿主有真实载体与解析器。
+    #[test]
+    fn argv_subset_admits_f32_and_unsigned_integers() {
+        let representable = [
+            SemanticType::Float32,
+            SemanticType::Integer8 { signed: false },
+            SemanticType::Integer16 { signed: false },
+            SemanticType::Integer32 { signed: false },
+            SemanticType::Integer64 { signed: false },
+        ];
+        for ty in representable {
+            assert!(argv_expressible_type_name(&ty).is_ok(), "`{ty}` 应被 argv 表达");
+        }
+    }
+
+    /// f32 / u8 / u64 入口必须生成 launcher，且解析调用指向真实宿主方法。
+    #[test]
+    fn launcher_uses_shared_contract_host_parsers() {
+        let descriptor =
+            JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Float, JvmTypeDescriptor::Int, JvmTypeDescriptor::Long], JvmTypeDescriptor::Float);
+        let method = JvmMethodPlan { name: "score".to_string(), descriptor };
+        let logical_parameters = vec!["f32".to_string(), "u8".to_string(), "u64".to_string()];
+        let launcher = build_managed_launcher_class("nyar/invoke/score", "nyar/App", &method, &logical_parameters, "f32")
+            .expect("f32/u8/u64 入口必须生成 launcher");
+        let code = launcher.methods[0].code.as_ref().expect("launcher main 必须有代码");
+        let calls = code
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                JvmInstruction::InvokeStatic(reference) | JvmInstruction::InvokeVirtual(reference) => Some(reference),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            calls
+                .iter()
+                .any(|reference| reference.owner == "java/lang/Float"
+                    && reference.name == "parseFloat"
+                    && reference.descriptor.to_string() == "(Ljava/lang/String;)F"),
+            "f32 必须走 `Float.parseFloat` 并落到 `F` 载体: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|reference| reference.owner == "java/lang/Integer"
+                && reference.name == "parseInt"
+                && reference.descriptor.to_string() == "(Ljava/lang/String;)I"),
+            "u8 必须先用更宽的有符号解析器 + 显式范围检查: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|reference| reference.owner == "java/lang/Long"
+                && reference.name == "parseUnsignedLong"
+                && reference.descriptor.to_string() == "(Ljava/lang/String;)J"),
+            "u64 必须走宿主无符号解析器: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|reference| reference.owner == "java/io/PrintStream"
+                && reference.name == "println"
+                && reference.descriptor.to_string() == "(F)V"),
+            "f32 返回值必须用 `println(float)`，不得升格为 double: {calls:?}"
+        );
+        assert!(
+            code.instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::AThrow)),
+            "u8 越界必须抛出未捕获异常，而不是静默截断"
+        );
+    }
+
+    /// `bool` 必须 fail-closed：先无参 `trim()`，再严格比较，否则抛异常。
+    #[test]
+    fn strict_bool_parse_trims_then_rejects_unknown_literals() {
+        let instructions = strict_boolean_parse(2);
+        let calls = instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                JvmInstruction::InvokeVirtual(reference) => Some(reference),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            calls
+                .iter()
+                .any(|reference| reference.owner == "java/lang/String"
+                    && reference.name == "trim"
+                    && reference.descriptor.to_string() == "()Ljava/lang/String;"),
+            "bool 解析必须先调用无参 `String.trim()`: {calls:?}"
+        );
+        assert!(
+            calls.iter().all(|reference| reference.name != "parseBoolean"),
+            "不得使用 fail-open 的 `Boolean.parseBoolean`"
+        );
+        assert!(
+            instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::AThrow)),
+            "非 true/false 必须抛出未捕获异常"
+        );
+    }
+
+    /// u8 的范围检查与 `athrow` 必须真的能编码成字节码。
+    #[test]
+    fn launcher_with_unsigned_range_check_encodes() {
+        let descriptor = JvmMethodDescriptor::new(vec![JvmTypeDescriptor::Int], JvmTypeDescriptor::Void);
+        let method = JvmMethodPlan { name: "take".to_string(), descriptor };
+        let launcher =
+            build_managed_launcher_class("nyar/invoke/take", "nyar/App", &method, &["u8".to_string()], "void").expect("u8 入口必须生成 launcher");
+        let bytes = launcher.to_bytes().expect("带范围检查与 athrow 的 launcher 必须可编码");
+        assert_eq!(&bytes[0..4], &[0xCA, 0xFE, 0xBA, 0xBE], "必须产出 class 文件头");
+        assert!(bytes.contains(&0xBF), "编码后必须包含 athrow 操作码 0xBF");
     }
 
     /// 数组形参的导出入口仍是合法 ABI 事实，只是没有 argv launcher。

@@ -20,9 +20,12 @@ use crate::{
         ExecutableInstruction as MirInstruction, ExecutableValueRef as MirValueRef, SemanticType,
     },
     contracts::{ArrayInitialization, Constant, InstructionKind, Operand, Terminator},
-    lowering::shared::{
-        executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
-        value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
+    lowering::{
+        backends::argv_encoding::{ArgvKind, argv_encoding},
+        shared::{
+            executable::{block_label, collect_reachable_blocks, slots::ExecutableSlotPlan},
+            value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth},
+        },
     },
     managed_abi::{ManagedAbiContract, ManagedAbiEntry},
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
@@ -321,6 +324,11 @@ const GLOBAL_METHODS_TYPE: &str = "_GlobalMethods";
 const SYSTEM_STRING: &str = "[mscorlib]System.String";
 const SYSTEM_INT64: &str = "[mscorlib]System.Int64";
 const SYSTEM_INT32: &str = "[mscorlib]System.Int32";
+const SYSTEM_UINT64: &str = "[mscorlib]System.UInt64";
+const SYSTEM_UINT32: &str = "[mscorlib]System.UInt32";
+const SYSTEM_UINT16: &str = "[mscorlib]System.UInt16";
+const SYSTEM_BYTE: &str = "[mscorlib]System.Byte";
+const SYSTEM_SINGLE: &str = "[mscorlib]System.Single";
 const SYSTEM_DOUBLE: &str = "[mscorlib]System.Double";
 const SYSTEM_BOOLEAN: &str = "[mscorlib]System.Boolean";
 const SYSTEM_CONSOLE: &str = "[mscorlib]System.Console";
@@ -359,12 +367,12 @@ fn managed_abi_type_name(ty: &MsilType) -> Result<String> {
     .to_string())
 }
 
-/// argv 可表达性子集：只承认宿主命令行能无损解析的标量。
+/// argv 可表达性：机械消费共享编码合同表。
 ///
-/// 这是「能力」判定而非「事实」判定：无符号、`i8`/`i16`、`f32`、`string`、数组
-/// 仍是合法库签名，只是不生成 argv launcher；这里不发明任何解析语法。
+/// 这是「包装能力」判定而非「入口事实」判定：被表拒绝的类型仍是合法库签名，
+/// 只是不生成 argv launcher；两个 managed 后端共享同一张表，不各自维护名单。
 fn managed_argv_expressible(managed_type: &str) -> bool {
-    matches!(managed_type, "void" | "bool" | "i32" | "i64" | "f64")
+    argv_encoding(managed_type).is_ok()
 }
 
 /// 合成 `int32(string[])` argv 分发入口：`args[0]` 是逻辑入口名，其余按声明类型解析。
@@ -465,38 +473,60 @@ fn string_equality_reference() -> MsilMethodRef {
     external_method(SYSTEM_STRING, "op_Equality", MsilType::Bool, vec![MsilType::String, MsilType::String])
 }
 
-/// argv 解析调用：按声明标量类型选择 `Int64.Parse` / `Int32.Parse` /
-/// `Double.Parse` / `Boolean.Parse`。
+/// argv 解析调用：按共享合同表选择宿主 `Parse`。
+///
+/// 无符号整型必须落到宿主无符号解析器（`Byte.Parse` / `UInt16.Parse` /
+/// `UInt32.Parse` / `UInt64.Parse`），范围与语义位宽一致；越界由宿主抛
+/// `OverflowException` / `FormatException` 自然传播，不截断、不回绕。
+/// `f32` 用 `System.Single.Parse` 得到真实 `float32`，不得升格成 `Double`。
 fn argument_parse_reference(managed_type: &str) -> Result<MsilMethodRef> {
-    let (owner, return_type) = match managed_type {
-        "i64" => (SYSTEM_INT64, MsilType::Int64 { signed: true }),
-        "i32" => (SYSTEM_INT32, MsilType::Int32 { signed: true }),
-        "f64" => (SYSTEM_DOUBLE, MsilType::Float64),
-        "bool" => (SYSTEM_BOOLEAN, MsilType::Bool),
-        other => return Err(format!("CLR managed ABI launcher 不支持形参标量 `{other}`")),
+    let encoding = argv_encoding(managed_type)?;
+    let (owner, return_type) = match encoding.kind {
+        ArgvKind::Bool => (SYSTEM_BOOLEAN, MsilType::Bool),
+        ArgvKind::Signed { bits: 32 } => (SYSTEM_INT32, MsilType::Int32 { signed: true }),
+        ArgvKind::Signed { bits: 64 } => (SYSTEM_INT64, MsilType::Int64 { signed: true }),
+        ArgvKind::Unsigned { bits: 8 } => (SYSTEM_BYTE, MsilType::Int8 { signed: false }),
+        ArgvKind::Unsigned { bits: 16 } => (SYSTEM_UINT16, MsilType::Int16 { signed: false }),
+        ArgvKind::Unsigned { bits: 32 } => (SYSTEM_UINT32, MsilType::Int32 { signed: false }),
+        ArgvKind::Unsigned { bits: 64 } => (SYSTEM_UINT64, MsilType::Int64 { signed: false }),
+        ArgvKind::Float { bits: 32 } => (SYSTEM_SINGLE, MsilType::Float32),
+        ArgvKind::Float { bits: 64 } => (SYSTEM_DOUBLE, MsilType::Float64),
+        ArgvKind::Void => return Err("CLR managed ABI launcher 形参不能是 `void`".to_string()),
+        other => return Err(format!("CLR managed ABI launcher 不支持形参载体 `{managed_type}`（合同类别 {other:?}）")),
     };
     Ok(external_method(owner, "Parse", return_type, vec![MsilType::String]))
 }
 
-/// 结果输出调用：按返回值类型选择匹配的 `Console.WriteLine` 重载。
+/// 结果输出调用：按共享合同表选择匹配的 `Console.WriteLine` 重载。
+///
+/// `u8`/`u16` 的值域落在 `int32` 内，用 `WriteLine(int32)` 无损；`u32`/`u64`
+/// 必须是宿主无符号重载，否则 4294967295 会被打成 -1。
 fn result_print_reference(managed_type: &str) -> Result<MsilMethodRef> {
-    match managed_type {
-        "i64" | "i32" | "f64" | "bool" => console_write_line_reference(managed_type),
-        "void" => Err("CLR managed ABI launcher：`void` 结果不得生成输出调用".to_string()),
-        other => Err(format!("CLR managed ABI launcher 不支持返回标量 `{other}`")),
-    }
+    let encoding = argv_encoding(managed_type)?;
+    let parameter = match encoding.kind {
+        ArgvKind::Bool => MsilType::Bool,
+        ArgvKind::Signed { bits: 32 } => MsilType::Int32 { signed: true },
+        ArgvKind::Signed { bits: 64 } => MsilType::Int64 { signed: true },
+        ArgvKind::Unsigned { bits: 8 | 16 } => MsilType::Int32 { signed: true },
+        ArgvKind::Unsigned { bits: 32 } => MsilType::Int32 { signed: false },
+        ArgvKind::Unsigned { bits: 64 } => MsilType::Int64 { signed: false },
+        ArgvKind::Float { bits: 32 } => MsilType::Float32,
+        ArgvKind::Float { bits: 64 } => MsilType::Float64,
+        ArgvKind::Void => return Err("CLR managed ABI launcher：`void` 结果不得生成输出调用".to_string()),
+        other => return Err(format!("CLR managed ABI launcher 不支持返回载体 `{managed_type}`（合同类别 {other:?}）")),
+    };
+    Ok(console_write_line_type(parameter))
 }
 
 fn console_write_line_reference(managed_type: &str) -> Result<MsilMethodRef> {
-    let parameter_type = match managed_type {
-        "i64" => MsilType::Int64 { signed: true },
-        "i32" => MsilType::Int32 { signed: true },
-        "f64" => MsilType::Float64,
-        "bool" => MsilType::Bool,
-        "string" => MsilType::String,
-        other => return Err(format!("CLR managed ABI launcher 不支持 `Console.WriteLine` 载体 `{other}`")),
-    };
-    Ok(external_method(SYSTEM_CONSOLE, "WriteLine", MsilType::Void, vec![parameter_type]))
+    match managed_type {
+        "string" => Ok(console_write_line_type(MsilType::String)),
+        other => Err(format!("CLR managed ABI launcher 不支持 `Console.WriteLine` 载体 `{other}`")),
+    }
+}
+
+fn console_write_line_type(parameter_type: MsilType) -> MsilMethodRef {
+    external_method(SYSTEM_CONSOLE, "WriteLine", MsilType::Void, vec![parameter_type])
 }
 
 /// 从导出面出发收集可达操作（按实例身份升序，保证稳定输出顺序）。
@@ -2375,15 +2405,75 @@ mod managed_abi_vocabulary_tests {
     fn argv_subset_rejects_non_argv_carriers() {
         let array = managed_abi_type_name(&MsilType::sz_array(MsilType::Int64 { signed: true })).expect("数组 ABI 事实");
         assert!(!managed_argv_expressible(&array));
-        assert!(!managed_argv_expressible("u32"));
         assert!(!managed_argv_expressible("string"));
-        assert!(!managed_argv_expressible("f32"));
+        assert!(!managed_argv_expressible("char"));
+        assert!(!managed_argv_expressible("i8"));
+        assert!(!managed_argv_expressible("i16"));
     }
 
     #[test]
     fn argv_subset_admits_lossless_scalars() {
-        for ty in ["void", "bool", "i32", "i64", "f64"] {
+        for ty in ["void", "bool", "i32", "i64", "f32", "f64", "u8", "u16", "u32", "u64"] {
             assert!(managed_argv_expressible(ty), "`{ty}` 应可 argv 表达");
         }
+    }
+
+    /// f32/u8/u64 分发入口必须调用真实宿主解析器与无损输出重载。
+    #[test]
+    fn entry_method_uses_shared_contract_host_parsers() {
+        let signature = MsilMethodSignature::new(
+            MsilType::Float32,
+            vec![MsilType::Float32, MsilType::Int8 { signed: false }, MsilType::Int64 { signed: false }],
+        );
+        let entry = ManagedAbiEntry {
+            logical_entry: "score".to_string(),
+            owner: GLOBAL_METHODS_TYPE.to_string(),
+            method: "score".to_string(),
+            signature: signature.to_string(),
+            parameter_types: vec!["f32".to_string(), "u8".to_string(), "u64".to_string()],
+            parameter_names: vec!["x".to_string(), "y".to_string(), "z".to_string()],
+            return_type: "f32".to_string(),
+            launcher_class: Some(MANAGED_ENTRY_METHOD.to_string()),
+        };
+        let target = ManagedDispatchTarget {
+            entry_index: 0,
+            signature,
+            parameter_types: entry.parameter_types.clone(),
+            return_type: entry.return_type.clone(),
+        };
+        let body = build_managed_entry_method(&[entry], &[target]).expect("f32/u8/u64 入口必须生成分发调用");
+        let calls = body
+            .instructions
+            .iter()
+            .filter_map(|instruction| match &instruction.operand {
+                Some(MsilInstructionOperand::Method(reference)) => Some(reference),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            calls.iter().any(|reference| reference.owner.as_deref() == Some(SYSTEM_SINGLE)
+                && reference.name == "Parse"
+                && reference.signature.return_type == MsilType::Float32),
+            "f32 必须走 `System.Single.Parse`: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|reference| reference.owner.as_deref() == Some(SYSTEM_BYTE)
+                && reference.name == "Parse"
+                && reference.signature.return_type == MsilType::Int8 { signed: false }),
+            "u8 必须走宿主无符号 `System.Byte.Parse`: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|reference| reference.owner.as_deref() == Some(SYSTEM_UINT64)
+                && reference.name == "Parse"
+                && reference.signature.return_type == MsilType::Int64 { signed: false }),
+            "u64 必须走 `System.UInt64.Parse`: {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|reference| reference.owner.as_deref() == Some(SYSTEM_CONSOLE)
+                && reference.name == "WriteLine"
+                && reference.signature.parameter_types == vec![MsilType::Float32]),
+            "f32 返回值必须用 `WriteLine(float32)`: {calls:?}"
+        );
     }
 }

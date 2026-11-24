@@ -3,6 +3,8 @@ pub(crate) use crate::lowering::{
     shared::{executable, interop},
 };
 
+pub(crate) mod argv_encoding;
+
 #[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
 pub mod ovm;

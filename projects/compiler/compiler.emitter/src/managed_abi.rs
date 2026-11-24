@@ -140,7 +140,7 @@ pub struct ManagedAbiEntry {
     pub return_type: String,
     /// argv launcher 类内部名。
     ///
-    /// `None` 表示该入口的签名不能由 argv 无损编组（数组、引用、unsigned 等），
+    /// `None` 表示该入口的签名不能由 argv 无损编组（数组、引用、字符/字符串等），
     /// 入口本身仍然是合法的库 ABI 事实，宿主应按 `owner`/`method`/`signature`
     /// 静态绑定实参。该字段不参与「入口是否存在」的判定。
     pub launcher_class: Option<String>,
