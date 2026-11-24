@@ -18,8 +18,17 @@
 //! 0，取反会错误地得到 true，因此 `f64.le`/`f64.ge` 必须使用无序变体
 //! `cgt.un`/`clt.un`（它们在无序时得 1，取反后为 0）。
 //!
-//! `f64.rem` 保持缺口：.NET 没有与 Java `%`/fmod 语义一致的 IL 指令，
-//! `Math.IEEERemainder` 是 IEEE 754 remainder，语义不同。
+//! 无符号有序比较同理：IL 没有独立的 `le.un`/`ge.un`，无符号 `le = !(a > b)`、
+//! `ge = !(a < b)`，首次比较用无符号 `cgt.un`/`clt.un`，第二次判等仍固定 `ceq`。
+//!
+//! 浮点取余不是缺口：ECMA-335 的 `rem` 对浮点操作数定义为截断余数，符号随被除数，
+//! 与 C# `%`、Java `%`、C `fmod` 一致。实测 .NET 8 上 `(-5.5) % 2.0 = -1.5`、
+//! `5.5 % 2.0 = 1.5`，且 C# 的两处 `%` 都编译成 IL `rem`（字节 `0x5D`）；
+//! `Math.IEEERemainder` 才是 IEEE 754 remainder，与本表无关。
+//!
+//! `f32` 独立载体暂无冻结项：emit 侧槽位/形参/返回已支持 `float32`，但 MSIL 模型
+//! 没有 `ldc.r4`（也没有 `conv.r4`），`float32` 槽无法接收浮点常量，故不冻结
+//! `f32.*`，待常量载体补齐后再加。
 
 use crate::{
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
@@ -137,6 +146,9 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Sub),
         "f64.mul" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Mul),
         "f64.div" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Div),
+        // 浮点取余：ECMA-335 `rem` 对浮点操作数就是截断余数（符号随被除数），与
+        // C# `%`/Java `%`/`fmod` 一致；实测 .NET 8 `(-5.5) % 2.0 = -1.5` 且编译为 `rem`。
+        "f64.rem" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Rem),
         "f64.neg" => unary(TargetOperandType::F64, MsilOpcode::Neg),
         // 比较：结果固定为 I32（0/1）；eq/lt/gt 是单 opcode，ne/le/ge 是取反组合。
         "i32.eq" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Ceq),
@@ -148,6 +160,11 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         // 整数载体没有 NaN，`le = !(a > b)`、`ge = !(a < b)`，取反有符号 `cgt`/`clt`。
         "i32.le" => inverted(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Cgt),
         "i32.ge" => inverted(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Clt),
+        // 无符号有序比较：IL 没有独立 `le.un`/`ge.un`，无符号 `le = !(a > b)`、
+        // `ge = !(a < b)`，首次比较取无符号 `cgt.un`/`clt.un`，第二次判等仍固定 `ceq`。
+        "i32.gt.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::CgtUn),
+        "i32.le.un" => inverted(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::CgtUn),
+        "i32.ge.un" => inverted(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::CltUn),
         "i64.eq" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Ceq),
         "i64.ne" => not_equal(TargetOperandType::I64, TargetOperandType::I32),
         "i64.lt" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),
@@ -157,6 +174,10 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         // int64 同样没有 NaN，`le`/`ge` 取反有符号 `cgt`/`clt`，结果槽仍是 I32。
         "i64.le" => inverted(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Cgt),
         "i64.ge" => inverted(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::Clt),
+        // int64 无符号有序比较：`clt.un`/`cgt.un` 对宽载体同形，结果槽仍是 I32。
+        "i64.gt.un" => binary(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::CgtUn),
+        "i64.le.un" => inverted(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::CgtUn),
+        "i64.ge.un" => inverted(TargetOperandType::I64, TargetOperandType::I32, MsilOpcode::CltUn),
         "f64.eq" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Ceq),
         "f64.ne" => not_equal(TargetOperandType::F64, TargetOperandType::I32),
         "f64.lt" => binary(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::Clt),
@@ -212,7 +233,7 @@ mod operator_binding_tests {
 
     /// 声明侧 `[clr_operator("…")]` 的真实助记符必须冻结成 MSIL opcode；
     /// `ne` 冻结为 `ceq; ldc.i4.0; ceq` 取反组合，`le`/`ge` 冻结为取反组合且浮点
-    /// 必须用无序 `cgt.un`/`clt.un`；`f64.rem` 仍保持 Unfrozen。
+    /// 与无符号比较必须用无序 `cgt.un`/`clt.un`；`f64.rem` 冻结为 `rem`。
     #[test]
     fn scalar_operator_mnemonics_freeze_to_msil_opcodes() {
         let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
@@ -285,8 +306,43 @@ mod operator_binding_tests {
             assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
         }
 
-        // .NET 没有与 Java `%`/fmod 语义一致的 IL 指令：`f64.rem` 必须保持缺口。
-        let unfrozen = freeze_clr_operator(&link("f64.rem"), instance, "infix %", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
+        // 无符号有序比较：`gt` 是单条 `cgt.un`，`le = !(a > b)`、`ge = !(a < b)` 取反
+        // 无符号 `cgt.un`/`clt.un`，结果槽仍是 I32。
+        let u32_ty = SemanticType::Integer32 { signed: false };
+        let u64_ty = SemanticType::Integer64 { signed: false };
+        for (mnemonic, operand, encoding) in [
+            ("i32.gt.un", u32_ty.clone(), ClrOperatorCode::Single(MsilOpcode::CgtUn)),
+            ("i32.le.un", u32_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("i32.ge.un", u32_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+            ("i64.gt.un", u64_ty.clone(), ClrOperatorCode::Single(MsilOpcode::CgtUn)),
+            ("i64.le.un", u64_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("i64.ge.un", u64_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+        ] {
+            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix cmp", &[operand.clone(), operand], &SemanticType::Boolean)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
+            let ClrOperatorBinding::Frozen(plan) = plan
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
+            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
+        }
+
+        // 浮点 `rem` 不是缺口：ECMA-335 `rem` 对浮点就是截断余数（符号随被除数），
+        // 与 C# `%`/Java `%`/`fmod` 一致；实测 .NET 8 `(-5.5) % 2.0 = -1.5` 且编译为 `rem`。
+        let remainder = freeze_clr_operator(&link("f64.rem"), instance, "infix %", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
+            .expect("冻结不得失败")
+            .expect("必须是 CLR operator 绑定");
+        let ClrOperatorBinding::Frozen(remainder) = remainder
+        else {
+            panic!("`f64.rem` 必须冻结");
+        };
+        assert_eq!(remainder.encoding, ClrOperatorCode::Single(MsilOpcode::Rem));
+        assert_eq!(remainder.result_type, crate::target_operator::TargetOperandType::F64);
+
+        // 真正未知的助记符仍然只能得到 Unfrozen。
+        let unfrozen = freeze_clr_operator(&link("f64.rem.unknown"), instance, "infix %", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
             .expect("冻结不得失败")
             .expect("必须是 CLR operator 绑定");
         assert!(matches!(unfrozen, ClrOperatorBinding::Unfrozen));
