@@ -49,6 +49,25 @@ pub enum BackendContractError {
         /// 属性参数 span。
         span: DiagnosticSpan,
     },
+    /// 函数级宿主导入定位属性的形态非法（段数不符、参数不是字符串字面量、或存在空串）。
+    ///
+    /// locator 是语言侧声明的导入合同：`[wasi("module", "function")]` 必须恰好两段
+    /// 非空字符串，与组件模型导入 `(module, field)` 的编码形状一致。语言层冻结
+    /// 形状，避免把只能由目标后端才发现的畸形声明拖到 emit 阶段。
+    MalformedHostImportAttribute {
+        /// 属性名（当前为 `wasi`）。
+        attribute: String,
+        /// 声明所有者的稳定符号名（module 路径 + 声明名）。
+        owner: String,
+        /// 期望的稳定形态描述。
+        expected: &'static str,
+        /// 实际解析出的字符串字面量段数。
+        actual: usize,
+        /// 声明所在源码路径。
+        source: String,
+        /// 属性参数 span。
+        span: DiagnosticSpan,
+    },
 }
 
 impl BackendContractError {
@@ -58,6 +77,7 @@ impl BackendContractError {
             Self::WasiPreview1ImportForbidden { span, .. } => span.clone(),
             Self::IntrinsicAnnotationRetired { span, .. } => span.clone(),
             Self::MalformedTypeTargetAttribute { span, .. } => span.clone(),
+            Self::MalformedHostImportAttribute { span, .. } => span.clone(),
         }
     }
 }
@@ -79,6 +99,10 @@ impl std::fmt::Display for BackendContractError {
             Self::MalformedTypeTargetAttribute { attribute, owner, expected, actual, .. } => write!(
                 f,
                 "type-level target mapping attribute `[{attribute}]` on `{owner}` requires {expected}, but resolved {actual} string segment(s)"
+            ),
+            Self::MalformedHostImportAttribute { attribute, owner, expected, actual, .. } => write!(
+                f,
+                "host import attribute `[{attribute}]` on `{owner}` requires {expected}, but resolved {actual} string segment(s)"
             ),
         }
     }
@@ -234,8 +258,9 @@ fn module_source_label(module: &HirModule) -> String {
 }
 
 fn validate_function_interop_surface(function: &HirFunction, scope: &str, source: &str) -> Result<(), BackendContractError> {
+    let owner = if scope.is_empty() { function.name.as_str().to_string() } else { format!("{scope}::{}", function.name.as_str()) };
     for attribute in &function.annotations {
-        validate_interop_attribute(attribute)?;
+        validate_interop_attribute(attribute, &owner, source)?;
     }
     validate_intrinsic_annotation_retired(function, scope, source)
 }
@@ -293,17 +318,35 @@ fn validate_type_target_attribute(attribute: &HirAttribute, owner: &str, source:
     })
 }
 
-fn validate_interop_attribute(attribute: &HirAttribute) -> Result<(), BackendContractError> {
+fn validate_interop_attribute(attribute: &HirAttribute, owner: &str, source: &str) -> Result<(), BackendContractError> {
     let Some(name) = attribute_name(attribute)
     else {
         return Ok(());
     };
 
-    if name != "wasi" {
-        return Ok(());
+    // locator 形状是声明级合同：`[wasi("module", "function")]` 与组件模型导入
+    // `(module, field)` 一一对应。形状不合法必须在声明期失败，不能等到目标后端
+    // 按名字/段数猜测后才报「无法编码」。
+    let expected = match name {
+        "wasi" => "exactly two non-empty string segments (module, function)",
+        _ => return Ok(()),
+    };
+    let locator_segments = attribute.arguments.iter().filter_map(argument_string_literal).collect::<Vec<_>>();
+    let malformed = locator_segments.len() != attribute.arguments.len()
+        || locator_segments.len() != 2
+        || locator_segments.iter().any(|segment| segment.trim().is_empty());
+    if malformed {
+        let span = attribute_argument_span(attribute);
+        return Err(BackendContractError::MalformedHostImportAttribute {
+            attribute: name.to_string(),
+            owner: owner.to_string(),
+            expected,
+            actual: locator_segments.len(),
+            source: source.to_string(),
+            span: DiagnosticSpan { start: span.start, end: span.end },
+        });
     }
 
-    let locator_segments = attribute.arguments.iter().filter_map(argument_string_literal).collect::<Vec<_>>();
     let forbidden_segments = locator_segments
         .iter()
         .filter(|segment| matches!(segment.as_str(), "wasi_snapshot_preview1" | "fd_write" | "fd_read"))
