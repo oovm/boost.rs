@@ -1022,6 +1022,18 @@ fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, 
         return Err("测试构建没有可调用的执行合同（node glue 或后端逐入口合同）：拒绝静默跳过测试入口".to_string());
     };
     let stem = glue.strip_suffix(".mjs").ok_or_else(|| format!("node glue 产物 `{glue}` 不是 `.mjs`"))?;
+    // 启动器是真实写出的物理产物：它必须登记到产物集合，否则只遍历 artifacts 的
+    // 打包/归档/清理路径会漏掉它，运行合同与产物声明就此分叉。
+    let glue_artifact = report
+        .artifacts
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.path == glue || std::path::Path::new(&artifact.path).file_name().and_then(|name| name.to_str()) == Some(glue.as_str()))
+        .cloned()
+        .ok_or_else(|| format!("node glue 产物 `{glue}` 没有登记在产物集合中；拒绝生成未登记物理产物的测试启动器"))?;
+    if !(Path::new(&glue).is_file() || output_dir.join(&glue).is_file()) {
+        return Err(format!("node glue 产物 `{glue}` 不存在；拒绝为不存在的宿主壳生成测试启动器"));
+    }
     std::fs::create_dir_all(output_dir).map_err(|error| format!("创建测试 launcher 目录失败: {}: {error}", output_dir.display()))?;
     let mut contracts = Vec::with_capacity(test_entry_names.len());
     for (index, test_name) in test_entry_names.iter().enumerate() {
@@ -1033,6 +1045,12 @@ fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, 
             js_string_literal(test_name),
         );
         std::fs::write(&launcher_path, content).map_err(|error| format!("写入测试 launcher 失败 {}: {error}", launcher_path.display()))?;
+        // 每个启动器都是一份真实物理产物，登记进产物集合以维持
+        // 「运行合同的 physical_entry 集 ⊆ artifacts」这一交叉不变量。
+        let mut launcher_artifact = glue_artifact.clone();
+        launcher_artifact.name = launcher_name.clone();
+        launcher_artifact.path = launcher_name.clone();
+        report.artifacts.artifacts.push(launcher_artifact);
         contracts.push(DriverRunContract {
             logical_entry: test_name.clone(),
             physical_entry: launcher_name.clone(),
