@@ -760,6 +760,14 @@ fn write_execution_manifest(
             validate: spec.validate.clone(),
         })
         .collect::<Vec<_>>();
+    // 依赖模块名的宿主（CPython）在清单里冻结与文件名/`PyInit_` 同源的模块名。
+    let cpython_module = match plan.project.resolved.contract {
+        ArtifactContract::Cpython(_) => Some(
+            compiler_emitter::emitter_backend_machine::cpython_module_name(&plan.project.name)
+                .map_err(|error| LegionError::msg(report!("{error}")))?,
+        ),
+        _ => None,
+    };
     let exports = library_exports
         .iter()
         .map(|export| crate::legion::cmds::run::LibraryExportIndexEntry {
@@ -773,6 +781,7 @@ fn write_execution_manifest(
             parameters: export.parameters.clone().unwrap_or_default(),
             parameter_names: export.parameter_names.clone().unwrap_or_default(),
             returns: export.returns.clone().unwrap_or_default(),
+            module_name: cpython_module.clone().unwrap_or_default(),
         })
         .collect::<Vec<_>>();
     ExecutionManifest::from_build_plan(plan, output_dir, &contracts, &exports, evidence)?.write_to_output_dir(output_dir)

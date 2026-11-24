@@ -39,9 +39,10 @@ pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// execution manifest 的 schema 版本；`1` 起 manifest 记录 `artifact_kind` 与
 /// 库导出索引，`2` 起库导出索引携带 `source_name` 与 `abi` 命名合同事实，
 /// `3` 起 `parameters`/`returns` 以可空载体签名表示「不可用」与「零形参」的区别。
+/// `4` 起库导出携带 CPython 冻结模块名（`module_name`），消费侧据此导入。
 /// 更早的旧产物一律判为不新鲜并重建。读取侧靠 `serde(default)` 兼容缺少新字段的旧文件。
 #[doc(hidden)]
-pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 3;
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 4;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -143,6 +144,12 @@ pub struct LibraryExportIndexEntry {
     /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
     #[serde(default)]
     pub returns: String,
+    /// 依赖模块名才能导入的宿主的冻结模块名（当前仅 `cpython`）。
+    ///
+    /// 与产物文件名里 `<module>.<abi 后缀>` 的前缀、`PyInit_<module>` 入口符号
+    /// 以及消费侧 `import` 使用同一个值；空串表示该 ABI 不依赖模块名（如 Node-API）。
+    #[serde(default)]
+    pub module_name: String,
 }
 
 /// execution manifest：记录构建输入/产物摘要与运行契约，供 `run` 判断产物是否新鲜。

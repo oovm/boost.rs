@@ -89,6 +89,30 @@ fn build_library_with_manifest_target(prefix: &str, source: &str, manifest_targe
     (outcome, root)
 }
 
+fn build_library_with_name(prefix: &str, project_name: &str, source: &str, target: &str) -> (BuildOutcome, PathBuf) {
+    let manifest_target = if matches!(target, "node" | "python" | "native") { "native" } else { target };
+    let root = std::env::temp_dir().join(format!("legion-export-naming-{prefix}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let source_dir = root.join("source");
+    fs::create_dir_all(&source_dir).unwrap();
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    name: "export-naming",
+    members: []
+}
+"#,
+    )
+    .unwrap();
+    let manifest = MANIFEST_TEMPLATE.replace("%TARGET%", manifest_target).replace("name: \"app\"", &format!("name: \"{project_name}\""));
+    fs::write(root.join("legion.von"), manifest).unwrap();
+    fs::write(source_dir.join("main.v"), source).unwrap();
+    fs::write(source_dir.join("core_primitive.v"), PRIMITIVES).unwrap();
+    let output_dir = root.join("dist").join("out");
+    let outcome = build_project(&BuildOptions { project_dir: root.clone(), target: Some(target.to_string()), output_dir: Some(output_dir) });
+    (outcome, root)
+}
+
 fn manifest_at(outcome: &BuildOutcome) -> ExecutionManifest {
     let artifact = PathBuf::from(outcome.artifacts.first().expect("库交付至少有一个产物"));
     let dir = artifact.parent().expect("产物在输出目录内");
@@ -117,6 +141,7 @@ fn plain_dll_export_index_uses_source_names_and_ignores_case_annotation() {
     assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "C ABI 清单记录冻结形参载体");
     assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "C ABI 清单记录形参声明名，供按名绑定");
     assert_eq!(move_zeroes.returns, "i64", "C ABI 清单记录冻结返回载体");
+    assert!(move_zeroes.module_name.is_empty(), "C ABI 不依赖模块名，清单不填 module_name");
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "two_sum", "C ABI 忽略 `case:` 注解改名");
     assert_eq!(two_sum.abi, "c-abi");
@@ -135,6 +160,7 @@ fn node_extension_export_index_projects_camel_case_and_honors_annotation() {
     assert_eq!(move_zeroes.parameters, vec!["i64".to_string()], "Node-API 清单记录冻结形参载体");
     assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()], "Node-API 清单记录形参声明名");
     assert_eq!(move_zeroes.returns, "i64", "Node-API 清单记录冻结返回载体");
+    assert!(move_zeroes.module_name.is_empty(), "Node-API 不依赖模块名，清单不填 module_name");
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "twoSum", "Node 有注解时用注解名（兼容旧行为）");
     assert_eq!(two_sum.abi, "node-api");
@@ -156,6 +182,32 @@ fn wasm_library_export_index_applies_annotation_contract() {
     let two_sum = export_of(&manifest, "two_sum");
     assert_eq!(two_sum.logical_name, "twoSum", "wasm 有注解时导出注解名");
     assert_eq!(two_sum.abi, "wasm");
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// CPython：工程名 `leetcode-multiply-strings` 归一化为可导入模块名，
+/// 文件名前缀、`PyInit_` 与清单 `module_name` 同源；导出名保留源码名。
+#[cfg(windows)]
+#[test]
+fn cpython_export_index_freezes_normalized_module_name() {
+    let (outcome, root) = build_library_with_name("python", "leetcode-multiply-strings", LIB_SOURCE, "python");
+    assert!(outcome.ok, "CPython 扩展构建失败: {:?}", outcome.error);
+    let manifest = manifest_at(&outcome);
+    let move_zeroes = export_of(&manifest, "move_zeroes");
+    assert_eq!(manifest.project_name, "leetcode-multiply-strings", "清单保留题库工程名");
+    assert_eq!(move_zeroes.abi, "cpython");
+    assert_eq!(move_zeroes.module_name, "leetcode_multiply_strings", "清单冻结归一化模块名");
+    assert!(
+        move_zeroes.physical_artifact.starts_with("leetcode_multiply_strings."),
+        "产物文件名以同一模块名为前缀: {}",
+        move_zeroes.physical_artifact
+    );
+    assert_eq!(move_zeroes.logical_name, "move_zeroes", "CPython 保留源码名，不自动 snake_case");
+    assert!(move_zeroes.signature_available);
+    assert_eq!(move_zeroes.parameters, vec!["i64".to_string()]);
+    assert_eq!(move_zeroes.parameter_names, vec!["x".to_string()]);
+    let two_sum = export_of(&manifest, "two_sum");
+    assert_eq!(two_sum.logical_name, "two_sum", "CPython 忽略 `case:` 注解");
     let _ = fs::remove_dir_all(&root);
 }
 
