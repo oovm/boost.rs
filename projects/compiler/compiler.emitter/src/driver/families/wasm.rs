@@ -43,19 +43,7 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
             input
                 .library_wasm_exports
                 .iter()
-                .map(|export| DriverLibraryExport {
-                    logical_name: export.public_name.clone(),
-                    source_name: export.source_name.clone(),
-                    physical_artifact: format!("{physical_name}.wasm"),
-                    invocation: "wasm callExport".to_string(),
-                    abi_digest: abi_digest.clone(),
-                    abi: "wasm".to_string(),
-                    // wasm 导出面的载体签名由 ABI schema 承载；本 lane 尚未把该
-                    // 事实投影到清单，`None` 表示签名不可用（区别于零形参的 `Some([])`）。
-                    parameters: None,
-                    parameter_names: None,
-                    returns: None,
-                })
+                .map(|export| project_library_export(export, &physical_name, &abi_digest))
                 .collect()
         }
         else {
@@ -123,6 +111,28 @@ fn library_invoke_digest(module: &crate::emitter_backend_wasi::WasmBinaryModule)
     payload.get("abi_digest")?.as_str().map(str::to_string)
 }
 
+/// 将 lowering 冻结的 wasm 库导出投影为驱动层清单条目。
+///
+/// 签名（载体标签 / 形参名 / 返回标签）已在 lowering 由冻结 ABI 定案，这里只做
+/// 纯映射：`Some([])` 表示已冻结的零形参，绝不回落为 `None`。
+fn project_library_export(
+    export: &crate::emitter_backend_wasi::WasmLibraryExport,
+    physical_name: &str,
+    abi_digest: &str,
+) -> DriverLibraryExport {
+    DriverLibraryExport {
+        logical_name: export.public_name.clone(),
+        source_name: export.source_name.clone(),
+        physical_artifact: format!("{physical_name}.wasm"),
+        invocation: "wasm callExport".to_string(),
+        abi_digest: abi_digest.to_string(),
+        abi: "wasm".to_string(),
+        parameters: Some(export.parameters.clone()),
+        parameter_names: Some(export.parameter_names.clone()),
+        returns: Some(export.returns.clone()),
+    }
+}
+
 /// 将逻辑产物名规范化为 `WASM` 物理产物名。
 ///
 /// 通用规则：直接使用 `artifact_name` 作为物理产物名，不对任何项目名做特殊分支。
@@ -130,4 +140,41 @@ fn library_invoke_digest(module: &crate::emitter_backend_wasi::WasmBinaryModule)
 /// `backend::wasi::canonical_wasm_artifact_stem` 产出相同的结果。
 fn wasm_physical_artifact_name(artifact_name: &str) -> String {
     artifact_name.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn export(parameters: &[&str], parameter_names: &[&str], returns: &str) -> crate::emitter_backend_wasi::WasmLibraryExport {
+        crate::emitter_backend_wasi::WasmLibraryExport {
+            source_name: "two_sum".to_string(),
+            public_name: "twoSum".to_string(),
+            parameters: parameters.iter().map(|carrier| carrier.to_string()).collect(),
+            parameter_names: parameter_names.iter().map(|name| name.to_string()).collect(),
+            returns: returns.to_string(),
+        }
+    }
+
+    /// 冻结签名必须原样投影为 `Some(...)`，不得回落为 `None`。
+    #[test]
+    fn library_export_projects_frozen_signature() {
+        let projected = project_library_export(&export(&["i32", "handle"], &["nums", "target"], "i64"), "app", "digest");
+        assert_eq!(projected.logical_name, "twoSum");
+        assert_eq!(projected.source_name, "two_sum");
+        assert_eq!(projected.parameters, Some(vec!["i32".to_string(), "handle".to_string()]));
+        assert_eq!(projected.parameter_names, Some(vec!["nums".to_string(), "target".to_string()]));
+        assert_eq!(projected.returns, Some("i64".to_string()));
+        assert_eq!(projected.physical_artifact, "app.wasm");
+        assert_eq!(projected.abi_digest, "digest");
+    }
+
+    /// 零形参是已冻结事实 `Some([])`，不是签名缺失 `None`。
+    #[test]
+    fn zero_parameter_export_stays_frozen_empty_vector() {
+        let projected = project_library_export(&export(&[], &[], "void"), "lib", "");
+        assert_eq!(projected.parameters, Some(Vec::new()));
+        assert_eq!(projected.parameter_names, Some(Vec::new()));
+        assert_eq!(projected.returns, Some("void".to_string()));
+    }
 }

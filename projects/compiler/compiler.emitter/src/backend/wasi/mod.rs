@@ -79,16 +79,28 @@ pub struct WasmBinaryBackendInput {
     pub wasm_package_kind: WasmPackageKind,
 }
 
-/// wasm library 交付的一条导出：语言侧源码名与目标公开名。
+/// wasm library 交付的一条导出：语言侧源码名、目标公开名与冻结的载体签名。
 ///
 /// wasm 的命名合同是「有 `name:` / `case:` 注解用注解名，否则源码名」；
-/// 清单与宿主调用面记录公开名，源码名保留用于跨目标追溯。
+/// 清单与宿主调用面记录公开名，源码名保留用于跨目标追溯。签名事实全部来自
+/// 已冻结的 Wasm 导出 ABI 载体合同（`freeze_wasm_export_abi`）与 canonical
+/// 参数身份，不按类型名/字符串表重新推导。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WasmLibraryExport {
     /// 语言侧冻结的源码声明名。
     pub source_name: String,
     /// wasm 命名合同投影后的公开导出名。
     pub public_name: String,
+    /// 按声明顺序排列的形参载体标签（`i32` / `i64` / `f32` / `f64` / `handle`）。
+    ///
+    /// 空向量表示已冻结的零形参，不是签名缺失。
+    pub parameters: Vec<String>,
+    /// 形参声明名（按声明顺序，与 `parameters` 等长）。
+    pub parameter_names: Vec<String>,
+    /// 返回载体标签（`i32` / `i64` / `f32` / `f64` / `handle` / `void`）。
+    ///
+    /// `void` 表示该导出没有返回值。
+    pub returns: String,
 }
 
 /// `WebAssembly` 二进制后端（覆盖 `WasmJsGlue` 与 `WasiComponent` 宿主边界）。

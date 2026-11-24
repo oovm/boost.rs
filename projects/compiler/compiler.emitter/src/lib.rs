@@ -820,16 +820,18 @@ pub struct DriverLibraryExport {
     pub abi_digest: String,
     /// 目标 ABI 合同标签（`node-api` / `cpython` / `c-abi` / `wasm` / `ovm` / `jvm-managed` / `clr-managed`）。
     pub abi: String,
-    /// 形参宿主载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）。
+    /// 形参载体标签（按形参顺序），词汇表由各 lane 的冻结 ABI 决定：
+    /// `c-abi` 用 `i64` / `i64[]` / `utf8` 等，`wasm` 用 `i32` / `i64` / `f32` /
+    /// `f64` / `handle`，托管 lane 用其 managed 标量名，`ovm` 用其 carrier 名。
     ///
-    /// `Some([])` 是已冻结的零形参签名，`None` 是该 lane 尚未提供签名事实；
+    /// `Some([])` 是已冻结的零形参签名，`None` 是该 lane 不提供签名事实；
     /// 两者必须可区分，消费侧不得把 `None` 当零形参编组。
     pub parameters: Option<Vec<String>>,
     /// 形参声明名（按形参顺序，与 `parameters` 等长）；`None` 表示签名不可用。
     /// 消费侧按名绑定用例字段，禁止依赖 JSON 对象键序。
     pub parameter_names: Option<Vec<String>>,
-    /// 返回宿主载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）；
-    /// `None` 表示该 lane 尚未提供签名事实。
+    /// 返回载体标签，词汇表与 [`Self::parameters`] 同源；无返回值用各 lane 的
+    /// void 标签（如 `unit` / `void`）。`None` 表示该 lane 不提供签名事实。
     pub returns: Option<String>,
 }
 
