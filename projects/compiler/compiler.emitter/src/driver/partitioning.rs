@@ -42,6 +42,7 @@ pub(crate) fn merge_partition_reports(
     let mut secondary_contracts = Vec::new();
     let mut managed_abi: Vec<(String, crate::ManagedAbiContract)> = Vec::new();
     let mut ovm_abi: Vec<(String, crate::OvmAbiSidecar)> = Vec::new();
+    let mut export_owners: Vec<(String, String)> = Vec::new();
     for (partition_name, report) in reports {
         merged.artifacts.artifacts.extend(report.artifacts.artifacts);
         if merged.entry_symbol.is_none() {
@@ -77,7 +78,18 @@ pub(crate) fn merge_partition_reports(
         else {
             secondary_contracts.extend(report.run_contracts);
         }
-        merged.library_exports.extend(report.library_exports);
+        // 导出清单是宿主按逻辑名查找的扁平索引；同一逻辑名被两个分区同时声称时，
+        // 宿主无法确定绑定哪一份产物，必须在合并期失败而不是写出歧义索引。
+        for export in report.library_exports {
+            if let Some((existing_partition, _)) = export_owners.iter().find(|(name, _)| *name == export.logical_name) {
+                return Err(format!(
+                    "多个分区同时导出同一逻辑名 `{}`：`{existing_partition}` 与 `{partition_name}`；拒绝合并歧义导出索引",
+                    export.logical_name
+                ));
+            }
+            export_owners.push((export.logical_name.clone(), partition_name.clone()));
+            merged.library_exports.push(export);
+        }
     }
     merged.run_contracts = primary_contracts;
     merged.run_contracts.extend(secondary_contracts);
@@ -123,5 +135,46 @@ mod tests {
         .expect_err("同一产物被两个分区声称必须失败");
         assert!(error.contains("managed ABI"), "{error}");
         assert!(error.contains("app.jar"), "{error}");
+    }
+
+    fn report_with_export(export_name: &str) -> DriverCompileReport {
+        DriverCompileReport {
+            library_exports: vec![crate::DriverLibraryExport {
+                logical_name: export_name.to_string(),
+                source_name: export_name.to_string(),
+                physical_artifact: format!("{export_name}.dll"),
+                invocation: "LoadLibraryW + GetProcAddress".to_string(),
+                abi_digest: String::new(),
+                abi: "c-abi".to_string(),
+                parameters: Some(Vec::new()),
+                parameter_names: Some(Vec::new()),
+                returns: Some("unit".to_string()),
+            }],
+            ..DriverCompileReport::default()
+        }
+    }
+
+    /// 不同分区导出不同逻辑名时必须全部保留。
+    #[test]
+    fn merges_distinct_library_exports() {
+        let merged =
+            merge_partition_reports(vec![("a".to_string(), report_with_export("alpha")), ("b".to_string(), report_with_export("beta"))], None)
+                .expect("不同逻辑名必须可合并");
+        assert_eq!(
+            merged.library_exports.iter().map(|export| export.logical_name.as_str()).collect::<Vec<_>>(),
+            vec!["alpha", "beta"]
+        );
+    }
+
+    /// 同一逻辑名被两个分区同时导出时，宿主无法确定绑定哪份产物，必须在合并期失败。
+    #[test]
+    fn rejects_duplicate_logical_export_names_across_partitions() {
+        let error = merge_partition_reports(
+            vec![("left".to_string(), report_with_export("shared")), ("right".to_string(), report_with_export("shared"))],
+            None,
+        )
+        .expect_err("重复逻辑名必须失败");
+        assert!(error.contains("歧义导出索引"), "{error}");
+        assert!(error.contains("`shared`"), "{error}");
     }
 }
