@@ -27,6 +27,18 @@ impl BundledBackendCompiler for WasmFamilyCompiler {
                 expected_boundary, request.requirement.host_boundary
             ));
         }
+        // 未实现的用途组合必须在写出前拒绝：JS glue 的宿主交付身份是库导出面，
+        // `WasiComponent` 的 command 世界只有 `_start`，两者都无法表达宿主扩展
+        // 装载或逐 `[test]` 调用；先写产物再报错只会留下无法按名调用的文件。
+        if request.purpose == compiler_target::ArtifactPurpose::HostExtension {
+            return Err("`wasm` lane 不支持宿主扩展用途：JS glue 的交付身份是库导出面；请改用 `artifact: library`".to_string());
+        }
+        if request.purpose == compiler_target::ArtifactPurpose::TestBundle && expected_boundary == HostProjectionBoundary::WasiComponent {
+            return Err(
+                "`WasiComponent` 不支持测试包用途：command 世界只有 `_start`，无法按 `[test]` 名字逐条调用；拒绝写出只能整体启动的组件"
+                    .to_string(),
+            );
+        }
         let backend = WasmBinaryBackend::new();
         backend.validate(&input).map_err(|error| error.to_string())?;
         let package_as_wasi_command = input.package_as_wasi_command;

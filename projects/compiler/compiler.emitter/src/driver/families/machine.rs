@@ -72,9 +72,16 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     return Err("native 宿主扩展缺少冻结的宿主合同；拒绝按扩展名猜装载方式".to_string());
                 }
             }
-            compiler_target::ArtifactPurpose::Application | compiler_target::ArtifactPurpose::TestBundle
-                if !input.host_exports.is_empty() || input.host_module.is_some() =>
-            {
+            compiler_target::ArtifactPurpose::TestBundle => {
+                // 测试包要求每个 `[test]` 一条独立运行合同，而原生交付只有单一
+                // 进程入口；先写镜像再由驱动层发现缺少逐测试入口，会留下只能整体
+                // 启动的误导产物。
+                return Err(
+                    "`machine-code` lane 不支持测试包用途：单一进程入口无法表达逐 `[test]` 运行合同；拒绝写出只能整体启动的镜像"
+                        .to_string(),
+                );
+            }
+            compiler_target::ArtifactPurpose::Application if !input.host_exports.is_empty() || input.host_module.is_some() => {
                 return Err("native 可执行交付不得携带宿主扩展导出面或宿主合同；用途与导出面必须一致".to_string());
             }
             _ => {}
