@@ -2537,11 +2537,12 @@ fn is_slot_type(ty: &SemanticType) -> bool {
     )
 }
 
-/// 数组元素的结构候选：标量，或本 lane 以 8 字节指针承载的引用/聚合/sum/数组。
+/// 数组元素的结构候选：标量，或本 lane 以 8 字节指针承载的引用/聚合/sum/数组/元组/文本。
 ///
-/// 这里只做「形状可能」的冻结前筛查；值存储聚合等需要计划才能判定的类型
-/// 由调用点的 [`FunctionLowerer::is_local_carrier`] 再裁决，避免把内联值
-/// 当成指针搬运。
+/// 本函数在 import 冻结阶段使用，早于计划建立，因此只能按形状判断；它必须覆盖
+/// [`is_local_carrier_type`] 的全部元素形状（以及需要计划才能确认存储类的引用形状），
+/// 否则同一元素类型会在构造入口被接受、在 operator 冻结被拒绝。值存储聚合等精确
+/// 裁决留给 lowering 的 [`FunctionLowerer::is_local_carrier`]，避免把内联值当成指针搬运。
 fn is_array_element_carrier_candidate(ty: &SemanticType) -> bool {
     is_slot_type(ty)
         || matches!(
@@ -2551,6 +2552,9 @@ fn is_array_element_carrier_candidate(ty: &SemanticType) -> bool {
                 | SemanticType::Union(_)
                 | SemanticType::Nullable(_)
                 | SemanticType::Array(_)
+                | SemanticType::Tuple(_)
+                | SemanticType::Utf8
+                | SemanticType::Utf16
         )
 }
 
@@ -2828,7 +2832,7 @@ fn freeze_x86_64_array_operator(
         };
         if !is_array_element_carrier_candidate(element) {
             return Err(format!(
-                "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 不在首批开放的 8 字节元素载体白名单内: function={symbol} instance={instance:?}"
+                "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
             ));
         }
         Ok(element)
@@ -2927,8 +2931,42 @@ fn require_array_return(
     };
     if !is_array_element_carrier_candidate(element) {
         return Err(format!(
-            "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 不在首批开放的 8 字节元素载体白名单内: function={symbol} instance={instance:?}"
+            "x86_64 数组 operator `{mnemonic}` 的元素类型 `{element}` 没有 8 字节槽载体: function={symbol} instance={instance:?}"
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod array_element_carrier_tests {
+    use super::*;
+
+    /// import 冻结早于计划建立：候选筛查必须覆盖所有无计划即可判定为元素载体的形状，
+    /// 否则同一元素类型会在构造入口（`is_local_carrier_type`）被接受、在 operator
+    /// 冻结被拒绝——这正是两条入口合同漂移的形态。
+    #[test]
+    fn operator_candidate_screen_covers_every_plan_free_element_carrier() {
+        let shapes = vec![
+            SemanticType::Boolean,
+            SemanticType::Character,
+            SemanticType::Integer8 { signed: true },
+            SemanticType::Integer16 { signed: false },
+            SemanticType::Integer32 { signed: true },
+            SemanticType::Integer64 { signed: false },
+            SemanticType::Float32,
+            SemanticType::Float64,
+            SemanticType::Utf8,
+            SemanticType::Utf16,
+            SemanticType::Array(Box::new(SemanticType::Integer8 { signed: false })),
+            SemanticType::Tuple(vec![SemanticType::Integer64 { signed: true }]),
+        ];
+        for ty in shapes {
+            if is_local_carrier_type(&ty) {
+                assert!(
+                    is_array_element_carrier_candidate(&ty),
+                    "`{ty}` 在构造入口可作数组元素，却被 operator 候选筛查拒绝"
+                );
+            }
+        }
+    }
 }
