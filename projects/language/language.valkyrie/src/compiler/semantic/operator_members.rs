@@ -132,3 +132,111 @@ pub fn is_operator_member_name(name: &str) -> bool {
 fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
     annotations.iter().any(|attribute| attribute.name.name == name)
 }
+
+#[cfg(test)]
+mod tests {
+    use compiler_target::{RewriteTheory, TheoryBundle};
+    use compiler_types::SemanticType;
+
+    use crate::compiler::hir::lowering::{CompilerSourceFile, CompilerSourceGroup};
+    use crate::compiler::hir::ValkyrieCompiler;
+
+    /// 语言测试夹具的标准库源：运算符作为结构体内的普通成员声明。
+    const STD_OPERATORS: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/std_operators.v"));
+
+    fn compile_scalar_operator_probe() -> crate::compiler::valkyrie_mir::CompiledValkyrieProgram {
+        let source = r#"
+namespace app;
+
+[export(name: "add")]
+micro add(a: i32, b: i32) -> i32 { return a + b }
+[export(name: "less")]
+micro less(a: i32, b: i32) -> bool { return a < b }
+[export(name: "negate")]
+micro negate(a: i32) -> i32 { return -a }
+"#;
+        let group = CompilerSourceGroup::from_source_files(
+            "app",
+            "app",
+            vec![
+                CompilerSourceFile { path: "std_operators.v".into(), source: STD_OPERATORS.into() },
+                CompilerSourceFile { path: "main.v".into(), source: source.into() },
+            ],
+            Vec::new(),
+        )
+        .as_entry();
+        ValkyrieCompiler::default()
+            .compile_source_groups_to_program(&[group])
+            .unwrap_or_else(|error| panic!("`a + b` / `a < b` / `-a` 必须解析到运算符成员声明: {error}"))
+    }
+
+    /// 前端闭环：`[infix] micro \`+\`` 是普通成员声明；调用点解析到该声明，
+    /// 目标绑定注解在目标计划里成为 operator 导入链接（不是 Unfrozen，也不是宿主导入）。
+    #[test]
+    fn scalar_operator_member_declarations_resolve_and_link_target_bindings() {
+        let program = compile_scalar_operator_probe();
+        let canonical = program.mir_program();
+        let fragment = canonical.linked.fragments.keys().next().cloned().expect("程序必须至少声明一个片段");
+        let roots: Vec<_> = canonical.mir.functions.keys().copied().collect();
+        let build_plan = |family: compiler_target::TargetBackendFamily| {
+            crate::compiler::emitter::pipeline::target_plan::from_compiled_program(
+                &program,
+                &fragment,
+                TheoryBundle { shared: RewriteTheory::default(), fragment: RewriteTheory::default() },
+                &roots,
+                compiler_emitter::sum_tag_width(family),
+            )
+            .unwrap_or_else(|error| panic!("运算符实例必须能冻结进目标计划({family:?}): {error}"))
+        };
+        let assert_plan = |plan: &compiler_emitter::TargetExecutionPlan| {
+            let by_segment = |segment: &str| {
+                plan.imports()
+                    .values()
+                    .find(|import| import.links.iter().any(|link| link.locator_segments().iter().any(|part| part == segment)))
+                    .unwrap_or_else(|| panic!("目标计划缺少 `{segment}` operator 导入"))
+            };
+
+            let add = by_segment("integer.add");
+            // 四个 target 的绑定必须按声明顺序全部保留：语言侧只记录「声明了哪些目标绑定」，
+            // 选哪条由各 target 自己的裁决函数决定，前端不得 first-wins 丢弃其余三条。
+            let add_bindings = add
+                .links
+                .iter()
+                .map(|link| {
+                    assert_eq!(link.boundary.as_str(), "host");
+                    (link.platform_tag.as_ref().map(|tag| tag.as_str().to_string()), link.locator_segments().join("."))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                add_bindings,
+                vec![
+                    (Some("jvm-operator".to_string()), "integer.add".to_string()),
+                    (Some("clr-operator".to_string()), "i32.add".to_string()),
+                    (Some("wasm-operator".to_string()), "i32.add".to_string()),
+                    (Some("ovm-operator".to_string()), "i32.add".to_string()),
+                ]
+            );
+            assert_eq!(
+                add.parameter_types,
+                vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }]
+            );
+            assert_eq!(add.return_type, SemanticType::Integer32 { signed: true });
+
+            let less = by_segment("integer.compare_less_than");
+            assert_eq!(less.parameter_types, vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }]);
+            assert_eq!(less.return_type, SemanticType::Boolean);
+
+            let negate = by_segment("integer.negate");
+            assert_eq!(negate.parameter_types, vec![SemanticType::Integer32 { signed: true }]);
+            assert_eq!(negate.return_type, SemanticType::Integer32 { signed: true });
+        };
+
+        // 同一份 `std_operators.v` 分别以四个 target 走「解析 → 计划」：每个计划都必须
+        // 保留全部四条候选链接，target 差异只体现在 sum tag width，不改变声明保留。
+        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Jvm));
+        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Clr));
+        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Wasm));
+        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Ovm));
+    }
+}

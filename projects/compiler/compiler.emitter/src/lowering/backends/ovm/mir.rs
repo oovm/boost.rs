@@ -2202,3 +2202,51 @@ pub(crate) fn freeze_ovm_operator(
     crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
     Ok(Some(OvmOperatorBinding::Frozen(plan)))
 }
+
+#[cfg(test)]
+mod operator_binding_tests {
+    use super::{OvmOperatorBinding, freeze_ovm_operator};
+    use compiler_target::{ExternalImportLink, Identifier};
+    use compiler_types::{ItemInstanceId, SemanticType};
+    use data_binary_odin::OdinHeadCode;
+
+    fn link(mnemonic: &str) -> ExternalImportLink {
+        ExternalImportLink::host(Some(Identifier::new("ovm-operator")), vec![mnemonic.to_string()])
+    }
+
+    /// 声明侧 `[ovm_operator("…")]` 的真实助记符必须冻结成 Odin 头码，
+    /// 而不是 Unfrozen；没有配方的助记符仍失败闭合。
+    #[test]
+    fn scalar_operator_mnemonics_freeze_to_odin_head_codes() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let i32_ty = SemanticType::Integer32 { signed: true };
+
+        let add = freeze_ovm_operator(&link("i32.add"), instance, "infix +", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
+            .expect("冻结不得失败")
+            .expect("必须是 OVM operator 绑定");
+        let OvmOperatorBinding::Frozen(add) = add
+        else {
+            panic!("`i32.add` 必须冻结");
+        };
+        assert_eq!(add.arity, 2);
+        assert_eq!(add.encoding, OdinHeadCode::I32Add);
+
+        let less =
+            freeze_ovm_operator(&link("i32.lt"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
+                .expect("冻结不得失败")
+                .expect("必须是 OVM operator 绑定");
+        let OvmOperatorBinding::Frozen(less) = less
+        else {
+            panic!("`i32.lt` 必须冻结");
+        };
+        assert_eq!(less.encoding, OdinHeadCode::I32LtS);
+        assert_eq!(less.result_type, crate::target_operator::TargetOperandType::I32);
+
+        // OVM 没有 i64 算术配方：必须保留 Unfrozen，禁止回落宿主导入或猜测指令。
+        let i64_ty = SemanticType::Integer64 { signed: true };
+        let unfrozen = freeze_ovm_operator(&link("i64.add"), instance, "infix +", &[i64_ty.clone(), i64_ty.clone()], &i64_ty)
+            .expect("冻结不得失败")
+            .expect("必须是 OVM operator 绑定");
+        assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen));
+    }
+}

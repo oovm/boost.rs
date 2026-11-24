@@ -2903,3 +2903,58 @@ mod managed_abi_type_tests {
         assert_eq!(contract.entries[0].launcher_class, None);
     }
 }
+
+#[cfg(test)]
+mod operator_binding_tests {
+    use compiler_target::{ExternalImportLink, Identifier, SemanticType};
+    use compiler_types::ItemInstanceId;
+
+    use super::super::JvmOperatorCode;
+    use super::super::recipe::{JvmOperatorBinding, freeze_jvm_operator};
+    use crate::target_operator::TargetOperandType;
+    use crate::transitional::binary::class::JvmInstruction;
+
+    fn link(mnemonic: &str) -> ExternalImportLink {
+        ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec![mnemonic.to_string()])
+    }
+
+    /// 声明侧 `[jvm_operator("…")]` 的真实助记符必须冻结成 JVM 指令，
+    /// 而不是 Unfrozen；未知助记符仍失败闭合。
+    #[test]
+    fn scalar_operator_mnemonics_freeze_to_jvm_instructions() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let i32_ty = SemanticType::Integer32 { signed: true };
+
+        let add = freeze_jvm_operator(&link("integer.add"), instance, "infix +", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(add) = add
+        else {
+            panic!("`integer.add` 必须冻结");
+        };
+        assert_eq!(add.arity, 2);
+        assert_eq!(add.encoding, JvmOperatorCode::IntegerAdd);
+        assert_eq!(add.encoding.arithmetic_instruction(), Some(JvmInstruction::IAdd));
+
+        let less = freeze_jvm_operator(&link("integer.compare_less_than"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(less) = less
+        else {
+            panic!("`integer.compare_less_than` 必须冻结");
+        };
+        assert_eq!(less.result_type, TargetOperandType::I32);
+        assert_eq!(less.encoding, JvmOperatorCode::IntegerCompareLessThan);
+        let instructions = less.encoding.instructions(0);
+        assert!(
+            instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfICmpGe(_))),
+            "i32 `<` 必须展开为 if_icmp 分支序列: {instructions:?}"
+        );
+
+        // JVM 没有 double.negate 配方：必须保留 Unfrozen，禁止退回宿主导入或猜测指令。
+        let unfrozen = freeze_jvm_operator(&link("double.negate"), instance, "prefix -", &[SemanticType::Float64], &SemanticType::Float64)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        assert!(matches!(unfrozen, JvmOperatorBinding::Unfrozen));
+    }
+}

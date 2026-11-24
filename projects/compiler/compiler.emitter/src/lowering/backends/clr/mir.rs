@@ -128,3 +128,48 @@ pub(crate) fn freeze_clr_operator(
     crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
     Ok(Some(ClrOperatorBinding::Frozen(plan)))
 }
+
+#[cfg(test)]
+mod operator_binding_tests {
+    use compiler_target::{ExternalImportLink, Identifier};
+    use compiler_types::{ItemInstanceId, SemanticType};
+
+    use super::{ClrOperatorBinding, MsilOpcode, freeze_clr_operator};
+
+    fn link(mnemonic: &str) -> ExternalImportLink {
+        ExternalImportLink::host(Some(Identifier::new("clr-operator")), vec![mnemonic.to_string()])
+    }
+
+    /// 声明侧 `[clr_operator("…")]` 的真实助记符必须冻结成 MSIL opcode；
+    /// MSIL 没有的 `ne` 仍保持 Unfrozen。
+    #[test]
+    fn scalar_operator_mnemonics_freeze_to_msil_opcodes() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let i32_ty = SemanticType::Integer32 { signed: true };
+
+        let add = freeze_clr_operator(&link("i32.add"), instance, "infix +", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
+            .expect("冻结不得失败")
+            .expect("必须是 CLR operator 绑定");
+        let ClrOperatorBinding::Frozen(add) = add
+        else {
+            panic!("`i32.add` 必须冻结");
+        };
+        assert_eq!(add.arity, 2);
+        assert_eq!(add.result_type, crate::target_operator::TargetOperandType::I32);
+        assert_eq!(add.encoding, MsilOpcode::Add);
+
+        let less = freeze_clr_operator(&link("i32.lt"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 CLR operator 绑定");
+        let ClrOperatorBinding::Frozen(less) = less
+        else {
+            panic!("`i32.lt` 必须冻结");
+        };
+        assert_eq!(less.encoding, MsilOpcode::Clt);
+
+        let unfrozen = freeze_clr_operator(&link("i32.ne"), instance, "infix !=", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 CLR operator 绑定");
+        assert!(matches!(unfrozen, ClrOperatorBinding::Unfrozen));
+    }
+}

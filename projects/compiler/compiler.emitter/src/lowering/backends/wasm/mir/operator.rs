@@ -136,3 +136,41 @@ fn validate_frozen_array_operator(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod operator_binding_tests {
+    use super::{WasmOpcode, WasmOperatorBinding, freeze_wasm_operator_binding};
+    use compiler_types::{ItemInstanceId, SemanticType};
+
+    /// 声明侧 `[wasm_operator("…")]` 的真实助记符必须冻结成 Wasm 原生 opcode；
+    /// Wasm 没有的 `f64.rem` 仍保持 Unfrozen。
+    #[test]
+    fn scalar_operator_mnemonics_freeze_to_wasm_opcodes() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let i32_ty = SemanticType::Integer32 { signed: true };
+
+        let add = freeze_wasm_operator_binding(instance, "infix +", "i32.add", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
+            .expect("冻结不得失败")
+            .expect("必须是 Wasm operator 绑定");
+        let WasmOperatorBinding::Numeric(add) = add
+        else {
+            panic!("`i32.add` 必须冻结为数值 operator");
+        };
+        assert_eq!(add.arity, 2);
+        assert_eq!(add.encoding, WasmOpcode::I32Add);
+
+        let less = freeze_wasm_operator_binding(instance, "infix <", "i32.lt_s", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 Wasm operator 绑定");
+        let WasmOperatorBinding::Numeric(less) = less
+        else {
+            panic!("`i32.lt_s` 必须冻结为数值 operator");
+        };
+        assert_eq!(less.encoding, WasmOpcode::I32LtS);
+
+        let unfrozen = freeze_wasm_operator_binding(instance, "infix %", "f64.rem", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
+            .expect("冻结不得失败")
+            .expect("必须是 Wasm operator 绑定");
+        assert!(matches!(unfrozen, WasmOperatorBinding::Unfrozen));
+    }
+}
