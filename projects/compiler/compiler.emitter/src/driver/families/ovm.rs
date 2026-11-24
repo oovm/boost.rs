@@ -58,9 +58,11 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
                 lane: TargetLane::Vm,
             });
 
-            // 应用交付的唯一入口就是产物身份；库交付的身份是导出索引，不得拿
-            // 清单里的第一个导出冒充「入口」。
-            entry_symbol = entry_symbol_for(library_surface, &entries);
+            // 应用交付的唯一入口就是产物身份；库交付的身份是导出索引，测试包的
+            // 身份是逐测试运行合同——后两者都不得拿清单里的第一个导出冒充「入口」。
+            let has_single_process_entry =
+                !library_surface && request.purpose != compiler_target::ArtifactPurpose::TestBundle;
+            entry_symbol = entry_symbol_for(has_single_process_entry, &entries);
             if library_surface {
                 // 库导出面必须携带冻结的 ABI 合同；缺失即失败闭合，绝不写出
                 // 无合同的导出索引让宿主按未校验的布局解释内存。
@@ -106,9 +108,12 @@ fn library_export_from_contract(entry: &str, artifact: &str, contract: &OvmAbiCo
     })
 }
 
-/// 库交付的入口身份由导出索引承载，不取清单里的第一个导出。
-fn entry_symbol_for(library_surface: bool, entries: &[String]) -> Option<String> {
-    if library_surface { None } else { entries.first().cloned() }
+/// 只有「单一进程入口」交付才取清单第一个导出作为入口身份。
+///
+/// 库交付的入口身份由导出索引承载，测试包的身份由逐测试运行合同承载，两者都
+/// 没有单一进程入口。
+fn entry_symbol_for(has_single_process_entry: bool, entries: &[String]) -> Option<String> {
+    if has_single_process_entry { entries.first().cloned() } else { None }
 }
 
 #[doc(hidden)]
@@ -167,10 +172,10 @@ mod tests {
     }
 
     #[test]
-    fn library_mode_does_not_claim_first_export_as_entry() {
+    fn only_single_process_entry_deliveries_claim_first_export_as_entry() {
         let entries = vec!["greet".to_string(), "tick".to_string()];
-        assert_eq!(entry_symbol_for(true, &entries), None, "库交付不得拿第一个导出冒充入口");
-        assert_eq!(entry_symbol_for(false, &entries), Some("greet".to_string()), "应用交付保留唯一入口身份");
+        assert_eq!(entry_symbol_for(false, &entries), None, "库/测试包交付不得拿第一个导出冒充入口");
+        assert_eq!(entry_symbol_for(true, &entries), Some("greet".to_string()), "应用交付保留唯一入口身份");
     }
 
     #[test]
