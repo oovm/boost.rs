@@ -807,6 +807,7 @@ impl<'config> ValkyrieBuilder<'config> {
         let mut parents = Vec::new();
         let mut fields = Vec::new();
         let mut methods = Vec::new();
+        let mut pending_annotations = Vec::new();
 
         for child in node.children() {
             match child {
@@ -830,7 +831,15 @@ impl<'config> ValkyrieBuilder<'config> {
                 },
                 RedTree::Node(n) => match n.green.kind {
                     ValkyrieElementType::Attribute => {
-                        annotations.push(self.build_attribute(n, source)?);
+                        // 名字之后出现的属性属于下一个成员（如 `[infix] micro ...`），
+                        // 不能并进结构体自身的注解；名字之前的才是结构体注解。
+                        let attribute = self.build_attribute(n, source)?;
+                        if name.name.is_empty() {
+                            annotations.push(attribute);
+                        }
+                        else {
+                            pending_annotations.push(attribute);
+                        }
                     }
                     ValkyrieElementType::GenericParameterList => {
                         generics = self.build_generic_params(n, source)?;
@@ -850,12 +859,14 @@ impl<'config> ValkyrieBuilder<'config> {
                         }
                     }
                     ValkyrieElementType::Field => {
-                        if let Some(field) = self.recover_member(self.build_field(n, source)) {
+                        if let Some(mut field) = self.recover_member(self.build_field(n, source)) {
+                            field.annotations.splice(0..0, pending_annotations.drain(..));
                             fields.push(field);
                         }
                     }
                     ValkyrieElementType::Micro | ValkyrieElementType::Method => {
-                        if let Some(method) = self.recover_member(self.build_function(n, source)) {
+                        if let Some(mut method) = self.recover_member(self.build_function(n, source)) {
+                            method.annotations.splice(0..0, pending_annotations.drain(..));
                             methods.push(method);
                         }
                     }
@@ -864,12 +875,14 @@ impl<'config> ValkyrieBuilder<'config> {
                             if let RedTree::Node(inner_n) = inner_child {
                                 match inner_n.green.kind {
                                     ValkyrieElementType::Field => {
-                                        if let Some(field) = self.recover_member(self.build_field(inner_n, source)) {
+                                        if let Some(mut field) = self.recover_member(self.build_field(inner_n, source)) {
+                                            field.annotations.splice(0..0, pending_annotations.drain(..));
                                             fields.push(field);
                                         }
                                     }
                                     ValkyrieElementType::Micro | ValkyrieElementType::Method => {
-                                        if let Some(method) = self.recover_member(self.build_function(inner_n, source)) {
+                                        if let Some(mut method) = self.recover_member(self.build_function(inner_n, source)) {
+                                            method.annotations.splice(0..0, pending_annotations.drain(..));
                                             methods.push(method);
                                         }
                                     }
@@ -881,6 +894,9 @@ impl<'config> ValkyrieBuilder<'config> {
                     _ => {}
                 },
             }
+        }
+        if !pending_annotations.is_empty() {
+            return Err(source.syntax_error("Attribute is not attached to a structure member".to_string(), span.end));
         }
         Ok(StructureDeclaration {
             kind,

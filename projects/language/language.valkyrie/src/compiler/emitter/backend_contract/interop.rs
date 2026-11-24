@@ -124,10 +124,11 @@ const WASM_OPERATOR_BINDING_ATTRIBUTE: &str = "wasm_operator";
 /// 与 `[wasm_operator]` 对称：该属性只声明目标 operator 助记符；助记符到目标
 /// 计划的映射归 OVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
 const OVM_OPERATOR_BINDING_ATTRIBUTE: &str = "ovm_operator";
-/// JVM 目标 operator 绑定属性（`[jvm_operator("ldiv")]`）。
+/// JVM 目标 operator 绑定属性（如 `[jvm_operator("integer.add")]`）。
 ///
-/// 与 `[wasm_operator]` 对称：该属性只声明 JVM 规范助记符；助记符到冻结配方的
-/// 映射归 JVM backend 所有，声明侧不携带任何语义类别或宿主符号名。
+/// 与 `[wasm_operator]` 对称：该属性只声明 JVM 规范助记符；助记符词汇与到冻结
+/// 配方的映射以 `freeze_jvm_operator_binding` 为准，归 JVM backend 所有，
+/// 声明侧不携带任何语义类别或宿主符号名。
 const JVM_OPERATOR_BINDING_ATTRIBUTE: &str = "jvm_operator";
 /// CLR 目标 operator 绑定属性（`[clr_operator("i64.div")]`）。
 ///

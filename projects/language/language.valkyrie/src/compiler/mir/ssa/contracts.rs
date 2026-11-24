@@ -73,34 +73,51 @@ pub(super) fn collect_external_call_contracts(
     module: &HirModule,
     gate: Option<&crate::compiler::hir::HirMaterializationGate>,
 ) -> Vec<MirExternalCallContract> {
+    fn abstract_contract(
+        module: &HirModule,
+        function: &HirFunction,
+        gate: Option<&crate::compiler::hir::HirMaterializationGate>,
+    ) -> Option<MirExternalCallContract> {
+        // 声明期 abstract callable（自由函数、结构体/类成员、impl 成员同规则）：
+        // 无泛型、目标绑定属性（或 host_contract）齐全时冻结为外部调用合同。
+        if !function.is_abstract
+            || !function.generics.is_empty()
+            || !gate.is_none_or(|gate| gate.permits_declaration(function.declaration))
+        {
+            return None;
+        }
+        let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(function)?;
+        Some(MirExternalCallContract {
+            declaration: function.declaration,
+            instance: function.instance,
+            symbol: crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, function),
+            link,
+            parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
+            return_type: function.return_type.clone(),
+        })
+    }
+
     fn collect_abstract_functions(
         module: &HirModule,
         gate: Option<&crate::compiler::hir::HirMaterializationGate>,
         out: &mut Vec<MirExternalCallContract>,
     ) {
         // 声明期 abstract 函数（目标绑定属性 / host_contract，无泛型）
-        out.extend(
-            module
-                .functions
-                .iter()
-                .filter(|function| {
-                    function.is_abstract
-                        && function.generics.is_empty()
-                        && gate.is_none_or(|gate| gate.permits_declaration(function.declaration))
-                        && crate::compiler::emitter::backend_contract::interop::function_interop_contract(function).is_some()
-                })
-                .filter_map(|function| {
-                    let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(function)?;
-                    Some(MirExternalCallContract {
-                        declaration: function.declaration,
-                        instance: function.instance,
-                        symbol: crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, function),
-                        link,
-                        parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
-                        return_type: function.return_type.clone(),
-                    })
-                }),
-        );
+        out.extend(module.functions.iter().filter_map(|function| abstract_contract(module, function, gate)));
+        // 结构体 / 类 / widget / singleton / impl 成员方法同样是普通成员声明：
+        // 运算符等无体成员必须进入同一外部调用合同表，否则调用点无法解析 identity。
+        for structure in &module.structs {
+            out.extend(structure.methods.iter().filter_map(|function| abstract_contract(module, function, gate)));
+        }
+        for widget in &module.widgets {
+            out.extend(widget.methods.iter().filter_map(|function| abstract_contract(module, function, gate)));
+        }
+        for singleton in &module.singletons {
+            out.extend(singleton.methods.iter().filter_map(|function| abstract_contract(module, function, gate)));
+        }
+        for implementation in &module.impls {
+            out.extend(implementation.methods.iter().filter_map(|function| abstract_contract(module, function, gate)));
+        }
         // 泛型实例化产生的 abstract 实例（如 __array_get<i64>）
         out.extend(
             module
