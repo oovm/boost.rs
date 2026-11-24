@@ -152,6 +152,24 @@ fn validate_export_surface(purpose: compiler_target::ArtifactPurpose, report: &D
     if report.artifacts.artifacts.is_empty() {
         return Err(format!("`{purpose:?}` 声明了导出面却没有产出任何物理产物"));
     }
+    // 导出索引必须指向本次真实产出的产物文件。只校验「非空字符串」会让清单在产物
+    // 改名或换 lane 之后继续指向不存在的文件而无人发现；这里按文件名判定，因为各
+    // lane 的 `physical_artifact` 有的是相对名、有的是完整路径。
+    let produced: std::collections::BTreeSet<String> = report
+        .artifacts
+        .artifacts
+        .iter()
+        .filter_map(|artifact| std::path::Path::new(&artifact.path).file_name().map(|name| name.to_string_lossy().into_owned()))
+        .collect();
+    for export in &report.library_exports {
+        let named = std::path::Path::new(&export.physical_artifact).file_name().map(|name| name.to_string_lossy().into_owned());
+        if !matches!(named.as_deref(), Some(name) if produced.contains(name)) {
+            return Err(format!(
+                "库导出清单条目 `{}` 指向物理产物 `{}`，但本次产物集合没有同名文件",
+                export.logical_name, export.physical_artifact
+            ));
+        }
+    }
     Ok(())
 }
 
