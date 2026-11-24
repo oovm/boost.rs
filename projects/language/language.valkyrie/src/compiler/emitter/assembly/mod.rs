@@ -104,14 +104,11 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                     .map_err(|error| format!("普通共享库目标不合法：{error}"))?;
                 let lowered =
                     compiler_emitter::emitter_backend_machine::lower_fragment_to_machine_library(&submission, product.platform())?;
-                let entry_symbol = lowered
-                    .entry_symbol
-                    .clone()
-                    .ok_or_else(|| "普通共享库缺少导出身份：适配器不得产出无导出面的库交付".to_string())?;
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
                     output_dir: request.output_dir.to_path_buf(),
-                    entry_symbol,
+                    // 普通共享库没有单一入口：交付合同是导出索引，不拿首导出冒充入口。
+                    entry_symbol: None,
                     artifact_extension: Some(lowered.artifact_extension),
                     host_exports: lowered
                         .exports
@@ -138,7 +135,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
                     output_dir: request.output_dir.to_path_buf(),
-                    entry_symbol: lowered.entry_symbol,
+                    entry_symbol: Some(lowered.entry_symbol),
                     artifact_extension: Some(lowered.artifact_extension),
                     host_exports: lowered.host_exports,
                     host_module: product.host_module(),
@@ -161,7 +158,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
             return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                 executable: lowered.executable,
                 output_dir: request.output_dir.to_path_buf(),
-                entry_symbol,
+                entry_symbol: Some(entry_symbol),
                 artifact_extension: None,
                 host_exports: Vec::new(),
                 host_module: None,

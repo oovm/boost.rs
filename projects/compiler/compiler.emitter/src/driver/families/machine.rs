@@ -115,7 +115,8 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 .collect();
             return Ok(DriverCompileReport {
                 artifacts,
-                entry_symbol: Some(entry_symbol),
+                // 宿主扩展的身份是宿主装载入口符号；缺失即输入事实错误。
+                entry_symbol: Some(entry_symbol.ok_or_else(|| "native 宿主扩展缺少装载入口符号".to_string())?),
                 run_contracts: Vec::new(),
                 managed_abi: Vec::new(),
                 ovm_abi: Vec::new(),
@@ -151,7 +152,9 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 .collect();
             return Ok(DriverCompileReport {
                 artifacts,
-                entry_symbol: Some(entry_symbol),
+                // 普通共享库没有单一入口：交付合同由 `library_exports` 的导出索引
+                // 承载，不得拿某个导出冒充入口。
+                entry_symbol: None,
                 run_contracts: Vec::new(),
                 managed_abi: Vec::new(),
                 ovm_abi: Vec::new(),
@@ -159,7 +162,8 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
             });
         }
         // 原生可执行文件就是宿主入口：运行契约直接指向产物本身，不拼接命令前缀，
-        // 逻辑入口取适配器冻结的入口符号。
+        // 逻辑入口取适配器冻结的入口符号；缺失是输入事实错误，不写空入口。
+        let entry_symbol = entry_symbol.ok_or_else(|| "原生可执行交付缺少冻结的入口身份：计划未给出入口操作的 ABI 名".to_string())?;
         let run_contracts = artifacts
             .artifacts
             .first()

@@ -33,8 +33,12 @@ pub struct MachineImageBackendInput {
     pub executable: Vec<u8>,
     /// 输出目录。
     pub output_dir: PathBuf,
-    /// 入口符号名。
-    pub entry_symbol: String,
+    /// 装载/进程入口符号名。
+    ///
+    /// 普通共享库没有单一入口（交付合同是导出索引），必须为 `None`；不得用
+    /// 「首个导出」冒充入口。宿主扩展是宿主装载入口（如 `PyInit_*`），可执行
+    /// 交付是进程入口，二者必须携带事实。
+    pub entry_symbol: Option<String>,
     /// 产物扩展名（含点），如 `.node`（Node 原生扩展）、`.pyd`（Windows Python 扩展）、
     /// `.so`（Linux Python/共享库）、`.dll`、`.exe`。`None` 时按可执行文件默认命名。
     ///

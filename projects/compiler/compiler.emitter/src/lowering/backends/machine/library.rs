@@ -23,12 +23,14 @@ use super::{
 };
 
 /// 普通共享库降低结果：完整共享库镜像与导出事实。
+///
+/// 库没有单一入口：交付合同是 [`Self::exports`] 的导出索引，外部消费者按
+/// `LoadLibrary`/`dlopen` 的名字装载。这里不提供「首个导出」之类的入口符号，
+/// 避免把任意一个导出伪装成库入口。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct X64LoweredLibrary {
     /// 共享库镜像字节（`PE32+` DLL 或 `ELF64 ET_DYN`）。
     pub executable: Vec<u8>,
-    /// 首个导出符号（用于记录产物入口身份；库没有进程入口）。
-    pub entry_symbol: Option<String>,
     /// 对外可见导出面（源码名 + 公开名，按冻结导出面顺序）。
     pub exports: Vec<MachineLibraryExport>,
     /// 产物扩展名（含点）：`.dll` / `.so`。
@@ -237,8 +239,7 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
     verify_shared_image(&executable, platform)?;
 
     let artifact_extension = if platform.is_windows() { ".dll".to_string() } else { ".so".to_string() };
-    let entry_symbol = exports.first().map(|export| export.public_name.clone());
-    Ok(X64LoweredLibrary { executable, entry_symbol, exports, artifact_extension })
+    Ok(X64LoweredLibrary { executable, exports, artifact_extension })
 }
 
 #[cfg(test)]
