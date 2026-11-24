@@ -69,9 +69,12 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
         }
         let mut artifacts = backend.compile(input, request.options).map_err(|error| error.to_string())?;
         if library_surface {
-            // 装载方式由用途决定：库 jar 按导出面被宿主调用。
+            // 装载方式由用途决定：库 jar 按导出面被宿主调用。同次导出的 `.class`
+            // 是装配清单件而非库交付本身，不能整批改标成 Library 误导打包器。
             for artifact in &mut artifacts.artifacts {
-                artifact.kind = compiler_target::ArtifactKind::Library;
+                if artifact.path.ends_with(".jar") {
+                    artifact.kind = compiler_target::ArtifactKind::Library;
+                }
             }
         }
         // 运行合同与 JAR manifest 消费同一个冻结入口 launcher；没有程序入口的
