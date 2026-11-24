@@ -66,8 +66,11 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 
 /// `[ovm_operator("...")]` 目标助记符到**冻结配方**的唯一映射表。
 ///
-/// 只覆盖 `NyarHeadCode` 已有的 i32 算术/位运算/比较变体；i64、浮点没有对应
-/// 单指令，必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
+/// 只覆盖 `OdinHeadCode` 已有的 i32 算术/位运算/比较变体，以及单精度 f32 块；
+/// i64、f64 的算术与比较没有对应头码（`data.binary.odin` 的 `OdinHeadCode` 除
+/// `I64ReinterpretF64`/`F64ReinterpretI64` 两个位搬运变体外，只有 `I32*`（0x30–0x49）
+/// 与 `F32*`（0x64–0x6C），不存在 `I64Add`/`I64Eq`/`F64Add`/`F64Lt` 之类变体），
+/// 必须保持宿主导入路径（由 runtime `parse_host_op` 决定是否存在）。
 /// 映射在 `TargetExecutionPlan` 构造时写入计划；未知助记符返回 `None`，由计划
 /// 冻结为 `对应 lane 的 `Unfrozen` 绑定`，emit 结构化失败，禁止回落到宿主导入
 /// 或默认指令。
@@ -2242,11 +2245,20 @@ mod operator_binding_tests {
         assert_eq!(less.encoding, OdinHeadCode::I32LtS);
         assert_eq!(less.result_type, crate::target_operator::TargetOperandType::I32);
 
-        // OVM 没有 i64 算术配方：必须保留 Unfrozen，禁止回落宿主导入或猜测指令。
+        // `OdinHeadCode` 没有 i64/f64 算术与比较变体（只有 I32* / F32* 块与两个
+        // 位重解释变体）：这些助记符必须保留 Unfrozen，禁止回落宿主导入或猜指令。
         let i64_ty = SemanticType::Integer64 { signed: true };
-        let unfrozen = freeze_ovm_operator(&link("i64.add"), instance, "infix +", &[i64_ty.clone(), i64_ty.clone()], &i64_ty)
-            .expect("冻结不得失败")
-            .expect("必须是 OVM operator 绑定");
-        assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen));
+        for (mnemonic, operand, result) in [
+            ("i64.add", i64_ty.clone(), i64_ty.clone()),
+            ("i64.eq", i64_ty.clone(), SemanticType::Boolean),
+            ("i64.lt", i64_ty.clone(), SemanticType::Boolean),
+            ("f64.add", SemanticType::Float64, SemanticType::Float64),
+            ("f64.lt", SemanticType::Float64, SemanticType::Boolean),
+        ] {
+            let unfrozen = freeze_ovm_operator(&link(mnemonic), instance, "scalar", &[operand.clone(), operand], &result)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 OVM operator 绑定"));
+            assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen), "`{mnemonic}` 头码不存在，必须保持缺口");
+        }
     }
 }

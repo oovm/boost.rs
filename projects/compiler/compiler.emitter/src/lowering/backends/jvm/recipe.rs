@@ -8,9 +8,10 @@
 //! 本表只接受下列出的 operator 名，未知名字返回 `None`，计划据此冻结为
 //! `对应 lane 的 `Unfrozen` 绑定`，由 emit 结构化失败，禁止猜默认指令。
 //!
-//! JVM 没有 `dneg`（`double` 取负需要 `dconst_0` + `dsub` 序列，而当前配方层的
-//! 常量步骤只支持整数载体），因此 `double.negate` 不在本表；补齐常量配方前不得
-//! 声明该 provider，避免静默错误语义。
+//! double/float 比较在 JVM 上没有单条指令，由后端展开为 `dcmpl`/`dcmpg`
+//! （`fcmpl`/`fcmpg`）+ 分支序列；NaN 语义按 Java 语言固定（见
+//! [`super::JvmOperatorCode::instructions`]）。`dneg`/`drem`/`fneg`/`frem` 都是
+//! 真实 JVM 指令，直接单条编码。
 
 use super::JvmOperatorCode;
 use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
@@ -76,11 +77,21 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         // 无符号 `u64` 除/余：JVM 没有无符号 `ldiv`/`lrem`，冻结为 Java 8 标准库静态方法。
         "long.divide_unsigned" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongDivideUnsigned),
         "long.remainder_unsigned" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainderUnsigned),
-        // double 算术：JVM 单指令（无 `dneg`，见模块头说明）。
+        // double 算术：JVM 单指令（`dadd`/`dsub`/`dmul`/`ddiv`/`drem`/`dneg`）。
         "double.add" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleAdd),
         "double.subtract" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleSubtract),
         "double.multiply" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleMultiply),
         "double.divide" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleDivide),
+        "double.remainder" => binary(TargetOperandType::F64, TargetOperandType::F64, JvmOperatorCode::DoubleRemainder),
+        "double.negate" => unary(TargetOperandType::F64, JvmOperatorCode::DoubleNegate),
+        // float 算术：JVM 单指令（`fadd`/`fsub`/`fmul`/`fdiv`/`frem`/`fneg`）。
+        // 单精度运算不得提升到 double 再降回。
+        "float.add" => binary(TargetOperandType::F32, TargetOperandType::F32, JvmOperatorCode::FloatAdd),
+        "float.subtract" => binary(TargetOperandType::F32, TargetOperandType::F32, JvmOperatorCode::FloatSubtract),
+        "float.multiply" => binary(TargetOperandType::F32, TargetOperandType::F32, JvmOperatorCode::FloatMultiply),
+        "float.divide" => binary(TargetOperandType::F32, TargetOperandType::F32, JvmOperatorCode::FloatDivide),
+        "float.remainder" => binary(TargetOperandType::F32, TargetOperandType::F32, JvmOperatorCode::FloatRemainder),
+        "float.negate" => unary(TargetOperandType::F32, JvmOperatorCode::FloatNegate),
         // integer 比较：结果固定为 I32（0/1），由后端展开 `if_icmpxx` 分支序列。
         "integer.compare_equal" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareEqual),
         "integer.compare_not_equal" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareNotEqual),
@@ -106,6 +117,14 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "long.compare_less_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareLessOrEqual),
         "long.compare_greater_than" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterThan),
         "long.compare_greater_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterOrEqual),
+        // double 比较：结果固定为 I32（0/1），由后端展开 `dcmpl`/`dcmpg` + 分支序列。
+        "double.compare_equal" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareEqual),
+        "double.compare_not_equal" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareNotEqual),
+        "double.compare_less_than" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareLessThan),
+        // float 比较：结果固定为 I32（0/1），由后端展开 `fcmpl`/`fcmpg` + 分支序列。
+        "float.compare_equal" => binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareEqual),
+        "float.compare_not_equal" => binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareNotEqual),
+        "float.compare_less_than" => binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareLessThan),
         _ => return None,
     })
 }

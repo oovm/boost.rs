@@ -133,7 +133,8 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.reinterpret_f32" => unary_to(TargetOperandType::F32, TargetOperandType::I32, WasmOpcode::I32ReinterpretF32),
         "f32.reinterpret_i32" => unary_to(TargetOperandType::I32, TargetOperandType::F32, WasmOpcode::F32ReinterpretI32),
 
-        // f64 算术。
+        // f64 算术。wasm 没有浮点余数指令（只有整数 `rem_s`/`rem_u`），
+        // `f64.rem` 保持缺口，不得伪造助记符。
         "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, WasmOpcode::F64Add),
         "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, WasmOpcode::F64Sub),
         "f64.mul" => binary(TargetOperandType::F64, TargetOperandType::F64, WasmOpcode::F64Mul),
@@ -216,10 +217,13 @@ mod tests {
         assert!(freeze_wasm_numeric_binding("i64.reinterpret_f32").is_none());
     }
 
-    /// 未知助记符不得猜默认指令。
+    /// 未知助记符不得猜默认指令；浮点余数在 wasm 上不存在（只有整数 rem），
+    /// 因此 `f64.rem`/`f32.rem` 必须保持缺口。
     #[test]
     fn unknown_mnemonic_stays_unfrozen() {
         assert!(freeze_wasm_numeric_binding("f32.unknown").is_none());
         assert!(freeze_wasm_numeric_binding("i64.rotl").is_none());
+        assert!(freeze_wasm_numeric_binding("f64.rem").is_none(), "wasm 没有 f64 余数指令");
+        assert!(freeze_wasm_numeric_binding("f32.rem").is_none(), "wasm 没有 f32 余数指令");
     }
 }

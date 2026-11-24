@@ -2951,8 +2951,112 @@ mod operator_binding_tests {
             "i32 `<` 必须展开为 if_icmp 分支序列: {instructions:?}"
         );
 
-        // JVM 没有 double.negate 配方：必须保留 Unfrozen，禁止退回宿主导入或猜测指令。
-        let unfrozen = freeze_jvm_operator(&link("double.negate"), instance, "prefix -", &[SemanticType::Float64], &SemanticType::Float64)
+        // `dneg` / `drem` 是真实 JVM 指令：必须冻结为单条指令，而不是 Unfrozen。
+        let negate = freeze_jvm_operator(&link("double.negate"), instance, "prefix -", &[SemanticType::Float64], &SemanticType::Float64)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(negate) = negate
+        else {
+            panic!("`double.negate` 必须冻结");
+        };
+        assert_eq!(negate.encoding, JvmOperatorCode::DoubleNegate);
+        assert_eq!(negate.encoding.arithmetic_instruction(), Some(JvmInstruction::DNeg));
+
+        let remainder = freeze_jvm_operator(
+            &link("double.remainder"),
+            instance,
+            "infix %",
+            &[SemanticType::Float64, SemanticType::Float64],
+            &SemanticType::Float64,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(remainder) = remainder
+        else {
+            panic!("`double.remainder` 必须冻结");
+        };
+        assert_eq!(remainder.encoding.arithmetic_instruction(), Some(JvmInstruction::DRem));
+
+        // double 比较：`==`/`!=` 用 `dcmpl`（NaN → -1 已给出 Java 语义），
+        // `<` 必须用 `dcmpg`（NaN → 1 才会被 `ifge` 判为 false）。
+        let f64_pair = [SemanticType::Float64, SemanticType::Float64];
+        let compare = freeze_jvm_operator(&link("double.compare_equal"), instance, "infix ==", &f64_pair, &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(compare) = compare
+        else {
+            panic!("`double.compare_equal` 必须冻结");
+        };
+        assert_eq!(compare.encoding, JvmOperatorCode::DoubleCompareEqual);
+        let equal_instructions = compare.encoding.instructions(0);
+        assert!(
+            equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::DCmpL)),
+            "`==` 必须用 dcmpl 处理 NaN: {equal_instructions:?}"
+        );
+        assert!(equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfNe(_))));
+
+        let compare = freeze_jvm_operator(&link("double.compare_not_equal"), instance, "infix !=", &f64_pair, &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(compare) = compare
+        else {
+            panic!("`double.compare_not_equal` 必须冻结");
+        };
+        let not_equal_instructions = compare.encoding.instructions(0);
+        assert!(not_equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::DCmpL)));
+        assert!(not_equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfEq(_))));
+
+        let compare = freeze_jvm_operator(&link("double.compare_less_than"), instance, "infix <", &f64_pair, &SemanticType::Boolean)
+            .expect("冻结不得失败")
+            .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(compare) = compare
+        else {
+            panic!("`double.compare_less_than` 必须冻结");
+        };
+        assert_eq!(compare.encoding, JvmOperatorCode::DoubleCompareLessThan);
+        let less_instructions = compare.encoding.instructions(0);
+        assert!(
+            less_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::DCmpG)),
+            "`<` 必须用 dcmpg 处理 NaN: {less_instructions:?}"
+        );
+        assert!(less_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfGe(_))));
+
+        // `frem`/`fneg` 与 `fcmpl`/`fcmpg` 同样是真实指令：float 族按同一结构冻结。
+        let float_remainder = freeze_jvm_operator(
+            &link("float.remainder"),
+            instance,
+            "infix %",
+            &[SemanticType::Float32, SemanticType::Float32],
+            &SemanticType::Float32,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(float_remainder) = float_remainder
+        else {
+            panic!("`float.remainder` 必须冻结");
+        };
+        assert_eq!(float_remainder.encoding.arithmetic_instruction(), Some(JvmInstruction::FRem));
+
+        let float_less = freeze_jvm_operator(
+            &link("float.compare_less_than"),
+            instance,
+            "infix <",
+            &[SemanticType::Float32, SemanticType::Float32],
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(float_less) = float_less
+        else {
+            panic!("`float.compare_less_than` 必须冻结");
+        };
+        assert!(
+            float_less.encoding.instructions(0).iter().any(|instruction| matches!(instruction, JvmInstruction::FCmpG)),
+            "float `<` 必须用 fcmpg 处理 NaN"
+        );
+
+        // 未补齐的比较组合仍保持 Unfrozen，禁止按名字前缀猜指令。
+        let unfrozen = freeze_jvm_operator(&link("double.compare_less_or_equal"), instance, "infix <=", &f64_pair, &SemanticType::Boolean)
             .expect("冻结不得失败")
             .expect("必须是 JVM operator 绑定");
         assert!(matches!(unfrozen, JvmOperatorBinding::Unfrozen));

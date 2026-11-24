@@ -11,10 +11,12 @@
 #   OVM  freeze_ovm_operator_binding   (compiler.emitter/src/lowering/backends/ovm/mir.rs)
 #
 # 配方缺口（不编造助记符）：
-#   * JVM 无 `double.remainder` / `double.negate` / `double.compare_*`；
-#   * CLR 无 `ne` 系列（`i32.ne` / `i64.ne` / `f64.ne`），也无 `f64.rem`；
-#   * Wasm 无 `f64.rem`；
-#   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 算术与比较。
+#   * JVM 无 `double.compare_less_or_equal` / `compare_greater_than` /
+#     `compare_greater_or_equal`（夹具未声明这些成员）；
+#   * CLR 无 `f64.rem`（.NET 没有与 Java `%`/fmod 语义一致的 IL 指令，
+#     `Math.IEEERemainder` 是 IEEE 754 remainder，语义不同）；
+#   * Wasm 无 `f64.rem`（wasm 只有整数 rem，没有浮点余数指令）；
+#   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术与比较头码。
 # 因此某些 (类型, 运算, target) 组合不会出现该 target 的注解。
 
 namespace std.primitive;
@@ -72,6 +74,7 @@ structure i32 {
 
     [infix]
     [jvm_operator("integer.compare_not_equal")]
+    [clr_operator("i32.ne")]
     [wasm_operator("i32.ne")]
     [ovm_operator("i32.ne")]
     micro `!=`(self: i32, other: i32) -> bool;
@@ -130,6 +133,7 @@ structure i64 {
 
     [infix]
     [jvm_operator("long.compare_not_equal")]
+    [clr_operator("i64.ne")]
     [wasm_operator("i64.ne")]
     micro `!=`(self: i64, other: i64) -> bool;
 
@@ -166,23 +170,30 @@ structure f64 {
     [wasm_operator("f64.div")]
     micro `/`(self: f64, other: f64) -> f64;
 
-    # `%` 没有任何 target 配方（JVM/CLR/Wasm 均无 f64 余数），故不声明。
+    [infix]
+    [jvm_operator("double.remainder")]
+    micro `%`(self: f64, other: f64) -> f64;
 
     [prefix]
+    [jvm_operator("double.negate")]
     [clr_operator("f64.neg")]
     [wasm_operator("f64.neg")]
     micro `-`(self: f64) -> f64;
 
     [infix]
+    [jvm_operator("double.compare_equal")]
     [clr_operator("f64.eq")]
     [wasm_operator("f64.eq")]
     micro `==`(self: f64, other: f64) -> bool;
 
     [infix]
+    [jvm_operator("double.compare_not_equal")]
+    [clr_operator("f64.ne")]
     [wasm_operator("f64.ne")]
     micro `!=`(self: f64, other: f64) -> bool;
 
     [infix]
+    [jvm_operator("double.compare_less_than")]
     [clr_operator("f64.lt")]
     [wasm_operator("f64.lt")]
     micro `<`(self: f64, other: f64) -> bool;

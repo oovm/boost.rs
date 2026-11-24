@@ -195,7 +195,7 @@ mod frozen_operator_tests {
     use super::TargetOperandType;
     use crate::{
         lowering::backends::{
-            clr::mir::freeze_clr_operator_binding,
+            clr::mir::{ClrOperatorCode, freeze_clr_operator_binding},
             jvm::{JvmOperatorCode, recipe::freeze_jvm_operator_binding},
             machine::x86_64::{X86_64OperatorCode, freeze_x86_64_operator_binding},
         },
@@ -210,7 +210,7 @@ mod frozen_operator_tests {
         assert_eq!(clr_plan.arity, 2);
         assert_eq!(clr_plan.operand_type, TargetOperandType::I64);
         assert_eq!(clr_plan.result_type, TargetOperandType::I32);
-        assert_eq!(clr_plan.encoding, MsilOpcode::CltUn);
+        assert_eq!(clr_plan.encoding, ClrOperatorCode::Single(MsilOpcode::CltUn));
 
         let jvm_plan = freeze_jvm_operator_binding("long.compare_less_than_unsigned").expect("`long.compare_less_than_unsigned` 必须冻结");
         assert_eq!(jvm_plan.arity, 2);
@@ -277,7 +277,7 @@ mod frozen_operator_tests {
             assert_eq!(plan.arity, 2);
             assert_eq!(plan.operand_type, operand);
             assert_eq!(plan.result_type, result);
-            assert_eq!(plan.encoding, opcode, "`{mnemonic}` 编码");
+            assert_eq!(plan.encoding, ClrOperatorCode::Single(opcode), "`{mnemonic}` 编码");
         }
 
         for (mnemonic, operand, result, code) in [

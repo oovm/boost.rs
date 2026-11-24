@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::mir::{ClrOperatorBinding, freeze_clr_operator};
+use super::mir::{ClrOperatorBinding, ClrOperatorCode, freeze_clr_operator};
 
 use crate::{
     FragmentSubmission, Result,
@@ -1443,7 +1443,7 @@ impl ClrMethodEmitter<'_> {
         else {
             return Err(format!("CLR 目标 `clr_operator` 绑定缺少可编码助记符 `{mnemonic}`: function={}", self.function.symbol));
         };
-        let opcode = plan.encoding;
+        let encoding = plan.encoding;
         if arguments.len() != plan.arity {
             return Err(format!(
                 "CLR 目标 operator `{mnemonic}` 实参数量与冻结 arity 不符: function={} expected={} actual={}",
@@ -1454,7 +1454,15 @@ impl ClrMethodEmitter<'_> {
         }
         let expected_kind = ClrValueKind::of_operand_type(plan.operand_type);
         self.emit_operator_operands(mnemonic, expected_kind, plan, arguments)?;
-        self.push_opcode(opcode);
+        match encoding {
+            ClrOperatorCode::Single(opcode) => self.push_opcode(opcode),
+            // 布尔取反组合：`ceq` 得到 0/1，再与 `ldc.i4.0` 比较一次，精确取反。
+            ClrOperatorCode::InvertCompare(compare) => {
+                self.push_opcode(compare);
+                self.push_opcode(MsilOpcode::LdcI4_0);
+                self.push_opcode(compare);
+            }
+        }
         match output {
             Some((slot, result_kind)) => {
                 if result_kind != ClrValueKind::of_operand_type(plan.result_type) {
@@ -1475,7 +1483,7 @@ impl ClrMethodEmitter<'_> {
         &mut self,
         mnemonic: &str,
         expected_kind: ClrValueKind,
-        plan: &TargetOperatorPlan<MsilOpcode>,
+        plan: &TargetOperatorPlan<ClrOperatorCode>,
         arguments: &[Operand],
     ) -> Result<()> {
         match plan.recipe {

@@ -98,6 +98,22 @@ pub enum JvmOperatorCode {
     DoubleMultiply,
     /// JVM `ddiv`：double 除法。
     DoubleDivide,
+    /// JVM `drem`：double 取余（Java `%` 的符号语义，与 `fmod` 一致）。
+    DoubleRemainder,
+    /// JVM `dneg`：double 取负（原生保留 `-0.0` 与 NaN 符号）。
+    DoubleNegate,
+    /// JVM `fadd`：float 加法。
+    FloatAdd,
+    /// JVM `fsub`：float 减法。
+    FloatSubtract,
+    /// JVM `fmul`：float 乘法。
+    FloatMultiply,
+    /// JVM `fdiv`：float 除法。
+    FloatDivide,
+    /// JVM `frem`：float 取余（Java `%` 的符号语义）。
+    FloatRemainder,
+    /// JVM `fneg`：float 取负（原生保留 `-0.0` 与 NaN 符号）。
+    FloatNegate,
     /// integer 相等比较（结果压 `int` 0/1）。
     IntegerCompareEqual,
     /// integer 不等比较（结果压 `int` 0/1）。
@@ -129,6 +145,21 @@ pub enum JvmOperatorCode {
     LongCompareGreaterThan,
     /// long 大于等于比较（结果压 `int` 0/1）。
     LongCompareGreaterOrEqual,
+    /// double 相等比较（结果压 `int` 0/1）：`dcmpl` + `ifne`，NaN 时 `dcmpl` 得
+    /// -1（非 0）→ 判为 false，与 Java `==` 一致。
+    DoubleCompareEqual,
+    /// double 不等比较（结果压 `int` 0/1）：`dcmpl` + `ifeq`，NaN 时 -1 → 不跳转
+    /// → 判为 true，与 Java `!=` 一致。
+    DoubleCompareNotEqual,
+    /// double 小于比较（结果压 `int` 0/1）：必须 `dcmpg`，NaN 时得 1 → `ifge`
+    /// 分支到 false，与 Java `<`（NaN 为 false）一致。
+    DoubleCompareLessThan,
+    /// float 相等比较（结果压 `int` 0/1）：`fcmpl` + `ifne`，NaN 语义同 Java `==`。
+    FloatCompareEqual,
+    /// float 不等比较（结果压 `int` 0/1）：`fcmpl` + `ifeq`，NaN 语义同 Java `!=`。
+    FloatCompareNotEqual,
+    /// float 小于比较（结果压 `int` 0/1）：必须 `fcmpg`，NaN 语义同 Java `<`。
+    FloatCompareLessThan,
 }
 
 impl JvmOperatorCode {
@@ -168,6 +199,14 @@ impl JvmOperatorCode {
             Self::DoubleSubtract => JvmInstruction::DSub,
             Self::DoubleMultiply => JvmInstruction::DMul,
             Self::DoubleDivide => JvmInstruction::DDiv,
+            Self::DoubleRemainder => JvmInstruction::DRem,
+            Self::DoubleNegate => JvmInstruction::DNeg,
+            Self::FloatAdd => JvmInstruction::FAdd,
+            Self::FloatSubtract => JvmInstruction::FSub,
+            Self::FloatMultiply => JvmInstruction::FMul,
+            Self::FloatDivide => JvmInstruction::FDiv,
+            Self::FloatRemainder => JvmInstruction::FRem,
+            Self::FloatNegate => JvmInstruction::FNeg,
             _ => return None,
         })
     }
@@ -230,6 +269,17 @@ impl JvmOperatorCode {
             Self::LongCompareLessOrEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfGt("comparison_false".to_string())]),
             Self::LongCompareGreaterThan => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfLe("comparison_false".to_string())]),
             Self::LongCompareGreaterOrEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfLt("comparison_false".to_string())]),
+            // 浮点比较的 NaN 语义按 Java 语言固定：
+            //   * `==` / `!=` 只关心 `cmp` 结果是否为 0，`dcmpl`/`fcmpl` 的 NaN → -1
+            //     已使二者分别得到 false / true（javac 同样选 `?cmpl`）；
+            //   * `<` 必须用 `dcmpg`/`fcmpg`：NaN → 1，`ifge` 因此分支到 false，
+            //     符合 Java `<` 在 NaN 时为 false；若改用 `?cmpl`（NaN → -1）会误判为 true。
+            Self::DoubleCompareEqual => (vec![JvmInstruction::DCmpL], vec![JvmInstruction::IfNe("comparison_false".to_string())]),
+            Self::DoubleCompareNotEqual => (vec![JvmInstruction::DCmpL], vec![JvmInstruction::IfEq("comparison_false".to_string())]),
+            Self::DoubleCompareLessThan => (vec![JvmInstruction::DCmpG], vec![JvmInstruction::IfGe("comparison_false".to_string())]),
+            Self::FloatCompareEqual => (vec![JvmInstruction::FCmpL], vec![JvmInstruction::IfNe("comparison_false".to_string())]),
+            Self::FloatCompareNotEqual => (vec![JvmInstruction::FCmpL], vec![JvmInstruction::IfEq("comparison_false".to_string())]),
+            Self::FloatCompareLessThan => (vec![JvmInstruction::FCmpG], vec![JvmInstruction::IfGe("comparison_false".to_string())]),
             _ => return vec![],
         };
         let mut sequence = prelude;
