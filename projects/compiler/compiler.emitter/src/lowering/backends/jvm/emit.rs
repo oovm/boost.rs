@@ -3055,10 +3055,180 @@ mod operator_binding_tests {
             "float `<` 必须用 fcmpg 处理 NaN"
         );
 
-        // 未补齐的比较组合仍保持 Unfrozen，禁止按名字前缀猜指令。
-        let unfrozen = freeze_jvm_operator(&link("double.compare_less_or_equal"), instance, "infix <=", &f64_pair, &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
+        // 未登记的比较助记符仍保持 Unfrozen，禁止按名字前缀猜指令。
+        let unfrozen = freeze_jvm_operator(
+            &link("double.compare_less_than_unsigned"),
+            instance,
+            "infix <=",
+            &f64_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
         assert!(matches!(unfrozen, JvmOperatorBinding::Unfrozen));
+
+        // `<=` / `>` / `>=`：NaN 必须分支到 false，故 `<`/`<=` 用 `?cmpg`、`>`/`>=` 用 `?cmpl`。
+        let double_less_or_equal = freeze_jvm_operator(
+            &link("double.compare_less_or_equal"),
+            instance,
+            "infix <=",
+            &f64_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(double_less_or_equal) = double_less_or_equal
+        else {
+            panic!("`double.compare_less_or_equal` 必须冻结");
+        };
+        assert!(
+            double_less_or_equal
+                .encoding
+                .instructions(0)
+                .iter()
+                .any(|instruction| matches!(instruction, JvmInstruction::DCmpG)),
+            "double `<=` 必须用 dcmpg 处理 NaN"
+        );
+        assert!(double_less_or_equal
+            .encoding
+            .instructions(0)
+            .iter()
+            .any(|instruction| matches!(instruction, JvmInstruction::IfGt(_))));
+
+        let double_greater_than = freeze_jvm_operator(
+            &link("double.compare_greater_than"),
+            instance,
+            "infix >",
+            &f64_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(double_greater_than) = double_greater_than
+        else {
+            panic!("`double.compare_greater_than` 必须冻结");
+        };
+        assert!(
+            double_greater_than
+                .encoding
+                .instructions(0)
+                .iter()
+                .any(|instruction| matches!(instruction, JvmInstruction::DCmpL)),
+            "double `>` 必须用 dcmpl 处理 NaN"
+        );
+        assert!(double_greater_than
+            .encoding
+            .instructions(0)
+            .iter()
+            .any(|instruction| matches!(instruction, JvmInstruction::IfLe(_))));
+
+        let double_greater_or_equal = freeze_jvm_operator(
+            &link("double.compare_greater_or_equal"),
+            instance,
+            "infix >=",
+            &f64_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(double_greater_or_equal) = double_greater_or_equal
+        else {
+            panic!("`double.compare_greater_or_equal` 必须冻结");
+        };
+        assert!(
+            double_greater_or_equal
+                .encoding
+                .instructions(0)
+                .iter()
+                .any(|instruction| matches!(instruction, JvmInstruction::DCmpL)),
+            "double `>=` 必须用 dcmpl 处理 NaN"
+        );
+        assert!(double_greater_or_equal
+            .encoding
+            .instructions(0)
+            .iter()
+            .any(|instruction| matches!(instruction, JvmInstruction::IfLt(_))));
+
+        let float_pair = [SemanticType::Float32, SemanticType::Float32];
+        let float_less_or_equal = freeze_jvm_operator(
+            &link("float.compare_less_or_equal"),
+            instance,
+            "infix <=",
+            &float_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(float_less_or_equal) = float_less_or_equal
+        else {
+            panic!("`float.compare_less_or_equal` 必须冻结");
+        };
+        assert!(
+            float_less_or_equal
+                .encoding
+                .instructions(0)
+                .iter()
+                .any(|instruction| matches!(instruction, JvmInstruction::FCmpG)),
+            "float `<=` 必须用 fcmpg 处理 NaN"
+        );
+        assert!(float_less_or_equal
+            .encoding
+            .instructions(0)
+            .iter()
+            .any(|instruction| matches!(instruction, JvmInstruction::IfGt(_))));
+
+        let float_greater_than = freeze_jvm_operator(
+            &link("float.compare_greater_than"),
+            instance,
+            "infix >",
+            &float_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(float_greater_than) = float_greater_than
+        else {
+            panic!("`float.compare_greater_than` 必须冻结");
+        };
+        assert!(
+            float_greater_than
+                .encoding
+                .instructions(0)
+                .iter()
+                .any(|instruction| matches!(instruction, JvmInstruction::FCmpL)),
+            "float `>` 必须用 fcmpl 处理 NaN"
+        );
+        assert!(float_greater_than
+            .encoding
+            .instructions(0)
+            .iter()
+            .any(|instruction| matches!(instruction, JvmInstruction::IfLe(_))));
+
+        let float_greater_or_equal = freeze_jvm_operator(
+            &link("float.compare_greater_or_equal"),
+            instance,
+            "infix >=",
+            &float_pair,
+            &SemanticType::Boolean,
+        )
+        .expect("冻结不得失败")
+        .expect("必须是 JVM operator 绑定");
+        let JvmOperatorBinding::Frozen(float_greater_or_equal) = float_greater_or_equal
+        else {
+            panic!("`float.compare_greater_or_equal` 必须冻结");
+        };
+        assert!(
+            float_greater_or_equal
+                .encoding
+                .instructions(0)
+                .iter()
+                .any(|instruction| matches!(instruction, JvmInstruction::FCmpL)),
+            "float `>=` 必须用 fcmpl 处理 NaN"
+        );
+        assert!(float_greater_or_equal
+            .encoding
+            .instructions(0)
+            .iter()
+            .any(|instruction| matches!(instruction, JvmInstruction::IfLt(_))));
     }
 }

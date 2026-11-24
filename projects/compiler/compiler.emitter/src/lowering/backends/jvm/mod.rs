@@ -160,6 +160,21 @@ pub enum JvmOperatorCode {
     FloatCompareNotEqual,
     /// float 小于比较（结果压 `int` 0/1）：必须 `fcmpg`，NaN 语义同 Java `<`。
     FloatCompareLessThan,
+    /// double 小于等于比较（结果压 `int` 0/1）：`dcmpg` + `ifgt`，NaN 时得 1 →
+    /// 分支到 false，与 Java `<=`（NaN 为 false）一致。
+    DoubleCompareLessOrEqual,
+    /// double 大于比较（结果压 `int` 0/1）：`dcmpl` + `ifle`，NaN 时得 -1 →
+    /// 分支到 false，与 Java `>`（NaN 为 false）一致。
+    DoubleCompareGreaterThan,
+    /// double 大于等于比较（结果压 `int` 0/1）：`dcmpl` + `iflt`，NaN 时得 -1 →
+    /// 分支到 false，与 Java `>=`（NaN 为 false）一致。
+    DoubleCompareGreaterOrEqual,
+    /// float 小于等于比较（结果压 `int` 0/1）：`fcmpg` + `ifgt`，NaN 语义同 Java `<=`。
+    FloatCompareLessOrEqual,
+    /// float 大于比较（结果压 `int` 0/1）：`fcmpl` + `ifle`，NaN 语义同 Java `>`。
+    FloatCompareGreaterThan,
+    /// float 大于等于比较（结果压 `int` 0/1）：`fcmpl` + `iflt`，NaN 语义同 Java `>=`。
+    FloatCompareGreaterOrEqual,
 }
 
 impl JvmOperatorCode {
@@ -274,12 +289,21 @@ impl JvmOperatorCode {
             //     已使二者分别得到 false / true（javac 同样选 `?cmpl`）；
             //   * `<` 必须用 `dcmpg`/`fcmpg`：NaN → 1，`ifge` 因此分支到 false，
             //     符合 Java `<` 在 NaN 时为 false；若改用 `?cmpl`（NaN → -1）会误判为 true。
+            //   原理：`?cmpg` 把 NaN 映为 1、`?cmpl` 映为 -1，四个有序比较都必须让 NaN
+            //   分支到 false，因此 `<`/`<=` 用 `?cmpg`（NaN → 1，配 `ifge`/`ifgt`），
+            //   `>`/`>=` 用 `?cmpl`（NaN → -1，配 `ifle`/`iflt`）。
             Self::DoubleCompareEqual => (vec![JvmInstruction::DCmpL], vec![JvmInstruction::IfNe("comparison_false".to_string())]),
             Self::DoubleCompareNotEqual => (vec![JvmInstruction::DCmpL], vec![JvmInstruction::IfEq("comparison_false".to_string())]),
             Self::DoubleCompareLessThan => (vec![JvmInstruction::DCmpG], vec![JvmInstruction::IfGe("comparison_false".to_string())]),
+            Self::DoubleCompareLessOrEqual => (vec![JvmInstruction::DCmpG], vec![JvmInstruction::IfGt("comparison_false".to_string())]),
+            Self::DoubleCompareGreaterThan => (vec![JvmInstruction::DCmpL], vec![JvmInstruction::IfLe("comparison_false".to_string())]),
+            Self::DoubleCompareGreaterOrEqual => (vec![JvmInstruction::DCmpL], vec![JvmInstruction::IfLt("comparison_false".to_string())]),
             Self::FloatCompareEqual => (vec![JvmInstruction::FCmpL], vec![JvmInstruction::IfNe("comparison_false".to_string())]),
             Self::FloatCompareNotEqual => (vec![JvmInstruction::FCmpL], vec![JvmInstruction::IfEq("comparison_false".to_string())]),
             Self::FloatCompareLessThan => (vec![JvmInstruction::FCmpG], vec![JvmInstruction::IfGe("comparison_false".to_string())]),
+            Self::FloatCompareLessOrEqual => (vec![JvmInstruction::FCmpG], vec![JvmInstruction::IfGt("comparison_false".to_string())]),
+            Self::FloatCompareGreaterThan => (vec![JvmInstruction::FCmpL], vec![JvmInstruction::IfLe("comparison_false".to_string())]),
+            Self::FloatCompareGreaterOrEqual => (vec![JvmInstruction::FCmpL], vec![JvmInstruction::IfLt("comparison_false".to_string())]),
             _ => return vec![],
         };
         let mut sequence = prelude;

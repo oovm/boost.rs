@@ -121,10 +121,28 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "double.compare_equal" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareEqual),
         "double.compare_not_equal" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareNotEqual),
         "double.compare_less_than" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareLessThan),
+        "double.compare_less_or_equal" => {
+            binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareLessOrEqual)
+        }
+        "double.compare_greater_than" => {
+            binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareGreaterThan)
+        }
+        "double.compare_greater_or_equal" => {
+            binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareGreaterOrEqual)
+        }
         // float 比较：结果固定为 I32（0/1），由后端展开 `fcmpl`/`fcmpg` + 分支序列。
         "float.compare_equal" => binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareEqual),
         "float.compare_not_equal" => binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareNotEqual),
         "float.compare_less_than" => binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareLessThan),
+        "float.compare_less_or_equal" => {
+            binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareLessOrEqual)
+        }
+        "float.compare_greater_than" => {
+            binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareGreaterThan)
+        }
+        "float.compare_greater_or_equal" => {
+            binary(TargetOperandType::F32, TargetOperandType::I32, JvmOperatorCode::FloatCompareGreaterOrEqual)
+        }
         _ => return None,
     })
 }
