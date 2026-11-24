@@ -105,6 +105,16 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "integer.compare_greater_or_equal" => {
             binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareGreaterOrEqual)
         }
+        // 无符号 `i32` 的其余有序比较：同样冻结为符号位翻转 + 有符号分支序列。
+        "integer.compare_greater_than_unsigned" => {
+            binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareGreaterThanUnsigned)
+        }
+        "integer.compare_less_or_equal_unsigned" => {
+            binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareLessOrEqualUnsigned)
+        }
+        "integer.compare_greater_or_equal_unsigned" => {
+            binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerCompareGreaterOrEqualUnsigned)
+        }
         // long 比较：结果固定为 I32（0/1），由后端展开 `lcmp` + `ifxx` 序列。
         "long.compare_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareEqual),
         "long.compare_not_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareNotEqual),
@@ -117,6 +127,17 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "long.compare_less_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareLessOrEqual),
         "long.compare_greater_than" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterThan),
         "long.compare_greater_or_equal" => binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterOrEqual),
+        // 无符号 `u64` 的其余有序比较：同样冻结为符号位翻转 + `lcmp` 序列；
+        // 翻转中途经 scratch long 槽周转。
+        "long.compare_greater_than_unsigned" => {
+            binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterThanUnsigned)
+        }
+        "long.compare_less_or_equal_unsigned" => {
+            binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareLessOrEqualUnsigned)
+        }
+        "long.compare_greater_or_equal_unsigned" => {
+            binary(TargetOperandType::I64, TargetOperandType::I32, JvmOperatorCode::LongCompareGreaterOrEqualUnsigned)
+        }
         // double 比较：结果固定为 I32（0/1），由后端展开 `dcmpl`/`dcmpg` + 分支序列。
         "double.compare_equal" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareEqual),
         "double.compare_not_equal" => binary(TargetOperandType::F64, TargetOperandType::I32, JvmOperatorCode::DoubleCompareNotEqual),

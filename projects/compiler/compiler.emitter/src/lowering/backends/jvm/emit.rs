@@ -1222,7 +1222,8 @@ struct JvmMethodEmitter<'a> {
     current_block: MirBlockRef,
     comparison_ordinal: usize,
     /// 无符号 `u64` 比较展开使用的 scratch `long` 槽（2 槽宽），仅当函数实际引用
-    /// `LongCompareLessThanUnsigned` 时在 `max_locals` 尾部预留；未预留即未引用。
+    /// [`JvmOperatorCode::requires_scratch_long_slot`] 为真的码时在 `max_locals` 尾部
+    /// 预留；未预留即未引用。
     scratch_long_slot: Option<u16>,
     /// 值聚合递归复制使用的临时引用槽：每层复制占 2 槽（源/目标），
     /// 依据冻结布局的嵌套深度在 `max_locals` 尾部预留。
@@ -1255,7 +1256,7 @@ fn lower_function(
             return false;
         };
         operator_by_instance.get(instance).is_some_and(
-            |(_, binding)| matches!(binding, JvmOperatorBinding::Frozen(plan) if plan.encoding == JvmOperatorCode::LongCompareLessThanUnsigned),
+            |(_, binding)| matches!(binding, JvmOperatorBinding::Frozen(plan) if plan.encoding.requires_scratch_long_slot()),
         )
     });
     let scratch_long_slot = if needs_scratch_long {
@@ -1751,7 +1752,7 @@ impl JvmMethodEmitter<'_> {
 
         // 无符号 `u64` 比较的展开要消费方法级 scratch `long` 槽；槽在 `lower_function`
         // 按同一绑定表预留，未预留说明计划与发射扫描不一致，必须失败闭合。
-        let scratch_long_slot = if code == JvmOperatorCode::LongCompareLessThanUnsigned {
+        let scratch_long_slot = if code.requires_scratch_long_slot() {
             self.scratch_long_slot.ok_or_else(|| {
                 format!("JVM 目标 operator `{mnemonic}` 的展开需要 scratch long 槽，但方法级预留缺失: function={}", self.function.symbol)
             })?
@@ -3230,5 +3231,103 @@ mod operator_binding_tests {
             .instructions(0)
             .iter()
             .any(|instruction| matches!(instruction, JvmInstruction::IfLt(_))));
+    }
+
+    /// 分支指令的稳定名（仅比较序列出现的方向分支）。
+    fn branch_kind(instruction: &JvmInstruction) -> Option<&'static str> {
+        Some(match instruction {
+            JvmInstruction::IfICmpLt(_) => "if_icmplt",
+            JvmInstruction::IfICmpLe(_) => "if_icmple",
+            JvmInstruction::IfICmpGt(_) => "if_icmpgt",
+            JvmInstruction::IfICmpGe(_) => "if_icmpge",
+            JvmInstruction::IfLt(_) => "iflt",
+            JvmInstruction::IfLe(_) => "ifle",
+            JvmInstruction::IfGt(_) => "ifgt",
+            JvmInstruction::IfGe(_) => "ifge",
+            _ => return None,
+        })
+    }
+
+    /// 断言符号位翻转发生在其后的比较分支之前（`If*` 之外至少含一次 `IXor`/`LXor`）。
+    fn assert_sign_bit_flip_precedes_branch(instructions: &[JvmInstruction], flip: fn(&JvmInstruction) -> bool) {
+        let flip_index = instructions
+            .iter()
+            .position(|instruction| flip(instruction))
+            .unwrap_or_else(|| panic!("无符号有序比较必须含符号位翻转: {instructions:?}"));
+        let branch_index = instructions
+            .iter()
+            .position(|instruction| branch_kind(instruction).is_some())
+            .unwrap_or_else(|| panic!("无符号有序比较必须含分支指令: {instructions:?}"));
+        assert!(flip_index < branch_index, "符号位翻转必须在比较分支之前: {instructions:?}");
+    }
+
+    /// 无符号有序比较的其余三项：`u32`/`u64` 都冻结为「翻转符号位后按有符号比较」，
+    /// 分支方向取翻转后条件的反（跳到 false），结果载体固定 `I32`。
+    #[test]
+    fn unsigned_ordered_comparison_mnemonics_freeze_with_sign_bit_flip() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let i32_pair = [SemanticType::Integer32 { signed: false }, SemanticType::Integer32 { signed: false }];
+        let i64_pair = [SemanticType::Integer64 { signed: false }, SemanticType::Integer64 { signed: false }];
+
+        for (mnemonic, code, expected_branch) in [
+            ("integer.compare_greater_than_unsigned", JvmOperatorCode::IntegerCompareGreaterThanUnsigned, "if_icmple"),
+            ("integer.compare_less_or_equal_unsigned", JvmOperatorCode::IntegerCompareLessOrEqualUnsigned, "if_icmpgt"),
+            ("integer.compare_greater_or_equal_unsigned", JvmOperatorCode::IntegerCompareGreaterOrEqualUnsigned, "if_icmplt"),
+        ] {
+            let binding = freeze_jvm_operator(&link(mnemonic), instance, "infix cmp", &i32_pair, &SemanticType::Boolean)
+                .expect("冻结不得失败")
+                .expect("必须是 JVM operator 绑定");
+            let JvmOperatorBinding::Frozen(plan) = binding
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, code, "`{mnemonic}` 编码");
+            assert_eq!(plan.operand_type, TargetOperandType::I32);
+            assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果载体必须是 I32");
+            let instructions = plan.encoding.instructions(0);
+            assert!(
+                instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::Swap)),
+                "`{mnemonic}` 必须经 `swap` 周转翻转两侧: {instructions:?}"
+            );
+            assert_sign_bit_flip_precedes_branch(&instructions, |instruction| matches!(instruction, JvmInstruction::IXor));
+            let branch = instructions.iter().find_map(branch_kind);
+            assert_eq!(branch, Some(expected_branch), "`{mnemonic}` 分支方向: {instructions:?}");
+        }
+
+        const SCRATCH_SLOT: u16 = 11;
+        for (mnemonic, code, expected_branch) in [
+            ("long.compare_greater_than_unsigned", JvmOperatorCode::LongCompareGreaterThanUnsigned, "ifle"),
+            ("long.compare_less_or_equal_unsigned", JvmOperatorCode::LongCompareLessOrEqualUnsigned, "ifgt"),
+            ("long.compare_greater_or_equal_unsigned", JvmOperatorCode::LongCompareGreaterOrEqualUnsigned, "iflt"),
+        ] {
+            let binding = freeze_jvm_operator(&link(mnemonic), instance, "infix cmp", &i64_pair, &SemanticType::Boolean)
+                .expect("冻结不得失败")
+                .expect("必须是 JVM operator 绑定");
+            let JvmOperatorBinding::Frozen(plan) = binding
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, code, "`{mnemonic}` 编码");
+            assert_eq!(plan.operand_type, TargetOperandType::I64);
+            assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果载体必须是 I32");
+            assert!(plan.encoding.requires_scratch_long_slot(), "`{mnemonic}` 必须声明 scratch long 槽");
+            let instructions = plan.encoding.instructions(SCRATCH_SLOT);
+            assert_sign_bit_flip_precedes_branch(&instructions, |instruction| matches!(instruction, JvmInstruction::LXor));
+            assert!(
+                instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::LStore(SCRATCH_SLOT))),
+                "`{mnemonic}` 必须把翻转结果周转进 scratch 槽: {instructions:?}"
+            );
+            assert!(
+                instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::LLoad(SCRATCH_SLOT))),
+                "`{mnemonic}` 必须从 scratch 槽取回翻转结果: {instructions:?}"
+            );
+            let lcmp_index = instructions
+                .iter()
+                .position(|instruction| matches!(instruction, JvmInstruction::LCmp))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须 `lcmp` 后分支: {instructions:?}"));
+            let branch = instructions.iter().position(|instruction| branch_kind(instruction).is_some());
+            assert!(branch.is_some_and(|index| lcmp_index < index), "`{mnemonic}` 必须先 `lcmp` 再分支: {instructions:?}");
+            assert_eq!(instructions.iter().find_map(branch_kind), Some(expected_branch), "`{mnemonic}` 分支方向: {instructions:?}");
+        }
     }
 }

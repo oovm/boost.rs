@@ -29,6 +29,37 @@ fn long_unsigned_call(name: &str) -> JvmInstruction {
     })
 }
 
+/// `u32` 无符号序比较的公共翻转前置：栈 `[a, b]` → `[a ^ MIN, b ^ MIN]`。
+///
+/// JVM 没有无符号 `if_icmp`，`u32` 的序等价于「两侧都翻转符号位后」的 `i32` 序；
+/// `ixor` 只作用于栈顶，因此需 `swap` 周转两次，结束时恢复 `[a, b]` 顺序。
+fn integer_unsigned_flip_prelude() -> Vec<JvmInstruction> {
+    vec![
+        JvmInstruction::IConst(i32::MIN),
+        JvmInstruction::IXor,
+        JvmInstruction::Swap,
+        JvmInstruction::IConst(i32::MIN),
+        JvmInstruction::IXor,
+        JvmInstruction::Swap,
+    ]
+}
+
+/// `u64` 无符号序比较的公共翻转前置：翻转两侧符号位后 `lcmp` 得到有符号差值。
+///
+/// JVM 没有无符号 `lcmp`，也没有 `swap2`；先把 `b ^ MIN` 经 `scratch_long_slot`
+/// 周转，再翻转 `a`，最后取回并 `lcmp`。
+fn long_unsigned_flip_prelude(scratch_long_slot: u16) -> Vec<JvmInstruction> {
+    vec![
+        JvmInstruction::LdcLong(i64::MIN),
+        JvmInstruction::LXor,
+        JvmInstruction::LStore(scratch_long_slot),
+        JvmInstruction::LdcLong(i64::MIN),
+        JvmInstruction::LXor,
+        JvmInstruction::LLoad(scratch_long_slot),
+        JvmInstruction::LCmp,
+    ]
+}
+
 /// 已冻结的 JVM operator 编码。
 ///
 /// 算术码对应单条 JVM 指令；比较码在 JVM 上没有单指令形态（`int` 比较走
@@ -129,6 +160,15 @@ pub enum JvmOperatorCode {
     IntegerCompareGreaterThan,
     /// integer 大于等于比较（结果压 `int` 0/1）。
     IntegerCompareGreaterOrEqual,
+    /// integer 无符号大于比较（结果压 `int` 0/1）：两侧翻转符号位后按有符号 `>`，
+    /// `if_icmple` 分支到 false。
+    IntegerCompareGreaterThanUnsigned,
+    /// integer 无符号小于等于比较（结果压 `int` 0/1）：两侧翻转符号位后按有符号 `<=`，
+    /// `if_icmpgt` 分支到 false。
+    IntegerCompareLessOrEqualUnsigned,
+    /// integer 无符号大于等于比较（结果压 `int` 0/1）：两侧翻转符号位后按有符号 `>=`，
+    /// `if_icmplt` 分支到 false。
+    IntegerCompareGreaterOrEqualUnsigned,
     /// long 相等比较（结果压 `int` 0/1）。
     LongCompareEqual,
     /// long 不等比较（结果压 `int` 0/1）。
@@ -145,6 +185,15 @@ pub enum JvmOperatorCode {
     LongCompareGreaterThan,
     /// long 大于等于比较（结果压 `int` 0/1）。
     LongCompareGreaterOrEqual,
+    /// long 无符号大于比较（结果压 `int` 0/1）：两侧翻转符号位后 `lcmp` 按有符号
+    /// `>` 比较，`ifle` 分支到 false。
+    LongCompareGreaterThanUnsigned,
+    /// long 无符号小于等于比较（结果压 `int` 0/1）：两侧翻转符号位后 `lcmp` 按有符号
+    /// `<=` 比较，`ifgt` 分支到 false。
+    LongCompareLessOrEqualUnsigned,
+    /// long 无符号大于等于比较（结果压 `int` 0/1）：两侧翻转符号位后 `lcmp` 按有符号
+    /// `>=` 比较，`iflt` 分支到 false。
+    LongCompareGreaterOrEqualUnsigned,
     /// double 相等比较（结果压 `int` 0/1）：`dcmpl` + `ifne`，NaN 时 `dcmpl` 得
     /// -1（非 0）→ 判为 false，与 Java `==` 一致。
     DoubleCompareEqual,
@@ -226,6 +275,18 @@ impl JvmOperatorCode {
         })
     }
 
+    /// 展开是否消费发射方预留的 scratch `long` 槽：`u64` 无符号有序比较都要把一侧
+    /// 翻转结果经局部槽周转（JVM 没有 `swap2`）。
+    pub(crate) fn requires_scratch_long_slot(self) -> bool {
+        matches!(
+            self,
+            Self::LongCompareLessThanUnsigned
+                | Self::LongCompareGreaterThanUnsigned
+                | Self::LongCompareLessOrEqualUnsigned
+                | Self::LongCompareGreaterOrEqualUnsigned
+        )
+    }
+
     /// 冻结码到 JVM 指令序列的展开。
     ///
     /// 算术码展开为单条指令；比较码展开为产生 `int` 0/1 的分支序列。
@@ -233,9 +294,9 @@ impl JvmOperatorCode {
     /// 唯一标签；本函数只给出形状，不解析跳转。
     ///
     /// `scratch_long_slot` 是发射方在 `max_locals` 之外按需预留的 2 槽 `long`
-    /// 周转槽；只有 [`Self::LongCompareLessThanUnsigned`] 消费它——`u64` 的序等价于
-    /// 「两侧都翻转符号位后」的 `i64` 序，而 JVM 没有 `swap2`，翻转中途必须经局部槽
-    /// 周转。其余码忽略该参数。
+    /// 周转槽；只有 [`Self::requires_scratch_long_slot`] 为真的码消费它——`u64` 的序
+    /// 等价于「两侧都翻转符号位后」的 `i64` 序，而 JVM 没有 `swap2`，翻转中途必须
+    /// 经局部槽周转。其余码忽略该参数。
     pub fn instructions(self, scratch_long_slot: u16) -> Vec<JvmInstruction> {
         if let Some(instruction) = self.arithmetic_instruction() {
             return vec![instruction];
@@ -249,41 +310,52 @@ impl JvmOperatorCode {
             Self::IntegerCompareNotEqual => (vec![], vec![JvmInstruction::IfICmpEq("comparison_false".to_string())]),
             Self::IntegerCompareLessThan => (vec![], vec![JvmInstruction::IfICmpGe("comparison_false".to_string())]),
             // 无符号比较：`u32` 的序等价于「两侧都翻转符号位后」的 `i32` 序。
-            // 栈 `[a, b]` → `[a ^ MIN, b ^ MIN]`，再按有符号 `<` 展开。
+            // 栈 `[a, b]` → `[a ^ MIN, b ^ MIN]`，再按有符号比较展开。
             Self::IntegerCompareLessThanUnsigned => (
-                vec![
-                    JvmInstruction::IConst(i32::MIN),
-                    JvmInstruction::IXor,
-                    JvmInstruction::Swap,
-                    JvmInstruction::IConst(i32::MIN),
-                    JvmInstruction::IXor,
-                    JvmInstruction::Swap,
-                ],
+                integer_unsigned_flip_prelude(),
                 vec![JvmInstruction::IfICmpGe("comparison_false".to_string())],
             ),
             Self::IntegerCompareLessOrEqual => (vec![], vec![JvmInstruction::IfICmpGt("comparison_false".to_string())]),
             Self::IntegerCompareGreaterThan => (vec![], vec![JvmInstruction::IfICmpLe("comparison_false".to_string())]),
             Self::IntegerCompareGreaterOrEqual => (vec![], vec![JvmInstruction::IfICmpLt("comparison_false".to_string())]),
+            // 无符号 `>`：翻转后按有符号 `>`，`if_icmple` 分支到 false。
+            Self::IntegerCompareGreaterThanUnsigned => (
+                integer_unsigned_flip_prelude(),
+                vec![JvmInstruction::IfICmpLe("comparison_false".to_string())],
+            ),
+            // 无符号 `<=`：翻转后按有符号 `<=`，`if_icmpgt` 分支到 false。
+            Self::IntegerCompareLessOrEqualUnsigned => (
+                integer_unsigned_flip_prelude(),
+                vec![JvmInstruction::IfICmpGt("comparison_false".to_string())],
+            ),
+            // 无符号 `>=`：翻转后按有符号 `>=`，`if_icmplt` 分支到 false。
+            Self::IntegerCompareGreaterOrEqualUnsigned => (
+                integer_unsigned_flip_prelude(),
+                vec![JvmInstruction::IfICmpLt("comparison_false".to_string())],
+            ),
             Self::LongCompareEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfNe("comparison_false".to_string())]),
             Self::LongCompareNotEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfEq("comparison_false".to_string())]),
             Self::LongCompareLessThan => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfGe("comparison_false".to_string())]),
-            // 无符号 `u64` 小于：栈 `[a, b]` → 先把 `b ^ MIN` 周转进 scratch 槽，
-            // 再翻转 `a`，最后 `lcmp` 按有符号比较。`ldc2_w i64::MIN` + `lxor` 即符号位翻转。
-            Self::LongCompareLessThanUnsigned => (
-                vec![
-                    JvmInstruction::LdcLong(i64::MIN),
-                    JvmInstruction::LXor,
-                    JvmInstruction::LStore(scratch_long_slot),
-                    JvmInstruction::LdcLong(i64::MIN),
-                    JvmInstruction::LXor,
-                    JvmInstruction::LLoad(scratch_long_slot),
-                    JvmInstruction::LCmp,
-                ],
-                vec![JvmInstruction::IfGe("comparison_false".to_string())],
-            ),
+            // 无符号 `u64` 小于：翻转两侧符号位后 `lcmp` 按有符号比较。`ldc2_w i64::MIN`
+            // + `lxor` 即符号位翻转；中间的翻转结果经 scratch 槽周转（JVM 没有 `swap2`）。
+            Self::LongCompareLessThanUnsigned => {
+                (long_unsigned_flip_prelude(scratch_long_slot), vec![JvmInstruction::IfGe("comparison_false".to_string())])
+            }
             Self::LongCompareLessOrEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfGt("comparison_false".to_string())]),
             Self::LongCompareGreaterThan => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfLe("comparison_false".to_string())]),
             Self::LongCompareGreaterOrEqual => (vec![JvmInstruction::LCmp], vec![JvmInstruction::IfLt("comparison_false".to_string())]),
+            // 无符号 `>`：翻转后 `lcmp` 按有符号 `>`，`ifle` 分支到 false。
+            Self::LongCompareGreaterThanUnsigned => {
+                (long_unsigned_flip_prelude(scratch_long_slot), vec![JvmInstruction::IfLe("comparison_false".to_string())])
+            }
+            // 无符号 `<=`：翻转后 `lcmp` 按有符号 `<=`，`ifgt` 分支到 false。
+            Self::LongCompareLessOrEqualUnsigned => {
+                (long_unsigned_flip_prelude(scratch_long_slot), vec![JvmInstruction::IfGt("comparison_false".to_string())])
+            }
+            // 无符号 `>=`：翻转后 `lcmp` 按有符号 `>=`，`iflt` 分支到 false。
+            Self::LongCompareGreaterOrEqualUnsigned => {
+                (long_unsigned_flip_prelude(scratch_long_slot), vec![JvmInstruction::IfLt("comparison_false".to_string())])
+            }
             // 浮点比较的 NaN 语义按 Java 语言固定：
             //   * `==` / `!=` 只关心 `cmp` 结果是否为 0，`dcmpl`/`fcmpl` 的 NaN → -1
             //     已使二者分别得到 false / true（javac 同样选 `?cmpl`）；
