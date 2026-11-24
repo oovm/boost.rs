@@ -53,13 +53,23 @@ pub struct ManagedAbiContract {
 
 impl ManagedAbiContract {
     /// 构造契约并计算摘要；`entries` 会按 `logical_entry` 稳定排序。
+    ///
+    /// `calling_convention` 由入口事实派生：存在 argv launcher 时声明
+    /// `static-argv-launcher`，全部入口都只能静态绑定实参时声明 `static-method`。
+    /// 它描述契约实际提供的能力，不按 lane 或产物名猜测。
     pub fn new(lane: impl Into<String>, artifact: impl Into<String>, mut entries: Vec<ManagedAbiEntry>) -> Self {
         entries.sort_by(|left, right| left.logical_entry.cmp(&right.logical_entry));
+        let calling_convention = if entries.iter().any(|entry| entry.launcher_class.is_some()) {
+            "static-argv-launcher"
+        }
+        else {
+            "static-method"
+        };
         let mut contract = Self {
             schema_version: MANAGED_ABI_SCHEMA_VERSION,
             lane: lane.into(),
             artifact: artifact.into(),
-            calling_convention: "static-argv-launcher".to_string(),
+            calling_convention: calling_convention.to_string(),
             entries,
             contract_digest: String::new(),
         };
@@ -182,5 +192,7 @@ mod tests {
         let without_launcher = ManagedAbiContract::new("jvm", "app.jar", vec![entry]);
         assert!(without_launcher.canonical_digest_input().ends_with("|-"), "got: {}", without_launcher.canonical_digest_input());
         assert_ne!(with_launcher.contract_digest, without_launcher.contract_digest, "launcher 事实变化必须改变合同摘要");
+        assert_eq!(with_launcher.calling_convention, "static-argv-launcher");
+        assert_eq!(without_launcher.calling_convention, "static-method");
     }
 }
