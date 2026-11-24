@@ -199,7 +199,7 @@ pub fn validate_interop_surface(module: &HirModule) -> Result<(), BackendContrac
 /// 标注是否把该可调用声明为「实现不在源码中」的抽象声明。
 ///
 /// 覆盖两类：目标绑定属性与显式 `[host_contract]`。两者的实现来源不同，
-/// 因此与 [`function_interop_contract`] 只共享「抽象」判定，不共享外部导入合同判定：
+/// 因此与 [`function_interop_contracts`] 只共享「抽象」判定，不共享外部导入合同判定：
 /// - `[host_contract]` 生成空 host 链接，由 adaptor 的 host provider 填充；
 /// - 目标绑定属性直接生成宿主 external_call。
 /// 无体声明被判定为抽象后不得降低成空体函数，否则调用静默落到空实现。
@@ -210,24 +210,25 @@ pub fn annotations_declare_external_import(annotations: &[HirAttribute]) -> bool
         .any(|attribute| attribute_to_interop_contract(attribute).is_some() || attribute_name(attribute).as_deref() == Some("host_contract"))
 }
 
-/// 从函数声明推导语言中性的外部导入链接。
+/// 从函数声明推导语言中性的外部导入链接候选。
+///
+/// 一份声明可以同时携带多个目标绑定（如 `[jvm_operator]` / `[clr_operator]` /
+/// `[wasm_operator]` / `[ovm_operator]`）。语言侧只负责**按声明顺序保留全部候选**，
+/// 哪个 target 用哪条绑定由各 target 自己的裁决函数决定；这里绝不 first-wins。
+/// 返回空列表表示该声明不是外部合同。
 #[doc(hidden)]
-pub fn function_interop_contract(function: &HirFunction) -> Option<ExternalImportLink> {
-    if let Some(link) = function.annotations.iter().find_map(attribute_to_interop_contract) {
-        return Some(link);
-    }
-    if !function.is_abstract {
-        return None;
-    }
-    // 抽象声明只剩 `[host_contract]` 一种「无显式目标绑定」的合法形态：
-    // 由 adaptor 的 host_provider 提供 target-conditioned 链接，此处返回空链接，
-    // 等待 host provider resolve 填充具体绑定。
+pub fn function_interop_contracts(function: &HirFunction) -> Vec<ExternalImportLink> {
+    let mut links = function.annotations.iter().filter_map(attribute_to_interop_contract).collect::<Vec<_>>();
+    // 抽象声明可以显式声明 `[host_contract]`：生成空链接，由 adaptor 的 host
+    // provider 填充具体绑定。它排在目标绑定之后，与目标绑定共存时同样交由
+    // 后端裁决（同一 target 同时命中两条即为歧义，必须失败闭合）。
     //
     // `[intrinsic(...)]` 已随 builtin 旁路整条清退，不再是实现来源；携带该注解的
     // 声明由 [`validate_interop_surface`] 显式拒绝，不静默忽略。
-    function.annotations.iter().find_map(|attribute| {
-        (attribute_name(attribute).as_deref() == Some("host_contract")).then(|| ExternalImportLink::host(None, Vec::new()))
-    })
+    if function.is_abstract && function.annotations.iter().any(|attribute| attribute_name(attribute).as_deref() == Some("host_contract")) {
+        links.push(ExternalImportLink::host(None, Vec::new()));
+    }
+    links
 }
 
 /// 从 `[host_provider(X)]` 属性中杝坖目标契约符坷。

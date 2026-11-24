@@ -16,7 +16,10 @@ use super::{
     super::{
         super::{
             executable::ExecutableLoweringContext,
-            interop::{wasi_host_import_target, wasm_host_import_target, wasm_operator_target, wasm_or_js_glue_host_import_target},
+            interop::{
+                select_unique_target, wasi_host_import_target, wasm_host_import_target, wasm_operator_target,
+                wasm_or_js_glue_host_import_target,
+            },
         },
         sections::wasm_function_type,
     },
@@ -24,19 +27,27 @@ use super::{
     representation::{wasm_js_glue_abi_value_type, wasm_param_value_type},
 };
 
-pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthesize_const_utf8: bool) -> Vec<(String, String)> {
+pub(super) fn collect_wasm_host_imports(
+    submission: &FragmentSubmission,
+    synthesize_const_utf8: bool,
+) -> crate::Result<Vec<(String, String)>> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
     // 计划声明的导入是权威集合：`external_import_links` 与 `imports` 在完整流水线里
     // 应当同源，但测试夹具可能只登记其一；两边都收集，按 `(module, field)` 去重。
-    let declared_links =
-        submission.backend_plan.external_import_links().values().chain(submission.backend_plan.imports().values().map(|import| &import.link));
-    for link in declared_links {
-        let Some(target) = wasm_or_js_glue_host_import_target(link)
+    let declared_links = submission
+        .backend_plan
+        .external_import_links()
+        .values()
+        .chain(submission.backend_plan.imports().values().map(|import| &import.links));
+    for links in declared_links {
+        // `[wasm]` 与 `[js_builtin]` 是同一宿主表面的两种合法声明，共用同一裁决函数；
+        // 一个 import 同时命中两条即歧义，由共享选择函数失败闭合。
+        let Some(target) = select_unique_target(links, wasm_or_js_glue_host_import_target)?
         else {
             continue;
         };
-        let key = (target.module.to_string(), target.field.to_string());
+        let key = (target.1.module.to_string(), target.1.field.to_string());
         if seen.insert(key.clone()) {
             imports.push(key);
         }
@@ -54,18 +65,21 @@ pub(super) fn collect_wasm_host_imports(submission: &FragmentSubmission, synthes
         }
     }
     imports.sort();
-    imports
+    Ok(imports)
 }
 
-pub(super) fn collect_wasi_host_imports(submission: &FragmentSubmission, preview: WasiPreview) -> Vec<(String, String)> {
+pub(super) fn collect_wasi_host_imports(
+    submission: &FragmentSubmission,
+    preview: WasiPreview,
+) -> crate::Result<Vec<(String, String)>> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
-    for link in submission.backend_plan.external_import_links().values() {
-        let Some(target) = wasi_host_import_target(link)
+    for links in submission.backend_plan.external_import_links().values() {
+        let Some(target) = select_unique_target(links, wasi_host_import_target)?
         else {
             continue;
         };
-        let Some((module, field)) = crate::emitter_backend_wasi::wasi_adapt_import_for_preview(target.module, target.function, preview)
+        let Some((module, field)) = crate::emitter_backend_wasi::wasi_adapt_import_for_preview(target.1.module, target.1.function, preview)
         else {
             continue;
         };
@@ -74,19 +88,19 @@ pub(super) fn collect_wasi_host_imports(submission: &FragmentSubmission, preview
             imports.push(key);
         }
     }
-    for link in submission.backend_plan.external_import_links().values() {
-        let Some(target) = wasm_host_import_target(link)
+    for links in submission.backend_plan.external_import_links().values() {
+        let Some(target) = select_unique_target(links, wasm_host_import_target)?
         else {
             continue;
         };
-        let key = (target.module.to_string(), target.field.to_string());
+        let key = (target.1.module.to_string(), target.1.field.to_string());
         if seen.insert(key.clone()) {
             imports.push(key);
         }
     }
     imports.sort();
     crate::emitter_backend_wasi::expand_wasi_cli_stream_imports(&mut imports);
-    imports
+    Ok(imports)
 }
 
 pub(super) fn collect_mir_string_literals(submission: &FragmentSubmission, operations: &[ItemInstanceId]) -> Vec<String> {
@@ -170,18 +184,17 @@ pub(super) fn wasi_import_type_for_field(module: &str, field: &str) -> Option<Ve
 }
 
 /// `(module, field)` → 已在 `TargetExecutionPlan` 绑定的导入签名（`[js]` / `[wasm]` 等）。
-pub(super) fn host_import_signature_index(submission: &FragmentSubmission) -> BTreeMap<(String, String), BackendImport> {
+pub(super) fn host_import_signature_index(submission: &FragmentSubmission) -> crate::Result<BTreeMap<(String, String), BackendImport>> {
     let mut index = BTreeMap::new();
     for import in submission.backend_plan.imports().values() {
-        let target = wasm_or_js_glue_host_import_target(&import.link).or_else(|| wasm_host_import_target(&import.link));
-        let Some(target) = target
+        let Some((_, target)) = select_unique_target(&import.links, wasm_or_js_glue_host_import_target)?
         else {
             continue;
         };
         let key = (target.module.to_string(), target.field.to_string());
         index.entry(key).or_insert_with(|| import.clone());
     }
-    index
+    Ok(index)
 }
 
 pub(super) fn wasm_import_type_from_backend_import(
@@ -251,13 +264,12 @@ pub(super) fn wasi_core_import_name<'a>(module: &'a str, field: &'a str, preview
     (module, field)
 }
 
-pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String, String)]) -> BTreeMap<ItemInstanceId, u32> {
+pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String, String)]) -> crate::Result<BTreeMap<ItemInstanceId, u32>> {
     let import_index_by_key: BTreeMap<(String, String), u32> =
         imports.iter().enumerate().map(|(index, (module, field))| ((module.clone(), field.clone()), index as u32)).collect();
     let mut callee_import_index = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
-        let link = &import.link;
-        let Some(target) = wasm_or_js_glue_host_import_target(link)
+        let Some((_, target)) = select_unique_target(&import.links, wasm_or_js_glue_host_import_target)?
         else {
             continue;
         };
@@ -267,7 +279,7 @@ pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports
         };
         callee_import_index.insert(*callee, index);
     }
-    callee_import_index
+    Ok(callee_import_index)
 }
 
 pub(super) fn build_callee_wasm_operator_index(
@@ -275,7 +287,7 @@ pub(super) fn build_callee_wasm_operator_index(
 ) -> crate::Result<BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>> {
     let mut callee_wasm_operator = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
-        let Some(mnemonic) = wasm_operator_target(&import.link)
+        let Some((_, mnemonic)) = select_unique_target(&import.links, wasm_operator_target)?
         else {
             continue;
         };
@@ -297,13 +309,12 @@ pub(super) fn build_wasi_callee_import_index(
     submission: &FragmentSubmission,
     imports: &[(String, String)],
     preview: WasiPreview,
-) -> BTreeMap<ItemInstanceId, u32> {
+) -> crate::Result<BTreeMap<ItemInstanceId, u32>> {
     let import_index_by_key: BTreeMap<(String, String), u32> =
         imports.iter().enumerate().map(|(index, (module, field))| ((module.clone(), field.clone()), index as u32)).collect();
     let mut callee_import_index = BTreeMap::new();
     for (callee, import) in submission.backend_plan.imports() {
-        let link = &import.link;
-        let Some(target) = wasi_host_import_target(link)
+        let Some((_, target)) = select_unique_target(&import.links, wasi_host_import_target)?
         else {
             continue;
         };
@@ -319,8 +330,7 @@ pub(super) fn build_wasi_callee_import_index(
         callee_import_index.insert(*callee, index);
     }
     for (callee, import) in submission.backend_plan.imports() {
-        let link = &import.link;
-        let Some(target) = wasm_host_import_target(link)
+        let Some((_, target)) = select_unique_target(&import.links, wasm_host_import_target)?
         else {
             continue;
         };
@@ -330,7 +340,7 @@ pub(super) fn build_wasi_callee_import_index(
         };
         callee_import_index.insert(*callee, index);
     }
-    callee_import_index
+    Ok(callee_import_index)
 }
 
 #[cfg(test)]
@@ -349,7 +359,7 @@ mod host_import_signature_tests {
             import_id,
             BackendImport {
                 index: ImportIndex::from_index(0).expect("import index"),
-                link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["fetch".into()]),
+                links: vec![ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["fetch".into()])],
                 parameter_types: vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }],
                 return_type: SemanticType::Integer32 { signed: true },
             },
@@ -357,7 +367,7 @@ mod host_import_signature_tests {
         let submission = FragmentSubmission::from_backend_plan(plan);
         let ctx = ExecutableLoweringContext::new(&submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)
             .expect("测试提交的布局必须可解析");
-        let signatures = host_import_signature_index(&submission);
+        let signatures = host_import_signature_index(&submission).expect("signature index");
         let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "fetch", false, &signatures)
             .expect("js_builtin fetch must derive wasm signature from BackendImport");
         let params = super::super::strings::wasm_function_type_param_bytes(&type_bytes);
@@ -375,7 +385,7 @@ mod host_import_signature_tests {
                 index: ImportIndex::from_index(0).expect("import index"),
                 // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
                 // 这里由 plan 声明一个不同的签名，验证 plan 胜出。
-                link: ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["utf8_length".into()]),
+                links: vec![ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["utf8_length".into()])],
                 parameter_types: vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }],
                 return_type: SemanticType::Integer64 { signed: true },
             },
@@ -383,7 +393,7 @@ mod host_import_signature_tests {
         let submission = FragmentSubmission::from_backend_plan(plan);
         let ctx = ExecutableLoweringContext::new(&submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)
             .expect("测试提交的布局必须可解析");
-        let signatures = host_import_signature_index(&submission);
+        let signatures = host_import_signature_index(&submission).expect("signature index");
         assert!(signatures.contains_key(&("env".to_string(), "utf8_length".to_string())), "plan import 必须解析到 env::utf8_length");
         assert_eq!(
             wasm_import_type_for_field("utf8_length"),

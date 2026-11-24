@@ -513,7 +513,10 @@ pub fn enforce_resolved_host_contract_bindings(
         .external_calls
         .iter()
         .filter(|contract| {
-            contract.link.matches_boundary("host") && contract.link.platform_tag.is_none() && contract.link.locator_segments.is_empty()
+            contract
+                .links
+                .iter()
+                .any(|link| link.matches_boundary("host") && link.platform_tag.is_none() && link.locator_segments.is_empty())
         })
         .filter_map(|contract| contract.instance.map(|instance| (instance, contract)))
         .collect();

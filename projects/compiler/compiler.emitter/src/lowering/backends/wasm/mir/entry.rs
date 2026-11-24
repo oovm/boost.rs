@@ -124,13 +124,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 只有常量载体（`const_utf8` / WASI 偏移）在两种宿主形态下不同。
     let string_literals = collect_mir_string_literals(submission, &operations);
     let mut host_imports = if wasi_mode {
-        collect_wasi_host_imports(submission, wasi_preview)
+        collect_wasi_host_imports(submission, wasi_preview)?
     }
     else {
         // 入口模块与库导出统一消费 fragment/plan 冻结身份声明的宿主导入表；
         // 确有字符串字面量时再合成 `const_utf8`。宿主导入 callable 不能因为
         // 导出名不是 `main` 就失去 `callee_import_index` 注册路径。
-        collect_wasm_host_imports(submission, !string_literals.is_empty())
+        collect_wasm_host_imports(submission, !string_literals.is_empty())?
     };
     // WASI 宿主负责提供进程 argv：入口声明单个首位动态 `[utf8]` argv 形参时，
     // 入口包装体必须从 `wasi:cli/environment#get-arguments` 取值。该导入属于
@@ -144,10 +144,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
     // `import_count` 在 managed→host 句柄转换导入按需合成之后再取（见下方冻结步）。
     let callee_import_index = if wasi_mode {
-        build_wasi_callee_import_index(submission, &host_imports, wasi_preview)
+        build_wasi_callee_import_index(submission, &host_imports, wasi_preview)?
     }
     else {
-        build_callee_import_index(submission, &host_imports)
+        build_callee_import_index(submission, &host_imports)?
     };
     let callee_wasm_operator = build_callee_wasm_operator_index(submission)?;
     // Node JS-glue：宿主导入与 `.mjs` 启动壳统一使用 i32 句柄（`hostIntern` / `const_utf8`），
@@ -156,7 +156,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // WASI 轨同样以线性内?i32 偏移传字符串?
     let js_glue_utf8_as_anyref = false;
     let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
-    let host_import_signatures = host_import_signature_index(submission);
+    let host_import_signatures = host_import_signature_index(submission)?;
     let mut module = WasmBinaryModule::new();
     // main_type ?type 段的?0 ?() -> i32，供 `build` 桩函数使用?
     // ?MIR 函数的类型从?1 项开始追加，各自携带独立的返回类型?

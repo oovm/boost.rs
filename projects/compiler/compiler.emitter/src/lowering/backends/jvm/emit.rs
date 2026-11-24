@@ -787,12 +787,12 @@ fn collect_jvm_operations(submission: &FragmentSubmission) -> Vec<ItemInstanceId
 fn external_operator_by_instance(submission: &FragmentSubmission) -> Result<BTreeMap<ItemInstanceId, (String, JvmOperatorBinding)>> {
     let mut operators = BTreeMap::new();
     for (instance, import) in submission.backend_plan.imports() {
-        let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(&import.link)
+        let Some((link, mnemonic)) = crate::lowering::shared::interop::select_unique_target(&import.links, crate::lowering::shared::interop::jvm_operator_target)?
         else {
             continue;
         };
         let symbol = submission.backend_plan.abi_name_for_instance(*instance).map(|name| name.to_string()).unwrap_or_default();
-        let Some(binding) = freeze_jvm_operator(&import.link, *instance, &symbol, &import.parameter_types, &import.return_type)?
+        let Some(binding) = freeze_jvm_operator(link, *instance, &symbol, &import.parameter_types, &import.return_type)?
         else {
             continue;
         };
@@ -1681,9 +1681,10 @@ impl JvmMethodEmitter<'_> {
             return self.emit_operator_call(mnemonic, binding, arguments, *output);
         }
         if let Some(import) = self.submission.backend_plan.imports().get(instance) {
+            let links = import.links.iter().map(|link| link.to_string()).collect::<Vec<_>>().join(", ");
             return Err(format!(
-                "JVM 最小 lowering 尚不支持宿主导入 `{instance:?}`（链接 `{}`）：缺少 JVM host 编码，function={}",
-                import.link, self.function.symbol
+                "JVM 最小 lowering 尚不支持宿主导入 `{instance:?}`（链接 `{links}`）：缺少 JVM host 编码，function={}",
+                self.function.symbol
             ));
         }
         let Some(method) = self.method_plans.get(instance).cloned()

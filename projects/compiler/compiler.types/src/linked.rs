@@ -84,8 +84,11 @@ pub struct CanonicalFragment {
     pub required_capabilities: Vec<CapabilityTag>,
     /// 片段入口 callable identity。
     pub entry_operation: Option<ItemInstanceId>,
-    /// 片段使用的外部导入合同，键为外部 callable identity。
-    pub external_imports: BTreeMap<ItemInstanceId, ExternalImportLink>,
+    /// 片段使用的外部导入合同候选，键为外部 callable identity。
+    ///
+    /// 源码可同时声明多个目标绑定（`[jvm_operator]` / `[clr_operator]` / …）；
+    /// 语言侧只按声明顺序保留全部候选，具体 target 选哪条由各后端自行裁决。
+    pub external_imports: BTreeMap<ItemInstanceId, Vec<ExternalImportLink>>,
     /// 已绑定身份的外部调用边。
     pub external_call_edges: Vec<CanonicalExternalCallEdge>,
     /// 已绑定身份的内部调用边。
@@ -189,8 +192,8 @@ pub struct EvidenceRecord {
 /// 已完成签名绑定的外部导入记录。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportRecord {
-    /// Compiler 已选择并验证的外部链接合同。
-    pub link: crate::ExternalImportLink,
+    /// Compiler 已保留的外部链接候选（声明顺序；target 裁决归各后端）。
+    pub links: Vec<crate::ExternalImportLink>,
     /// 互操作链接能力，仅用于链接和诊断，不作为执行分派键。
     pub capability: ImportCapability,
     /// 对应的外部 callable 实例。

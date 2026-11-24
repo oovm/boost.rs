@@ -57,7 +57,7 @@ pub fn canonical_fragments(
                 if functions.contains_key(&caller) {
                     return Err(error(module, "CAN049", "同一实例同时绑定导入与函数体"));
                 }
-                external_imports.insert(caller, record.link.clone());
+                external_imports.insert(caller, record.links.clone());
                 continue;
             }
             let function = functions
@@ -85,7 +85,7 @@ pub fn canonical_fragments(
                     if functions.contains_key(callee) {
                         return Err(error(module, "CAN049", "同一实例同时绑定导入与函数体"));
                     }
-                    external_imports.insert(*callee, record.link.clone());
+                    external_imports.insert(*callee, record.links.clone());
                     external_call_edges.push(CanonicalExternalCallEdge {
                         caller,
                         import: *import,

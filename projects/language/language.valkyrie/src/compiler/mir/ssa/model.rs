@@ -238,8 +238,11 @@ pub struct MirExternalCallContract {
     pub instance: Option<compiler_types::ItemInstanceId>,
     /// HIR 选择的精确源码身份。
     pub symbol: NamePath,
-    /// 声明阶段形成的显式外部链接合同。
-    pub link: compiler_types::ExternalImportLink,
+    /// 声明阶段形成的显式外部链接候选（按声明顺序保留全部目标绑定）。
+    ///
+    /// 语言侧不做 target 裁决：哪个 target 用哪条链接由各后端自己的 interop
+    /// 函数决定；空列表表示该声明不是外部合同。
+    pub links: Vec<compiler_types::ExternalImportLink>,
     /// 语义导出声明的参数类型；禁止缺失后默认成空参数列表。
     pub parameter_types: Vec<ValkyrieType>,
     /// 语义导出声明的返回类型。

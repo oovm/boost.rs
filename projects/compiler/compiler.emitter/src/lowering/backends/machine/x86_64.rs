@@ -1264,7 +1264,14 @@ impl FunctionLowerer<'_> {
                 .get(&instance)
                 .ok_or_else(|| format!("x86_64 lowering：导入实例 `{instance:?}` 缺失: function={}", self.function.symbol))?;
             let symbol = self.submission.backend_plan.abi_name_for_instance(instance).map(|name| name.to_string()).unwrap_or_default();
-            let binding = freeze_x86_64_operator(&import.link, instance, &symbol, &import.parameter_types, &import.return_type)?;
+            let selected = crate::lowering::shared::interop::select_unique_target(
+                &import.links,
+                crate::lowering::shared::interop::x86_64_operator_target,
+            )?;
+            let binding = match selected {
+                Some((link, _)) => freeze_x86_64_operator(link, instance, &symbol, &import.parameter_types, &import.return_type)?,
+                None => None,
+            };
             // 数组 operator 的元素载体必须由计划裁决：值存储聚合等虽然形状像指针，
             // 在本 lane 没有内联槽合同，不能当元素搬运。
             let array_element = match &binding {
@@ -1277,7 +1284,8 @@ impl FunctionLowerer<'_> {
                 }
                 _ => None,
             };
-            (binding, import.link.clone(), array_element)
+            let links = import.links.iter().map(|link| link.to_string()).collect::<Vec<_>>().join(", ");
+            (binding, links, array_element)
         };
         if let Some(element) = &array_element
             && !self.is_local_carrier(element)

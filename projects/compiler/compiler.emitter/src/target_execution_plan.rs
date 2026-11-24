@@ -22,7 +22,7 @@ pub struct TargetExecutionPlan {
     entry_operation: Option<ItemInstanceId>,
     export_names: BTreeMap<ItemInstanceId, String>,
     export_annotations: BTreeMap<ItemInstanceId, String>,
-    external_import_links: BTreeMap<ItemInstanceId, compiler_target::ExternalImportLink>,
+    external_import_links: BTreeMap<ItemInstanceId, Vec<compiler_target::ExternalImportLink>>,
     external_call_edges: Vec<compiler_types::CanonicalExternalCallEdge>,
     internal_call_edges: Vec<compiler_types::CanonicalCallEdge>,
     aggregate_layouts: compiler_types::AggregateLayoutPlan,
@@ -63,8 +63,8 @@ pub struct TargetExecutionPlan {
 pub struct BackendImport {
     /// Canonical 导入索引。
     pub index: compiler_types::ImportIndex,
-    /// 外部链接合同。
-    pub link: compiler_types::ExternalImportLink,
+    /// 外部链接候选（声明顺序；target 裁决归各后端自己的 interop 函数）。
+    pub links: Vec<compiler_types::ExternalImportLink>,
     /// 参数类型列表。
     pub parameter_types: Vec<SemanticType>,
     /// 返回类型。
@@ -128,8 +128,8 @@ pub struct TargetPlanInput {
     pub export_names: BTreeMap<ItemInstanceId, String>,
     /// callable 到 `[export(name:)]` / `[export(case:)]` 注解解析名的映射。
     pub export_annotations: BTreeMap<ItemInstanceId, String>,
-    /// 外部导入链接映射。
-    pub external_import_links: BTreeMap<ItemInstanceId, compiler_target::ExternalImportLink>,
+    /// 外部导入链接候选映射。
+    pub external_import_links: BTreeMap<ItemInstanceId, Vec<compiler_target::ExternalImportLink>>,
     /// 外部调用边。
     pub external_call_edges: Vec<compiler_types::CanonicalExternalCallEdge>,
     /// 内部调用边。
@@ -388,8 +388,8 @@ impl TargetExecutionPlan {
         self.export_annotations.get(instance).or_else(|| self.export_names.get(instance))
     }
 
-    /// 返回外部导入链接映射。
-    pub fn external_import_links(&self) -> &BTreeMap<ItemInstanceId, compiler_target::ExternalImportLink> {
+    /// 返回外部导入链接候选映射。
+    pub fn external_import_links(&self) -> &BTreeMap<ItemInstanceId, Vec<compiler_target::ExternalImportLink>> {
         &self.external_import_links
     }
 

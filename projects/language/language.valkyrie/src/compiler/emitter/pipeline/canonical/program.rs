@@ -201,7 +201,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Valkyri
         linked.imports.insert(
             import,
             ImportRecord {
-                link: contract.link.clone(),
+                links: contract.links.clone(),
                 capability,
                 callee: instance,
                 parameter_types: contract.parameter_types.iter().map(|ty| type_id(&type_values, ty)).collect::<Result<_, _>>()?,

@@ -263,8 +263,8 @@ fn lower_fragment_mir_to_ovm_module_impl(
         .backend_plan
         .imports()
         .iter()
-        .map(|(instance, import)| (*instance, import.link.clone()))
-        .collect::<BTreeMap<ItemInstanceId, ExternalImportLink>>();
+        .map(|(instance, import)| (*instance, import.links.clone()))
+        .collect::<BTreeMap<ItemInstanceId, Vec<ExternalImportLink>>>();
     // 外部调用的实参位宽与内部调用同源：来自计划冻结的签名（`BackendImport.parameter_types`）。
     // 消费点缺失签名时必须结构化失败，不得回落到 semantic MIR 的 `Integer64` 默认。
     let external_param_types_by_instance = submission
@@ -278,12 +278,15 @@ fn lower_fragment_mir_to_ovm_module_impl(
     let external_opcode_by_instance = {
         let mut operators = BTreeMap::new();
         for (instance, import) in submission.backend_plan.imports() {
-            let Some(mnemonic) = crate::lowering::shared::interop::ovm_operator_target(&import.link)
+            let Some((link, mnemonic)) = crate::lowering::shared::interop::select_unique_target(
+                &import.links,
+                crate::lowering::shared::interop::ovm_operator_target,
+            )?
             else {
                 continue;
             };
             let symbol = submission.backend_plan.abi_name_for_instance(*instance).map(|name| name.to_string()).unwrap_or_default();
-            let Some(binding) = freeze_ovm_operator(&import.link, *instance, &symbol, &import.parameter_types, &import.return_type)?
+            let Some(binding) = freeze_ovm_operator(link, *instance, &symbol, &import.parameter_types, &import.return_type)?
             else {
                 continue;
             };
@@ -545,7 +548,7 @@ fn freeze_text_representations(
     exec: &TargetExecutionPlan,
     mir_fn: &MirFunction,
     value_definitions: &BTreeMap<MirValueRef, &MirInstruction>,
-    external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_link_by_instance: &BTreeMap<ItemInstanceId, Vec<ExternalImportLink>>,
 ) -> crate::Result<BTreeMap<MirValueRef, TextCarrier>> {
     // 程序级 raw 模式只来自正式表示计划事实：计划显式声明 raw 才授权 raw 槽。
     // 禁止由布局注册表为空反推——上游漏登记整类布局时 missing 会被吸收成合法表示。
@@ -736,7 +739,7 @@ fn lower_mir_function_to_bytecode(
     function_entry_arities: &BTreeMap<i32, usize>,
     param_types_by_function_index: &BTreeMap<i32, Vec<SemanticType>>,
     param_layouts_by_function_index: &BTreeMap<i32, Vec<Option<LayoutId>>>,
-    external_link_by_instance: &BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_link_by_instance: &BTreeMap<ItemInstanceId, Vec<ExternalImportLink>>,
     external_param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<SemanticType>>,
     external_opcode_by_instance: &BTreeMap<ItemInstanceId, (String, OvmOperatorBinding)>,
     sum_layout_index_by_nominal: &BTreeMap<NominalInstanceId, i32>,
@@ -794,7 +797,7 @@ struct NyarMirLowerer<'a, 'e> {
     function_entry_arities: &'a BTreeMap<i32, usize>,
     param_types_by_function_index: &'a BTreeMap<i32, Vec<SemanticType>>,
     param_layouts_by_function_index: &'a BTreeMap<i32, Vec<Option<LayoutId>>>,
-    external_link_by_instance: &'a BTreeMap<ItemInstanceId, ExternalImportLink>,
+    external_link_by_instance: &'a BTreeMap<ItemInstanceId, Vec<ExternalImportLink>>,
     external_param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<SemanticType>>,
     external_opcode_by_instance: &'a BTreeMap<ItemInstanceId, (String, OvmOperatorBinding)>,
     sum_layout_index_by_nominal: &'a BTreeMap<NominalInstanceId, i32>,
@@ -1116,9 +1119,9 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
             MirInstructionKind::Call { callee, arguments } => {
                 if let MirOperand::Item(instance) = callee {
-                    if let Some(link) = self.external_link_by_instance.get(instance).cloned() {
+                    if let Some(links) = self.external_link_by_instance.get(instance).cloned() {
                         let opcode = self.external_opcode_by_instance.get(instance);
-                        self.emit_external_call(&link, *instance, opcode, arguments, output)?;
+                        self.emit_external_call(&links, *instance, opcode, arguments, output)?;
                         return Ok(());
                     }
                     let index = self
@@ -1337,7 +1340,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     /// 不得回落为空体、默认值或 `0`。
     fn emit_external_call(
         &mut self,
-        link: &ExternalImportLink,
+        links: &[ExternalImportLink],
         instance: ItemInstanceId,
         opcode: Option<&(String, OvmOperatorBinding)>,
         arguments: &[MirOperand],
@@ -1399,15 +1402,14 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
         }
         else {
-            let Some(symbol) = (link.matches_boundary("host") && link.matches_platform_tag("ovm"))
-                .then(|| match link.locator_segments() {
-                    [symbol] => Some(symbol.as_str()),
-                    _ => None,
-                })
-                .flatten()
+            let Some((_, symbol)) = crate::lowering::shared::interop::select_unique_target(
+                links,
+                crate::lowering::shared::interop::ovm_host_import_target,
+            )?
             else {
+                let declared = links.iter().map(|link| link.to_string()).collect::<Vec<_>>().join(", ");
                 return Err(format!(
-                    "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {link}（contract/tag）不是已绑定的目标 provider；\
+                    "Nyar 目标不支持外部调用 `{callee_name}`：链接合同 {declared}（contract/tag）不是已绑定的目标 provider；\
                      需要 host 边界 + 目标标签 `ovm-operator` + 恰好一段符号，未绑定目标 provider 不得回落"
                 ));
             };
@@ -1430,7 +1432,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
     /// 结构化失败，绝不回落到 semantic MIR 的 `Integer64` 默认。
     fn emit_external_arguments(&mut self, callee_name: &str, instance: ItemInstanceId, arguments: &[MirOperand]) -> crate::Result<()> {
         let parameter_types = self.external_param_types_by_instance.get(&instance).cloned();
-        let import_symbol = self.external_link_by_instance.get(&instance).map(|link| link.locator_segments().join("::")).unwrap_or_default();
+        let import_symbol = self
+            .external_link_by_instance
+            .get(&instance)
+            .map(|links| links.iter().map(|link| link.locator_segments().join("::")).collect::<Vec<_>>().join(" | "))
+            .unwrap_or_default();
         for (index, argument) in arguments.iter().enumerate() {
             let actual = self.operand_actual_type(argument);
             let Some(expected) = parameter_types.as_ref().and_then(|types| types.get(index)).cloned()

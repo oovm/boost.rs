@@ -61,7 +61,7 @@ pub fn collect_host_runtime_callables(declaration_base: u32, instance_base: u32)
             declaration: Some(declaration),
             instance: Some(instance),
             symbol: NamePath::new(vec![Identifier::new(name)]),
-            link: ExternalImportLink::host(None, vec![name.to_string()]),
+            links: vec![ExternalImportLink::host(None, vec![name.to_string()])],
             parameter_types: vec![ValkyrieType::Utf8],
             return_type: ValkyrieType::Unit,
         });
@@ -86,12 +86,15 @@ pub(super) fn collect_external_call_contracts(
         {
             return None;
         }
-        let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(function)?;
+        let links = crate::compiler::emitter::backend_contract::interop::function_interop_contracts(function);
+        if links.is_empty() {
+            return None;
+        }
         Some(MirExternalCallContract {
             declaration: function.declaration,
             instance: function.instance,
             symbol: crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, function),
-            link,
+            links,
             parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
             return_type: function.return_type.clone(),
         })
@@ -126,10 +129,10 @@ pub(super) fn collect_external_call_contracts(
                 .filter(|callable| {
                     callable.function.is_abstract
                         && gate.is_none_or(|gate| gate.permits_instance(callable.function.instance))
-                        && crate::compiler::emitter::backend_contract::interop::function_interop_contract(&callable.function).is_some()
+                        && !crate::compiler::emitter::backend_contract::interop::function_interop_contracts(&callable.function).is_empty()
                 })
                 .filter_map(|callable| {
-                    let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(&callable.function)?;
+                    let links = crate::compiler::emitter::backend_contract::interop::function_interop_contracts(&callable.function);
                     let param_types: Vec<_> = callable.function.params.iter().map(|p| p.ty.clone()).collect();
                     let return_type = callable.function.return_type.clone();
                     // substitution 未闭合（还有 open generic binder）→ 跳过，避免 canonical 化时 CAN014
@@ -140,7 +143,7 @@ pub(super) fn collect_external_call_contracts(
                         declaration: callable.function.declaration,
                         instance: callable.function.instance,
                         symbol: crate::compiler::hir::symbols::stable_hir_function_name_path(&module.name, &callable.function),
-                        link,
+                        links,
                         parameter_types: param_types,
                         return_type,
                     })
@@ -158,13 +161,16 @@ pub(super) fn collect_external_call_contracts(
             .iter()
             .flat_map(|export| {
                 export.functions.iter().filter_map(move |function| {
-                    let link = crate::compiler::emitter::backend_contract::interop::function_interop_contract(function)?;
+                    let links = crate::compiler::emitter::backend_contract::interop::function_interop_contracts(function);
+                    if links.is_empty() {
+                        return None;
+                    }
                     let symbol = crate::compiler::hir::symbols::stable_hir_function_name_path(&export.module, function);
                     Some(MirExternalCallContract {
                         declaration: function.declaration,
                         instance: function.instance,
                         symbol,
-                        link,
+                        links,
                         parameter_types: function.params.iter().map(|parameter| parameter.ty.clone()).collect(),
                         return_type: function.return_type.clone(),
                     })

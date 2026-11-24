@@ -199,7 +199,7 @@ fn build_plan(
                 .collect::<std::result::Result<Vec<_>, TargetPlanError>>()?;
             let return_type = lower_type(canonical, import.return_type)
                 .map_err(|reason| TargetPlanError::unsound(AdapterStage::Type, Some(instance), None, reason))?;
-            imports.insert(instance, BackendImport { index: *index, link: import.link.clone(), parameter_types, return_type });
+            imports.insert(instance, BackendImport { index: *index, links: import.links.clone(), parameter_types, return_type });
             continue;
         }
         let name = canonical.linked.callable_names.get(&instance).ok_or_else(|| {
