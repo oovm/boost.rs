@@ -87,11 +87,15 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
             contract
                 .entries
                 .iter()
-                .map(|entry| DriverRunContract {
-                    logical_entry: entry.logical_entry.clone(),
-                    physical_entry: format!("{}.jar", request.artifact_name),
-                    invocation: "java".to_string(),
-                    validate: format!("java -cp {}.jar {}", request.artifact_name, entry.launcher_class.replace('/', ".")),
+                .filter_map(|entry| {
+                    // 无 argv launcher 的入口仍是合法库入口；它不产生命令行运行合同。
+                    let launcher = entry.launcher_class.as_deref()?;
+                    Some(DriverRunContract {
+                        logical_entry: entry.logical_entry.clone(),
+                        physical_entry: format!("{}.jar", request.artifact_name),
+                        invocation: "java".to_string(),
+                        validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
+                    })
                 })
                 .collect()
         }

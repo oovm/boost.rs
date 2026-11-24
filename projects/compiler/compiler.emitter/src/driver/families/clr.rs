@@ -98,11 +98,15 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
             contract
                 .entries
                 .iter()
-                .map(|entry| DriverRunContract {
-                    logical_entry: entry.logical_entry.clone(),
-                    physical_entry: artifact_file.clone(),
-                    invocation: "dotnet".to_string(),
-                    validate: format!("dotnet exec {} {}", artifact_file, entry.logical_entry),
+                .filter_map(|entry| {
+                    // 无 argv launcher 的入口仍是合法库入口；它不产生命令行运行合同。
+                    entry.launcher_class.as_ref()?;
+                    Some(DriverRunContract {
+                        logical_entry: entry.logical_entry.clone(),
+                        physical_entry: artifact_file.clone(),
+                        invocation: "dotnet".to_string(),
+                        validate: format!("dotnet exec {} {}", artifact_file, entry.logical_entry),
+                    })
                 })
                 .collect()
         }
@@ -157,7 +161,7 @@ mod tests {
             parameter_types: parameter_types.iter().map(|ty| (*ty).to_string()).collect(),
             parameter_names: parameter_names.iter().map(|name| (*name).to_string()).collect(),
             return_type: "i64".to_string(),
-            launcher_class: "managed_entry".to_string(),
+            launcher_class: Some("managed_entry".to_string()),
         }
     }
 

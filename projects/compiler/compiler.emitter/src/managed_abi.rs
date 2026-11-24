@@ -2,10 +2,16 @@
 //!
 //! 库产物（例如 `.jar`）没有零参 `main`，但仍需要机器可校验的执行入口。
 //! 本模块只描述已经由目标 lowering 冻结的入口事实：逻辑入口名、主类中的
-//! 静态方法、JVM 方法描述符，以及独立 launcher 类；不补造未降低的入口。
+//! 静态方法、JVM 方法描述符，以及可选的 argv launcher 类；不补造未降低的入口。
+//!
+//! 入口 ABI 事实与 argv 包装能力是两件事：前者由语言冻结签名决定，后者只覆盖
+//! 宿主命令行能无损解析的标量子集。数组、引用等签名仍然是合法的库入口事实，
+//! 只是没有 argv launcher；`launcher_class = None` 表示「该入口不经 argv 编组」，
+//! 不表示签名未知。禁止为了补齐 launcher 而发明 argv 语法或默认值。
 //!
 //! `contract_digest` 覆盖 lane、产物文件名、调用约定与按 `logical_entry`
-//! 排序后的全部入口（含形参类型与形参声明名），任何入口事实变化都会改变摘要。
+//! 排序后的全部入口（含形参类型、形参声明名与 launcher 事实），任何入口事实
+//! 变化都会改变摘要。
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -14,7 +20,11 @@ use sha2::{Digest, Sha256};
 ///
 /// 版本 2 起入口携带 `parameter_names`：消费侧按形参声明名绑定实参，禁止按
 /// 位置猜测；该事实同时进入合同摘要，因此与版本 1 的摘要不可互认。
-pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 2;
+///
+/// 版本 3 起 `launcher_class` 是 `Option`：入口事实与 argv 包装能力分离。
+/// `None` 是「签名不可由 argv 无损表达」的显式事实，消费侧必须按静态方法绑定
+/// 实参，不得据此推断入口不存在。
+pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 3;
 
 /// managed ABI sidecar 文件名：每个物理产物一份，`app.jar` → `app.jar.managed-abi.json`。
 ///
@@ -84,7 +94,8 @@ impl ManagedAbiContract {
                 entry.parameter_types.join(","),
                 entry.parameter_names.join(","),
                 entry.return_type,
-                entry.launcher_class,
+                // 无 launcher 是已冻结事实；用显式哨兵参与摘要，禁止与空名字混淆。
+                entry.launcher_class.as_deref().unwrap_or("-"),
             ));
         }
         lines.join("\n")
@@ -117,8 +128,12 @@ pub struct ManagedAbiEntry {
     pub parameter_names: Vec<String>,
     /// 返回值的 managed 标量类型名。
     pub return_type: String,
-    /// launcher 类内部名。
-    pub launcher_class: String,
+    /// argv launcher 类内部名。
+    ///
+    /// `None` 表示该入口的签名不能由 argv 无损编组（数组、引用、unsigned 等），
+    /// 入口本身仍然是合法的库 ABI 事实，宿主应按 `owner`/`method`/`signature`
+    /// 静态绑定实参。该字段不参与「入口是否存在」的判定。
+    pub launcher_class: Option<String>,
 }
 
 #[cfg(test)]
@@ -142,17 +157,30 @@ mod tests {
             parameter_types: vec!["i64".to_string(), "i64".to_string()],
             parameter_names: names.iter().map(|name| (*name).to_string()).collect(),
             return_type: "i64".to_string(),
-            launcher_class: "nyar/invoke/sum".to_string(),
+            launcher_class: Some("nyar/invoke/sum".to_string()),
         }
     }
 
     /// 形参声明名进入摘要：同名类型不同参数名必须产生不同合同摘要。
     #[test]
     fn digest_input_covers_parameter_names() {
-        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 2);
+        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 3);
         let left = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["left", "right"])]);
         let right = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["first", "second"])]);
         assert!(left.canonical_digest_input().contains("i64,i64|left,right|i64"), "got: {}", left.canonical_digest_input());
         assert_ne!(left.contract_digest, right.contract_digest, "形参名变化必须改变合同摘要");
+    }
+
+    /// 无 launcher 是显式已冻结事实：进入摘要、与有 launcher 的入口不可互认，
+    /// 且不得写成空字符串冒充。
+    #[test]
+    fn digest_input_covers_launcher_presence() {
+        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 3);
+        let with_launcher = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["left", "right"])]);
+        let mut entry = entry_with_names(&["left", "right"]);
+        entry.launcher_class = None;
+        let without_launcher = ManagedAbiContract::new("jvm", "app.jar", vec![entry]);
+        assert!(without_launcher.canonical_digest_input().ends_with("|-"), "got: {}", without_launcher.canonical_digest_input());
+        assert_ne!(with_launcher.contract_digest, without_launcher.contract_digest, "launcher 事实变化必须改变合同摘要");
     }
 }

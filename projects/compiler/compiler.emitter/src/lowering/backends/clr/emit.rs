@@ -200,7 +200,7 @@ fn build_managed_abi_surface(
             parameter_types: parameter_types.clone(),
             parameter_names,
             return_type,
-            launcher_class: MANAGED_ENTRY_METHOD.to_string(),
+            launcher_class: Some(MANAGED_ENTRY_METHOD.to_string()),
         });
         dispatch_targets.push((
             body.method.signature.clone(),

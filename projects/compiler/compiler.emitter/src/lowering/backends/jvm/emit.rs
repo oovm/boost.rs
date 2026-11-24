@@ -292,7 +292,7 @@ fn build_managed_abi_surface(
             parameter_types,
             parameter_names,
             return_type,
-            launcher_class,
+            launcher_class: Some(launcher_class),
         });
         companion_classes.push(launcher);
     }
