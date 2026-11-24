@@ -19,7 +19,7 @@ use compiler_types::ItemInstanceId;
 use super::{
     X64Platform, compile_shared_container, extension::verify_shared_image, is_c_identifier,
     x64_program::encode_x64_program_with_dependencies,
-    x86_64::{collect_reachable_functions, lower_function_to_text_program},
+    x86_64::{collect_reachable_functions, is_reference_carrier, lower_function_to_text_program},
 };
 
 /// 普通共享库降低结果：完整共享库镜像与导出事实。
@@ -45,25 +45,91 @@ pub struct MachineLibraryExport {
     pub source_name: String,
     /// C ABI 公开符号名（本 lane 合同下等于源码名）。
     pub public_name: String,
-    /// 形参载体标签（`i64` / `i64[]` / `utf8`，按形参顺序）；来自冻结签名，
-    /// 供外部 C 消费者按清单装载与调用，不在消费侧重新猜测。
+    /// 形参载体标签（`i32` / `i64` / `f64` / `utf8` / `i64[]` / `handle`，按形参
+    /// 顺序）；来自冻结签名，供外部 C 消费者按清单装载与调用，不在消费侧重新猜测。
     pub parameters: Vec<String>,
     /// 形参声明名（按形参顺序，与 `parameters` 等长）；消费侧按名绑定用例字段。
     pub parameter_names: Vec<String>,
-    /// 返回载体标签（`i64` / `bool` / `utf8` / `i64[]` / `unit`）。
+    /// 返回载体标签（`unit` / `bool` / `char` / `i64` / `utf8` / `i64[]` / `handle`）。
     pub returns: String,
 }
 
-/// 语义类型 → 清单载体标签；未闭合载体保留语义类型文本，避免伪装成已定案 ABI。
-fn library_type_tag(ty: &crate::backend_plan_views::SemanticType) -> String {
-    use crate::backend_plan_views::SemanticType;
-    match ty {
-        SemanticType::Integer64 { signed: true } => "i64".to_string(),
-        SemanticType::Boolean => "bool".to_string(),
-        SemanticType::Utf8 => "utf8".to_string(),
-        SemanticType::Unit => "unit".to_string(),
-        SemanticType::Array(element) if matches!(element.as_ref(), SemanticType::Integer64 { signed: true }) => "i64[]".to_string(),
-        other => other.to_string(),
+/// 普通共享库 C ABI 载体：本 lane 的封闭词汇。
+///
+/// 载体必须与 x86_64 的物理槽一一对应：标量按精确语言类型命名（`i32` 不并入
+/// `i64`），堆数组递归展开元素，引用对象/unite/元组/可空等 8 字节指针统一记
+/// `handle`。没有物理槽的类型（值存储聚合、定长数组、`i128`、函数、trait 对象）
+/// 结构化失败，禁止把语义类型文本写进清单冒充已定案 ABI。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum X64LibraryCarrier {
+    Unit,
+    Bool,
+    Char,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    F32,
+    F64,
+    Utf8,
+    Utf16,
+    Array(Box<Self>),
+    Handle,
+}
+
+impl X64LibraryCarrier {
+    /// 由冻结语义类型与计划事实派生载体；不支持即结构化失败。
+    fn of(ty: &crate::backend_plan_views::SemanticType, plan: &crate::TargetExecutionPlan) -> Result<Self> {
+        use crate::backend_plan_views::SemanticType;
+        Ok(match ty {
+            SemanticType::Unit => Self::Unit,
+            SemanticType::Boolean => Self::Bool,
+            SemanticType::Character => Self::Char,
+            SemanticType::Integer8 { signed: true } => Self::I8,
+            SemanticType::Integer8 { signed: false } => Self::U8,
+            SemanticType::Integer16 { signed: true } => Self::I16,
+            SemanticType::Integer16 { signed: false } => Self::U16,
+            SemanticType::Integer32 { signed: true } => Self::I32,
+            SemanticType::Integer32 { signed: false } => Self::U32,
+            SemanticType::Integer64 { signed: true } => Self::I64,
+            SemanticType::Integer64 { signed: false } => Self::U64,
+            SemanticType::Float32 => Self::F32,
+            SemanticType::Float64 => Self::F64,
+            SemanticType::Utf8 => Self::Utf8,
+            SemanticType::Utf16 => Self::Utf16,
+            SemanticType::Array(element) => Self::Array(Box::new(Self::of(element, plan)?)),
+            other if is_reference_carrier(other, plan) => Self::Handle,
+            other => {
+                return Err(format!("`{other}` 没有 x86_64 槽载体：值存储聚合、定长数组、`i128` 与函数类型都不能跨越 C ABI 库边界"))
+            }
+        })
+    }
+
+    /// 清单标签：跨仓消费的稳定字符串，不是调试文本。
+    fn tag(&self) -> String {
+        match self {
+            Self::Unit => "unit".to_string(),
+            Self::Bool => "bool".to_string(),
+            Self::Char => "char".to_string(),
+            Self::I8 => "i8".to_string(),
+            Self::U8 => "u8".to_string(),
+            Self::I16 => "i16".to_string(),
+            Self::U16 => "u16".to_string(),
+            Self::I32 => "i32".to_string(),
+            Self::U32 => "u32".to_string(),
+            Self::I64 => "i64".to_string(),
+            Self::U64 => "u64".to_string(),
+            Self::F32 => "f32".to_string(),
+            Self::F64 => "f64".to_string(),
+            Self::Utf8 => "utf8".to_string(),
+            Self::Utf16 => "utf16".to_string(),
+            Self::Array(element) => format!("{}[]", element.tag()),
+            Self::Handle => "handle".to_string(),
+        }
     }
 }
 
@@ -95,27 +161,38 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
         if names.insert(*instance, export_name.clone()).is_some() {
             return Err(format!("普通共享库导出名 `{export_name}` 重复：不得用同名导出覆盖", ));
         }
-        // 载体签名来自冻结函数类型；缺函数体时留空标签，消费侧按未知处理，
-        // 不用默认值伪造已定案签名。参数名是绑定用例字段的唯一依据，缺失即失败。
-        let (parameters, parameter_names, returns) = submission
-            .backend_plan
-            .get_function(instance)
-            .map(|view| {
-                let names = crate::abi_structure::canonical_parameter_identities(export_name, &view.function)
-                    .map(|identities| identities.into_iter().map(|(_, name)| name.to_string()).collect::<Vec<_>>())?;
-                Ok::<_, String>((
-                    view.function.param_types.iter().map(library_type_tag).collect::<Vec<_>>(),
-                    names,
-                    library_type_tag(&view.function.return_type),
-                ))
+        // 载体签名只从冻结函数类型派生：缺函数体或载体不在本 lane 封闭词汇内
+        // 都是结构化失败，不写空标签或用语义类型文本冒充已定案 ABI。参数名是
+        // 绑定用例字段的唯一依据，缺失同样失败。
+        let view = submission.backend_plan.get_function(instance).ok_or_else(|| {
+            format!("普通共享库：导出 `{export_name}` 缺少冻结函数体，无法派生 C ABI 载体签名，target={}", platform.name())
+        })?;
+        let names = crate::abi_structure::canonical_parameter_identities(export_name, &view.function)?
+            .into_iter()
+            .map(|(_, name)| name.to_string())
+            .collect::<Vec<_>>();
+        let parameters = view
+            .function
+            .param_types
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| {
+                let carrier = X64LibraryCarrier::of(ty, &submission.backend_plan)
+                    .map_err(|reason| format!("普通共享库导出 `{export_name}` 形参 {index} 类型 `{ty}` 没有 C ABI 载体: {reason}"))?;
+                if carrier == X64LibraryCarrier::Unit {
+                    return Err(format!("普通共享库导出 `{export_name}` 形参 {index} 类型为 `unit`：`unit` 只允许出现在返回位"));
+                }
+                Ok(carrier.tag())
             })
-            .transpose()?
-            .unwrap_or_default();
+            .collect::<Result<Vec<_>>>()?;
+        let returns = X64LibraryCarrier::of(&view.function.return_type, &submission.backend_plan)
+            .map_err(|reason| format!("普通共享库导出 `{export_name}` 返回类型 `{}` 没有 C ABI 载体: {reason}", view.function.return_type))?
+            .tag();
         exports.push(MachineLibraryExport {
             source_name: export_name.clone(),
             public_name: export_name.clone(),
             parameters,
-            parameter_names,
+            parameter_names: names,
             returns,
         });
     }
@@ -162,4 +239,54 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
     let artifact_extension = if platform.is_windows() { ".dll".to_string() } else { ".so".to_string() };
     let entry_symbol = exports.first().map(|export| export.public_name.clone());
     Ok(X64LoweredLibrary { executable, entry_symbol, exports, artifact_extension })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend_plan_views::SemanticType;
+
+    fn tag_of(ty: &SemanticType) -> Result<String> {
+        X64LibraryCarrier::of(ty, &crate::TargetExecutionPlan::default()).map(|carrier| carrier.tag())
+    }
+
+    fn primitive(spelling: &str) -> SemanticType {
+        crate::test_canonical_primitive(spelling)
+    }
+
+    /// 标量按精确语言类型命名：`i32` 不得并入 `i64`，浮点不得并入整数。
+    #[test]
+    fn scalar_carriers_use_exact_language_names() {
+        for spelling in ["bool", "char", "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "utf8", "utf16"] {
+            assert_eq!(tag_of(&primitive(spelling)), Ok(spelling.to_string()), "`{spelling}` 必须按自身命名");
+        }
+        assert_eq!(tag_of(&SemanticType::Unit), Ok("unit".to_string()));
+    }
+
+    /// 数组载体按结构递归派生，不得退化为 `Display` 文本（`[i32]` 不是 `[i32]`）。
+    #[test]
+    fn array_carriers_are_structural() {
+        let i64_array = SemanticType::Array(Box::new(primitive("i64")));
+        assert_eq!(tag_of(&i64_array), Ok("i64[]".to_string()));
+        let i32_array = SemanticType::Array(Box::new(primitive("i32")));
+        assert_eq!(tag_of(&i32_array), Ok("i32[]".to_string()), "窄整型数组标签必须与 `i64[]` 同构");
+        let nested = SemanticType::Array(Box::new(i64_array));
+        assert_eq!(tag_of(&nested), Ok("i64[][]".to_string()));
+        let unsupported = SemanticType::Array(Box::new(primitive("i128")));
+        assert!(tag_of(&unsupported).is_err(), "元素无载体时数组也必须失败闭合");
+    }
+
+    /// 没有 x86_64 物理槽的类型必须在清单派生处失败，不得写入语义类型文本。
+    #[test]
+    fn carriers_without_x86_64_slot_fail_closed() {
+        let fixed = SemanticType::FixedArray { element: Box::new(primitive("i64")), length: 4 };
+        let named_without_layout = SemanticType::Nominal {
+            layout: 0u32,
+            spelling: compiler_types::Identifier::new("app::Record"),
+        };
+        for ty in [primitive("i128"), primitive("void"), fixed, named_without_layout] {
+            let error = tag_of(&ty).expect_err("无槽载体必须结构化失败");
+            assert!(error.contains("没有 x86_64 槽载体"), "`{ty:?}` 的错误必须说明缺载体，got: {error}");
+        }
+    }
 }

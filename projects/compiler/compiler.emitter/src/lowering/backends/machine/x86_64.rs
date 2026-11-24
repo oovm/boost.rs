@@ -2491,28 +2491,31 @@ impl FunctionLowerer<'_> {
     /// 在标量/数组/文本之外，x86-64 引用对象、unite（sum）与引用可空都是 8 字节
     /// 指针载体；值存储聚合没有内联槽合同，仍在这里结构化失败。
     fn is_local_carrier(&self, ty: &SemanticType) -> bool {
-        if is_local_carrier_type(ty) {
-            return true;
-        }
-        let plan = &self.submission.backend_plan;
-        match ty {
-            SemanticType::Nominal { .. } | SemanticType::Apply(..) => {
-                if let Some(layout) = plan.aggregate_layouts().frozen_layout(ty) {
-                    return layout.storage.is_reference();
-                }
-                // 闭合 unite 实例：物理载体是 sum 对象指针（`{u32 tag, i64 payload}`）。
-                plan.sum_layout_by_semantic_type().contains_key(ty)
-                    || plan.sum_layout_by_semantic_type().contains_key(&ty.contract_key())
+        is_local_carrier_type(ty) || is_reference_carrier(ty, &self.submission.backend_plan)
+    }
+}
+
+/// 8 字节指针载体：引用对象、unite（sum）、引用可空、元组与匿名 union。
+///
+/// 与 [`is_local_carrier_type`] 合起来定义 native 槽载体全集。库导出清单的
+/// C ABI 载体也从这一处派生，禁止清单另写一套「什么能过界」的判定。
+pub(super) fn is_reference_carrier(ty: &SemanticType, plan: &crate::TargetExecutionPlan) -> bool {
+    match ty {
+        SemanticType::Nominal { .. } | SemanticType::Apply(..) => {
+            if let Some(layout) = plan.aggregate_layouts().frozen_layout(ty) {
+                return layout.storage.is_reference();
             }
-            SemanticType::Union(_) => true,
-            SemanticType::Nullable(inner) => {
-                self.is_local_carrier(inner) || matches!(**inner, SemanticType::Array(_) | SemanticType::Utf8 | SemanticType::Utf16)
-            }
-            // 元组：本 lane 以堆对象指针承载（元素槽合同见 `tuple_field_offset`，
-            // 构造/读取在 `TupleNew`/`TupleGet` 发射点逐项校验）。
-            SemanticType::Tuple(_) => true,
-            _ => false,
+            // 闭合 unite 实例：物理载体是 sum 对象指针（`{u32 tag, i64 payload}`）。
+            plan.sum_layout_by_semantic_type().contains_key(ty) || plan.sum_layout_by_semantic_type().contains_key(&ty.contract_key())
         }
+        SemanticType::Union(_) => true,
+        SemanticType::Nullable(inner) => {
+            is_local_carrier_type(inner) || is_reference_carrier(inner, plan) || matches!(**inner, SemanticType::Array(_) | SemanticType::Utf8 | SemanticType::Utf16)
+        }
+        // 元组：本 lane 以堆对象指针承载（元素槽合同见 `tuple_field_offset`，
+        // 构造/读取在 `TupleNew`/`TupleGet` 发射点逐项校验）。
+        SemanticType::Tuple(_) => true,
+        _ => false,
     }
 }
 
