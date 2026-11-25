@@ -12,14 +12,13 @@
 #![warn(missing_docs)]
 
 use std::{
-    fmt,
-    fs,
+    fmt, fs,
     path::{Path, PathBuf},
 };
 
+use boost_fs::publish::{OverwritePolicy, PublishOptions};
 use data_binary_mach_o::mach_o;
 use data_binary_pe::{elf, pe};
-use boost_fs::publish::{OverwritePolicy, PublishOptions};
 use data_checksum::XxHash64;
 use data_encoding::representation::Hex;
 use serde::{Deserialize, Serialize};
@@ -275,6 +274,54 @@ pub struct SymbolsReport {
     pub truncated: bool,
 }
 
+/// One `CodeView` payload from a PE debug directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeViewInfo {
+    /// Four-byte signature, `RSDS` or `NB10`.
+    pub signature: String,
+    /// `GUID` as `XXXXXXXX-XXXX-...` for `RSDS` entries.
+    pub guid: Option<String>,
+    /// `PDB` age.
+    pub age: u32,
+    /// `PDB` file path.
+    pub path: String,
+}
+
+/// One PE debug directory entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugEntry {
+    /// `codeview`, `pogo`, `embedded_pdb` or another type name.
+    pub debug_type: String,
+    /// `TimeDateStamp`.
+    pub timestamp: u32,
+    /// `MajorVersion`.
+    pub major_version: u16,
+    /// `MinorVersion`.
+    pub minor_version: u16,
+    /// `SizeOfData`.
+    pub size_of_data: u32,
+    /// `RVA` of the debug data.
+    pub address_of_raw_data: u32,
+    /// File offset of the debug data.
+    pub pointer_to_raw_data: u32,
+    /// `CodeView` payload, when present.
+    pub code_view: Option<CodeViewInfo>,
+}
+
+/// Bounded result of [`BinarySession::debug`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugReport {
+    /// Entries that survived the limit.
+    pub entries: Vec<DebugEntry>,
+    /// Number of entries before the limit was applied.
+    pub total: usize,
+    /// Whether the limit removed entries.
+    pub truncated: bool,
+}
+
 /// Pattern kinds accepted by [`BinarySession::search`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -330,15 +377,7 @@ pub struct SearchOptions {
 impl SearchOptions {
     /// Builds case-insensitive, whole-file, bounded options.
     pub fn new(mode: SearchMode, pattern: impl Into<String>) -> Self {
-        Self {
-            mode,
-            pattern: pattern.into(),
-            case_sensitive: false,
-            whole_word: false,
-            limit: default_search_limit(),
-            start: None,
-            end: None,
-        }
+        Self { mode, pattern: pattern.into(), case_sensitive: false, whole_word: false, limit: default_search_limit(), start: None, end: None }
     }
 }
 
@@ -469,8 +508,7 @@ pub struct BinarySession {
 impl BinarySession {
     /// Opens the file named by `options`.
     pub fn open(options: InspectOptions) -> Result<Self> {
-        let bytes = fs::read(&options.path)
-            .map_err(|error| InspectError::io(format!("cannot read {}: {error}", options.path.display())))?;
+        let bytes = fs::read(&options.path).map_err(|error| InspectError::io(format!("cannot read {}: {error}", options.path.display())))?;
         Ok(Self::with_options(options.path.clone(), bytes, options))
     }
 
@@ -489,8 +527,8 @@ impl BinarySession {
 
     /// Builds a session from its JSON wire form.
     pub fn from_options_json(raw: &str) -> Result<Self> {
-        let options: InspectOptions = serde_json::from_str(raw)
-            .map_err(|error| InspectError::parse(format!("invalid InspectOptions: {error}")))?;
+        let options: InspectOptions =
+            serde_json::from_str(raw).map_err(|error| InspectError::parse(format!("invalid InspectOptions: {error}")))?;
         Self::open(options)
     }
 
@@ -545,24 +583,27 @@ impl BinarySession {
             BinaryFormat::Elf => {
                 let image = elf::parse_elf(&self.bytes).map_err(|error| InspectError::parse(format!("ELF: {error}")))?;
                 info.magic = Some(image.header.class.to_string());
-                info.endian = Some(match image.header.endian {
-                    elf::ElfEndian::Little => "little",
-                    elf::ElfEndian::Big => "big",
-                }
-                .to_string());
+                info.endian = Some(
+                    match image.header.endian {
+                        elf::ElfEndian::Little => "little",
+                        elf::ElfEndian::Big => "big",
+                    }
+                    .to_string(),
+                );
                 info.entry = Some(image.header.entry);
                 info.section_count = image.sections.len() as u64;
             }
             BinaryFormat::MachO => {
-                let header = mach_o::parse_macho_header(&self.bytes)
-                    .map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let header = mach_o::parse_macho_header(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
                 let is_64 = mach_o::macho_magic(&self.bytes).map(|(is_64, _)| is_64).unwrap_or(false);
                 info.magic = Some(if is_64 { "Mach-O 64" } else { "Mach-O 32" }.to_string());
-                info.endian = Some(match header.endian {
-                    mach_o::MachOEndian::Little => "little",
-                    mach_o::MachOEndian::Big => "big",
-                }
-                .to_string());
+                info.endian = Some(
+                    match header.endian {
+                        mach_o::MachOEndian::Little => "little",
+                        mach_o::MachOEndian::Big => "big",
+                    }
+                    .to_string(),
+                );
                 info.cpu_type = Some(i64::from(header.cpu_type));
                 info.file_type = Some(header.file_type);
                 info.command_count = Some(header.command_count);
@@ -575,9 +616,7 @@ impl BinarySession {
     /// Detected architecture, or `unknown`.
     pub fn architecture(&self) -> Architecture {
         match self.format {
-            BinaryFormat::Pe => pe::parse_pe(&self.bytes)
-                .map(|image| pe_architecture(image.coff.machine))
-                .unwrap_or(Architecture::Unknown),
+            BinaryFormat::Pe => pe::parse_pe(&self.bytes).map(|image| pe_architecture(image.coff.machine)).unwrap_or(Architecture::Unknown),
             BinaryFormat::Elf => elf::parse_elf(&self.bytes)
                 .map(|image| match elf::architecture(image.header.machine) {
                     elf::ElfArchitecture::X86 => Architecture::X86,
@@ -631,15 +670,15 @@ impl BinarySession {
 
     /// Lists imported functions.
     ///
-    /// PE reads the import directory, ELF reads `SHT_DYNSYM`, and Mach-O reads
-    /// undefined external symbols from `LC_SYMTAB`; the library name is empty
-    /// when the format does not attribute an import to one.
+    /// PE reads the import directory, ELF reads `SHT_DYNSYM`, and Mach-O prefers
+    /// `dyld` bind opcodes and falls back to undefined external symbols from
+    /// `LC_SYMTAB`; the library name is empty when the format does not attribute
+    /// an import to one.
     pub fn imports(&self, limit: Option<usize>) -> Result<ImportsReport> {
         let mut entries = match self.format {
             BinaryFormat::Pe => {
                 let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
-                let imports =
-                    pe::read_imports(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE imports: {error}")))?;
+                let imports = pe::read_imports(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE imports: {error}")))?;
                 imports
                     .into_iter()
                     .map(|entry| ImportEntry {
@@ -660,26 +699,35 @@ impl BinarySession {
                         symbols
                             .into_iter()
                             .filter(|symbol| symbol.is_undefined() && symbol.is_global() && !symbol.name.is_empty())
-                            .map(|symbol| ImportEntry {
-                                module: String::new(),
-                                name: Some(symbol.name),
-                                ordinal: None,
-                                address: None,
-                            }),
+                            .map(|symbol| ImportEntry { module: String::new(), name: Some(symbol.name), ordinal: None, address: None }),
                     );
                 }
                 entries
             }
             BinaryFormat::MachO => {
-                let image =
-                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
-                let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
-                    .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
-                symbols
-                    .into_iter()
-                    .filter(|symbol| symbol.is_undefined() && symbol.is_external() && !symbol.name.is_empty())
-                    .map(|symbol| ImportEntry { module: String::new(), name: Some(symbol.name), ordinal: None, address: None })
-                    .collect()
+                let image = mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let bindings =
+                    mach_o::read_bindings(&self.bytes, &image).map_err(|error| InspectError::parse(format!("Mach-O bindings: {error}")))?;
+                if !bindings.is_empty() {
+                    bindings
+                        .into_iter()
+                        .map(|binding| ImportEntry {
+                            module: binding.library.unwrap_or_default(),
+                            name: Some(binding.symbol),
+                            ordinal: (binding.library_ordinal > 0).then_some(binding.library_ordinal as u32),
+                            address: Some(binding.address),
+                        })
+                        .collect()
+                }
+                else {
+                    let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
+                        .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
+                    symbols
+                        .into_iter()
+                        .filter(|symbol| symbol.is_undefined() && symbol.is_external() && !symbol.name.is_empty())
+                        .map(|symbol| ImportEntry { module: String::new(), name: Some(symbol.name), ordinal: None, address: None })
+                        .collect()
+                }
             }
             BinaryFormat::Unknown => {
                 return Err(InspectError::unsupported("imports are only available for PE, ELF and Mach-O files"));
@@ -700,17 +748,13 @@ impl BinarySession {
         let mut entries = match self.format {
             BinaryFormat::Pe => {
                 let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
-                let exports =
-                    pe::read_exports(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE exports: {error}")))?;
+                let exports = pe::read_exports(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE exports: {error}")))?;
                 exports
                     .into_iter()
                     .map(|entry| ExportEntry {
                         name: entry.name,
                         ordinal: Some(entry.ordinal),
-                        address: entry
-                            .forwarder
-                            .is_none()
-                            .then(|| image.optional.image_base.saturating_add(u64::from(entry.rva))),
+                        address: entry.forwarder.is_none().then(|| image.optional.image_base.saturating_add(u64::from(entry.rva))),
                         forwarder: entry.forwarder,
                     })
                     .collect()
@@ -725,26 +769,17 @@ impl BinarySession {
                         symbols
                             .into_iter()
                             .filter(|symbol| {
-                                !symbol.is_undefined()
-                                    && symbol.is_global()
-                                    && !symbol.name.is_empty()
-                                    && matches!(symbol.kind(), 1 | 2 | 10)
+                                !symbol.is_undefined() && symbol.is_global() && !symbol.name.is_empty() && matches!(symbol.kind(), 1 | 2 | 10)
                             })
-                            .map(|symbol| ExportEntry {
-                                name: Some(symbol.name),
-                                ordinal: None,
-                                address: Some(symbol.value),
-                                forwarder: None,
-                            }),
+                            .map(|symbol| ExportEntry { name: Some(symbol.name), ordinal: None, address: Some(symbol.value), forwarder: None }),
                     );
                 }
                 entries
             }
             BinaryFormat::MachO => {
-                let image =
-                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
-                let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
-                    .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
+                let image = mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let symbols =
+                    mach_o::read_macho_symbols(&self.bytes, &image).map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
                 symbols
                     .into_iter()
                     .filter(|symbol| symbol.is_section() && symbol.is_external() && !symbol.name.is_empty())
@@ -770,8 +805,8 @@ impl BinarySession {
         let mut entries = match self.format {
             BinaryFormat::Pe => {
                 let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
-                let symbols = pe::read_coff_symbols(&image, &self.bytes)
-                    .map_err(|error| InspectError::parse(format!("PE symbols: {error}")))?;
+                let symbols =
+                    pe::read_coff_symbols(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE symbols: {error}")))?;
                 symbols
                     .into_iter()
                     .map(|symbol| {
@@ -799,14 +834,7 @@ impl BinarySession {
                             3 => "static",
                             _ => "unknown",
                         };
-                        SymbolEntry {
-                            name: symbol.name,
-                            address,
-                            size: 0,
-                            kind: kind.to_string(),
-                            binding: binding.to_string(),
-                            section,
-                        }
+                        SymbolEntry { name: symbol.name, address, size: 0, kind: kind.to_string(), binding: binding.to_string(), section }
                     })
                     .collect()
             }
@@ -847,10 +875,9 @@ impl BinarySession {
                 entries
             }
             BinaryFormat::MachO => {
-                let image =
-                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
-                let symbols = mach_o::read_macho_symbols(&self.bytes, &image)
-                    .map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
+                let image = mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let symbols =
+                    mach_o::read_macho_symbols(&self.bytes, &image).map_err(|error| InspectError::parse(format!("Mach-O symbols: {error}")))?;
                 symbols
                     .into_iter()
                     .filter(|symbol| !symbol.name.is_empty())
@@ -891,15 +918,44 @@ impl BinarySession {
         Ok(SymbolsReport { entries, total, truncated })
     }
 
+    /// Reads the PE debug directory, including `CodeView` PDB records.
+    pub fn debug(&self, limit: Option<usize>) -> Result<DebugReport> {
+        if self.format != BinaryFormat::Pe {
+            return Err(InspectError::unsupported("debug directories are only available for PE files"));
+        }
+        let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
+        let entries = pe::read_debug_directory(&image, &self.bytes).map_err(|error| InspectError::parse(format!("PE debug: {error}")))?;
+        let mut entries: Vec<DebugEntry> = entries
+            .into_iter()
+            .map(|entry| DebugEntry {
+                debug_type: entry.type_name().to_string(),
+                timestamp: entry.timestamp,
+                major_version: entry.major_version,
+                minor_version: entry.minor_version,
+                size_of_data: entry.size_of_data,
+                address_of_raw_data: entry.address_of_raw_data,
+                pointer_to_raw_data: entry.pointer_to_raw_data,
+                code_view: entry.code_view.map(|code_view| CodeViewInfo {
+                    signature: code_view.signature,
+                    guid: code_view.guid.map(format_guid),
+                    age: code_view.age,
+                    path: code_view.path,
+                }),
+            })
+            .collect();
+        let total = entries.len();
+        let limit = limit.unwrap_or(usize::MAX);
+        let truncated = total > limit;
+        entries.truncate(limit);
+        Ok(DebugReport { entries, total, truncated })
+    }
+
     /// Searches for a hex, ASCII or UTF-16LE pattern.
     pub fn search(&self, options: &SearchOptions) -> Result<SearchReport> {
         let start = options.start.unwrap_or(0);
         let end = options.end.unwrap_or(self.size());
         if start > end || end > self.size() {
-            return Err(InspectError::range(format!(
-                "search range 0x{start:x}..0x{end:x} is outside the file (size {})",
-                self.size()
-            )));
+            return Err(InspectError::range(format!("search range 0x{start:x}..0x{end:x} is outside the file (size {})", self.size())));
         }
         let needle = build_needle(options)?;
         let range = &self.bytes[start as usize..end as usize];
@@ -911,10 +967,7 @@ impl BinarySession {
             if matches_at(range, index, &needle, options) {
                 total += 1;
                 if hits.len() < limit {
-                    hits.push(SearchHit {
-                        offset: start + index as u64,
-                        preview: preview(options.mode, &range[index..index + needle.len()]),
-                    });
+                    hits.push(SearchHit { offset: start + index as u64, preview: preview(options.mode, &range[index..index + needle.len()]) });
                 }
             }
             index += 1;
@@ -951,9 +1004,7 @@ impl BinarySession {
 
     /// Reads a byte range from the file.
     pub fn read(&self, offset: u64, length: u64) -> Result<&[u8]> {
-        let end = offset
-            .checked_add(length)
-            .ok_or_else(|| InspectError::range(format!("read at 0x{offset:x} overflows")))?;
+        let end = offset.checked_add(length).ok_or_else(|| InspectError::range(format!("read at 0x{offset:x} overflows")))?;
         if end > self.bytes.len() as u64 {
             return Err(InspectError::range(format!(
                 "read of {length} byte(s) at 0x{offset:x} is outside the file (size {})",
@@ -965,9 +1016,7 @@ impl BinarySession {
 
     /// Writes patched bytes back to the source, or to `output` when given.
     pub fn patch(&mut self, offset: u64, data: &[u8], output: Option<&Path>) -> Result<PatchReport> {
-        let end = offset
-            .checked_add(data.len() as u64)
-            .ok_or_else(|| InspectError::range(format!("patch at 0x{offset:x} overflows")))?;
+        let end = offset.checked_add(data.len() as u64).ok_or_else(|| InspectError::range(format!("patch at 0x{offset:x} overflows")))?;
         if end > self.bytes.len() as u64 {
             return Err(InspectError::range(format!(
                 "patch of {} byte(s) at 0x{offset:x} is outside the file (size {})",
@@ -987,13 +1036,7 @@ impl BinarySession {
         .map_err(|error| InspectError::io(format!("cannot write {}: {error}", target.display())))?;
         let after_hash = content_hash(&updated);
         self.bytes = updated;
-        Ok(PatchReport {
-            path: target.display().to_string(),
-            offset,
-            length: data.len() as u64,
-            before_hash,
-            after_hash,
-        })
+        Ok(PatchReport { path: target.display().to_string(), offset, length: data.len() as u64, before_hash, after_hash })
     }
 
     /// Maps an RVA or virtual address onto a file offset.
@@ -1001,24 +1044,18 @@ impl BinarySession {
         match self.format {
             BinaryFormat::Pe => {
                 let image = pe::parse_pe(&self.bytes).map_err(|error| InspectError::parse(format!("PE: {error}")))?;
-                let rva = u32::try_from(address)
-                    .map_err(|_| InspectError::range(format!("address 0x{address:x} does not fit a PE RVA")))?;
+                let rva = u32::try_from(address).map_err(|_| InspectError::range(format!("address 0x{address:x} does not fit a PE RVA")))?;
                 // Headers occupy the bytes before the first section and are mapped 1:1.
-                let first_section = image
-                    .sections
-                    .iter()
-                    .map(|section| section.virtual_address)
-                    .filter(|address| *address > 0)
-                    .min()
-                    .unwrap_or(0);
+                let first_section =
+                    image.sections.iter().map(|section| section.virtual_address).filter(|address| *address > 0).min().unwrap_or(0);
                 if rva < first_section {
                     if u64::from(rva) < self.size() {
                         return Ok(u64::from(rva));
                     }
                     return Err(InspectError::range(format!("address 0x{address:x} maps beyond the end of the file")));
                 }
-                let offset = pe::rva_to_offset(&image.sections, rva)
-                    .map_err(|error| InspectError::range(format!("address 0x{address:x}: {error}")))?;
+                let offset =
+                    pe::rva_to_offset(&image.sections, rva).map_err(|error| InspectError::range(format!("address 0x{address:x}: {error}")))?;
                 let offset = u64::from(offset);
                 if offset >= self.size() {
                     return Err(InspectError::range(format!("address 0x{address:x} maps beyond the end of the file")));
@@ -1077,17 +1114,14 @@ impl BinarySession {
                 Ok(section.address + (offset - section.offset))
             }
             BinaryFormat::MachO => {
-                let image =
-                    mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
+                let image = mach_o::parse_macho(&self.bytes).map_err(|error| InspectError::parse(format!("Mach-O: {error}")))?;
                 if let Some(section) = image.sections.iter().find(|section| {
                     section.size != 0 && offset >= section.file_offset && offset < section.file_offset.saturating_add(section.size)
                 }) {
                     return Ok(section.address + (offset - section.file_offset));
                 }
                 if let Some(segment) = image.segments.iter().find(|segment| {
-                    segment.file_size != 0
-                        && offset >= segment.file_offset
-                        && offset < segment.file_offset.saturating_add(segment.file_size)
+                    segment.file_size != 0 && offset >= segment.file_offset && offset < segment.file_offset.saturating_add(segment.file_size)
                 }) {
                     return Ok(segment.vm_address + (offset - segment.file_offset));
                 }
@@ -1237,8 +1271,7 @@ fn preview(mode: SearchMode, bytes: &[u8]) -> String {
         }
         SearchMode::Ascii => String::from_utf8_lossy(&bytes[..bytes.len().min(64)]).into_owned(),
         SearchMode::Utf16Le => {
-            let units: Vec<u16> =
-                bytes.chunks_exact(2).take(64).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+            let units: Vec<u16> = bytes.chunks_exact(2).take(64).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
             String::from_utf16_lossy(&units)
         }
     }
@@ -1250,6 +1283,15 @@ fn pe_magic(magic: u16) -> &'static str {
         0x020b => "PE32+",
         _ => "PE",
     }
+}
+
+/// Formats a PE `CodeView` GUID, whose first three fields are little-endian.
+fn format_guid(bytes: [u8; 16]) -> String {
+    let data1 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let data2 = u16::from_le_bytes([bytes[4], bytes[5]]);
+    let data3 = u16::from_le_bytes([bytes[6], bytes[7]]);
+    let tail = bytes[8..].iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+    format!("{data1:08X}-{data2:04X}-{data3:04X}-{}-{}", &tail[..4], &tail[4..])
 }
 
 fn pe_architecture(machine: u16) -> Architecture {
@@ -1297,12 +1339,7 @@ fn elf_section(section: &elf::ElfSection) -> SectionInfo {
 
 fn macho_section(section: &mach_o::MachSection) -> SectionInfo {
     SectionInfo {
-        name: if section.segment.is_empty() {
-            section.name.clone()
-        }
-        else {
-            format!("{},{}", section.segment, section.name)
-        },
+        name: if section.segment.is_empty() { section.name.clone() } else { format!("{},{}", section.segment, section.name) },
         virtual_address: section.address,
         virtual_size: section.size,
         raw_pointer: section.file_offset,
@@ -1340,11 +1377,7 @@ fn scan_strings(bytes: &[u8], min_len: usize) -> Vec<StringHit> {
 }
 
 fn push_hit(hits: &mut Vec<StringHit>, offset: usize, bytes: &[u8]) {
-    hits.push(StringHit {
-        offset: offset as u64,
-        length: bytes.len() as u64,
-        value: String::from_utf8_lossy(bytes).into_owned(),
-    });
+    hits.push(StringHit { offset: offset as u64, length: bytes.len() as u64, value: String::from_utf8_lossy(bytes).into_owned() });
 }
 
 fn content_hash(bytes: &[u8]) -> String {
@@ -1355,9 +1388,7 @@ fn content_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Architecture, BinaryFormat, BinarySession, InspectOptions, SearchMode, SearchOptions, parse_hex, scan_strings,
-    };
+    use super::{Architecture, BinaryFormat, BinarySession, InspectOptions, SearchMode, SearchOptions, parse_hex, scan_strings};
 
     #[test]
     fn hex_parser_accepts_common_separators() {
@@ -1437,10 +1468,7 @@ mod tests {
 
     #[test]
     fn search_supports_ascii_hex_and_utf16() {
-        let session = BinarySession::from_bytes(
-            "search.bin",
-            b"\x00Hello World\x00hello\x00H\x00e\x00l\x00l\x00o\x00".to_vec(),
-        );
+        let session = BinarySession::from_bytes("search.bin", b"\x00Hello World\x00hello\x00H\x00e\x00l\x00l\x00o\x00".to_vec());
 
         let text = session.search(&SearchOptions::new(SearchMode::Ascii, "hello")).unwrap();
         assert_eq!(text.mode, "ascii");
@@ -1449,9 +1477,7 @@ mod tests {
         assert_eq!(text.hits[0].preview, "Hello");
         assert!(!text.truncated);
 
-        let bounded = session
-            .search(&SearchOptions { limit: Some(1), ..SearchOptions::new(SearchMode::Ascii, "hello") })
-            .unwrap();
+        let bounded = session.search(&SearchOptions { limit: Some(1), ..SearchOptions::new(SearchMode::Ascii, "hello") }).unwrap();
         assert_eq!(bounded.hits.len(), 1);
         assert_eq!(bounded.total, 2);
         assert!(bounded.truncated);
@@ -1465,24 +1491,14 @@ mod tests {
         assert_eq!(wide.hits[0].offset, 19);
         assert_eq!(wide.hits[0].preview, "Hello");
 
-        let whole = session
-            .search(&SearchOptions { whole_word: true, ..SearchOptions::new(SearchMode::Ascii, "hello") })
-            .unwrap();
+        let whole = session.search(&SearchOptions { whole_word: true, ..SearchOptions::new(SearchMode::Ascii, "hello") }).unwrap();
         assert_eq!(whole.total, 2);
-        let partial = session
-            .search(&SearchOptions { whole_word: true, ..SearchOptions::new(SearchMode::Ascii, "Hell") })
-            .unwrap();
+        let partial = session.search(&SearchOptions { whole_word: true, ..SearchOptions::new(SearchMode::Ascii, "Hell") }).unwrap();
         assert_eq!(partial.total, 0);
 
+        assert_eq!(session.search(&SearchOptions::new(SearchMode::Hex, "zz")).unwrap_err().code(), "binary/parse");
         assert_eq!(
-            session.search(&SearchOptions::new(SearchMode::Hex, "zz")).unwrap_err().code(),
-            "binary/parse"
-        );
-        assert_eq!(
-            session
-                .search(&SearchOptions { start: Some(4), end: Some(2), ..SearchOptions::new(SearchMode::Ascii, "a") })
-                .unwrap_err()
-                .code(),
+            session.search(&SearchOptions { start: Some(4), end: Some(2), ..SearchOptions::new(SearchMode::Ascii, "a") }).unwrap_err().code(),
             "binary/range"
         );
     }
@@ -1535,5 +1551,38 @@ mod tests {
         });
         assert_eq!(elf.offset_to_va(0).unwrap_err().code(), "binary/range");
         assert_eq!(elf.offset_to_rva(0).unwrap_err().code(), "binary/unsupported");
+    }
+
+    #[test]
+    fn debug_directory_reports_codeview_metadata() {
+        let mut bytes = small_pe();
+        // Data directory 6: debug directory at RVA 0x1000, 28 bytes.
+        bytes[0x138..0x13c].copy_from_slice(&0x1000u32.to_le_bytes());
+        bytes[0x13c..0x140].copy_from_slice(&28u32.to_le_bytes());
+        // Entry at file 0x200, CodeView data at file 0x300.
+        bytes[0x20c..0x210].copy_from_slice(&2u32.to_le_bytes());
+        let path = b"cli.pdb\0";
+        bytes[0x210..0x214].copy_from_slice(&((4 + 16 + 4 + path.len()) as u32).to_le_bytes());
+        bytes[0x214..0x218].copy_from_slice(&0x1100u32.to_le_bytes());
+        bytes[0x218..0x21c].copy_from_slice(&0x300u32.to_le_bytes());
+        bytes[0x300..0x304].copy_from_slice(b"RSDS");
+        bytes[0x304..0x314].copy_from_slice(&[0x10, 0x32, 0x54, 0x76, 0xba, 0xdc, 0xfe, 0x98, 0, 1, 2, 3, 4, 5, 6, 7]);
+        bytes[0x314..0x318].copy_from_slice(&3u32.to_le_bytes());
+        bytes[0x318..0x318 + path.len()].copy_from_slice(path);
+
+        let session = BinarySession::from_bytes("small.exe", bytes);
+        let report = session.debug(None).unwrap();
+        assert_eq!(report.total, 1);
+        assert!(!report.truncated);
+        assert_eq!(report.entries[0].debug_type, "codeview");
+        let code_view = report.entries[0].code_view.as_ref().unwrap();
+        assert_eq!(code_view.signature, "RSDS");
+        assert_eq!(code_view.guid.as_deref(), Some("76543210-DCBA-98FE-0001-020304050607"));
+        assert_eq!(code_view.age, 3);
+        assert_eq!(code_view.path, "cli.pdb");
+        assert_eq!(session.debug(Some(0)).unwrap().entries.len(), 0);
+
+        let elf = BinarySession::from_bytes("small.elf", b"\x7fELF".to_vec());
+        assert_eq!(elf.debug(None).unwrap_err().code(), "binary/unsupported");
     }
 }
