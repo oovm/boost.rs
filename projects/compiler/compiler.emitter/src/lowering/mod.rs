@@ -24,7 +24,7 @@ use self::backends::{clr, jvm, ovm, wasm};
 use self::backends::{clr, jvm, wasm};
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
-    backends::wasm::mir::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
+    backends::wasm::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
 }
 
 pub(crate) fn testing_jvm_type_descriptor(
@@ -91,18 +91,36 @@ pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> R
 pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;
 
 pub(crate) fn testing_append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    wasm::mir::singleton::append_singleton_metadata_sections(module, submission);
+    if let Ok(input) = wasm::input::settle_from_submission(submission) {
+        wasm::mir::singleton::append_singleton_metadata_sections(module, &input);
+    }
 }
 
 pub(crate) fn testing_augment_wasm_with_singleton_accessors(
     module: &mut WasmBinaryModule,
     submission: &FragmentSubmission,
 ) -> std::result::Result<(), features::semantic_mir_contract::SemanticMirContractError> {
-    wasm::mir::singleton::augment_wasm_with_singleton_accessors(module, submission)
+    match wasm::input::settle_from_submission(submission) {
+        Ok(input) => wasm::mir::singleton::augment_wasm_with_singleton_accessors(module, &input),
+        Err(_) => Ok(()),
+    }
 }
 
 pub(crate) fn testing_singleton_metadata_line(plan: &compiler_types::SingletonInstancePlan) -> String {
-    wasm::mir::singleton::singleton_metadata_line(plan)
+    let fact = wasm::input::WasmSingletonFact {
+        namespace: plan.namespace.clone(),
+        name: plan.name.clone(),
+        instance_field: plan.instance_field.clone(),
+        is_lazy: plan.is_lazy,
+        constructor_symbol: plan.constructor_symbol.clone(),
+        finalizer_symbol: plan.finalizer_symbol.clone(),
+        layout_size: None,
+        layout_align: None,
+        accessor_method: plan.accessor_method().to_string(),
+        qualified_name: plan.qualified_name(),
+        supports_unload: plan.supports_unload(),
+    };
+    wasm::mir::singleton::singleton_metadata_line(&fact)
 }
 
 /// 将已完成语义装配的片段降低为驱动层目标输入（集成测试专用）。

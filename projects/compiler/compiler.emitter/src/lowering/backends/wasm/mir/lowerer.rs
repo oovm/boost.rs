@@ -2,34 +2,22 @@
 
 use std::collections::BTreeMap;
 
-use crate::lowering::shared::physical_layout::{ResolvedAggregateLayout, ResolvedFieldLayout};
-
 use super::{
-    super::{
-        super::executable::{ExecutableLoweringContext, collect_reachable_blocks},
-        gc::WASM_GC_ANYREF,
-        sections::encode_uleb128,
-    },
-    NominalInstanceId, StorageKind, VALTYPE_F32, WasmBodyInstruction, WasmOperatorBinding, encode_wasm_body,
+    super::{gc::WASM_GC_ANYREF, sections::encode_uleb128},
+    collect_reachable_blocks, encode_wasm_body,
     representation::{
         is_js_glue_host_string_type, mir_storage_for_type, type_is_inline_aggregate, wasm_gc_field_type_byte_for_glue, wasm_param_value_type,
         wasm_param_value_type_for,
     },
+    VALTYPE_F32, WasmBlockKey, WasmBodyInstruction, WasmCallableKey, WasmConstant, WasmFieldFact, WasmFunctionInput, WasmInstruction,
+    WasmInstructionKey, WasmLayoutFact, WasmLayoutKey, WasmModuleInput, WasmNominalKey, WasmOperand, WasmOperation, WasmOperatorBinding,
+    WasmStorageClass, WasmTypeFact, WasmValueKey,
 };
-use crate::{
-    FragmentSubmission,
-    backend_plan_views::{
-        ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant, ExecutableFunction as MirFunction,
-        ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand,
-        ExecutableStorageKind as MirStorageKind, ExecutableValueRef as MirValueRef, SemanticType,
-    },
-};
-use compiler_types::{ItemInstanceId, LayoutId};
 use data_binary_wasm::{VALTYPE_EXTERNREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 
-pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &SemanticType) -> Option<&SemanticType> {
+pub(in crate::lowering::backends::wasm) fn array_element_type(array_type: &WasmTypeFact) -> Option<&WasmTypeFact> {
     match array_type {
-        SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => Some(element.as_ref()),
+        WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } => Some(element.as_ref()),
         _ => None,
     }
 }
@@ -92,40 +80,39 @@ pub(in crate::lowering::backends::wasm) struct Utf8HostHandleMaterializePlan {
 }
 
 pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
-    submission: &FragmentSubmission,
-    mir_fn: &MirFunction,
+    input: &WasmModuleInput,
+    mir_fn: &WasmFunctionInput,
     return_value_type: Option<u8>,
     js_glue_utf8_as_anyref: bool,
     wasi_mode: bool,
-    function_index_by_instance: &BTreeMap<ItemInstanceId, u32>,
-    type_index_by_instance: &BTreeMap<ItemInstanceId, u32>,
-    param_types_by_instance: &BTreeMap<ItemInstanceId, Vec<u8>>,
-    return_types_by_instance: &BTreeMap<ItemInstanceId, Option<u8>>,
+    function_index_by_instance: &BTreeMap<WasmCallableKey, u32>,
+    type_index_by_instance: &BTreeMap<WasmCallableKey, u32>,
+    param_types_by_instance: &BTreeMap<WasmCallableKey, Vec<u8>>,
+    return_types_by_instance: &BTreeMap<WasmCallableKey, Option<u8>>,
     param_types_by_function_index: &BTreeMap<u32, Vec<u8>>,
     return_types_by_function_index: &BTreeMap<u32, Option<u8>>,
     import_param_types: &[Vec<u8>],
     import_return_types: &[Option<u8>],
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
-    gc_sum_type_indices: &BTreeMap<NominalInstanceId, u32>,
+    gc_sum_type_indices: &BTreeMap<WasmNominalKey, u32>,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
     gc_f64_box_type_index: u32,
     gc_closure_type_index: u32,
-    callee_import_index: &BTreeMap<ItemInstanceId, u32>,
-    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
+    callee_import_index: &BTreeMap<WasmCallableKey, u32>,
+    callee_wasm_operator: &BTreeMap<WasmCallableKey, (String, WasmOperatorBinding)>,
     host_imports: &[(String, String)],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
     const_utf8_import: Option<u32>,
-    function_value_table_slots: &BTreeMap<ItemInstanceId, u32>,
+    function_value_table_slots: &BTreeMap<WasmCallableKey, u32>,
     type_index_by_signature: &BTreeMap<(Vec<u8>, Option<u8>), u32>,
-    managed_utf8_to_host_handle: &BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
-    utf8_host_handle_materialize: &BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
+    managed_utf8_to_host_handle: &BTreeMap<WasmLayoutKey, ManagedUtf8ToHostHandlePlan>,
+    utf8_host_handle_materialize: &BTreeMap<WasmLayoutKey, Utf8HostHandleMaterializePlan>,
 ) -> crate::Result<Vec<u8>> {
-    let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
     let mut lowerer = WasmMirLowerer::new(
-        &ctx,
+        input,
         mir_fn,
         return_value_type,
         js_glue_utf8_as_anyref,
@@ -161,8 +148,8 @@ pub(in crate::lowering::backends::wasm) fn lower_mir_function_to_wasm_bytes(
 }
 
 pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
-    pub(in crate::lowering::backends::wasm::mir) ctx: &'a ExecutableLoweringContext<'a>,
-    pub(in crate::lowering::backends::wasm::mir) mir_fn: &'a MirFunction,
+    pub(in crate::lowering::backends::wasm::mir) input: &'a WasmModuleInput,
+    pub(in crate::lowering::backends::wasm::mir) mir_fn: &'a WasmFunctionInput,
     /// 当前函数?WASM 返回值类型字节?
     /// `None` = void（无返回值）；`Some(VALTYPE_I32)` = i32；`Some(VALTYPE_ANYREF)` = anyref?
     /// `Some(VALTYPE_F64)` = f64；`Some(VALTYPE_I64)` = i64?
@@ -181,22 +168,22 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) next_local: u32,
     /// 每个声明 local 的完?valtype 字节（i32=VALTYPE_I32, anyref=VALTYPE_ANYREF, struct ref=VALTYPE_REF+typeidx）?
     pub(in crate::lowering::backends::wasm::mir) local_valtypes: Vec<Vec<u8>>,
-    pub(in crate::lowering::backends::wasm::mir) value_locals: BTreeMap<MirValueRef, u32>,
+    pub(in crate::lowering::backends::wasm::mir) value_locals: BTreeMap<WasmValueKey, u32>,
     /// 引用类型 local 的集合。这?local 的值类型是 `anyref` (VALTYPE_ANYREF),而非 i32?
-    pub(in crate::lowering::backends::wasm::mir) reference_locals: BTreeMap<MirValueRef, u32>,
-    pub(in crate::lowering::backends::wasm::mir) block_order: Vec<MirBlockRef>,
-    pub(in crate::lowering::backends::wasm::mir) block_index: BTreeMap<MirBlockRef, usize>,
-    pub(in crate::lowering::backends::wasm::mir) function_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
-    pub(in crate::lowering::backends::wasm::mir) type_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
-    pub(in crate::lowering::backends::wasm::mir) param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<u8>>,
-    pub(in crate::lowering::backends::wasm::mir) return_types_by_instance: &'a BTreeMap<ItemInstanceId, Option<u8>>,
+    pub(in crate::lowering::backends::wasm::mir) reference_locals: BTreeMap<WasmValueKey, u32>,
+    pub(in crate::lowering::backends::wasm::mir) block_order: Vec<WasmBlockKey>,
+    pub(in crate::lowering::backends::wasm::mir) block_index: BTreeMap<WasmBlockKey, usize>,
+    pub(in crate::lowering::backends::wasm::mir) function_index_by_instance: &'a BTreeMap<WasmCallableKey, u32>,
+    pub(in crate::lowering::backends::wasm::mir) type_index_by_instance: &'a BTreeMap<WasmCallableKey, u32>,
+    pub(in crate::lowering::backends::wasm::mir) param_types_by_instance: &'a BTreeMap<WasmCallableKey, Vec<u8>>,
+    pub(in crate::lowering::backends::wasm::mir) return_types_by_instance: &'a BTreeMap<WasmCallableKey, Option<u8>>,
     /// ?`function_index_by_instance` 下标对齐?callee 形参 wasm 类型（call 实参 coerce 权威来源）?
     pub(in crate::lowering::backends::wasm::mir) param_types_by_function_index: &'a BTreeMap<u32, Vec<u8>>,
     pub(in crate::lowering::backends::wasm::mir) return_types_by_function_index: &'a BTreeMap<u32, Option<u8>>,
     pub(in crate::lowering::backends::wasm::mir) import_param_types: &'a [Vec<u8>],
     pub(in crate::lowering::backends::wasm::mir) import_return_types: &'a [Option<u8>],
     /// 引用类型 layout_id -> wasm-gc structtype ?type_index?
-    pub(in crate::lowering::backends::wasm::mir) gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
+    pub(in crate::lowering::backends::wasm::mir) gc_struct_type_indices: &'a BTreeMap<WasmLayoutKey, u32>,
     /// unite sum_name -> wasm-gc structtype [i32,anyref] ?type_index?
     /// Fine/Fail ?unite 标量 payload（utf8/bool/i32）装箱用 structtype [i32]?
     pub(in crate::lowering::backends::wasm::mir) gc_i32_box_type_index: u32,
@@ -209,10 +196,10 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     /// heap array element_type 字符串键 -> wasm-gc arraytype 的 type_index。
     pub(in crate::lowering::backends::wasm::mir) gc_array_type_indices: &'a BTreeMap<String, u32>,
     /// sum nominal identity -> wasm-gc structtype `[i32 tag, anyref payload]` 的 type_index。
-    pub(in crate::lowering::backends::wasm::mir) gc_sum_type_indices: &'a BTreeMap<NominalInstanceId, u32>,
-    pub(in crate::lowering::backends::wasm::mir) callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
+    pub(in crate::lowering::backends::wasm::mir) gc_sum_type_indices: &'a BTreeMap<WasmNominalKey, u32>,
+    pub(in crate::lowering::backends::wasm::mir) callee_import_index: &'a BTreeMap<WasmCallableKey, u32>,
     /// `[wasm_operator]` 绑定的 provider 实例 → 计划冻结的目标指令配方。
-    pub(in crate::lowering::backends::wasm::mir) callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
+    pub(in crate::lowering::backends::wasm::mir) callee_wasm_operator: &'a BTreeMap<WasmCallableKey, (String, WasmOperatorBinding)>,
     /// WASI 宿主 import 表（?stream 内建），?write-via-stream 协议查找索引?
     pub(in crate::lowering::backends::wasm::mir) host_imports: &'a [(String, String)],
     pub(in crate::lowering::backends::wasm::mir) string_literal_index: &'a BTreeMap<String, u32>,
@@ -220,52 +207,52 @@ pub(in crate::lowering::backends::wasm) struct WasmMirLowerer<'a> {
     pub(in crate::lowering::backends::wasm::mir) string_literal_offset: &'a BTreeMap<String, u32>,
     pub(in crate::lowering::backends::wasm::mir) const_utf8_import: Option<u32>,
     /// 函数值实例 → funcref table 槽位下标；由模块装配预扫描 `LoadFunctionRef` 登记。
-    pub(in crate::lowering::backends::wasm::mir) function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
+    pub(in crate::lowering::backends::wasm::mir) function_value_table_slots: &'a BTreeMap<WasmCallableKey, u32>,
     /// wasm functype 签名字节 → type 段条目下标；间接调用的 `typeidx` 只能反查已注册条目。
     pub(in crate::lowering::backends::wasm::mir) type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
     /// 目标计划冻结的 managed 字符串 → 宿主 i32 句柄转换配方表（编码期只读消费）。
-    pub(in crate::lowering::backends::wasm::mir) managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
+    pub(in crate::lowering::backends::wasm::mir) managed_utf8_to_host_handle: &'a BTreeMap<WasmLayoutKey, ManagedUtf8ToHostHandlePlan>,
     /// 目标计划冻结的 `[utf8]` 数组元素边界「宿主 i32 句柄 → managed 字符串」物化配方表（编码期只读消费）。
-    pub(in crate::lowering::backends::wasm::mir) utf8_host_handle_materialize: &'a BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
+    pub(in crate::lowering::backends::wasm::mir) utf8_host_handle_materialize: &'a BTreeMap<WasmLayoutKey, Utf8HostHandleMaterializePlan>,
     /// CFG 调度中的基本块索引。
     pub(in crate::lowering::backends::wasm::mir) pc_local: u32,
     /// 当前正在发射的指令身份。ABI 载体失配必须报出来源指令，禁止只报函数名。
-    pub(in crate::lowering::backends::wasm::mir) current_instruction_id: Option<compiler_types::InstructionId>,
+    pub(in crate::lowering::backends::wasm::mir) current_instruction_id: Option<WasmInstructionKey>,
 }
 
 impl<'a> WasmMirLowerer<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
-        ctx: &'a ExecutableLoweringContext<'a>,
-        mir_fn: &'a MirFunction,
+        input: &'a WasmModuleInput,
+        mir_fn: &'a WasmFunctionInput,
         return_value_type: Option<u8>,
         js_glue_utf8_as_anyref: bool,
         wasi_mode: bool,
-        function_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
-        type_index_by_instance: &'a BTreeMap<ItemInstanceId, u32>,
-        param_types_by_instance: &'a BTreeMap<ItemInstanceId, Vec<u8>>,
-        return_types_by_instance: &'a BTreeMap<ItemInstanceId, Option<u8>>,
+        function_index_by_instance: &'a BTreeMap<WasmCallableKey, u32>,
+        type_index_by_instance: &'a BTreeMap<WasmCallableKey, u32>,
+        param_types_by_instance: &'a BTreeMap<WasmCallableKey, Vec<u8>>,
+        return_types_by_instance: &'a BTreeMap<WasmCallableKey, Option<u8>>,
         param_types_by_function_index: &'a BTreeMap<u32, Vec<u8>>,
         return_types_by_function_index: &'a BTreeMap<u32, Option<u8>>,
         import_param_types: &'a [Vec<u8>],
         import_return_types: &'a [Option<u8>],
-        gc_struct_type_indices: &'a BTreeMap<LayoutId, u32>,
+        gc_struct_type_indices: &'a BTreeMap<WasmLayoutKey, u32>,
         gc_array_type_indices: &'a BTreeMap<String, u32>,
-        gc_sum_type_indices: &'a BTreeMap<NominalInstanceId, u32>,
+        gc_sum_type_indices: &'a BTreeMap<WasmNominalKey, u32>,
         gc_i32_box_type_index: u32,
         gc_i64_box_type_index: u32,
         gc_f64_box_type_index: u32,
         gc_closure_type_index: u32,
-        callee_import_index: &'a BTreeMap<ItemInstanceId, u32>,
-        callee_wasm_operator: &'a BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
+        callee_import_index: &'a BTreeMap<WasmCallableKey, u32>,
+        callee_wasm_operator: &'a BTreeMap<WasmCallableKey, (String, WasmOperatorBinding)>,
         host_imports: &'a [(String, String)],
         string_literal_index: &'a BTreeMap<String, u32>,
         string_literal_offset: &'a BTreeMap<String, u32>,
         const_utf8_import: Option<u32>,
-        function_value_table_slots: &'a BTreeMap<ItemInstanceId, u32>,
+        function_value_table_slots: &'a BTreeMap<WasmCallableKey, u32>,
         type_index_by_signature: &'a BTreeMap<(Vec<u8>, Option<u8>), u32>,
-        managed_utf8_to_host_handle: &'a BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
-        utf8_host_handle_materialize: &'a BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>,
+        managed_utf8_to_host_handle: &'a BTreeMap<WasmLayoutKey, ManagedUtf8ToHostHandlePlan>,
+        utf8_host_handle_materialize: &'a BTreeMap<WasmLayoutKey, Utf8HostHandleMaterializePlan>,
     ) -> crate::Result<Self> {
         let block_order = collect_reachable_blocks(mir_fn);
         let block_index = block_order.iter().enumerate().map(|(index, block_id)| (*block_id, index)).collect();
@@ -275,7 +262,7 @@ impl<'a> WasmMirLowerer<'a> {
         // 导致 V8 ?`local.set[0] expected type anyref, found i32.const`?
         let param_count = mir_fn.param_types.len() as u32;
         let mut lowerer = Self {
-            ctx,
+            input,
             mir_fn,
             return_value_type,
             js_glue_utf8_as_anyref,
@@ -326,7 +313,7 @@ impl<'a> WasmMirLowerer<'a> {
             for (param_slot, param) in block.parameters.iter().enumerate() {
                 let ty = mir_fn.value_types.get(param).expect("WASM 块参数缺少已确定类型");
                 let stack_type = wasm_param_value_type_for(
-                    ctx,
+                    input,
                     ty,
                     mir_fn.value_layouts.get(param).copied(),
                     gc_struct_type_indices,
@@ -356,8 +343,8 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(lowerer)
     }
 
-    pub(super) fn storage_for_type(&self, ty: &SemanticType) -> MirStorageKind {
-        mir_storage_for_type(self.ctx, ty, self.js_glue_utf8_as_anyref)
+    pub(super) fn storage_for_type(&self, ty: &WasmTypeFact) -> WasmStorageClass {
+        mir_storage_for_type(self.input, ty, self.js_glue_utf8_as_anyref)
     }
 
     pub(super) fn finish(self) -> Vec<u8> {
@@ -442,7 +429,7 @@ impl<'a> WasmMirLowerer<'a> {
             let entry = self.mir_fn.blocks.iter().find(|block| block.id == self.mir_fn.entry).expect("Wasm 函数缺少入口合同");
             let parameter = entry.parameters.get(local_index as usize).expect("Wasm 参数 local 缺少 SSA 身份");
             return wasm_param_value_type_for(
-                self.ctx,
+                self.input,
                 ty,
                 self.mir_fn.value_layouts.get(parameter).copied(),
                 self.gc_struct_type_indices,
@@ -472,15 +459,15 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 操作数的可读描述（SSA 值带冻结语义类型），用于结构化失败信息。
-    pub(super) fn describe_operand(&self, operand: &MirOperand) -> String {
+    pub(super) fn describe_operand(&self, operand: &WasmOperand) -> String {
         match operand {
-            MirOperand::Value(value) => match self.mir_fn.value_types.get(value) {
+            WasmOperand::Value(value) => match self.mir_fn.value_types.get(value) {
                 Some(ty) => format!("%{} ({ty:?})", value.0),
                 None => format!("%{} (<missing semantic type>)", value.0),
             },
-            MirOperand::Constant(constant) => format!("constant {constant:?}"),
-            MirOperand::Symbol(path) => format!("symbol {path:?}"),
-            MirOperand::Item(instance) => format!("item {instance:?}"),
+            WasmOperand::Constant(constant) => format!("constant {constant:?}"),
+            WasmOperand::Symbol(path) => format!("symbol {path:?}"),
+            WasmOperand::Item(instance) => format!("item {instance:?}"),
         }
     }
 
@@ -492,7 +479,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    pub(super) fn plan_instruction(&mut self, instruction: &MirInstruction) {
+    pub(super) fn plan_instruction(&mut self, instruction: &WasmInstruction) {
         // StoreVar 是纯附加操作（let 绑定），wasm 后端不消费其 name/value
         // 但它的 results 仍要规划 local —— 该 SSA 值会被 Jump/Return 等 terminator 引用。
         for output in &instruction.results {
@@ -511,9 +498,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// 为一条指令的某个 output 决定规划槽位的 wasm 栈类型。
     /// 对 Copy 特判：直接使用 source operand 已规划的物理槽 valtype，
     /// 确保 plan 与 emit 阶段 `operand_wasm_stack_type(source)` 的权威结果一致。
-    fn plan_result_stack_type(&self, instruction: &MirInstruction, output: &MirValueRef) -> u8 {
-        if let MirInstructionKind::Copy { source } = &instruction.kind {
-            if let MirOperand::Value(vref) = source {
+    fn plan_result_stack_type(&self, instruction: &WasmInstruction, output: &WasmValueKey) -> u8 {
+        if let WasmOperation::Copy { source } = &instruction.kind {
+            if let WasmOperand::Value(vref) = source {
                 if let Some(local) = self.reference_locals.get(vref).or_else(|| self.value_locals.get(vref)).copied() {
                     return self.wasm_local_value_type(local);
                 }
@@ -521,7 +508,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         let ty = self.mir_fn.value_types.get(output).expect("WASM SSA 结果缺少已确定类型");
         wasm_param_value_type_for(
-            self.ctx,
+            self.input,
             ty,
             self.mir_fn.value_layouts.get(output).copied(),
             self.gc_struct_type_indices,
@@ -542,11 +529,11 @@ impl<'a> WasmMirLowerer<'a> {
         local
     }
 
-    pub(super) fn emit_f64_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
+    pub(super) fn emit_f64_operand(&mut self, operand: &WasmOperand) -> crate::Result<()> {
         self.emit_contract_operand(operand, VALTYPE_F64)
     }
 
-    pub(super) fn emit_i32_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
+    pub(super) fn emit_i32_operand(&mut self, operand: &WasmOperand) -> crate::Result<()> {
         self.emit_contract_operand(operand, VALTYPE_I32)
     }
 
@@ -557,7 +544,7 @@ impl<'a> WasmMirLowerer<'a> {
         self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eqz));
     }
 
-    pub(super) fn emit_call_arguments(&mut self, arguments: &[MirOperand], param_types: &[u8]) -> crate::Result<()> {
+    pub(super) fn emit_call_arguments(&mut self, arguments: &[WasmOperand], param_types: &[u8]) -> crate::Result<()> {
         assert_eq!(arguments.len(), param_types.len(), "WASM 调用实参与已解析签名不一致");
         for (argument, expected) in arguments.iter().zip(param_types) {
             self.emit_operand_coerced(argument, *expected)?;
@@ -567,10 +554,10 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// Receiver array-ness is Semantic MIR metadata, never a nominal name or
     /// backend-local storage class.
-    pub(super) fn operand_is_heap_array(&self, operand: &MirOperand) -> bool {
+    pub(super) fn operand_is_heap_array(&self, operand: &WasmOperand) -> bool {
         match operand {
-            MirOperand::Value(vref) => match self.mir_fn.value_types.get(vref) {
-                Some(ty) => matches!(ty, SemanticType::Array(_) | SemanticType::FixedArray { .. }),
+            WasmOperand::Value(vref) => match self.mir_fn.value_types.get(vref) {
+                Some(ty) => matches!(ty, WasmTypeFact::Array(_) | WasmTypeFact::FixedArray { .. }),
                 None => false,
             },
             _ => false,
@@ -578,7 +565,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// `length` 需宿主字符串；`+` / `==` 需两端均为宿主字符串（否则?i32 原语）?
-    pub(super) fn utf8_method_receiver_ok(&self, method: &str, arguments: &[MirOperand]) -> bool {
+    pub(super) fn utf8_method_receiver_ok(&self, method: &str, arguments: &[WasmOperand]) -> bool {
         match method {
             "length" => self.operand_is_utf8_host_string(arguments.first()),
             "concat" | "infix +" | "infix ++" | "equals" | "infix ==" => {
@@ -588,27 +575,27 @@ impl<'a> WasmMirLowerer<'a> {
         }
     }
 
-    pub(super) fn operand_is_utf8_host_string(&self, operand: Option<&MirOperand>) -> bool {
+    pub(super) fn operand_is_utf8_host_string(&self, operand: Option<&WasmOperand>) -> bool {
         let Some(operand) = operand
         else {
             return false;
         };
         match operand {
-            MirOperand::Constant(MirConstant::Utf8(_)) => !self.wasi_mode,
-            MirOperand::Value(vref) => {
+            WasmOperand::Constant(WasmConstant::Utf8(_)) => !self.wasi_mode,
+            WasmOperand::Value(vref) => {
                 if let Some(ty) = self.mir_fn.value_types.get(vref) {
                     return is_js_glue_host_string_type(ty);
                 }
                 false
             }
-            MirOperand::Symbol(_) => false,
+            WasmOperand::Symbol(_) => false,
             _ => false,
         }
     }
 
     /// 普通调用只按 Compiler 实例身份查询物理函数下标。
-    pub(super) fn resolve_callee_function_index(&self, callee: &MirOperand) -> Option<u32> {
-        let MirOperand::Item(instance) = callee
+    pub(super) fn resolve_callee_function_index(&self, callee: &WasmOperand) -> Option<u32> {
+        let WasmOperand::Item(instance) = callee
         else {
             return None;
         };
@@ -616,8 +603,8 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 类型化调用必须具备对应实例的物理签名，禁止选择第一个函数类型。
-    pub(super) fn resolve_callee_type_index(&self, callee: &MirOperand) -> u32 {
-        let MirOperand::Item(instance) = callee
+    pub(super) fn resolve_callee_type_index(&self, callee: &WasmOperand) -> u32 {
+        let WasmOperand::Item(instance) = callee
         else {
             panic!("WASM 调用缺少 Compiler 实例身份");
         };
@@ -643,46 +630,46 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 反面教训：曾在此处按 `layout.storage` / 字段类型二次推导，导致同一 layout 在
     /// 构造侧走线性内存、消费侧走 gc struct，运行时直接 `illegal cast`。
-    pub(super) fn layout_uses_gc_struct(&self, layout: &ResolvedAggregateLayout) -> bool {
+    pub(super) fn layout_uses_gc_struct(&self, layout: &WasmLayoutFact) -> bool {
         self.gc_struct_type_indices.contains_key(&layout.id)
     }
 
-    pub(super) fn resolve_layout(&self, nominal: compiler_types::NominalInstanceId) -> ResolvedAggregateLayout {
-        self.ctx
+    pub(super) fn resolve_layout(&self, nominal: WasmNominalKey) -> WasmLayoutFact {
+        self.input
             .layout_by_nominal(nominal)
             .cloned()
             .unwrap_or_else(|| panic!("WASM semantic MIR contract violation: missing aggregate layout identity in `{}`", self.mir_fn.symbol))
     }
 
-    /// 发射 SSA 值槽。常量没有独立类型（`MirConstant::Int` 只承载 `i64` 载荷），
+    /// 发射 SSA 值槽。常量没有独立类型（`WasmConstant::Int` 只承载 `i64` 载荷），
     /// 必须由调用方经 [`Self::emit_load_constant_for_slot`] / `emit_contract_operand`
     /// 给出目标槽 valtype；此处拒绝按默认位宽猜测。
-    pub(super) fn emit_operand(&mut self, operand: &MirOperand) -> crate::Result<()> {
+    pub(super) fn emit_operand(&mut self, operand: &WasmOperand) -> crate::Result<()> {
         match operand {
-            MirOperand::Value(value) => {
+            WasmOperand::Value(value) => {
                 let local = self.planned_value_local(*value);
                 self.emit_local_get(local);
                 Ok(())
             }
-            MirOperand::Constant(_) => Err(format!("WASM 常量操作数缺少目标槽 valtype，禁止按默认 i32 猜测: `{}`", self.mir_fn.symbol)),
-            MirOperand::Symbol(_) => Err(format!("WASM 值操作数缺少 SSA 身份: `{}`", self.mir_fn.symbol)),
-            MirOperand::Item(_) => Err(format!("WASM callable identity cannot be used as a value operand: `{}`", self.mir_fn.symbol)),
+            WasmOperand::Constant(_) => Err(format!("WASM 常量操作数缺少目标槽 valtype，禁止按默认 i32 猜测: `{}`", self.mir_fn.symbol)),
+            WasmOperand::Symbol(_) => Err(format!("WASM 值操作数缺少 SSA 身份: `{}`", self.mir_fn.symbol)),
+            WasmOperand::Item(_) => Err(format!("WASM callable identity cannot be used as a value operand: `{}`", self.mir_fn.symbol)),
         }
     }
 
-    pub(super) fn output_scalar_slot_type(&self, output: MirValueRef) -> u8 {
+    pub(super) fn output_scalar_slot_type(&self, output: WasmValueKey) -> u8 {
         self.wasm_local_value_type(self.planned_value_local(output))
     }
 
     /// 常量发射的唯一入口：目标槽 valtype 是选 `i32.const` / `i64.const` / `f64.const`
     /// 的唯一权威。
     ///
-    /// `MirConstant::Int` 只承载 `i64` 载荷、不携带位宽，因此不存在「按常量自身类型
+    /// `WasmConstant::Int` 只承载 `i64` 载荷、不携带位宽，因此不存在「按常量自身类型
     /// 发射」的合法形态。历史上与之并行的无槽版本会 `*value as i32` 截断 i64 字面量，
     /// 现已在 `emit_operand` 处删除，禁止恢复猜测分支。
-    pub(super) fn emit_load_constant_for_slot(&mut self, constant: &MirConstant, slot_ty: u8) -> crate::Result<()> {
+    pub(super) fn emit_load_constant_for_slot(&mut self, constant: &WasmConstant, slot_ty: u8) -> crate::Result<()> {
         match constant {
-            MirConstant::Int(value) => match slot_ty {
+            WasmConstant::Int(value) => match slot_ty {
                 VALTYPE_I64 => self.emit_i64_const(*value),
                 VALTYPE_F64 => self.emit_f64_const(*value as f64),
                 VALTYPE_I32 => {
@@ -696,19 +683,19 @@ impl<'a> WasmMirLowerer<'a> {
                     return Err(format!("WASM 整数常量与已规划槽 valtype {other:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
             },
-            MirConstant::Bool(value) => match slot_ty {
+            WasmConstant::Bool(value) => match slot_ty {
                 VALTYPE_I32 => self.emit_i32_const(if *value { 1 } else { 0 }),
                 other => {
                     return Err(format!("WASM 布尔常量与已规划槽 valtype {other:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
             },
-            MirConstant::Float64(value) => match slot_ty {
+            WasmConstant::Float64(value) => match slot_ty {
                 VALTYPE_F64 => self.emit_f64_const(value.into_inner()),
                 other => {
                     return Err(format!("WASM 浮点常量与已规划槽 valtype {other:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
             },
-            MirConstant::Utf8(text) => {
+            WasmConstant::Utf8(text) => {
                 if slot_ty != VALTYPE_I32 {
                     return Err(format!("WASM 文本句柄与已规划槽 valtype {slot_ty:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
@@ -733,20 +720,20 @@ impl<'a> WasmMirLowerer<'a> {
                 self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
             }
             // Unit ADT=1（恰有一个值）；用 ref.null any 作 GC 占位，勿与 void(ADT=0) 混淆。
-            MirConstant::Unit => {
+            WasmConstant::Unit => {
                 if slot_ty != WASM_GC_ANYREF {
                     return Err(format!("WASM 单元值与已规划槽 valtype {slot_ty:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
                 self.emit_ref_null_anyref();
             }
             // 可空空值就是 `T?` 的空引用；槽必须已按 Nullable 规划成 anyref。
-            MirConstant::Null => {
+            WasmConstant::Null => {
                 if slot_ty != WASM_GC_ANYREF {
                     return Err(format!("WASM 空值与已规划的 nullable 槽 valtype {slot_ty:#x} 不一致: `{}`", self.mir_fn.symbol));
                 }
                 self.emit_ref_null_anyref();
             }
-            MirConstant::Utf16(_) => {
+            WasmConstant::Utf16(_) => {
                 return Err(format!("{}: `{}`", crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI, self.mir_fn.symbol));
             }
         }
@@ -762,33 +749,33 @@ impl<'a> WasmMirLowerer<'a> {
     /// `reference_locals`（引用类型）时找不到 local，导致栈顶值未存储?
     /// 或被其他指令错误消费。修复后 `Copy`/`Identity` 等调?`store_scalar` 的指?
     /// 能正确将 anyref 结果存入 anyref local，避?`local.set expected i32, found anyref`?
-    pub(super) fn store_scalar(&mut self, value: MirValueRef) {
+    pub(super) fn store_scalar(&mut self, value: WasmValueKey) {
         self.assign_output_local(value);
     }
 
-    pub(super) fn operand_address_local(&self, operand: &MirOperand) -> Option<u32> {
+    pub(super) fn operand_address_local(&self, operand: &WasmOperand) -> Option<u32> {
         match operand {
-            MirOperand::Value(value) => self.value_locals.get(value).copied(),
+            WasmOperand::Value(value) => self.value_locals.get(value).copied(),
             _ => None,
         }
     }
 
-    pub(super) fn field_store_stack_type(&self, field: &ResolvedFieldLayout) -> crate::Result<u8> {
-        if self.storage_for_type(&field.ty) == StorageKind::Reference {
+    pub(super) fn field_store_stack_type(&self, field: &WasmFieldFact) -> crate::Result<u8> {
+        if self.storage_for_type(&field.ty) == WasmStorageClass::Reference {
             // 引用字段在线性内存中不存 GC 引用，用 i32 占位。
             Ok(VALTYPE_I32)
         }
-        else if type_is_inline_aggregate(self.ctx, &field.ty) {
+        else if type_is_inline_aggregate(self.input, &field.ty) {
             // 内联聚合字段的源操作数是地址；标量字段（含零字段值布局）的源是载体本身。
             Ok(VALTYPE_I32)
         }
         else {
-            wasm_param_value_type(self.ctx, &field.ty, self.js_glue_utf8_as_anyref)
+            wasm_param_value_type(self.input, &field.ty, self.js_glue_utf8_as_anyref)
         }
     }
 
     /// wasm-gc `struct.set` 字段值栈类型（与 `register_gc_struct_types` / `wasm_gc_field_type_byte` 一致）。
-    pub(super) fn gc_struct_field_stack_type(&self, field: &ResolvedFieldLayout) -> crate::Result<u8> {
+    pub(super) fn gc_struct_field_stack_type(&self, field: &WasmFieldFact) -> crate::Result<u8> {
         wasm_gc_field_type_byte_for_glue(&field.ty, self.js_glue_utf8_as_anyref)
     }
 
@@ -798,9 +785,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// For nested value-type fields, emits `memory.copy` to copy the inline contents
     /// from the source address (already on the stack) into the parent's field region.
     /// Stack at entry: `[dest_addr, source_value_or_addr]`.
-    pub(super) fn emit_store_at_field(&mut self, field: &ResolvedFieldLayout) -> crate::Result<()> {
+    pub(super) fn emit_store_at_field(&mut self, field: &WasmFieldFact) -> crate::Result<()> {
         // 只有带字段的内联聚合才以地址形式存储；标量与零字段值布局直接存载体。
-        if type_is_inline_aggregate(self.ctx, &field.ty) {
+        if type_is_inline_aggregate(self.input, &field.ty) {
             // Stack: [dest_addr, source_addr] → memory.copy expects [dest, source, len]
             self.emit_i32_const(field.size as i32);
             self.emit_memory_copy();
@@ -818,7 +805,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn emit_load_at_field(&mut self, field: &ResolvedFieldLayout) -> crate::Result<()> {
+    pub(super) fn emit_load_at_field(&mut self, field: &WasmFieldFact) -> crate::Result<()> {
         match self.gc_struct_field_stack_type(field)? {
             VALTYPE_F32 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 }),
             VALTYPE_F64 => self.code.push(WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 }),

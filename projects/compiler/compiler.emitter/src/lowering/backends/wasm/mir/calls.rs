@@ -33,19 +33,19 @@ impl<'a> WasmMirLowerer<'a> {
     ///   special codegen is needed beyond emitting the argument normally.
     pub(super) fn emit_call_lowering(
         &mut self,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-        dispatch: MirDispatchKind,
-        witness: Option<&MirOperand>,
-        receiver_kind: Option<ReceiverPassingKind>,
-        output: Option<MirValueRef>,
+        callee: &WasmOperand,
+        arguments: &[WasmOperand],
+        dispatch: WasmDispatchKind,
+        witness: Option<&WasmOperand>,
+        receiver_kind: Option<WasmReceiverPassingKind>,
+        output: Option<WasmValueKey>,
     ) -> crate::Result<()> {
-        if let Some(ReceiverPassingKind::ByAddress) = receiver_kind {
+        if let Some(WasmReceiverPassingKind::ByAddress) = receiver_kind {
             // Confirm the receiver exists as the first argument; it is emitted below.
         }
         let mut callee_return;
         match dispatch {
-            MirDispatchKind::Static => {
+            WasmDispatchKind::Static => {
                 // `[wasm_operator]` 绑定的 provider 直接在调用点编码为目标指令；
                 // 不是 host import，也没有函数体，必须先于 import 解析处理。
                 if self.try_emit_wasm_operator_call(callee, arguments, output)? {
@@ -81,7 +81,7 @@ impl<'a> WasmMirLowerer<'a> {
                     return Err(format!("WASM 静态调用缺少已解析 callable identity: {} callee={callee:?}", self.mir_fn.symbol));
                 }
             }
-            MirDispatchKind::Witness => {
+            WasmDispatchKind::Witness => {
                 callee_return = self.resolve_callee_return_type(callee, None)?;
                 for argument in arguments {
                     let expected = self.operand_wasm_stack_type(argument)?;
@@ -96,9 +96,9 @@ impl<'a> WasmMirLowerer<'a> {
                 let type_index = self.resolve_callee_type_index(callee);
                 self.emit_call_indirect(type_index, 0);
             }
-            MirDispatchKind::Indirect => {
+            WasmDispatchKind::Indirect => {
                 // callee 是函数值 SSA（闭包对象 anyref，合同 §5.3）。签名事实来自该
-                // SSA 值冻结的 `SemanticType::Function`：可见形参 coerce 与返回载体由它
+                // SSA 值冻结的 `WasmTypeFact::Function`：可见形参 coerce 与返回载体由它
                 // 决定，`call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」。
                 // 环境作为普通尾实参压栈，不占 callee 槽；缺事实即结构化失败。
                 let (param_types, return_type, type_index) = self.resolve_indirect_callee_signature(callee)?;
@@ -112,7 +112,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    fn emit_store_call_output(&mut self, output: Option<MirValueRef>, callee_return: Option<u8>) -> crate::Result<()> {
+    fn emit_store_call_output(&mut self, output: Option<WasmValueKey>, callee_return: Option<u8>) -> crate::Result<()> {
         match output {
             Some(output) => {
                 // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
@@ -151,9 +151,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// 组合保持既有 coerce 语义（宽度、装箱由目标计划承诺），未知分叉结构化失败。
     fn emit_abi_call_arguments(
         &mut self,
-        arguments: &[MirOperand],
+        arguments: &[WasmOperand],
         param_types: &[u8],
-        param_layouts: Option<&[Option<LayoutId>]>,
+        param_layouts: Option<&[Option<WasmLayoutKey>]>,
     ) -> crate::Result<()> {
         if arguments.len() != param_types.len() {
             return Err(format!(
@@ -172,21 +172,21 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 语言函数被调方的形参 layout（entry 块参数上的冻结事实）。
     /// 仅静态调用可解析；导入/间接调用没有本地函数体，返回 `None`。
-    fn callee_param_layouts(&self, callee: &MirOperand) -> Option<Vec<Option<LayoutId>>> {
-        let MirOperand::Item(instance) = callee
+    fn callee_param_layouts(&self, callee: &WasmOperand) -> Option<Vec<Option<WasmLayoutKey>>> {
+        let WasmOperand::Item(instance) = callee
         else {
             return None;
         };
-        let view = self.ctx.submission.backend_plan.get_function(instance)?;
-        let entry = view.function.blocks.iter().find(|block| block.id == view.function.entry)?;
-        Some(entry.parameters.iter().map(|parameter| view.function.value_layouts.get(parameter).copied()).collect())
+        let function = self.input.function(instance)?;
+        let entry = function.blocks.iter().find(|block| block.id == function.entry)?;
+        Some(entry.parameters.iter().map(|parameter| function.value_layouts.get(parameter).copied()).collect())
     }
 
     /// 按冻结配方把 managed 字符串 gc struct 转为宿主 i32 句柄：
     /// `struct.get` 取字节数组 → bump 分配线性内存 → 逐字节 `array.get` + `i32.store8`
     /// → `call env::host_intern_utf8(ptr, len)`。栈效果：`[anyref] → [i32]`。
-    pub(super) fn emit_managed_utf8_to_host_handle(&mut self, operand: &MirOperand) -> crate::Result<()> {
-        let MirOperand::Value(value) = operand
+    pub(super) fn emit_managed_utf8_to_host_handle(&mut self, operand: &WasmOperand) -> crate::Result<()> {
+        let WasmOperand::Value(value) = operand
         else {
             return Err(format!("WASM 宿主字符串边界操作数缺少 SSA 身份: {}", self.mir_fn.symbol));
         };
@@ -290,7 +290,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 判定宿主导入返回值是否命中「i32 宿主句柄 → managed 字符串」边界：结果值类型是
     /// 宿主字符串，且目标计划已按冻结 layout 把该 SSA 槽规划为 anyref。纯类型/布局
     /// 事实判定，不按符号名特判；未命中即继续走原 i32 句柄 ABI。
-    fn host_import_return_materialize_layout(&self, output: MirValueRef) -> Option<LayoutId> {
+    fn host_import_return_materialize_layout(&self, output: WasmValueKey) -> Option<WasmLayoutKey> {
         if !self.mir_fn.value_types.get(&output).is_some_and(is_js_glue_host_string_type) {
             return None;
         }
@@ -307,7 +307,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 宿主句柄→managed 配方物化（与实参方向的 managed→host 配方互为逆）。
     /// 其余槽位分歧是可执行合同分叉：返回结构化错误并点名函数、槽号、期望载体
     /// 与实际载体，禁止 panic。
-    pub(super) fn validate_output_slot_type(&mut self, output: MirValueRef, stack_ty: u8) -> crate::Result<()> {
+    pub(super) fn validate_output_slot_type(&mut self, output: WasmValueKey, stack_ty: u8) -> crate::Result<()> {
         let local = self.planned_value_local(output);
         let actual_ty = self.wasm_local_value_type(local);
         if actual_ty == stack_ty {
@@ -325,12 +325,12 @@ impl<'a> WasmMirLowerer<'a> {
         ))
     }
 
-    pub(super) fn assign_output_local(&mut self, output: MirValueRef) {
+    pub(super) fn assign_output_local(&mut self, output: WasmValueKey) {
         let local = self.planned_value_local(output);
         self.emit_local_set(local);
     }
 
-    pub(super) fn resolve_callee_param_types(&self, callee: &MirOperand, import_index: Option<u32>) -> crate::Result<Vec<u8>> {
+    pub(super) fn resolve_callee_param_types(&self, callee: &WasmOperand, import_index: Option<u32>) -> crate::Result<Vec<u8>> {
         // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
         if let Some(index) = import_index {
             return self
@@ -339,7 +339,7 @@ impl<'a> WasmMirLowerer<'a> {
                 .ok_or_else(|| format!("WASM 导入缺少参数签名: import_index={index} in `{}`", self.mir_fn.symbol))
                 .cloned();
         }
-        let MirOperand::Item(instance) = callee
+        let WasmOperand::Item(instance) = callee
         else {
             return Err(format!("WASM 普通调用缺少实例身份: {} callee={callee:?}", self.mir_fn.symbol));
         };
@@ -349,7 +349,7 @@ impl<'a> WasmMirLowerer<'a> {
             .cloned()
     }
 
-    pub(super) fn resolve_callee_return_type(&self, callee: &MirOperand, import_index: Option<u32>) -> crate::Result<Option<u8>> {
+    pub(super) fn resolve_callee_return_type(&self, callee: &WasmOperand, import_index: Option<u32>) -> crate::Result<Option<u8>> {
         // 计划事实缺失属可执行合同不一致，禁止 panic（与 `8050500c` 同款结构化失败）。
         if let Some(index) = import_index {
             return self
@@ -358,7 +358,7 @@ impl<'a> WasmMirLowerer<'a> {
                 .ok_or_else(|| format!("WASM 导入缺少返回签名: import_index={index} in `{}`", self.mir_fn.symbol))
                 .copied();
         }
-        let MirOperand::Item(instance) = callee
+        let WasmOperand::Item(instance) = callee
         else {
             return Err(format!("WASM 普通调用缺少实例身份: {} callee={callee:?}", self.mir_fn.symbol));
         };
@@ -368,27 +368,27 @@ impl<'a> WasmMirLowerer<'a> {
             .copied()
     }
 
-    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `SemanticType::Function`。
+    /// 间接调用的签名解析：callee SSA 值必须携带冻结的 `WasmTypeFact::Function`。
     /// `call_indirect` 的 functype 固定为「可见形参 + 一个尾部 anyref」（环境槽），
     /// 必须命中模块已注册的 functype（按签名字节反查 typeidx）。缺类型或缺注册
     /// 条目都结构化失败，禁止按参数个数猜签名，也禁止退回无 env 的旧签名。
-    pub(super) fn resolve_indirect_callee_signature(&self, callee: &MirOperand) -> crate::Result<(Vec<u8>, Option<u8>, u32)> {
-        let MirOperand::Value(value) = callee
+    pub(super) fn resolve_indirect_callee_signature(&self, callee: &WasmOperand) -> crate::Result<(Vec<u8>, Option<u8>, u32)> {
+        let WasmOperand::Value(value) = callee
         else {
             return Err(format!("WASM 间接调用缺少函数值操作数: {}", self.mir_fn.symbol));
         };
-        let Some(SemanticType::Function(signature)) = self.mir_fn.value_types.get(value)
+        let Some(WasmTypeFact::Function(signature)) = self.mir_fn.value_types.get(value)
         else {
             return Err(format!("WASM 间接调用 callee %{} 缺少冻结 Function 签名: {}", value.0, self.mir_fn.symbol));
         };
         let visible_param_types: Vec<u8> = signature
             .params
             .iter()
-            .map(|ty| wasm_function_abi_value_type_for(self.ctx, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
+            .map(|ty| wasm_function_abi_value_type_for(self.input, ty, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref))
             .collect::<crate::Result<Vec<u8>>>()?;
         let return_type = match &signature.return_type {
-            SemanticType::Unit | SemanticType::Bottom => None,
-            other => Some(wasm_function_abi_value_type_for(self.ctx, other, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)?),
+            WasmTypeFact::Unit | WasmTypeFact::Bottom => None,
+            other => Some(wasm_function_abi_value_type_for(self.input, other, self.gc_struct_type_indices, self.js_glue_utf8_as_anyref)?),
         };
         let mut indirect_param_types = visible_param_types.clone();
         indirect_param_types.push(WASM_GC_ANYREF);
@@ -405,7 +405,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// `call_indirect` 的栈序是 `实参..., env, code`（callee 下标最后压入）；
     /// env 是普通实参，不占 callee 槽。闭包对象槽是 anyref，读取字段前必须
     /// `ref.cast` 到冻结的闭包 structtype。
-    fn emit_closure_callee(&mut self, callee: &MirOperand) -> crate::Result<()> {
+    fn emit_closure_callee(&mut self, callee: &WasmOperand) -> crate::Result<()> {
         self.emit_operand_coerced(callee, WASM_GC_ANYREF)?;
         self.emit_ref_cast_struct(self.gc_closure_type_index);
         self.emit_struct_get(self.gc_closure_type_index, WASM_CLOSURE_ENV_FIELD);
@@ -415,20 +415,20 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn operand_wasm_stack_type(&self, operand: &MirOperand) -> crate::Result<u8> {
+    pub(super) fn operand_wasm_stack_type(&self, operand: &WasmOperand) -> crate::Result<u8> {
         Ok(match operand {
-            MirOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
-            MirOperand::Constant(constant) => match constant {
-                MirConstant::Utf8(_) => VALTYPE_I32,
-                MirConstant::Utf16(_) => return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string()),
-                MirConstant::Unit => WASM_GC_ANYREF,
+            WasmOperand::Value(value) => self.wasm_local_value_type(self.planned_value_local(*value)),
+            WasmOperand::Constant(constant) => match constant {
+                WasmConstant::Utf8(_) => VALTYPE_I32,
+                WasmConstant::Utf16(_) => return Err(crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string()),
+                WasmConstant::Unit => WASM_GC_ANYREF,
                 // 可空空值是空引用，与 nullable 槽的 anyref 载体一致。
-                MirConstant::Null => WASM_GC_ANYREF,
-                MirConstant::Float64(_) => VALTYPE_F64,
-                MirConstant::Int(_) | MirConstant::Bool(_) => VALTYPE_I32,
+                WasmConstant::Null => WASM_GC_ANYREF,
+                WasmConstant::Float64(_) => VALTYPE_F64,
+                WasmConstant::Int(_) | WasmConstant::Bool(_) => VALTYPE_I32,
             },
-            MirOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
-            MirOperand::Item(_) => {
+            WasmOperand::Symbol(_) => panic!("WASM 值操作数缺少 SSA 身份"),
+            WasmOperand::Item(_) => {
                 panic!("WASM callable identity cannot be used as a value operand")
             }
         })
@@ -436,20 +436,20 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 操作数在计划中冻结的语义类型；显式 `as` 的转换语义必须由此决定，
     /// 不得退回到只携带位宽的栈类型字节。
-    pub(super) fn operand_semantic_type(&self, operand: &MirOperand) -> Option<&SemanticType> {
+    pub(super) fn operand_semantic_type(&self, operand: &WasmOperand) -> Option<&WasmTypeFact> {
         match operand {
-            MirOperand::Value(value) => self.mir_fn.value_types.get(value),
+            WasmOperand::Value(value) => self.mir_fn.value_types.get(value),
             _ => None,
         }
     }
 
     /// 按目标合同发射操作数。
     ///
-    /// 常量不携带位宽（`MirConstant::Int` 只有 `i64` 载荷），因此常量一律交给
+    /// 常量不携带位宽（`WasmConstant::Int` 只有 `i64` 载荷），因此常量一律交给
     /// 目标槽 valtype 决定 `i32.const` / `i64.const` / `f64.const`。任何宽度转换
     /// 只对已规划 SSA 槽生效，避免把 i64 字面量先截断成 i32 再符号扩展。
-    pub(super) fn emit_operand_coerced(&mut self, operand: &MirOperand, expected: u8) -> crate::Result<()> {
-        if let MirOperand::Constant(constant) = operand {
+    pub(super) fn emit_operand_coerced(&mut self, operand: &WasmOperand, expected: u8) -> crate::Result<()> {
+        if let WasmOperand::Constant(constant) = operand {
             return self.emit_load_constant_for_slot(constant, expected);
         }
         let actual = self.operand_wasm_stack_type(operand)?;
@@ -523,11 +523,11 @@ impl<'a> WasmMirLowerer<'a> {
     /// `TargetOperatorPlan`；未冻结的绑定必须返回结构化错误，禁止从助记符猜语义。
     pub(super) fn try_emit_wasm_operator_call(
         &mut self,
-        callee: &MirOperand,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
+        callee: &WasmOperand,
+        arguments: &[WasmOperand],
+        output: Option<WasmValueKey>,
     ) -> crate::Result<bool> {
-        let MirOperand::Item(instance) = callee
+        let WasmOperand::Item(instance) = callee
         else {
             return Ok(false);
         };
@@ -579,9 +579,9 @@ impl<'a> WasmMirLowerer<'a> {
         &mut self,
         mnemonic: &str,
         plan: WasmGcArrayOperatorPlan,
-        arguments: &[MirOperand],
-        output: Option<MirValueRef>,
-        instance: &compiler_types::ItemInstanceId,
+        arguments: &[WasmOperand],
+        output: Option<WasmValueKey>,
+        instance: &WasmCallableKey,
     ) -> crate::Result<()> {
         if arguments.len() != plan.arity {
             return Err(format!(
@@ -625,7 +625,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 倍增/减半是精确操作；每次减法前不变式 `s <= r < 2s` 成立，由 Sterbenz
     /// 引理减法精确。算法事实冻结在本函数体内，签名（arity、载体）已由计划
     /// 校验，发射只机械展开，不按助记符推断任何形状。
-    fn emit_wasm_float_remainder(&mut self, mnemonic: &str, carrier: TargetOperandType, arguments: &[MirOperand], output: Option<MirValueRef>) -> crate::Result<()> {
+    fn emit_wasm_float_remainder(&mut self, mnemonic: &str, carrier: TargetOperandType, arguments: &[WasmOperand], output: Option<WasmValueKey>) -> crate::Result<()> {
         if arguments.len() != 2 {
             return Err(format!(
                 "WASM `wasm_operator` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: expected=2 actual={} function={}",
@@ -807,7 +807,7 @@ impl<'a> WasmMirLowerer<'a> {
         mnemonic: &str,
         expected: u8,
         steps: &'static [TargetOperandStep],
-        arguments: &[MirOperand],
+        arguments: &[WasmOperand],
     ) -> crate::Result<()> {
         for step in steps {
             match step {
@@ -838,9 +838,9 @@ impl<'a> WasmMirLowerer<'a> {
 
     /// 按目标绑定载体发射实参。SSA 槽的栈类型必须与计划冻结的实参载体一致；
     /// 常量没有独立位宽，交给目标载体在 `emit_load_constant_for_slot` 里选指令。
-    fn emit_wasm_operator_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[MirOperand]) -> crate::Result<()> {
+    fn emit_wasm_operator_operands(&mut self, mnemonic: &str, expected: u8, arguments: &[WasmOperand]) -> crate::Result<()> {
         for argument in arguments {
-            if let MirOperand::Value(_) = argument {
+            if let WasmOperand::Value(_) = argument {
                 let actual = self.operand_wasm_stack_type(argument)?;
                 if actual != expected {
                     return Err(format!(
@@ -854,8 +854,8 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn resolve_callee_import_index(&self, callee: &MirOperand, _arguments: &[MirOperand]) -> Option<u32> {
-        let MirOperand::Item(instance) = callee
+    pub(super) fn resolve_callee_import_index(&self, callee: &WasmOperand, _arguments: &[WasmOperand]) -> Option<u32> {
+        let WasmOperand::Item(instance) = callee
         else {
             return None;
         };
@@ -863,7 +863,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// `i64` → wasm-gc struct `[i64]`（anyref），供泛型 `T` 数组槽使用。
-    fn emit_box_i64_payload(&mut self, operand: &MirOperand) -> crate::Result<()> {
+    fn emit_box_i64_payload(&mut self, operand: &WasmOperand) -> crate::Result<()> {
         let box_ty = self.gc_i64_box_type_index;
         self.emit_struct_new_default(box_ty);
         let tmp = self.alloc_anyref_local();
@@ -888,7 +888,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// `f64` → wasm-gc struct `[f64]`（anyref），供 `Option<F64>` 的 niche 载荷槽使用。
-    fn emit_box_f64_payload(&mut self, operand: &MirOperand) -> crate::Result<()> {
+    fn emit_box_f64_payload(&mut self, operand: &WasmOperand) -> crate::Result<()> {
         let box_ty = self.gc_f64_box_type_index;
         self.emit_struct_new_default(box_ty);
         let tmp = self.alloc_anyref_local();
@@ -914,9 +914,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// ?write 再交 reader 会在 sync `stream.write` 上永久挂起?
     fn try_emit_wasi_cli_write_via_stream(
         &mut self,
-        arguments: &[MirOperand],
+        arguments: &[WasmOperand],
         import_index: u32,
-        output: Option<MirValueRef>,
+        output: Option<WasmValueKey>,
     ) -> crate::Result<bool> {
         if !self.wasi_mode || arguments.len() != 1 {
             return Ok(false);

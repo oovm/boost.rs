@@ -1,27 +1,14 @@
 //! Host import collection / validation / index-building for Node + WASI.
+//!
+//! 本模块只消费 `input.rs` 结算出的私有链接事实（[`WasmImportLinkFact`]）；
+//! 面向公共 `ExternalImportLink` 的同名分类器在 `wasm/interop.rs`。
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{
-    BackendImport, FragmentSubmission,
-    backend_plan_views::{
-        ExecutableConstant as MirConstant, ExecutableInstruction as MirInstruction, ExecutableInstructionKind as MirInstructionKind,
-    },
-    emitter_backend_wasi::WasiPreview,
-};
-use compiler_target::ExternalImportLink;
-use compiler_types::{ItemInstanceId, SemanticType};
-use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
+use crate::emitter_backend_wasi::WasiPreview;
 
-use super::{
-    super::{
-        super::executable::ExecutableLoweringContext,
-        sections::wasm_function_type,
-    },
-    WasmOperatorBinding, freeze_wasm_operator_binding,
-    representation::{wasm_js_glue_abi_value_type, wasm_param_value_type},
-};
-use crate::lowering::shared::interop::select_unique_target;
+use super::super::sections::wasm_function_type;
+use super::*;
 
 /// Wasm 宿主导入的模块/字段对。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +25,7 @@ pub(crate) struct WasiHostImportTarget<'a> {
 }
 
 /// `[wasm("module", "field")]` 声明的 wasm 宿主导入。
-pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
+pub(crate) fn wasm_host_import_target(link: &WasmImportLinkFact) -> Option<WasmHostImportTarget<'_>> {
     if !link.matches_boundary("host") || !link.matches_platform_tag("wasm") {
         return None;
     }
@@ -52,7 +39,7 @@ pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmH
 /// `[js_builtin("wx.request")]` → browser/node wasm `env` 导入字段。
 ///
 /// WasmJsGlue 轨在 MIR 阶段仍通过 wasm `call` 命中宿主导入；`.mjs` 启动壳按字段名提供实现。
-pub(crate) fn js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
+pub(crate) fn js_glue_host_import_target(link: &WasmImportLinkFact) -> Option<WasmHostImportTarget<'_>> {
     if !link.matches_boundary("host") {
         return None;
     }
@@ -67,7 +54,7 @@ pub(crate) fn js_glue_host_import_target(link: &ExternalImportLink) -> Option<Wa
     }
 }
 
-pub(crate) fn wasm_or_js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
+pub(crate) fn wasm_or_js_glue_host_import_target(link: &WasmImportLinkFact) -> Option<WasmHostImportTarget<'_>> {
     wasm_host_import_target(link).or_else(|| js_glue_host_import_target(link))
 }
 
@@ -75,7 +62,7 @@ pub(crate) fn wasm_or_js_glue_host_import_target(link: &ExternalImportLink) -> O
 ///
 /// 只接受 platform tag `wasm-operator` 且 locator 恰好一段；其余形态返回 `None`，
 /// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn wasm_operator_target(link: &ExternalImportLink) -> Option<&str> {
+pub(crate) fn wasm_operator_target(link: &WasmImportLinkFact) -> Option<&str> {
     if !link.matches_boundary("host") || !link.matches_platform_tag("wasm-operator") {
         return None;
     }
@@ -88,7 +75,7 @@ pub(crate) fn wasm_operator_target(link: &ExternalImportLink) -> Option<&str> {
 
 /// WASI 宿主合同只由显式 `wasi` 平台标签绑定：不凭 locator 的 `wasi:` 前缀
 /// 猜测，否则 JS 目标里恰好叫 `wasi:*` 的模块会被误当成 WASI 宿主导入。
-pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiHostImportTarget<'_>> {
+pub(crate) fn wasi_host_import_target(link: &WasmImportLinkFact) -> Option<WasiHostImportTarget<'_>> {
     if !link.matches_boundary("host") || !link.matches_platform_tag("wasi") {
         return None;
     }
@@ -99,22 +86,41 @@ pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiH
     }
 }
 
-pub(super) fn collect_wasm_host_imports(
-    submission: &FragmentSubmission,
-    synthesize_const_utf8: bool,
-) -> crate::Result<Vec<(String, String)>> {
+/// 候选唯一性裁决（wasm 私有版；错误文案与共享 `select_unique_target` 逐字一致）。
+///
+/// 同一 import 里若有多条候选同时被同一个裁决函数命中，声明本身有歧义：
+/// 必须结构化失败，禁止按声明顺序 first-wins。
+fn select_unique_target<'a, T>(
+    links: &'a [WasmImportLinkFact],
+    target: impl Fn(&'a WasmImportLinkFact) -> Option<T>,
+) -> crate::Result<Option<(&'a WasmImportLinkFact, T)>> {
+    let matched = links.iter().filter_map(|link| target(link).map(|value| (link, value))).collect::<Vec<_>>();
+    if matched.len() <= 1 {
+        return Ok(matched.into_iter().next());
+    }
+    let candidates = matched
+        .iter()
+        .map(|(link, _)| {
+            let tag = link.platform_tag.as_ref().map(|tag| tag.as_str()).unwrap_or("<none>");
+            format!("tag=`{tag}` locator=[{}]", link.locator_segments().join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(format!(
+        "外部导入目标绑定歧义：{} 条候选同时命中同一 target 裁决，必须唯一（{candidates}）",
+        matched.len()
+    ))
+}
+
+pub(super) fn collect_wasm_host_imports(input: &WasmModuleInput, synthesize_const_utf8: bool) -> crate::Result<Vec<(String, String)>> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
     // 计划声明的导入是权威集合：`external_import_links` 与 `imports` 在完整流水线里
     // 应当同源，但测试夹具可能只登记其一；两边都收集，按 `(module, field)` 去重。
-    let declared_links = submission
-        .backend_plan
-        .external_import_links()
-        .values()
-        .chain(submission.backend_plan.imports().values().map(|import| &import.links));
+    let declared_links = input.external_import_links.values().chain(input.imports.values().map(|import| &import.links));
     for links in declared_links {
         // `[wasm]` 与 `[js_builtin]` 是同一宿主表面的两种合法声明，共用同一裁决函数；
-        // 一个 import 同时命中两条即歧义，由共享选择函数失败闭合。
+        // 一个 import 同时命中两条即歧义，由选择函数失败闭合。
         let Some(target) = select_unique_target(links, wasm_or_js_glue_host_import_target)?
         else {
             continue;
@@ -140,13 +146,10 @@ pub(super) fn collect_wasm_host_imports(
     Ok(imports)
 }
 
-pub(super) fn collect_wasi_host_imports(
-    submission: &FragmentSubmission,
-    preview: WasiPreview,
-) -> crate::Result<Vec<(String, String)>> {
+pub(super) fn collect_wasi_host_imports(input: &WasmModuleInput, preview: WasiPreview) -> crate::Result<Vec<(String, String)>> {
     let mut imports = Vec::new();
     let mut seen = BTreeSet::new();
-    for links in submission.backend_plan.external_import_links().values() {
+    for links in input.external_import_links.values() {
         let Some(target) = select_unique_target(links, wasi_host_import_target)?
         else {
             continue;
@@ -160,7 +163,7 @@ pub(super) fn collect_wasi_host_imports(
             imports.push(key);
         }
     }
-    for links in submission.backend_plan.external_import_links().values() {
+    for links in input.external_import_links.values() {
         let Some(target) = select_unique_target(links, wasm_host_import_target)?
         else {
             continue;
@@ -175,18 +178,17 @@ pub(super) fn collect_wasi_host_imports(
     Ok(imports)
 }
 
-pub(super) fn collect_mir_string_literals(submission: &FragmentSubmission, operations: &[ItemInstanceId]) -> Vec<String> {
+pub(super) fn collect_mir_string_literals(input: &WasmModuleInput, operations: &[WasmCallableKey]) -> Vec<String> {
     let mut seen = BTreeSet::new();
     let mut literals = Vec::new();
-    let exec = &submission.backend_plan;
     for operation in operations {
-        let Some(view) = exec.get_function(operation)
+        let Some(function) = input.function(operation)
         else {
             continue;
         };
-        for block in &view.function.blocks {
+        for block in &function.blocks {
             for instruction in &block.instructions {
-                if let MirInstructionKind::LoadConstant { constant: MirConstant::Utf8(text), .. } = &instruction.kind {
+                if let WasmOperation::LoadConstant { constant: WasmConstant::Utf8(text), .. } = &instruction.kind {
                     if seen.insert(text.clone()) {
                         literals.push(text.clone());
                     }
@@ -202,21 +204,21 @@ pub(super) fn const_utf8_import_index(imports: &[(String, String)]) -> Option<u3
 }
 
 pub(super) fn validate_string_literal_payloads(
-    submission: &FragmentSubmission,
-    operations: &[ItemInstanceId],
+    input: &WasmModuleInput,
+    operations: &[WasmCallableKey],
     string_literal_index: &BTreeMap<String, u32>,
     string_literal_offset: &BTreeMap<String, u32>,
     const_utf8_import: Option<u32>,
     wasi_mode: bool,
 ) -> crate::Result<()> {
     for operation in operations {
-        let Some(view) = submission.backend_plan.get_function(operation)
+        let Some(function) = input.function(operation)
         else {
             continue;
         };
-        for block in &view.function.blocks {
+        for block in &function.blocks {
             for (index, instruction) in block.instructions.iter().enumerate() {
-                let MirInstructionKind::LoadConstant { constant: MirConstant::Utf8(text), .. } = &instruction.kind
+                let WasmOperation::LoadConstant { constant: WasmConstant::Utf8(text), .. } = &instruction.kind
                 else {
                     continue;
                 };
@@ -229,7 +231,7 @@ pub(super) fn validate_string_literal_payloads(
                 if !registered {
                     return Err(format!(
                         "WASM pre-emission verifier: `{}` block {} instruction {index} 的 utf8 字面量缺少宿主载体（wasi={wasi_mode}, const_utf8={const_utf8_import:?}）；不得回落 `i32 0` 句柄",
-                        view.function.symbol, block.id.0
+                        function.symbol, block.id.0
                     ));
                 }
             }
@@ -255,10 +257,10 @@ pub(super) fn wasi_import_type_for_field(module: &str, field: &str) -> Option<Ve
     crate::emitter_backend_wasi::wasi_import_signature(module, field).map(|(params, results)| wasm_function_type(params, results))
 }
 
-/// `(module, field)` → 已在 `TargetExecutionPlan` 绑定的导入签名（`[js]` / `[wasm]` 等）。
-pub(super) fn host_import_signature_index(submission: &FragmentSubmission) -> crate::Result<BTreeMap<(String, String), BackendImport>> {
+/// `(module, field)` → 已在结算输入里绑定的导入签名（`[js]` / `[wasm]` 等）。
+pub(super) fn host_import_signature_index(input: &WasmModuleInput) -> crate::Result<BTreeMap<(String, String), WasmImportFact>> {
     let mut index = BTreeMap::new();
-    for import in submission.backend_plan.imports().values() {
+    for import in input.imports.values() {
         let Some((_, target)) = select_unique_target(&import.links, wasm_or_js_glue_host_import_target)?
         else {
             continue;
@@ -270,8 +272,8 @@ pub(super) fn host_import_signature_index(submission: &FragmentSubmission) -> cr
 }
 
 pub(super) fn wasm_import_type_from_backend_import(
-    ctx: &ExecutableLoweringContext,
-    import: &BackendImport,
+    input: &WasmModuleInput,
+    import: &WasmImportFact,
     wasi_mode: bool,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<Vec<u8>> {
@@ -279,36 +281,35 @@ pub(super) fn wasm_import_type_from_backend_import(
     // `WasmJsGlue` 边界才按 `declared_text_projection` 把 `utf16` 降为 i32 宿主句柄。
     // 导入签名不在 `validate_text_encoding_projection` 的覆盖范围内，所以这里必须
     // 自己区分边界，不能依赖 verifier 兜底。
-    let abi_value_type = |ty: &SemanticType| {
+    let abi_value_type = |ty: &WasmTypeFact| {
         if wasi_mode {
-            wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
+            wasm_param_value_type(input, ty, js_glue_utf8_as_anyref)
         }
         else {
-            wasm_js_glue_abi_value_type(ctx, ty, js_glue_utf8_as_anyref)
+            wasm_js_glue_abi_value_type(input, ty, js_glue_utf8_as_anyref)
         }
     };
     let params = import.parameter_types.iter().map(abi_value_type).collect::<crate::Result<Vec<_>>>()?;
     let results = match &import.return_type {
-        SemanticType::Unit | SemanticType::Bottom => Vec::new(),
+        WasmTypeFact::Unit | WasmTypeFact::Bottom => Vec::new(),
         ty => vec![abi_value_type(ty)?],
     };
     Ok(wasm_function_type(&params, &results))
 }
 
 pub(super) fn wasm_import_type_bytes_for_host(
-    submission: &FragmentSubmission,
-    ctx: &ExecutableLoweringContext,
+    input: &WasmModuleInput,
     wasi_mode: bool,
     module: &str,
     field: &str,
     js_glue_utf8_as_anyref: bool,
-    signature_index: &BTreeMap<(String, String), BackendImport>,
+    signature_index: &BTreeMap<(String, String), WasmImportFact>,
 ) -> crate::Result<Vec<u8>> {
-    // 单一事实源：`TargetExecutionPlan` 已冻结的 `BackendImport` 声明优先。
+    // 单一事实源：结算输入里已冻结的 `WasmImportFact` 声明优先。
     // 字段名表只是历史快照，不得越过 plan 改写已声明的导入签名。
     let key = (module.to_string(), field.to_string());
     if let Some(import) = signature_index.get(&key) {
-        return wasm_import_type_from_backend_import(ctx, import, wasi_mode, js_glue_utf8_as_anyref);
+        return wasm_import_type_from_backend_import(input, import, wasi_mode, js_glue_utf8_as_anyref);
     }
     // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、`NODE_HOST_IMPORT_FIELDS`
     // 里的 utf8_* 辅助、WASI 预演化的 stream 内建等）；它不得覆盖 plan 已声明的事实。
@@ -336,11 +337,11 @@ pub(super) fn wasi_core_import_name<'a>(module: &'a str, field: &'a str, preview
     (module, field)
 }
 
-pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports: &[(String, String)]) -> crate::Result<BTreeMap<ItemInstanceId, u32>> {
+pub(super) fn build_callee_import_index(input: &WasmModuleInput, imports: &[(String, String)]) -> crate::Result<BTreeMap<WasmCallableKey, u32>> {
     let import_index_by_key: BTreeMap<(String, String), u32> =
         imports.iter().enumerate().map(|(index, (module, field))| ((module.clone(), field.clone()), index as u32)).collect();
     let mut callee_import_index = BTreeMap::new();
-    for (callee, import) in submission.backend_plan.imports() {
+    for (callee, import) in input.imports.iter() {
         let Some((_, target)) = select_unique_target(&import.links, wasm_or_js_glue_host_import_target)?
         else {
             continue;
@@ -354,21 +355,19 @@ pub(super) fn build_callee_import_index(submission: &FragmentSubmission, imports
     Ok(callee_import_index)
 }
 
-pub(super) fn build_callee_wasm_operator_index(
-    submission: &FragmentSubmission,
-) -> crate::Result<BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>> {
+pub(super) fn build_callee_wasm_operator_index(input: &WasmModuleInput) -> crate::Result<BTreeMap<WasmCallableKey, (String, WasmOperatorBinding)>> {
     let mut callee_wasm_operator = BTreeMap::new();
-    for (callee, import) in submission.backend_plan.imports() {
+    for (callee, import) in input.imports.iter() {
         let Some((_, mnemonic)) = select_unique_target(&import.links, wasm_operator_target)?
         else {
             continue;
         };
         // operator 导入是按构造没有 ABI 名的外部实例（目标计划在导入分支不写
         // `abi_names`）；这个标签只用于失败信息定位，不得写成空串冒充已冻结符号身份。
-        let symbol = submission
-            .backend_plan
-            .abi_name_for_instance(*callee)
-            .map(|name| name.to_string())
+        let symbol = input
+            .abi_labels
+            .get(callee)
+            .cloned()
             .unwrap_or_else(|| format!("<wasm-operator import {callee:?}>"));
         let binding = freeze_wasm_operator_binding(*callee, &symbol, mnemonic, &import.parameter_types, &import.return_type)?
             .ok_or_else(|| format!("Wasm operator 绑定 `{mnemonic}` 缺少冻结结果: callee={callee:?}"))?;
@@ -378,14 +377,14 @@ pub(super) fn build_callee_wasm_operator_index(
 }
 
 pub(super) fn build_wasi_callee_import_index(
-    submission: &FragmentSubmission,
+    input: &WasmModuleInput,
     imports: &[(String, String)],
     preview: WasiPreview,
-) -> crate::Result<BTreeMap<ItemInstanceId, u32>> {
+) -> crate::Result<BTreeMap<WasmCallableKey, u32>> {
     let import_index_by_key: BTreeMap<(String, String), u32> =
         imports.iter().enumerate().map(|(index, (module, field))| ((module.clone(), field.clone()), index as u32)).collect();
     let mut callee_import_index = BTreeMap::new();
-    for (callee, import) in submission.backend_plan.imports() {
+    for (callee, import) in input.imports.iter() {
         let Some((_, target)) = select_unique_target(&import.links, wasi_host_import_target)?
         else {
             continue;
@@ -401,7 +400,7 @@ pub(super) fn build_wasi_callee_import_index(
         };
         callee_import_index.insert(*callee, index);
     }
-    for (callee, import) in submission.backend_plan.imports() {
+    for (callee, import) in input.imports.iter() {
         let Some((_, target)) = select_unique_target(&import.links, wasm_host_import_target)?
         else {
             continue;
@@ -417,31 +416,29 @@ pub(super) fn build_wasi_callee_import_index(
 
 #[cfg(test)]
 mod host_import_signature_tests {
-    use compiler_target::{ExternalImportLink, Identifier};
+    use compiler_types::Identifier;
 
     use super::*;
-    use crate::{FragmentSubmission, TargetExecutionPlan};
-    use compiler_types::ImportIndex;
 
     #[test]
     fn wasm_import_type_uses_backend_import_when_field_not_frozen() {
-        let import_id = ItemInstanceId::from_index(1).expect("import");
-        let mut plan = TargetExecutionPlan::default();
-        plan.testing_register_import(
+        let import_id = WasmCallableKey(1);
+        let mut input = WasmModuleInput::testing_empty();
+        input.imports.insert(
             import_id,
-            BackendImport {
-                index: ImportIndex::from_index(0).expect("import index"),
-                links: vec![ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["fetch".into()])],
-                parameter_types: vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }],
-                return_type: SemanticType::Integer32 { signed: true },
+            WasmImportFact {
+                links: vec![WasmImportLinkFact {
+                    boundary: Identifier::new("host"),
+                    platform_tag: Some(Identifier::new("js_builtin")),
+                    locator_segments: vec!["fetch".into()],
+                }],
+                parameter_types: vec![WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Integer32 { signed: true }],
+                return_type: WasmTypeFact::Integer32 { signed: true },
             },
         );
-        let submission = FragmentSubmission::from_backend_plan(plan);
-        let ctx = ExecutableLoweringContext::new(&submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)
-            .expect("测试提交的布局必须可解析");
-        let signatures = host_import_signature_index(&submission).expect("signature index");
-        let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "fetch", false, &signatures)
-            .expect("js_builtin fetch must derive wasm signature from BackendImport");
+        let signatures = host_import_signature_index(&input).expect("signature index");
+        let type_bytes = wasm_import_type_bytes_for_host(&input, false, "env", "fetch", false, &signatures)
+            .expect("js_builtin fetch must derive wasm signature from WasmImportFact");
         let params = super::super::strings::wasm_function_type_param_bytes(&type_bytes);
         assert_eq!(params, vec![VALTYPE_I32, VALTYPE_I32]);
         assert_eq!(super::super::strings::wasm_function_type_result_byte(&type_bytes), Some(VALTYPE_I32));
@@ -449,31 +446,31 @@ mod host_import_signature_tests {
 
     #[test]
     fn wasm_import_type_prefers_backend_import_over_field_name_table() {
-        let import_id = ItemInstanceId::from_index(1).expect("import");
-        let mut plan = TargetExecutionPlan::default();
-        plan.testing_register_import(
+        let import_id = WasmCallableKey(1);
+        let mut input = WasmModuleInput::testing_empty();
+        input.imports.insert(
             import_id,
-            BackendImport {
-                index: ImportIndex::from_index(0).expect("import index"),
-                // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
-                // 这里由 plan 声明一个不同的签名，验证 plan 胜出。
-                links: vec![ExternalImportLink::host(Some(Identifier::new("js_builtin")), vec!["utf8_length".into()])],
-                parameter_types: vec![SemanticType::Integer32 { signed: true }, SemanticType::Integer32 { signed: true }],
-                return_type: SemanticType::Integer64 { signed: true },
+            WasmImportFact {
+                links: vec![WasmImportLinkFact {
+                    boundary: Identifier::new("host"),
+                    platform_tag: Some(Identifier::new("js_builtin")),
+                    // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
+                    // 这里由结算输入声明一个不同的签名，验证 plan 胜出。
+                    locator_segments: vec!["utf8_length".into()],
+                }],
+                parameter_types: vec![WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Integer32 { signed: true }],
+                return_type: WasmTypeFact::Integer64 { signed: true },
             },
         );
-        let submission = FragmentSubmission::from_backend_plan(plan);
-        let ctx = ExecutableLoweringContext::new(&submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)
-            .expect("测试提交的布局必须可解析");
-        let signatures = host_import_signature_index(&submission).expect("signature index");
+        let signatures = host_import_signature_index(&input).expect("signature index");
         assert!(signatures.contains_key(&("env".to_string(), "utf8_length".to_string())), "plan import 必须解析到 env::utf8_length");
         assert_eq!(
             wasm_import_type_for_field("utf8_length"),
             Some(wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32])),
             "字段名表快照应保持 `[i32] -> [i32]`"
         );
-        let type_bytes = wasm_import_type_bytes_for_host(&submission, &ctx, false, "env", "utf8_length", false, &signatures)
-            .expect("plan 声明的签名必须胜出");
+        let type_bytes =
+            wasm_import_type_bytes_for_host(&input, false, "env", "utf8_length", false, &signatures).expect("plan 声明的签名必须胜出");
         assert_eq!(super::super::strings::wasm_function_type_param_bytes(&type_bytes), vec![VALTYPE_I32, VALTYPE_I32]);
         assert_eq!(super::super::strings::wasm_function_type_result_byte(&type_bytes), Some(VALTYPE_I64));
     }

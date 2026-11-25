@@ -1,7 +1,7 @@
 //! Wasm CFG 调度只消费已验证的块、SSA 槽和返回合同。
 
 use super::{
-    MirBlock, MirBlockRef, MirConstant, MirOperand, MirTerminator, MirValueRef, WasmBodyInstruction, WasmMirLowerer,
+    WasmBlock, WasmBlockKey, WasmConstant, WasmOperand, WasmTerminator, WasmValueKey, WasmBodyInstruction, WasmMirLowerer,
     is_js_glue_host_string_type,
 };
 use data_binary_wasm::{VALTYPE_I32, WasmOpcode};
@@ -49,10 +49,10 @@ impl<'a> WasmMirLowerer<'a> {
         u32::try_from(case_count.checked_sub(case_index + 1).expect("WASM case 不在调度表内")).expect("WASM 分支深度溢出")
     }
 
-    fn emit_terminator(&mut self, case_index: usize, case_count: usize, block: &MirBlock) -> crate::Result<()> {
+    fn emit_terminator(&mut self, case_index: usize, case_count: usize, block: &WasmBlock) -> crate::Result<()> {
         let continue_depth = self.cfg_continue_depth(case_index, case_count);
         match &block.terminator {
-            MirTerminator::Return { value } => {
+            WasmTerminator::Return { value } => {
                 match (self.return_value_type, value) {
                     (Some(expected), Some(value)) => self.emit_operand_into_text_slot(value, expected, self.mir_fn.return_layout)?,
                     (None, None) => {}
@@ -60,14 +60,14 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Return));
             }
-            MirTerminator::Jump { target, arguments } => {
+            WasmTerminator::Jump { target, arguments } => {
                 self.emit_jump_arguments(*target, arguments)?;
                 let target_index = self.block_index[target];
                 self.emit_i32_const(i32::try_from(target_index).expect("WASM 跳转目标溢出"));
                 self.emit_local_set(self.pc_local);
                 self.emit_br_depth(continue_depth);
             }
-            MirTerminator::Branch { condition, then_target, else_target } => {
+            WasmTerminator::Branch { condition, then_target, else_target } => {
                 for target in [then_target, else_target] {
                     let target_block = self.mir_fn.blocks.iter().find(|block| block.id == *target).expect("WASM 分支目标不存在");
                     assert!(target_block.parameters.is_empty(), "WASM Branch 没有块实参，不能跳到有参数的块");
@@ -79,13 +79,13 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_local_set(self.pc_local);
                 self.emit_br_depth(continue_depth);
             }
-            MirTerminator::Unreachable => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable)),
+            WasmTerminator::Unreachable => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable)),
             // `Raise` 的 wasm 目标合同：payload 已由前置指令完成求值。Node 宿主声明了
             // `env::host_raise` 且 payload 是文本时，先把文本句柄交给宿主抛出结构化异常；
             // `unreachable` 只是永不返回的兜底。非文本 payload（结构化 effect 值）没有
             // 文本 ABI，仍按 trap 终止。resume 块在 wasm 上永不可达（trap 不会返回），
             // 仍保留在调度表中以保持块身份与验证器一致。
-            MirTerminator::Raise { payload, .. } => {
+            WasmTerminator::Raise { payload, .. } => {
                 self.emit_host_raise(payload)?;
                 self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Unreachable));
             }
@@ -99,7 +99,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 只消费 Node 宿主声明的合成导入 `env::host_raise`；WASI 轨与结构化 effect
     /// 值（没有文本 ABI）保持既有 trap 合同。必须发射真实 payload 句柄，禁止用
     /// 空字符串或 `0` 占位。
-    fn emit_host_raise(&mut self, payload: &Option<MirOperand>) -> crate::Result<()> {
+    fn emit_host_raise(&mut self, payload: &Option<WasmOperand>) -> crate::Result<()> {
         if self.wasi_mode {
             return Ok(());
         }
@@ -108,7 +108,7 @@ impl<'a> WasmMirLowerer<'a> {
             return Ok(());
         };
         let is_text = match payload {
-            MirOperand::Constant(MirConstant::Utf8(_)) => true,
+            WasmOperand::Constant(WasmConstant::Utf8(_)) => true,
             _ => self.operand_semantic_type(payload).is_some_and(is_js_glue_host_string_type),
         };
         if !is_text {
@@ -123,7 +123,7 @@ impl<'a> WasmMirLowerer<'a> {
         Ok(())
     }
 
-    pub(super) fn planned_value_local(&self, value: MirValueRef) -> u32 {
+    pub(super) fn planned_value_local(&self, value: WasmValueKey) -> u32 {
         self.reference_locals
             .get(&value)
             .or_else(|| self.value_locals.get(&value))
@@ -131,9 +131,9 @@ impl<'a> WasmMirLowerer<'a> {
             .unwrap_or_else(|| panic!("WASM SSA 值缺少预规划槽: %{} in {}", value.0, self.mir_fn.symbol))
     }
 
-    pub(super) fn emit_contract_operand(&mut self, operand: &MirOperand, expected: u8) -> crate::Result<()> {
+    pub(super) fn emit_contract_operand(&mut self, operand: &WasmOperand, expected: u8) -> crate::Result<()> {
         match operand {
-            MirOperand::Value(value) => {
+            WasmOperand::Value(value) => {
                 let local = self.planned_value_local(*value);
                 let actual = self.wasm_local_value_type(local);
                 if actual != expected {
@@ -145,13 +145,13 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_local_get(local);
                 Ok(())
             }
-            MirOperand::Constant(constant) => self.emit_load_constant_for_slot(constant, expected),
-            MirOperand::Symbol(_) => panic!("WASM CFG 操作数必须是 SSA 值或已类型化常量"),
-            MirOperand::Item(_) => panic!("WASM CFG callable identity cannot be a block operand"),
+            WasmOperand::Constant(constant) => self.emit_load_constant_for_slot(constant, expected),
+            WasmOperand::Symbol(_) => panic!("WASM CFG 操作数必须是 SSA 值或已类型化常量"),
+            WasmOperand::Item(_) => panic!("WASM CFG callable identity cannot be a block operand"),
         }
     }
 
-    fn emit_jump_arguments(&mut self, target: MirBlockRef, arguments: &[MirOperand]) -> crate::Result<()> {
+    fn emit_jump_arguments(&mut self, target: WasmBlockKey, arguments: &[WasmOperand]) -> crate::Result<()> {
         let target_block = self.mir_fn.blocks.iter().find(|block| block.id == target).expect("WASM 跳转目标不存在");
         assert_eq!(target_block.parameters.len(), arguments.len(), "WASM 块参数数量不一致");
         let destinations = target_block.parameters.iter().map(|parameter| self.planned_value_local(*parameter)).collect::<Vec<_>>();

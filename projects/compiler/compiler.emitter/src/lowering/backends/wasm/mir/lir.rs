@@ -1,7 +1,7 @@
 //! Wasm 目标私有低层 IR（LIR）与函数体编码器。
 //!
 //! 所有权边界（01 §5.5）：`wasm/mir` 的降低器把计划事实转成 [`WasmBodyInstruction`]；
-//! 本模块只按 Wasm 二进制编码形把 LIR 写成函数体字节，不读取 `ExecutableFunction`、
+//! 本模块只按 Wasm 二进制编码形把 LIR 写成函数体字节，不读取 `WasmFunctionInput`、
 //! 计划、类型注册表或布局。控制指令的块类型、立即数与 br_table 深度都是显式 LIR
 //! 事实，编码器不做任何 CFG 或语义推导。
 

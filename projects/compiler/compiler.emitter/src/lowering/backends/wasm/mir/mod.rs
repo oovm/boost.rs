@@ -3,6 +3,10 @@
 //! **Not** a second MIR. Language CFG/types stay in Semantic MIR; this facade and its
 //! submodules own Wasm physical encoding only.
 //!
+//! 本子系统只消费 [`super::input`] 结算出的 Wasm 私有词汇：跨目标公共 IR
+//! （`FragmentSubmission` / `TargetExecutionPlan` / 公共可执行合同与语义类型）
+//! 在 `settle_from_submission` 处收敛，编码层不再直接读取任何公共形状。
+//!
 //! - [control] — CFG block dispatch helpers
 //! - [representation] — unique Wasm storage / value-type rules
 //! - [type_registry] — GC type-index registration
@@ -19,26 +23,24 @@
 // 从 data_binary_wasm re-export（calls.rs / control.rs / lowerer.rs 通过 super::* 消费）
 pub(super) use data_binary_wasm::{BLOCKTYPE_EMPTY, VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64, WasmOpcode};
 
-// 从 crate::backend_plan_views re-export
-pub(super) use crate::backend_plan_views::{
-    ExecutableBlock as MirBlock, ExecutableBlockRef as MirBlockRef, ExecutableConstant as MirConstant,
-    ExecutableDispatchKind as MirDispatchKind, ExecutableFunction as MirFunction, ExecutableInstruction as MirInstruction,
-    ExecutableInstructionKind as MirInstructionKind, ExecutableOperand as MirOperand, ExecutableReceiverPassingKind as ReceiverPassingKind,
-    ExecutableStorageKind as MirStorageKind, ExecutableStorageKind as StorageKind, ExecutableTerminator as MirTerminator,
-    ExecutableValueRef as MirValueRef, SemanticType,
-};
-
 /// `f32` 在 wasm 侧的唯一 valtype 常量（`0x7D`）；权威定义见 `wasm::gc::VALTYPE_F32`。
 pub(super) use crate::lowering::backends::wasm::gc::VALTYPE_F32;
 
 /// `f32` 的常量与 memarg 编码由 `data-binary-wasm` 拥有；emitter 不再保留本地发射点。
 pub(super) use data_binary_wasm::{encode_f32_const, encode_f32_load};
 
-pub(super) use super::super::executable::ExecutableLoweringContext;
-pub(super) use compiler_types::{LayoutId, NominalInstanceId, VariantId};
-
-// 从 crate 顶层模块 re-export
-pub(super) use crate::contracts::{ArrayInitialization, instruction_primary_result};
+// ── Wasm 私有结算词汇（唯一来源：super::input）────────────────────────────
+pub(super) use super::input::{
+    abi_structure_for_type, abi_structure_for_type_with_layouts, canonical_parameter_identities, canonical_type_spelling, collect_reachable_blocks,
+    declared_text_projection, operand_carrier, primary_result, sum_identity_facts, sum_variants_of, unresolved_text_abi_reason,
+    validate_frozen_operator, wasm_export_abi, wasm_gc_field_type_byte, wasm_gc_value_carrier_valtype, wasm_js_glue_value_carrier_valtype,
+    WasmAbiField, WasmAbiStructure, WasmAbiVariant, WasmAggregateStructure, WasmArrayInit, WasmBlock, WasmBlockKey, WasmCallableKey, WasmConstant,
+    WasmDispatchKind, WasmFieldFact, WasmFieldKey, WasmFloat64Bits, WasmFunctionInput, WasmFunctionType, WasmImportFact, WasmImportLinkFact,
+    WasmInstruction, WasmInstructionKey, WasmLayoutFact, WasmLayoutKey, WasmLayoutKeyFact, WasmModuleInput, WasmNominalKey, WasmOperation,
+    WasmOperand, WasmProgramTextRepresentation, WasmReceiverPassingKind, WasmSequenceLevel, WasmSequenceStructure, WasmSingletonFact,
+    WasmStorageClass, WasmSumLayoutFact, WasmSumRep, WasmSumVariantFact, WasmSumVariantLayoutFact, WasmTerminator, WasmTypeFact, WasmValue,
+    WasmValueKey, WasmValueOrigin, WasmVariantKey, WasmWitnessObject,
+};
 
 // GC 数组冻结计划是 wasm lane 私有事实，定义在本 lane 的 `array` 模块。
 pub(crate) use array::{WasmGcArrayOperation, WasmGcArrayOperatorPlan};
@@ -81,17 +83,4 @@ mod type_registry;
 
 // ── Facade pub(crate) entrances (wasm 后端唯一对外入口) ──────────────────
 
-pub(crate) use entry::{augment_wasm_with_value_aggregate_metadata, lower_fragment_mir_to_wasm_module, lower_fragment_mir_to_wasm_module_for};
-pub(crate) use singleton::{append_singleton_metadata_sections, augment_wasm_with_singleton_accessors, singleton_metadata_line};
-
-/// Wasm 物理导出 ABI 的私有派生点。
-///
-/// 公共 [`crate::TargetExecutionPlan`] 只携带逻辑导出身份与签名，构造时不再
-/// 为任何目标预先冻结物理载体。Wasm lane 在需要导出 ABI 时按函数签名现场冻结；
-/// 本 lane 的载体合同不会写回共享计划，其它 lane 也不受 Wasm 载体资格约束。
-pub(crate) fn wasm_library_export_abi(
-    plan: &crate::TargetExecutionPlan,
-    instance: &compiler_types::ItemInstanceId,
-) -> crate::Result<crate::lowering::backends::wasm::abi::WasmLibraryExportAbi> {
-    crate::lowering::backends::wasm::abi::freeze_wasm_export_abi_for(plan, instance)
-}
+pub(crate) use entry::{augment_wasm_with_value_aggregate_metadata, lower_fragment_mir_to_wasm_module_for};

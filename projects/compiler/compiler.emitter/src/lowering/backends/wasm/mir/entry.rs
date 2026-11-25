@@ -2,42 +2,39 @@
 
 use super::{
     super::{
-        super::executable::ExecutableLoweringContext,
         cabi::{
             CABI_HEAP_GLOBAL_INDEX, cabi_heap_base_after_data, cabi_heap_global_section, memory_min_pages_for_heap_base,
             wasm_cabi_realloc_bump_body,
         },
         gc::{WASM_GC_ANYREF, wasm_gc_array_type, wasm_gc_struct_type},
         sections::{
-            code_section_bytes, data_section_bytes, decode_uleb128, elem_section_bytes, encode_sleb128_i32, encode_uleb128,
-            export_section_bytes, function_section_bytes, import_section_bytes, memory_section_bytes, table_section_bytes, type_section_bytes,
-            wasm_function_body, wasm_function_type,
+            code_section_bytes, data_section_bytes, decode_uleb128, elem_section_bytes, encode_sleb128_i32, encode_uleb128, export_section_bytes,
+            function_section_bytes, import_section_bytes, memory_section_bytes, table_section_bytes, type_section_bytes, wasm_function_body,
+            wasm_function_type,
         },
     },
-    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, MirInstructionKind, MirOperand, StorageKind, Utf8HostHandleMaterializePlan,
+    HostHandleToManagedUtf8Plan, ManagedUtf8ToHostHandlePlan, WasmOperation, WasmOperand, WasmStorageClass, Utf8HostHandleMaterializePlan,
     VALTYPE_F32, WASM_GC_EXTERNREF, WasmBodyInstruction, WasmGcArrayOperation, WasmOperatorBinding, encode_f32_const, encode_wasm_body,
     imports::{
         build_callee_import_index, build_callee_wasm_operator_index, build_string_literal_index, build_wasi_callee_import_index,
-        collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index,
-        host_import_signature_index, validate_string_literal_payloads, wasi_core_import_name, wasm_import_type_bytes_for_host,
+        collect_mir_string_literals, collect_wasi_host_imports, collect_wasm_host_imports, const_utf8_import_index, host_import_signature_index,
+        validate_string_literal_payloads, wasi_core_import_name, wasm_import_type_bytes_for_host,
     },
     library_invoke,
     lowerer::lower_mir_function_to_wasm_bytes,
     representation::{
         is_js_glue_host_string_type, layout_needs_gc_struct, type_is_inline_aggregate, type_is_wasm_gc_heap_reference,
-        wasm_function_abi_value_type_for, wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type_for,
-        wasm_return_value_type,
+        wasm_function_abi_value_type_for, wasm_gc_field_type_byte_for_glue, wasm_param_types, wasm_param_value_type_for, wasm_return_value_type,
     },
     strings::{
         build_wasi_string_data_section, build_wasi_string_literal_offsets, wasi_string_data_section_size, wasm_function_type_param_bytes,
         wasm_function_type_result_byte,
     },
     type_registry::{register_gc_array_types, register_gc_struct_types, register_gc_sum_types, wasm_array_element_type_key},
+    WasmCallableKey, WasmFunctionInput, WasmImportFact, WasmLayoutKey, WasmModuleInput, WasmNominalKey, WasmSumLayoutFact, WasmTypeFact,
+    primary_result, wasm_export_abi,
 };
 use crate::{
-    FragmentSubmission,
-    backend_plan_views::SemanticType,
-    contracts::instruction_primary_result,
     emitter_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
 };
 use data_binary_wasm::{
@@ -50,92 +47,68 @@ use data_binary_wasm::{
 };
 
 use compiler_target::HostProjectionBoundary;
-use compiler_types::{ItemInstanceId, LayoutId};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn build_param_types_by_instance(
-    ctx: &ExecutableLoweringContext,
-    submission: &FragmentSubmission,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> crate::Result<BTreeMap<ItemInstanceId, Vec<u8>>> {
-    submission
-        .backend_plan
+) -> crate::Result<BTreeMap<WasmCallableKey, Vec<u8>>> {
+    input
         .instances()
-        .into_iter()
+        .iter()
         .map(|instance| {
-            let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
-            let params = wasm_param_types(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
-            Ok((instance, params))
+            let function = input.function(instance).expect("Compiler 实例必须有函数体");
+            let params = wasm_param_types(input, function, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+            Ok((*instance, params))
         })
         .collect()
 }
 
 pub(super) fn build_return_types_by_instance(
-    ctx: &ExecutableLoweringContext,
-    submission: &FragmentSubmission,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     js_glue_utf8_as_anyref: bool,
-) -> crate::Result<BTreeMap<ItemInstanceId, Option<u8>>> {
-    submission
-        .backend_plan
+) -> crate::Result<BTreeMap<WasmCallableKey, Option<u8>>> {
+    input
         .instances()
-        .into_iter()
+        .iter()
         .map(|instance| {
-            let view = submission.backend_plan.get_function(&instance).expect("Compiler 实例必须有函数体");
-            let return_type = wasm_return_value_type(ctx, &view.function, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
-            Ok((instance, return_type))
+            let function = input.function(instance).expect("Compiler 实例必须有函数体");
+            let return_type = wasm_return_value_type(input, function, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+            Ok((*instance, return_type))
         })
         .collect()
-}
-
-pub(crate) fn lower_fragment_mir_to_wasm_module(
-    submission: &FragmentSubmission,
-    export_name: &str,
-) -> crate::Result<(WasmBinaryModule, Vec<(String, String)>)> {
-    lower_fragment_mir_to_wasm_module_for(
-        submission,
-        export_name,
-        HostProjectionBoundary::WasmJsGlue,
-        crate::emitter_backend_wasi::WasiPreview::Preview2,
-        crate::emitter_backend_wasi::WasmPackageKind::Binary,
-    )
 }
 
 /// 宿主模式只由显式 `host_boundary` 决定；`export_name` 是入口函数的导出符号，
 /// 由宿主边界的冻结词汇给出（`main` / `_start`），不取自 `[export]` 公开名。
 /// `export_name` 不参与运行环境推断。
 pub(crate) fn lower_fragment_mir_to_wasm_module_for(
-    submission: &FragmentSubmission,
+    input: &WasmModuleInput,
     export_name: &str,
     host_boundary: HostProjectionBoundary,
     wasi_preview: crate::emitter_backend_wasi::WasiPreview,
     wasm_package_kind: crate::emitter_backend_wasi::WasmPackageKind,
 ) -> crate::Result<(WasmBinaryModule, Vec<(String, String)>)> {
-    // 存储类选择的唯一闸门：编码前拒绝无身份的名义类型残差。
-    // 形态判断发生在 `storage_for_type` / `wasm_param_value_type` / GC 字段字节之前。
-    crate::lowering::shared::executable::validate_storage_identities(submission).map_err(|error| {
-        let owner = if error.function.is_empty() { error.site.clone() } else { format!("{} at {}", error.function, error.site) };
-        format!("WASM pre-emission verifier: {owner} 携带无身份名义类型 `{}`；declaration / `TypeId` 缺失时不得按短名解析存储类", error.ty)
-    })?;
     let wasi_mode = matches!(host_boundary, HostProjectionBoundary::WasiComponent);
-    let operations = submission.backend_plan.instances();
+    let operations = input.instances();
     // 字符串字面量属于被发射模块本身，与导出名是 `main` 还是库导出无关；
     // 只有常量载体（`const_utf8` / WASI 偏移）在两种宿主形态下不同。
-    let string_literals = collect_mir_string_literals(submission, &operations);
+    let string_literals = collect_mir_string_literals(input, operations);
     let mut host_imports = if wasi_mode {
-        collect_wasi_host_imports(submission, wasi_preview)?
+        collect_wasi_host_imports(input, wasi_preview)?
     }
     else {
         // 入口模块与库导出统一消费 fragment/plan 冻结身份声明的宿主导入表；
         // 确有字符串字面量时再合成 `const_utf8`。宿主导入 callable 不能因为
         // 导出名不是 `main` 就失去 `callee_import_index` 注册路径。
-        collect_wasm_host_imports(submission, !string_literals.is_empty())?
+        collect_wasm_host_imports(input, !string_literals.is_empty())?
     };
     // WASI 宿主负责提供进程 argv：入口声明单个首位动态 `[utf8]` argv 形参时，
     // 入口包装体必须从 `wasi:cli/environment#get-arguments` 取值。该导入属于
     // 宿主边界本身，不由用户源码显式声明——否则 argv 形参永远只会拿到空数组。
-    if wasi_mode && wasi_entry_declares_argv(submission) {
+    if wasi_mode && wasi_entry_declares_argv(input) {
         let key = crate::emitter_backend_wasi::wasi_argv_import(wasi_preview);
         if !host_imports.contains(&key) {
             host_imports.push(key);
@@ -143,19 +116,18 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
     // `import_count` 在 managed→host 句柄转换导入按需合成之后再取（见下方冻结步）。
     let callee_import_index = if wasi_mode {
-        build_wasi_callee_import_index(submission, &host_imports, wasi_preview)?
+        build_wasi_callee_import_index(input, &host_imports, wasi_preview)?
     }
     else {
-        build_callee_import_index(submission, &host_imports)?
+        build_callee_import_index(input, &host_imports)?
     };
-    let callee_wasm_operator = build_callee_wasm_operator_index(submission)?;
+    let callee_wasm_operator = build_callee_wasm_operator_index(input)?;
     // Node JS-glue：宿主导入与 `.mjs` 启动壳统一使用 i32 句柄（`hostIntern` / `const_utf8`），
     // ?`wasm_import_type_for_field` ?i32 签名对齐。若?utf8 标成 anyref，call 实参?
     // 被降?`ref.null`，丢?`cli_get_*` 返回的句柄（自举 `exports.build` 会静默失败）?
     // WASI 轨同样以线性内?i32 偏移传字符串?
     let js_glue_utf8_as_anyref = false;
-    let ctx = ExecutableLoweringContext::new(submission, crate::lowering::shared::physical_layout::LayoutPolicy::WASM32)?;
-    let host_import_signatures = host_import_signature_index(submission)?;
+    let host_import_signatures = host_import_signature_index(input)?;
     let mut module = WasmBinaryModule::new();
     // main_type ?type 段的?0 ?() -> i32，供 `build` 桩函数使用?
     // ?MIR 函数的类型从?1 项开始追加，各自携带独立的返回类型?
@@ -165,7 +137,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     for (module, field) in &host_imports {
         let import_type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         let type_bytes =
-            wasm_import_type_bytes_for_host(submission, &ctx, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
+            wasm_import_type_bytes_for_host(input, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
         type_indices.push(type_bytes);
         import_type_entries.push(import_type_index);
     }
@@ -173,13 +145,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut code_bodies = Vec::new();
     let mut exports = Vec::new();
     // 语言规范：wasm/wasi 强制 wasm-gc。始终为引用 layout 注册 structtype?
-    let gc_struct_type_indices = register_gc_struct_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref)?;
+    let gc_struct_type_indices = register_gc_struct_types(input, &mut type_indices, js_glue_utf8_as_anyref)?;
     // ?heap array element_type 注册 wasm-gc arraytype（Node/V8 ?WASI/wasmtime 均支持）?
     // 必须?glue 感知路径：`[utf8]` →?i32 元，禁止 Named→anyref 误登记?
-    let mut gc_array_type_indices = register_gc_array_types(&ctx, &mut type_indices, js_glue_utf8_as_anyref)?;
+    let mut gc_array_type_indices = register_gc_array_types(input, &mut type_indices, js_glue_utf8_as_anyref)?;
     // sum 的物理布局（tag + anyref payload）是后端私有决定，必须按 nominal identity 单独注册，
     // 让 `SumNew` 构造的对象与 `SumPayloadGet` / `SumVariantIs` 的 `ref.cast` 指向同一条目。
-    let gc_sum_type_indices = register_gc_sum_types(&ctx, &mut type_indices);
+    let gc_sum_type_indices = register_gc_sum_types(input, &mut type_indices);
     // Scalar unite payloads such as utf8/bool/i32 handles need boxing into an
     // `[i32]` struct before entering the anyref payload slot.
     let gc_i32_box_type_index = {
@@ -208,7 +180,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         type_index
     };
     // 合同 §5：managed 字符串 → 宿主 i32 句柄的转换在目标计划阶段冻结，编码期只消费配方表。
-    // `SemanticType::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
+    // `WasmTypeFact::Utf8` SSA 值携带已登记 gc struct layout 时，宿主导入边界必须按配方转换；
     // 合成导入 `env::host_intern_utf8` 仅在模块确有 managed 字符串时按需追加，因此
     // `import_count` 在冻结步之后再取。
     let managed_utf8_to_host_handle = if wasi_mode {
@@ -216,8 +188,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
     else {
         freeze_managed_utf8_to_host_handle_plans(
-            submission,
-            &ctx,
+            input,
             &gc_struct_type_indices,
             &mut gc_array_type_indices,
             &mut type_indices,
@@ -237,8 +208,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
     else {
         freeze_host_handle_to_managed_utf8_plans(
-            submission,
-            &ctx,
+            input,
             &gc_struct_type_indices,
             &mut gc_array_type_indices,
             &mut type_indices,
@@ -255,7 +225,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         BTreeMap::new()
     }
     else {
-        freeze_managed_utf8_return_to_host_handle_plans(submission, &managed_utf8_to_host_handle, &gc_struct_type_indices)?
+        freeze_managed_utf8_return_to_host_handle_plans(input, &managed_utf8_to_host_handle, &gc_struct_type_indices)?
     };
     // 合同 §5：宿主 i32 句柄 → managed 字符串边界。产生句柄的两类站点是 `[utf8]`
     // 数组元素（`array.get`）与宿主导入返回值（`utf8_*` 宿主函数）；结果 SSA 值绑定
@@ -267,8 +237,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
     else {
         freeze_utf8_host_handle_materialize_plans(
-            submission,
-            &ctx,
+            input,
             &callee_wasm_operator,
             &callee_import_index,
             &gc_struct_type_indices,
@@ -285,12 +254,12 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // WASI 轨：构建字符串字面量到线性内存偏移量的映射，存入 data 段?
     let string_literal_offset = if wasi_mode { build_wasi_string_literal_offsets(&string_literals) } else { BTreeMap::new() };
     let const_utf8_import = const_utf8_import_index(&host_imports);
-    validate_string_literal_payloads(submission, &operations, &string_literal_index, &string_literal_offset, const_utf8_import, wasi_mode)?;
+    validate_string_literal_payloads(input, operations, &string_literal_index, &string_literal_offset, const_utf8_import, wasi_mode)?;
     // 仅对确有 MIR 体的 operation 分配稠密函数下标，避免「operations 枚举下标」与
     // `code_bodies.len()` 错位：错位时 call 会打到别人的 (param i64) 却按本函?anyref 签名?ref.null?
-    let mir_operations: Vec<(compiler_types::ItemInstanceId, _)> = operations
+    let mir_operations: Vec<(WasmCallableKey, &WasmFunctionInput)> = operations
         .iter()
-        .filter_map(|operation| submission.backend_plan.get_function(operation).map(|view| (*operation, view.function)))
+        .filter_map(|operation| input.function(operation).map(|function| (*operation, function)))
         .collect();
     let base_function_index = import_count;
     let mut function_index_by_instance = BTreeMap::new();
@@ -298,8 +267,8 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut return_types_by_function_index: BTreeMap<u32, Option<u8>> = BTreeMap::new();
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
         let wasm_idx = base_function_index + dense as u32;
-        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
-        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let params = wasm_param_types(input, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let ret = wasm_return_value_type(input, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         param_types_by_function_index.insert(wasm_idx, params);
         return_types_by_function_index.insert(wasm_idx, ret);
         function_index_by_instance.insert(*instance, wasm_idx);
@@ -312,40 +281,40 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         visible_param_types: Vec<u8>,
         return_type: Option<u8>,
         has_environment: bool,
-        environment_layout: Option<LayoutId>,
-        environment_type: Option<SemanticType>,
+        environment_layout: Option<WasmLayoutKey>,
+        environment_type: Option<WasmTypeFact>,
     }
-    let mut function_value_plans: BTreeMap<ItemInstanceId, FunctionValuePlan> = BTreeMap::new();
+    let mut function_value_plans: BTreeMap<WasmCallableKey, FunctionValuePlan> = BTreeMap::new();
     for (_, mir_fn) in mir_operations.iter() {
         for block in &mir_fn.blocks {
             for instruction in &block.instructions {
-                let MirInstructionKind::LoadFunctionRef { instance, environment, captured } = &instruction.kind
+                let WasmOperation::LoadFunctionRef { instance, environment, captured } = &instruction.kind
                 else {
                     continue;
                 };
-                let Some(output) = instruction_primary_result(instruction)
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少结果槽: {}", mir_fn.symbol));
                 };
-                let Some(SemanticType::Function(signature)) = mir_fn.value_types.get(&output)
+                let Some(WasmTypeFact::Function(signature)) = mir_fn.value_types.get(&output)
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少冻结 Function 签名: {}", mir_fn.symbol));
                 };
                 let visible_param_types: Vec<u8> = signature
                     .params
                     .iter()
-                    .map(|ty| wasm_function_abi_value_type_for(&ctx, ty, &gc_struct_type_indices, js_glue_utf8_as_anyref))
+                    .map(|ty| wasm_function_abi_value_type_for(input, ty, &gc_struct_type_indices, js_glue_utf8_as_anyref))
                     .collect::<crate::Result<Vec<u8>>>()?;
                 let return_type = match &signature.return_type {
-                    SemanticType::Unit | SemanticType::Bottom => None,
-                    other => Some(wasm_function_abi_value_type_for(&ctx, other, &gc_struct_type_indices, js_glue_utf8_as_anyref)?),
+                    WasmTypeFact::Unit | WasmTypeFact::Bottom => None,
+                    other => Some(wasm_function_abi_value_type_for(input, other, &gc_struct_type_indices, js_glue_utf8_as_anyref)?),
                 };
                 let (environment_layout, environment_type) = match environment {
-                    Some(MirOperand::Value(value)) => {
+                    Some(WasmOperand::Value(value)) => {
                         // 泛型 lambda 的环境类型常是 `Apply(Nominal, args)`，不一定落在
-                        // `SemanticType::Nominal`；layout 身份以计划冻结的 `value_layouts` 为准。
+                        // `WasmTypeFact::Nominal`；layout 身份以计划冻结的 `value_layouts` 为准。
                         let layout = mir_fn.value_layouts.get(value).copied().or_else(|| match mir_fn.value_types.get(value) {
-                            Some(SemanticType::Nominal { layout, .. }) => Some(*layout),
+                            Some(WasmTypeFact::Nominal { layout, .. }) => Some(*layout),
                             _ => None,
                         });
                         (layout, mir_fn.value_types.get(value).cloned())
@@ -425,21 +394,21 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 函数自身签名的 functype 反查表（静态调用/见证调用仍消费它）；间接调用签名
     // 已在上面按「可见形参 + env」登记，两者按签名字节共用同一反查表。
     for (dense, (_, mir_fn)) in mir_operations.iter().enumerate() {
-        let params = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
-        let ret = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let params = wasm_param_types(input, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let ret = wasm_return_value_type(input, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         type_index_by_signature.entry((params, ret)).or_insert(function_type_base + dense as u32);
     }
-    let function_value_table_slots: BTreeMap<ItemInstanceId, u32> =
+    let function_value_table_slots: BTreeMap<WasmCallableKey, u32> =
         function_value_plans.keys().copied().enumerate().map(|(slot, instance)| (instance, slot as u32)).collect();
 
     // Node JS-glue：宿主字符串?anyref 传递；?`wasm_import_type_for_field` ?anyref 签名对齐?
-    let param_types_by_instance = build_param_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
-    let return_types_by_instance = build_return_types_by_instance(&ctx, submission, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+    let param_types_by_instance = build_param_types_by_instance(input, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+    let return_types_by_instance = build_return_types_by_instance(input, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
     let import_param_types: Vec<Vec<u8>> = host_imports
         .iter()
         .map(|(module, field)| -> crate::Result<Vec<u8>> {
             let type_bytes =
-                wasm_import_type_bytes_for_host(submission, &ctx, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
+                wasm_import_type_bytes_for_host(input, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
             Ok(wasm_function_type_param_bytes(&type_bytes))
         })
         .collect::<crate::Result<Vec<_>>>()?;
@@ -447,18 +416,18 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         .iter()
         .map(|(module, field)| -> crate::Result<Option<u8>> {
             let type_bytes =
-                wasm_import_type_bytes_for_host(submission, &ctx, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
+                wasm_import_type_bytes_for_host(input, wasi_mode, module, field, js_glue_utf8_as_anyref, &host_import_signatures)?;
             Ok(wasm_function_type_result_byte(&type_bytes))
         })
         .collect::<crate::Result<Vec<_>>>()?;
     let mut mir_wasm_functions: Vec<(u32, String)> = Vec::new();
 
     for (dense, (instance, mir_fn)) in mir_operations.iter().enumerate() {
-        let full = submission.backend_plan.abi_name_for_instance(*instance).ok_or_else(|| format!("函数实例缺少 ABI 标签"))?.to_string();
-        let param_types = wasm_param_types(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let full = input.abi_labels.get(instance).ok_or_else(|| format!("函数实例缺少 ABI 标签"))?.clone();
+        let param_types = wasm_param_types(input, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         // 每个函数独立计算返回类型,取代旧的模块?`returns_i32`?
         // 引用返回类型 →?anyref (VALTYPE_ANYREF)；i32 →?VALTYPE_I32；void →?空?
-        let return_value_type = wasm_return_value_type(&ctx, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+        let return_value_type = wasm_return_value_type(input, mir_fn, &gc_struct_type_indices, js_glue_utf8_as_anyref)?;
         let result_types: &[u8] = match &return_value_type {
             Some(byte) => std::slice::from_ref(byte),
             None => &[],
@@ -469,7 +438,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         function_indices.push(type_index);
         let wasm_index = import_count + u32::try_from(code_bodies.len()).expect("code body index overflow");
         code_bodies.push(wasm_function_body(lower_mir_function_to_wasm_bytes(
-            submission,
+            input,
             mir_fn,
             return_value_type,
             js_glue_utf8_as_anyref,
@@ -502,10 +471,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
         )?));
         mir_wasm_functions.push((wasm_index, full.clone()));
         // wasm 命名合同：有注解用注解名，否则源码名。
-        if let Some(public_name) = submission.backend_plan.export_public_name(instance) {
+        if let Some(public_name) = input.export_public_name(instance) {
             exports.push((public_name.as_str(), WasmExternalKind::Func.as_u8(), wasm_index));
         }
-        else if submission.backend_plan.entry_operation() == Some(*instance) {
+        else if input.entry_operation == Some(*instance) {
             exports.push((export_name, WasmExternalKind::Func.as_u8(), wasm_index));
         }
     }
@@ -589,14 +558,13 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             // anyref 反推。WIT `run: func() -> result` 与 core `_start` 是零参，携带
             // argv 的入口经无参包装体调用。（非零退出状态属 `wasi:cli/exit`，不在
             // 这个空 `result` 里。）
-            let entry_instance = submission.backend_plan.entry_operation().expect("WASI 入口必须保留 Compiler 实例身份");
+            let entry_instance = input.entry_operation.expect("WASI 入口必须保留 Compiler 实例身份");
             let entry_return = return_types_by_instance.get(&entry_instance).copied();
             // 入口形参合同只认冻结函数体：缺体时不得把「未知」当成「零形参」，
             // 否则会发射忽略实参的 `_start` 并静默丢掉 argv。
-            let entry_mir_params: Vec<SemanticType> = submission
-                .backend_plan
-                .get_function(&entry_instance)
-                .map(|view| view.function.param_types)
+            let entry_mir_params: Vec<WasmTypeFact> = input
+                .function(&entry_instance)
+                .map(|function| function.param_types.clone())
                 .ok_or_else(|| format!("WASI 入口 `{entry_instance}` 缺少冻结函数体：无法确认入口形参合同，拒绝按零形参处理"))?;
             let entry_wasm_params = param_types_by_function_index.get(&index).cloned().expect("WASI 入口缺少物理签名");
 
@@ -608,7 +576,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             let argv_array_ty = gc_array_type_indices.get("Utf8").copied();
             let entry_argv_plan = match entry_mir_params.as_slice() {
                 [] => None,
-                [SemanticType::Array(element)] if is_js_glue_host_string_type(element.as_ref()) => {
+                [WasmTypeFact::Array(element)] if is_js_glue_host_string_type(element.as_ref()) => {
                     match (get_arguments_import, argv_array_ty) {
                         (Some(import_index), Some(array_ty)) => Some((import_index, array_ty)),
                         _ => {
@@ -703,7 +671,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 替换为 i32 句柄；体内先按配方物化形参，调用内部函数后再按配方把返回物化，
     // 导出重定向到 wrapper。未命中任一配方的实例不生成 wrapper。
     if !wasi_mode {
-        let wrapper_instances: BTreeSet<ItemInstanceId> =
+        let wrapper_instances: BTreeSet<WasmCallableKey> =
             host_handle_to_managed_utf8.keys().chain(managed_utf8_return_to_host_handle.keys()).copied().collect();
         for instance in wrapper_instances {
             let empty_plans = Vec::new();
@@ -766,8 +734,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             );
             let wrapper_func_index = import_count + u32::try_from(code_bodies.len()).expect("code body overflow");
             code_bodies.push(wasm_function_body(wrapper_body));
-            let public_name = submission
-                .backend_plan
+            let public_name = input
                 .export_public_name(&instance)
                 .cloned()
                 .ok_or_else(|| format!("库导出 `{instance}` 物化配方缺少公开导出名"))?;
@@ -790,8 +757,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     let mut accessor_export_names: Vec<String> = Vec::new();
     if wasm_package_kind == WasmPackageKind::Library {
         emit_library_field_accessors(
-            submission,
-            &ctx,
+            input,
             &gc_struct_type_indices,
             &gc_array_type_indices,
             &gc_sum_type_indices,
@@ -807,7 +773,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
             &mut accessor_export_names,
         )?;
     }
-    library_invoke::append_library_invoke_section(wasm_package_kind, submission, &mut module)?;
+    library_invoke::append_library_invoke_section(wasm_package_kind, input, &mut module)?;
 
     module.sections.push(type_section_bytes(type_indices));
     if !host_imports.is_empty() {
@@ -879,8 +845,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     }
     append_wasm_spy_metadata_sections(
         &mut module,
-        &ctx,
-        submission,
+        input,
         import_count,
         &mir_wasm_functions,
         &gc_struct_type_indices,
@@ -891,41 +856,40 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
 
 /// 目标计划阶段冻结「managed 字符串 → 宿主 i32 句柄」转换配方（合同 §5）。
 ///
-/// 扫描所有函数携带 gc struct layout 的 `SemanticType::Utf8` SSA 值：这些值在宿主导入
+/// 扫描所有函数携带 gc struct layout 的 `WasmTypeFact::Utf8` SSA 值：这些值在宿主导入
 /// 边界（ABI 声明 i32 句柄）必须由编码期按配方转换，转换事实不允许在编码阶段
 /// 按类型名或布局形状重新推导。字节字段槽来自 layout 的整数字节数组字段，
 /// arraytype 缺失时按注册表同一构造器补登记；合成导入 `env::host_intern_utf8`
 /// 仅在确有 managed 字符串时追加到导入表尾部。
 #[allow(clippy::too_many_arguments)]
 fn freeze_managed_utf8_to_host_handle_plans(
-    submission: &FragmentSubmission,
-    ctx: &ExecutableLoweringContext,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     gc_array_type_indices: &mut BTreeMap<String, u32>,
     type_indices: &mut Vec<Vec<u8>>,
     js_glue_utf8_as_anyref: bool,
     host_imports: &mut Vec<(String, String)>,
     import_type_entries: &mut Vec<u32>,
-    host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
-) -> crate::Result<BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>> {
+    host_import_signatures: &BTreeMap<(String, String), WasmImportFact>,
+) -> crate::Result<BTreeMap<WasmLayoutKey, ManagedUtf8ToHostHandlePlan>> {
     let mut managed_string_layouts = BTreeSet::new();
-    for instance in submission.backend_plan.instances() {
-        let Some(view) = submission.backend_plan.get_function(&instance)
+    for instance in input.instances() {
+        let Some(function) = input.function(instance)
         else {
             continue;
         };
-        for (value, ty) in &view.function.value_types {
+        for (value, ty) in &function.value_types {
             if !is_js_glue_host_string_type(ty) {
                 continue;
             }
-            if let Some(layout_id) = view.function.value_layouts.get(value).copied() {
+            if let Some(layout_id) = function.value_layouts.get(value).copied() {
                 managed_string_layouts.insert(layout_id);
             }
         }
         // 返回值侧与形参侧同载体合同：导出返回的 managed 字符串 layout 也必须在
         // 配方表内，返回物化 wrapper 不得另造一份转换逻辑。
-        if is_js_glue_host_string_type(&view.function.return_type) {
-            if let Some(layout_id) = view.function.return_layout {
+        if is_js_glue_host_string_type(&function.return_type) {
+            if let Some(layout_id) = function.return_layout {
                 managed_string_layouts.insert(layout_id);
             }
         }
@@ -939,8 +903,7 @@ fn freeze_managed_utf8_to_host_handle_plans(
         None => {
             let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
             type_indices.push(wasm_import_type_bytes_for_host(
-                submission,
-                ctx,
+                input,
                 false,
                 "env",
                 "host_intern_utf8",
@@ -960,14 +923,14 @@ fn freeze_managed_utf8_to_host_handle_plans(
             continue;
         };
         let layout =
-            ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM managed 字符串转换冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
+            input.layout_by_id(layout_id).ok_or_else(|| format!("WASM managed 字符串转换冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
         let (bytes_field_slot, element_type) = layout
             .fields
             .iter()
             .enumerate()
             .find_map(|(index, field)| match &field.ty {
-                SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
-                    matches!(element.as_ref(), SemanticType::Integer8 { .. }).then(|| (index as u32, element.as_ref().clone()))
+                WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } => {
+                    matches!(element.as_ref(), WasmTypeFact::Integer8 { .. }).then(|| (index as u32, element.as_ref().clone()))
                 }
                 _ => None,
             })
@@ -993,29 +956,27 @@ fn freeze_managed_utf8_to_host_handle_plans(
 /// 目标计划阶段冻结「宿主 i32 句柄 → managed 字符串」库导出边界物化配方（合同 §5）。
 ///
 /// 扫描已登记公开导出名的实例：entry 块形参 SSA 值绑定已登记 gc struct layout 的
-/// `SemanticType::Utf8` 形参，其物理槽是 anyref，而宿主按冻结库 ABI 传 i32 句柄，导出
+/// `WasmTypeFact::Utf8` 形参，其物理槽是 anyref，而宿主按冻结库 ABI 传 i32 句柄，导出
 /// 边界必须物化。物化事实与冻结 ABI 载体交叉核对：载体不是 `i32` 说明合同已坏，
 /// 结构化失败，禁止静默回落。字节字段槽与 arraytype 推导与 managed→host 冻结同法；
 /// 合成导入 `env::host_utf8_extract` 仅在确有需物化形参时追加到导入表尾部。
 #[allow(clippy::too_many_arguments)]
 fn freeze_host_handle_to_managed_utf8_plans(
-    submission: &FragmentSubmission,
-    ctx: &ExecutableLoweringContext,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     gc_array_type_indices: &mut BTreeMap<String, u32>,
     type_indices: &mut Vec<Vec<u8>>,
     js_glue_utf8_as_anyref: bool,
     host_imports: &mut Vec<(String, String)>,
     import_type_entries: &mut Vec<u32>,
-    host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
-) -> crate::Result<BTreeMap<ItemInstanceId, Vec<HostHandleToManagedUtf8Plan>>> {
-    let mut plans_by_instance: BTreeMap<ItemInstanceId, Vec<HostHandleToManagedUtf8Plan>> = BTreeMap::new();
-    for (instance, public_name) in submission.backend_plan.export_names() {
-        let Some(view) = submission.backend_plan.get_function(instance)
+    host_import_signatures: &BTreeMap<(String, String), WasmImportFact>,
+) -> crate::Result<BTreeMap<WasmCallableKey, Vec<HostHandleToManagedUtf8Plan>>> {
+    let mut plans_by_instance: BTreeMap<WasmCallableKey, Vec<HostHandleToManagedUtf8Plan>> = BTreeMap::new();
+    for (instance, public_name) in input.export_names.iter() {
+        let Some(mir_fn) = input.function(instance)
         else {
             continue;
         };
-        let mir_fn = &view.function;
         let Some(entry_block) = mir_fn.blocks.iter().find(|block| block.id == mir_fn.entry)
         else {
             continue;
@@ -1033,7 +994,7 @@ fn freeze_host_handle_to_managed_utf8_plans(
             else {
                 continue;
             };
-            let abi = super::wasm_library_export_abi(&submission.backend_plan, instance).map_err(|reason| {
+            let abi = wasm_export_abi(input, instance).map_err(|reason| {
                 format!(
                     "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对宿主句柄→managed 物化配方: {reason}"
                 )
@@ -1051,14 +1012,14 @@ fn freeze_host_handle_to_managed_utf8_plans(
                 ));
             }
             let layout =
-                ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM 宿主句柄物化冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
+                input.layout_by_id(layout_id).ok_or_else(|| format!("WASM 宿主句柄物化冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
             let (bytes_field_slot, element_type) = layout
                 .fields
                 .iter()
                 .enumerate()
                 .find_map(|(field_index, field)| match &field.ty {
-                    SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
-                        matches!(element.as_ref(), SemanticType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
+                    WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } => {
+                        matches!(element.as_ref(), WasmTypeFact::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
                     }
                     _ => None,
                 })
@@ -1079,8 +1040,7 @@ fn freeze_host_handle_to_managed_utf8_plans(
                 None => {
                     let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
                     type_indices.push(wasm_import_type_bytes_for_host(
-                        submission,
-                        ctx,
+                        input,
                         false,
                         "env",
                         "host_utf8_extract",
@@ -1111,22 +1071,21 @@ fn freeze_host_handle_to_managed_utf8_plans(
 /// 同一张 managed→host 配方表合成导出 wrapper；载体不是 `i32`、或 layout 已登记
 /// gc struct 却缺少配方，均结构化失败并点名实例与类型，禁止静默退回 anyref 透传。
 fn freeze_managed_utf8_return_to_host_handle_plans(
-    submission: &FragmentSubmission,
-    managed_utf8_to_host_handle: &BTreeMap<LayoutId, ManagedUtf8ToHostHandlePlan>,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
-) -> crate::Result<BTreeMap<ItemInstanceId, ManagedUtf8ToHostHandlePlan>> {
+    input: &WasmModuleInput,
+    managed_utf8_to_host_handle: &BTreeMap<WasmLayoutKey, ManagedUtf8ToHostHandlePlan>,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
+) -> crate::Result<BTreeMap<WasmCallableKey, ManagedUtf8ToHostHandlePlan>> {
     let mut plans = BTreeMap::new();
-    for (instance, public_name) in submission.backend_plan.export_names() {
-        let Some(view) = submission.backend_plan.get_function(instance)
+    for (instance, public_name) in input.export_names.iter() {
+        let Some(mir_fn) = input.function(instance)
         else {
             continue;
         };
-        let mir_fn = &view.function;
         if !is_js_glue_host_string_type(&mir_fn.return_type) {
             continue;
         }
         // 宿主字符串返回类型的冻结载体只能是 i32 句柄；载体不明或分叉即刻结构化失败。
-        let abi = super::wasm_library_export_abi(&submission.backend_plan, instance).map_err(|reason| {
+        let abi = wasm_export_abi(input, instance).map_err(|reason| {
             format!(
                 "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对 managed→宿主句柄返回物化配方: {reason}"
             )
@@ -1173,44 +1132,42 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
 /// 字符串边界同口径。
 #[allow(clippy::too_many_arguments)]
 fn freeze_utf8_host_handle_materialize_plans(
-    submission: &FragmentSubmission,
-    ctx: &ExecutableLoweringContext,
-    callee_wasm_operator: &BTreeMap<ItemInstanceId, (String, WasmOperatorBinding)>,
-    callee_import_index: &BTreeMap<ItemInstanceId, u32>,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    callee_wasm_operator: &BTreeMap<WasmCallableKey, (String, WasmOperatorBinding)>,
+    callee_import_index: &BTreeMap<WasmCallableKey, u32>,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     gc_array_type_indices: &mut BTreeMap<String, u32>,
     type_indices: &mut Vec<Vec<u8>>,
     js_glue_utf8_as_anyref: bool,
     host_imports: &mut Vec<(String, String)>,
     import_type_entries: &mut Vec<u32>,
-    host_import_signatures: &BTreeMap<(String, String), crate::BackendImport>,
-) -> crate::Result<BTreeMap<LayoutId, Utf8HostHandleMaterializePlan>> {
+    host_import_signatures: &BTreeMap<(String, String), WasmImportFact>,
+) -> crate::Result<BTreeMap<WasmLayoutKey, Utf8HostHandleMaterializePlan>> {
     let mut boundary_layouts = BTreeSet::new();
-    for instance in submission.backend_plan.instances() {
-        let Some(view) = submission.backend_plan.get_function(&instance)
+    for instance in input.instances() {
+        let Some(mir_fn) = input.function(instance)
         else {
             continue;
         };
-        let mir_fn = &view.function;
         for block in &mir_fn.blocks {
             for instruction in &block.instructions {
                 let is_handle_boundary_source = match &instruction.kind {
-                    MirInstructionKind::ArrayGet { .. } => true,
+                    WasmOperation::ArrayGet { .. } => true,
                     // 聚合字段读与数组元素读同属宿主 i32 句柄载体：字段物理字节是 i32
                     // 时（`utf8`/`utf16` 已按同一编组合同落成句柄），结果 SSA 若带已登记
                     // gc struct layout 就必须在编码期物化，配方要在这里一并冻结。
-                    MirInstructionKind::TupleGet { layout_id, index, .. } => ctx
+                    WasmOperation::TupleGet { layout_id, index, .. } => input
                         .layout_by_id(*layout_id)
                         .and_then(|layout| layout.fields.get(*index as usize))
                         .map(|field| wasm_gc_field_type_byte_for_glue(&field.ty, js_glue_utf8_as_anyref))
                         .transpose()?
                         .is_some_and(|byte| byte == VALTYPE_I32),
-                    MirInstructionKind::FieldGet { field, .. } => ctx
+                    WasmOperation::FieldGet { field, .. } => input
                         .field_layout_by_id(*field)
                         .map(|(_, field_layout, _)| wasm_gc_field_type_byte_for_glue(&field_layout.ty, js_glue_utf8_as_anyref))
                         .transpose()?
                         .is_some_and(|byte| byte == VALTYPE_I32),
-                    MirInstructionKind::Call { callee: MirOperand::Item(callee), .. } => {
+                    WasmOperation::Call { callee: WasmOperand::Item(callee), .. } => {
                         matches!(
                             callee_wasm_operator.get(callee),
                             Some((_, WasmOperatorBinding::GcArray(plan))) if plan.operation == WasmGcArrayOperation::Get
@@ -1218,7 +1175,7 @@ fn freeze_utf8_host_handle_materialize_plans(
                     }
                     // 字符串常量 / `Utf8` SSA 值是宿主 i32 句柄；写入文本载体局部槽
                     // （`StoreVar` / `Copy` 结果）时同样要在编码期物化。
-                    MirInstructionKind::StoreVar { .. } | MirInstructionKind::Copy { .. } => true,
+                    WasmOperation::StoreVar { .. } | WasmOperation::Copy { .. } => true,
                     _ => false,
                 };
                 if is_handle_boundary_source {
@@ -1241,19 +1198,19 @@ fn freeze_utf8_host_handle_materialize_plans(
                 }
                 // 静态语言调用：宿主 i32 文本句柄实参进入被调方 managed 形参槽时，
                 // 物化配方按被调方 entry 块参数的 layout 冻结。
-                if let MirInstructionKind::Call { callee: MirOperand::Item(callee), arguments, .. } = &instruction.kind {
-                    let Some(view) = submission.backend_plan.get_function(callee)
+                if let WasmOperation::Call { callee: WasmOperand::Item(callee), arguments, .. } = &instruction.kind {
+                    let Some(callee_function) = input.function(callee)
                     else {
                         continue;
                     };
-                    let Some(entry) = view.function.blocks.iter().find(|block| block.id == view.function.entry)
+                    let Some(entry) = callee_function.blocks.iter().find(|block| block.id == callee_function.entry)
                     else {
                         continue;
                     };
                     for (argument, parameter) in arguments.iter().zip(entry.parameters.iter()) {
                         let argument_is_host_handle = match argument {
-                            MirOperand::Constant(_) => true,
-                            MirOperand::Value(value) => {
+                            WasmOperand::Constant(_) => true,
+                            WasmOperand::Value(value) => {
                                 mir_fn.value_layouts.get(value).is_none()
                                     && mir_fn.value_types.get(value).is_some_and(|ty| is_js_glue_host_string_type(ty))
                             }
@@ -1262,7 +1219,7 @@ fn freeze_utf8_host_handle_materialize_plans(
                         if !argument_is_host_handle {
                             continue;
                         }
-                        let Some(layout_id) = view.function.value_layouts.get(parameter).copied()
+                        let Some(layout_id) = callee_function.value_layouts.get(parameter).copied()
                         else {
                             continue;
                         };
@@ -1287,14 +1244,14 @@ fn freeze_utf8_host_handle_materialize_plans(
             continue;
         };
         let layout =
-            ctx.layout_by_id(layout_id).ok_or_else(|| format!("WASM 数组元素物化冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
+            input.layout_by_id(layout_id).ok_or_else(|| format!("WASM 数组元素物化冻结失败: layout_id={layout_id:?} 缺少聚合布局身份"))?;
         let (bytes_field_slot, element_type) = layout
             .fields
             .iter()
             .enumerate()
             .find_map(|(field_index, field)| match &field.ty {
-                SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
-                    matches!(element.as_ref(), SemanticType::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
+                WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } => {
+                    matches!(element.as_ref(), WasmTypeFact::Integer8 { .. }).then(|| (field_index as u32, element.as_ref().clone()))
                 }
                 _ => None,
             })
@@ -1315,8 +1272,7 @@ fn freeze_utf8_host_handle_materialize_plans(
             None => {
                 let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
                 type_indices.push(wasm_import_type_bytes_for_host(
-                    submission,
-                    ctx,
+                    input,
                     false,
                     "env",
                     "host_utf8_extract",
@@ -1495,9 +1451,9 @@ fn emit_host_handle_to_managed_utf8_wrapper_body(
     WasmOpcode::End.encode(body);
 }
 
-pub(super) fn emit_wasi_entry_default_arg(ty: &SemanticType, gc_array_type_indices: &BTreeMap<String, u32>, body: &mut Vec<u8>) {
+pub(super) fn emit_wasi_entry_default_arg(ty: &WasmTypeFact, gc_array_type_indices: &BTreeMap<String, u32>, body: &mut Vec<u8>) {
     match ty {
-        SemanticType::Array(element) | SemanticType::FixedArray { element, .. } => {
+        WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } => {
             let key = wasm_array_element_type_key(element);
             let type_index = gc_array_type_indices.get(&key).copied();
             if let Some(type_index) = type_index {
@@ -1508,12 +1464,12 @@ pub(super) fn emit_wasi_entry_default_arg(ty: &SemanticType, gc_array_type_indic
                 panic!("WASI entry array parameter `{key}` 缺少已注册的 array type");
             }
         }
-        SemanticType::Float64 => encode_f64_const(0.0, body),
+        WasmTypeFact::Float64 => encode_f64_const(0.0, body),
         // f32 有独立载体：默认值按真实 f32 位模式发射（+0.0），不得借 f64 载体。
-        SemanticType::Float32 => encode_f32_const(0.0, body),
-        SemanticType::Integer64 { .. } | SemanticType::Integer128 { .. } => encode_i64_const(0, body),
-        SemanticType::Unit => encode_ref_null_anyref(body),
-        SemanticType::Bottom => encode_i32_const(0, body),
+        WasmTypeFact::Float32 => encode_f32_const(0.0, body),
+        WasmTypeFact::Integer64 { .. } | WasmTypeFact::Integer128 { .. } => encode_i64_const(0, body),
+        WasmTypeFact::Unit => encode_ref_null_anyref(body),
+        WasmTypeFact::Bottom => encode_i32_const(0, body),
         other if is_js_glue_host_string_type(other) => encode_i32_const(0, body),
         other if type_is_wasm_gc_heap_reference(other) => {
             panic!("WASI entry heap 参数 `{other:?}` 缺少 array type 合同")
@@ -1530,10 +1486,10 @@ pub(super) const WASI_GET_ARGUMENTS_OUT_PTR: i32 = 16;
 /// 该判定与入口包装体构建 argv 的条件一致；它决定 `get-arguments` 是否作为
 /// 宿主边界导入被加入模块，而不是要求用户源码显式声明该导入。固定长度数组
 /// 与任意位置的字符串数组形参都不是 argv 载体，禁止按形状认领。
-fn wasi_entry_declares_argv(submission: &FragmentSubmission) -> bool {
-    submission.backend_plan.entry_operation().and_then(|instance| submission.backend_plan.get_function(&instance)).is_some_and(|view| {
-        matches!(view.function.param_types.as_slice(),
-                [SemanticType::Array(element)] if is_js_glue_host_string_type(element.as_ref()))
+fn wasi_entry_declares_argv(input: &WasmModuleInput) -> bool {
+    input.entry_operation.and_then(|instance| input.function(&instance)).is_some_and(|function| {
+        matches!(function.param_types.as_slice(),
+                [WasmTypeFact::Array(element)] if is_js_glue_host_string_type(element.as_ref()))
     })
 }
 
@@ -1636,11 +1592,10 @@ pub(super) fn wasi_argv_from_get_arguments_instructions(get_arguments_import: u3
 
 pub(super) fn append_wasm_spy_metadata_sections(
     module: &mut WasmBinaryModule,
-    ctx: &ExecutableLoweringContext,
-    submission: &FragmentSubmission,
+    input: &WasmModuleInput,
     import_count: u32,
     mir_wasm_functions: &[(u32, String)],
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
 ) {
     let mut func_payload = format!("import_count={import_count}\n");
@@ -1651,12 +1606,12 @@ pub(super) fn append_wasm_spy_metadata_sections(
 
     // 语言规范：wasm/wasi 强制 GC；structtype ?arraytype 均注册?
     let mut gc_payload = String::from("gc_required=true\n");
-    for layout in &ctx.layouts.layouts {
-        let storage = if layout.storage == StorageKind::Reference { "reference" } else { "value" };
+    for layout in &input.layouts {
+        let storage = if layout.storage == WasmStorageClass::Reference { "reference" } else { "value" };
         if let Some(type_index) = gc_struct_type_indices.get(&layout.id) {
             gc_payload.push_str(&format!("struct\t{}\t{}\t{type_index}\tregistered\t{storage}\n", layout.id, layout.name));
         }
-        else if layout_needs_gc_struct(ctx, layout) {
+        else if layout_needs_gc_struct(input, layout) {
             gc_payload.push_str(&format!("struct\t{}\t{}\tmissing\tnot_registered\t{storage}\n", layout.id, layout.name));
         }
         else {
@@ -1667,39 +1622,38 @@ pub(super) fn append_wasm_spy_metadata_sections(
         gc_payload.push_str(&format!("array\t{key}\t{type_index}\tregistered\n"));
     }
     {
-        let exec = &submission.backend_plan;
-        for operation in exec.instances() {
-            let Some(view) = exec.get_function(&operation)
+        for operation in input.instances() {
+            let Some(function) = input.function(operation)
             else {
                 continue;
             };
             let symbol = operation.to_string();
-            for block in &view.function.blocks {
+            for block in &function.blocks {
                 for instruction in &block.instructions {
-                    let mut record_missing = |layout_id: LayoutId, type_name: &str, site: &str| {
+                    let mut record_missing = |layout_id: WasmLayoutKey, type_name: &str, site: &str| {
                         if gc_struct_type_indices.contains_key(&layout_id) {
                             return;
                         }
                         gc_payload.push_str(&format!("mir_use\t{layout_id}\t{type_name}\t{site}\t{symbol}\n"));
                     };
                     match &instruction.kind {
-                        MirInstructionKind::StructNew { nominal, .. } => {
-                            if let Some(layout) = ctx.layout_by_nominal(*nominal) {
-                                if layout.storage == StorageKind::Reference {
+                        WasmOperation::StructNew { nominal, .. } => {
+                            if let Some(layout) = input.layout_by_nominal(*nominal) {
+                                if layout.storage == WasmStorageClass::Reference {
                                     record_missing(layout.id, &layout.name, "StructNew");
                                 }
                             }
                         }
-                        MirInstructionKind::FieldGet { field, .. } | MirInstructionKind::FieldSet { field, .. } => {
-                            if let Some((layout, _, _)) = ctx.field_layout_by_id(*field) {
-                                if layout.storage == StorageKind::Reference {
+                        WasmOperation::FieldGet { field, .. } | WasmOperation::FieldSet { field, .. } => {
+                            if let Some((layout, _, _)) = input.field_layout_by_id(*field) {
+                                if layout.storage == WasmStorageClass::Reference {
                                     record_missing(layout.id, &layout.name, "FieldAccess");
                                 }
                             }
                         }
-                        MirInstructionKind::AggregateCopy { layout_id, .. } => {
-                            if let Some(layout) = ctx.layout_by_id(*layout_id) {
-                                if layout.storage == StorageKind::Reference {
+                        WasmOperation::AggregateCopy { layout_id, .. } => {
+                            if let Some(layout) = input.layout_by_id(*layout_id) {
+                                if layout.storage == WasmStorageClass::Reference {
                                     record_missing(layout.id, &layout.name, "AggregateCopy");
                                 }
                             }
@@ -1713,15 +1667,13 @@ pub(super) fn append_wasm_spy_metadata_sections(
     module.sections.push(WasmSection { id: 0, name: Some("nyar.wasm.gc_layouts".to_string()), bytes: gc_payload.into_bytes() });
 }
 
-pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    let mir_functions_len = submission.backend_plan.instances().len();
+pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinaryModule, input: &WasmModuleInput) {
+    let mir_functions_len = input.instances().len();
     if mir_functions_len == 0 {
         return;
     }
-    let value_layout_count =
-        submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Value).count();
-    let reference_layout_count =
-        submission.backend_plan.aggregate_layouts().layouts.iter().filter(|layout| layout.storage == StorageKind::Reference).count();
+    let value_layout_count = input.layouts.iter().filter(|layout| layout.storage == WasmStorageClass::Value).count();
+    let reference_layout_count = input.layouts.iter().filter(|layout| layout.storage == WasmStorageClass::Reference).count();
     let payload =
         format!("mir_functions={};value_layouts={};reference_layouts={}", mir_functions_len, value_layout_count, reference_layout_count);
     module.sections.push(WasmSection { id: 0, name: Some("nyar.value_aggregate".to_string()), bytes: payload.into_bytes() });
@@ -1741,11 +1693,10 @@ pub(crate) fn augment_wasm_with_value_aggregate_metadata(module: &mut WasmBinary
 /// 查表。缺布局身份直接结构化失败，不做默认回填。
 #[allow(clippy::too_many_arguments)]
 fn emit_library_field_accessors<'name>(
-    submission: &FragmentSubmission,
-    ctx: &ExecutableLoweringContext,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     gc_array_type_indices: &BTreeMap<String, u32>,
-    gc_sum_type_indices: &BTreeMap<compiler_types::NominalInstanceId, u32>,
+    gc_sum_type_indices: &BTreeMap<WasmNominalKey, u32>,
     js_glue_utf8_as_anyref: bool,
     gc_i32_box_type_index: u32,
     gc_i64_box_type_index: u32,
@@ -1759,42 +1710,42 @@ fn emit_library_field_accessors<'name>(
 ) -> crate::Result<()> {
     /// 从导出位置（参数或返回值）收集桥接可达节点。
     ///
-    /// - `Nominal` 自带布局；`Apply` 只从计划冻结的 `SemanticType → LayoutId`
+    /// - `Nominal` 自带布局；`Apply` 只从计划冻结的 `WasmTypeFact → WasmLayoutKey`
     ///   索引解析，索引缺失直接跳过（schema 侧同样没有字段合同，宿主失败闭合）。
     /// - heap `Array<T>` 收集元素类型，供发射 `array.new_default/get/set/len`。
     /// - 深搜按 `reachable` 去重，布局环不会死循环。
     fn collect_bridge_nodes(
-        ty: &SemanticType,
-        ctx: &ExecutableLoweringContext,
-        reachable: &mut BTreeSet<LayoutId>,
-        array_elements: &mut BTreeMap<String, SemanticType>,
-        worklist: &mut Vec<SemanticType>,
+        ty: &WasmTypeFact,
+        input: &WasmModuleInput,
+        reachable: &mut BTreeSet<WasmLayoutKey>,
+        array_elements: &mut BTreeMap<String, WasmTypeFact>,
+        worklist: &mut Vec<WasmTypeFact>,
     ) {
         match ty {
-            SemanticType::Array(element) => {
+            WasmTypeFact::Array(element) => {
                 array_elements.entry(wasm_array_element_type_key(element)).or_insert_with(|| element.as_ref().clone());
                 worklist.push(element.as_ref().clone());
             }
-            SemanticType::FixedArray { element, .. } | SemanticType::Nullable(element) => {
+            WasmTypeFact::FixedArray { element, .. } | WasmTypeFact::Nullable(element) => {
                 worklist.push(element.as_ref().clone());
             }
-            SemanticType::Tuple(elements) | SemanticType::Union(elements) => {
+            WasmTypeFact::Tuple(elements) | WasmTypeFact::Union(elements) => {
                 worklist.extend(elements.iter().cloned());
             }
-            SemanticType::Nominal { layout, .. } => {
+            WasmTypeFact::Nominal { layout, .. } => {
                 if reachable.insert(*layout) {
-                    if let Some(item) = ctx.layout_by_id(*layout) {
+                    if let Some(item) = input.layout_by_id(*layout) {
                         worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
                     }
                 }
             }
-            SemanticType::Apply(..) => {
-                if let Some(item) = ctx.layout_for_semantic_type(ty) {
+            WasmTypeFact::Apply(..) => {
+                if let Some(item) = input.layout_for_type(ty) {
                     if reachable.insert(item.id) {
                         worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
                     }
                 }
-                else if let SemanticType::Apply(base, args) = ty {
+                else if let WasmTypeFact::Apply(base, args) = ty {
                     worklist.push(base.as_ref().clone());
                     worklist.extend(args.iter().cloned());
                 }
@@ -1803,28 +1754,28 @@ fn emit_library_field_accessors<'name>(
         }
     }
 
-    let mut worklist: Vec<SemanticType> = Vec::new();
-    for (instance, _) in submission.backend_plan.export_names() {
-        let Some(view) = submission.backend_plan.get_function(instance)
+    let mut worklist: Vec<WasmTypeFact> = Vec::new();
+    for (instance, _) in input.export_names.iter() {
+        let Some(function) = input.function(instance)
         else {
             continue;
         };
-        worklist.extend(view.function.param_types.iter().cloned());
-        worklist.push(view.function.return_type.clone());
+        worklist.extend(function.param_types.iter().cloned());
+        worklist.push(function.return_type.clone());
     }
-    let mut reachable: BTreeSet<LayoutId> = BTreeSet::new();
-    let mut array_elements: BTreeMap<String, SemanticType> = BTreeMap::new();
+    let mut reachable: BTreeSet<WasmLayoutKey> = BTreeSet::new();
+    let mut array_elements: BTreeMap<String, WasmTypeFact> = BTreeMap::new();
     // Option 标量载荷的物理载体集合：`None` 是 `ref.null`，`Some(标量)` 必须装进
     // 后端已注册的 `[i32]` / `[i64]` / `[f64]` box。只在这里收集**导出签名可达**的载荷，
     // 不按类型名或调用点外的事实猜。
     let mut option_payloads: BTreeSet<String> = BTreeSet::new();
     // unite 变体身份桥：导出签名可达的全部 sum（零载荷与带载荷）都需要按判别
     // tag 读回；带载荷变体再按同一份 sum 身份派生 payload accessor。
-    // 索引来自 canonical 冻结的 `SemanticType → SumTypeLayout`，不按名字识别。
-    let sums = submission.backend_plan.sum_layout_by_semantic_type();
-    let mut reachable_sums: BTreeMap<compiler_types::NominalInstanceId, compiler_types::SumTypeLayout> = BTreeMap::new();
+    // 索引来自 canonical 冻结的 `WasmTypeFact → WasmSumLayoutFact`，不按名字识别。
+    let sums = &input.sum_layouts_by_type;
+    let mut reachable_sums: BTreeMap<WasmNominalKey, WasmSumLayoutFact> = BTreeMap::new();
     // 类型工作列表按类型去重：递归 sum 的载荷会再次命中自身，没有去重会无限展开。
-    let mut visited_types: BTreeSet<SemanticType> = BTreeSet::new();
+    let mut visited_types: BTreeSet<WasmTypeFact> = BTreeSet::new();
     while let Some(ty) = worklist.pop() {
         if !visited_types.insert(ty.clone()) {
             continue;
@@ -1834,33 +1785,33 @@ fn emit_library_field_accessors<'name>(
             // 变体载荷也是 ABI 边界的一部分：嵌套 sum / 聚合 / 数组必须一起可达。
             worklist.extend(sum.variants.iter().filter_map(|variant| variant.payload_type.clone()));
         }
-        if let SemanticType::Nullable(inner) = &ty {
+        if let WasmTypeFact::Nullable(inner) = &ty {
             let inner_schema = super::abi_schema::abi_schema_for_type(inner);
             if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
                 option_payloads.insert(contract.payload.to_string());
             }
         }
-        collect_bridge_nodes(&ty, ctx, &mut reachable, &mut array_elements, &mut worklist);
+        collect_bridge_nodes(&ty, input, &mut reachable, &mut array_elements, &mut worklist);
     }
 
     // 阶段 1：按布局/字段顺序确定性派生全部 accessor 身份；名字统一进
     // 调用方作用域的 name_store，导出条目从中稳定借用。
     #[derive(Clone, Copy)]
     struct AccessorPlan {
-        layout_id: LayoutId,
+        layout_id: WasmLayoutKey,
         field_index: usize,
         gc_struct_type_index: Option<u32>,
     }
     let mut plans: Vec<(String, AccessorPlan)> = Vec::new();
     let mut emitted_names: BTreeSet<String> = BTreeSet::new();
     for layout_id in &reachable {
-        let layout = ctx.layout_by_id(*layout_id).expect("可达布局已通过身份核对");
+        let layout = input.layout_by_id(*layout_id).expect("可达布局已通过身份核对");
         if layout.fields.is_empty() {
             continue;
         }
         let gc_struct_type_index = gc_struct_type_indices.get(layout_id).copied();
         for (field_index, _) in layout.fields.iter().enumerate() {
-            let name = super::abi_schema::field_accessor_export_name(&semantic_aggregate_layout(layout), field_index);
+            let name = super::abi_schema::field_accessor_export_name(layout, field_index);
             if !emitted_names.insert(name.clone()) {
                 continue;
             }
@@ -1876,20 +1827,20 @@ fn emit_library_field_accessors<'name>(
     // 计数）的唯一合法入口，不在宿主侧复刻布局。
     #[derive(Clone, Copy)]
     struct ConstructorPlan {
-        layout_id: LayoutId,
+        layout_id: WasmLayoutKey,
         struct_type_index: u32,
     }
     let mut constructor_plans: Vec<(String, ConstructorPlan)> = Vec::new();
     for layout_id in &reachable {
-        let layout = ctx.layout_by_id(*layout_id).expect("可达布局已通过身份核对");
+        let layout = input.layout_by_id(*layout_id).expect("可达布局已通过身份核对");
         let Some(struct_type_index) = gc_struct_type_indices.get(layout_id).copied()
         else {
             continue;
         };
-        if layout.storage != StorageKind::Reference {
+        if layout.storage != WasmStorageClass::Reference {
             continue;
         }
-        let name = super::abi_schema::aggregate_constructor_export_name(&semantic_aggregate_layout(layout));
+        let name = super::abi_schema::aggregate_constructor_export_name(layout);
         if !emitted_names.insert(name.clone()) {
             continue;
         }
@@ -1940,7 +1891,7 @@ fn emit_library_field_accessors<'name>(
     // 阶段 9：unite tag accessor 计划。名字与 `abi_schema::sum_tag_accessor_export_name`
     // 同源；每个可达 unite 必须已有后端注册的 GC sum 类型，否则结构化失败。
     let mut sum_plans: Vec<(String, u32)> = Vec::new();
-    let mut reachable_sum_type_indices: BTreeMap<compiler_types::NominalInstanceId, u32> = BTreeMap::new();
+    let mut reachable_sum_type_indices: BTreeMap<WasmNominalKey, u32> = BTreeMap::new();
     for (nominal, sum) in &reachable_sums {
         let Some(sum_type_index) = gc_sum_type_indices.get(nominal).copied()
         else {
@@ -1959,7 +1910,7 @@ fn emit_library_field_accessors<'name>(
     // 阶段 9b：variant payload accessor 计划。每个带载荷变体一个导出：
     // `(unite anyref) -> payload carrier`。载体与函数体 `SumNew` 的 payload 槽
     // 物理配方一致（标量先装箱成 `[i32]`/`[i64]`/`[f64]`）；名字与 tag accessor
-    // 从同一份 `SumTypeLayout` 身份派生。
+    // 从同一份 `WasmSumLayoutFact` 身份派生。
     struct SumPayloadPlan {
         name: String,
         sum_type_index: u32,
@@ -1974,7 +1925,7 @@ fn emit_library_field_accessors<'name>(
             else {
                 continue;
             };
-            let carrier = wasm_param_value_type_for(ctx, payload_ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
+            let carrier = wasm_param_value_type_for(input, payload_ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)?;
             let box_type_index = match carrier {
                 WASM_GC_ANYREF => None,
                 VALTYPE_I32 => Some(gc_i32_box_type_index),
@@ -2002,7 +1953,7 @@ fn emit_library_field_accessors<'name>(
 
     // 阶段 4：发射 accessor 函数体并登记导出。
     for (position, (_, plan)) in plans.iter().enumerate() {
-        let layout = ctx.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
+        let layout = input.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
         let field = &layout.fields[plan.field_index];
         let (param_types, result_type, body) = match plan.gc_struct_type_index {
             Some(struct_type_index) => {
@@ -2019,15 +1970,15 @@ fn emit_library_field_accessors<'name>(
             None => {
                 // 线性 value 布局：(param i32 地址) → 冻结偏移 + 类型化 load，
                 // load 配方与 `FieldGet` 的线性路径完全一致。
-                let inline_aggregate = type_is_inline_aggregate(ctx, &field.ty);
+                let inline_aggregate = type_is_inline_aggregate(input, &field.ty);
                 let result_type = if inline_aggregate {
                     VALTYPE_I32
                 }
                 else {
                     match field.ty {
-                        SemanticType::Float32 => VALTYPE_F32,
-                        SemanticType::Float64 => VALTYPE_F64,
-                        SemanticType::Integer64 { .. } => VALTYPE_I64,
+                        WasmTypeFact::Float32 => VALTYPE_F32,
+                        WasmTypeFact::Float64 => VALTYPE_F64,
+                        WasmTypeFact::Integer64 { .. } => VALTYPE_I64,
                         _ => VALTYPE_I32,
                     }
                 };
@@ -2038,9 +1989,9 @@ fn emit_library_field_accessors<'name>(
                 ];
                 if !inline_aggregate {
                     lir.push(match field.ty {
-                        SemanticType::Float32 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 },
-                        SemanticType::Float64 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 },
-                        SemanticType::Integer64 { .. } => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Load, align: 3, offset: 0 },
+                        WasmTypeFact::Float32 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F32Load, align: 2, offset: 0 },
+                        WasmTypeFact::Float64 => WasmBodyInstruction::MemArg { opcode: WasmOpcode::F64Load, align: 3, offset: 0 },
+                        WasmTypeFact::Integer64 { .. } => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I64Load, align: 3, offset: 0 },
                         _ => WasmBodyInstruction::MemArg { opcode: WasmOpcode::I32Load, align: 2, offset: 0 },
                     });
                 }
@@ -2058,7 +2009,7 @@ fn emit_library_field_accessors<'name>(
 
     // 阶段 5：发射聚合构造函数体。
     for (position, (_, plan)) in constructor_plans.iter().enumerate() {
-        let layout = ctx.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
+        let layout = input.layout_by_id(plan.layout_id).expect("可达布局已通过身份核对");
         let param_types: Vec<u8> = layout
             .fields
             .iter()
@@ -2207,16 +2158,4 @@ fn synthetic_body(lir: Vec<WasmBodyInstruction>) -> Vec<u8> {
     encode_uleb128(0, &mut body);
     body.extend_from_slice(&encode_wasm_body(&lir));
     body
-}
-
-/// 从已解析物理布局重建语义布局形状：导出名只由语义身份派生，偏移与宽度不参与。
-fn semantic_aggregate_layout(layout: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout) -> compiler_types::AggregateLayout {
-    compiler_types::AggregateLayout {
-        id: layout.id,
-        name: layout.name.clone(),
-        namespace: layout.namespace.clone(),
-        key: layout.key.clone(),
-        storage: layout.storage,
-        fields: layout.fields.iter().map(|field| compiler_types::FieldLayout { name: field.name.clone(), ty: field.ty.clone() }).collect(),
-    }
 }

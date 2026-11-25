@@ -11,9 +11,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// 栈：`[length: i32]` → `[arrayref]`，结果写入 `output` 的引用槽。
     pub(super) fn emit_array_new_default_ops(
         &mut self,
-        element_type: &SemanticType,
-        length: &MirOperand,
-        output: MirValueRef,
+        element_type: &WasmTypeFact,
+        length: &WasmOperand,
+        output: WasmValueKey,
     ) -> crate::Result<()> {
         let Some(type_index) = self.resolve_gc_array_type_index(element_type)
         else {
@@ -31,7 +31,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 发射 `ref.cast array` + `array.len`：栈 `[anyref]` → `[i32]`，结果写入 `output`。
-    pub(super) fn emit_array_length_ops(&mut self, array: &MirOperand, output: Option<MirValueRef>) -> crate::Result<()> {
+    pub(super) fn emit_array_length_ops(&mut self, array: &WasmOperand, output: Option<WasmValueKey>) -> crate::Result<()> {
         self.emit_operand_coerced(array, WASM_GC_ANYREF)?;
         self.emit_ref_cast_array();
         self.emit_array_len();
@@ -42,7 +42,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 发射 `ref.cast (ref arraytype)` + `array.get`：栈 `[arrayref, i32]` → `[element]`。
-    pub(super) fn emit_array_get_ops(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) -> crate::Result<()> {
+    pub(super) fn emit_array_get_ops(&mut self, arguments: &[WasmOperand], output: Option<WasmValueKey>) -> crate::Result<()> {
         if arguments.len() < 2 {
             return Ok(());
         }
@@ -71,8 +71,8 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_array_get(type_index);
         if let Some(output) = output {
             let wants_i64 = self.mir_fn.value_types.get(&output).is_some_and(|ty| {
-                matches!(ty, SemanticType::Integer64 { .. } | SemanticType::Integer128 { .. })
-                    || matches!(ty, SemanticType::Named(name) if name.as_str() == "i64")
+                matches!(ty, WasmTypeFact::Integer64 { .. } | WasmTypeFact::Integer128 { .. })
+                    || matches!(ty, WasmTypeFact::Named(name) if name.as_str() == "i64")
             });
             if element_stack_ty == WASM_GC_ANYREF && wants_i64 {
                 self.emit_unbox_i64_payload();
@@ -87,7 +87,7 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 发射 `ref.cast (ref arraytype)` + `array.set`：栈 `[arrayref, i32, element]` → `[]`。
-    pub(super) fn emit_array_set_ops(&mut self, arguments: &[MirOperand], output: Option<MirValueRef>) -> crate::Result<()> {
+    pub(super) fn emit_array_set_ops(&mut self, arguments: &[WasmOperand], output: Option<WasmValueKey>) -> crate::Result<()> {
         let _ = output;
         if arguments.len() < 3 {
             return Ok(());
@@ -119,7 +119,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// 判定 `array.get` 结果值是否命中 `[utf8]` 数组元素边界：值类型是宿主字符串
     /// 且携带已登记 gc struct layout（计划槽 anyref）。纯类型/布局事实判定，
     /// 不按符号名特判。
-    pub(super) fn utf8_host_handle_boundary_layout(&self, value: MirValueRef) -> Option<LayoutId> {
+    pub(super) fn utf8_host_handle_boundary_layout(&self, value: WasmValueKey) -> Option<WasmLayoutKey> {
         if !self.mir_fn.value_types.get(&value).is_some_and(is_js_glue_host_string_type) {
             return None;
         }
@@ -133,9 +133,9 @@ impl<'a> WasmMirLowerer<'a> {
     /// 其余组合保持既有 coerce 语义；缺 layout 或配方的分叉仍结构化失败。
     pub(super) fn emit_operand_into_text_slot(
         &mut self,
-        operand: &MirOperand,
+        operand: &WasmOperand,
         slot_ty: u8,
-        slot_layout: Option<LayoutId>,
+        slot_layout: Option<WasmLayoutKey>,
     ) -> crate::Result<()> {
         let actual = self.operand_wasm_stack_type(operand)?;
         if slot_ty == WASM_GC_ANYREF && actual == VALTYPE_I32 && self.operand_semantic_type(operand).is_some_and(is_js_glue_host_string_type) {
@@ -154,7 +154,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// `call env::host_utf8_extract` 取回 `(ptr, len)` → `array.new_default` →
     /// 逐字节 `i32.load8_u` + `array.set` → `struct.new_default` + `struct.set`。
     /// 栈效果：`[i32]` → `[anyref]`。与库导出物化 wrapper 同一构造序列。
-    pub(super) fn emit_utf8_host_handle_materialize(&mut self, layout_id: LayoutId) -> crate::Result<()> {
+    pub(super) fn emit_utf8_host_handle_materialize(&mut self, layout_id: WasmLayoutKey) -> crate::Result<()> {
         let Some(recipe) = self.utf8_host_handle_materialize.get(&layout_id)
         else {
             return Err(format!(

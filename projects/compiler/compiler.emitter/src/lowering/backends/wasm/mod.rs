@@ -8,6 +8,11 @@ pub(crate) mod abi;
 #[doc(hidden)]
 pub mod cabi;
 mod gc;
+pub(crate) mod input;
+// 公共 `ExternalImportLink` 分类器只服务 `shared::interop` 的裁决测试；
+// 编码层消费的是 `mir/imports.rs` 的私有版分类器。
+#[cfg(test)]
+pub(crate) mod interop;
 pub(crate) mod mir;
 mod sections;
 
@@ -167,15 +172,46 @@ pub(crate) fn build_wasm_program_input(
     // 属于另一个命名面，不能借给入口函数：否则入口会冒用导出名，或与同名导出一起
     // 产出重复导出名的非法模块。入口命名不参与宿主模式推断。
     let entry_export_name = boundary_entry_name;
+    // 存储类选择的唯一闸门：编码前拒绝无身份名义类型残差。形态判断发生在
+    // `storage_for_type` / `wasm_param_value_type` / GC 字段字节之前；本门留在
+    // lane 装配点，编码层（`mir/`）不再接触公共提交。
+    validate_wasm_storage_identities(submission)?;
+    // 公共 IR 在此一次结算为 wasm 私有输入；`mir/` 全部子模块只消费私有词汇。
+    let input = input::settle_from_submission(submission)?;
     let (mut module, imports) =
-        mir::lower_fragment_mir_to_wasm_module_for(submission, entry_export_name, host_boundary, wasi_preview, wasm_package_kind)?;
+        mir::lower_fragment_mir_to_wasm_module_for(&input, entry_export_name, host_boundary, wasi_preview, wasm_package_kind)?;
 
-    prepend_nyar_custom_sections(&mut module, submission);
-    mir::singleton::append_singleton_metadata_sections(&mut module, submission);
-    mir::singleton::augment_wasm_with_singleton_accessors(&mut module, submission)
+    prepend_nyar_custom_sections(&mut module, &input);
+    mir::singleton::append_singleton_metadata_sections(&mut module, &input);
+    mir::singleton::augment_wasm_with_singleton_accessors(&mut module, &input)
         .map_err(|error| format!("singleton contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
-    mir::augment_wasm_with_value_aggregate_metadata(&mut module, submission);
+    mir::augment_wasm_with_value_aggregate_metadata(&mut module, &input);
     Ok(WasmProgramInput { module, imports })
+}
+
+/// 默认宿主边界（WasmJsGlue / Preview2 / Binary）的完整降低：只做私有结算与
+/// 编码门，不装配边界壳。供 `lowering` 层的测试与旧入口使用。
+pub(crate) fn lower_fragment_mir_to_wasm_module(
+    submission: &FragmentSubmission,
+    export_name: &str,
+) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
+    validate_wasm_storage_identities(submission)?;
+    let input = input::settle_from_submission(submission)?;
+    mir::lower_fragment_mir_to_wasm_module_for(
+        &input,
+        export_name,
+        HostProjectionBoundary::WasmJsGlue,
+        crate::emitter_backend_wasi::WasiPreview::Preview2,
+        crate::emitter_backend_wasi::WasmPackageKind::Binary,
+    )
+}
+
+/// 存储类身份门：无 declaration / `TypeId` 的名义类型残差在编码前结构化拒绝。
+fn validate_wasm_storage_identities(submission: &FragmentSubmission) -> Result<()> {
+    crate::lowering::shared::executable::validate_storage_identities(submission).map_err(|error| {
+        let owner = if error.function.is_empty() { error.site.clone() } else { format!("{} at {}", error.function, error.site) };
+        format!("WASM pre-emission verifier: {owner} 携带无身份名义类型 `{}`；declaration / `TypeId` 缺失时不得按短名解析存储类", error.ty)
+    })
 }
 
 /// Wasm 目标私有输入 → 模块产物：只做模块形状自检。
@@ -275,23 +311,22 @@ fn boundary_name(host_boundary: HostProjectionBoundary) -> &'static str {
     }
 }
 
-fn prepend_nyar_custom_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-    let merged_theory = submission.backend_plan.theory_bundle().merged();
+fn prepend_nyar_custom_sections(module: &mut WasmBinaryModule, input: &input::WasmModuleInput) {
     let mut customs = vec![
-        ("nyar.module".to_string(), submission.backend_plan.module_name().as_bytes().to_vec()),
-        ("nyar.fragment".to_string(), submission.backend_plan.fragment_id().as_str().as_bytes().to_vec()),
+        ("nyar.module".to_string(), input.module_name.as_bytes().to_vec()),
+        ("nyar.fragment".to_string(), input.fragment_id.as_bytes().to_vec()),
     ];
-    for operation in submission.backend_plan.exported_operations() {
+    for operation in &input.exported_operations {
         customs.push(("nyar.export".to_string(), operation.to_string().into_bytes()));
     }
-    for capability in submission.backend_plan.required_capabilities() {
-        customs.push(("nyar.capability".to_string(), capability.as_str().to_string().into_bytes()));
+    for capability in &input.required_capabilities {
+        customs.push(("nyar.capability".to_string(), capability.clone().into_bytes()));
     }
-    if let Some(entry) = submission.backend_plan.entry_operation() {
+    if let Some(entry) = input.entry_operation {
         customs.push(("nyar.entry".to_string(), entry.to_string().into_bytes()));
     }
-    customs.push(("nyar.theory.rules".to_string(), merged_theory.rules.len().to_string().into_bytes()));
-    customs.push(("nyar.theory.equations".to_string(), merged_theory.equations.len().to_string().into_bytes()));
+    customs.push(("nyar.theory.rules".to_string(), input.theory_rules.to_string().into_bytes()));
+    customs.push(("nyar.theory.equations".to_string(), input.theory_equations.to_string().into_bytes()));
 
     let mut prepended = customs.into_iter().map(|(name, bytes)| WasmSection { id: 0, name: Some(name), bytes }).collect::<Vec<_>>();
     prepended.append(&mut module.sections);

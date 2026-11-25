@@ -4,7 +4,7 @@
 //! `[ovm_operator]` / `[x86_64_operator]` 与各宿主导入域）归对应后端的私有模块：
 //! JVM 在 [`crate::lowering::backends::jvm::recipe`]、CLR 在
 //! [`crate::lowering::backends::clr::mir`]、Wasm 在
-//! [`crate::lowering::backends::wasm::mir::imports`]、OVM 在
+//! `wasm::interop`（测试门）、OVM 在
 //! [`crate::lowering::backends::ovm_mir`]、x86-64 在
 //! [`crate::lowering::backends::machine::x86_64`]。本模块只保留可跨 lane 复用的
 //! **候选唯一性校验**，不携带任何平台的绑定词汇。
@@ -49,7 +49,7 @@ mod tests {
         clr::mir::clr_operator_target,
         jvm::recipe::jvm_operator_target,
         machine::x86_64::x86_64_operator_target,
-        wasm::mir::imports::{wasi_host_import_target, wasm_operator_target},
+        wasm::interop::{wasi_host_import_target, wasm_operator_target},
     };
     #[cfg(feature = "ovm-lane")]
     use crate::lowering::backends::ovm_mir::{ovm_host_import_target, ovm_operator_target};

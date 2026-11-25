@@ -1,7 +1,7 @@
-pub(crate) use crate::lowering::{
-    sanitize_symbol,
-    shared::{executable, interop},
-};
+// 仅 ovm lane（feature 门）经 `super::` 消费这两个 re-export；wasm lane 已改用
+// 目标私有结算词汇，默认构建下不再引用。
+#[cfg(feature = "ovm-lane")]
+pub(crate) use crate::lowering::{sanitize_symbol, shared::executable};
 
 pub(crate) mod argv_encoding;
 

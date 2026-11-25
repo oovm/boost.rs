@@ -1,15 +1,14 @@
 //! Split from `lowerer.rs`.
 use super::*;
-use crate::lowering::shared::physical_layout::ResolvedAggregateLayout;
 
 impl<'a> WasmMirLowerer<'a> {
-    pub(super) fn emit_instruction(&mut self, instruction: &MirInstruction) -> crate::Result<()> {
+    pub(super) fn emit_instruction(&mut self, instruction: &WasmInstruction) -> crate::Result<()> {
         match &instruction.kind {
-            MirInstructionKind::LoadConstant { constant, .. } => {
+            WasmOperation::LoadConstant { constant, .. } => {
                 // 常量的目标槽 valtype 是唯一权威：i64 槽必须 `i64.const`，
                 // i32 槽必须 `i32.const` 且范围可表示。无槽形态没有合法位宽，
                 // 不得回退到「猜 i32」。
-                let Some(output) = instruction_primary_result(instruction)
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM 常量指令缺少结果槽，无法确定目标 valtype: `{}`", self.mir_fn.symbol));
                 };
@@ -17,14 +16,14 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_load_constant_for_slot(constant, slot_ty)?;
                 self.store_scalar(output);
             }
-            MirInstructionKind::StoreVar { value, .. } => {
+            WasmOperation::StoreVar { value, .. } => {
                 // `StoreVar` 的 result 是「变量在该程序点的当前值」的 SSA 身份：
                 // 后继读取（含块终结符的实参）引用的就是它，而不是 `value` 本身。
                 // 因此必须把 `value` 写进 result 的预规划槽；跳过不发射会让该 SSA 值
                 // 停留在槽默认值（引用槽是 null、标量槽是 0），后续 `ref.cast` 直接
                 // 触发 `illegal cast`。禁止按变量名重建值（那是另一回事），但按 SSA
                 // 身份搬运值是这条指令的全部语义。
-                if let Some(output) = instruction_primary_result(instruction) {
+                if let Some(output) = primary_result(instruction) {
                     let slot_ty = self.output_scalar_slot_type(output);
                     let slot_layout = self.mir_fn.value_layouts.get(&output).copied();
                     self.emit_operand_into_text_slot(value, slot_ty, slot_layout)?;
@@ -35,12 +34,12 @@ impl<'a> WasmMirLowerer<'a> {
                     self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
-            MirInstructionKind::Copy { source } => {
+            WasmOperation::Copy { source } => {
                 // plan/emit 顺序不一致时，output 可能被误分配?i32?
                 // ?source **真实栈类?*（含 param 槽位 valtype）校?output 槽?
                 // 铁律：`emit_operand` 压栈类型必须与即?`local.set` 的槽 valtype 一致，
                 // 否则出现 `local.set expected i32, found anyref`（func ?array 形参 Copy）?
-                if let Some(output) = instruction_primary_result(instruction) {
+                if let Some(output) = primary_result(instruction) {
                     let slot_ty = self.output_scalar_slot_type(output);
                     let slot_layout = self.mir_fn.value_layouts.get(&output).copied();
                     self.emit_operand_into_text_slot(source, slot_ty, slot_layout)?;
@@ -51,14 +50,14 @@ impl<'a> WasmMirLowerer<'a> {
                     self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
-            MirInstructionKind::Cast { source, ty } => {
-                // 语言层 `as` 是表示转换：转换语义由计划冻结的两端 `SemanticType` 决定，
+            WasmOperation::Cast { source, ty } => {
+                // 语言层 `as` 是表示转换：转换语义由计划冻结的两端 `WasmTypeFact` 决定，
                 // 栈类型字节（`i32`/`i64`）区分不了有符号与无符号扩展。
                 let source_ty = self
                     .operand_semantic_type(source)
                     .ok_or_else(|| format!("wasm 显式 cast 的源操作数缺少冻结类型: {}", self.mir_fn.symbol))?;
                 let steps = scalar_cast_steps(source_ty, ty)?;
-                let Some(output) = instruction_primary_result(instruction)
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("wasm 显式 cast 缺少结果槽: {}", self.mir_fn.symbol));
                 };
@@ -69,8 +68,8 @@ impl<'a> WasmMirLowerer<'a> {
                 self.validate_output_slot_type(output, self.output_scalar_slot_type(output))?;
                 self.assign_output_local(output);
             }
-            MirInstructionKind::StructNew { fields, nominal } => {
-                let Some(output) = instruction_primary_result(instruction)
+            WasmOperation::StructNew { fields, nominal } => {
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM StructNew 缺少结果槽: {}", self.mir_fn.symbol));
                 };
@@ -82,7 +81,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_struct_new_default(type_index);
                     self.emit_local_set(local);
                     for (field_id, value) in fields {
-                        let Some((_, field_layout, field_index)) = self.ctx.field_layout_by_id(*field_id)
+                        let Some((_, field_layout, field_index)) = self.input.field_layout_by_id(*field_id)
                         else {
                             continue;
                         };
@@ -105,7 +104,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.bump_allocate(layout.size, layout.align);
                     self.emit_local_set(local);
                     for (field_id, value) in fields {
-                        let Some((_, field, _)) = self.ctx.field_layout_by_id(*field_id)
+                        let Some((_, field, _)) = self.input.field_layout_by_id(*field_id)
                         else {
                             continue;
                         };
@@ -118,9 +117,9 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
             }
-            MirInstructionKind::TupleGet { object, layout_id, index } => {
-                let output = instruction_primary_result(instruction);
-                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
+            WasmOperation::TupleGet { object, layout_id, index } => {
+                let output = primary_result(instruction);
+                let Some(layout) = self.input.layout_by_id(*layout_id).cloned()
                 else {
                     return Err(format!(
                         "WASM TupleGet 缺少 layout 身份 `{layout_id:?}` in `{}`（object={object:?}, index={index}）",
@@ -163,7 +162,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_local_get(object_local);
                     self.emit_i32_const(field.offset as i32);
                     self.emit_i32_add();
-                    let field_is_inline_aggregate = type_is_inline_aggregate(self.ctx, &field.ty);
+                    let field_is_inline_aggregate = type_is_inline_aggregate(self.input, &field.ty);
                     if let Some(output) = output {
                         if field_is_inline_aggregate {
                             self.validate_output_slot_type(output, VALTYPE_I32)?;
@@ -204,12 +203,12 @@ impl<'a> WasmMirLowerer<'a> {
                     ));
                 }
             }
-            MirInstructionKind::TupleNew { layout_id, fields } => {
-                let Some(output) = instruction_primary_result(instruction)
+            WasmOperation::TupleNew { layout_id, fields } => {
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM TupleNew 缺少结果槽: {}", self.mir_fn.symbol));
                 };
-                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
+                let Some(layout) = self.input.layout_by_id(*layout_id).cloned()
                 else {
                     return Err(format!("WASM TupleNew 缺少 layout 身份 `{layout_id:?}` in `{}`", self.mir_fn.symbol));
                 };
@@ -253,9 +252,9 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
             }
-            MirInstructionKind::ArrayNew { array_type, length, initialization } => {
+            WasmOperation::ArrayNew { array_type, length, initialization } => {
                 // 缺结果槽/引用槽是缺事实：分配无处安放即计划不一致，发射前拒绝。
-                let Some(output) = instruction_primary_result(instruction)
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM ArrayNew 缺少结果槽 in `{}`; refusing runtime trap placeholders", self.mir_fn.symbol));
                 };
@@ -272,16 +271,16 @@ impl<'a> WasmMirLowerer<'a> {
                 };
                 let _ = local;
                 match initialization {
-                    ArrayInitialization::Default | ArrayInitialization::Fill(_) => {
+                    WasmArrayInit::Default | WasmArrayInit::Fill(_) => {
                         // Fail-closed seed path: allocate default; Fill 的静默填充循环
                         // 由同一共享发射器拒绝（arraytype 事实缺失即结构化失败）。
                         self.emit_array_new_default_ops(element_type, length, output)?;
                     }
                 }
             }
-            MirInstructionKind::ArrayFromElements { layout_id, array_type, elements } => {
+            WasmOperation::ArrayFromElements { layout_id, array_type, elements } => {
                 // 缺结果槽是缺事实：构造结果无处安放即计划不一致，发射前拒绝。
-                let Some(output) = instruction_primary_result(instruction)
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM ArrayFromElements 缺少结果槽 in `{}`; refusing runtime trap placeholders", self.mir_fn.symbol));
                 };
@@ -292,9 +291,9 @@ impl<'a> WasmMirLowerer<'a> {
                         self.mir_fn.symbol
                     ));
                 };
-                if matches!(array_type, SemanticType::FixedArray { .. }) {
+                if matches!(array_type, WasmTypeFact::FixedArray { .. }) {
                     // Fixed value aggregate: linear layout when available.
-                    if let Some(layout) = layout_id.and_then(|layout_id| self.ctx.layout_by_id(layout_id)).cloned() {
+                    if let Some(layout) = layout_id.and_then(|layout_id| self.input.layout_by_id(layout_id)).cloned() {
                         // 缺值槽是缺事实，发射前拒绝。
                         let Some(&local) = self.value_locals.get(&output)
                         else {
@@ -336,10 +335,10 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_array_new_fixed(type_index, elements.len() as u32);
                 self.emit_local_set(local);
             }
-            MirInstructionKind::AggregateCopy { layout_id, source, dest } => {
+            WasmOperation::AggregateCopy { layout_id, source, dest } => {
                 // 缺 layout 是缺事实，不是"合法无需复制"：必须在发射前结构化拒绝，
                 // 禁止编 `unreachable` 把计划缺陷伪装成运行期 trap 后返回成功。
-                let Some(layout) = self.ctx.layout_by_id(*layout_id).cloned()
+                let Some(layout) = self.input.layout_by_id(*layout_id).cloned()
                 else {
                     return Err(format!(
                         "WASM AggregateCopy 缺少 layout 身份 `{layout_id:?}` in `{}`: source={source:?} dest={dest:?}; refusing runtime trap placeholders",
@@ -351,9 +350,9 @@ impl<'a> WasmMirLowerer<'a> {
                 // 被 Field*/AggregateCopy 扫描登记，而 Symbol 地址拷贝仍须 memory.copy。
                 // 与 StructNew storage=Reference / layout.storage=Value 的不一致对齐：
                 // 只要 source/dest 已在 reference_locals（anyref），就必须深拷贝。
-                let source_in_ref = if let MirOperand::Value(vref) = source { self.reference_locals.contains_key(vref) } else { false };
-                let dest_in_ref = if let MirOperand::Value(vref) = dest { self.reference_locals.contains_key(vref) } else { false };
-                let use_gc_struct = source_in_ref || dest_in_ref || layout.storage == StorageKind::Reference;
+                let source_in_ref = if let WasmOperand::Value(vref) = source { self.reference_locals.contains_key(vref) } else { false };
+                let dest_in_ref = if let WasmOperand::Value(vref) = dest { self.reference_locals.contains_key(vref) } else { false };
+                let use_gc_struct = source_in_ref || dest_in_ref || layout.storage == WasmStorageClass::Reference;
                 if use_gc_struct {
                     // gc struct 表示的聚合（含 Value 存储被注册表判成 anyref 的路径）：
                     // 深拷贝。struct.new_default + 逐字段 struct.get/set。
@@ -426,12 +425,12 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
             }
-            MirInstructionKind::FieldGet { object, field } => {
-                let output = instruction_primary_result(instruction);
+            WasmOperation::FieldGet { object, field } => {
+                let output = primary_result(instruction);
                 // 计划事实缺失（字段无 layout / gc struct 与对象槽表示冲突）属于
                 // 可执行合同不一致，必须与 `Cast` 臂同款结构化失败返回 `Err`，
                 // 禁止 panic 把编译期缺陷升级成崩溃。
-                let Some(layout) = self.ctx.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
+                let Some(layout) = self.input.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
                 else {
                     return Err(format!("WASM FieldGet 缺少字段所属 layout in `{}`: field=`{field}` object={object:?}", self.mir_fn.symbol));
                 };
@@ -444,7 +443,7 @@ impl<'a> WasmMirLowerer<'a> {
                             layout.name, self.mir_fn.symbol
                         ));
                     };
-                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
+                    let Some((_, _, field_index)) = self.input.field_layout_by_id(*field)
                     else {
                         // 上面已用同一字段身份解析出 layout，二次查表不可能失败：
                         // 失败即计划自相矛盾，必须报错而不是静默丢弃结果槽。
@@ -468,7 +467,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
-                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
+                    let Some((_, field_layout, _)) = self.input.field_layout_by_id(*field)
                     else {
                         // 与 gc struct 分支同理：二次查表失败是计划自相矛盾，禁止静默跳过。
                         return Err(format!(
@@ -481,7 +480,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_i32_add();
                     // 只有带字段的内联聚合字段读出的是地址；标量与零字段值布局读出的是载体本身，
                     // 必须走 `*load`，否则会把字段地址当作标量值返回。
-                    let field_is_inline_aggregate = type_is_inline_aggregate(self.ctx, &field_layout.ty);
+                    let field_is_inline_aggregate = type_is_inline_aggregate(self.input, &field_layout.ty);
                     if let Some(output) = output {
                         if field_is_inline_aggregate {
                             self.validate_output_slot_type(output, VALTYPE_I32)?;
@@ -502,7 +501,7 @@ impl<'a> WasmMirLowerer<'a> {
                     }
                 }
                 else if let Some(object_local) = self.operand_reference_local(object) {
-                    let Some((_, _, field_index)) = self.ctx.field_layout_by_id(*field)
+                    let Some((_, _, field_index)) = self.input.field_layout_by_id(*field)
                     else {
                         // 与地址分支同理：二次查表失败是计划自相矛盾，禁止静默丢弃结果槽。
                         return Err(format!(
@@ -534,11 +533,11 @@ impl<'a> WasmMirLowerer<'a> {
                     ));
                 }
             }
-            MirInstructionKind::FieldSet { object, field, value } => {
+            WasmOperation::FieldSet { object, field, value } => {
                 // 计划事实缺失（字段无 layout / gc struct 与对象槽表示冲突 / 对象槽无法定位）
                 // 属于可执行合同不一致，必须与 `Cast` 臂同款结构化失败返回 `Err`，
                 // 禁止 panic 把编译期缺陷升级成崩溃。
-                let Some(layout) = self.ctx.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
+                let Some(layout) = self.input.field_layout_by_id(*field).map(|(layout, _, _)| layout).cloned()
                 else {
                     return Err(format!("WASM FieldSet 缺少 layout in `{}`: field=`{field}`", self.mir_fn.symbol));
                 };
@@ -550,7 +549,7 @@ impl<'a> WasmMirLowerer<'a> {
                             layout.name, self.mir_fn.symbol
                         ));
                     };
-                    let Some((_, field_layout, field_index)) = self.ctx.field_layout_by_id(*field)
+                    let Some((_, field_layout, field_index)) = self.input.field_layout_by_id(*field)
                     else {
                         return Err(format!(
                             "WASM FieldSet 字段 layout 二次查表不一致（gc struct 分支）: field=`{field}`（symbol=`{}`）",
@@ -564,7 +563,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_struct_set(type_index, field_index as u32);
                 }
                 else if let Some(object_local) = self.operand_address_local(object) {
-                    let Some((_, field_layout, _)) = self.ctx.field_layout_by_id(*field)
+                    let Some((_, field_layout, _)) = self.input.field_layout_by_id(*field)
                     else {
                         return Err(format!(
                             "WASM FieldSet 字段 layout 二次查表不一致（地址分支）: field=`{field}`（symbol=`{}`）",
@@ -582,30 +581,30 @@ impl<'a> WasmMirLowerer<'a> {
                     return Err(format!("WASM FieldSet 找不到对象槽 in `{}`: layout=`{}` field=`{field}`", self.mir_fn.symbol, layout.name));
                 }
             }
-            MirInstructionKind::ArrayGet { array, index } => {
-                self.emit_array_get_ops(&[array.clone(), index.clone()], instruction_primary_result(instruction))?;
+            WasmOperation::ArrayGet { array, index } => {
+                self.emit_array_get_ops(&[array.clone(), index.clone()], primary_result(instruction))?;
             }
-            MirInstructionKind::ArraySet { array, index, value } => {
-                self.emit_array_set_ops(&[array.clone(), index.clone(), value.clone()], instruction_primary_result(instruction))?;
+            WasmOperation::ArraySet { array, index, value } => {
+                self.emit_array_set_ops(&[array.clone(), index.clone(), value.clone()], primary_result(instruction))?;
             }
-            MirInstructionKind::ArrayLength { array } => {
-                self.emit_array_length_ops(array, instruction_primary_result(instruction))?;
+            WasmOperation::ArrayLength { array } => {
+                self.emit_array_length_ops(array, primary_result(instruction))?;
             }
-            MirInstructionKind::NullIsNull { value } => {
+            WasmOperation::NullIsNull { value } => {
                 self.emit_operand_coerced(value, WASM_GC_ANYREF)?;
                 self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::RefIsNull));
-                if let Some(output) = instruction_primary_result(instruction) {
+                if let Some(output) = primary_result(instruction) {
                     self.store_scalar(output);
                 }
             }
-            MirInstructionKind::NullUnwrap { value } => {
+            WasmOperation::NullUnwrap { value } => {
                 // `try?` / pattern lowering already branches on `NullIsNull` before unwrap.
                 self.emit_operand_coerced(value, WASM_GC_ANYREF)?;
-                if let Some(output) = instruction_primary_result(instruction) {
+                if let Some(output) = primary_result(instruction) {
                     self.store_scalar(output);
                 }
             }
-            MirInstructionKind::LoadFunctionRef { instance, environment, captured: _ } => {
+            WasmOperation::LoadFunctionRef { instance, environment, captured: _ } => {
                 // 函数值 = 闭包对象（合同 §5.3）：gc struct `[code: i32, env: anyref]`。
                 // code 槽只来自模块装配预扫描登记的 funcref table 槽位；未登记实例是
                 // 计划事实缺失，结构化失败，禁止编码期补造 table 项。无捕获路径同样
@@ -614,7 +613,7 @@ impl<'a> WasmMirLowerer<'a> {
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少已登记的 funcref table 槽位: {}", self.mir_fn.symbol));
                 };
-                let Some(output) = instruction_primary_result(instruction)
+                let Some(output) = primary_result(instruction)
                 else {
                     return Err(format!("WASM 函数值 `{instance:?}` 缺少结果槽: {}", self.mir_fn.symbol));
                 };
@@ -636,27 +635,27 @@ impl<'a> WasmMirLowerer<'a> {
                 }
                 self.emit_struct_set(self.gc_closure_type_index, WASM_CLOSURE_ENV_FIELD);
             }
-            MirInstructionKind::Call { callee, arguments } => {
+            WasmOperation::Call { callee, arguments } => {
                 // Slim Call 没有 dispatch 字段：路由只由 callee 操作数形态决定——
                 // `Item` 是 Compiler 冻结的直接 callable 身份（Static），
                 // `Value` 是函数值 SSA（i32 table 槽载体），必须走类型化间接调用。
                 let dispatch = match callee {
-                    MirOperand::Value(_) => MirDispatchKind::Indirect,
-                    _ => MirDispatchKind::Static,
+                    WasmOperand::Value(_) => WasmDispatchKind::Indirect,
+                    _ => WasmDispatchKind::Static,
                 };
-                self.emit_call_lowering(callee, arguments, dispatch, None, None, instruction_primary_result(instruction))?;
+                self.emit_call_lowering(callee, arguments, dispatch, None, None, primary_result(instruction))?;
             }
             // pattern 无法 lowering：extractor ?resolved 或类型推断失败，
             // 运行?trap——emit wasm `unreachable` (0x00) 立即触发 trap?
             // ── sum（nominal variant）───────────────────────────────────────
             // 物理载体是后端私有的 `[i32 tag, anyref payload]` struct；语义身份
-            // （nominal / variant）只来自计划冻结的 `SumRepresentation`，绝不按
+            // （nominal / variant）只来自计划冻结的 `WasmSumRep`，绝不按
             // 字段名、成员短名或字面量 tag 推断。
-            MirInstructionKind::SumNew { nominal, variant, payload } => {
+            WasmOperation::SumNew { nominal, variant, payload } => {
                 let type_index = self.resolve_gc_sum_type_index(nominal);
                 let (tag, payload_type) = self.sum_variant_representation(nominal, variant);
                 assert_eq!(
-                    payload_type.is_some(),
+                    payload_type,
                     payload.is_some(),
                     "WASM SumNew variant {variant:?} 的操作数与计划 payload 合同不一致 in `{}`",
                     self.mir_fn.symbol
@@ -675,7 +674,7 @@ impl<'a> WasmMirLowerer<'a> {
                     self.emit_struct_set(type_index, SUM_PAYLOAD_FIELD);
                 }
                 self.emit_local_get(object_local);
-                if let Some(output) = instruction_primary_result(instruction) {
+                if let Some(output) = primary_result(instruction) {
                     self.validate_output_slot_type(output, WASM_GC_ANYREF)?;
                     self.assign_output_local(output);
                 }
@@ -683,11 +682,11 @@ impl<'a> WasmMirLowerer<'a> {
                     self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop));
                 }
             }
-            MirInstructionKind::SumPayloadGet { nominal, variant, object } => {
+            WasmOperation::SumPayloadGet { nominal, variant, object } => {
                 let type_index = self.resolve_gc_sum_type_index(nominal);
                 let (_, payload_type) = self.sum_variant_representation(nominal, variant);
-                assert!(payload_type.is_some(), "WASM SumPayloadGet 对无 payload 的 variant {variant:?} 取值 in `{}`", self.mir_fn.symbol);
-                let output = instruction_primary_result(instruction)
+                assert!(payload_type, "WASM SumPayloadGet 对无 payload 的 variant {variant:?} 取值 in `{}`", self.mir_fn.symbol);
+                let output = primary_result(instruction)
                     .unwrap_or_else(|| panic!("WASM SumPayloadGet 缺少结果槽 in `{}`", self.mir_fn.symbol));
                 let target_stack_ty = self.wasm_local_value_type(self.planned_value_local(output));
                 self.emit_operand_coerced(object, WASM_GC_ANYREF)?;
@@ -697,7 +696,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.validate_output_slot_type(output, target_stack_ty)?;
                 self.assign_output_local(output);
             }
-            MirInstructionKind::SumVariantIs { nominal, variant, object } => {
+            WasmOperation::SumVariantIs { nominal, variant, object } => {
                 let type_index = self.resolve_gc_sum_type_index(nominal);
                 let (tag, _) = self.sum_variant_representation(nominal, variant);
                 self.emit_operand_coerced(object, WASM_GC_ANYREF)?;
@@ -705,7 +704,7 @@ impl<'a> WasmMirLowerer<'a> {
                 self.emit_struct_get(type_index, SUM_TAG_FIELD);
                 self.emit_i32_const(i32::try_from(tag).expect("sum tag 超出 i32"));
                 self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Eq));
-                if let Some(output) = instruction_primary_result(instruction) {
+                if let Some(output) = primary_result(instruction) {
                     self.store_scalar(output);
                 }
                 else {
@@ -729,7 +728,7 @@ impl<'a> WasmMirLowerer<'a> {
     /// （数组、闭包、联合、`class` 等）。禁止按类型名/字段名特判。
     fn emit_gc_struct_value_copy(
         &mut self,
-        layout: &ResolvedAggregateLayout,
+        layout: &WasmLayoutFact,
         type_index: u32,
         source_local: u32,
         dest_local: u32,
@@ -775,7 +774,7 @@ impl<'a> WasmMirLowerer<'a> {
             self.emit_local_set(nested_dest);
             self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Else));
             let nested_layout = self
-                .ctx
+                .input
                 .layout_by_id(nested_layout_id)
                 .cloned()
                 .ok_or_else(|| format!("WASM AggregateCopy 嵌套值聚合 layout `{nested_layout_id:?}` 未登记 in `{}`", self.mir_fn.symbol))?;
@@ -790,13 +789,13 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 嵌套字段是否是需要递归复制的值语义聚合（返回其 layout 身份与 gc struct 类型索引）。
-    fn nested_value_aggregate_layout(&self, ty: &SemanticType) -> Option<(LayoutId, u32)> {
+    fn nested_value_aggregate_layout(&self, ty: &WasmTypeFact) -> Option<(WasmLayoutKey, u32)> {
         // 字段槽必须是引用载体，否则没有可递归的堆对象。
         if wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref).ok() != Some(WASM_GC_ANYREF) {
             return None;
         }
-        let layout = self.ctx.layout_for_semantic_type(ty)?;
-        if layout.storage != StorageKind::Value || layout.fields.is_empty() {
+        let layout = self.input.layout_for_type(ty)?;
+        if layout.storage != WasmStorageClass::Value || layout.fields.is_empty() {
             return None;
         }
         self.gc_struct_type_indices.get(&layout.id).map(|type_index| (layout.id, *type_index))
@@ -806,7 +805,7 @@ impl<'a> WasmMirLowerer<'a> {
     ///
     /// 载荷槽统一是 `anyref`，所以标量必须先装箱成 `[i32]` / `[i64]`；直接放标量
     /// 会让 `struct.set` 在 V8 校验阶段失败。引用载荷原样透传。
-    fn emit_payload_to_anyref(&mut self, payload: &MirOperand) -> crate::Result<()> {
+    fn emit_payload_to_anyref(&mut self, payload: &WasmOperand) -> crate::Result<()> {
         let stack_ty = self.operand_wasm_stack_type(payload)?;
         let box_ty = match stack_ty {
             WASM_GC_ANYREF => {
@@ -918,13 +917,13 @@ const WASM_F64_PROMOTE_F32: WasmOpcode = WasmOpcode::F64PromoteF32;
 ///
 /// f32/f64 之间的转换必须显式走 `f64.promote_f32` / `f32.demote_f64`，
 /// 不存在「同载体恒等」或「借 64 位槽」的隐式路径。
-fn is_float_carrier(ty: &SemanticType) -> bool {
-    matches!(ty, SemanticType::Float32 | SemanticType::Float64)
+fn is_float_carrier(ty: &WasmTypeFact) -> bool {
+    matches!(ty, WasmTypeFact::Float32 | WasmTypeFact::Float64)
 }
 
 /// 语言层 `as` 的数值表示转换配方。
 ///
-/// 语义由计划冻结的两端 `SemanticType` 决定：`i32` 与 `u32` 都占 `VALTYPE_I32`，只有
+/// 语义由计划冻结的两端 `WasmTypeFact` 决定：`i32` 与 `u32` 都占 `VALTYPE_I32`，只有
 /// `signed` 能区分 `i64.extend_i32_s` 与 `i64.extend_i32_u`；窄整数（`Integer8` /
 /// `Integer16`）同样占 `VALTYPE_I32`，因此窄化配方必须显式写出，不能靠载体相同就跳过。
 ///
@@ -937,14 +936,14 @@ fn is_float_carrier(ty: &SemanticType) -> bool {
 /// 因此不存在 double rounding；也禁止把 `f32` 当 `f64` 恒等搬移。
 ///
 /// 任何缺少精确配方的组合都必须响亮失败，禁止用近似指令冒充。
-fn scalar_cast_steps(source: &SemanticType, target: &SemanticType) -> crate::Result<Vec<ScalarCastStep>> {
+fn scalar_cast_steps(source: &WasmTypeFact, target: &WasmTypeFact) -> crate::Result<Vec<ScalarCastStep>> {
     if source == target {
         return Ok(Vec::new());
     }
     match (source, target) {
         // 浮点之间是显式单指令转换，不是载体恒等。
-        (SemanticType::Float32, SemanticType::Float64) => return Ok(vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]),
-        (SemanticType::Float64, SemanticType::Float32) => return Ok(vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]),
+        (WasmTypeFact::Float32, WasmTypeFact::Float64) => return Ok(vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]),
+        (WasmTypeFact::Float64, WasmTypeFact::Float32) => return Ok(vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]),
         _ => {}
     }
     if is_float_carrier(source) {
@@ -954,12 +953,12 @@ fn scalar_cast_steps(source: &SemanticType, target: &SemanticType) -> crate::Res
         return integer_to_float_steps(source, target);
     }
     match (source, target) {
-        (SemanticType::Integer64 { .. }, SemanticType::Integer64 { .. }) => return Ok(Vec::new()),
+        (WasmTypeFact::Integer64 { .. }, WasmTypeFact::Integer64 { .. }) => return Ok(Vec::new()),
         _ => {}
     }
     let source_on_i32 = match source {
-        SemanticType::Integer8 { .. } | SemanticType::Integer16 { .. } | SemanticType::Integer32 { .. } | SemanticType::Character => true,
-        SemanticType::Integer64 { .. } => false,
+        WasmTypeFact::Integer8 { .. } | WasmTypeFact::Integer16 { .. } | WasmTypeFact::Integer32 { .. } | WasmTypeFact::Character => true,
+        WasmTypeFact::Integer64 { .. } => false,
         _ => return Err(unsupported_cast(source, target)),
     };
     let mut steps = Vec::new();
@@ -968,7 +967,7 @@ fn scalar_cast_steps(source: &SemanticType, target: &SemanticType) -> crate::Res
         steps.push(ScalarCastStep::Opcode(WasmOpcode::I32WrapI64));
     }
     match target {
-        SemanticType::Integer64 { .. } => steps.push(if source_is_signed(source) {
+        WasmTypeFact::Integer64 { .. } => steps.push(if source_is_signed(source) {
             ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)
         }
         else {
@@ -982,13 +981,13 @@ fn scalar_cast_steps(source: &SemanticType, target: &SemanticType) -> crate::Res
 /// i32 载体值落到目标整数类型的规范化配方（窄化掩码 / 符号扩展）。
 ///
 /// 32 位目标与 `Character` 直接就是载体本身；`None` 表示目标不是 32 位以内的整数族。
-fn normalize_i32_carrier_to_integer(target: &SemanticType) -> Option<Vec<ScalarCastStep>> {
+fn normalize_i32_carrier_to_integer(target: &WasmTypeFact) -> Option<Vec<ScalarCastStep>> {
     Some(match target {
-        SemanticType::Integer32 { .. } | SemanticType::Character => Vec::new(),
-        SemanticType::Integer8 { signed: false } => vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
-        SemanticType::Integer8 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)],
-        SemanticType::Integer16 { signed: false } => vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
-        SemanticType::Integer16 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)],
+        WasmTypeFact::Integer32 { .. } | WasmTypeFact::Character => Vec::new(),
+        WasmTypeFact::Integer8 { signed: false } => vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
+        WasmTypeFact::Integer8 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)],
+        WasmTypeFact::Integer16 { signed: false } => vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)],
+        WasmTypeFact::Integer16 { signed: true } => vec![ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)],
         _ => return None,
     })
 }
@@ -1000,10 +999,10 @@ fn normalize_i32_carrier_to_integer(target: &SemanticType) -> Option<Vec<ScalarC
 ///
 /// 源在 i32 载体上已是规范形态（无符号是掩码后的非负值，有符号是符号扩展值，
 /// `Character` 是码点），所以窄整数只需看 `signed` 位宽即可，无需先规范化。
-fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate::Result<Vec<ScalarCastStep>> {
-    let to_f32 = matches!(target, SemanticType::Float32);
+fn integer_to_float_steps(source: &WasmTypeFact, target: &WasmTypeFact) -> crate::Result<Vec<ScalarCastStep>> {
+    let to_f32 = matches!(target, WasmTypeFact::Float32);
     let opcode = match source {
-        SemanticType::Integer64 { signed: true } => {
+        WasmTypeFact::Integer64 { signed: true } => {
             if to_f32 {
                 WASM_F32_CONVERT_I64_S
             }
@@ -1011,7 +1010,7 @@ fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate
                 WASM_F64_CONVERT_I64_S
             }
         }
-        SemanticType::Integer64 { signed: false } => {
+        WasmTypeFact::Integer64 { signed: false } => {
             if to_f32 {
                 WASM_F32_CONVERT_I64_U
             }
@@ -1019,7 +1018,7 @@ fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate
                 WASM_F64_CONVERT_I64_U
             }
         }
-        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => {
+        WasmTypeFact::Integer8 { signed } | WasmTypeFact::Integer16 { signed } | WasmTypeFact::Integer32 { signed } => {
             match (*signed, to_f32) {
                 (true, true) => WASM_F32_CONVERT_I32_S,
                 (true, false) => WASM_F64_CONVERT_I32_S,
@@ -1028,7 +1027,7 @@ fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate
             }
         }
         // Unicode 码点恒非负。
-        SemanticType::Character => {
+        WasmTypeFact::Character => {
             if to_f32 {
                 WASM_F32_CONVERT_I32_U
             }
@@ -1045,37 +1044,37 @@ fn integer_to_float_steps(source: &SemanticType, target: &SemanticType) -> crate
 ///
 /// `trunc_*` 在 NaN 与目标范围外会触发 wasm trap（`integer overflow`），这是
 /// 语言层 `as` 的 fail-closed 行为，不得换成静默饱和。
-fn float_to_integer_steps(source: &SemanticType, target: &SemanticType) -> crate::Result<Vec<ScalarCastStep>> {
+fn float_to_integer_steps(source: &WasmTypeFact, target: &WasmTypeFact) -> crate::Result<Vec<ScalarCastStep>> {
     let (trunc_i32_s, trunc_i32_u, trunc_i64_s, trunc_i64_u) = match source {
-        SemanticType::Float32 => (WASM_I32_TRUNC_F32_S, WASM_I32_TRUNC_F32_U, WASM_I64_TRUNC_F32_S, WASM_I64_TRUNC_F32_U),
-        SemanticType::Float64 => (WASM_I32_TRUNC_F64_S, WASM_I32_TRUNC_F64_U, WASM_I64_TRUNC_F64_S, WASM_I64_TRUNC_F64_U),
+        WasmTypeFact::Float32 => (WASM_I32_TRUNC_F32_S, WASM_I32_TRUNC_F32_U, WASM_I64_TRUNC_F32_S, WASM_I64_TRUNC_F32_U),
+        WasmTypeFact::Float64 => (WASM_I32_TRUNC_F64_S, WASM_I32_TRUNC_F64_U, WASM_I64_TRUNC_F64_S, WASM_I64_TRUNC_F64_U),
         _ => return Err(unsupported_cast(source, target)),
     };
     match target {
-        SemanticType::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_s)]),
-        SemanticType::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_u)]),
-        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => {
+        WasmTypeFact::Integer64 { signed: true } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_s)]),
+        WasmTypeFact::Integer64 { signed: false } => Ok(vec![ScalarCastStep::Opcode(trunc_i64_u)]),
+        WasmTypeFact::Integer8 { signed } | WasmTypeFact::Integer16 { signed } | WasmTypeFact::Integer32 { signed } => {
             let trunc = if *signed { trunc_i32_s } else { trunc_i32_u };
             let mut steps = vec![ScalarCastStep::Opcode(trunc)];
             steps.extend(normalize_i32_carrier_to_integer(target).expect("32 位整数族必须有规范化配方"));
             Ok(steps)
         }
         // 码点恒非负，`trunc_u` 之后就是 `Character` 的规范形态。
-        SemanticType::Character => Ok(vec![ScalarCastStep::Opcode(trunc_i32_u)]),
+        WasmTypeFact::Character => Ok(vec![ScalarCastStep::Opcode(trunc_i32_u)]),
         _ => Err(unsupported_cast(source, target)),
     }
 }
 
 /// 源类型在 i32 载体上的值是否可能为负：决定宽化到 64 位时用符号扩展还是零扩展。
-fn source_is_signed(source: &SemanticType) -> bool {
+fn source_is_signed(source: &WasmTypeFact) -> bool {
     match source {
-        SemanticType::Integer8 { signed } | SemanticType::Integer16 { signed } | SemanticType::Integer32 { signed } => *signed,
+        WasmTypeFact::Integer8 { signed } | WasmTypeFact::Integer16 { signed } | WasmTypeFact::Integer32 { signed } => *signed,
         // `Character` 是 Unicode 码点，恒非负。
         _ => false,
     }
 }
 
-fn unsupported_cast(source: &SemanticType, target: &SemanticType) -> String {
+fn unsupported_cast(source: &WasmTypeFact, target: &WasmTypeFact) -> String {
     format!("wasm 后端缺少 {source} → {target} 的精确表示转换编码（data_binary_wasm 未提供对应 opcode），不得退化为近似转换")
 }
 
@@ -1083,58 +1082,58 @@ fn unsupported_cast(source: &SemanticType, target: &SemanticType) -> String {
 mod tests {
     use super::*;
 
-    fn cast(source: SemanticType, target: SemanticType) -> Vec<ScalarCastStep> {
+    fn cast(source: WasmTypeFact, target: WasmTypeFact) -> Vec<ScalarCastStep> {
         scalar_cast_steps(&source, &target).expect("表示转换应有精确配方")
     }
 
     #[test]
     fn widening_selects_extension_by_source_signedness() {
-        let i32s = SemanticType::Integer32 { signed: true };
-        let u32v = SemanticType::Integer32 { signed: false };
-        let i64s = SemanticType::Integer64 { signed: true };
+        let i32s = WasmTypeFact::Integer32 { signed: true };
+        let u32v = WasmTypeFact::Integer32 { signed: false };
+        let i64s = WasmTypeFact::Integer64 { signed: true };
         assert_eq!(cast(i32s.clone(), i64s.clone()), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
         assert_eq!(cast(u32v, i64s.clone()), vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]);
         // 窄整数在 i32 载体上已是规范形态：宽化到 32 位不需要任何指令。
-        assert_eq!(cast(SemanticType::Integer8 { signed: false }, SemanticType::Integer32 { signed: false }), Vec::new());
-        assert_eq!(cast(SemanticType::Integer16 { signed: true }, i32s), Vec::new());
-        assert_eq!(cast(SemanticType::Integer8 { signed: true }, i64s), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
+        assert_eq!(cast(WasmTypeFact::Integer8 { signed: false }, WasmTypeFact::Integer32 { signed: false }), Vec::new());
+        assert_eq!(cast(WasmTypeFact::Integer16 { signed: true }, i32s), Vec::new());
+        assert_eq!(cast(WasmTypeFact::Integer8 { signed: true }, i64s), vec![ScalarCastStep::Opcode(WasmOpcode::I64ExtendI32S)]);
     }
 
     #[test]
     fn narrowing_masks_unsigned_and_extends_signed_explicitly() {
         assert_eq!(
-            cast(SemanticType::Integer32 { signed: false }, SemanticType::Integer8 { signed: false }),
+            cast(WasmTypeFact::Integer32 { signed: false }, WasmTypeFact::Integer8 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
         assert_eq!(
-            cast(SemanticType::Integer32 { signed: true }, SemanticType::Integer16 { signed: false }),
+            cast(WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Integer16 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
         assert_eq!(
-            cast(SemanticType::Integer32 { signed: true }, SemanticType::Integer8 { signed: true }),
+            cast(WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Integer8 { signed: true }),
             vec![ScalarCastStep::Opcode(WASM_I32_EXTEND8_S)]
         );
         assert_eq!(
-            cast(SemanticType::Integer64 { signed: false }, SemanticType::Integer16 { signed: true }),
+            cast(WasmTypeFact::Integer64 { signed: false }, WasmTypeFact::Integer16 { signed: true }),
             vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64), ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)]
         );
     }
 
     #[test]
     fn character_conversions_use_the_code_point_carrier() {
-        assert_eq!(cast(SemanticType::Character, SemanticType::Integer32 { signed: false }), Vec::new());
+        assert_eq!(cast(WasmTypeFact::Character, WasmTypeFact::Integer32 { signed: false }), Vec::new());
         // 码点可以超出 16 位，收窄到 `u16` 必须显式掩码。
         assert_eq!(
-            cast(SemanticType::Character, SemanticType::Integer16 { signed: false }),
+            cast(WasmTypeFact::Character, WasmTypeFact::Integer16 { signed: false }),
             vec![ScalarCastStep::I32Const(0xFFFF), ScalarCastStep::Opcode(WasmOpcode::I32And)]
         );
         assert_eq!(
-            cast(SemanticType::Character, SemanticType::Integer64 { signed: true }),
+            cast(WasmTypeFact::Character, WasmTypeFact::Integer64 { signed: true }),
             vec![ScalarCastStep::Opcode(WASM_I64_EXTEND_I32_U)]
         );
-        assert_eq!(cast(SemanticType::Integer16 { signed: false }, SemanticType::Character), Vec::new());
+        assert_eq!(cast(WasmTypeFact::Integer16 { signed: false }, WasmTypeFact::Character), Vec::new());
         assert_eq!(
-            cast(SemanticType::Integer64 { signed: true }, SemanticType::Character),
+            cast(WasmTypeFact::Integer64 { signed: true }, WasmTypeFact::Character),
             vec![ScalarCastStep::Opcode(WasmOpcode::I32WrapI64)]
         );
     }
@@ -1142,71 +1141,71 @@ mod tests {
     #[test]
     fn integer_to_float_picks_opcode_by_signedness_and_carrier() {
         // 64 位源：有符号与无符号必须选不同的 convert 指令。
-        assert_eq!(cast(SemanticType::Integer64 { signed: true }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_S)]);
+        assert_eq!(cast(WasmTypeFact::Integer64 { signed: true }, WasmTypeFact::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_S)]);
         assert_eq!(
-            cast(SemanticType::Integer64 { signed: false }, SemanticType::Float64),
+            cast(WasmTypeFact::Integer64 { signed: false }, WasmTypeFact::Float64),
             vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I64_U)]
         );
         // 32 位载体同理。
-        assert_eq!(cast(SemanticType::Integer32 { signed: true }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_S)]);
+        assert_eq!(cast(WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_S)]);
         assert_eq!(
-            cast(SemanticType::Integer32 { signed: false }, SemanticType::Float64),
+            cast(WasmTypeFact::Integer32 { signed: false }, WasmTypeFact::Float64),
             vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]
         );
         // 窄无符号在 i32 载体上已是掩码后的非负值，无需再规范化。
-        assert_eq!(cast(SemanticType::Integer8 { signed: false }, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(WasmTypeFact::Integer8 { signed: false }, WasmTypeFact::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
         // 码点恒非负。
-        assert_eq!(cast(SemanticType::Character, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
+        assert_eq!(cast(WasmTypeFact::Character, WasmTypeFact::Float64), vec![ScalarCastStep::Opcode(WASM_F64_CONVERT_I32_U)]);
     }
 
     #[test]
     fn float_to_integer_uses_trunc_then_target_normalization() {
-        assert_eq!(cast(SemanticType::Float64, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_S)]);
-        assert_eq!(cast(SemanticType::Float64, SemanticType::Integer64 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_U)]);
-        assert_eq!(cast(SemanticType::Float64, SemanticType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(cast(WasmTypeFact::Float64, WasmTypeFact::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_S)]);
+        assert_eq!(cast(WasmTypeFact::Float64, WasmTypeFact::Integer64 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F64_U)]);
+        assert_eq!(cast(WasmTypeFact::Float64, WasmTypeFact::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
         assert_eq!(
-            cast(SemanticType::Float64, SemanticType::Integer8 { signed: false }),
+            cast(WasmTypeFact::Float64, WasmTypeFact::Integer8 { signed: false }),
             vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U), ScalarCastStep::I32Const(0xFF), ScalarCastStep::Opcode(WasmOpcode::I32And),]
         );
         assert_eq!(
-            cast(SemanticType::Float64, SemanticType::Integer16 { signed: true }),
+            cast(WasmTypeFact::Float64, WasmTypeFact::Integer16 { signed: true }),
             vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_S), ScalarCastStep::Opcode(WASM_I32_EXTEND16_S)]
         );
-        assert_eq!(cast(SemanticType::Float64, SemanticType::Character), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
+        assert_eq!(cast(WasmTypeFact::Float64, WasmTypeFact::Character), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F64_U)]);
     }
 
     #[test]
     fn float32_casts_are_explicit_single_instruction_conversions() {
         // f32 ↔ f64 是显式单指令，绝不是「同载体恒等」或借 64 位槽。
-        assert_eq!(cast(SemanticType::Float32, SemanticType::Float64), vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]);
-        assert_eq!(cast(SemanticType::Float64, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]);
+        assert_eq!(cast(WasmTypeFact::Float32, WasmTypeFact::Float64), vec![ScalarCastStep::Opcode(WASM_F64_PROMOTE_F32)]);
+        assert_eq!(cast(WasmTypeFact::Float64, WasmTypeFact::Float32), vec![ScalarCastStep::Opcode(WASM_F32_DEMOTE_F64)]);
         // 整数↔f32 直接用 f32.convert_* / trunc_f32_*，不先经 f64（避免 double rounding）。
-        assert_eq!(cast(SemanticType::Integer32 { signed: true }, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_S)]);
+        assert_eq!(cast(WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_S)]);
         assert_eq!(
-            cast(SemanticType::Integer64 { signed: false }, SemanticType::Float32),
+            cast(WasmTypeFact::Integer64 { signed: false }, WasmTypeFact::Float32),
             vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I64_U)]
         );
-        assert_eq!(cast(SemanticType::Character, SemanticType::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_U)]);
-        assert_eq!(cast(SemanticType::Float32, SemanticType::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F32_S)]);
-        assert_eq!(cast(SemanticType::Float32, SemanticType::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F32_U)]);
+        assert_eq!(cast(WasmTypeFact::Character, WasmTypeFact::Float32), vec![ScalarCastStep::Opcode(WASM_F32_CONVERT_I32_U)]);
+        assert_eq!(cast(WasmTypeFact::Float32, WasmTypeFact::Integer64 { signed: true }), vec![ScalarCastStep::Opcode(WASM_I64_TRUNC_F32_S)]);
+        assert_eq!(cast(WasmTypeFact::Float32, WasmTypeFact::Integer32 { signed: false }), vec![ScalarCastStep::Opcode(WASM_I32_TRUNC_F32_U)]);
     }
 
     /// 反例：`f32` 不得被当作 `f64` 或整数静默搬运（载体身份不可伪造）。
     #[test]
     fn float32_never_alias_to_f64_or_integer_slots() {
-        assert_ne!(cast(SemanticType::Float32, SemanticType::Float64), Vec::<ScalarCastStep>::new());
-        assert_ne!(cast(SemanticType::Float64, SemanticType::Float32), Vec::<ScalarCastStep>::new());
+        assert_ne!(cast(WasmTypeFact::Float32, WasmTypeFact::Float64), Vec::<ScalarCastStep>::new());
+        assert_ne!(cast(WasmTypeFact::Float64, WasmTypeFact::Float32), Vec::<ScalarCastStep>::new());
         // 宽度不匹配：`f32` 当 u64 用必须是结构化失败，不能靠掩码或拓宽蒙混。
-        assert!(scalar_cast_steps(&SemanticType::Float32, &SemanticType::Boolean).is_err());
-        assert!(scalar_cast_steps(&SemanticType::Boolean, &SemanticType::Float32).is_err());
+        assert!(scalar_cast_steps(&WasmTypeFact::Float32, &WasmTypeFact::Boolean).is_err());
+        assert!(scalar_cast_steps(&WasmTypeFact::Boolean, &WasmTypeFact::Float32).is_err());
     }
 
     #[test]
     fn unrepresentable_widths_fail_loudly() {
-        assert!(scalar_cast_steps(&SemanticType::Integer128 { signed: true }, &SemanticType::Integer32 { signed: true }).is_err());
+        assert!(scalar_cast_steps(&WasmTypeFact::Integer128 { signed: true }, &WasmTypeFact::Integer32 { signed: true }).is_err());
         // 布尔/文本与浮点之间没有冻结的 `as` 语义，必须结构化失败。
-        assert!(scalar_cast_steps(&SemanticType::Boolean, &SemanticType::Float64).is_err());
-        assert!(scalar_cast_steps(&SemanticType::Float64, &SemanticType::Boolean).is_err());
-        assert!(scalar_cast_steps(&SemanticType::Utf8, &SemanticType::Float64).is_err());
+        assert!(scalar_cast_steps(&WasmTypeFact::Boolean, &WasmTypeFact::Float64).is_err());
+        assert!(scalar_cast_steps(&WasmTypeFact::Float64, &WasmTypeFact::Boolean).is_err());
+        assert!(scalar_cast_steps(&WasmTypeFact::Utf8, &WasmTypeFact::Float64).is_err());
     }
 }

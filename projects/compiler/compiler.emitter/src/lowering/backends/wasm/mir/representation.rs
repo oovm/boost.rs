@@ -1,14 +1,17 @@
-//! Wasm physical representation of SemanticType / AggregateLayout.
+//! Wasm physical representation of WasmTypeFact / WasmLayoutFact.
 //!
 //! Owns unique storage and value-type rules for the Wasm GC backend:
-//! Semantic MIR `StorageKind`, ABI param/return bytes, and GC field-type bytes.
+//! Semantic MIR `WasmStorageClass`, ABI param/return bytes, and GC field-type bytes.
 //! This is Wasm **physical representation** only — Semantic MIR remains the
 //! language type authority; backend only chooses Wasm encoding.
 //!
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
-use super::{ExecutableLoweringContext, LayoutId, MirFunction, MirStorageKind, SemanticType, StorageKind, WASM_GC_ANYREF};
-use crate::lowering::backends::wasm::gc::{VALTYPE_F32, wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype};
+use super::{
+    WasmFunctionInput, WasmLayoutFact, WasmLayoutKey, WasmModuleInput, WasmStorageClass, WasmTypeFact, WASM_GC_ANYREF, unresolved_text_abi_reason,
+    wasm_gc_field_type_byte, wasm_js_glue_value_carrier_valtype,
+};
+use crate::lowering::backends::wasm::gc::VALTYPE_F32;
 use data_binary_wasm::{VALTYPE_ANYREF, VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
 use std::collections::BTreeMap;
 
@@ -16,70 +19,70 @@ use std::collections::BTreeMap;
 pub(in crate::lowering::backends::wasm) const WASM_CLOSURE_CODE_FIELD: u32 = 0;
 pub(in crate::lowering::backends::wasm) const WASM_CLOSURE_ENV_FIELD: u32 = 1;
 
-pub(super) fn is_js_glue_host_string_type(ty: &SemanticType) -> bool {
+pub(super) fn is_js_glue_host_string_type(ty: &WasmTypeFact) -> bool {
     // Only the explicit language encoding reaches the JS glue ABI. Nominal
     // names are not evidence of text semantics.
-    matches!(ty, SemanticType::Utf8)
+    matches!(ty, WasmTypeFact::Utf8)
 }
 
 /// Wasm lane 自有的存储类归类：标量与文本是值槽，内联聚合按形状是值槽，
 /// 堆载体（数组 / trait object / union / nullable / 泛型实例 / 函数值）是引用槽，
 /// `Nominal` 按 canonical 冻结的实例级布局身份解析，不按拼写回查。
 ///
-/// 这是 Wasm 的物理表示合同，归本 lane 所有；共享 `ExecutableLoweringContext`
-/// 不再承载按 `SemanticType` 归类语义的判定。
-pub(super) fn storage_for_type(ctx: &ExecutableLoweringContext, ty: &SemanticType) -> MirStorageKind {
+/// 这是 Wasm 的物理表示合同，归本 lane 所有；共享 `WasmModuleInput`
+/// 不再承载按 `WasmTypeFact` 归类语义的判定。
+pub(super) fn storage_for_type(input: &WasmModuleInput, ty: &WasmTypeFact) -> WasmStorageClass {
     match ty {
-        SemanticType::Bottom
-        | SemanticType::Unit
-        | SemanticType::Boolean
-        | SemanticType::Integer8 { .. }
-        | SemanticType::Integer16 { .. }
-        | SemanticType::Integer32 { .. }
-        | SemanticType::Integer64 { .. }
-        | SemanticType::Integer128 { .. }
-        | SemanticType::Float32
-        | SemanticType::Float64
-        | SemanticType::Character
-        | SemanticType::Utf8
-        | SemanticType::Utf16 => StorageKind::Value,
-        SemanticType::Tuple(_) | SemanticType::FixedArray { .. } => StorageKind::Value,
-        SemanticType::Array(_)
-        | SemanticType::TraitObject(_)
-        | SemanticType::Union(_)
-        | SemanticType::Nullable(_)
-        | SemanticType::Apply(..)
-        | SemanticType::Function(_) => StorageKind::Reference,
+        WasmTypeFact::Bottom
+        | WasmTypeFact::Unit
+        | WasmTypeFact::Boolean
+        | WasmTypeFact::Integer8 { .. }
+        | WasmTypeFact::Integer16 { .. }
+        | WasmTypeFact::Integer32 { .. }
+        | WasmTypeFact::Integer64 { .. }
+        | WasmTypeFact::Integer128 { .. }
+        | WasmTypeFact::Float32
+        | WasmTypeFact::Float64
+        | WasmTypeFact::Character
+        | WasmTypeFact::Utf8
+        | WasmTypeFact::Utf16 => WasmStorageClass::Value,
+        WasmTypeFact::Tuple(_) | WasmTypeFact::FixedArray { .. } => WasmStorageClass::Value,
+        WasmTypeFact::Array(_)
+        | WasmTypeFact::TraitObject(_)
+        | WasmTypeFact::Union(_)
+        | WasmTypeFact::Nullable(_)
+        | WasmTypeFact::Apply(..)
+        | WasmTypeFact::Function(_) => WasmStorageClass::Reference,
         // `Nominal` 携带 canonical 冻结的实例级布局身份：存储类按 `layout` 解析，
         // 不按拼写匹配。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
-        SemanticType::Nominal { layout, spelling } => match ctx.layout_by_id(*layout) {
+        WasmTypeFact::Nominal { layout, spelling } => match input.layout_by_id(*layout) {
             Some(layout) => layout.storage,
             None => panic!(
                 "wasm lowering contract violation: `Nominal({spelling})` 的 layout `{layout:?}` 未注册，\
 身份无法解析存储类（预编码校验见 `validate_storage_identities`）"
             ),
         },
-        SemanticType::Named(name) => panic!(
+        WasmTypeFact::Named(name) => panic!(
             "wasm lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
 禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
         ),
     }
 }
 
-pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> MirStorageKind {
+pub(super) fn mir_storage_for_type(input: &WasmModuleInput, ty: &WasmTypeFact, js_glue_utf8_as_anyref: bool) -> WasmStorageClass {
     let _ = js_glue_utf8_as_anyref;
     if is_js_glue_host_string_type(ty) {
-        return StorageKind::Value;
+        return WasmStorageClass::Value;
     }
     // Tagged unions are represented by GC structs on the WASM backend. Keep
     // their SSA values in anyref locals even when the nominal layout metadata
     // still reports a value-oriented payload representation; otherwise a
     // variant return can later be ref.cast from an i32 slot and trap with
     // `illegal cast`.
-    if matches!(ty, SemanticType::Union(_)) {
-        return StorageKind::Reference;
+    if matches!(ty, WasmTypeFact::Union(_)) {
+        return WasmStorageClass::Reference;
     }
-    storage_for_type(ctx, ty)
+    storage_for_type(input, ty)
 }
 
 /// 对象槽是否走 gc struct：**只读注册表**，不按类型形状特判。
@@ -89,15 +92,15 @@ pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &Semanti
 /// `illegal cast`。注册条件（含 `js_glue_utf8_as_anyref` 的字段判定）已由
 /// `register_gc_struct_types` 冻结，这里消费同一事实，不重新推导。
 pub(super) fn type_uses_gc_struct_param(
-    ctx: &ExecutableLoweringContext,
-    layout_id: Option<LayoutId>,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    layout_id: Option<WasmLayoutKey>,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
 ) -> bool {
     let Some(layout_id) = layout_id
     else {
         return false;
     };
-    let Some(layout) = ctx.layout_by_id(layout_id)
+    let Some(layout) = input.layout_by_id(layout_id)
     else {
         return false;
     };
@@ -107,22 +110,22 @@ pub(super) fn type_uses_gc_struct_param(
 }
 
 pub(super) fn wasm_param_value_type_for(
-    ctx: &ExecutableLoweringContext,
-    ty: &SemanticType,
-    layout_id: Option<LayoutId>,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    ty: &WasmTypeFact,
+    layout_id: Option<WasmLayoutKey>,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<u8> {
     // 注册表是对象槽的唯一权威：值携带已登记 gc struct 的 layout 时，槽必须是
     // anyref，与构造/字段读取点消费同一冻结事实。宿主字符串特判不得反向污染此处。
-    if type_uses_gc_struct_param(ctx, layout_id, gc_struct_type_indices) {
+    if type_uses_gc_struct_param(input, layout_id, gc_struct_type_indices) {
         return Ok(WASM_GC_ANYREF);
     }
     // 未携带 `layout_id`（如 ABI 形参与合成 lambda 的环境槽）但类型本身是已登记
     // gc struct 的名义实例时，仍必须按注册表返回 anyref。闭包环境 layout 由
     // `LoadFunctionRef` 的 environment 操作数强制登记（见 `type_registry`），
     // 否则跨间接调用的环境槽会被降成 i32，与构造点分叉。
-    if let SemanticType::Nominal { layout, .. } = ty {
+    if let WasmTypeFact::Nominal { layout, .. } = ty {
         if gc_struct_type_indices.contains_key(layout) {
             return Ok(WASM_GC_ANYREF);
         }
@@ -132,7 +135,7 @@ pub(super) fn wasm_param_value_type_for(
     if is_js_glue_host_string_type(ty) {
         return Ok(VALTYPE_I32);
     }
-    wasm_js_glue_abi_value_type(ctx, ty, js_glue_utf8_as_anyref)
+    wasm_js_glue_abi_value_type(input, ty, js_glue_utf8_as_anyref)
 }
 
 /// `WasmJsGlue` ABI 位置的载体：`utf16` 与 `utf8` 共用 i32 宿主句柄。
@@ -141,21 +144,21 @@ pub(super) fn wasm_param_value_type_for(
 /// `declared_text_projection` 判定（`WasiComponent` 在到达这里前被拒绝）。
 /// GC 聚合字段槽仍走 `wasm_gc_field_type_byte`，继续拒绝 `utf16`。
 pub(super) fn wasm_js_glue_abi_value_type(
-    ctx: &ExecutableLoweringContext,
-    ty: &SemanticType,
+    input: &WasmModuleInput,
+    ty: &WasmTypeFact,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<u8> {
-    if matches!(ty, SemanticType::Utf16) {
+    if matches!(ty, WasmTypeFact::Utf16) {
         return wasm_js_glue_value_carrier_valtype(ty)
             .ok_or_else(|| crate::lowering::features::physical_contract::UTF16_UNRESOLVED_TEXT_ABI.to_string());
     }
-    wasm_param_value_type(ctx, ty, js_glue_utf8_as_anyref)
+    wasm_param_value_type(input, ty, js_glue_utf8_as_anyref)
 }
 
 pub(super) fn wasm_param_types(
-    ctx: &ExecutableLoweringContext,
-    mir_fn: &MirFunction,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    mir_fn: &WasmFunctionInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<Vec<u8>> {
     mir_fn
@@ -170,12 +173,12 @@ pub(super) fn wasm_param_types(
                 .and_then(|block| block.parameters.get(index))
                 .and_then(|value| mir_fn.value_layouts.get(value))
                 .copied();
-            wasm_param_value_type_for(ctx, ty, layout_id, gc_struct_type_indices, js_glue_utf8_as_anyref)
+            wasm_param_value_type_for(input, ty, layout_id, gc_struct_type_indices, js_glue_utf8_as_anyref)
         })
         .collect()
 }
 
-pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
+pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &WasmTypeFact, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
     // Node/WASI 宿主字符串默认是 i32 句柄（`const_utf8` / `utf8_*`）；
     // 仅当显式打开 js_glue_utf8_as_anyref 时才把 utf8/utf16 放进 anyref 字段/数组元。
     if is_js_glue_host_string_type(ty) {
@@ -187,26 +190,26 @@ pub(super) fn wasm_gc_field_type_byte_for_glue(ty: &SemanticType, js_glue_utf8_a
 /// 函数值签名的 ABI 载体：函数值跨 `call_indirect` 时只认托管形态。
 ///
 /// 函数值自身是闭包对象（anyref），其 code 槽指向的函数体按托管约定接收
-/// `utf8`，因此 `SemanticType::Function` 的可见形参/返回值必须与函数体同一张
+/// `utf8`，因此 `WasmTypeFact::Function` 的可见形参/返回值必须与函数体同一张
 /// 载体表；宿主 i32 句柄只允许出现在真正的导入/导出边界，由边界物化点
 /// 转换。若此处仍按 `None` layout 推导成 i32，`is_less_or_equal` 等间接
 /// 调用点会与闭包体的 anyref 形参分叉。
 pub(super) fn wasm_function_abi_value_type_for(
-    ctx: &ExecutableLoweringContext,
-    ty: &SemanticType,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    ty: &WasmTypeFact,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<u8> {
     if is_js_glue_host_string_type(ty) {
         return Ok(WASM_GC_ANYREF);
     }
-    wasm_param_value_type_for(ctx, ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)
+    wasm_param_value_type_for(input, ty, None, gc_struct_type_indices, js_glue_utf8_as_anyref)
 }
 
 /// wasm/wasi 强制 GC：heap `[T]` / fixed array 在 layout 里常为 Value，
 /// 但 lowering 必须用 anyref + `array.*`，不能分配 i32 槽后 `ref.cast`。
-pub(super) fn type_is_wasm_gc_heap_reference(ty: &SemanticType) -> bool {
-    matches!(ty, SemanticType::Array(_) | SemanticType::FixedArray { .. })
+pub(super) fn type_is_wasm_gc_heap_reference(ty: &WasmTypeFact) -> bool {
+    matches!(ty, WasmTypeFact::Array(_) | WasmTypeFact::FixedArray { .. })
 }
 
 /// 该类型在 wasm 线性内存里是否是**带字段的内联聚合**。
@@ -215,19 +218,19 @@ pub(super) fn type_is_wasm_gc_heap_reference(ty: &SemanticType) -> bool {
 /// 赋值/字段写入方式。零字段值布局（`[primitive(...)] structure usize { }`、
 /// 空结构）与所有标量载体（整数/浮点/bool/unit/字符串句柄）的槽直接持有载体
 /// 本身；对这些形状使用 `memory.copy` 会把载体数值当地址解引用，产生静默错误结果。
-pub(super) fn type_is_inline_aggregate(ctx: &ExecutableLoweringContext, ty: &SemanticType) -> bool {
+pub(super) fn type_is_inline_aggregate(input: &WasmModuleInput, ty: &WasmTypeFact) -> bool {
     match ty {
-        SemanticType::Tuple(_) | SemanticType::FixedArray { .. } => true,
-        SemanticType::Nominal { layout, .. } => ctx.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
+        WasmTypeFact::Tuple(_) | WasmTypeFact::FixedArray { .. } => true,
+        WasmTypeFact::Nominal { layout, .. } => input.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
         _ => false,
     }
 }
 
 /// Maps a MIR parameter type to its WASM value-type byte.
-pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
+pub(super) fn wasm_param_value_type(input: &WasmModuleInput, ty: &WasmTypeFact, js_glue_utf8_as_anyref: bool) -> crate::Result<u8> {
     let _ = js_glue_utf8_as_anyref;
-    if let Some(reason) = crate::lowering::features::physical_contract::unresolved_text_abi_reason(ty) {
-        // 载体事实只有一个来源：`physical_contract::declared_text_projection`。
+    if let Some(reason) = unresolved_text_abi_reason(ty) {
+        // 载体事实只有一个来源：`declared_text_projection`（settle 私有镜像）。
         // `utf16` 尚未在该边界落地载体，禁止借用 `utf8` 的 i32 宿主句柄。
         return Err(reason.to_string());
     }
@@ -240,23 +243,23 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &Semant
     // Aggregates carrying references are represented by wasm-gc structs.
     // Keep their ABI as anyref even when stale nominal layout metadata says
     // Value; otherwise callers ref.cast an i32 return and trap.
-    if matches!(ty, SemanticType::Union(_)) {
+    if matches!(ty, WasmTypeFact::Union(_)) {
         return Ok(WASM_GC_ANYREF);
     }
     // 函数值 = 闭包对象（gc struct `[code: i32, env: anyref]`），见合同 §5.3。
     // 无捕获路径同样使用该载体（env 为 `ref.null anyref`），因此 SSA 槽一律 anyref；
     // 不再把 funcref table 槽位下标当作函数值本身。
-    if matches!(ty, SemanticType::Function(_)) {
+    if matches!(ty, WasmTypeFact::Function(_)) {
         return Ok(WASM_GC_ANYREF);
     }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
-    if storage_for_type(ctx, ty) == StorageKind::Reference {
+    if storage_for_type(input, ty) == WasmStorageClass::Reference {
         return Ok(WASM_GC_ANYREF);
     }
     Ok(wasm_scalar_value_type(ty)?)
 }
 
-/// 标量 `SemanticType` 的 wasm 载体映射。
+/// 标量 `WasmTypeFact` 的 wasm 载体映射。
 ///
 /// 载体按语义宽度一一对应：`f32 → VALTYPE_F32`（`0x7D`，真实 4 字节）、
 /// `f64 → VALTYPE_F64`。`f32` 不得落到 `VALTYPE_F64` 或 `VALTYPE_I32`：
@@ -265,11 +268,11 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &Semant
 ///
 /// 转换只允许显式指令：`f64.promote_f32` / `f32.demote_f64`（RNE）。本表不做
 /// 任何隐式拓宽或收窄，调用点也不得自行补转换。
-fn wasm_scalar_value_type(ty: &SemanticType) -> crate::Result<u8> {
+fn wasm_scalar_value_type(ty: &WasmTypeFact) -> crate::Result<u8> {
     match ty {
-        SemanticType::Float32 => Ok(VALTYPE_F32),
-        SemanticType::Float64 => Ok(VALTYPE_F64),
-        SemanticType::Integer64 { .. } | SemanticType::Integer128 { .. } => Ok(VALTYPE_I64),
+        WasmTypeFact::Float32 => Ok(VALTYPE_F32),
+        WasmTypeFact::Float64 => Ok(VALTYPE_F64),
+        WasmTypeFact::Integer64 { .. } | WasmTypeFact::Integer128 { .. } => Ok(VALTYPE_I64),
         _ => Ok(VALTYPE_I32),
     }
 }
@@ -281,34 +284,31 @@ mod tests {
     /// 回归：`f32` 必须有独立的 32 位载体，不得落到 64 位或整数假载体。
     #[test]
     fn f32_has_independent_wasm_carrier() {
-        assert_eq!(wasm_scalar_value_type(&SemanticType::Float32).expect("`f32` 必须有载体"), VALTYPE_F32);
-        assert_eq!(wasm_scalar_value_type(&SemanticType::Float64).expect("`f64` 载体未变"), VALTYPE_F64);
+        assert_eq!(wasm_scalar_value_type(&WasmTypeFact::Float32).expect("`f32` 必须有载体"), VALTYPE_F32);
+        assert_eq!(wasm_scalar_value_type(&WasmTypeFact::Float64).expect("`f64` 载体未变"), VALTYPE_F64);
         assert_ne!(
-            wasm_scalar_value_type(&SemanticType::Float32).expect("`f32` 载体"),
-            wasm_scalar_value_type(&SemanticType::Float64).expect("`f64` 载体"),
+            wasm_scalar_value_type(&WasmTypeFact::Float32).expect("`f32` 载体"),
+            wasm_scalar_value_type(&WasmTypeFact::Float64).expect("`f64` 载体"),
             "`f32` 不得复用 `f64` 槽"
         );
-        assert_ne!(wasm_scalar_value_type(&SemanticType::Float32).expect("`f32` 载体"), VALTYPE_I32, "`f32` 不得借 i32 假载体");
+        assert_ne!(wasm_scalar_value_type(&WasmTypeFact::Float32).expect("`f32` 载体"), VALTYPE_I32, "`f32` 不得借 i32 假载体");
     }
 }
 
 /// 计算 MIR 函数返回值对应的 WASM 值类型字节。
 pub(super) fn wasm_return_value_type(
-    ctx: &ExecutableLoweringContext,
-    mir_fn: &MirFunction,
-    gc_struct_type_indices: &BTreeMap<LayoutId, u32>,
+    input: &WasmModuleInput,
+    mir_fn: &WasmFunctionInput,
+    gc_struct_type_indices: &BTreeMap<WasmLayoutKey, u32>,
     js_glue_utf8_as_anyref: bool,
 ) -> crate::Result<Option<u8>> {
     match &mir_fn.return_type {
-        SemanticType::Unit | SemanticType::Bottom => Ok(None),
-        other => Ok(Some(wasm_param_value_type_for(ctx, other, mir_fn.return_layout, gc_struct_type_indices, js_glue_utf8_as_anyref)?)),
+        WasmTypeFact::Unit | WasmTypeFact::Bottom => Ok(None),
+        other => Ok(Some(wasm_param_value_type_for(input, other, mir_fn.return_layout, gc_struct_type_indices, js_glue_utf8_as_anyref)?)),
     }
 }
 
-pub(super) fn layout_needs_gc_struct(
-    ctx: &ExecutableLoweringContext,
-    layout: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout,
-) -> bool {
-    let has_ref_fields = layout.fields.iter().any(|field| storage_for_type(ctx, &field.ty) == StorageKind::Reference);
-    layout.storage == StorageKind::Reference || has_ref_fields
+pub(super) fn layout_needs_gc_struct(input: &WasmModuleInput, layout: &WasmLayoutFact) -> bool {
+    let has_ref_fields = layout.fields.iter().any(|field| storage_for_type(input, &field.ty) == WasmStorageClass::Reference);
+    layout.storage == WasmStorageClass::Reference || has_ref_fields
 }

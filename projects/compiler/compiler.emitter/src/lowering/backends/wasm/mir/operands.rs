@@ -3,9 +3,9 @@ use super::{lowerer::array_element_type, *};
 
 impl<'a> WasmMirLowerer<'a> {
     /// 从操作数结构类型取 heap array 元素类型；仅认 `Array` / `FixedArray`，禁止类型名白名单。
-    pub(super) fn infer_array_element_type(&self, operand: &MirOperand) -> Option<SemanticType> {
+    pub(super) fn infer_array_element_type(&self, operand: &WasmOperand) -> Option<WasmTypeFact> {
         match operand {
-            MirOperand::Value(value) => self.mir_fn.value_types.get(value).and_then(|ty| {
+            WasmOperand::Value(value) => self.mir_fn.value_types.get(value).and_then(|ty| {
                 if let Some(element) = array_element_type(ty) {
                     return Some(element.clone());
                 }
@@ -17,9 +17,9 @@ impl<'a> WasmMirLowerer<'a> {
     }
 
     /// 只查询已经预规划的 SSA 引用槽。
-    pub(super) fn operand_reference_local(&self, operand: &MirOperand) -> Option<u32> {
+    pub(super) fn operand_reference_local(&self, operand: &WasmOperand) -> Option<u32> {
         match operand {
-            MirOperand::Value(value) => {
+            WasmOperand::Value(value) => {
                 if let Some(local) = self.reference_locals.get(value).copied() {
                     return Some(local);
                 }

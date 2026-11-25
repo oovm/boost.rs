@@ -4,10 +4,10 @@
 //! 逻辑导入链接，不再携带任何平台的冻结结果。计划构造阶段由本模块一次性冻结，
 //! 发射期只消费 [`WasmOperatorBinding`]，不得再从助记符字符串推断 arity 或配方。
 
-use compiler_types::{ItemInstanceId, SemanticType};
 use data_binary_wasm::WasmOpcode;
 
-use crate::target_operator::{TargetOperandType, TargetOperatorPlan, operand_carrier, validate_frozen_operator};
+use super::{WasmCallableKey, WasmTypeFact, operand_carrier, validate_frozen_operator};
+use crate::target_operator::{TargetOperandType, TargetOperatorPlan};
 
 use super::{
     array::{WasmGcArrayOperation, WasmGcArrayOperatorPlan, freeze_wasm_array_binding},
@@ -35,11 +35,11 @@ pub(crate) enum WasmOperatorBinding {
 /// Wasm operator 但助记符不在 Wasm 私有表内。两种状态都必须由调用方保留，不允许
 /// 回落为宿主导入或默认成功。
 pub(crate) fn freeze_wasm_operator_binding(
-    instance: ItemInstanceId,
+    instance: WasmCallableKey,
     symbol: &str,
     mnemonic: &str,
-    parameter_types: &[SemanticType],
-    return_type: &SemanticType,
+    parameter_types: &[WasmTypeFact],
+    return_type: &WasmTypeFact,
 ) -> crate::Result<Option<WasmOperatorBinding>> {
     if let Some(plan) = freeze_wasm_numeric_binding(mnemonic) {
         validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
@@ -61,11 +61,11 @@ pub(crate) fn freeze_wasm_operator_binding(
 /// 余数是同型二元运算：`f32.rem` 两侧必须是 `f32` 载体并返回 `f32`，`f64.rem`
 /// 同理；任何混宽（`f32` 实参配 `f64` 结果）都不是该助记符的合同，失败闭合。
 fn validate_frozen_float_remainder(
-    instance: ItemInstanceId,
+    instance: WasmCallableKey,
     function: &str,
     mnemonic: &str,
-    parameter_types: &[SemanticType],
-    return_type: &SemanticType,
+    parameter_types: &[WasmTypeFact],
+    return_type: &WasmTypeFact,
     carrier: TargetOperandType,
 ) -> crate::Result<()> {
     let fail = |reason: String| -> crate::Result<()> {
@@ -92,11 +92,11 @@ fn validate_frozen_float_remainder(
 /// 与冻结 arity/操作身份的语义形状：聚合参数必须是堆数组 `[T]`，长度/索引参数必须
 /// 携带 i32 载体，`get`/`set` 的元素槽必须与数组元素类型逐点一致。
 fn validate_frozen_array_operator(
-    instance: ItemInstanceId,
+    instance: WasmCallableKey,
     function: &str,
     mnemonic: &str,
-    parameter_types: &[SemanticType],
-    return_type: &SemanticType,
+    parameter_types: &[WasmTypeFact],
+    return_type: &WasmTypeFact,
     plan: &WasmGcArrayOperatorPlan,
 ) -> crate::Result<()> {
     use WasmGcArrayOperation::{Get, Length, New, Set};
@@ -106,13 +106,13 @@ fn validate_frozen_array_operator(
     if parameter_types.len() != plan.arity {
         return fail(format!("expected arity={} actual={}", plan.arity, parameter_types.len()));
     }
-    fn array_element(ty: &SemanticType) -> Option<&SemanticType> {
+    fn array_element(ty: &WasmTypeFact) -> Option<&WasmTypeFact> {
         match ty {
-            SemanticType::Array(element) => Some(element.as_ref()),
+            WasmTypeFact::Array(element) => Some(element.as_ref()),
             _ => None,
         }
     }
-    let index_carrier = |ty: &SemanticType| operand_carrier(ty) == Some(crate::target_operator::TargetOperandType::I32);
+    let index_carrier = |ty: &WasmTypeFact| operand_carrier(ty) == Some(crate::target_operator::TargetOperandType::I32);
     match plan.operation {
         New => {
             let Some(length) = parameter_types.first()
@@ -169,7 +169,7 @@ fn validate_frozen_array_operator(
             if value != element {
                 return fail(format!("`array.set` 的值参数必须与数组元素类型一致: element={element:?} actual={value:?}"));
             }
-            if *return_type != SemanticType::Unit {
+            if *return_type != WasmTypeFact::Unit {
                 return fail(format!("`array.set` 的返回类型必须是 unit: actual={return_type:?}"));
             }
         }
@@ -179,16 +179,15 @@ fn validate_frozen_array_operator(
 
 #[cfg(test)]
 mod operator_binding_tests {
-    use super::{TargetOperandType, WasmOpcode, WasmOperatorBinding, freeze_wasm_operator_binding};
-    use compiler_types::{ItemInstanceId, SemanticType};
+    use super::{TargetOperandType, WasmCallableKey, WasmOpcode, WasmOperatorBinding, WasmTypeFact, freeze_wasm_operator_binding};
 
     /// 声明侧 `[wasm_operator("…")]` 的真实助记符必须冻结成 Wasm 原生 opcode；
     /// 没有原生指令但合同可兑现的 `f64.rem` 冻结为浮点余数 lowering，
     /// 表外助记符仍保持 Unfrozen。
     #[test]
     fn scalar_operator_mnemonics_freeze_to_wasm_opcodes() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let i32_ty = SemanticType::Integer32 { signed: true };
+        let instance = WasmCallableKey(0);
+        let i32_ty = WasmTypeFact::Integer32 { signed: true };
 
         let add = freeze_wasm_operator_binding(instance, "infix +", "i32.add", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
             .expect("冻结不得失败")
@@ -200,7 +199,7 @@ mod operator_binding_tests {
         assert_eq!(add.arity, 2);
         assert_eq!(add.encoding, WasmOpcode::I32Add);
 
-        let less = freeze_wasm_operator_binding(instance, "infix <", "i32.lt_s", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
+        let less = freeze_wasm_operator_binding(instance, "infix <", "i32.lt_s", &[i32_ty.clone(), i32_ty.clone()], &WasmTypeFact::Boolean)
             .expect("冻结不得失败")
             .expect("必须是 Wasm operator 绑定");
         let WasmOperatorBinding::Numeric(less) = less
@@ -210,23 +209,23 @@ mod operator_binding_tests {
         assert_eq!(less.encoding, WasmOpcode::I32LtS);
 
         let f64_rem =
-            freeze_wasm_operator_binding(instance, "infix %", "f64.rem", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
+            freeze_wasm_operator_binding(instance, "infix %", "f64.rem", &[WasmTypeFact::Float64, WasmTypeFact::Float64], &WasmTypeFact::Float64)
                 .expect("冻结不得失败")
                 .expect("必须是 Wasm operator 绑定");
         assert_eq!(f64_rem, WasmOperatorBinding::FloatRemainder(TargetOperandType::F64), "`f64.rem` 必须冻结为浮点余数 lowering");
 
         let f32_rem =
-            freeze_wasm_operator_binding(instance, "infix %", "f32.rem", &[SemanticType::Float32, SemanticType::Float32], &SemanticType::Float32)
+            freeze_wasm_operator_binding(instance, "infix %", "f32.rem", &[WasmTypeFact::Float32, WasmTypeFact::Float32], &WasmTypeFact::Float32)
                 .expect("冻结不得失败")
                 .expect("必须是 Wasm operator 绑定");
         assert_eq!(f32_rem, WasmOperatorBinding::FloatRemainder(TargetOperandType::F32), "`f32.rem` 必须冻结为浮点余数 lowering");
 
         // 混宽签名不是余数合同：`f32.rem` 配 f64 返回必须失败闭合，不得静默放宽。
-        let mismatch = freeze_wasm_operator_binding(instance, "infix %", "f32.rem", &[SemanticType::Float32, SemanticType::Float32], &SemanticType::Float64)
+        let mismatch = freeze_wasm_operator_binding(instance, "infix %", "f32.rem", &[WasmTypeFact::Float32, WasmTypeFact::Float32], &WasmTypeFact::Float64)
             .expect_err("混宽余数签名必须结构化失败");
         assert!(mismatch.contains("返回载体"), "错误必须点名载体不符: {mismatch}");
 
-        let unfrozen = freeze_wasm_operator_binding(instance, "infix <", "f64.unknown", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Boolean)
+        let unfrozen = freeze_wasm_operator_binding(instance, "infix <", "f64.unknown", &[WasmTypeFact::Float64, WasmTypeFact::Float64], &WasmTypeFact::Boolean)
             .expect("冻结不得失败")
             .expect("必须是 Wasm operator 绑定");
         assert!(matches!(unfrozen, WasmOperatorBinding::Unfrozen));
