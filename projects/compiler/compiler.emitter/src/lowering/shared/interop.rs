@@ -192,12 +192,9 @@ pub(crate) fn x86_64_operator_target(link: &ExternalImportLink) -> Option<&str> 
 }
 
 pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiHostImportTarget<'_>> {
-    if !link.matches_boundary("host") {
-        return None;
-    }
-
-    let module_looks_wasi = link.locator_segments().first().is_some_and(|module| module.starts_with("wasi:"));
-    if !link.matches_platform_tag("wasi") && !module_looks_wasi {
+    // WASI 宿主合同只由显式 `wasi` 平台标签绑定：不凭 locator 的 `wasi:` 前缀
+    // 猜测，否则 JS 目标里恰好叫 `wasi:*` 的模块会被误当成 WASI 宿主导入。
+    if !link.matches_boundary("host") || !link.matches_platform_tag("wasi") {
         return None;
     }
 
@@ -279,6 +276,23 @@ mod tests {
             select_unique_target(&links, x86_64_operator_target).expect("x86_64 裁决唯一").is_none(),
             "该声明没有 native 绑定；未命中必须保持 None，不得回退到别的 target"
         );
+    }
+
+    #[test]
+    fn wasi_binding_requires_explicit_domain_not_locator_prefix() {
+        let tagged = ExternalImportLink::host(Some(Identifier::new("wasi")), vec!["wasi:io/streams".into(), "blocking-write".into()]);
+        let target = wasi_host_import_target(&tagged).expect("显式 `wasi` 域必须解析成 WASI 宿主导入");
+        assert_eq!(target.module, "wasi:io/streams");
+        assert_eq!(target.function, "blocking-write");
+
+        // 同一 locator 但域是 JS/Wasm32：不得凭 `wasi:` 前缀猜成 WASI 宿主。
+        for domain in [None, Some("wasm32-unknown"), Some("js")] {
+            let js = ExternalImportLink::host(domain.map(Identifier::new), vec!["wasi:io/streams".into(), "blocking-write".into()]);
+            assert!(
+                wasi_host_import_target(&js).is_none(),
+                "域 {domain:?} 下的 `wasi:` locator 不得被接受为 WASI 宿主导入"
+            );
+        }
     }
 
     #[test]
