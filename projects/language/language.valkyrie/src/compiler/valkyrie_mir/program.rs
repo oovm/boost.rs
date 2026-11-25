@@ -3,9 +3,11 @@
 //! 该成功类型归 Valkyrie 所有；`CompiledValkyrieProgram` 只允许把已验证的
 //! Valkyrie MIR 与同一程序生成的表示计划一起交给后续阶段（语言 × 目标适配器）。
 
+use std::collections::BTreeMap;
+
 use super::operation::{ValkyrieMir, ValkyrieMirCallee, ValkyrieMirError, ValkyrieMirOperation, ValkyrieMirWitness};
 use compiler_types::{
-    LinkedSemanticProgram,
+    CanonicalPrimitiveType, LinkedSemanticProgram, TypeId,
     semantic_ids::{InstructionId, ItemInstanceId, MirValueId, NominalInstanceId, ValueIdentity},
 };
 
@@ -18,6 +20,12 @@ pub struct ValkyrieMirProgram {
     pub linked: LinkedSemanticProgram,
     /// Validated MIR (semantic only).
     pub mir: ValkyrieMir,
+    /// `[primitive("…")]` 自举身份结算出的标量载体。
+    ///
+    /// 这张表是 Valkyrie 的语言事实：`std::primitive::i64` 在 canonical 里保持
+    /// 名义 `TypeId`（不得改写成 `Primitive`），但标量载体由身份而非声明拼写决定。
+    /// 公共链接模型不再持有它，目标计划只从本程序读取。
+    pub primitive_identities: BTreeMap<TypeId, CanonicalPrimitiveType>,
 }
 
 impl ValkyrieMirProgram {

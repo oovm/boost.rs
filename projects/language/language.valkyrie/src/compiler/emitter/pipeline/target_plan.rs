@@ -917,10 +917,9 @@ fn lower_type(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Resul
             // 声明拼写或短名回查。同名但没有该身份的普通 nominal 必须继续走布局，
             // 不得因为名字叫 `i64` 就被静默折叠成标量。
             if let Some(primitive) = program
-                .linked
                 .primitive_identities
                 .get(&id)
-                .or_else(|| program.linked.primitive_identities.get(declaration))
+                .or_else(|| program.primitive_identities.get(declaration))
                 .copied()
             {
                 return semantic_of_canonical_primitive(primitive);
@@ -1152,7 +1151,7 @@ mod tests {
         let declaration = type_id(0);
         let mut program = program_with_types(vec![(declaration, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() })]);
         program.linked.type_surface_spellings.insert(declaration, compiler_types::Identifier::new("std::primitive::i64"));
-        program.linked.primitive_identities.insert(declaration, CanonicalPrimitiveType::Integer { bits: 64, signed: true });
+        program.primitive_identities.insert(declaration, CanonicalPrimitiveType::Integer { bits: 64, signed: true });
         program.linked.aggregate_layout_by_type.insert(declaration, 0);
         program.linked.aggregate_layouts.layouts.push(compiler_types::AggregateLayout {
             id: 0,

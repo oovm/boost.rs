@@ -43,6 +43,9 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Valkyri
     ensure_declaration_aggregate_types(module, &mut type_values)?;
     let AggregateDeclarations { mut nominals, mut field_records, declaration_nominals } = collect_aggregate_identities(module, &type_values)?;
     let mut linked = LinkedSemanticProgram { module_name: module.name.clone(), ..LinkedSemanticProgram::default() };
+    // `[primitive("…")]` 自举身份是 Valkyrie 的语言事实，不进入公共链接模型；
+    // 结算结果随 `ValkyrieMirProgram` 一起交给目标计划阶段。
+    let mut primitive_identities = BTreeMap::new();
     linked.aggregate_layouts = module.aggregate_layouts.clone();
     for (ty, type_id) in &type_values {
         if let Some(layout_id) = crate::compiler::mir::layout_id_for_type(ty, &module.aggregate_layouts) {
@@ -114,7 +117,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Valkyri
             && arguments.is_empty()
             && let Some(primitive) = primitive_identity_canonical_primitive(identity)
         {
-            linked.primitive_identities.insert(*id, primitive);
+            primitive_identities.insert(*id, primitive);
         }
         // `Nominal{usize}` / `Named("usize")` 保持名义 TypeId，不得改写成 Primitive；登记后供
         // ArrayGet/ArrayLength/ArrayNew 合同认整数形状（见 LinkedSemanticProgram::array_index_types）。
@@ -255,7 +258,7 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Valkyri
         })
         .collect::<Result<BTreeMap<_, _>, StructuredDiagnosticSet>>()?;
     linked.fragments = canonical_fragments(module, &linked, &functions, &module.semantic_fragments)?;
-    let mut program = ValkyrieMirProgram { linked, mir: ValkyrieMir { module_name: module.name.clone(), functions } };
+    let mut program = ValkyrieMirProgram { linked, mir: ValkyrieMir { module_name: module.name.clone(), functions }, primitive_identities };
     // 具体 witness 分派必须在实例化固定点消去为冻结实例身份；目标层不再扫描实例库。
     program.resolve_witness_dispatch().map_err(|error| canonical_error(module, &program, error))?;
     program.validate().map_err(|error| canonical_error(module, &program, error))?;

@@ -51,12 +51,6 @@ pub struct LinkedSemanticProgram {
     /// 是 std 中指向 `Utf8Text` / `Utf16Text` 的别名声明。前端把载体声明的 TypeId
     /// 登记在这里；canonical 只认这份身份，不按拼写猜语言类型。
     pub text_encoding_types: BTreeMap<TypeId, CanonicalPrimitiveType>,
-    /// 带 `[primitive("…")]` 自举身份的名义声明到标量基元的显式映射。
-    ///
-    /// `std::primitive::i64` 这类声明在 canonical 里保持名义 `TypeId`（不得改写成
-    /// `Primitive`），但它的标量载体是身份事实，不是拼写事实。目标计划必须按这份
-    /// 身份取载体：同名但无此身份的普通 nominal 不得被折叠成标量。
-    pub primitive_identities: BTreeMap<TypeId, CanonicalPrimitiveType>,
     /// Compiler 解析出的聚合布局；装配与 backend 不得从旧 MIR 重建。
     pub aggregate_layouts: AggregateLayoutPlan,
     /// 已由 Compiler 绑定的名义身份到物理布局身份映射。
