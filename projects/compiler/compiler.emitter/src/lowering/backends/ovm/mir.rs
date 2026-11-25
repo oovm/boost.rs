@@ -64,6 +64,27 @@ enum TextSlotTarget {
 const I32_NEGATE_STEPS: &[TargetOperandStep] =
     &[TargetOperandStep::IntegerConstant { operand_type: TargetOperandType::I32, value: 0 }, TargetOperandStep::Arguments];
 
+/// OVM operator 的冻结编码。
+///
+/// 多数助记符是单条头码；IL-less 的 OVM 上 `f32.ne`/`f32.gt` 没有原生头码，但可
+/// 用现有头码**保真组合**：组合必须是显式编码变体，emit 只机械展开，不得按助记符
+/// 推断序列。`le`/`ge` 无法用有序 `f32.lt` 组合保真（NaN 时 `!(a<b)` ≠ `a<=b`，
+/// 而 OR 组合需要同一对实参参与两次比较，超出单尾码配方模型），保持缺口待头码。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OvmOperatorCode {
+    /// 单条 OVM 头码。
+    Single(OdinHeadCode),
+    /// 交换实参顺序后执行头码：`f32.gt(a,b)` = `F32Lt(b,a)`。
+    ///
+    /// 有序 `lt` 任一操作数为 NaN 得 0，与 IEEE `gt` 的 NaN 裁决一致，交换保真。
+    SwapCompare(OdinHeadCode),
+    /// 头码得到 0/1 后按位取反：`x != 0` 用 `I32Ne(x, 0)` 表达。
+    ///
+    /// 仅对结果恰为 0/1 的比较成立；`f32.ne(a,b)` = `NOT(F32Eq(a,b))`，
+    /// NaN 时 `eq` 得 0、取反得 1，与 IEEE `!=` 一致。
+    InvertBoolean(OdinHeadCode),
+}
+
 /// `[ovm_operator("...")]` 目标助记符到**冻结配方**的唯一映射表。
 ///
 /// 只覆盖 `OdinHeadCode` 已有的 i32 算术/位运算/比较变体，以及单精度 f32 块；
@@ -88,7 +109,10 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 ///    `F64PromoteF32` 单步头码（RNE / 精确）；本表不冻结隐式拓宽。
 /// 3. **运算与位模式**：f32 算术/比较在单精度上做；`i32.reinterpret_f32` /
 ///    `f32.reinterpret_i32` 是 32 位 `i32` 载体的纯位搬运，NaN payload 23 位保位。
-pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<OdinHeadCode>> {
+/// 4. **显式组合**：`f32.ne`/`f32.gt` 无原生头码但可保真组合，冻结为
+///    `OvmOperatorCode::InvertBoolean`/`SwapCompare`；`f32.le`/`f32.ge` 在 NaN 下
+///    无法用有序 `F32Lt` 组合保真，保持缺口待头码，不得回落宿主导入。
+pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<OvmOperatorCode>> {
     // 跨载体助记符显式点名两侧载体；其余既有助记符两侧都是 i32。
     let (operand_type, result_type) = match mnemonic {
         "i64.reinterpret_f64" => (TargetOperandType::F64, TargetOperandType::I64),
@@ -101,46 +125,49 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         _ => (TargetOperandType::I32, TargetOperandType::I32),
     };
     let (arity, recipe, code) = match mnemonic {
-        "i32.add" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Add),
-        "i32.sub" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Sub),
-        "i32.mul" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Mul),
-        "i32.div" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32DivS),
-        "i32.rem" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32RemS),
-        "i32.and" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32And),
-        "i32.or" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Or),
-        "i32.xor" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Xor),
-        "i32.shl" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Shl),
-        "i32.shr_s" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32ShrS),
-        "i32.shr_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32ShrU),
-        "i32.eq" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Eq),
-        "i32.ne" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32Ne),
-        "i32.lt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LtS),
-        "i32.le" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LeS),
-        "i32.gt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GtS),
-        "i32.ge" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GeS),
-        "i32.lt_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LtU),
-        "i32.le_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32LeU),
-        "i32.gt_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GtU),
-        "i32.ge_u" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::I32GeU),
-        "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), OdinHeadCode::I32Sub),
-        "i64.reinterpret_f64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::I64ReinterpretF64),
-        "f64.reinterpret_i64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F64ReinterpretI64),
-        "i32.reinterpret_f32" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::I32ReinterpretF32),
-        "f32.reinterpret_i32" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F32ReinterpretI32),
-        "f32.add" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Add),
-        "f32.sub" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Sub),
-        "f32.mul" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Mul),
-        "f32.div" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Div),
-        "f32.neg" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F32Neg),
-        "f32.eq" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Eq),
-        "f32.lt" => (2, TargetOperatorRecipe::Operands, OdinHeadCode::F32Lt),
-        "f32.demote_f64" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F32DemoteF64),
-        "f64.promote_f32" => (1, TargetOperatorRecipe::Operands, OdinHeadCode::F64PromoteF32),
+        "i32.add" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Add)),
+        "i32.sub" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Sub)),
+        "i32.mul" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Mul)),
+        "i32.div" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32DivS)),
+        "i32.rem" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32RemS)),
+        "i32.and" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32And)),
+        "i32.or" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Or)),
+        "i32.xor" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Xor)),
+        "i32.shl" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Shl)),
+        "i32.shr_s" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32ShrS)),
+        "i32.shr_u" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32ShrU)),
+        "i32.eq" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Eq)),
+        "i32.ne" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32Ne)),
+        "i32.lt" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32LtS)),
+        "i32.le" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32LeS)),
+        "i32.gt" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32GtS)),
+        "i32.ge" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32GeS)),
+        "i32.lt_u" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32LtU)),
+        "i32.le_u" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32LeU)),
+        "i32.gt_u" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32GtU)),
+        "i32.ge_u" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32GeU)),
+        "i32.neg" => (1, TargetOperatorRecipe::Steps(I32_NEGATE_STEPS), OvmOperatorCode::Single(OdinHeadCode::I32Sub)),
+        "i64.reinterpret_f64" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I64ReinterpretF64)),
+        "f64.reinterpret_i64" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F64ReinterpretI64)),
+        "i32.reinterpret_f32" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::I32ReinterpretF32)),
+        "f32.reinterpret_i32" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32ReinterpretI32)),
+        "f32.add" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Add)),
+        "f32.sub" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Sub)),
+        "f32.mul" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Mul)),
+        "f32.div" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Div)),
+        "f32.neg" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Neg)),
+        "f32.eq" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Eq)),
+        "f32.lt" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Lt)),
+        // 无原生头码但可保真组合：`ne` 取反 `eq` 的 0/1 结果，`gt` 交换操作数用 `lt`。
+        "f32.ne" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::InvertBoolean(OdinHeadCode::F32Eq)),
+        "f32.gt" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::SwapCompare(OdinHeadCode::F32Lt)),
+        "f32.demote_f64" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32DemoteF64)),
+        "f64.promote_f32" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F64PromoteF32)),
         _ => return None,
     };
     // 比较结果固定为 i32 布尔：载体身份由助记符语义决定，不靠默认 i32 蒙混。
     let result_type = match mnemonic {
-        "f32.eq" | "f32.lt" => TargetOperandType::I32,
+        "f32.eq" | "f32.lt" | "f32.ne" | "f32.gt" => TargetOperandType::I32,
         _ => result_type,
     };
     Some(TargetOperatorPlan { arity, operand_type, result_type, recipe, encoding: code })
@@ -1373,12 +1400,26 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     arguments.len()
                 ));
             }
-            match plan.recipe {
-                TargetOperatorRecipe::Operands => {
+            match (plan.recipe, code) {
+                (TargetOperatorRecipe::Operands, OvmOperatorCode::Single(code)) => {
                     self.emit_external_arguments(&callee_name, instance, arguments)?;
                     self.emitter.emit_plain(code);
                 }
-                TargetOperatorRecipe::Steps(steps) => {
+                // 交换实参顺序执行有序比较：`f32.gt(a,b)` = `F32Lt(b,a)`，NaN 裁决一致。
+                (TargetOperatorRecipe::Operands, OvmOperatorCode::SwapCompare(code)) => {
+                    let reversed: Vec<MirOperand> = arguments.iter().rev().cloned().collect();
+                    self.emit_external_arguments(&callee_name, instance, &reversed)?;
+                    self.emitter.emit_plain(code);
+                }
+                // 比较得 0/1 后用 `I32Ne(x, 0)` 取反；仅对 0/1 结果成立。
+                (TargetOperatorRecipe::Operands, OvmOperatorCode::InvertBoolean(code)) => {
+                    self.emit_external_arguments(&callee_name, instance, arguments)?;
+                    self.emitter.emit_plain(code);
+                    let zero = self.emitter.intern_i32(0);
+                    self.emitter.emit_imm1(OdinHeadCode::Constant, zero);
+                    self.emitter.emit_plain(OdinHeadCode::I32Ne);
+                }
+                (TargetOperatorRecipe::Steps(steps), OvmOperatorCode::Single(code)) => {
                     for step in steps {
                         match step {
                             TargetOperandStep::Arguments => self.emit_external_arguments(&callee_name, instance, arguments)?,
@@ -1401,6 +1442,11 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                         }
                     }
                     self.emitter.emit_plain(code);
+                }
+                (TargetOperatorRecipe::Steps(_), _) => {
+                    return Err(format!(
+                        "Nyar 目标 `ovm_operator` 绑定 `{mnemonic}` 的组合编码不得携带操作数重写配方，拒绝隐式组合: callee=`{callee_name}`"
+                    ));
                 }
             }
         }
@@ -2180,8 +2226,8 @@ impl BytecodeEmitter<'_> {
 /// OVM 平台私有的 operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OvmOperatorBinding {
-    /// 已冻结的 Odin 头码配方。
-    Frozen(TargetOperatorPlan<OdinHeadCode>),
+    /// 已冻结的 Odin 头码配方（含显式组合编码）。
+    Frozen(TargetOperatorPlan<OvmOperatorCode>),
     /// 声明了 `[ovm_operator]`，但没有 OVM 可编码配方；emit 必须结构化失败。
     Unfrozen,
 }
@@ -2208,7 +2254,7 @@ pub(crate) fn freeze_ovm_operator(
 
 #[cfg(test)]
 mod operator_binding_tests {
-    use super::{OvmOperatorBinding, freeze_ovm_operator};
+    use super::{OvmOperatorBinding, OvmOperatorCode, freeze_ovm_operator};
     use compiler_target::{ExternalImportLink, Identifier};
     use compiler_types::{ItemInstanceId, SemanticType};
     use data_binary_odin::OdinHeadCode;
@@ -2232,7 +2278,7 @@ mod operator_binding_tests {
             panic!("`i32.add` 必须冻结");
         };
         assert_eq!(add.arity, 2);
-        assert_eq!(add.encoding, OdinHeadCode::I32Add);
+        assert_eq!(add.encoding, OvmOperatorCode::Single(OdinHeadCode::I32Add));
 
         let less =
             freeze_ovm_operator(&link("i32.lt"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
@@ -2242,7 +2288,7 @@ mod operator_binding_tests {
         else {
             panic!("`i32.lt` 必须冻结");
         };
-        assert_eq!(less.encoding, OdinHeadCode::I32LtS);
+        assert_eq!(less.encoding, OvmOperatorCode::Single(OdinHeadCode::I32LtS));
         assert_eq!(less.result_type, crate::target_operator::TargetOperandType::I32);
 
         // `OdinHeadCode` 没有 i64/f64 算术与比较变体（只有 I32* / F32* 块与两个
@@ -2259,6 +2305,41 @@ mod operator_binding_tests {
                 .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
                 .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 OVM operator 绑定"));
             assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen), "`{mnemonic}` 头码不存在，必须保持缺口");
+        }
+    }
+
+    /// f32 无原生头码的比较必须走**显式组合编码**：`ne` 取反 `eq`、`gt` 交换操作数用
+    /// `lt`；`le`/`ge` 在 NaN 下无法用有序 `lt` 保真组合（`!(a<b)` ≠ `a<=b`），
+    /// 保持缺口待头码，不得用 OR 组合冒充（单尾码配方模型表达不了实参双消费）。
+    #[test]
+    fn f32_composite_comparisons_freeze_explicitly_and_le_ge_stay_unfrozen() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let f32_ty = SemanticType::Float32;
+
+        let (ne, gt) = match [
+            freeze_ovm_operator(&link("f32.ne"), instance, "infix !=", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
+                .expect("冻结不得失败")
+                .expect("必须是 OVM operator 绑定"),
+            freeze_ovm_operator(&link("f32.gt"), instance, "infix >", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
+                .expect("冻结不得失败")
+                .expect("必须是 OVM operator 绑定"),
+        ] {
+            [
+                OvmOperatorBinding::Frozen(ne),
+                OvmOperatorBinding::Frozen(gt),
+            ] => (ne, gt),
+            other => panic!("f32.ne/f32.gt 必须冻结: {other:?}"),
+        };
+        assert_eq!(ne.encoding, OvmOperatorCode::InvertBoolean(OdinHeadCode::F32Eq));
+        assert_eq!(ne.result_type, crate::target_operator::TargetOperandType::I32);
+        assert_eq!(gt.encoding, OvmOperatorCode::SwapCompare(OdinHeadCode::F32Lt));
+        assert_eq!(gt.result_type, crate::target_operator::TargetOperandType::I32);
+
+        for mnemonic in ["f32.le", "f32.ge"] {
+            let unfrozen = freeze_ovm_operator(&link(mnemonic), instance, "infix cmp", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 OVM operator 绑定"));
+            assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen), "`{mnemonic}` 无法保真组合，必须保持缺口");
         }
     }
 }

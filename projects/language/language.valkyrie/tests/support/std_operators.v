@@ -15,7 +15,8 @@
 #     缺的只是常量载体 `ldc.r4`/`conv.r4`（`f64.rem` 已可编码为 IL `rem`）；
 #   * Wasm 无 `f64.rem` / `f32.rem`（wasm 只有整数 rem，没有浮点余数指令）；
 #   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术、位运算与比较头码；u32 的 `/`、`%`
-#     也没有无符号除余头码（`i32.div`/`i32.rem` 都是有符号）；f32 只有 `eq`、`lt`。
+#     也没有无符号除余头码（`i32.div`/`i32.rem` 都是有符号）；f32 有 `eq`/`lt` 头码，
+#     `ne`/`gt` 走显式组合编码，`le`/`ge` 缺头码且无法在 NaN 语义下组合。
 # 因此某些 (类型, 运算, target) 组合不会出现该 target 的注解。
 
 namespace std.primitive;
@@ -554,8 +555,8 @@ structure f64 {
 
 # 单精度 32 位浮点：载体是独立的 `F32`，不得借 f64/i32 槽中转。
 # CLR 的形参算术/比较走 ECMA 通用 opcode；仍缺 `ldc.r4` 常量载体，f32 常量路径
-# 在 emit 侧失败闭合。OVM 只有 `eq`/`lt` 头码，且没有浮点余数指令；
-# Wasm 没有 `f32.rem`。
+# 在 emit 侧失败闭合。OVM 有 `eq`/`lt` 头码，`ne`/`gt` 走显式组合编码，`le`/`ge`
+# 因 NaN 语义无法组合、仍缺头码；OVM 没有浮点余数指令；Wasm 没有 `f32.rem`。
 [primitive("std::primitive::f32")]
 structure f32 {
     [infix]
@@ -609,6 +610,7 @@ structure f32 {
     [jvm_operator("float.compare_not_equal")]
     [clr_operator("f32.ne")]
     [wasm_operator("f32.ne")]
+    [ovm_operator("f32.ne")]
     micro `!=`(self: f32, other: f32) -> bool;
 
     [infix]
@@ -628,6 +630,7 @@ structure f32 {
     [jvm_operator("float.compare_greater_than")]
     [clr_operator("f32.gt")]
     [wasm_operator("f32.gt")]
+    [ovm_operator("f32.gt")]
     micro `>`(self: f32, other: f32) -> bool;
 
     [infix]
