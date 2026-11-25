@@ -2839,6 +2839,54 @@ mod apply_layout_tests {
         let error = jvm_type_descriptor(&AggregateLayoutPlan::default(), &open).expect_err("开放泛型不得发射");
         assert!(error.contains("缺少冻结布局映射"), "got: {error}");
     }
+
+    /// 两个拼写相同的 nominal 必须是两个载体：身份由 layout 记录结算，拼写不参与。
+    #[test]
+    fn same_spelling_nominals_keep_distinct_carriers() {
+        let left = AggregateLayout {
+            id: 11,
+            name: "Point".to_string(),
+            namespace: "app::geometry".to_string(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: Vec::new(),
+        };
+        let right = AggregateLayout {
+            id: 12,
+            name: "Point".to_string(),
+            namespace: "app::physics".to_string(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: Vec::new(),
+        };
+        assert_ne!(jvm_layout_class_name(&left), jvm_layout_class_name(&right), "同名 nominal 不得折叠到同一载体");
+    }
+
+    /// 两个闭合泛型实例（`ArrayList<i64>` / `ArrayList<f64>`）必须各自命中冻结布局。
+    #[test]
+    fn distinct_closed_generic_instances_get_distinct_carriers() {
+        let int_items = closed_apply();
+        let float_items = SemanticType::Apply(
+            Box::new(SemanticType::Named(Identifier::new("std::collection::ArrayList"))),
+            vec![SemanticType::Float64],
+        );
+        let layout = |id: u32| AggregateLayout {
+            id,
+            name: "ArrayList".to_string(),
+            namespace: String::new(),
+            key: None,
+            storage: StorageKind::Reference,
+            fields: vec![FieldLayout { name: "len".to_string(), ty: SemanticType::Integer64 { signed: true } }],
+        };
+        let mut plan = AggregateLayoutPlan { layouts: vec![layout(1), layout(2)], ..Default::default() };
+        // `layout_by_semantic_type` 的值是 `LayoutId` 而不是 `layouts` 下标：
+        // 闭合实例必须各自指向自己的布局身份。
+        plan.layout_by_semantic_type.insert(int_items.clone(), 1);
+        plan.layout_by_semantic_type.insert(float_items.clone(), 2);
+        let int_descriptor = jvm_type_descriptor(&plan, &int_items).expect("`ArrayList<i64>` 必须命中冻结布局");
+        let float_descriptor = jvm_type_descriptor(&plan, &float_items).expect("`ArrayList<f64>` 必须命中冻结布局");
+        assert_ne!(int_descriptor, float_descriptor, "两个闭合泛型实例不得共用一个载体");
+    }
 }
 
 #[cfg(test)]

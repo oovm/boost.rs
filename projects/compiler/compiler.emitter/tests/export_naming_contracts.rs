@@ -72,6 +72,37 @@ fn submission_for(sources: &[&str], annotations: &[(&str, &str)]) -> FragmentSub
     FragmentSubmission::from_backend_plan(plan_with(sources, annotations))
 }
 
+/// 构造形参可指定的函数体：返回首个形参，供宿主 ABI 载体合同的反例使用。
+#[allow(deprecated)]
+fn function_with_params(symbol: &str, params: Vec<compiler_types::SemanticType>) -> ExecutableFunction {
+    let value_types = params
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| (ValueRef(index as u32), ty.clone()))
+        .collect::<BTreeMap<_, _>>();
+    ExecutableFunction {
+        symbol: symbol.to_string(),
+        return_type: params.first().cloned().expect("反例函数至少一个形参"),
+        param_types: params.clone(),
+        value_types,
+        value_layouts: BTreeMap::new(),
+        return_layout: None,
+        entry: BlockRef(0),
+        values: params
+            .iter()
+            .enumerate()
+            .map(|(index, _)| Value { id: ValueRef(index as u32), origin: ValueOrigin::Parameter { index, name: format!("p{index}") } })
+            .collect(),
+        blocks: vec![Block {
+            id: BlockRef(0),
+            label: "entry".to_string(),
+            parameters: (0..params.len() as u32).map(ValueRef).collect(),
+            instructions: Vec::new(),
+            terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
+        }],
+    }
+}
+
 /// 从降低结果里取 (源码名, 公开名) 对，按公开名排序比较。
 fn pairs_of(exports: &[MachineHostExport]) -> Vec<(String, String)> {
     exports.iter().map(|export| (export.source_name.clone(), export.public_name.clone())).collect()
@@ -227,4 +258,25 @@ fn wasm_binary_rejects_duplicate_export_public_names() {
         .expect_err("重复导出公开名必须拒绝");
     assert!(error.contains("重复"), "诊断应说明重复：{error}");
     assert!(error.contains("dup"), "诊断应指出冲突名：{error}");
+}
+
+/// Win64 混合整型/浮点形参：宿主扩展只有整型/序列/文本载体，浮点形参必须在
+/// 写出前拒绝，不得静默窄化或按位重解释。
+#[test]
+fn windows_node_extension_rejects_mixed_int_float_parameters() {
+    let function = function_with_params(
+        "echo",
+        vec![compiler_types::SemanticType::Integer64 { signed: true }, compiler_types::SemanticType::Float64],
+    );
+    let mut plan = compiler_emitter::TargetExecutionPlan::from_functions(BTreeMap::from([(
+        QualifiedName::new(vec![Identifier::new("echo")]),
+        function,
+    )]));
+    let instance = plan.instances()[0];
+    plan.testing_export_names_mut().insert(instance, "echo".to_string());
+    let submission = FragmentSubmission::from_backend_plan(plan);
+    let target = X64ProductTarget::extension(X64Platform::windows_x64(), HostModule::Node);
+    let error = lower_fragment_to_machine_extension(&submission, &target).expect_err("混合 int/float 形参没有宿主载体，必须拒绝");
+    assert!(error.contains("没有无损宿主载体"), "诊断应说明缺少载体：{error}");
+    assert!(error.contains("f64") || error.contains("Float64"), "诊断应点名浮点形参：{error}");
 }
