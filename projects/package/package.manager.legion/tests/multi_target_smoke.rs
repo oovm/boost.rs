@@ -195,6 +195,8 @@ const U32_UNSIGNED_DIVISION: &[Operator] = &[
     infix("<", true, Some("integer.compare_less_than_unsigned"), Some("i32.lt.un"), Some("i32.lt_u"), Some("i32.lt_u")),
     infix("<=", true, Some("integer.compare_less_or_equal_unsigned"), Some("i32.le.un"), Some("i32.le_u"), Some("i32.le_u")),
     infix(">=", true, Some("integer.compare_greater_or_equal_unsigned"), Some("i32.ge.un"), Some("i32.ge_u"), Some("i32.ge_u")),
+    // `u32 >> n` 必须是逻辑右移：`i32.shr.un`/`i32.shr_u`/`iushr`，不得借算术右移。
+    infix(">>", false, Some("integer.shift_right_unsigned"), Some("i32.shr.un"), Some("i32.shr_u"), Some("i32.shr_u")),
 ];
 
 /// `f64` 算术与比较：OVM 没有 f64 头码，CLR/Wasm 没有浮点余数，故不声明 `%`。
@@ -241,6 +243,17 @@ const U64_OPERATORS: &[Operator] = &[
     infix(">=", true, Some("long.compare_greater_or_equal_unsigned"), Some("i64.ge.un"), Some("i64.ge_u"), None),
 ];
 
+/// `i32` 位运算与移位：`& | ^ << >>`，四个 target 头码齐全。
+const I32_BITWISE: &[Operator] = &[
+    infix("&", false, Some("integer.and"), Some("i32.and"), Some("i32.and"), Some("i32.and")),
+    infix("|", false, Some("integer.or"), Some("i32.or"), Some("i32.or"), Some("i32.or")),
+    infix("^", false, Some("integer.xor"), Some("i32.xor"), Some("i32.xor"), Some("i32.xor")),
+    infix("<<", false, Some("integer.shift_left"), Some("i32.shl"), Some("i32.shl"), Some("i32.shl")),
+    infix(">>", false, Some("integer.shift_right"), Some("i32.shr"), Some("i32.shr_s"), Some("i32.shr_s")),
+    prefix("-", Some("integer.negate"), Some("i32.neg"), Some("i32.neg"), Some("i32.neg")),
+    infix("==", true, Some("integer.compare_equal"), Some("i32.eq"), Some("i32.eq"), Some("i32.eq")),
+];
+
 /// 只作为返回/比较结果载体出现、不参与任何运算的 primitive。
 const NO_OPERATORS: &[Operator] = &[];
 
@@ -249,6 +262,7 @@ const U32_ARITHMETIC_PRIMITIVE: Primitive = Primitive { canonical: "std::primiti
 const U32_DIVISION_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_UNSIGNED_DIVISION };
 const F64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::f64", name: "f64", operators: F64_OPERATORS };
 const I64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i64", name: "i64", operators: I64_OPERATORS };
+const BITWISE_I32_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i32", name: "i32", operators: I32_BITWISE };
 const U64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u64", name: "u64", operators: U64_OPERATORS };
 const CARRIER_I32: Primitive = Primitive { canonical: "std::primitive::i32", name: "i32", operators: NO_OPERATORS };
 const CARRIER_BOOL: Primitive = Primitive { canonical: "std::primitive::bool", name: "bool", operators: NO_OPERATORS };
@@ -342,23 +356,27 @@ micro main() -> i32 {
 }
 "#;
 
-/// 无符号 `u32` 用例入口：`probe(1)` 在 `0xFFFF_FFFF` 上做 `/ 2`、`% 7` 与四个有序比较。
+/// 无符号 `u32` 用例入口：`probe(1)` 在 `0xFFFF_FFFF` 上做 `/ 2`、`% 7`、四个有序比较与 `>> 4`。
 ///
-/// 无符号：`/ 2 = 0x7FFF_FFFF`、`% 7 = 3`，商上 `> >=` 成立、余数上 `< <=` 成立
-/// （`3 < 7`、`3 <= 7`）。若 `/` 误用有符号除法，商为 0、`0 > 1` 不成立而返回 1；
-/// 若 `%` 误用有符号取余，余数为 `0xFFFF_FFFF`，`< 7`、`<= 7` 都不成立而返回 4/6。
-/// 四个比较按嵌套顺序各带独立分支（1/3/4/6），全部成立返回 5。
+/// 无符号：`/ 2 = 0x7FFF_FFFF`、`% 7 = 3`、`>> 4 = 0x0FFF_FFFF`，商上 `> >=` 成立、
+/// 余数上 `< <=` 成立、移位后 `< big` 成立。若 `/` 误用有符号除法，商为 0、`0 > 1`
+/// 不成立而返回 1；若 `%` 误用有符号取余，余数为 `0xFFFF_FFFF`，`< 7`、`<= 7` 都不成立；
+/// 若 `>>` 误用算术右移，移位结果仍为 `0xFFFF_FFFF`、`< big` 不成立而返回 7。
 const UNSIGNED_DIVISION_SOURCE: &str = r#"namespace app;
 
 micro probe(a: u32) -> i32 {
     let big = -a
     let quotient = big / 2
     let remainder = big % 7
+    let shifted = big >> 4
     if quotient > a {
         if quotient >= a {
             if remainder < 7 {
                 if remainder <= 7 {
-                    return 5
+                    if shifted < big {
+                        return 5
+                    }
+                    return 7
                 }
                 return 6
             }
@@ -452,6 +470,44 @@ micro main() -> i32 {
 }
 "#;
 
+/// `i32` 位运算用例入口：`bits(13)` 走 `& | ^ << >>`、前缀 `-` 与 `==`。
+///
+/// `13 & 7 = 5`，`5 | 8 = 13`，`13 ^ 15 = 2`，`2 << 3 = 16`，`-16 >> 2 = -4`
+/// （有符号右移必须算术填充）。每步带独立错误分支；全部成立返回 29。若 `>>` 误用
+/// 逻辑右移，`-16 >> 2 = 0x3FFF_FFFC`，`r == -4` 不成立而返回 5。
+const BITWISE_SOURCE: &str = r#"namespace app;
+
+micro bits(a: i32) -> i32 {
+    let x = a & 7
+    let y = x | 8
+    let z = y ^ 15
+    let shifted = z << 3
+    let neg = -shifted
+    let r = neg >> 2
+    if x == 5 {
+        if y == 13 {
+            if z == 2 {
+                if shifted == 16 {
+                    if r == -4 {
+                        return 29
+                    }
+                    return 5
+                }
+                return 4
+            }
+            return 3
+        }
+        return 2
+    }
+    return 1
+}
+
+[main]
+micro main() -> i32 {
+    return app::bits(13)
+}
+"#;
+
 /// 一个数值算子 e2e 用例：夹具声明 + 可观测入口。
 struct Case {
     /// 临时目录与产物目录的去重标签。
@@ -487,6 +543,7 @@ const FLOAT_PRIMITIVES: &[Primitive] = &[CARRIER_I32, F64_PRIMITIVE, CARRIER_BOO
 const UNSIGNED_DIVISION_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U32_DIVISION_PRIMITIVE, CARRIER_BOOL];
 const INT64_PRIMITIVES: &[Primitive] = &[CARRIER_I32, I64_PRIMITIVE, CARRIER_BOOL];
 const UINT64_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U64_PRIMITIVE, CARRIER_BOOL];
+const BITWISE_PRIMITIVES: &[Primitive] = &[BITWISE_I32_PRIMITIVE, CARRIER_BOOL];
 
 /// 全部数值算子用例。`expected` 是入口返回值，不是产物存在性。
 const NUMERIC_CASES: &[Case] = &[
@@ -495,6 +552,7 @@ const NUMERIC_CASES: &[Case] = &[
     Case { label: "unsigned-division", primitives: UNSIGNED_DIVISION_PRIMITIVES, source: UNSIGNED_DIVISION_SOURCE, expected: 5 },
     Case { label: "int64", primitives: INT64_PRIMITIVES, source: INT64_SOURCE, expected: 23 },
     Case { label: "uint64", primitives: UINT64_PRIMITIVES, source: UINT64_SOURCE, expected: 31 },
+    Case { label: "bitwise", primitives: BITWISE_PRIMITIVES, source: BITWISE_SOURCE, expected: 29 },
 ];
 
 const MANIFEST_TEMPLATE: &str = r#"{
