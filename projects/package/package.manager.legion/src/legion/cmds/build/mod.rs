@@ -484,70 +484,103 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
     let backup_dir = output_dir.join(format!(".nyar-backup-{}-{backup_seq}", std::process::id()));
     fs::create_dir_all(&backup_dir).map_err(|e| LegionError::msg(format!("创建提交备份目录失败: {}: {e}", backup_dir.display())))?;
 
-    // 回滚记录：moved_aside = (备份位置, 原位置)；moved_in = 本代已移入的路径。
-    let mut moved_aside: Vec<(PathBuf, PathBuf)> = Vec::new();
-    let mut moved_in: Vec<PathBuf> = Vec::new();
-    let rollback = |moved_aside: &[(PathBuf, PathBuf)], moved_in: &[PathBuf]| {
-        // 先撤本代已移入的文件，再从备份恢复上一代文件。
-        for to in moved_in.iter().rev() {
+    // 回滚记录按对读者的影响分三类，保证替换项不留「文件缺失」窗口：
+    // - created：本代新建、原目录不存在的文件，回滚时删除。
+    // - overwritten：本代覆盖旧文件的文件，旧字节先按副本留在备份目录，原位文件保持在场，
+    //   回滚时把副本写回原位（同卷 rename 覆盖是原子的，读者始终看到完整一代）。
+    // - retired：上一代受管理而本代退出的文件，整体移入备份目录，回滚时移回原位。
+    let mut created: Vec<PathBuf> = Vec::new();
+    let mut overwritten: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut retired: Vec<(PathBuf, PathBuf)> = Vec::new();
+    // 返回 Some(备份目录) 表示恢复未全部成功：必须保留备份作为唯一恢复副本，禁止删除。
+    let rollback = |created: &[PathBuf], overwritten: &[(PathBuf, PathBuf)], retired: &[(PathBuf, PathBuf)]| -> Option<PathBuf> {
+        for to in created.iter().rev() {
             let _ = fs::remove_file(to);
         }
-        for (from, to) in moved_aside.iter().rev() {
-            let _ = fs::rename(from, to);
+        let mut restore_failed = false;
+        for (backup, original) in overwritten.iter().rev() {
+            if fs::copy(backup, original).is_err() {
+                restore_failed = true;
+            }
         }
-        let _ = fs::remove_dir_all(&backup_dir);
+        for (backup, original) in retired.iter().rev() {
+            if fs::rename(backup, original).is_err() {
+                restore_failed = true;
+            }
+        }
+        if restore_failed {
+            Some(backup_dir.clone())
+        }
+        else {
+            let _ = fs::remove_dir_all(&backup_dir);
+            None
+        }
+    };
+    let report_rollback = |kept: Option<PathBuf>, base: String| -> LegionError {
+        match kept {
+            Some(dir) => LegionError::msg(format!("{base}；回滚未能恢复全部上一代文件，恢复副本保留于 {}，请人工介入", dir.display())),
+            None => LegionError::msg(base),
+        }
     };
 
-    // 1) 让位：本代将覆盖的文件 + 上一代受管理但本代不再存在的退出项。
+    // 1) 备份将被覆盖的旧文件（留在原位，读者仍见完整旧代），并把退出项整体移入备份。
     let retire: Vec<&str> = previous.files.iter().map(String::as_str).filter(|name| !staged_names.contains(name)).collect();
-    let replace = staged_names.clone();
-    for name in replace.iter().chain(retire.iter()) {
+    for name in &staged_names {
         let existing = output_dir.join(name);
         if existing.is_file() {
-            let to = backup_dir.join(name);
-            if let Err(error) = fs::rename(&existing, &to) {
-                rollback(&moved_aside, &moved_in);
-                return Err(LegionError::msg(format!("移出旧受管理文件失败 {}: {error}", existing.display())));
+            let backup = backup_dir.join(name);
+            if let Err(error) = fs::copy(&existing, &backup) {
+                let kept = rollback(&created, &overwritten, &retired);
+                return Err(report_rollback(kept, format!("备份旧产物失败 {}: {error}", existing.display())));
             }
-            moved_aside.push((to, existing));
+            overwritten.push((backup, existing));
+        }
+    }
+    for name in &retire {
+        let existing = output_dir.join(name);
+        if existing.is_file() {
+            let backup = backup_dir.join(name);
+            if let Err(error) = fs::rename(&existing, &backup) {
+                let kept = rollback(&created, &overwritten, &retired);
+                return Err(report_rollback(kept, format!("移出退出产物失败 {}: {error}", existing.display())));
+            }
+            retired.push((backup, existing));
         }
     }
 
-    // 2) 移入本代。
+    // 2) 移入本代：同卷 rename 原子覆盖，替换项全程在场，不再出现「先移走再移入」的缺失窗口。
     for (from, name) in &staged {
         let to = output_dir.join(name);
+        let overwrites = overwritten.iter().any(|(_, original)| original == &to);
         if let Err(error) = fs::rename(from, &to) {
-            rollback(&moved_aside, &moved_in);
-            return Err(LegionError::msg(format!("提交产物失败: {} -> {}: {error}", from.display(), to.display())));
+            let kept = rollback(&created, &overwritten, &retired);
+            return Err(report_rollback(kept, format!("提交产物失败: {} -> {}: {error}", from.display(), to.display())));
         }
-        moved_in.push(to);
+        if !overwrites {
+            created.push(to);
+        }
     }
 
-    // 3) 写 generation 清单（受管理集合的最终事实）。
+    // 3) 写 generation 清单：这是唯一的提交点，读者据此固定整代直到加载结束。
     let manifest = DeliveryManifest {
         schema_version: 0,
         generation: format!("{triple}-{ir_hash}"),
         files: staged.iter().map(|(_, name)| name.clone()).chain(std::iter::once(DELIVERY_MANIFEST_FILE.to_string())).collect(),
     };
     // 清单自身作为受管理文件在下一代表达；此处直接写入输出目录。
-    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(|error| {
-        rollback(&moved_aside, &moved_in);
-        LegionError::msg(format!("序列化 generation 清单失败: {error}"))
-    });
-    match manifest_bytes {
-        Ok(bytes) => {
-            if let Err(error) = fs::write(output_dir.join(DELIVERY_MANIFEST_FILE), bytes) {
-                rollback(&moved_aside, &moved_in);
-                return Err(LegionError::msg(format!("写入 generation 清单失败: {error}")));
-            }
+    let manifest_bytes = match serde_json::to_vec_pretty(&manifest) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let kept = rollback(&created, &overwritten, &retired);
+            return Err(report_rollback(kept, format!("序列化 generation 清单失败: {error}")));
         }
-        Err(error) => return Err(error),
+    };
+    if let Err(error) = fs::write(output_dir.join(DELIVERY_MANIFEST_FILE), manifest_bytes) {
+        let kept = rollback(&created, &overwritten, &retired);
+        return Err(report_rollback(kept, format!("写入 generation 清单失败: {error}")));
     }
 
-    // 4) 清理：备份目录与暂存目录。
-    for (backup, _) in &moved_aside {
-        let _ = fs::remove_file(backup);
-    }
+    // 4) 提交成功：清理备份副本与暂存目录。
     let _ = fs::remove_dir_all(&backup_dir);
     fs::remove_dir_all(staging_dir).map_err(|e| LegionError::msg(format!("清理暂存目录失败: {}: {e}", staging_dir.display())))?;
     Ok(())
@@ -638,6 +671,42 @@ mod artifact_transaction_tests {
         assert_eq!(fs::read(output.join("app.wasm")).expect("read after rollback"), b"g1", "回滚后上一代产物完整恢复");
         assert!(output.join(DELIVERY_MANIFEST_FILE).is_file(), "generation 清单回滚保留");
         assert!(read_delivery_manifest(&output).generation == "g1", "清单仍指向上第一代");
+    }
+
+    /// 被覆盖的旧产物在回滚时按副本写回原位，且成功恢复后备份目录被清理。
+    #[test]
+    fn commit_restores_overwritten_files_from_copy_backup() {
+        let root = boost_fs::temp::create_folder().expect("temp dir");
+        let output = root.path().join("dist");
+        fs::create_dir_all(&output).expect("output dir");
+        fs::write(output.join("app.wasm"), b"g1").expect("write g1");
+        fs::write(output.join("lib.wasm"), b"g1").expect("write g1 lib");
+        // 注入失败：第三个目标位置是目录，rename 无法覆盖。
+        fs::create_dir_all(output.join("broken.txt")).expect("blocking directory");
+        let previous = DeliveryManifest {
+            schema_version: 0,
+            generation: "g1".to_string(),
+            files: vec!["app.wasm".to_string(), "lib.wasm".to_string(), DELIVERY_MANIFEST_FILE.to_string()],
+        };
+        fs::write(output.join(DELIVERY_MANIFEST_FILE), serde_json::to_vec(&previous).expect("serialize")).expect("write manifest");
+
+        let staging = staging_dir_for(&output);
+        fs::create_dir_all(&staging).expect("staging dir");
+        fs::write(staging.join("app.wasm"), b"g2").expect("write g2");
+        fs::write(staging.join("lib.wasm"), b"g2").expect("write g2 lib");
+        fs::write(staging.join("broken.txt"), b"g2 broken").expect("write g2 broken");
+
+        commit_staged_delivery(&staging, &output, "wasm32-unknown-unknown", "ir2").expect_err("目标被占用必须整组失败");
+
+        assert_eq!(fs::read(output.join("app.wasm")).expect("read after rollback"), b"g1", "被覆盖产物按副本写回");
+        assert_eq!(fs::read(output.join("lib.wasm")).expect("read after rollback"), b"g1", "被覆盖产物按副本写回");
+        assert_eq!(read_delivery_manifest(&output).generation, "g1", "清单仍指向上第一代");
+        let leftovers = fs::read_dir(&output)
+            .expect("read output")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".nyar-backup-"))
+            .count();
+        assert_eq!(leftovers, 0, "恢复全部成功后不得残留备份目录");
     }
 
     /// 暂存集合出现子目录说明装配违约：提交拒绝，不部分移动。
