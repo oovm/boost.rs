@@ -276,7 +276,7 @@ impl DeckEdit {
     }
 
     /// Borrows the table content of one element, rejecting non-table targets.
-    fn table_mut(&mut self, slide: &SlideId, element: &ElementId, needs: &str) -> Result<&mut TableContent, DeckError> {
+    pub(crate) fn table_mut(&mut self, slide: &SlideId, element: &ElementId, needs: &str) -> Result<&mut TableContent, DeckError> {
         let model = self.slide_mut(slide)?;
         let target = model.element_mut(element).ok_or_else(|| missing_element(slide, element))?;
         match &mut target.content {

@@ -15,12 +15,14 @@ pub mod error;
 pub mod id;
 pub mod images;
 pub mod inspect;
+pub mod layout;
 pub mod model;
 pub mod notes;
 pub mod playback;
 pub mod project;
 pub mod size;
 pub mod tables;
+pub mod text_runs;
 
 pub use edit::{
     ChartElementInput, DeckEdit, DefaultBox, FormulaElementInput, ImageElementInput, ShapeElementInput, SlideAddOptions, TableElementInput,
@@ -36,8 +38,10 @@ pub use model::{
     TextContent, TextParagraph, TextRun, Theme, Transform,
 };
 pub use images::{ImageDuplicateOptions, ImageMoveTarget};
+pub use layout::{AlignEdge, AlignReference, DistributeAxis, ElementZOrder};
 pub use notes::NotesEntry;
 pub use playback::{PlaybackSession, PlaybackState};
 pub use project::{DECK_ENTRY, decode_project, encode_project};
 pub use size::{DeckSize, EMU_PER_POINT, emu_to_points, points_to_emu};
 pub use tables::{TableColumnInsertInput, TableDuplicateOptions, TableMoveTarget, TableRowInsertInput};
+pub use text_runs::{TextReplaceOptions, TextRunStyle, replace_in_rows, replace_in_text};

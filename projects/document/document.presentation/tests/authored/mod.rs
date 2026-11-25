@@ -165,8 +165,10 @@ fn duplicated_slides_receive_fresh_identities() {
 }
 
 mod images;
+mod layout;
 mod notes;
 mod tables;
+mod text_runs;
 
 #[test]
 fn media_elements_keep_asset_identity_across_reopen() {
