@@ -143,7 +143,11 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             if request.artifact_purpose == compiler_target::ArtifactPurpose::HostExtension {
                 let product = compiler_emitter::emitter_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
                     .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
-                let lowered = compiler_emitter::emitter_backend_machine::lower_fragment_to_machine_extension(&submission, &product)?;
+                // 纵链两段式：先取目标私有宿主扩展输入，再交装配服务；装配签名
+                // 不再接触跨目标的共享程序。
+                let extension_input =
+                    compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_x64_extension_input(&submission, &request.resolved)?;
+                let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_extension_image(&extension_input)?;
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
                     output_dir: request.output_dir.to_path_buf(),

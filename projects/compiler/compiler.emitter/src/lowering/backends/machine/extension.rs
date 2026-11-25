@@ -29,7 +29,8 @@ use crate::{
 use compiler_types::ItemInstanceId;
 
 use super::{
-    HostMethod, HostModule, HostParameterKind, HostValueKind, X64Platform, X64ProductTarget, any_returns_bool, any_returns_int64_array,
+    HostMethod, HostModule, HostParameterKind, HostValueKind, X64Platform, X64ProductTarget, X64ProgramFunction, any_returns_bool,
+    any_returns_int64_array,
     any_returns_utf8, append_text_arena,
     compile_shared_container, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
     python_module_data, python_module_exec, python_module_registration,
@@ -78,12 +79,45 @@ pub struct MachineHostExport {
     pub returns: String,
 }
 
+/// 宿主扩展的目标私有输入：已降低的 LIR 程序 + 冻结的宿主边界事实。
+///
+/// 装配服务（宿主包装体编组 + 编码 + 共享库容器 + 自检）只接受这个形状，不再
+/// 接触跨目标的 `FragmentSubmission` / `ExecutableFunction`。
+pub struct X64ExtensionProgramInput {
+    platform: X64Platform,
+    host: HostModule,
+    host_library: String,
+    host_dependencies: Vec<String>,
+    functions: Vec<X64ProgramFunction>,
+    methods: Vec<HostMethod>,
+    host_exports: Vec<MachineHostExport>,
+    module_name: Option<String>,
+    artifact_extension: String,
+}
+
+impl X64ExtensionProgramInput {
+    /// 目标平台身份（容器与调用约定一次冻结）。
+    pub fn platform(&self) -> X64Platform {
+        self.platform
+    }
+
+    /// 宿主模块合同（Node-API / CPython）。
+    pub fn host_module(&self) -> HostModule {
+        self.host
+    }
+}
+
 /// 把已冻结的目标计划降低为宿主扩展共享库。
 ///
 /// `target` 必须来自统一目标解析服务的宿主合同；CPython 模块名是目标计划已冻结
 /// 的事实（`X64ProductTarget::cpython_module_name`），缺失即失败闭合，lowering
 /// 不再接收工程名、也不重新归一化。
 pub fn lower_fragment_to_machine_extension(submission: &FragmentSubmission, target: &X64ProductTarget) -> Result<X64LoweredExtension> {
+    assemble_x64_extension_image(&build_x64_extension_program_input(submission, target)?)
+}
+
+/// 计划事实 → 目标私有宿主扩展输入（不编组宿主包装体、不编码、不写容器）。
+pub fn build_x64_extension_program_input(submission: &FragmentSubmission, target: &X64ProductTarget) -> Result<X64ExtensionProgramInput> {
     super::validate_machine_submission(submission)?;
     let (platform, host) = match target {
         X64ProductTarget::Extension { platform, module, .. } => (*platform, *module),
@@ -143,68 +177,20 @@ pub fn lower_fragment_to_machine_extension(submission: &FragmentSubmission, targ
         Some(library) if !platform.is_windows() && matches!(target.host_module(), Some(HostModule::Python)) => vec![library.to_string()],
         _ => Vec::new(),
     };
-    let properties: &[HostProperty] = &[];
-
-    let (image, entry_symbol, artifact_extension) = match host {
-        HostModule::Node => {
-            let (node_data, property_name_offsets, method_name_offsets, error_message_offset, range_error_offset, allocation_error_offset) =
-                node_module_data(properties, &methods);
-            let mut data = node_data;
-            let arena_offset = Some(append_text_arena(&mut data));
-            let bool_exports = any_returns_bool(properties, &methods);
-            for method in &methods {
-                functions.push(node_method_wrapper(
-                    method,
-                    error_message_offset,
-                    range_error_offset,
-                    allocation_error_offset,
-                    platform,
-                    &host_library,
-                    arena_offset,
-                ));
-            }
-            functions.push(node_addon_registration(
-                properties,
-                &property_name_offsets,
-                methods.as_slice(),
-                &method_name_offsets,
-                platform,
-                &host_library,
-                arena_offset,
-            ));
-            let imports = node_imports(&methods, bool_exports, &host_library);
-            let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &[], &host_dependencies)?;
-            (image, "napi_register_module_v1".to_string(), ".node".to_string())
+    if let Some(module) = &python_module {
+        if !is_c_identifier(module) {
+            return Err(format!("CPython 扩展模块名 `{module}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"));
         }
-        HostModule::Python => {
-            let module = python_module.as_deref().expect("Python 分支已冻结模块名");
-            if !is_c_identifier(module) {
-                return Err(format!("CPython 扩展模块名 `{module}` 不是合法 C 标识符：`PyInit_<module>` 必须能在 C 中声明"));
-            }
-            let (definition, relocations, property_name_offsets, format_offsets) = python_module_data(module, properties, &methods);
-            let mut data = definition;
-            let arena_offset = Some(append_text_arena(&mut data));
-            let bool_exports = any_returns_bool(properties, &methods);
-            for (method, format_offset) in methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(method, format_offset, &host_library, arena_offset, platform));
-            }
-            functions.push(python_module_exec(properties, &property_name_offsets, &host_library, arena_offset));
-            functions.push(python_module_registration(module, &host_library));
-            let imports = python_imports(&methods, bool_exports, &host_library);
-            let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &relocations, &host_dependencies)?;
-            let entry_symbol = format!("PyInit_{module}");
-            // 扩展后缀优先取解析服务冻结/探测的宿主 ABI 事实；无配置时才按平台
-            // 规范名回落（`.pyd` / `.so`），产物身份差异由 ResolvedTarget::identity 承载。
-            let extension = target
-                .cpython_module_suffix()
-                .map(|suffix| if suffix.starts_with('.') { suffix.to_string() } else { format!(".{suffix}") })
-                .unwrap_or_else(|| if platform.is_windows() { ".pyd".to_string() } else { ".so".to_string() });
-            (image, entry_symbol, extension)
-        }
+    }
+    // 扩展后缀优先取解析服务冻结/探测的宿主 ABI 事实；无配置时才按平台规范名
+    // 回落（`.pyd` / `.so`），产物身份差异由 ResolvedTarget::identity 承载。
+    let artifact_extension = match host {
+        HostModule::Node => ".node".to_string(),
+        HostModule::Python => target
+            .cpython_module_suffix()
+            .map(|suffix| if suffix.starts_with('.') { suffix.to_string() } else { format!(".{suffix}") })
+            .unwrap_or_else(|| if platform.is_windows() { ".pyd".to_string() } else { ".so".to_string() }),
     };
-
-    let executable = compile_shared_container(platform, &image)?;
-    verify_shared_image(&executable, platform)?;
 
     // 宿主导出面按冻结顺序（与 methods 一致按公开名排序）携带源码名 + 公开名 +
     // 载体签名 + 形参声明名：签名只来自上面已闭合的 `HostMethod`，参数名来自
@@ -252,12 +238,86 @@ pub fn lower_fragment_to_machine_extension(submission: &FragmentSubmission, targ
         });
     }
 
+    Ok(X64ExtensionProgramInput {
+        platform,
+        host,
+        host_library,
+        host_dependencies,
+        functions,
+        methods,
+        host_exports,
+        module_name: python_module,
+        artifact_extension,
+    })
+}
+
+/// 目标私有宿主扩展输入 → 共享库镜像（宿主包装体编组 + 编码 + 容器 + 自检）。
+pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<X64LoweredExtension> {
+    let platform = input.platform;
+    let abi = platform.abi();
+    let properties: &[HostProperty] = &[];
+    let mut functions = input.functions.clone();
+
+    let (image, entry_symbol) = match input.host {
+        HostModule::Node => {
+            let (node_data, property_name_offsets, method_name_offsets, error_message_offset, range_error_offset, allocation_error_offset) =
+                node_module_data(properties, &input.methods);
+            let mut data = node_data;
+            let arena_offset = Some(append_text_arena(&mut data));
+            let bool_exports = any_returns_bool(properties, &input.methods);
+            for method in &input.methods {
+                functions.push(node_method_wrapper(
+                    method,
+                    error_message_offset,
+                    range_error_offset,
+                    allocation_error_offset,
+                    platform,
+                    &input.host_library,
+                    arena_offset,
+                ));
+            }
+            functions.push(node_addon_registration(
+                properties,
+                &property_name_offsets,
+                input.methods.as_slice(),
+                &method_name_offsets,
+                platform,
+                &input.host_library,
+                arena_offset,
+            ));
+            let imports = node_imports(&input.methods, bool_exports, &input.host_library);
+            let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &[], &input.host_dependencies)?;
+            (image, "napi_register_module_v1".to_string())
+        }
+        HostModule::Python => {
+            let module = input
+                .module_name
+                .as_deref()
+                .ok_or("CPython 宿主扩展缺少冻结模块名：构建计划必须经 `freeze_cpython_module_name` 装配后再 lowering")?;
+            let (definition, relocations, property_name_offsets, format_offsets) = python_module_data(module, properties, &input.methods);
+            let mut data = definition;
+            let arena_offset = Some(append_text_arena(&mut data));
+            let bool_exports = any_returns_bool(properties, &input.methods);
+            for (method, format_offset) in input.methods.iter().zip(format_offsets) {
+                functions.push(python_method_wrapper(method, format_offset, &input.host_library, arena_offset, platform));
+            }
+            functions.push(python_module_exec(properties, &property_name_offsets, &input.host_library, arena_offset));
+            functions.push(python_module_registration(module, &input.host_library));
+            let imports = python_imports(&input.methods, bool_exports, &input.host_library);
+            let image = encode_x64_program_with_dependencies(&functions, &imports, abi, &data, &relocations, &input.host_dependencies)?;
+            (image, format!("PyInit_{module}"))
+        }
+    };
+
+    let executable = compile_shared_container(platform, &image)?;
+    verify_shared_image(&executable, platform)?;
+
     Ok(X64LoweredExtension {
         executable,
         entry_symbol,
-        host_exports,
-        artifact_extension,
-        module_name: python_module,
+        host_exports: input.host_exports.clone(),
+        artifact_extension: input.artifact_extension.clone(),
+        module_name: input.module_name.clone(),
     })
 }
 

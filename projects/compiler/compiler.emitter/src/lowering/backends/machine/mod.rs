@@ -29,7 +29,7 @@ mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
-pub use extension::{MachineHostExport, X64LoweredExtension, lower_fragment_to_machine_extension};
+pub use extension::{MachineHostExport, X64ExtensionProgramInput, X64LoweredExtension, lower_fragment_to_machine_extension};
 pub use library::{MachineLibraryExport, X64LibraryProgramInput, X64LoweredLibrary, lower_fragment_to_machine_library};
 
 pub use carrier::{
@@ -542,6 +542,23 @@ pub fn lower_resolved_fragment_to_x64_library_input(
 /// C ABI 库纵链第二段：目标私有输入 → 共享库镜像（编码 + 容器 + 自检）。
 pub fn assemble_x64_library_image(input: &X64LibraryProgramInput) -> Result<X64LoweredLibrary> {
     library::assemble_x64_library_image(input)
+}
+
+/// 宿主扩展纵链第一段：计划事实 → 目标私有宿主扩展输入。
+///
+/// 返回之后，宿主包装体编组、编码与容器装配只认
+/// [`X64ExtensionProgramInput`]；跨目标的共享程序不再越过这条边界。
+pub fn lower_resolved_fragment_to_x64_extension_input(
+    submission: &FragmentSubmission,
+    resolved: &ResolvedTarget,
+) -> Result<X64ExtensionProgramInput> {
+    let product = X64ProductTarget::from_resolved(resolved).map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
+    extension::build_x64_extension_program_input(submission, &product)
+}
+
+/// 宿主扩展纵链第二段：目标私有输入 → 共享库镜像（包装体编组 + 编码 + 容器 + 自检）。
+pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<X64LoweredExtension> {
+    extension::assemble_x64_extension_image(input)
 }
 
 /// 机器码 lane 的统一提交验证门。
