@@ -2243,7 +2243,7 @@ impl ClrMethodEmitter<'_> {
             return Ok(());
         }
         if source.is_float() || target.is_float() {
-            return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的浮点 cast 尚未闭合: function={}", self.function.symbol));
+            return self.emit_float_cast_conversion(source, target, source_kind, target_kind);
         }
         if source_kind == ClrValueKind::Reference || target_kind == ClrValueKind::Reference {
             return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的引用 cast 缺少目标合同: function={}", self.function.symbol));
@@ -2258,6 +2258,50 @@ impl ClrMethodEmitter<'_> {
         }
         // 再按目标位宽/符号性转换（int64 目标用 `conv.i8`/`conv.u8`）。
         self.push_opcode(msil_int_normalize_opcode(target_shape));
+        Ok(())
+    }
+
+    /// 浮点 `as` 转换的 lowering：ECMA-335 的 `conv.r4`/`conv.r8`/`conv.i1`…
+    /// `conv.u8` 是数值栈载体之间的正式转换指令，舍入行为由运行时合同承诺。
+    ///
+    /// `int32` 系源先按源形状归一（8/16 位载体携带越界高位）；浮点→`int32` 系
+    /// 结果由目标形状的 conv 指令一步完成（ECMA 允许浮点源直接 `conv.i1` 等）。
+    /// `int64` 与浮点之间是单条 `conv.r4`/`conv.r8`/`conv.i8`。非数值载体
+    /// （bool/reference）保持失败闭合，不做隐式转换。
+    fn emit_float_cast_conversion(&mut self, source: &SemanticType, target: &SemanticType, source_kind: ClrValueKind, target_kind: ClrValueKind) -> crate::Result<()> {
+        let step = match (source, target) {
+            (SemanticType::Float32, SemanticType::Float64) => Some(MsilOpcode::ConvR8),
+            (SemanticType::Float64, SemanticType::Float32) => Some(MsilOpcode::ConvR4),
+            (SemanticType::Float32, SemanticType::Integer64 { .. }) => Some(MsilOpcode::ConvI8),
+            (SemanticType::Float64, SemanticType::Integer64 { .. }) => Some(MsilOpcode::ConvI8),
+            (SemanticType::Integer64 { .. }, SemanticType::Float32) => Some(MsilOpcode::ConvR4),
+            (SemanticType::Integer64 { .. }, SemanticType::Float64) => Some(MsilOpcode::ConvR8),
+            _ => None,
+        };
+        if let Some(opcode) = step {
+            self.push_opcode(opcode);
+            return Ok(());
+        }
+        if source.is_float() {
+            // 浮点 → int32 系：目标形状的 conv 指令一步完成（int64 已在上面单步）。
+            if !matches!(target_kind, ClrValueKind::Int32) {
+                return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的浮点 cast 目标没有整型载体: function={}", self.function.symbol));
+            }
+            let Some(shape) = msil_int_shape(target) else {
+                return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的浮点 cast 目标没有可归一的整型形状: function={}", self.function.symbol));
+            };
+            self.push_opcode(msil_int_normalize_opcode(shape));
+            return Ok(());
+        }
+        // int32 系 → 浮点：源归一后 conv.r4/conv.r8（int64 源已在上面单步）。
+        if !matches!(source_kind, ClrValueKind::Int32) {
+            return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的浮点 cast 源没有数值载体: function={}", self.function.symbol));
+        }
+        let Some(shape) = msil_int_shape(source) else {
+            return Err(format!("CLR 最小 lowering：`{source}` → `{target}` 的浮点 cast 源没有可归一的整型形状: function={}", self.function.symbol));
+        };
+        self.push_opcode(msil_int_normalize_opcode(shape));
+        self.push_opcode(if matches!(target, SemanticType::Float32) { MsilOpcode::ConvR4 } else { MsilOpcode::ConvR8 });
         Ok(())
     }
 

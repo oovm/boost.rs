@@ -1982,7 +1982,7 @@ impl JvmMethodEmitter<'_> {
             return Ok(());
         }
         if source.is_float() || target.is_float() {
-            return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的浮点 cast 尚未闭合: function={}", self.function.symbol));
+            return self.emit_float_cast_conversion(source, target, source_kind, target_kind);
         }
         if source_kind == JvmSlotKind::Reference || target_kind == JvmSlotKind::Reference {
             return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的引用 cast 缺少目标合同: function={}", self.function.symbol));
@@ -2012,6 +2012,50 @@ impl JvmMethodEmitter<'_> {
         if target_kind == JvmSlotKind::Int {
             self.emit_int_normalize(target_shape);
         }
+        Ok(())
+    }
+
+    /// 浮点 `as` 转换的 lowering：只发射 JVM 原生、两侧宽度对应的单条转换指令。
+    ///
+    /// `float`/`double`/`long` 之间的舍入与饱和语义由 JVM 转换指令本身承诺
+    /// （与语言 `as` 合同一致），backend 不发明舍入。`int` 系源先按源形状在
+    /// `int` 载体上归一（8/16 位载体携带越界高位），整型结果再按目标形状归一。
+    /// 非数值载体（bool/reference）保持失败闭合，不做隐式转换。
+    fn emit_float_cast_conversion(&mut self, source: &SemanticType, target: &SemanticType, source_kind: JvmSlotKind, target_kind: JvmSlotKind) -> crate::Result<()> {
+        let step = match (source, target) {
+            (SemanticType::Float32, SemanticType::Float64) => Some(JvmInstruction::F2D),
+            (SemanticType::Float64, SemanticType::Float32) => Some(JvmInstruction::D2F),
+            (SemanticType::Float32, SemanticType::Integer64 { .. }) => Some(JvmInstruction::F2L),
+            (SemanticType::Float64, SemanticType::Integer64 { .. }) => Some(JvmInstruction::D2L),
+            (SemanticType::Integer64 { .. }, SemanticType::Float32) => Some(JvmInstruction::L2F),
+            (SemanticType::Integer64 { .. }, SemanticType::Float64) => Some(JvmInstruction::L2D),
+            _ => None,
+        };
+        if let Some(instruction) = step {
+            self.instructions.push(instruction);
+            return Ok(());
+        }
+        if source.is_float() {
+            // float → 32 位整型系：F2I/D2I 后按目标形状归一（i64 结果已在上面单步完成）。
+            if !matches!(target_kind, JvmSlotKind::Int) {
+                return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的浮点 cast 目标没有整型载体: function={}", self.function.symbol));
+            }
+            let Some(shape) = jvm_int_shape(target) else {
+                return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的浮点 cast 目标没有可归一的整型形状: function={}", self.function.symbol));
+            };
+            self.instructions.push(if matches!(source, SemanticType::Float32) { JvmInstruction::F2I } else { JvmInstruction::D2I });
+            self.emit_int_normalize(shape);
+            return Ok(());
+        }
+        // 32 位整型系 → float：源归一后 I2F/I2D（i64 源已在上面单步完成）。
+        if !matches!(source_kind, JvmSlotKind::Int) {
+            return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的浮点 cast 源没有数值载体: function={}", self.function.symbol));
+        }
+        let Some(shape) = jvm_int_shape(source) else {
+            return Err(format!("JVM 最小 lowering：`{source}` → `{target}` 的浮点 cast 源没有可归一的整型形状: function={}", self.function.symbol));
+        };
+        self.emit_int_normalize(shape);
+        self.instructions.push(if matches!(target, SemanticType::Float32) { JvmInstruction::I2F } else { JvmInstruction::I2D });
         Ok(())
     }
 
