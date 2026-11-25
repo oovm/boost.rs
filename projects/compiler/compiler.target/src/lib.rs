@@ -42,9 +42,10 @@ pub use self::{
 };
 pub use compiler_analysis::{EntryContract, ExportContract, FunctionAnalysis, ImportContract, ProgramFacts};
 pub use compiler_optimize::{
-    AlgebraicTerm, EGraphSnapshot, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder, ObjectAlgebraicDimension,
-    ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult, OptimizationSession, ProjectionPlan,
-    ProjectionPolicy, ReferenceManagement, RewriteEquation, RewritePhase, RewriteRule, RewriteTheory, TermRewrite, TheoryBundle,
+    AlgebraicTerm, EGraphSnapshot, EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder,
+    ObjectAlgebraicDimension, ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult,
+    OptimizationSession, ProjectionPlan, ProjectionPolicy, ReferenceManagement, RewriteEquation, RewritePhase, RewriteRule,
+    RewriteTheory, TermRewrite, TheoryBundle,
 };
 pub use compiler_types::{
     AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout, FunctionType, Identifier,

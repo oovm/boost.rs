@@ -24,9 +24,9 @@ pub use egraph::{ConstantInterpreter, EClassId, EGraphHost, EGraphStats, Structu
 pub use extract::{ExtractCost, extract_class};
 pub use pattern::{EGraphMatchView, Substitution, TermPattern, atom_pattern, instantiate_pattern, match_pattern, parse_pattern};
 pub use session::{
-    AlgebraicTerm, EGraphSnapshot, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder, ObjectAlgebraicDimension,
-    ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult, OptimizationSession, ProjectionPlan,
-    ProjectionPolicy, RewriteRule, RewriteTheory, TheoryBundle,
+    AlgebraicTerm, EGraphSnapshot, EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder,
+    ObjectAlgebraicDimension, ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult,
+    OptimizationSession, ProjectionPlan, ProjectionPolicy, RewriteRule, RewriteTheory, TheoryBundle,
 };
 pub use term::{Term, parse_term, qualified_from_dotted};
 pub use theory::{

@@ -239,6 +239,38 @@ pub enum HostProjectionBoundary {
     Vm,
 }
 
+/// 入口返回值在宿主上的可观测投影。
+///
+/// 运行合同冻结的是 [`HostProjectionBoundary`]；消费者（e2e、`legion run`、宿主
+/// 调用方）必须经 [`HostProjectionBoundary::return_projection`] 派生观测方式，
+/// 不得按 target 名字另行推导。缺失该事实时 fail-closed，不得假定默认通道。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum EntryReturnProjection {
+    /// 宿主 launcher 把入口返回值打印到 stdout，自身以 0 退出（JVM argv launcher）。
+    StdoutInteger,
+    /// 入口返回值就是进程退出码（CLR、wasm-node、机器码可执行文件）。
+    ProcessExitCode,
+    /// 解释器在进程内调用入口，返回值是 VM 内的值（OVM）。
+    InProcessValue,
+    /// 入口没有返回值（WASI `_start`）。
+    NoReturnValue,
+}
+
+impl HostProjectionBoundary {
+    /// 该宿主边界上入口返回值的可观测投影。
+    ///
+    /// 这是投影事实的唯一权威：合同只冻结边界，观测方式由本函数派生。
+    #[must_use]
+    pub const fn return_projection(self) -> EntryReturnProjection {
+        match self {
+            Self::Jvm => EntryReturnProjection::StdoutInteger,
+            Self::Clr | Self::WasmJsGlue | Self::MachineCode => EntryReturnProjection::ProcessExitCode,
+            Self::WasiComponent => EntryReturnProjection::NoReturnValue,
+            Self::Vm => EntryReturnProjection::InProcessValue,
+        }
+    }
+}
+
 /// `Futamura projection` 选择策略。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectionPolicy {
@@ -405,4 +437,23 @@ fn canonicalize_flat(host: &EGraphHost, operations: &[QualifiedName]) -> Vec<Qua
         }
     }
     canonical
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_host_boundary_declares_one_return_projection() {
+        for (boundary, expected) in [
+            (HostProjectionBoundary::Jvm, EntryReturnProjection::StdoutInteger),
+            (HostProjectionBoundary::Clr, EntryReturnProjection::ProcessExitCode),
+            (HostProjectionBoundary::WasmJsGlue, EntryReturnProjection::ProcessExitCode),
+            (HostProjectionBoundary::WasiComponent, EntryReturnProjection::NoReturnValue),
+            (HostProjectionBoundary::MachineCode, EntryReturnProjection::ProcessExitCode),
+            (HostProjectionBoundary::Vm, EntryReturnProjection::InProcessValue),
+        ] {
+            assert_eq!(boundary.return_projection(), expected, "{boundary:?}");
+        }
+    }
 }
