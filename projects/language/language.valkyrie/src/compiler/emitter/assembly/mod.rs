@@ -91,7 +91,6 @@ struct ValkyrieTargetAdapter<'a> {
     compiled_program: &'a CompiledValkyrieProgram,
     roots: Vec<compiler_types::ItemInstanceId>,
     theory_bundle: compiler_target::TheoryBundle,
-    sum_tag_width: u32,
 }
 
 impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
@@ -105,7 +104,6 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             &self.partition.fragment,
             self.theory_bundle.clone(),
             &self.roots,
-            self.sum_tag_width,
         )
         .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
         let submission = FragmentSubmission::from_backend_plan(plan);
@@ -238,14 +236,14 @@ pub fn assemble_fragment<'a>(
         roots.push(entry);
     }
     let theory_bundle = fragment_view.theory_bundle.clone();
-    // tag 宽度是平台服务提供的事实；语言侧不再声明它。
-    let sum_tag_width = compiler_emitter::sum_tag_width(plan.target.to_profile(None).backend_family);
 
     // 目标计划不在此处构造：适配器只持有已编译程序与分区身份，等编排层交出
     // 冻结目标后在 `prepare` 内按 `request.resolved` 构造目标输入。
+    // sum tag 的物理宽度是各 lane 自己的事实，不由编排层按 backend family
+    // 预先取好传给语言适配器。
     Ok(AssembledFragment {
         partition: partition.clone(),
         theory_bundle: theory_bundle.clone(),
-        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), compiled_program, roots, theory_bundle, sum_tag_width }),
+        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), compiled_program, roots, theory_bundle }),
     })
 }

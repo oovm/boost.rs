@@ -120,7 +120,6 @@ pub fn from_compiled_program(
     fragment_id: &compiler_target::Identifier,
     theory_bundle: compiler_target::TheoryBundle,
     roots: &[ItemInstanceId],
-    sum_tag_width: u32,
 ) -> std::result::Result<TargetExecutionPlan, TargetPlanError> {
     let canonical = program.mir_program();
     if !canonical.linked.fragments.contains_key(fragment_id) {
@@ -131,7 +130,7 @@ pub fn from_compiled_program(
             return Err(TargetPlanError::UnknownRoot { instance: *root });
         }
     }
-    build_plan(program, fragment_id, theory_bundle, roots, sum_tag_width)
+    build_plan(program, fragment_id, theory_bundle, roots)
 }
 
 fn build_plan(
@@ -139,7 +138,6 @@ fn build_plan(
     fragment_id: &compiler_target::Identifier,
     theory_bundle: compiler_target::TheoryBundle,
     roots: &[ItemInstanceId],
-    sum_tag_width: u32,
 ) -> std::result::Result<TargetExecutionPlan, TargetPlanError> {
     let canonical = program.mir_program();
     let fragment = canonical
@@ -325,7 +323,7 @@ fn build_plan(
         functions,
         abi_names,
         imports,
-        sum_reps: platform_sum_representations(canonical, sum_tag_width)
+        sum_reps: platform_sum_representations(canonical)
             .map_err(|reason| TargetPlanError::unsound(AdapterStage::Representation, None, None, reason))?,
         // 程序级文本表示模式只来自正式表示计划的显式事实（`RepresentationPlan`）；
         // 计划未声明时保持 `None`，后端按 managed 语义 fail-closed，禁止在这里
@@ -498,11 +496,12 @@ fn canonical_sum_operations(
     }
 }
 
-/// 把链接期 sum/variant 事实映射成平台 sum 计划。
+/// 把链接期 sum/variant 事实映射成 sum 表示合同。
 ///
-/// variant 身份与 payload 类型来自链接程序；tag 宽度由平台提供，
-/// 语言表示计划不再声明它。
-fn platform_sum_representations(canonical: &ValkyrieMirProgram, tag_width: u32) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
+/// variant 身份、discriminant 与 payload 类型来自链接程序。tag 的物理宽度不在
+/// 这里声明——它是各 lane 自己的物理事实，由后端在布局处冻结；语言适配器不再
+/// 按 backend family 预先取宽度。
+fn platform_sum_representations(canonical: &ValkyrieMirProgram) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
     let mut reps = BTreeMap::new();
     for sum in &canonical.linked.sum_types {
         if !canonical.linked.nominal_instances.contains_key(&sum.nominal) {
@@ -522,7 +521,7 @@ fn platform_sum_representations(canonical: &ValkyrieMirProgram, tag_width: u32) 
                 return Err(format!("sum variant identity 重复: {:?}/{:?}", sum.nominal, variant.id));
             }
         }
-        if reps.insert(sum.nominal, SumRepresentation { nominal: sum.nominal, tag_width, variants }).is_some() {
+        if reps.insert(sum.nominal, SumRepresentation { nominal: sum.nominal, variants }).is_some() {
             return Err(format!("sum nominal identity 重复: {:?}", sum.nominal));
         }
     }

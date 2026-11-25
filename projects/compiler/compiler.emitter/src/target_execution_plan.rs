@@ -84,13 +84,16 @@ pub enum ProgramTextRepresentation {
     Managed,
 }
 
-/// 平台 sum 表示计划：variant 身份由语言冻结，tag 宽度与槽位由平台决定。
+/// sum 的语言事实：variant 身份、discriminant 与 payload 类型由语言冻结。
+///
+/// tag 的物理宽度与槽位表示**不在**这份合同里——它是各 lane 自己的物理事实
+/// （machine 4 字节 tag 槽、JVM `int` 字段、CLR `int32` 字段、Wasm GC `i32`
+/// 字段、OVM i32 槽 0），由后端在自己的布局处冻结，不由编排层按 backend
+/// family 预先取好传给语言适配器。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SumRepresentation {
     /// 完整的 sum 名义实例身份。
     pub nominal: compiler_types::NominalInstanceId,
-    /// 本平台选择的 tag 宽度（字节），必须落在该 lane 的合同范围内。
-    pub tag_width: u32,
     /// variant 身份到 tag/payload 合同的稀疏表。
     pub variants: BTreeMap<compiler_types::VariantId, SumVariantRepresentation>,
 }

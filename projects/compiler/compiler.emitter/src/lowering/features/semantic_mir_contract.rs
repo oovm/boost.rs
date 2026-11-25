@@ -386,12 +386,12 @@ fn validate_static_call_resolution(submission: &FragmentSubmission, function: &E
 
 fn validate_nominal_sums(submission: &FragmentSubmission) -> Result<(), SemanticMirContractError> {
     for (nominal, sum) in submission.backend_plan.sum_representations() {
-        if *nominal != sum.nominal || sum.variants.is_empty() || sum.tag_width == 0 {
+        if *nominal != sum.nominal || sum.variants.is_empty() {
             return Err(SemanticMirContractError {
                 code: "SMIR006",
                 function: format!("{nominal:?}"),
                 location: "sum layout".to_string(),
-                detail: "nominal sum layout requires identity, tag width, and at least one variant".to_string(),
+                detail: "nominal sum layout requires identity and at least one variant".to_string(),
             });
         }
         let mut tags = std::collections::BTreeSet::new();

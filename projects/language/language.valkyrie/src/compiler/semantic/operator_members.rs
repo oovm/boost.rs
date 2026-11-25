@@ -185,15 +185,14 @@ micro negate(a: i32) -> i32 { return -a }
         let canonical = program.mir_program();
         let fragment = canonical.linked.fragments.keys().next().cloned().expect("程序必须至少声明一个片段");
         let roots: Vec<_> = canonical.mir.functions.keys().copied().collect();
-        let build_plan = |family: compiler_target::TargetBackendFamily| {
+        let build_plan = || {
             crate::compiler::emitter::pipeline::target_plan::from_compiled_program(
                 &program,
                 &fragment,
                 TheoryBundle { shared: RewriteTheory::default(), fragment: RewriteTheory::default() },
                 &roots,
-                compiler_emitter::sum_tag_width(family),
             )
-            .unwrap_or_else(|error| panic!("运算符实例必须能冻结进目标计划({family:?}): {error}"))
+            .unwrap_or_else(|error| panic!("运算符实例必须能冻结进目标计划: {error}"))
         };
         let assert_plan = |plan: &compiler_emitter::TargetExecutionPlan| {
             let by_segment = |segment: &str| {
@@ -262,11 +261,9 @@ micro negate(a: i32) -> i32 { return -a }
             assert_eq!(negate.return_type, SemanticType::Integer32 { signed: true });
         };
 
-        // 同一份 `std_operators.v` 分别以四个 target 走「解析 → 计划」：每个计划都必须
-        // 保留全部四条候选链接，target 差异只体现在 sum tag width，不改变声明保留。
-        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Jvm));
-        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Clr));
-        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Wasm));
-        assert_plan(&build_plan(compiler_target::TargetBackendFamily::Ovm));
+        // 目标计划不再按 backend family 分化（sum tag 宽度已归各 lane 冻结）：
+        // 一份 `std_operators.v` 产出的计划必须保留全部四条候选链接，
+        // target 裁决在各后端自己的边界发生，不在语言计划里 first-wins。
+        assert_plan(&build_plan());
     }
 }

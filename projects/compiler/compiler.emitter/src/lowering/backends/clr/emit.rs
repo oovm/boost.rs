@@ -803,9 +803,7 @@ fn build_sum_types(submission: &FragmentSubmission) -> Result<Vec<MsilTypeDef>> 
         else {
             return Err(format!("CLR 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`"));
         };
-        if sum.tag_width == 0 || sum.tag_width > 4 {
-            return Err(format!("CLR 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同", sum.tag_width));
-        }
+        let _ = sum;
         let type_name = clr_sum_type_name(nominal);
         types.push(MsilTypeDef {
             methods: vec![clr_instance_constructor(&type_name)],

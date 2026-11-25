@@ -195,7 +195,8 @@ pub(super) fn register_gc_array_types(
 /// 为 MIR 中实际出现的 sum nominal 注册 wasm-gc `structtype`。
 ///
 /// 物理布局是**后端私有**选择，但必须由计划事实派生，不能按名字特判：
-/// - 字段 0 = tag（`SumRepresentation::tag_width` 决定的整数字段，当前只承诺 1 个字）；
+/// - 字段 0 = tag，本 lane 冻结为 `i32` 整数字段（宽度是 WASM 自己的物理事实，
+///   不由共享计划携带）；
 /// - 字段 1 = payload，一律 `anyref`（标量载荷由调用点装箱成 `[i32]` / `[i64]`）。
 ///
 /// 每个 nominal identity 单独注册一个 type，使 `ref.cast` 能把「同一 nominal 的
@@ -246,12 +247,7 @@ pub(super) fn register_gc_sum_types(ctx: &ExecutableLoweringContext, type_indice
     }
     let mut map = BTreeMap::new();
     for nominal in nominals {
-        let sum = &sums[&nominal];
-        assert!(
-            sum.tag_width > 0 && sum.tag_width <= 4,
-            "WASM sum 布局只承诺 1..=4 字节 tag（nominal={nominal:?} tag_width={}）",
-            sum.tag_width
-        );
+        let _sum = &sums[&nominal];
         let type_index = u32::try_from(type_indices.len()).expect("type index overflow");
         type_indices.push(wasm_gc_struct_type(&[VALTYPE_I32, VALTYPE_ANYREF]));
         map.insert(nominal, type_index);

@@ -995,9 +995,6 @@ fn build_sum_classes(submission: &FragmentSubmission) -> Result<Vec<JvmClassFile
         else {
             return Err(format!("JVM 最小 lowering：sum nominal `{nominal:?}` 没有冻结的 `SumRepresentation`"));
         };
-        if sum.tag_width == 0 || sum.tag_width > 4 {
-            return Err(format!("JVM 最小 lowering：sum nominal `{nominal:?}` 的 `tag_width`={} 超出 1..=4 合同", sum.tag_width));
-        }
         let mut class_file = JvmClassFile::new(jvm_sum_class_name(nominal, sum));
         class_file.fields.push(JvmFieldSignature {
             name: JVM_SUM_TAG_FIELD.to_string(),

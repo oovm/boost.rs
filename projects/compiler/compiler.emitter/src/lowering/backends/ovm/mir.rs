@@ -447,9 +447,9 @@ fn lower_fragment_mir_to_ovm_module_impl(
 
 /// 为模块内出现过的 nominal sum 铸造后端私有物理布局，返回 nominal → 布局下标。
 ///
-/// 物理合同由本文件固定：槽 0 = tag（i32），槽 1 = payload。字段顺序是 OVM 后端
-/// 私有事实，只由计划冻结的 `SumRepresentation` 驱动；禁止按 variant 名 / 短名
-/// 推断槽位。tag 宽度合同与 wasm `type_registry` 一致，只承诺 1..=4 字节。
+/// 物理合同由本文件固定：槽 0 = tag（i32），槽 1 = payload。字段顺序与 tag 宽度
+/// 都是 OVM 后端私有事实，只由计划冻结的 `SumRepresentation` 的 variant 身份驱动；
+/// 禁止按 variant 名 / 短名推断槽位。
 fn register_sum_layouts(submission: &FragmentSubmission, layouts: &mut Vec<OdinLayout>) -> crate::Result<BTreeMap<NominalInstanceId, i32>> {
     let sums = submission.backend_plan.sum_representations();
     let exec = &submission.backend_plan;
@@ -473,10 +473,7 @@ fn register_sum_layouts(submission: &FragmentSubmission, layouts: &mut Vec<OdinL
     }
     let mut map = BTreeMap::new();
     for nominal in nominals {
-        let sum = sums.get(&nominal).ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?;
-        if sum.tag_width == 0 || sum.tag_width > 4 {
-            return Err(format!("OVM sum 表示只承诺 1..=4 字节 tag（nominal={nominal:?}, tag_width={}）", sum.tag_width));
-        }
+        let _sum = sums.get(&nominal).ok_or_else(|| format!("OVM sum 表示缺失：nominal {nominal:?} 没有冻结的 SumTypeLayout"))?;
         let index = layouts.len() as i32;
         layouts.push(OdinLayout { field_count: 2 });
         map.insert(nominal, index);
@@ -1122,7 +1119,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 self.emitter.emit_imm1(OdinHeadCode::ObjectNew, sum_layout_index);
                 self.store_to_local(output);
                 let object = MirOperand::Value(output);
-                // tag 槽的合同宽度是 i32（`SumRepresentation.tag_width` <= 4），超界即失败。
+                // tag 槽的物理宽度是 OVM 自己冻结的 i32，discriminant 超界即失败。
                 let tag_value = i32::try_from(tag).map_err(|_| {
                     format!(
                         "OVM SumNew 的 tag {tag} 超出 i32 槽合同（nominal={nominal:?}, variant={variant:?}, symbol=`{}`）",

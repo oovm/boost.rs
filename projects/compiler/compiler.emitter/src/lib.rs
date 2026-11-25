@@ -537,23 +537,6 @@ pub fn bundled_backend_registry_from_canonical(
     registry
 }
 
-/// 平台默认 sum tag 宽度（字节）。
-///
-/// tag 宽度是平台承载选择，不来自语言表示计划。各 lane 当前统一用 4 字节
-/// （i32 槽）；若某平台需要更窄的 tag，应在此按 family 明确返回并在该 lane
-/// 的验证门中确认。
-pub fn sum_tag_width(family: TargetBackendFamily) -> u32 {
-    match family {
-        TargetBackendFamily::Wasm
-        | TargetBackendFamily::Clr
-        | TargetBackendFamily::Jvm
-        | TargetBackendFamily::Ovm
-        | TargetBackendFamily::MachineCode
-        | TargetBackendFamily::Gpu
-        | TargetBackendFamily::Unknown => 4,
-    }
-}
-
 /// 后端路由可接受的动态分发能力。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendRoute {

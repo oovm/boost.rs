@@ -1663,7 +1663,7 @@ impl FunctionLowerer<'_> {
         Ok(self.submission.backend_plan.aggregate_layouts().frozen_layout_id(&ty))
     }
 
-    /// 冻结 sum 表示里的平台 tag；只接受本 lane 的 4 字节 tag。
+    /// 冻结 sum 表示里的 variant tag；本 lane 物理 tag 固定为 4 字节槽。
     fn sum_variant_tag(
         &self,
         nominal: compiler_types::NominalInstanceId,
@@ -1673,12 +1673,6 @@ impl FunctionLowerer<'_> {
         let rep = self.submission.backend_plan.sum_representations().get(&nominal).ok_or_else(|| {
             format!("x86_64 lowering：{operation} 的 sum 实例 {nominal:?} 缺少冻结表示：function={}", self.function.symbol)
         })?;
-        if rep.tag_width != 4 {
-            return Err(format!(
-                "x86_64 lowering：{operation} 的 sum tag 宽度 {} 不是本 lane 冻结的 4 字节：function={}",
-                rep.tag_width, self.function.symbol
-            ));
-        }
         let variant_rep = rep.variants.get(&variant).ok_or_else(|| {
             format!("x86_64 lowering：{operation} 的 variant {variant:?} 不在 sum 表示内：function={}", self.function.symbol)
         })?;
