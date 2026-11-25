@@ -146,26 +146,6 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_wasm_mir_module(submission, export_name)
     }
 
-    /// Resolve the CLR carrier type for a frozen platform type (carrier contract tests).
-    pub fn msil_type(
-        layouts: &compiler_types::AggregateLayoutPlan,
-        ty: &compiler_types::SemanticType,
-    ) -> Result<super::emitter_backend_clr::MsilType> {
-        super::lowering::testing_msil_type(layouts, ty)
-    }
-
-    /// Lower a fragment submission to a CLR MSIL module.
-    pub fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<super::emitter_backend_clr::MsilModule> {
-        super::lowering::testing_lower_fragment_to_clr_module(submission)
-    }
-
-    /// Lower a fragment submission to the CLR MSIL module and its managed ABI contract.
-    pub fn lower_fragment_to_clr_managed_surface(
-        submission: &FragmentSubmission,
-    ) -> Result<(super::emitter_backend_clr::MsilModule, Option<super::ManagedAbiContract>)> {
-        super::lowering::testing_lower_fragment_to_clr_managed_surface(submission)
-    }
-
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)

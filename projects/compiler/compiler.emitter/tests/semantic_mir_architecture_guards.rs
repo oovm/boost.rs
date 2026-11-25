@@ -237,3 +237,23 @@ fn jvm_lane_consumes_mir_without_shared_program() {
         }
     }
 }
+
+#[test]
+fn clr_lane_consumes_mir_without_shared_program() {
+    // CLR 纵链第一段已迁到语言侧直读 MIR：入口与 lowering 文件不得再引用
+    // 跨目标共享程序的任何形状（MIR 自身的终结符类型不在禁用之列）。
+    let clr = "../../language/language.valkyrie/src/compiler/emitter/pipeline/clr";
+    for path in [format!("{clr}/mod.rs"), format!("{clr}/lowerer.rs")] {
+        let source = read(&path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind"] {
+            assert!(!source.contains(banned), "{path} 作为语言侧 MIR 直消费入口不得引用 `{banned}`");
+        }
+    }
+    // emitter 侧只保留目标私有编码原语与装配服务：整个 backends/clr/ 不得出现公共 IR 类型。
+    for path in ["src/lowering/backends/clr/mod.rs", "src/lowering/backends/clr/emit.rs", "src/lowering/backends/clr/mir.rs"] {
+        let source = read(path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+            assert!(!source.contains(banned), "{path} 作为 CLR 目标私有编码层不得引用 `{banned}`");
+        }
+    }
+}

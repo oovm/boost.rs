@@ -42,7 +42,7 @@ use crate::{
 /// 因此编码必须显式区分「单指令」与「取反组合」，emit 只机械展开，不得按助记符
 /// 或名字前缀推断序列。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ClrOperatorCode {
+pub enum ClrOperatorCode {
     /// 单条 MSIL opcode。
     Single(MsilOpcode),
     /// 布尔取反：先执行 `compare` 得到 0/1，再压 `ldc.i4.0` 并用 `ceq` 与 0 判等。
@@ -217,7 +217,7 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
 ///
 /// 只接受 platform tag `clr-operator` 且 locator 恰好一段；其余形态返回 `None`，
 /// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn clr_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
+pub fn clr_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
     if !link.matches_boundary("host") || !link.matches_platform_tag("clr-operator") {
         return None;
     }
@@ -229,7 +229,7 @@ pub(crate) fn clr_operator_target(link: &compiler_target::ExternalImportLink) ->
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ClrOperatorBinding {
+pub enum ClrOperatorBinding {
     /// 已冻结的 MSIL 配方。
     Frozen(TargetOperatorPlan<ClrOperatorCode>),
     /// 声明了 `[clr_operator]`，但没有 CLR 可编码配方；emit 必须结构化失败。
@@ -237,7 +237,7 @@ pub(crate) enum ClrOperatorBinding {
 }
 
 /// 按声明的导入签名冻结 CLR operator 绑定。
-pub(crate) fn freeze_clr_operator(
+pub fn freeze_clr_operator(
     link: &compiler_target::ExternalImportLink,
     instance: compiler_types::ItemInstanceId,
     symbol: &str,

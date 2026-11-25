@@ -22,6 +22,29 @@ pub use crate::transitional::{
 pub use hosting::{DotNetFramework, DotNetRuntimeConfig, DotNetRuntimeOptions, write_dotnet_deps_json, write_dotnet_runtime_config};
 pub use msil_text_writer::MsilTextWriter;
 
+// CLR 目标私有编码原语：语言侧 CLR lane 直读 MIR 结算计划事实后，只经这些
+// 原语完成载体类型映射、布局/sum 载体定义、operator 绑定、argv 编码与模块装配；
+// emitter 不再解释跨目标共享程序载荷。
+pub use crate::lowering::backends::argv_encoding::argv_encoding;
+pub use crate::lowering::backends::clr::emit::{
+    CLR_SUM_PAYLOAD_FIELD, CLR_SUM_TAG_FIELD, ClrLoweredFragment, ClrProgramInput, ClrValueKind, GLOBAL_METHODS_TYPE, MANAGED_ENTRY_METHOD,
+    ManagedDispatchTarget, MsilIntShape, SYSTEM_BOOLEAN, SYSTEM_BYTE, SYSTEM_CONSOLE, SYSTEM_DOUBLE, SYSTEM_INT32, SYSTEM_INT64, SYSTEM_OBJECT,
+    SYSTEM_SINGLE, SYSTEM_STRING, SYSTEM_UINT16, SYSTEM_UINT32, SYSTEM_UINT64, argument_parse_reference, assemble_clr_module, branch_instruction,
+    build_layout_types, build_managed_entry_method, build_sum_types, call_instruction, clr_array_element_type, clr_array_load_opcode,
+    clr_array_store_opcode, clr_instance_constructor, clr_layout_field_name, clr_layout_type_name, clr_sum_type_name, console_write_line_reference,
+    console_write_line_type, external_method, ldarg0, ldc_i4_0, managed_abi_type_name, managed_argv_expressible, msil_array_element_type,
+    msil_int_normalize_opcode, msil_int_shape, msil_instruction, msil_parameter_type, msil_return_type, msil_type, opcode_instruction,
+    reject_duplicate_type_names, result_print_reference, string_equality_reference,
+};
+pub use crate::lowering::backends::clr::mir::{ClrOperatorBinding, ClrOperatorCode, clr_operator_target, freeze_clr_operator};
+pub use crate::lowering::sanitize_operation_symbol;
+pub use crate::lowering::sanitize_symbol;
+pub use crate::lowering::shared::interop::select_unique_target;
+pub use crate::lowering::shared::value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth};
+pub use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
+pub use crate::SumRepresentation;
+pub use compiler_types::{AggregateLayout, AggregateLayoutPlan, SemanticType};
+
 use std::path::PathBuf;
 
 use crate::{DriverRunContract, EmitterError, ManagedAbiContract, Result};

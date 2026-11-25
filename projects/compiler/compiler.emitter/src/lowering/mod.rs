@@ -13,28 +13,10 @@ pub mod backends;
 pub mod features;
 pub(crate) mod shared;
 
-use self::backends::{clr, wasm};
+use self::backends::wasm;
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
     backends::wasm::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
-}
-
-pub(crate) fn testing_msil_type(
-    layouts: &compiler_types::AggregateLayoutPlan,
-    ty: &crate::backend_plan_views::SemanticType,
-) -> Result<crate::emitter_backend_clr::MsilType> {
-    clr::emit::msil_type(layouts, ty)
-}
-
-pub(crate) fn testing_lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<crate::emitter_backend_clr::MsilModule> {
-    clr::emit::lower_fragment_to_clr_module(submission).map(|lowered| lowered.module)
-}
-
-pub(crate) fn testing_lower_fragment_to_clr_managed_surface(
-    submission: &FragmentSubmission,
-) -> Result<(crate::emitter_backend_clr::MsilModule, Option<crate::ManagedAbiContract>)> {
-    let lowered = clr::emit::lower_fragment_to_clr_module(submission)?;
-    Ok((lowered.module, lowered.managed_abi))
 }
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
@@ -215,19 +197,12 @@ fn build_driver_input(
         TargetBackendFamily::Jvm => Err(format!(
             "JVM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Jvm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 JVM 产物"
         )),
-        TargetBackendFamily::Clr => {
-            let lowered = clr::emit::lower_fragment_to_clr_module(submission)?;
-            // 库导出面自带合成入口点，仍必须写成 `.dll`；无导出的可执行镜像继续
-            // 按 `is_entry_point` 推断 `.exe`。
-            let image_kind = lowered.managed_abi.as_ref().map(|_| compiler_target::backends::clr::ClrImageKind::DynamicLibrary);
-            Ok(DriverBackendInput::Clr(crate::emitter_backend_clr::ClrBinaryBackendInput {
-                module: lowered.module,
-                output_dir,
-                image_kind,
-                managed_abi: lowered.managed_abi,
-                run_contracts: Vec::new(),
-            }))
-        }
+        // CLR lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
+        // `pipeline/clr/`）：submission 公共 IR 解释阶段已删除，Clr 家族不得
+        // 再经本路径静默产出产物，显式失败闭合。
+        TargetBackendFamily::Clr => Err(format!(
+            "CLR lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Clr 家族；拒绝经 `lower_fragment_to_driver_input` 产出 CLR 产物"
+        )),
         other => Err(format!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
     }
 }
@@ -320,7 +295,7 @@ pub fn sanitize_symbol(name: &str) -> String {
 /// Joins [`QualifiedName`] parts with `.` (same shape as MIR instance symbols /
 /// [`NamePath`] Display) before flattening, so `Option::is_none` and
 /// `Option.is_none` both become `Option_is_none` — never `Option__is_none`.
-pub(crate) fn sanitize_operation_symbol(operation: &compiler_target::QualifiedName) -> String {
+pub fn sanitize_operation_symbol(operation: &compiler_target::QualifiedName) -> String {
     let dotted = operation.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join(".");
     sanitize_symbol(&dotted)
 }

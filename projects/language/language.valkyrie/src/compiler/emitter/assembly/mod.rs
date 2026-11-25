@@ -8,7 +8,7 @@ use compiler_emitter::{
 use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError};
 use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
-use super::pipeline::{jvm, lane, machine};
+use super::pipeline::{clr, jvm, lane, machine};
 #[cfg(feature = "ovm-lane")]
 use super::pipeline::ovm;
 use super::pipeline::target_plan::{self, TargetPlanError};
@@ -200,6 +200,29 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
                 companion_classes: lowered.companion_classes,
                 managed_abi: lowered.managed_abi,
                 entry_launcher: lowered.entry_launcher,
+                run_contracts: Vec::new(),
+            })
+            // 产物基名沿用旧公共路径的合同：入口操作 ABI 名末段清洗；无入口时
+            // 回落工程名（`with_artifact_base_name(None)` 不覆盖）。
+            .with_artifact_base_name(entry_artifact_name(&ctx)));
+        }
+        if request.backend_family == compiler_target::TargetBackendFamily::Clr {
+            // CLR lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
+            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
+            // emitter 装配服务只做模块非空自检并封装。
+            let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
+                .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+            let program_input = clr::build_clr_program_input(&ctx, self.partition.clr_suspend_strategy)
+                .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+            let lowered = compiler_emitter::emitter_backend_clr::assemble_clr_module(&program_input)?;
+            // 库导出面自带合成入口点，仍必须写成 `.dll`；无导出的可执行镜像继续
+            // 按 `is_entry_point` 推断 `.exe`。
+            let image_kind = lowered.managed_abi.as_ref().map(|_| compiler_target::backends::clr::ClrImageKind::DynamicLibrary);
+            return Ok(LoweredBackendInput::clr(compiler_emitter::emitter_backend_clr::ClrBinaryBackendInput {
+                module: lowered.module,
+                output_dir: request.output_dir.to_path_buf(),
+                image_kind,
+                managed_abi: lowered.managed_abi,
                 run_contracts: Vec::new(),
             })
             // 产物基名沿用旧公共路径的合同：入口操作 ABI 名末段清洗；无入口时
