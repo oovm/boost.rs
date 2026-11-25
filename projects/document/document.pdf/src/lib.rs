@@ -23,7 +23,7 @@ pub use compose::{
     interleave_pages, move_pages, replace_pages, reverse_pages, swap_pages,
 };
 pub use fidelity::{FidelityCode, FidelityLoss};
-pub use links::{LinkKind, LinkRecord, NamedDestination, extract_links, list_destinations};
+pub use links::{LinkKind, LinkRecord, NamedDestination, OutlineEntry, extract_links, list_destinations, list_outline};
 
 // The byte-level engine lives in `data-binary-pdf`; the module aliases keep the
 // page-operation modules reading as if they owned it.

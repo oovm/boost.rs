@@ -6,14 +6,16 @@
 //! annotation and resolves its target: a URI, a destination inside this
 //! document (direct reference, destination array or named destination) or a
 //! destination inside an embedded document carried by a `GoToE` action.
+//! [`list_outline`] walks the `/Root/Outlines` tree and reports each entry with
+//! the page its destination resolves to, reusing the same resolver.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Serialize;
 
 use crate::error::Result;
-use crate::object::PdfObject;
+use crate::object::{Dict, PdfObject};
 use crate::parse::{PdfDocument, decode_text_string, parse_document, resolve_object};
 use crate::{filters, load_document};
 
@@ -28,6 +30,19 @@ pub struct NamedDestination {
     pub name: String,
     /// 1-based page the destination points at.
     pub page: usize,
+}
+
+/// One outline entry with the page its destination resolves to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlineEntry {
+    /// Outline title as spelled in the outline tree.
+    pub title: String,
+    /// Nesting level, top-level entries are `1`.
+    pub depth: usize,
+    /// 1-based page the entry points at, or `null` when the destination is
+    /// missing, names an unknown destination or leaves this document.
+    pub page: Option<usize>,
 }
 
 /// The action kind carried by a link annotation.
@@ -76,6 +91,89 @@ pub fn list_destinations(path: &Path) -> Result<Vec<NamedDestination>> {
         }
     }
     Ok(out)
+}
+
+/// Lists every outline entry with the page its destination resolves to.
+///
+/// Entries keep outline reading order: an entry is followed by its children and
+/// then by its next sibling. `/Dest` and a `GoTo` action `/D` are both accepted;
+/// an entry whose destination cannot be resolved to a page of this document
+/// keeps `page: None`, so a product can reject it instead of guessing.
+pub fn list_outline(path: &Path) -> Result<Vec<OutlineEntry>> {
+    let document = load_document(path)?;
+    Ok(outline_entries(&document))
+}
+
+/// Collects the outline tree of one parsed document.
+fn outline_entries(document: &PdfDocument) -> Vec<OutlineEntry> {
+    let Some(root) = document
+        .catalog
+        .get("Outlines")
+        .and_then(|node| resolve_object(&document.objects, node).ok())
+        .and_then(PdfObject::as_dict)
+    else {
+        return Vec::new();
+    };
+    let dests = destination_map(document);
+    let mut entries = Vec::new();
+    let mut visited = BTreeSet::new();
+    if let Some(first) = root.get("First") {
+        walk_outline(document, &dests, first, 1, &mut visited, &mut entries);
+    }
+    entries
+}
+
+/// Walks one sibling chain, descending into children first.
+fn walk_outline(
+    document: &PdfDocument,
+    dests: &BTreeMap<String, PdfObject>,
+    node: &PdfObject,
+    depth: usize,
+    visited: &mut BTreeSet<u32>,
+    entries: &mut Vec<OutlineEntry>,
+) {
+    if depth > MAX_NAME_TREE_DEPTH {
+        return;
+    }
+    let mut current = Some(node.clone());
+    while let Some(object) = current {
+        if let PdfObject::Reference(number, _) = object
+            && !visited.insert(number)
+        {
+            return;
+        }
+        let Some(item) = resolve_object(&document.objects, &object).ok().and_then(PdfObject::as_dict).cloned() else {
+            return;
+        };
+        let title = item
+            .get("Title")
+            .and_then(|title| match title {
+                PdfObject::String(text) => Some(decode_text_string(text)),
+                _ => None,
+            })
+            .unwrap_or_default();
+        entries.push(OutlineEntry { title, depth, page: outline_page(document, dests, &item) });
+        if let Some(first) = item.get("First") {
+            walk_outline(document, dests, first, depth + 1, visited, entries);
+        }
+        current = item.get("Next").cloned();
+    }
+}
+
+/// Resolves the page of one outline item: its `/Dest` or a `GoTo` action `/D`.
+fn outline_page(document: &PdfDocument, dests: &BTreeMap<String, PdfObject>, item: &Dict) -> Option<usize> {
+    let destination = match item.get("Dest") {
+        Some(value) => value,
+        None => {
+            let action = item.get("A").and_then(|value| resolve_object(&document.objects, value).ok())?;
+            let action = action.as_dict()?;
+            if action.get("S").and_then(PdfObject::as_name) != Some("GoTo") {
+                return None;
+            }
+            action.get("D")?
+        }
+    };
+    resolve_destination(document, dests, destination)
 }
 
 /// Reads every `/Link` annotation and resolves its target.
@@ -466,6 +564,94 @@ mod tests {
         fs::write(path, bytes).expect("write links fixture");
     }
 
+    /// Builds a three-page document whose outline mixes a named target, a
+    /// direct page object, an unknown name and a dangling page reference.
+    fn outline_fixture(path: &Path) {
+        let mut writer = PdfWriter::new();
+        let mut pages = Vec::new();
+        for _ in 0..3 {
+            let mut page = Dict::new();
+            page.insert("Type".to_string(), name("Page"));
+            page.insert("MediaBox".to_string(), media_box_object([0.0, 0.0, 612.0, 792.0]));
+            pages.push(writer.add(PdfObject::Dictionary(page)));
+        }
+        let root = writer.reserve();
+        let named = writer.reserve();
+        let child = writer.reserve();
+        let unknown = writer.reserve();
+        let dangling = writer.reserve();
+
+        let mut root_dict = Dict::new();
+        root_dict.insert("Type".to_string(), name("Outlines"));
+        root_dict.insert("First".to_string(), PdfObject::Reference(named, 0));
+        root_dict.insert("Last".to_string(), PdfObject::Reference(dangling, 0));
+        root_dict.insert("Count".to_string(), PdfObject::Integer(4));
+        writer.set(root, PdfObject::Dictionary(root_dict));
+
+        let mut named_dict = Dict::new();
+        named_dict.insert("Title".to_string(), string("Named"));
+        named_dict.insert("Parent".to_string(), PdfObject::Reference(root, 0));
+        named_dict.insert("Dest".to_string(), string("Target"));
+        named_dict.insert("First".to_string(), PdfObject::Reference(child, 0));
+        named_dict.insert("Last".to_string(), PdfObject::Reference(child, 0));
+        named_dict.insert("Count".to_string(), PdfObject::Integer(1));
+        named_dict.insert("Next".to_string(), PdfObject::Reference(unknown, 0));
+        writer.set(named, PdfObject::Dictionary(named_dict));
+
+        let mut child_dict = Dict::new();
+        child_dict.insert("Title".to_string(), string("Child"));
+        child_dict.insert("Parent".to_string(), PdfObject::Reference(named, 0));
+        child_dict.insert("Dest".to_string(), PdfObject::Array(vec![PdfObject::Reference(pages[2], 0), name("Fit")]));
+        writer.set(child, PdfObject::Dictionary(child_dict));
+
+        let mut unknown_action = Dict::new();
+        unknown_action.insert("S".to_string(), name("GoTo"));
+        unknown_action.insert("D".to_string(), string("Missing"));
+        let mut unknown_dict = Dict::new();
+        unknown_dict.insert("Title".to_string(), string("Broken"));
+        unknown_dict.insert("Parent".to_string(), PdfObject::Reference(root, 0));
+        unknown_dict.insert("Prev".to_string(), PdfObject::Reference(named, 0));
+        unknown_dict.insert("Next".to_string(), PdfObject::Reference(dangling, 0));
+        unknown_dict.insert("A".to_string(), PdfObject::Dictionary(unknown_action));
+        writer.set(unknown, PdfObject::Dictionary(unknown_dict));
+
+        let mut dangling_dict = Dict::new();
+        dangling_dict.insert("Title".to_string(), string("OutOfRange"));
+        dangling_dict.insert("Parent".to_string(), PdfObject::Reference(root, 0));
+        dangling_dict.insert("Prev".to_string(), PdfObject::Reference(unknown, 0));
+        dangling_dict.insert("Dest".to_string(), PdfObject::Array(vec![PdfObject::Reference(99, 0), name("Fit")]));
+        writer.set(dangling, PdfObject::Dictionary(dangling_dict));
+
+        let mut dests = Dict::new();
+        dests.insert("Names".to_string(), PdfObject::Array(vec![
+            string("Target"),
+            PdfObject::Array(vec![PdfObject::Reference(pages[1], 0), name("Fit")]),
+        ]));
+        let mut catalog_entries = Dict::new();
+        catalog_entries.insert("Outlines".to_string(), PdfObject::Reference(root, 0));
+        catalog_entries.insert("Dests".to_string(), PdfObject::Dictionary(dests));
+        let bytes = crate::finish_document_with(&mut writer, &pages, None, catalog_entries).expect("finish outline fixture");
+        fs::write(path, bytes).expect("write outline fixture");
+    }
+
+    #[test]
+    fn list_outline_reports_named_direct_broken_and_out_of_range_targets() {
+        let workspace = Workspace::new();
+        let path = workspace.path("outline.pdf");
+        outline_fixture(&path);
+
+        let entries = list_outline(&path).expect("list outline");
+        assert_eq!(
+            entries,
+            [
+                OutlineEntry { title: "Named".to_string(), depth: 1, page: Some(2) },
+                OutlineEntry { title: "Child".to_string(), depth: 2, page: Some(3) },
+                OutlineEntry { title: "Broken".to_string(), depth: 1, page: None },
+                OutlineEntry { title: "OutOfRange".to_string(), depth: 1, page: None },
+            ]
+        );
+    }
+
     #[test]
     fn extract_links_resolves_named_direct_and_embedded_targets() {
         let workspace = Workspace::new();
@@ -532,5 +718,6 @@ mod tests {
         let path = workspace.create("plain.pdf", &["One", "Two"]);
         assert!(extract_links(&path).expect("extract links").is_empty());
         assert!(list_destinations(&path).expect("list destinations").is_empty());
+        assert!(list_outline(&path).expect("list outline").is_empty());
     }
 }
