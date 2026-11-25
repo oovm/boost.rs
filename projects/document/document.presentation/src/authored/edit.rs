@@ -511,7 +511,7 @@ impl DeckEdit {
             .ok_or_else(|| DeckError::new(codes::OBJECT_NOT_FOUND, format!("slide `{id}` does not exist")))
     }
 
-    fn slide_mut(&mut self, id: &SlideId) -> Result<&mut DeckSlide, DeckError> {
+    pub(super) fn slide_mut(&mut self, id: &SlideId) -> Result<&mut DeckSlide, DeckError> {
         let index = self.slide_position(id)?;
         Ok(&mut self.document.slides[index])
     }
@@ -541,7 +541,7 @@ impl DeckEdit {
         }
     }
 
-    fn allocate(&mut self, prefix: &str) -> String {
+    pub(super) fn allocate(&mut self, prefix: &str) -> String {
         self.document.next_object_id.allocate(prefix)
     }
 

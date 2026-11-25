@@ -18,6 +18,7 @@ pub mod model;
 pub mod playback;
 pub mod project;
 pub mod size;
+pub mod tables;
 
 pub use edit::{
     ChartElementInput, DeckEdit, DefaultBox, FormulaElementInput, ImageElementInput, ShapeElementInput, SlideAddOptions, TableElementInput,
@@ -35,3 +36,4 @@ pub use model::{
 pub use playback::{PlaybackSession, PlaybackState};
 pub use project::{DECK_ENTRY, decode_project, encode_project};
 pub use size::{DeckSize, EMU_PER_POINT, emu_to_points, points_to_emu};
+pub use tables::{TableColumnInsertInput, TableDuplicateOptions, TableMoveTarget, TableRowInsertInput};

@@ -164,6 +164,8 @@ fn duplicated_slides_receive_fresh_identities() {
     deck.document().validate().expect("identities stay unique");
 }
 
+mod tables;
+
 #[test]
 fn media_elements_keep_asset_identity_across_reopen() {
     let mut deck = empty_deck();
