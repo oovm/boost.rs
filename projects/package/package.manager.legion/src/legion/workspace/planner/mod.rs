@@ -9,8 +9,6 @@ mod host_inventory_ast;
 mod resolver;
 mod source_file_conditions;
 mod sources;
-mod target_gate;
-mod target_when;
 mod types;
 
 pub use bindings::{compiler_gated_out_host_providers, compiler_host_provider_bindings};

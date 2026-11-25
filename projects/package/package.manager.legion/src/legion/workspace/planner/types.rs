@@ -10,30 +10,9 @@ use std::{
 
 use crate::legion::workspace::manifest::{BuildTargetSpec, ManifestError, ProjectManifest, WorkspaceManifest};
 
-/// 单个 `[when(...)]` attribute item 归一后的目标/环境条件（不与其他 `when` 自动组合）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WhenPredicate {
-    /// 条件键（如 `vendor`、`specification`）。
-    pub key: String,
-    /// 条件值（字符串字面量）。
-    pub value: String,
-}
-
-/// 单个 `[gate(...)]` attribute item 归一后的功能/构建条件（不与其他 `gate` 自动组合）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GatePredicate {
-    /// 条件键（第一版主要为 `feature`）。
-    pub key: String,
-    /// 条件值（字符串字面量）。
-    pub value: String,
-}
-
-/// 文件级前导 `gate` / `when` items（各自独立列表，无跨 item 布尔语义）。
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct FileLevelConditionItems {
-    pub gates: Vec<GatePredicate>,
-    pub whens: Vec<WhenPredicate>,
-}
+/// `[when]` / `[gate]` 条件语义归语言侧 `language_valkyrie::compiler::syntax::conditions`
+/// 所有；planner 只再导出这些类型以保持计划结构的 serde 形状，不再自带一份规则。
+pub use language_valkyrie::compiler::syntax::conditions::{FileLevelConditionItems, GatePredicate, WhenPredicate};
 
 /// 单次构建请求：工程目录、已冻结的解析目标与可选输出目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

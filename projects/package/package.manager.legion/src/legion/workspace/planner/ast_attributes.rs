@@ -1,22 +1,18 @@
 //! 从 `data.text` `Attribute` 读取 planner 事实（不渲染 attribute 文本、不做二次 parse）。
+//!
+//! `[when]` / `[gate]` 条件语义与字符串字面量提取归语言侧
+//! `language_valkyrie::compiler::syntax::conditions` 所有，本模块只再导出供 inventory
+//! 使用；这里保留的是宿主合同 attribute（`[host_contract]` / `[foreign_binding]` /
+//! `[host_provider]`）的读取，属于包图装配而非条件语义。
 
-use language_valkyrie::compiler::syntax::surface::ast::{Attribute, QuoteLiteral, TermExpression};
+use language_valkyrie::compiler::syntax::surface::ast::{Attribute, TermExpression};
 
-use super::{
-    capability::ForeignBinding,
-    types::{GatePredicate, WhenPredicate},
-};
+use super::capability::ForeignBinding;
+
+pub(crate) use language_valkyrie::compiler::syntax::conditions::{gate_attributes_from_items, term_string_literal, when_attributes_from_items};
 
 pub(crate) fn has_host_contract_attribute(attributes: &[Attribute]) -> bool {
     attributes.iter().any(|attribute| attribute.name.name == "host_contract")
-}
-
-pub(crate) fn when_attributes_from_items(attributes: &[Attribute]) -> Vec<WhenPredicate> {
-    attributes.iter().filter_map(WhenPredicate::from_when_attribute).collect()
-}
-
-pub(crate) fn gate_attributes_from_items(attributes: &[Attribute]) -> Vec<GatePredicate> {
-    attributes.iter().filter_map(GatePredicate::from_gate_attribute).collect()
 }
 
 pub(crate) fn foreign_bindings_from_attributes(attributes: &[Attribute]) -> Vec<ForeignBinding> {
@@ -59,27 +55,10 @@ pub(crate) fn host_provider_contract_targets(attributes: &[Attribute], source: &
 /// `host_provider` 参数：字符串字面量走 AST 解码，其余用表达式 span 在源码中的切片（不拼 attribute 文本）。
 pub(crate) fn host_provider_contract_reference(expr: &TermExpression, source: &str) -> Option<String> {
     match expr {
-        TermExpression::QuoteLiteral(literal) => quote_capture_value(literal),
+        TermExpression::QuoteLiteral(literal) => language_valkyrie::compiler::syntax::conditions::quote_capture_value(literal),
         expr => {
             let span = expr.span();
             source.get(span.start..span.end).map(str::trim).filter(|text| !text.is_empty()).map(str::to_string)
         }
-    }
-}
-
-pub(crate) fn term_string_literal(expr: &TermExpression) -> Option<String> {
-    match expr {
-        TermExpression::QuoteLiteral(literal) => quote_capture_value(literal),
-        _ => None,
-    }
-}
-
-/// 常量位使用与表达式位同一套捕获解码；含插值即非常量，返回 `None`。
-fn quote_capture_value(literal: &QuoteLiteral) -> Option<String> {
-    use language_valkyrie::compiler::hir::lowering::quote_literal::{DecodedQuoteCapture, decode_quote_capture};
-    match decode_quote_capture(literal, false).ok()? {
-        DecodedQuoteCapture::PlainText(text) => Some(text),
-        DecodedQuoteCapture::Character(value) => Some(char::try_from(u32::from(value)).expect("char value is a valid scalar").to_string()),
-        _ => None,
     }
 }
