@@ -313,4 +313,22 @@ mod tests {
             .expect("占位符必须可构造");
         assert_eq!(placeholders.get("entry").map(String::as_str), Some("app.mjs"));
     }
+
+    #[test]
+    fn run_host_boundary_round_trips_and_fails_closed() {
+        let frozen = RunContract { boundary: RunHostBoundary::WasmJsGlue, ..contract("main", "app.wasm", &["node", "{artifact}"]) };
+        let text = crate::legion::write_von_indented(&frozen).expect("清单必须可序列化");
+        assert!(text.contains("boundary=wasm_js_glue"), "{text}");
+        let parsed: RunContract = crate::legion::parse_von(&text).expect("清单必须可反序列化");
+        assert_eq!(parsed.host_boundary(), Some(compiler_target::HostProjectionBoundary::WasmJsGlue));
+
+        // 旧清单缺少边界字段：按 `Unknown` 读取，投影必须 fail-closed。
+        let legacy = crate::legion::write_von_indented(&contract("main", "app.jar", &["java"])).expect("清单必须可序列化");
+        let parsed: RunContract = crate::legion::parse_von(&legacy).expect("旧清单必须可读取");
+        assert_eq!(parsed.host_boundary(), None);
+
+        // 未知词表不得静默降级成任何真实边界。
+        let unknown = text.replace("wasm_js_glue", "bogus_boundary");
+        assert!(crate::legion::parse_von::<RunContract>(&unknown).is_err());
+    }
 }
