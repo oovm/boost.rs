@@ -15,8 +15,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::model::{CellRange, CellValue, format_number, parse_reference};
-use crate::{EvalReport, Workbook};
+use crate::{
+    EvalReport, Workbook,
+    model::{CellRange, CellValue, format_number, parse_reference},
+};
 
 /// Error code of a division by zero.
 const DIV0: &str = "#DIV/0!";
@@ -336,9 +338,7 @@ fn lex(source: &str) -> Result<Vec<Token>, String> {
                 }
                 tokens.push(Token::ErrorCode(characters[start..index].iter().collect()));
             }
-            _ if character.is_ascii_digit()
-                || (character == '.' && characters.get(index + 1).is_some_and(char::is_ascii_digit)) =>
-            {
+            _ if character.is_ascii_digit() || (character == '.' && characters.get(index + 1).is_some_and(char::is_ascii_digit)) => {
                 let start = index;
                 let mut seen_dot = false;
                 while index < characters.len() {
@@ -363,9 +363,7 @@ fn lex(source: &str) -> Result<Vec<Token>, String> {
             }
             _ if character.is_alphabetic() || character == '_' || character == '$' => {
                 let start = index;
-                while index < characters.len()
-                    && (characters[index].is_alphanumeric() || matches!(characters[index], '_' | '.' | '$'))
-                {
+                while index < characters.len() && (characters[index].is_alphanumeric() || matches!(characters[index], '_' | '.' | '$')) {
                     index += 1;
                 }
                 tokens.push(Token::Ident(characters[start..index].iter().collect()));
@@ -857,10 +855,7 @@ impl Evaluator<'_> {
         // opening and re-exporting a valid workbook never replaces a real
         // result with `#NAME?`.
         let value = if self.unsupported.contains(&key) {
-            self.workbook
-                .cell(sheet, row, column)
-                .and_then(|cell| cell.cached)
-                .unwrap_or_else(|| error(NAME))
+            self.workbook.cell(sheet, row, column).and_then(|cell| cell.cached).unwrap_or_else(|| error(NAME))
         }
         else {
             evaluated
@@ -878,6 +873,11 @@ impl Evaluator<'_> {
         else {
             return Err(error(REF));
         };
+        self.grid_at(index, range)
+    }
+
+    /// Flattens one validated range of one resolved sheet into a grid.
+    fn grid_at(&mut self, index: usize, range: &CellRange) -> Result<Grid, CellValue> {
         if !range.is_valid() || range.end_row > MAX_ROW || range.end_column > MAX_COLUMN {
             return Err(error(REF));
         }
@@ -894,6 +894,33 @@ impl Evaluator<'_> {
         Ok(Grid { values, rows: range.rows(), columns: range.columns() })
     }
 
+    /// Resolves one name used as a function argument: a defined range becomes a
+    /// grid, a single-cell name becomes its value and an unknown name keeps the
+    /// `#NAME?` fallback.
+    fn name_argument(&mut self, name: &str) -> Argument {
+        let Some(named) = self.workbook.named_range(name)
+        else {
+            self.mark_unsupported();
+            return Argument::Value(error(NAME));
+        };
+        let Some(index) = self.workbook.sheet_index(&named.sheet)
+        else {
+            return Argument::Invalid(error(REF));
+        };
+        if !named.range.is_valid() {
+            return Argument::Invalid(error(REF));
+        }
+        if named.range.start_row == named.range.end_row && named.range.start_column == named.range.end_column {
+            Argument::Value(self.cell_value(index, named.range.start_row, named.range.start_column))
+        }
+        else {
+            match self.grid_at(index, &named.range) {
+                Ok(grid) => Argument::Grid(grid),
+                Err(error) => Argument::Invalid(error),
+            }
+        }
+    }
+
     fn eval(&mut self, expression: &Expr, current: usize) -> CellValue {
         match expression {
             Expr::Number(number) => CellValue::number(*number),
@@ -901,9 +928,29 @@ impl Evaluator<'_> {
             Expr::Bool(value) => CellValue::boolean(*value),
             Expr::Error(code) => error(code),
             Expr::Empty => CellValue::Empty,
-            Expr::Name(_) => {
-                self.mark_unsupported();
-                error(NAME)
+            Expr::Name(name) => {
+                let Some(named) = self.workbook.named_range(name)
+                else {
+                    self.mark_unsupported();
+                    return error(NAME);
+                };
+                let Some(index) = self.workbook.sheet_index(&named.sheet)
+                else {
+                    return error(REF);
+                };
+                if !named.range.is_valid() {
+                    return error(REF);
+                }
+                if named.range.start_row == named.range.end_row && named.range.start_column == named.range.end_column {
+                    self.cell_value(index, named.range.start_row, named.range.start_column)
+                }
+                else {
+                    // A multi-cell name used as one scalar is the same
+                    // construct as `Expr::Range`: keep the imported cache
+                    // instead of replacing it with `#VALUE!`.
+                    self.mark_unsupported();
+                    error(VALUE)
+                }
             }
             Expr::Cell { sheet, row, column } => {
                 let Some(index) = self.resolve_sheet(sheet.as_deref(), current)
@@ -1021,6 +1068,7 @@ impl Evaluator<'_> {
                     Ok(grid) => Argument::Grid(grid),
                     Err(error) => Argument::Invalid(error),
                 },
+                Expr::Name(name) => self.name_argument(name),
                 _ => Argument::Value(self.eval(argument, current)),
             });
         }
@@ -1257,9 +1305,7 @@ impl Evaluator<'_> {
                 Some((_, current_row, current_column)) => CellValue::number(coordinate(*current_row, *current_column)),
                 None => error(VALUE),
             },
-            Some(Expr::Cell { row: target_row, column: target_column, .. }) => {
-                CellValue::number(coordinate(*target_row, *target_column))
-            }
+            Some(Expr::Cell { row: target_row, column: target_column, .. }) => CellValue::number(coordinate(*target_row, *target_column)),
             Some(Expr::Range { range, .. }) => CellValue::number(coordinate(range.start_row, range.start_column)),
             Some(_) => error(VALUE),
         }
@@ -1980,12 +2026,7 @@ fn serial_from_parts(year: i64, month: i64, day: i64) -> Option<i64> {
         return None;
     }
     let days = days_from_civil(year, month, 1) + day - 1;
-    let serial = if days < days_from_civil(1900, 3, 1) {
-        days - days_from_civil(1899, 12, 31)
-    }
-    else {
-        days - days_from_civil(1899, 12, 30)
-    };
+    let serial = if days < days_from_civil(1900, 3, 1) { days - days_from_civil(1899, 12, 31) } else { days - days_from_civil(1899, 12, 30) };
     (1..=2_958_465).contains(&serial).then_some(serial)
 }
 
@@ -2151,10 +2192,8 @@ fn proper_case(text: &str) -> String {
 
 /// One-based character offset of `needle` in `text`, or `None` when absent.
 fn text_position(text: &str, needle: &str, start: usize, case_sensitive: bool) -> Option<usize> {
-    let text: Vec<char> =
-        if case_sensitive { text.chars().collect() } else { text.chars().flat_map(char::to_lowercase).collect() };
-    let needle: Vec<char> =
-        if case_sensitive { needle.chars().collect() } else { needle.chars().flat_map(char::to_lowercase).collect() };
+    let text: Vec<char> = if case_sensitive { text.chars().collect() } else { text.chars().flat_map(char::to_lowercase).collect() };
+    let needle: Vec<char> = if case_sensitive { needle.chars().collect() } else { needle.chars().flat_map(char::to_lowercase).collect() };
     if start > text.len() || needle.len() > text.len() {
         return None;
     }
@@ -2225,9 +2264,7 @@ struct Criterion {
 fn criterion_from(value: &CellValue) -> Result<Option<Criterion>, CellValue> {
     match value {
         CellValue::Error { .. } => Err(value.clone()),
-        CellValue::Number { .. } | CellValue::Bool { .. } => {
-            Ok(Some(Criterion { op: ComparisonOp::Equal, operand: value.clone() }))
-        }
+        CellValue::Number { .. } | CellValue::Bool { .. } => Ok(Some(Criterion { op: ComparisonOp::Equal, operand: value.clone() })),
         CellValue::Empty => Ok(None),
         CellValue::Text { text } => {
             for (prefix, op) in [
@@ -3086,14 +3123,8 @@ pub fn evaluate(workbook: &dyn Workbook) -> EvalReport {
     }
     let mut keys: Vec<CellKey> = forms.keys().copied().collect();
     keys.sort_unstable();
-    let mut evaluator = Evaluator {
-        workbook,
-        forms,
-        values: HashMap::new(),
-        states: HashMap::new(),
-        stack: Vec::new(),
-        unsupported: HashSet::new(),
-    };
+    let mut evaluator =
+        Evaluator { workbook, forms, values: HashMap::new(), states: HashMap::new(), stack: Vec::new(), unsupported: HashSet::new() };
     for (sheet, row, column) in keys {
         evaluator.eval_cell(sheet, row, column);
     }
@@ -3145,6 +3176,22 @@ fn collect_dependencies(expression: &Expr, workbook: &dyn Workbook, current: usi
             {
                 for row in range.start_row..=range.end_row {
                     for column in range.start_column..=range.end_column {
+                        out.push((index, row, column));
+                    }
+                }
+            }
+        }
+        Expr::Name(name) => {
+            // A defined name depends on every cell its rectangle denotes.
+            if let Some(named) = workbook.named_range(name)
+                && let Some(index) = workbook.sheet_index(&named.sheet)
+                && named.range.is_valid()
+                && named.range.end_row <= MAX_ROW
+                && named.range.end_column <= MAX_COLUMN
+                && u64::from(named.range.rows()) * u64::from(named.range.columns()) <= MAX_RANGE_CELLS
+            {
+                for row in named.range.start_row..=named.range.end_row {
+                    for column in named.range.start_column..=named.range.end_column {
                         out.push((index, row, column));
                     }
                 }

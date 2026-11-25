@@ -13,11 +13,15 @@
 
 mod engine;
 mod model;
+mod names;
+mod shift;
 
 use std::collections::{HashMap, HashSet};
 
 pub use engine::{CellKey, FUNCTION_ALIASES, FUNCTIONS, canonical_function, evaluate, find_cycles, validate};
 pub use model::{CellRange, CellValue, format_number, parse_reference};
+pub use names::{NameTable, NamedRange};
+pub use shift::{Axis, EditDirection, LineEdit, rename_sheet, shift_formula};
 
 /// One formula cell the engine must evaluate.
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +57,13 @@ pub trait Workbook {
     fn cell(&self, sheet: usize, row: u32, column: u32) -> Option<CellSnapshot>;
     /// Every formula cell in the workbook.
     fn formula_cells(&self) -> Vec<FormulaCell>;
+    /// Resolves one defined name to the rectangle it denotes.
+    ///
+    /// Workbooks without defined names keep the `#NAME?` fallback; the default
+    /// implementation returns `None`.
+    fn named_range(&self, _name: &str) -> Option<NamedRange> {
+        None
+    }
 }
 
 /// Resolved evaluation results.
@@ -88,12 +99,7 @@ mod tests {
             for (sheet, entries) in self.sheets.iter().enumerate() {
                 for (row, column, _, formula) in entries {
                     if let Some(source) = formula {
-                        cells.push(FormulaCell {
-                            sheet,
-                            row: *row,
-                            column: *column,
-                            source: source.trim_start_matches('=').to_owned(),
-                        });
+                        cells.push(FormulaCell { sheet, row: *row, column: *column, source: source.trim_start_matches('=').to_owned() });
                     }
                 }
             }
@@ -112,10 +118,7 @@ mod tests {
                     (2, 2, CellValue::Empty, Some("=UPPER(A2)".to_owned())),
                     (3, 1, CellValue::Empty, Some("=SUM(Data!A1:A2)".to_owned())),
                 ],
-                vec![
-                    (1, 1, CellValue::number(10.0), None),
-                    (2, 1, CellValue::number(20.0), None),
-                ],
+                vec![(1, 1, CellValue::number(10.0), None), (2, 1, CellValue::number(20.0), None)],
             ],
         }
     }
@@ -133,10 +136,7 @@ mod tests {
     fn detects_direct_cycles() {
         let book = FakeWorkbook {
             names: vec!["Sheet1".to_owned()],
-            sheets: vec![vec![
-                (1, 1, CellValue::Empty, Some("=B1".to_owned())),
-                (1, 2, CellValue::Empty, Some("=A1".to_owned())),
-            ]],
+            sheets: vec![vec![(1, 1, CellValue::Empty, Some("=B1".to_owned())), (1, 2, CellValue::Empty, Some("=A1".to_owned()))]],
         };
         let cycles = find_cycles(&book);
         assert_eq!(cycles.len(), 1);
@@ -148,10 +148,8 @@ mod tests {
     fn rejects_unparseable_formulas_and_reports_unknown_functions() {
         assert!(validate("SUM(A1:A2)").is_ok());
         assert!(validate("SUM(").is_err());
-        let book = FakeWorkbook {
-            names: vec!["Sheet1".to_owned()],
-            sheets: vec![vec![(1, 1, CellValue::Empty, Some("=MYSTERY(1)".to_owned()))]],
-        };
+        let book =
+            FakeWorkbook { names: vec!["Sheet1".to_owned()], sheets: vec![vec![(1, 1, CellValue::Empty, Some("=MYSTERY(1)".to_owned()))]] };
         let report = evaluate(&book);
         assert!(report.unsupported.contains(&(0, 1, 1)));
         assert_eq!(report.values.get(&(0, 1, 1)), Some(&CellValue::error("#NAME?")));
@@ -338,5 +336,141 @@ mod tests {
         }
         assert_eq!(canonical_function("SUM"), "SUM", "canonical names pass through");
         assert_eq!(canonical_function("CONCATENATEX"), "CONCATENATEX", "near misses pass through");
+    }
+
+    /// Single sheet `Sheet1` backed by a [`NameTable`] of defined names.
+    struct NamedWorkbook {
+        cells: HashMap<(u32, u32), (CellValue, Option<String>, Option<CellValue>)>,
+        names: NameTable,
+    }
+
+    impl NamedWorkbook {
+        fn new() -> Self {
+            Self { cells: HashMap::new(), names: NameTable::new() }
+        }
+
+        fn set(&mut self, row: u32, column: u32, value: CellValue) -> &mut Self {
+            self.cells.insert((row, column), (value, None, None));
+            self
+        }
+
+        fn formula(&mut self, row: u32, column: u32, source: &str) -> &mut Self {
+            self.cells.insert((row, column), (CellValue::Empty, Some(source.to_owned()), None));
+            self
+        }
+
+        fn cached_formula(&mut self, row: u32, column: u32, source: &str, cached: CellValue) -> &mut Self {
+            self.cells.insert((row, column), (CellValue::Empty, Some(source.to_owned()), Some(cached)));
+            self
+        }
+
+        fn name(&mut self, name: &str, range: CellRange) -> &mut Self {
+            self.names.define(name, "Sheet1", range).expect("a valid defined name");
+            self
+        }
+    }
+
+    impl Workbook for NamedWorkbook {
+        fn sheet_index(&self, name: &str) -> Option<usize> {
+            if name.eq_ignore_ascii_case("Sheet1") { Some(0) } else { None }
+        }
+
+        fn cell(&self, sheet: usize, row: u32, column: u32) -> Option<CellSnapshot> {
+            if sheet != 0 {
+                return None;
+            }
+            let (value, formula, cached) = self.cells.get(&(row, column))?;
+            Some(CellSnapshot { value: value.clone(), has_formula: formula.is_some(), cached: cached.clone() })
+        }
+
+        fn formula_cells(&self) -> Vec<FormulaCell> {
+            let mut cells: Vec<FormulaCell> = self
+                .cells
+                .iter()
+                .filter_map(|(&(row, column), entry)| {
+                    entry.1.as_ref().map(|source| FormulaCell { sheet: 0, row, column, source: source.clone() })
+                })
+                .collect();
+            cells.sort_by_key(|cell| (cell.row, cell.column));
+            cells
+        }
+
+        fn named_range(&self, name: &str) -> Option<NamedRange> {
+            self.names.resolve(name).cloned()
+        }
+    }
+
+    #[test]
+    fn named_ranges_evaluate_as_scalars_and_grids() {
+        let mut book = NamedWorkbook::new();
+        for (row, value) in [(1u32, 3.0), (2, 4.0), (3, 5.0)] {
+            book.set(row, 2, CellValue::number(value));
+        }
+        book.name("SalesTotal", CellRange::between(1, 2, 3, 2));
+        book.name("Tax", CellRange::between(1, 2, 1, 2));
+        book.formula(1, 3, "SUM(SalesTotal)");
+        book.formula(2, 3, "Tax*2");
+        book.formula(3, 3, "SUM(Tax)");
+        book.formula(4, 3, "SalesTotal2");
+        book.set(1, 4, CellValue::number(7.0));
+        book.name("SalesTotal2", CellRange::between(1, 4, 1, 4));
+        let report = evaluate(&book);
+        assert_eq!(report.values.get(&(0, 1, 3)), Some(&CellValue::number(12.0)), "a multi-cell name sums as a grid");
+        assert_eq!(report.values.get(&(0, 2, 3)), Some(&CellValue::number(6.0)), "a single-cell name evaluates as its value");
+        assert_eq!(report.values.get(&(0, 3, 3)), Some(&CellValue::number(3.0)), "a single-cell name is one scalar argument");
+        assert_eq!(report.values.get(&(0, 4, 3)), Some(&CellValue::number(7.0)));
+        assert!(report.unsupported.is_empty());
+    }
+
+    #[test]
+    fn undefined_names_keep_the_name_error_fallback() {
+        let mut book = NamedWorkbook::new();
+        book.set(1, 2, CellValue::number(3.0));
+        book.cached_formula(1, 3, "Missing", CellValue::number(9.0));
+        book.formula(2, 3, "Missing");
+        let report = evaluate(&book);
+        assert_eq!(report.values.get(&(0, 1, 3)), Some(&CellValue::number(9.0)), "the imported cache survives");
+        assert_eq!(report.values.get(&(0, 2, 3)), Some(&CellValue::error("#NAME?")));
+        assert!(report.unsupported.contains(&(0, 1, 3)));
+        assert!(report.unsupported.contains(&(0, 2, 3)));
+    }
+
+    #[test]
+    fn multi_cell_name_as_scalar_keeps_the_cache() {
+        let mut book = NamedWorkbook::new();
+        for row in 1..=3u32 {
+            book.set(row, 2, CellValue::number(f64::from(row)));
+        }
+        book.name("SalesTotal", CellRange::between(1, 2, 3, 2));
+        book.cached_formula(1, 3, "SalesTotal", CellValue::number(99.0));
+        let report = evaluate(&book);
+        assert!(report.unsupported.contains(&(0, 1, 3)), "a range used as one scalar is unsupported");
+        assert_eq!(report.values.get(&(0, 1, 3)), Some(&CellValue::number(99.0)));
+    }
+
+    #[test]
+    fn named_ranges_join_cycle_detection() {
+        let mut book = NamedWorkbook::new();
+        book.name("SalesTotal", CellRange::between(1, 2, 1, 2));
+        book.formula(1, 1, "SalesTotal");
+        book.formula(1, 2, "A1");
+        let cycles = find_cycles(&book);
+        assert_eq!(cycles.len(), 1);
+        assert_eq!(cycles[0].len(), 2);
+        let report = evaluate(&book);
+        assert_eq!(report.values.get(&(0, 1, 1)), Some(&CellValue::error("#CYCLE!")));
+        assert_eq!(report.values.get(&(0, 1, 2)), Some(&CellValue::error("#CYCLE!")));
+    }
+
+    #[test]
+    fn name_pointing_at_a_missing_sheet_reports_ref() {
+        let mut book = NamedWorkbook::new();
+        book.names.define("Ghost", "Gone", CellRange::between(1, 1, 2, 2)).expect("a valid defined name");
+        book.formula(1, 1, "Ghost");
+        book.formula(2, 1, "SUM(Ghost)");
+        let report = evaluate(&book);
+        assert_eq!(report.values.get(&(0, 1, 1)), Some(&CellValue::error("#REF!")));
+        assert_eq!(report.values.get(&(0, 2, 1)), Some(&CellValue::error("#REF!")));
+        assert!(!report.unsupported.contains(&(0, 1, 1)), "a dangling sheet is a resolution error, not a gap");
     }
 }
