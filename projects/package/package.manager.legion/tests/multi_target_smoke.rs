@@ -241,6 +241,8 @@ const U64_OPERATORS: &[Operator] = &[
     infix("<=", true, Some("long.compare_less_or_equal_unsigned"), Some("i64.le.un"), Some("i64.le_u"), None),
     infix(">", true, Some("long.compare_greater_than_unsigned"), Some("i64.gt.un"), Some("i64.gt_u"), None),
     infix(">=", true, Some("long.compare_greater_or_equal_unsigned"), Some("i64.ge.un"), Some("i64.ge_u"), None),
+    // `u64 >> n` 必须是逻辑右移：`lushr`/`i64.shr.un`/`i64.shr_u`，不得借算术右移。
+    infix(">>", false, Some("long.shift_right_unsigned"), Some("i64.shr.un"), Some("i64.shr_u"), None),
 ];
 
 /// `i32` 位运算与移位：`& | ^ << >>`，四个 target 头码齐全。
@@ -445,34 +447,39 @@ micro main() -> i32 {
 }
 "#;
 
-/// 无符号 `u64` 用例入口：`0xFFFF_FFFF_FFFF_FFFF` 上的除/余与六个无符号比较。
+/// 无符号 `u64` 用例入口：`0xFFFF_FFFF_FFFF_FFFF` 上的除/余、`>> 32` 与六个无符号比较。
 ///
-/// 无符号：`/ 2 = 0x7FFF_FFFF_FFFF_FFFF`、`% 7 = 1`；若误用有符号裁决，商为 0、
-/// 余数为 `0xFFFF_FFFF_FFFF_FFFF`，`q > a` 与 `r < 7` 都会改变，返回 1/2；
-/// 六个比较各带独立错误分支（3/4/5/6），全部成立返回 31。
+/// 无符号：`/ 2 = 0x7FFF_FFFF_FFFF_FFFF`、`% 7 = 1`、`>> 32 = 0xFFFF_FFFF`；若误用有符号
+/// 裁决，商为 0、余数为 `0xFFFF_FFFF_FFFF_FFFF`、`>> 32` 仍为全 1，`q > a`、`r < 7`、
+/// `logical < big` 都会改变，各自返回 1/2/4/7；六个比较各带独立分支（3/5/6），
+/// 全部成立返回 31。
 const UINT64_SOURCE: &str = r#"namespace app;
 
 micro wide_unsigned(a: u64) -> i32 {
     let big = -a
     let q = big / 2
     let r = big % 7
+    let logical = big >> 32
     if q > a {
         if q >= a {
             if r < 7 {
                 if r <= 7 {
                     if a != big {
-                        if a == 1 {
-                            return 31
+                        if logical < big {
+                            if a == 1 {
+                                return 31
+                            }
+                            return 6
                         }
-                        return 6
+                        return 5
                     }
-                    return 5
+                    return 3
                 }
                 return 4
             }
-            return 3
+            return 2
         }
-        return 2
+        return 7
     }
     return 1
 }
