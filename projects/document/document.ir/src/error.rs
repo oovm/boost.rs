@@ -83,8 +83,8 @@ pub mod params {
         BudgetExceeded,
         /// `document/not-found`.
         DocumentNotFound {
-            /// Handle that has no live document.
-            handle: u64,
+            /// Handle that has no live document, when one was addressed.
+            handle: Option<u64>,
         },
         /// `document/revision-conflict`.
         RevisionConflict {
@@ -163,7 +163,9 @@ pub mod params {
                 Self::BudgetExceeded => Value::Object(Map::new()),
                 Self::DocumentNotFound { handle } => {
                     let mut object = Map::new();
-                    object.insert("handle".to_owned(), Value::from(*handle));
+                    if let Some(handle) = handle {
+                        object.insert("handle".to_owned(), Value::from(*handle));
+                    }
                     Value::Object(object)
                 }
                 Self::RevisionConflict { actual, expected } => {
@@ -231,7 +233,11 @@ pub mod params {
                 }
                 codes::DOCUMENT_NOT_FOUND => {
                     allow_keys(object, &["handle"])?;
-                    Ok(Self::DocumentNotFound { handle: required_u64(object, "handle")? })
+                    let handle = match object.get("handle") {
+                        None | Some(Value::Null) => None,
+                        Some(value) => Some(value.as_u64().ok_or(ParamError::WrongType("handle"))?),
+                    };
+                    Ok(Self::DocumentNotFound { handle })
                 }
                 codes::REVISION_CONFLICT => {
                     allow_keys(object, &["actual", "expected"])?;

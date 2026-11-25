@@ -29,7 +29,7 @@ fn sample_params() -> Vec<ErrorParams> {
     vec![
         ErrorParams::ArgumentInvalid { reason: "`steps` must be a positive integer".to_owned() },
         ErrorParams::BudgetExceeded,
-        ErrorParams::DocumentNotFound { handle: 7 },
+        ErrorParams::DocumentNotFound { handle: Some(7) },
         ErrorParams::RevisionConflict { actual: 7, expected: Some(6) },
         ErrorParams::NotFound { kind: ObjectKind::Block, id: "42".to_owned() },
         ErrorParams::Unsupported { operation: "edit operation".to_owned(), name: "graph.reparent".to_owned() },
@@ -67,7 +67,7 @@ fn typed_construction_uses_the_frozen_keys() {
     let json = ErrorParams::BudgetExceeded.to_json();
     assert_eq!(json, serde_json::json!({}));
 
-    let json = ErrorParams::DocumentNotFound { handle: 7 }.to_json();
+    let json = ErrorParams::DocumentNotFound { handle: Some(7) }.to_json();
     assert_eq!(json, serde_json::json!({ "handle": 7 }));
 
     let json = ErrorParams::RevisionConflict { actual: 7, expected: Some(6) }.to_json();
@@ -90,6 +90,16 @@ fn typed_construction_uses_the_frozen_keys() {
 }
 
 #[test]
+fn a_document_without_a_handle_stays_valid() {
+    let json = ErrorParams::DocumentNotFound { handle: None }.to_json();
+    assert_eq!(json, serde_json::json!({}), "a session with no open document names no handle");
+    assert_eq!(
+        ErrorParams::parse(codes::DOCUMENT_NOT_FOUND, &json),
+        Ok(ErrorParams::DocumentNotFound { handle: None })
+    );
+}
+
+#[test]
 fn strict_parsing_rejects_unstructured_payloads() {
     for payload in [serde_json::json!(null), serde_json::json!("the document is gone"), serde_json::json!([1, 2])] {
         assert_eq!(
@@ -100,13 +110,8 @@ fn strict_parsing_rejects_unstructured_payloads() {
     }
 
     assert_eq!(
-        ErrorParams::parse(codes::DOCUMENT_NOT_FOUND, &serde_json::json!({})),
-        Err(ParamError::Missing("handle")),
-        "a missing document names its handle"
-    );
-    assert_eq!(
         ErrorParams::parse(codes::DOCUMENT_NOT_FOUND, &serde_json::json!({ "handle": "7" })),
-        Err(ParamError::Missing("handle")),
+        Err(ParamError::WrongType("handle")),
         "a handle must be a number"
     );
     assert_eq!(
