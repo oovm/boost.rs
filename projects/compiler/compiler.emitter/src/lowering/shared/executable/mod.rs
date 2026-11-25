@@ -14,7 +14,7 @@ use compiler_types::{AggregateLayoutPlan, FieldId, LayoutId, NominalInstanceId, 
 
 use crate::{
     FragmentSubmission,
-    backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableStorageKind, ExecutableTerminator},
+    backend_plan_views::{ExecutableBlockRef, ExecutableFunction, ExecutableTerminator},
     contracts::{BlockRef, InstructionKind},
     lowering::shared::physical_layout::{
         LayoutPolicy, ResolvedAggregateLayout, ResolvedFieldLayout, ResolvedLayoutPlan, resolve_physical_layouts,
@@ -77,48 +77,6 @@ impl<'a> ExecutableLoweringContext<'a> {
         self.layout_by_id(layout_id).and_then(|layout| layout.fields.iter().find(|item| item.name == field))
     }
 
-    /// 类型的存储类；每一条分支都来自类型自身的结构形状或已绑定身份。
-    ///
-    /// 这里既不做 layout 名称回查，也没有 `Reference` 默认值：`Named` 残差
-    /// 不携带 declaration / `TypeId`，不存在可按身份解析的名义 layout。
-    /// [`validate_storage_identities`] 已在 lowering 前拒绝该形状。
-    pub fn storage_for_type(&self, ty: &SemanticType) -> ExecutableStorageKind {
-        match ty {
-            SemanticType::Bottom
-            | SemanticType::Unit
-            | SemanticType::Boolean
-            | SemanticType::Integer8 { .. }
-            | SemanticType::Integer16 { .. }
-            | SemanticType::Integer32 { .. }
-            | SemanticType::Integer64 { .. }
-            | SemanticType::Integer128 { .. }
-            | SemanticType::Float32
-            | SemanticType::Float64
-            | SemanticType::Character
-            | SemanticType::Utf8
-            | SemanticType::Utf16 => ExecutableStorageKind::Value,
-            SemanticType::Tuple(_) | SemanticType::FixedArray { .. } => ExecutableStorageKind::Value,
-            SemanticType::Array(_)
-            | SemanticType::TraitObject(_)
-            | SemanticType::Union(_)
-            | SemanticType::Nullable(_)
-            | SemanticType::Apply(..)
-            | SemanticType::Function(_) => ExecutableStorageKind::Reference,
-            // `Nominal` 携带 canonical 冻结的实例级布局身份：存储类按 `layout` 解析，
-            // 不按拼写匹配。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
-            SemanticType::Nominal { layout, spelling } => match self.layout_by_id(*layout) {
-                Some(layout) => layout.storage,
-                None => panic!(
-                    "executable lowering contract violation: `Nominal({spelling})` 的 layout `{layout:?}` 未注册，\
-身份无法解析存储类（预编码校验见 `validate_storage_identities`）"
-                ),
-            },
-            SemanticType::Named(name) => panic!(
-                "executable lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
-禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
-            ),
-        }
-    }
 }
 
 /// 可执行合同里无法按身份解析存储类的名义类型残差。

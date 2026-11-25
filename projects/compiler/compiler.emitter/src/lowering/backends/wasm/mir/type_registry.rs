@@ -9,7 +9,7 @@
 
 use super::{
     ExecutableLoweringContext, LayoutId, MirInstructionKind, MirOperand, NominalInstanceId, SemanticType, StorageKind,
-    representation::{is_js_glue_host_string_type, mir_storage_for_type, wasm_gc_field_type_byte_for_glue},
+    representation::{is_js_glue_host_string_type, mir_storage_for_type, storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
 use crate::lowering::backends::wasm::gc::{wasm_gc_array_type, wasm_gc_struct_type};
 use data_binary_wasm::{VALTYPE_ANYREF, VALTYPE_I32};
@@ -37,7 +37,7 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                 match &instruction.kind {
                     MirInstructionKind::StructNew { nominal, .. } => {
                         if let Some(layout) = ctx.layout_by_nominal(*nominal) {
-                            // 注册条件必须与槽规划同源：槽规划按 `ctx.storage_for_type`
+                            // 注册条件必须与槽规划同源：槽规划按 Wasm lane 的 `storage_for_type`
                             // 决定 anyref，而泛型实例（`SemanticType::Apply`，如
                             // `EnumerateItem<K>`）在类型层是 Reference、在声明级
                             // `layout.storage` 却可能是 Value。只看后者会让槽规划出
@@ -49,7 +49,7 @@ pub(super) fn collect_mir_reference_layout_ids(ctx: &ExecutableLoweringContext) 
                                 .results
                                 .first()
                                 .and_then(|output| view.function.value_types.get(output))
-                                .is_some_and(|ty| ctx.storage_for_type(ty) == StorageKind::Reference);
+                                .is_some_and(|ty| storage_for_type(ctx, ty) == StorageKind::Reference);
                             if declared_reference || slot_reference {
                                 ids.insert(layout.id);
                             }

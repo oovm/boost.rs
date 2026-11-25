@@ -22,6 +22,50 @@ pub(super) fn is_js_glue_host_string_type(ty: &SemanticType) -> bool {
     matches!(ty, SemanticType::Utf8)
 }
 
+/// Wasm lane 自有的存储类归类：标量与文本是值槽，内联聚合按形状是值槽，
+/// 堆载体（数组 / trait object / union / nullable / 泛型实例 / 函数值）是引用槽，
+/// `Nominal` 按 canonical 冻结的实例级布局身份解析，不按拼写回查。
+///
+/// 这是 Wasm 的物理表示合同，归本 lane 所有；共享 `ExecutableLoweringContext`
+/// 不再承载按 `SemanticType` 归类语义的判定。
+pub(super) fn storage_for_type(ctx: &ExecutableLoweringContext, ty: &SemanticType) -> MirStorageKind {
+    match ty {
+        SemanticType::Bottom
+        | SemanticType::Unit
+        | SemanticType::Boolean
+        | SemanticType::Integer8 { .. }
+        | SemanticType::Integer16 { .. }
+        | SemanticType::Integer32 { .. }
+        | SemanticType::Integer64 { .. }
+        | SemanticType::Integer128 { .. }
+        | SemanticType::Float32
+        | SemanticType::Float64
+        | SemanticType::Character
+        | SemanticType::Utf8
+        | SemanticType::Utf16 => StorageKind::Value,
+        SemanticType::Tuple(_) | SemanticType::FixedArray { .. } => StorageKind::Value,
+        SemanticType::Array(_)
+        | SemanticType::TraitObject(_)
+        | SemanticType::Union(_)
+        | SemanticType::Nullable(_)
+        | SemanticType::Apply(..)
+        | SemanticType::Function(_) => StorageKind::Reference,
+        // `Nominal` 携带 canonical 冻结的实例级布局身份：存储类按 `layout` 解析，
+        // 不按拼写匹配。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
+        SemanticType::Nominal { layout, spelling } => match ctx.layout_by_id(*layout) {
+            Some(layout) => layout.storage,
+            None => panic!(
+                "wasm lowering contract violation: `Nominal({spelling})` 的 layout `{layout:?}` 未注册，\
+身份无法解析存储类（预编码校验见 `validate_storage_identities`）"
+            ),
+        },
+        SemanticType::Named(name) => panic!(
+            "wasm lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
+禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
+        ),
+    }
+}
+
 pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &SemanticType, js_glue_utf8_as_anyref: bool) -> MirStorageKind {
     let _ = js_glue_utf8_as_anyref;
     if is_js_glue_host_string_type(ty) {
@@ -35,7 +79,7 @@ pub(super) fn mir_storage_for_type(ctx: &ExecutableLoweringContext, ty: &Semanti
     if matches!(ty, SemanticType::Union(_)) {
         return StorageKind::Reference;
     }
-    ctx.storage_for_type(ty)
+    storage_for_type(ctx, ty)
 }
 
 /// 对象槽是否走 gc struct：**只读注册表**，不按类型形状特判。
@@ -206,7 +250,7 @@ pub(super) fn wasm_param_value_type(ctx: &ExecutableLoweringContext, ty: &Semant
         return Ok(WASM_GC_ANYREF);
     }
     // 引用类型参数用 anyref (VALTYPE_ANYREF) 传递;值类型参数仍用 i32 地址。
-    if ctx.storage_for_type(ty) == StorageKind::Reference {
+    if storage_for_type(ctx, ty) == StorageKind::Reference {
         return Ok(WASM_GC_ANYREF);
     }
     Ok(wasm_scalar_value_type(ty)?)
@@ -265,6 +309,6 @@ pub(super) fn layout_needs_gc_struct(
     ctx: &ExecutableLoweringContext,
     layout: &crate::lowering::shared::physical_layout::ResolvedAggregateLayout,
 ) -> bool {
-    let has_ref_fields = layout.fields.iter().any(|field| ctx.storage_for_type(&field.ty) == StorageKind::Reference);
+    let has_ref_fields = layout.fields.iter().any(|field| storage_for_type(ctx, &field.ty) == StorageKind::Reference);
     layout.storage == StorageKind::Reference || has_ref_fields
 }
