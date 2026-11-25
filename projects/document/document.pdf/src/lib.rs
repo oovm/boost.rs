@@ -14,12 +14,14 @@ mod compose;
 mod create;
 mod error;
 mod extract;
+mod links;
 mod stamp;
 
 pub use compose::{
     ComposeReport, ComposedSource, PagePlan, PagePlacement, compose, duplicate_pages, insert_blank_pages, insert_pages,
     interleave_pages, move_pages, replace_pages, reverse_pages, swap_pages,
 };
+pub use links::{LinkKind, LinkRecord, NamedDestination, extract_links, list_destinations};
 
 // The byte-level engine lives in `data-binary-pdf`; the module aliases keep the
 // page-operation modules reading as if they owned it.
