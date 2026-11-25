@@ -175,6 +175,85 @@ pub fn publish_bytes_with_options(target: impl AsRef<Path>, bytes: &[u8], option
     Ok(())
 }
 
+/// One destination and payload in a [`publish_batch`] request.
+#[derive(Debug)]
+pub struct PublishEntry<'a> {
+    /// Final destination path.
+    pub target: PathBuf,
+    /// Bytes to publish at that destination.
+    pub bytes: &'a [u8],
+}
+
+/// Why a batch publish stopped.
+#[derive(Debug)]
+pub struct BatchFailure {
+    /// Destinations already published when the failure happened, in request order.
+    ///
+    /// Each of those files was published atomically, so a reader sees a complete file at every
+    /// listed destination. A batch caller that needs all-or-nothing semantics must undo these
+    /// itself, and can only do so for destinations it knows it replaced.
+    pub published: Vec<PathBuf>,
+    /// The destination whose publish failed, or the offending target of a refused pre-check.
+    pub target: PathBuf,
+    /// The underlying failure.
+    pub error: io::Error,
+}
+
+/// Publish several files as one request.
+///
+/// Every destination is pre-checked before any byte is staged: the parent folder must exist, no
+/// two entries may name the same destination, and with [`OverwritePolicy::RefuseExisting`] an
+/// already existing destination is refused here instead of after earlier files were written. Each
+/// file is then published atomically in request order. A failure mid-batch stops the remaining
+/// entries and reports the destinations that were already published in [`BatchFailure::published`].
+pub fn publish_batch(entries: &[PublishEntry<'_>], options: PublishOptions) -> Result<Vec<PathBuf>, BatchFailure> {
+    let mut published = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let failure = |error: io::Error| BatchFailure { published: published.clone(), target: entry.target.clone(), error };
+        let parent_exists = match entry.target.parent().filter(|path| !path.as_os_str().is_empty()) {
+            Some(parent) => parent.is_dir(),
+            None => true,
+        };
+        if !parent_exists {
+            return Err(failure(io::Error::new(io::ErrorKind::NotFound, "destination parent directory does not exist")));
+        }
+        if entries[..index].iter().any(|earlier| same_target(&earlier.target, &entry.target)) {
+            return Err(failure(io::Error::new(io::ErrorKind::AlreadyExists, "two batch entries name the same destination")));
+        }
+        if options.overwrite == OverwritePolicy::RefuseExisting && entry.target.exists() {
+            return Err(failure(io::Error::new(io::ErrorKind::AlreadyExists, "destination already exists")));
+        }
+    }
+    for entry in entries {
+        if let Err(error) = publish_bytes_with_options(&entry.target, entry.bytes, options) {
+            return Err(BatchFailure { published, target: entry.target.clone(), error });
+        }
+        published.push(entry.target.clone());
+    }
+    Ok(published)
+}
+
+/// Reports whether two paths name the same destination, comparing case-insensitively once both
+/// exist (Windows) and literally otherwise.
+fn same_target(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => {
+            #[cfg(windows)]
+            {
+                left.as_os_str().to_string_lossy().eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+            }
+            #[cfg(not(windows))]
+            {
+                false
+            }
+        }
+    }
+}
+
 /// Flush the folder that holds the destination.
 ///
 /// A folder handle keeps the published name durable across a crash, so a failure to open or flush it

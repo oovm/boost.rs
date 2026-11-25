@@ -31,7 +31,10 @@ pub use link::symlink;
 pub use link::{canonicalize, hard_link, read_link};
 pub use metadata::{FileType, Metadata, metadata, symlink_metadata};
 pub use permissions::{Permissions, set_permissions};
-pub use publish::{AtomicPublisher, OverwritePolicy, PublishOptions, publish_bytes, publish_bytes_with_options};
+pub use publish::{
+    AtomicPublisher, BatchFailure, OverwritePolicy, PublishEntry, PublishOptions, publish_batch, publish_bytes,
+    publish_bytes_with_options,
+};
 pub use read_write::{copy, read, read_to_string, write};
 pub use remove::{remove_file, remove_folder, remove_folder_all};
 pub use rename::rename;
