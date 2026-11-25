@@ -114,10 +114,12 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
             if request.artifact_purpose == compiler_target::ArtifactPurpose::Library {
                 // 普通共享库：导出面就是交付合同，没有进程入口，也不绑定宿主模块。
-                let product = compiler_emitter::emitter_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
-                    .map_err(|error| format!("普通共享库目标不合法：{error}"))?;
-                let lowered =
-                    compiler_emitter::emitter_backend_machine::lower_fragment_to_machine_library(&submission, product.platform())?;
+                // 纵链两段式：先取目标私有共享库输入，再交装配服务。
+                let library_input = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_x64_library_input(
+                    &submission,
+                    &request.resolved,
+                )?;
+                let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_library_image(&library_input)?;
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
                     output_dir: request.output_dir.to_path_buf(),

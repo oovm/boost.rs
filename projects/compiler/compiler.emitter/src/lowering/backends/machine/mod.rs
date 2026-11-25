@@ -30,7 +30,7 @@ pub mod x86_64;
 
 pub use container::compile_shared_container;
 pub use extension::{MachineHostExport, X64LoweredExtension, lower_fragment_to_machine_extension};
-pub use library::{MachineLibraryExport, X64LoweredLibrary, lower_fragment_to_machine_library};
+pub use library::{MachineLibraryExport, X64LibraryProgramInput, X64LoweredLibrary, lower_fragment_to_machine_library};
 
 pub use carrier::{
     HostMethod, HostParameterKind, HostProperty, HostValueKind, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool,
@@ -527,6 +527,21 @@ pub fn lower_resolved_fragment_to_x64_program_input(
 /// 正式 lane 纵链第二段：目标私有输入 → 进程镜像（编码 + 容器 + 自检）。
 pub fn assemble_x64_program_image(input: &x86_64::X64ProgramInput) -> Result<X64LoweredProgram> {
     x86_64::assemble_x86_64_program_image(input)
+}
+
+/// C ABI 库纵链第一段：计划事实 → 目标私有共享库输入。
+pub fn lower_resolved_fragment_to_x64_library_input(
+    submission: &FragmentSubmission,
+    resolved: &ResolvedTarget,
+) -> Result<X64LibraryProgramInput> {
+    let product =
+        X64ProductTarget::from_resolved(resolved).map_err(|error| format!("普通共享库目标不合法：{error}"))?;
+    library::build_x64_library_program_input(submission, product.platform())
+}
+
+/// C ABI 库纵链第二段：目标私有输入 → 共享库镜像（编码 + 容器 + 自检）。
+pub fn assemble_x64_library_image(input: &X64LibraryProgramInput) -> Result<X64LoweredLibrary> {
+    library::assemble_x64_library_image(input)
 }
 
 /// 机器码 lane 的统一提交验证门。

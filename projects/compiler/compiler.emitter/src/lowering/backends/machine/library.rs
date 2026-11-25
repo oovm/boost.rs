@@ -17,7 +17,7 @@ use crate::{
 use compiler_types::ItemInstanceId;
 
 use super::{
-    X64Platform, compile_shared_container, extension::verify_shared_image, is_c_identifier,
+    X64Platform, X64ProgramFunction, compile_shared_container, extension::verify_shared_image, is_c_identifier,
     x64_program::encode_x64_program_with_dependencies,
     x86_64::{collect_reachable_functions, is_reference_carrier, lower_function_to_text_program},
 };
@@ -135,8 +135,33 @@ impl X64LibraryCarrier {
     }
 }
 
+/// 普通共享库的目标私有输入：已降低的 LIR 程序 + 冻结导出描述符。
+///
+/// 装配服务（编码 + 共享库容器 + 自检）只接受这个形状，不再接触跨目标的
+/// `FragmentSubmission` / `ExecutableFunction`。
+pub struct X64LibraryProgramInput {
+    platform: X64Platform,
+    functions: Vec<X64ProgramFunction>,
+    exports: Vec<MachineLibraryExport>,
+}
+
+impl X64LibraryProgramInput {
+    /// 目标平台身份（容器与调用约定一次冻结）。
+    pub fn platform(&self) -> X64Platform {
+        self.platform
+    }
+}
+
 /// 把已冻结的目标计划降低为普通共享库。
 pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platform: X64Platform) -> Result<X64LoweredLibrary> {
+    assemble_x64_library_image(&build_x64_library_program_input(submission, platform)?)
+}
+
+/// 计划事实 → 目标私有共享库输入（不编码、不写容器）。
+pub(crate) fn build_x64_library_program_input(
+    submission: &FragmentSubmission,
+    platform: X64Platform,
+) -> Result<X64LibraryProgramInput> {
     super::validate_machine_submission(submission)?;
     if let Some(entry) = submission.backend_plan.entry_operation() {
         return Err(format!(
@@ -234,13 +259,18 @@ pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platfo
         )?);
     }
 
-    // 普通库不绑定宿主模块：没有导入面、没有宿主依赖、没有文本数据段。
-    let image = encode_x64_program_with_dependencies(&functions, &[], platform.abi(), &[], &[], &[])?;
-    let executable = compile_shared_container(platform, &image)?;
-    verify_shared_image(&executable, platform)?;
+    Ok(X64LibraryProgramInput { platform, functions, exports })
+}
 
-    let artifact_extension = if platform.is_windows() { ".dll".to_string() } else { ".so".to_string() };
-    Ok(X64LoweredLibrary { executable, exports, artifact_extension })
+/// 目标私有共享库输入 → 共享库镜像（编码 + 容器 + 自检）。
+pub(crate) fn assemble_x64_library_image(input: &X64LibraryProgramInput) -> Result<X64LoweredLibrary> {
+    // 普通库不绑定宿主模块：没有导入面、没有宿主依赖、没有文本数据段。
+    let image = encode_x64_program_with_dependencies(&input.functions, &[], input.platform.abi(), &[], &[], &[])?;
+    let executable = compile_shared_container(input.platform, &image)?;
+    verify_shared_image(&executable, input.platform)?;
+
+    let artifact_extension = if input.platform.is_windows() { ".dll".to_string() } else { ".so".to_string() };
+    Ok(X64LoweredLibrary { executable, exports: input.exports.clone(), artifact_extension })
 }
 
 #[cfg(test)]
