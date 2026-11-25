@@ -314,7 +314,8 @@ pub fn interleave_pages(first: &Path, second: &Path, out: &Path, overwrite: bool
 /// Reverses the whole document or one selection in place.
 ///
 /// When `selection` is given, those pages trade places among themselves and
-/// every other page keeps its position. The selection must be non-empty.
+/// every other page keeps its position. The selection must be non-empty and
+/// repeated pages are rejected; the flip follows the given selection order.
 pub fn reverse_pages(input: &Path, selection: Option<&[usize]>, out: &Path, overwrite: bool) -> Result<crate::ArrangeReport> {
     if let Some(selection) = selection
         && selection.is_empty()
@@ -341,7 +342,9 @@ pub fn reverse_pages(input: &Path, selection: Option<&[usize]>, out: &Path, over
 ///
 /// `after` is a 1-based page that stays put, or `0` to move the selection to
 /// the front; an anchor inside the selection is refused because its position
-/// is being moved. The pages keep the relative order of the selection.
+/// is being moved. The pages keep the relative order of the selection, so a
+/// selection such as `[4, 2]` places page 4 before page 2. The selection must
+/// be non-empty and repeated pages are rejected.
 pub fn move_pages(input: &Path, selection: &[usize], after: usize, out: &Path, overwrite: bool) -> Result<crate::ArrangeReport> {
     if selection.is_empty() {
         return Err(argument("move_pages needs at least one selected page"));
@@ -367,7 +370,8 @@ pub fn move_pages(input: &Path, selection: &[usize], after: usize, out: &Path, o
 /// Trades places between two equal-length selections.
 ///
 /// The first page of `left` swaps with the first of `right`, and so on. The
-/// selections must be the same length and must not share a page.
+/// selections must be the same length, must not share a page and must not
+/// repeat one; the pairing follows the given order of each selection.
 pub fn swap_pages(input: &Path, left: &[usize], right: &[usize], out: &Path, overwrite: bool) -> Result<crate::ArrangeReport> {
     if left.is_empty() {
         return Err(argument("swap_pages needs at least one selected page"));
@@ -703,5 +707,44 @@ mod tests {
 
         assert!(swap_pages(&source, &[1], &[1], &workspace.path("shared.pdf"), true).is_err());
         assert!(swap_pages(&source, &[1], &[3, 4], &workspace.path("uneven.pdf"), true).is_err());
+        assert!(swap_pages(&source, &[1, 1], &[2, 3], &workspace.path("repeat.pdf"), true).is_err());
+    }
+
+    #[test]
+    fn page_order_operations_follow_the_given_selection_order() {
+        let workspace = Workspace::new();
+        let source = workspace.create("source.pdf", &["One", "Two", "Three", "Four"]);
+        let out = workspace.path("ordered.pdf");
+
+        move_pages(&source, &[4, 2], 1, &out, false).expect("move in the given order");
+        assert_eq!(markers(&out), ["One", "Four", "Two", "Three"]);
+
+        let swapped = workspace.path("paired.pdf");
+        swap_pages(&source, &[1, 4], &[2, 3], &swapped, false).expect("pair in the given order");
+        assert_eq!(markers(&swapped), ["Two", "One", "Four", "Three"]);
+
+        let flipped = workspace.path("flipped.pdf");
+        reverse_pages(&source, Some(&[1, 2, 3]), &flipped, false).expect("flip the first three");
+        assert_eq!(markers(&flipped), ["Three", "Two", "One", "Four"]);
+
+        assert!(move_pages(&source, &[2, 2], 1, &workspace.path("twice.pdf"), true).is_err());
+        assert!(reverse_pages(&source, Some(&[4, 4]), &workspace.path("again.pdf"), true).is_err());
+    }
+
+    #[test]
+    fn page_order_operations_report_corrupt_documents_without_panicking() {
+        let workspace = Workspace::new();
+        let broken = workspace.path("broken.pdf");
+        fs::write(&broken, b"not a PDF").expect("write a corrupt fixture");
+        let readable = workspace.create("readable.pdf", &["One"]);
+
+        let error = reverse_pages(&broken, None, &workspace.path("r.pdf"), true).expect_err("corrupt input");
+        assert_eq!(error.code(), "format/invalid");
+        let error = move_pages(&broken, &[1], 0, &workspace.path("m.pdf"), true).expect_err("corrupt input");
+        assert_eq!(error.code(), "format/invalid");
+        let error = swap_pages(&broken, &[1], &[2], &workspace.path("s.pdf"), true).expect_err("corrupt input");
+        assert_eq!(error.code(), "format/invalid");
+        let error = interleave_pages(&broken, &readable, &workspace.path("i.pdf"), true).expect_err("corrupt input");
+        assert_eq!(error.code(), "format/invalid");
     }
 }
