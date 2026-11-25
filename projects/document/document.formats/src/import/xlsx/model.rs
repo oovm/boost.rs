@@ -540,6 +540,20 @@ pub struct XlsxStats {
     pub comment_count: usize,
 }
 
+/// One defined name as authored in `workbook.xml`.
+///
+/// The reference payload is kept verbatim so any spelling — an A1 range, a
+/// constant or a formula — survives a read → write round trip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinedName {
+    /// Defined name as authored, including `_xlnm.*` built-ins.
+    pub name: String,
+    /// Sheet name when `localSheetId` scopes the name, `None` for workbook scope.
+    pub sheet: Option<String>,
+    /// Raw text payload such as `'Data'!$A$1:$B$2`.
+    pub reference: String,
+}
+
 /// Parsed XLSX workbook.
 #[derive(Debug, Clone, PartialEq)]
 pub struct XlsxWorkbook {
@@ -552,7 +566,7 @@ pub struct XlsxWorkbook {
     /// Resolved styles.
     pub styles: WorkbookStyles,
     /// Defined names as authored.
-    pub defined_names: Vec<String>,
+    pub defined_names: Vec<DefinedName>,
     /// Whether the package carries a VBA project.
     pub macro_enabled: bool,
     /// Non-fatal issues collected during import.

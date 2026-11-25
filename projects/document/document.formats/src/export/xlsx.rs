@@ -5,9 +5,9 @@
 //! formulas, styles, merges, column widths, row heights and frozen panes
 //! instead of lowering through the semantic IR and back.
 //!
-//! Charts, pictures, comments, conditional formatting, data validation,
-//! defined names and macro payloads have no writer here. They are reported as
-//! loss markers rather than silently dropped.
+//! Charts, pictures, comments, conditional formatting, data validation and
+//! macro payloads have no writer here. They are reported as loss markers
+//! rather than silently dropped. Defined names are written back verbatim.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -17,7 +17,7 @@ use document_ir::{LossMarker, SemanticStatus};
 use super::super::import::xlsx::model::{
     CellStyle, CellValue, DateSystem, HorizontalAlign, SheetVisibility, VerticalAlign, WorkbookStyles, XlsxCell, XlsxSheet, XlsxWorkbook,
 };
-use crate::import::xlsx::styles::resolve_color;
+use crate::import::xlsx::styles::{builtin_number_format, resolve_color};
 use crate::FormatError;
 
 /// Loss code for a skipped chart or drawing frame.
@@ -30,8 +30,6 @@ pub const LOSS_COMMENT: &str = "export.xlsx.comment";
 pub const LOSS_CONDITIONAL_FORMATTING: &str = "export.xlsx.conditional-formatting";
 /// Loss code for skipped data validation rules.
 pub const LOSS_DATA_VALIDATION: &str = "export.xlsx.data-validation";
-/// Loss code for a skipped defined name.
-pub const LOSS_DEFINED_NAME: &str = "export.xlsx.defined-name";
 /// Loss code for a workbook macro payload that cannot be written as `.xlsx`.
 pub const LOSS_MACRO: &str = "export.xlsx.macro";
 /// Loss code for a skipped embedded object.
@@ -90,7 +88,6 @@ fn losses(workbook: &XlsxWorkbook) -> Vec<LossMarker> {
         (comment, LOSS_COMMENT, "cell comments are not written"),
         (conditional, LOSS_CONDITIONAL_FORMATTING, "conditional formatting rules are not written"),
         (validation, LOSS_DATA_VALIDATION, "data validation rules are not written"),
-        (!workbook.defined_names.is_empty(), LOSS_DEFINED_NAME, "defined names are not written"),
         (workbook.macro_enabled, LOSS_MACRO, "a macro payload cannot be written as .xlsx"),
         (embedded, LOSS_EMBEDDED_OBJECT, "embedded objects are not written"),
     ];
@@ -152,7 +149,25 @@ fn workbook_xml(workbook: &XlsxWorkbook) -> String {
             index + 1
         ));
     }
-    body.push_str("</sheets></workbook>");
+    body.push_str("</sheets>");
+    if !workbook.defined_names.is_empty() {
+        body.push_str("<definedNames>");
+        for defined in &workbook.defined_names {
+            let local = defined
+                .sheet
+                .as_deref()
+                .and_then(|name| workbook.sheets.iter().position(|sheet| sheet.name == *name))
+                .map(|index| format!(" localSheetId=\"{index}\""))
+                .unwrap_or_default();
+            body.push_str(&format!(
+                "<definedName name=\"{}\"{local}>{}</definedName>",
+                escape_attribute(&defined.name),
+                escape_text(defined.reference.trim())
+            ));
+        }
+        body.push_str("</definedNames>");
+    }
+    body.push_str("</workbook>");
     body
 }
 
@@ -462,12 +477,19 @@ impl StyleTable {
         };
         let num_fmt = match style.number_format.as_deref() {
             Some(code) if !code.eq_ignore_ascii_case("general") && !code.trim().is_empty() => {
-                match self.numbers.iter().find(|(_, existing)| existing == code) {
-                    Some((id, _)) => *id,
-                    None => {
-                        let id = 164 + self.numbers.len() as u32;
-                        self.numbers.push((id, code.to_owned()));
-                        id
+                if style.number_format_id != 0
+                    && builtin_number_format(style.number_format_id).is_some_and(|builtin| builtin.eq_ignore_ascii_case(code))
+                {
+                    style.number_format_id
+                }
+                else {
+                    match self.numbers.iter().find(|(_, existing)| existing == code) {
+                        Some((id, _)) => *id,
+                        None => {
+                            let id = 164 + self.numbers.len() as u32;
+                            self.numbers.push((id, code.to_owned()));
+                            id
+                        }
                     }
                 }
             }
@@ -747,7 +769,6 @@ mod tests {
     fn reports_skipped_constructs() {
         let mut workbook = sample();
         workbook.macro_enabled = true;
-        workbook.defined_names.push("print_area".to_owned());
         workbook.sheets[0].comments.push(crate::import::xlsx::model::CellComment {
             reference: "A1".to_owned(),
             author: None,
@@ -756,8 +777,97 @@ mod tests {
         let report = export_xlsx_bytes_report(&workbook).expect("write");
         let codes = report.losses.iter().map(|marker| marker.code.as_str()).collect::<Vec<_>>();
         assert!(codes.contains(&LOSS_MACRO));
-        assert!(codes.contains(&LOSS_DEFINED_NAME));
         assert!(codes.contains(&LOSS_COMMENT));
+    }
+
+    #[test]
+    fn keeps_font_decoration_borders_and_vertical_through_a_round_trip() {
+        let mut workbook = XlsxWorkbook::new("decor.xlsx");
+        let mut sheet = XlsxSheet::new("S", 0);
+        sheet.cells.push(XlsxCell {
+            reference: "A1".to_owned(),
+            row: 1,
+            column: 1,
+            value: CellValue::Text("decorated".to_owned()),
+            formula: None,
+            style_index: None,
+            style: CellStyle {
+                underline: true,
+                strike: true,
+                font_name: Some("Consolas".to_owned()),
+                vertical: VerticalAlign::Center,
+                borders: crate::import::xlsx::model::BorderEdges {
+                    top: Some(crate::import::xlsx::model::BorderEdge { style: "thin".to_owned(), color: Some("#FF0000".to_owned()) }),
+                    bottom: Some(crate::import::xlsx::model::BorderEdge { style: "medium".to_owned(), color: None }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        });
+        workbook.sheets.push(sheet);
+        let imported = import_xlsx_bytes("decor.xlsx", &export_xlsx_bytes(&workbook).expect("write")).expect("read");
+        let style = &imported.sheet("S").expect("sheet").cell(1, 1).expect("cell").style;
+        assert!(style.underline, "underline survives the round trip");
+        assert!(style.strike, "strike survives the round trip");
+        assert_eq!(style.font_name.as_deref(), Some("Consolas"));
+        assert_eq!(style.vertical, VerticalAlign::Center);
+        assert_eq!(style.borders.top.as_ref().map(|edge| edge.style.as_str()), Some("thin"));
+        assert_eq!(style.borders.top.as_ref().and_then(|edge| edge.color.as_deref()), Some("#FF0000"));
+        assert_eq!(style.borders.bottom.as_ref().map(|edge| edge.style.as_str()), Some("medium"));
+        assert!(style.borders.right.is_none(), "an unwritten edge stays absent");
+    }
+
+    #[test]
+    fn keeps_builtin_number_format_ids_through_a_round_trip() {
+        let mut workbook = XlsxWorkbook::new("builtin.xlsx");
+        let mut sheet = XlsxSheet::new("S", 0);
+        sheet.cells.push(XlsxCell {
+            reference: "A1".to_owned(),
+            row: 1,
+            column: 1,
+            value: CellValue::Number(1234.5),
+            formula: None,
+            style_index: None,
+            style: CellStyle {
+                number_format_id: 3,
+                number_format: Some("#,##0".to_owned()),
+                ..Default::default()
+            },
+        });
+        sheet.cells.push(XlsxCell {
+            reference: "B1".to_owned(),
+            row: 1,
+            column: 2,
+            value: CellValue::Number(1.0),
+            formula: None,
+            style_index: None,
+            style: CellStyle { number_format: Some("0.000".to_owned()), ..Default::default() },
+        });
+        workbook.sheets.push(sheet);
+        let imported = import_xlsx_bytes("builtin.xlsx", &export_xlsx_bytes(&workbook).expect("write")).expect("read");
+        let sheet = imported.sheet("S").expect("sheet");
+        let builtin = &sheet.cell(1, 1).expect("cell").style;
+        assert_eq!(builtin.number_format_id, 3, "a built-in code keeps its built-in id");
+        assert_eq!(builtin.number_format.as_deref(), Some("#,##0"));
+        let custom = &sheet.cell(1, 2).expect("cell").style;
+        assert_eq!(custom.number_format.as_deref(), Some("0.000"));
+        assert!(custom.number_format_id >= 164, "a custom code gets a custom id, got {}", custom.number_format_id);
+    }
+
+    #[test]
+    fn writes_defined_names_back_verbatim() {
+        use crate::import::xlsx::model::DefinedName;
+        let mut workbook = sample();
+        workbook.defined_names.push(DefinedName {
+            name: "Sales".to_owned(),
+            sheet: Some("Data".to_owned()),
+            reference: "Data!$A$1:$B$2".to_owned(),
+        });
+        workbook.defined_names.push(DefinedName { name: "Total".to_owned(), sheet: None, reference: "Data!$B$3".to_owned() });
+        let export = export_xlsx_bytes_report(&workbook).expect("write");
+        assert!(export.losses.iter().all(|marker| marker.code != "export.xlsx.defined-name"), "defined names are no longer a loss");
+        let imported = import_xlsx_bytes("names.xlsx", &export.bytes).expect("read");
+        assert_eq!(imported.defined_names, workbook.defined_names);
     }
 
     #[test]

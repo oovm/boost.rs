@@ -8,8 +8,8 @@ use data_text_xml::ast::XmlElement;
 
 use super::{
     model::{
-        CellComment, CellFormula, CellStyle, CellValue, DateKind, DateSystem, FormulaKind, FreezePane, ImageAnchor, IssueStatus, SheetColumn,
-        SheetImage, SheetRow, SheetVisibility, WorkbookStyles, XlsxCell, XlsxIssue, XlsxSheet, XlsxStats, XlsxWorkbook, codes,
+        CellComment, CellFormula, CellStyle, CellValue, DateKind, DateSystem, DefinedName, FormulaKind, FreezePane, ImageAnchor, IssueStatus,
+        SheetColumn, SheetImage, SheetRow, SheetVisibility, WorkbookStyles, XlsxCell, XlsxIssue, XlsxSheet, XlsxStats, XlsxWorkbook, codes,
     },
     reference::{parse_range, parse_reference, reference},
     styles::parse_styles,
@@ -131,14 +131,17 @@ pub fn import_xlsx_bytes(label: &str, bytes: &[u8]) -> Result<XlsxWorkbook, Form
 
     let mut defined_names = Vec::new();
     if let Some(block) = descendant_named(workbook_root, "definedNames") {
-        for name in children_named(block, "definedName") {
-            defined_names.push(element_text(name).trim().to_owned());
+        for element in children_named(block, "definedName") {
+            let Some(name) = attribute_value(element, "name") else { continue };
+            let sheet =
+                u32_attribute(element, "localSheetId").and_then(|index| sheets.get(index as usize).map(|sheet| sheet.name.clone()));
+            defined_names.push(DefinedName { name, sheet, reference: element_text(element).trim().to_owned() });
         }
     }
     if !defined_names.is_empty() {
         issues.push(issue(
             codes::DEFINED_NAME,
-            format!("{} defined names read as text", defined_names.len()),
+            format!("{} defined names carried as authored text", defined_names.len()),
             IssueStatus::Partial,
             None,
             None,
