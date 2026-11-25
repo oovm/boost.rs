@@ -850,7 +850,7 @@ fn collect_jvm_operations(submission: &FragmentSubmission) -> Vec<ItemInstanceId
 fn external_operator_by_instance(submission: &FragmentSubmission) -> Result<BTreeMap<ItemInstanceId, (String, JvmOperatorBinding)>> {
     let mut operators = BTreeMap::new();
     for (instance, import) in submission.backend_plan.imports() {
-        let Some((link, mnemonic)) = crate::lowering::shared::interop::select_unique_target(&import.links, crate::lowering::shared::interop::jvm_operator_target)?
+        let Some((link, mnemonic)) = crate::lowering::shared::interop::select_unique_target(&import.links, super::recipe::jvm_operator_target)?
         else {
             continue;
         };

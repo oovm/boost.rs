@@ -213,6 +213,21 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
 }
 
 /// CLR 平台私有的 operator 绑定。
+/// 源码 `[clr_operator("i64.div")]` 声明的 CLR 目标 operator 助记符。
+///
+/// 只接受 platform tag `clr-operator` 且 locator 恰好一段；其余形态返回 `None`，
+/// 由调用方按「缺少可编码目标绑定」结构化失败。
+pub(crate) fn clr_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("clr-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClrOperatorBinding {
     /// 已冻结的 MSIL 配方。
@@ -229,7 +244,7 @@ pub(crate) fn freeze_clr_operator(
     parameter_types: &[compiler_types::SemanticType],
     return_type: &compiler_types::SemanticType,
 ) -> crate::Result<Option<ClrOperatorBinding>> {
-    let Some(mnemonic) = crate::lowering::shared::interop::clr_operator_target(link)
+    let Some(mnemonic) = clr_operator_target(link)
     else {
         return Ok(None);
     };

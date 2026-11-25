@@ -1300,10 +1300,7 @@ impl FunctionLowerer<'_> {
                 .get(&instance)
                 .ok_or_else(|| format!("x86_64 lowering：导入实例 `{instance:?}` 缺失: function={}", self.function.symbol))?;
             let symbol = self.submission.backend_plan.abi_name_for_instance(instance).map(|name| name.to_string()).unwrap_or_default();
-            let selected = crate::lowering::shared::interop::select_unique_target(
-                &import.links,
-                crate::lowering::shared::interop::x86_64_operator_target,
-            )?;
+            let selected = crate::lowering::shared::interop::select_unique_target(&import.links, x86_64_operator_target)?;
             let binding = match selected {
                 Some((link, _)) => freeze_x86_64_operator(link, instance, &symbol, &import.parameter_types, &import.return_type)?,
                 None => None,
@@ -2668,6 +2665,25 @@ fn is_exit_code_type(ty: &SemanticType) -> bool {
     matches!(ty, SemanticType::Unit | SemanticType::Bottom) || is_slot_type(ty)
 }
 
+/// 源码 `[x86_64_operator("i64.add")]` 声明的 x86-64 目标 operator 助记符。
+///
+/// 注解按 **ISA** 声明，而不是按「native」：`native` 只是产物形态，`native` /
+/// `node` / `python` 最终都会展开成规范目标四元组，而算子编码由四元组的 `arch`
+/// 决定。只有显式声明 ISA 的绑定才能在此冻结编码；未声明 ISA 的绑定保持
+/// `Unfrozen`，由 emit 结构化失败，禁止按宿主架构猜编码。
+///
+/// 只接受 platform tag `x86_64-operator` 且 locator 恰好一段；其余形态返回 `None`。
+pub(crate) fn x86_64_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("x86_64-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
 /// 唯一 x86-64 operator 配方表。未知名字返回 `None`。
 ///
 /// 与 JVM/CLR 使用同一组 provider 名（`integer.*` / `long.*` / `double.*` / `float.*`），
@@ -2803,7 +2819,7 @@ pub(crate) fn freeze_x86_64_operator(
     parameter_types: &[compiler_types::SemanticType],
     return_type: &compiler_types::SemanticType,
 ) -> crate::Result<Option<X86OperatorBinding>> {
-    let Some(mnemonic) = crate::lowering::shared::interop::x86_64_operator_target(link)
+    let Some(mnemonic) = x86_64_operator_target(link)
     else {
         return Ok(None);
     };

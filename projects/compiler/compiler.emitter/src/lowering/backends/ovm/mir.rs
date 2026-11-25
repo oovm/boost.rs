@@ -331,10 +331,7 @@ fn lower_fragment_mir_to_ovm_module_impl(
     let external_opcode_by_instance = {
         let mut operators = BTreeMap::new();
         for (instance, import) in submission.backend_plan.imports() {
-            let Some((link, mnemonic)) = crate::lowering::shared::interop::select_unique_target(
-                &import.links,
-                crate::lowering::shared::interop::ovm_operator_target,
-            )?
+            let Some((link, mnemonic)) = crate::lowering::shared::interop::select_unique_target(&import.links, ovm_operator_target)?
             else {
                 continue;
             };
@@ -1475,10 +1472,7 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
             }
         }
         else {
-            let Some((_, symbol)) = crate::lowering::shared::interop::select_unique_target(
-                links,
-                crate::lowering::shared::interop::ovm_host_import_target,
-            )?
+            let Some((_, symbol)) = crate::lowering::shared::interop::select_unique_target(links, ovm_host_import_target)?
             else {
                 let declared = links.iter().map(|link| link.to_string()).collect::<Vec<_>>().join(", ");
                 return Err(format!(
@@ -2270,6 +2264,36 @@ impl BytecodeEmitter<'_> {
     }
 }
 
+/// 源码 `[ovm_operator("i32.add")]` 声明的 OVM 目标 operator 助记符。
+///
+/// 只接受 platform tag `ovm-operator` 且 locator 恰好一段；其余形态返回 `None`，
+/// 由调用方按「缺少可编码目标绑定」结构化失败。
+pub(crate) fn ovm_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
+/// 源码 `[ovm("symbol")]` 声明的 OVM host provider 符号。
+///
+/// OVM 的宿主 provider 走 `CallImport`，由 runtime `parse_host_op` 判定；只接受
+/// host 边界 + platform tag `ovm` + 恰好一段符号，其余形态返回 `None`。
+pub(crate) fn ovm_host_import_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [symbol] => Some(symbol.as_str()),
+        _ => None,
+    }
+}
+
 /// OVM 平台私有的 operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OvmOperatorBinding {
@@ -2287,7 +2311,7 @@ pub(crate) fn freeze_ovm_operator(
     parameter_types: &[compiler_types::SemanticType],
     return_type: &compiler_types::SemanticType,
 ) -> crate::Result<Option<OvmOperatorBinding>> {
-    let Some(mnemonic) = crate::lowering::shared::interop::ovm_operator_target(link)
+    let Some(mnemonic) = ovm_operator_target(link)
     else {
         return Ok(None);
     };

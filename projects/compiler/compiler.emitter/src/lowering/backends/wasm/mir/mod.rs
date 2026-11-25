@@ -65,7 +65,7 @@ mod calls;
 mod control;
 mod encode;
 mod entry;
-mod imports;
+pub(crate) mod imports;
 mod instructions;
 mod intrinsics;
 mod library_invoke;

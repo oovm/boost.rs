@@ -168,6 +168,21 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
     })
 }
 
+/// 源码 `[jvm_operator("ldiv")]` 声明的 JVM 目标 operator 助记符。
+///
+/// 只接受 platform tag `jvm-operator` 且 locator 恰好一段；其余形态返回 `None`，
+/// 由调用方按「缺少可编码目标绑定」结构化失败。
+pub(crate) fn jvm_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
+    if !link.matches_boundary("host") || !link.matches_platform_tag("jvm-operator") {
+        return None;
+    }
+
+    match link.locator_segments() {
+        [mnemonic] => Some(mnemonic.as_str()),
+        _ => None,
+    }
+}
+
 /// JVM 平台私有的 operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum JvmOperatorBinding {
@@ -188,7 +203,7 @@ pub(crate) fn freeze_jvm_operator(
     parameter_types: &[compiler_types::SemanticType],
     return_type: &compiler_types::SemanticType,
 ) -> crate::Result<Option<JvmOperatorBinding>> {
-    let Some(mnemonic) = crate::lowering::shared::interop::jvm_operator_target(link)
+    let Some(mnemonic) = jvm_operator_target(link)
     else {
         return Ok(None);
     };

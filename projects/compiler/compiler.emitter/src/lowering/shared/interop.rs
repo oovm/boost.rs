@@ -1,75 +1,20 @@
+//! 外部导入目标绑定的共享裁决工具。
+//!
+//! 各协议的绑定解码（`[jvm_operator]` / `[clr_operator]` / `[wasm_operator]` /
+//! `[ovm_operator]` / `[x86_64_operator]` 与各宿主导入域）归对应后端的私有模块：
+//! JVM 在 [`crate::lowering::backends::jvm::recipe`]、CLR 在
+//! [`crate::lowering::backends::clr::mir`]、Wasm 在
+//! [`crate::lowering::backends::wasm::mir::imports`]、OVM 在
+//! [`crate::lowering::backends::ovm_mir`]、x86-64 在
+//! [`crate::lowering::backends::machine::x86_64`]。本模块只保留可跨 lane 复用的
+//! **候选唯一性校验**，不携带任何平台的绑定词汇。
+
 use compiler_target::ExternalImportLink;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WasmHostImportTarget<'a> {
-    pub module: &'a str,
-    pub field: &'a str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WasiHostImportTarget<'a> {
-    pub module: &'a str,
-    pub function: &'a str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Win32HostImportTarget<'a> {
-    pub dll: &'a str,
-    pub symbol: &'a str,
-}
-
-/// How to repair the evaluation stack after a BCL call whose MSIL return differs from the
-/// frontend/host-contract desired type (flatten often copies the contract return onto the FFI).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ClrHostReturnAdapt {
-    /// Stack already matches `desired` (including void with nothing pushed).
-    Identity,
-    /// Pop the BCL reference return; if `push_true`, push `ldc.i4.1` for a bool contract.
-    DiscardRef { push_true: bool },
-    /// BCL returns void; push `ldc.i4.1` so a bool contract/local gets a value.
-    PushTrue,
-}
-
-pub(crate) fn wasm_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("wasm") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [module, field, ..] => Some(WasmHostImportTarget { module, field }),
-        _ => None,
-    }
-}
-
-/// `[js_builtin("wx.request")]` → browser/node wasm `env` 导入字段。
-///
-/// WasmJsGlue 轨在 MIR 阶段仍通过 wasm `call` 命中宿主导入；`.mjs` 启动壳按字段名提供实现。
-pub(crate) fn js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
-    if !link.matches_boundary("host") {
-        return None;
-    }
-    if !link.matches_platform_tag("js_builtin") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [field] => Some(WasmHostImportTarget { module: "env", field }),
-        [module, field, ..] => Some(WasmHostImportTarget { module, field }),
-        _ => None,
-    }
-}
-
-pub(crate) fn wasm_or_js_glue_host_import_target(link: &ExternalImportLink) -> Option<WasmHostImportTarget<'_>> {
-    wasm_host_import_target(link).or_else(|| js_glue_host_import_target(link))
-}
 
 /// 在一份导入声明的全部候选链接里，由本 target 自己的裁决函数选出唯一命中项。
 ///
 /// 语言侧只保留「声明了哪些目标绑定」并保持声明顺序；哪个 target 用哪条由各后端
-/// 自己的裁决函数（[`jvm_operator_target`] / [`clr_operator_target`] /
-/// [`wasm_operator_target`] / [`ovm_operator_target`] / [`x86_64_operator_target`] /
-/// [`wasm_or_js_glue_host_import_target`] / [`wasi_host_import_target`] /
-/// [`win32_host_import_target`] / [`linux_gnu_host_import_target`] …）决定。
+/// 自己的裁决函数决定。
 ///
 /// 同一 import 里若有多条候选同时被**同一个**裁决函数命中（例如重复写了两次
 /// `[jvm_operator]`，或 `[host_contract]` 与目标绑定都归同一 target 消费），
@@ -96,151 +41,18 @@ pub(crate) fn select_unique_target<'a, T>(
     ))
 }
 
-/// 源码 `[wasm_operator("i32.add")]` 声明的 wasm 目标 operator 助记符。
-///
-/// 只接受 platform tag `wasm-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn wasm_operator_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("wasm-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
-/// 源码 `[ovm_operator("i32.add")]` 声明的 OVM 目标 operator 助记符。
-///
-/// 只接受 platform tag `ovm-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn ovm_operator_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
-/// 源码 `[ovm("symbol")]` 声明的 OVM host provider 符号。
-///
-/// OVM 的宿主 provider 走 `CallImport`，由 runtime `parse_host_op` 判定；只接受
-/// host 边界 + platform tag `ovm` + 恰好一段符号，其余形态返回 `None`。
-pub(crate) fn ovm_host_import_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [symbol] => Some(symbol.as_str()),
-        _ => None,
-    }
-}
-
-/// 源码 `[jvm_operator("ldiv")]` 声明的 JVM 目标 operator 助记符。
-///
-/// 只接受 platform tag `jvm-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn jvm_operator_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("jvm-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
-/// 源码 `[clr_operator("i64.div")]` 声明的 CLR 目标 operator 助记符。
-///
-/// 只接受 platform tag `clr-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub(crate) fn clr_operator_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("clr-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
-/// 源码 `[x86_64_operator("i64.add")]` 声明的 x86-64 目标 operator 助记符。
-///
-/// 注解按 **ISA** 声明，而不是按「native」：`native` 只是产物形态，`native` /
-/// `node` / `python` 最终都会展开成规范目标四元组，而算子编码由四元组的 `arch`
-/// 决定。计划层（[`crate::TargetExecutionPlan`]）不持有目标四元组，因此只有显式
-/// 声明 ISA 的绑定才能在此冻结编码；声明 `native` 而不声明 ISA 的绑定保持
-/// `Unfrozen`，由 emit 结构化失败，禁止按宿主架构猜编码。
-///
-/// 只接受 platform tag `x86_64-operator` 且 locator 恰好一段；其余形态返回 `None`。
-pub(crate) fn x86_64_operator_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("x86_64-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
-pub(crate) fn wasi_host_import_target(link: &ExternalImportLink) -> Option<WasiHostImportTarget<'_>> {
-    // WASI 宿主合同只由显式 `wasi` 平台标签绑定：不凭 locator 的 `wasi:` 前缀
-    // 猜测，否则 JS 目标里恰好叫 `wasi:*` 的模块会被误当成 WASI 宿主导入。
-    if !link.matches_boundary("host") || !link.matches_platform_tag("wasi") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [module, function] => Some(WasiHostImportTarget { module, function }),
-        _ => None,
-    }
-}
-
-pub(crate) fn win32_host_import_target(link: &ExternalImportLink) -> Option<Win32HostImportTarget<'_>> {
-    if !link.matches_host_platform("win32") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [dll, symbol] => Some(Win32HostImportTarget { dll, symbol }),
-        _ => None,
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LinuxGnuHostImportTarget<'a> {
-    pub library: &'a str,
-    pub symbol: &'a str,
-}
-
-pub(crate) fn linux_gnu_host_import_target(link: &ExternalImportLink) -> Option<LinuxGnuHostImportTarget<'_>> {
-    if link.matches_host_platform("linux-gnu") || link.matches_host_platform("linux") {
-        return match link.locator_segments() {
-            [library, symbol] => Some(LinuxGnuHostImportTarget { library, symbol }),
-            _ => None,
-        };
-    }
-
-    // Freestanding Linux print / I/O edges may be declared as `[syscall(N)]`
-    // without a platform tag; recognize them as linux-gnu host imports.
-    match link.locator_segments() {
-        [library, number] if library.as_str() == "syscall" => Some(LinuxGnuHostImportTarget { library, symbol: number }),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use compiler_target::Identifier;
+    use crate::lowering::backends::{
+        clr::mir::clr_operator_target,
+        jvm::recipe::jvm_operator_target,
+        machine::x86_64::x86_64_operator_target,
+        wasm::mir::imports::{wasi_host_import_target, wasm_operator_target},
+    };
+    #[cfg(feature = "ovm-lane")]
+    use crate::lowering::backends::ovm_mir::{ovm_host_import_target, ovm_operator_target};
 
     /// 同一份声明携带的四个目标绑定（与 `std_operators.v` 的 `i32` `+` 一致）。
     fn four_target_candidates() -> Vec<ExternalImportLink> {
@@ -268,9 +80,12 @@ mod tests {
         assert_eq!(wasm, "i32.add");
         assert!(std::ptr::eq(wasm_link, &links[2]), "Wasm 必须选中声明里的 wasm-operator 候选");
 
-        let (ovm_link, ovm) = select_unique_target(&links, ovm_operator_target).expect("ovm 裁决唯一").expect("ovm 绑定");
-        assert_eq!(ovm, "i32.add");
-        assert!(std::ptr::eq(ovm_link, &links[3]), "OVM 必须选中声明里的 ovm-operator 候选");
+        #[cfg(feature = "ovm-lane")]
+        {
+            let (ovm_link, ovm) = select_unique_target(&links, ovm_operator_target).expect("ovm 裁决唯一").expect("ovm 绑定");
+            assert_eq!(ovm, "i32.add");
+            assert!(std::ptr::eq(ovm_link, &links[3]), "OVM 必须选中声明里的 ovm-operator 候选");
+        }
 
         assert!(
             select_unique_target(&links, x86_64_operator_target).expect("x86_64 裁决唯一").is_none(),
@@ -300,12 +115,14 @@ mod tests {
         // 声明里只有 `jvm-operator`：其他目标各自的裁决必须是 None，不得把相邻域的
         // 绑定借来当自己的 provider。
         let links = vec![ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["integer.add".into()])];
-        for (label, matched) in [
-            ("ovm", select_unique_target(&links, ovm_host_import_target).expect("ovm 裁决唯一")),
+        let mut checks = vec![
             ("clr", select_unique_target(&links, clr_operator_target).expect("clr 裁决唯一")),
             ("wasm", select_unique_target(&links, wasm_operator_target).expect("wasm 裁决唯一")),
             ("x86_64", select_unique_target(&links, x86_64_operator_target).expect("x86_64 裁决唯一")),
-        ] {
+        ];
+        #[cfg(feature = "ovm-lane")]
+        checks.push(("ovm", select_unique_target(&links, ovm_host_import_target).expect("ovm 裁决唯一")));
+        for (label, matched) in checks {
             assert!(matched.is_none(), "{label} 不得借用其他域的目标绑定");
         }
     }
