@@ -11,7 +11,7 @@ pub mod reader;
 pub mod render;
 
 pub(crate) mod reference;
-mod styles;
+pub(crate) mod styles;
 mod value;
 
 pub use lower::{GraphOptions, import_xlsx_graph, import_xlsx_graph_bytes, workbook_to_graph};

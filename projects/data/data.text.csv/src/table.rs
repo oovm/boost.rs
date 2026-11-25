@@ -152,4 +152,20 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert_eq!(records[0][0].text, "a");
     }
+
+    #[test]
+    fn round_trips_empty_and_quoted_empty_fields() {
+        let rows = vec![vec!["a".to_owned(), String::new()], vec![String::new(), String::new()]];
+        let text = write_records(&rows, ',');
+        assert_eq!(text, "a,\n,\n");
+        let parsed = parse_records(&text, ',');
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].len(), 2);
+        assert_eq!(parsed[1][0].text, "");
+        assert!(!parsed[1][0].quoted);
+        let quoted = parse_records("\"\",x\n", ',');
+        assert_eq!(quoted.len(), 1);
+        assert!(quoted[0][0].quoted);
+        assert_eq!(quoted[0][0].text, "");
+    }
 }

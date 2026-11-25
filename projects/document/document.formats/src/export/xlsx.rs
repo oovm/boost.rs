@@ -15,8 +15,9 @@ use data_binary_zip::{ZipEntry, ZipWriter};
 use document_ir::{LossMarker, SemanticStatus};
 
 use super::super::import::xlsx::model::{
-    CellStyle, CellValue, HorizontalAlign, SheetVisibility, VerticalAlign, XlsxCell, XlsxSheet, XlsxWorkbook,
+    CellStyle, CellValue, DateSystem, HorizontalAlign, SheetVisibility, VerticalAlign, WorkbookStyles, XlsxCell, XlsxSheet, XlsxWorkbook,
 };
+use crate::import::xlsx::styles::resolve_color;
 use crate::FormatError;
 
 /// Loss code for a skipped chart or drawing frame.
@@ -132,6 +133,9 @@ fn workbook_xml(workbook: &XlsxWorkbook) -> String {
     let mut body = String::new();
     body.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
     body.push_str("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">");
+    if workbook.date_system == DateSystem::Date1904 {
+        body.push_str("<workbookPr date1904=\"1\"/>");
+    }
     body.push_str("<bookViews><workbookView activeTab=\"0\"/></bookViews>");
     body.push_str("<sheets>");
     for (index, sheet) in workbook.sheets.iter().enumerate() {
@@ -201,7 +205,13 @@ fn sheet_xml(sheet: &XlsxSheet, table: &StyleTable) -> String {
         ));
     }
     body.push_str("</sheetView></sheetViews>");
-    body.push_str(&format!("<sheetFormatPr defaultRowHeight=\"{}\"/>", format_number(sheet.default_row_height)));
+    let default_column = if (sheet.default_column_width - 8.43).abs() > f64::EPSILON {
+        format!(" defaultColWidth=\"{}\"", format_number(sheet.default_column_width))
+    }
+    else {
+        String::new()
+    };
+    body.push_str(&format!("<sheetFormatPr defaultRowHeight=\"{}\"{default_column}/>", format_number(sheet.default_row_height)));
     if !sheet.columns.is_empty() {
         body.push_str("<cols>");
         for column in &sheet.columns {
@@ -279,15 +289,25 @@ fn cell_xml(cell: &XlsxCell, table: &StyleTable) -> String {
 
     let mut body = format!("<c r=\"{reference}\"{style_attribute}");
     if let Some(formula) = &cell.formula {
-        let source = formula.source.trim().strip_prefix('=').unwrap_or(formula.source.trim());
+        let trimmed = formula.source.trim();
+        let source = trimmed.strip_prefix('=').unwrap_or(trimmed);
         let cached = formula.cached.as_deref().or(Some(&cell.value));
         match cached.and_then(cached_value) {
             Some((kind, value)) => {
                 body.push_str(kind);
                 body.push('>');
-                body.push_str(&format!("<f>{}</f><v>{}</v>", escape_text(source), escape_text(&value)));
+                if source.is_empty() {
+                    body.push_str(&format!("<v>{}</v>", escape_text(&value)));
+                }
+                else {
+                    body.push_str(&format!("<f>{}</f><v>{}</v>", escape_text(source), escape_text(&value)));
+                }
             }
             None => {
+                if source.is_empty() {
+                    body.push_str("/>");
+                    return body;
+                }
                 body.push('>');
                 body.push_str(&format!("<f>{}</f>", escape_text(source)));
             }
@@ -380,17 +400,16 @@ impl StyleTable {
             xfs: vec![Xf::default()],
             index: HashMap::new(),
         };
-        let _ = &workbook.styles;
         for sheet in &workbook.sheets {
             for cell in &sheet.cells {
-                table.register(&cell.style);
+                table.register(&cell.style, &workbook.styles);
             }
         }
         table
     }
 
     /// Registers one style and returns its cellXfs index.
-    fn register(&mut self, style: &CellStyle) -> usize {
+    fn register(&mut self, style: &CellStyle, styles: &WorkbookStyles) -> usize {
         if *style == CellStyle::default() {
             return 0;
         }
@@ -398,6 +417,7 @@ impl StyleTable {
         if let Some(index) = self.index.get(&key) {
             return *index;
         }
+        let resolve = |color: &str| resolve_color(color, styles).unwrap_or_else(|| color.to_owned());
         let font = FontSpec {
             bold: style.bold,
             italic: style.italic,
@@ -405,7 +425,7 @@ impl StyleTable {
             strike: style.strike,
             name: style.font_name.clone(),
             size: style.font_size,
-            color: style.font_color.clone(),
+            color: style.font_color.as_deref().map(resolve),
         };
         let font = match self.fonts.iter().position(|existing| existing == &font) {
             Some(index) => index,
@@ -415,20 +435,23 @@ impl StyleTable {
             }
         };
         let fill = match &style.fill_color {
-            Some(color) => match self.fills.iter().position(|existing| existing == color) {
-                Some(index) => index + 2,
-                None => {
-                    self.fills.push(color.clone());
-                    self.fills.len() + 1
+            Some(color) => {
+                let color = resolve(color);
+                match self.fills.iter().position(|existing| existing == &color) {
+                    Some(index) => index + 2,
+                    None => {
+                        self.fills.push(color);
+                        self.fills.len() + 1
+                    }
                 }
-            },
+            }
             None => 0,
         };
         let border = BorderSpec {
-            top: style.borders.top.as_ref().map(|edge| (edge.style.clone(), edge.color.clone())),
-            right: style.borders.right.as_ref().map(|edge| (edge.style.clone(), edge.color.clone())),
-            bottom: style.borders.bottom.as_ref().map(|edge| (edge.style.clone(), edge.color.clone())),
-            left: style.borders.left.as_ref().map(|edge| (edge.style.clone(), edge.color.clone())),
+            top: style.borders.top.as_ref().map(|edge| (edge.style.clone(), edge.color.as_deref().map(resolve))),
+            right: style.borders.right.as_ref().map(|edge| (edge.style.clone(), edge.color.as_deref().map(resolve))),
+            bottom: style.borders.bottom.as_ref().map(|edge| (edge.style.clone(), edge.color.as_deref().map(resolve))),
+            left: style.borders.left.as_ref().map(|edge| (edge.style.clone(), edge.color.as_deref().map(resolve))),
         };
         let border = match self.borders.iter().position(|existing| existing == &border) {
             Some(index) => index,
@@ -741,5 +764,105 @@ mod tests {
     fn rejects_a_workbook_without_sheets() {
         let workbook = XlsxWorkbook::new("empty.xlsx");
         assert!(export_xlsx_bytes(&workbook).is_err());
+    }
+
+    #[test]
+    fn keeps_the_1904_date_system_through_a_round_trip() {
+        let mut workbook = XlsxWorkbook::new("mac.xlsx");
+        workbook.date_system = DateSystem::Date1904;
+        let mut sheet = XlsxSheet::new("Dates", 0);
+        sheet.cells.push(XlsxCell {
+            reference: "A1".to_owned(),
+            row: 1,
+            column: 1,
+            value: CellValue::Date(crate::import::xlsx::model::ExcelDate {
+                serial: 1.0,
+                iso: "1904-01-02".to_owned(),
+                kind: crate::import::xlsx::model::DateKind::Date,
+            }),
+            formula: None,
+            style_index: None,
+            style: CellStyle { number_format: Some("yyyy-mm-dd".to_owned()), ..Default::default() },
+        });
+        workbook.sheets.push(sheet);
+        let imported = import_xlsx_bytes("mac.xlsx", &export_xlsx_bytes(&workbook).expect("write")).expect("read");
+        assert_eq!(imported.date_system, DateSystem::Date1904);
+        match &imported.sheet("Dates").expect("sheet").cell(1, 1).expect("date cell").value {
+            CellValue::Date(date) => {
+                assert_eq!(date.serial, 1.0);
+                assert_eq!(date.iso, "1904-01-02");
+            }
+            other => panic!("expected a date, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolves_theme_colors_when_writing() {
+        let mut workbook = XlsxWorkbook::new("theme.xlsx");
+        workbook.styles.theme_colors.insert("accent1".to_owned(), "#4472C4".to_owned());
+        let mut sheet = XlsxSheet::new("S", 0);
+        sheet.cells.push(XlsxCell {
+            reference: "A1".to_owned(),
+            row: 1,
+            column: 1,
+            value: CellValue::Text("coloured".to_owned()),
+            formula: None,
+            style_index: None,
+            style: CellStyle {
+                font_color: Some("theme:4".to_owned()),
+                fill_color: Some("theme:4:-0.25".to_owned()),
+                ..Default::default()
+            },
+        });
+        workbook.sheets.push(sheet);
+        let imported = import_xlsx_bytes("theme.xlsx", &export_xlsx_bytes(&workbook).expect("write")).expect("read");
+        let style = &imported.sheet("S").expect("sheet").cell(1, 1).expect("cell").style;
+        assert_eq!(style.font_color.as_deref(), Some("#4472C4"));
+        let fill = style.fill_color.clone().expect("fill");
+        assert!(fill.starts_with('#') && fill.len() == 7, "expected a resolved hex fill, got {fill}");
+        assert_ne!(fill, "#4472C4");
+    }
+
+    #[test]
+    fn keeps_a_custom_default_column_width() {
+        let mut workbook = XlsxWorkbook::new("width.xlsx");
+        let mut sheet = XlsxSheet::new("S", 0);
+        sheet.default_column_width = 12.5;
+        sheet.cells.push(XlsxCell {
+            reference: "A1".to_owned(),
+            row: 1,
+            column: 1,
+            value: CellValue::Number(1.0),
+            formula: None,
+            style_index: None,
+            style: CellStyle::default(),
+        });
+        workbook.sheets.push(sheet);
+        let imported = import_xlsx_bytes("width.xlsx", &export_xlsx_bytes(&workbook).expect("write")).expect("read");
+        assert_eq!(imported.sheet("S").expect("sheet").default_column_width, 12.5);
+    }
+
+    #[test]
+    fn writes_only_the_cached_value_for_a_shared_child_without_source() {
+        let mut workbook = XlsxWorkbook::new("shared.xlsx");
+        let mut sheet = XlsxSheet::new("S", 0);
+        sheet.cells.push(XlsxCell {
+            reference: "B3".to_owned(),
+            row: 3,
+            column: 2,
+            value: CellValue::Number(7.0),
+            formula: Some(crate::import::xlsx::model::CellFormula {
+                source: String::new(),
+                kind: crate::import::xlsx::model::FormulaKind::SharedChild { index: 0 },
+                cached: None,
+            }),
+            style_index: None,
+            style: CellStyle::default(),
+        });
+        workbook.sheets.push(sheet);
+        let imported = import_xlsx_bytes("shared.xlsx", &export_xlsx_bytes(&workbook).expect("write")).expect("read");
+        let cell = imported.sheet("S").expect("sheet").cell(3, 2).expect("cell");
+        assert_eq!(cell.value, CellValue::Number(7.0));
+        assert!(cell.formula.is_none(), "an empty shared child must not emit a formula element");
     }
 }
