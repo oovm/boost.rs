@@ -1496,7 +1496,21 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                 ));
             };
             self.emit_external_arguments(&callee_name, instance, arguments)?;
-            self.emitter.emit_call_import(symbol, arguments.len() as i32);
+            // 调用 arity 取自已冻结的 `BackendImport` 签名，不取调用方实参数量：
+            // 缺签名事实即失败闭合，实参数量与签名 arity 不符（少传同样）也在此拒绝，
+            // 否则「查不到 arity 就用 arguments.len()」会让缺失事实通过该次检查。
+            let Some(frozen_arity) = self.external_param_types_by_instance.get(&instance).map(Vec::len) else {
+                return Err(format!(
+                    "OVM 外部调用 `{callee_name}`（instance={instance:?}）缺少已冻结的导入签名：无法确定调用 arity，禁止回落到调用方实参数量"
+                ));
+            };
+            if arguments.len() != frozen_arity {
+                return Err(format!(
+                    "OVM 外部调用 `{callee_name}`（instance={instance:?}）实参数量 {} 与冻结导入签名 arity {frozen_arity} 不符",
+                    arguments.len()
+                ));
+            }
+            self.emitter.emit_call_import(symbol, frozen_arity as i32);
         }
 
         if let Some(output) = output {
