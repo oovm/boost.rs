@@ -15,7 +15,8 @@ use compiler_emitter::{
 use compiler_target::ResolvedTarget;
 use compiler_types::{ItemInstanceId, SemanticType};
 
-use super::{MachineContext, MachineFunctionView, lowerer};
+use super::super::lane::{FunctionView, LaneContext};
+use super::lowerer;
 
 /// x86-64 C ABI 库载体清单：一个物理槽一个稳定标签。
 ///
@@ -101,7 +102,7 @@ impl X64LibraryCarrier {
 
 /// canonical 参数身份校验：数量、连续、非空、去重（旧 `canonical_parameter_identities`
 /// 的 MIR 等价——MIR 的 `parameter_names` 按位置即 canonical 身份）。
-pub(crate) fn canonical_parameter_names(label: &str, view: &MachineFunctionView) -> Result<Vec<String>> {
+pub(crate) fn canonical_parameter_names(label: &str, view: &FunctionView) -> Result<Vec<String>> {
     let identities: Vec<(usize, &str)> = view.parameter_names.iter().enumerate().map(|(index, name)| (index, name.as_str())).collect();
     if identities.len() != view.param_types.len() {
         return Err(format!(
@@ -151,7 +152,7 @@ pub(crate) fn validate_library_export_names<'a>(
 }
 
 /// 冻结导出面 → 目标私有共享库输入（不编码、不写容器）。
-pub(crate) fn build_library_input(ctx: &MachineContext, resolved: &ResolvedTarget) -> Result<X64LibraryProgramInput> {
+pub(crate) fn build_library_input(ctx: &LaneContext, resolved: &ResolvedTarget) -> Result<X64LibraryProgramInput> {
     let product = X64ProductTarget::from_resolved(resolved).map_err(|error| format!("普通共享库目标不合法：{error}"))?;
     let platform = product.platform();
     if let Some(entry) = ctx.fragment().entry_operation {

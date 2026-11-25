@@ -27,7 +27,7 @@ use crate::compiler::valkyrie_mir::{
     ValkyrieMirArrayInitialization, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind,
     ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperation, ValkyrieMirTerminator,
 };
-use super::{MachineContext, MachineFunctionView};
+use super::super::lane::{FunctionView, LaneContext};
 
 /// 实参的寄存器落位：整数与浮点各自记录序位与宽度。
 enum FloatPlacement {
@@ -45,7 +45,7 @@ pub(crate) struct SlotPlan {
 }
 
 impl SlotPlan {
-    fn plan(function: &ValkyrieMirFunction, view: &MachineFunctionView) -> Result<Self, String> {
+    fn plan(function: &ValkyrieMirFunction, view: &FunctionView) -> Result<Self, String> {
         let mut local_types = Vec::new();
         let mut value_locals: BTreeMap<MirValueId, u16> = BTreeMap::new();
         let mut block_param_locals = BTreeMap::new();
@@ -100,9 +100,9 @@ impl SlotPlan {
 
 /// 单函数降低器：把 MIR 事实转成文本 LIR，不产生任何字节。
 struct FunctionLowerer<'a> {
-    ctx: &'a MachineContext<'a>,
+    ctx: &'a LaneContext<'a>,
     function: &'a ValkyrieMirFunction,
-    view: &'a MachineFunctionView,
+    view: &'a FunctionView,
     slots: SlotPlan,
     reachable: &'a [ItemInstanceId],
     /// 实例 → 镜像符号名。
@@ -1896,7 +1896,7 @@ impl FunctionLowerer<'_> {
 
 /// 把一个可达函数实例降低为文本 LIR 程序函数。
 pub(crate) fn lower_function(
-    ctx: &MachineContext,
+    ctx: &LaneContext,
     instance: &ItemInstanceId,
     reachable: &[ItemInstanceId],
     names: &BTreeMap<ItemInstanceId, String>,

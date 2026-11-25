@@ -8,7 +8,7 @@ use compiler_emitter::{
 use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError};
 use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
-use super::pipeline::machine;
+use super::pipeline::{lane, machine};
 use super::pipeline::target_plan::{self, TargetPlanError};
 use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;
 
@@ -102,7 +102,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             // 机器码 lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
             // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
             // emitter 装配服务只做编码 + 容器 + 自检，不自行拼接机器码。
-            let ctx = machine::build_context(self.compiled_program, &self.partition.fragment, &self.roots)
+            let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
                 .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             if request.artifact_purpose == compiler_target::ArtifactPurpose::Library {
                 // 普通共享库：导出面就是交付合同，没有进程入口，也不绑定宿主模块。
@@ -150,7 +150,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             let entry = ctx
                 .fragment()
                 .entry_operation
-                .and_then(|instance| machine::entry_symbol(&ctx, &instance))
+                .and_then(|instance| lane::entry_symbol(&ctx, &instance))
                 .ok_or_else(|| "原生可执行交付缺少冻结的入口身份：计划未给出入口操作的 ABI 名".to_string())?;
             let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_program_image(&program_input)?;
             return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {

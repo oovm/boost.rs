@@ -14,14 +14,15 @@ use compiler_target::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecif
 use compiler_target::ResolvedTarget;
 use compiler_types::ItemInstanceId;
 
-use super::{MachineContext, lowerer};
+use super::super::lane::{FunctionView, LaneContext};
+use super::lowerer;
 
 /// 进程可执行用途（`Application` / `TestBundle`）的目标私有输入。
 ///
 /// 只接受进程可执行用途与普通原生合同：库交付与宿主扩展分别由库 lane 与
 /// 宿主扩展降低承载，在这里结构化拒绝，不把进程镜像改标成其他产物。入口身份
 /// 必须已由片段冻结；缺失时由 lowering 报错，不回填默认名。
-pub(crate) fn build_program_input(ctx: &MachineContext, resolved: &ResolvedTarget, purpose: compiler_target::ArtifactPurpose) -> Result<X64ProgramInput> {
+pub(crate) fn build_program_input(ctx: &LaneContext, resolved: &ResolvedTarget, purpose: compiler_target::ArtifactPurpose) -> Result<X64ProgramInput> {
     match purpose {
         compiler_target::ArtifactPurpose::Application | compiler_target::ArtifactPurpose::TestBundle => {}
         compiler_target::ArtifactPurpose::Library => {
@@ -50,7 +51,7 @@ pub(crate) fn build_program_input(ctx: &MachineContext, resolved: &ResolvedTarge
 ///
 /// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选
 /// 编码、容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
-fn build_machine_program_input(ctx: &MachineContext, target: compiler_target::CanonicalTarget) -> Result<X64ProgramInput> {
+fn build_machine_program_input(ctx: &LaneContext, target: compiler_target::CanonicalTarget) -> Result<X64ProgramInput> {
     match target.arch {
         CanonicalArch::X86_64 => match target.specification {
             CanonicalSpecification::Windows => match target.abi {
@@ -85,7 +86,7 @@ fn build_machine_program_input(ctx: &MachineContext, target: compiler_target::Ca
 ///
 /// 这是语言语义最后一次以函数级形状出现的地方；返回值之后的装配服务只认
 /// [`X64ProgramInput`]。
-fn build_x86_64_program_input(ctx: &MachineContext, abi: X64CallConv, windows: bool) -> Result<X64ProgramInput> {
+fn build_x86_64_program_input(ctx: &LaneContext, abi: X64CallConv, windows: bool) -> Result<X64ProgramInput> {
     let container = if windows { "PE" } else { "ELF" };
     let reachable = ctx.reachable();
     if reachable.is_empty() {
@@ -133,7 +134,7 @@ fn exe_symbol_names(reachable: &[ItemInstanceId]) -> BTreeMap<ItemInstanceId, St
 ///
 /// 两个容器都以 `rax` 作为进程退出码（PE loader 读取返回值，ELF 入口桩把它传给
 /// `exit`）；loader 不提供有意义的形参，因此入口只接受可直接作为退出码的标量返回。
-fn validate_entry(ctx: &MachineContext, entry: &ItemInstanceId, view: &super::MachineFunctionView, container: &str) -> Result<()> {
+fn validate_entry(ctx: &LaneContext, entry: &ItemInstanceId, view: &FunctionView, container: &str) -> Result<()> {
     let function = ctx
         .function(entry)
         .ok_or_else(|| format!("x86_64 lowering：入口函数 `{}` 缺少入口块", view.symbol))?;

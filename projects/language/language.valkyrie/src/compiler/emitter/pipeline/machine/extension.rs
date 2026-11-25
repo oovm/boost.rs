@@ -16,7 +16,8 @@ use compiler_emitter::{
 use compiler_target::ResolvedTarget;
 use compiler_types::{ItemInstanceId, SemanticType};
 
-use super::{MachineContext, lowerer};
+use super::super::lane::LaneContext;
+use super::lowerer;
 
 /// 机器码宿主扩展的命名合同：源码名 + 注解 → 目标公开名（纯投影，可独立测试）。
 ///
@@ -37,7 +38,7 @@ pub(crate) fn host_export_public_name_of(source: &str, annotation: Option<&str>,
 }
 
 /// 实例的目标公开名（链接事实版）。
-fn host_export_public_name(ctx: &MachineContext, instance: &ItemInstanceId, host: HostModule) -> String {
+fn host_export_public_name(ctx: &LaneContext, instance: &ItemInstanceId, host: HostModule) -> String {
     host_export_public_name_of(
         ctx.fragment().export_names.get(instance).map(String::as_str).unwrap_or_default(),
         ctx.fragment().export_annotations.get(instance).map(String::as_str),
@@ -158,7 +159,7 @@ pub(crate) fn project_host_methods(facts: &[HostMethodFacts], target: &X64Produc
 }
 
 /// 冻结导出面 → 方法事实（真实链接路径）。
-fn frozen_host_methods(ctx: &MachineContext, target: &X64ProductTarget, reachable: &[ItemInstanceId]) -> Result<Vec<HostMethod>> {
+fn frozen_host_methods(ctx: &LaneContext, target: &X64ProductTarget, reachable: &[ItemInstanceId]) -> Result<Vec<HostMethod>> {
     let facts = ctx
         .fragment()
         .export_names
@@ -179,7 +180,7 @@ fn frozen_host_methods(ctx: &MachineContext, target: &X64ProductTarget, reachabl
 
 /// 镜像符号名表：导出函数按目标公开名规约的符号，内部函数按实例身份。
 fn extension_symbol_names(
-    ctx: &MachineContext,
+    ctx: &LaneContext,
     target: &X64ProductTarget,
     reachable: &[ItemInstanceId],
     methods: &[HostMethod],
@@ -240,7 +241,7 @@ pub(crate) fn frozen_python_module_name(target: &X64ProductTarget, host: HostMod
 }
 
 /// 冻结导出面 → 目标私有宿主扩展输入（不编组宿主包装体、不编码、不写容器）。
-pub(crate) fn build_extension_input(ctx: &MachineContext, resolved: &ResolvedTarget) -> Result<X64ExtensionProgramInput> {
+pub(crate) fn build_extension_input(ctx: &LaneContext, resolved: &ResolvedTarget) -> Result<X64ExtensionProgramInput> {
     let product = X64ProductTarget::from_resolved(resolved).map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
     let (platform, host) = match &product {
         X64ProductTarget::Extension { platform, module, .. } => (*platform, *module),

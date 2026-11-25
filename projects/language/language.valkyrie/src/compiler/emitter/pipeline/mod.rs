@@ -18,6 +18,7 @@ mod envelope_checks;
 mod error;
 mod evidence;
 mod host_bindings;
+pub(crate) mod lane;
 mod link;
 pub(crate) mod machine;
 mod representation;
