@@ -19,7 +19,7 @@ use compiler_target::ExternalImportLink;
 /// 同一 import 里若有多条候选同时被**同一个**裁决函数命中（例如重复写了两次
 /// `[jvm_operator]`，或 `[host_contract]` 与目标绑定都归同一 target 消费），
 /// 声明本身有歧义：必须结构化失败，禁止按声明顺序 first-wins。
-pub(crate) fn select_unique_target<'a, T>(
+pub fn select_unique_target<'a, T>(
     links: &'a [ExternalImportLink],
     target: impl Fn(&'a ExternalImportLink) -> Option<T>,
 ) -> Result<Option<(&'a ExternalImportLink, T)>, String> {

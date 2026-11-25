@@ -15,19 +15,32 @@ use compiler_target::{
 };
 
 pub use crate::lowering::backends::machine::{
-    HostMethod, HostModule, HostProperty, HostValueKind, MachineHostExport, MachineLibraryExport, X64_TEXT_ARENA_CAPACITY, X64CallConv,
-    X64DataTarget, X64LoweredExtension, X64LoweredLibrary, X64Platform,
+    HostMethod, HostModule, HostParameterKind, HostProperty, HostValueKind, MachineHostExport, MachineLibraryExport, X64_TEXT_ARENA_CAPACITY,
+    X64CallConv,
+    X64DataTarget, X64FloatCast, X64LoweredExtension, X64LoweredLibrary, X64LoweredProgram, X64Platform,
     X64ProductTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction, any_returns_bool, any_returns_utf8, append_text_arena,
     compile_shared_container, encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies,
-    encode_x64_program_with_imports, is_c_identifier, lower_fragment_to_machine_extension, lower_fragment_to_machine_library,
-    lower_resolved_fragment_to_machine_image, lower_resolved_fragment_to_x64_program_input, assemble_x64_program_image,
-    lower_resolved_fragment_to_x64_library_input, assemble_x64_library_image,
-    lower_resolved_fragment_to_x64_extension_input, assemble_x64_extension_image,
+    encode_x64_program_with_imports, is_c_identifier, assemble_x64_program_image, assemble_x64_library_image, assemble_x64_extension_image,
     node_addon_registration, node_method_wrapper,
     node_module_data, python_method_wrapper, python_module_data, python_module_exec, python_module_registration, reset_text_arena,
 };
 pub use executable::{MachineImageError, MachineImageFacts, MachineImageKind, classify_machine_executable, classify_machine_image};
-pub use crate::lowering::backends::machine::x86_64::X64ProgramInput;
+pub use crate::lowering::backends::machine::x86_64::{
+    X64ArrayOperation, X64ArrayOperatorPlan, X64ConsoleOperation, X64IntShape,
+    X64ProgramInput, X86OperatorBinding, X86_64OperatorCode, float_int_target_bounds, freeze_x86_64_operator,
+    freeze_x86_64_operator_binding, heap_array_element_type, is_exit_code_type, is_local_carrier_type, is_reference_carrier,
+    narrow_normalize, x64_int_shape, x86_64_operator_target,
+};
+pub use crate::lowering::backends::machine::{
+    ARRAY_ALLOCATION_BYTES_OFFSET, ARRAY_COUNT_OFFSET, ARRAY_ELEMENT_ALIGNMENT, ARRAY_ELEMENT_BYTES, ARRAY_ELEMENT_OFFSET,
+    ARRAY_HEADER_BYTES, ARRAY_MAX_ELEMENTS, SUM_CARRIER_BYTES, SUM_PAYLOAD_OFFSET, ArrayAllocationSlots, ArrayAllocator, array_allocate,
+    array_bounds_check, array_failure_exit, array_free, object_allocate,
+};
+pub use crate::lowering::sanitize_symbol;
+pub use crate::lowering::shared::interop::select_unique_target;
+pub use crate::lowering::shared::physical_layout::{
+    LayoutPolicy, ResolvedAggregateLayout, ResolvedFieldLayout, ResolvedLayoutPlan, resolve_physical_layouts,
+};
 pub use crate::lowering::backends::machine::X64LibraryProgramInput;
 pub use crate::lowering::backends::machine::X64ExtensionProgramInput;
 

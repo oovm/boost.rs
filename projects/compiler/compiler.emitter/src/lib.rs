@@ -200,22 +200,6 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_clr_managed_surface(submission)
     }
 
-    /// Lower a fragment submission to a native image for a resolved canonical target.
-    pub fn lower_fragment_to_machine_image(
-        submission: &FragmentSubmission,
-        target: compiler_target::abstractions::CanonicalTarget,
-    ) -> Result<super::lowering::backends::machine::X64LoweredProgram> {
-        super::lowering::testing_lower_fragment_to_machine_image(submission, target)
-    }
-
-    /// Lower a fragment submission to a host-extension shared library.
-    pub fn lower_fragment_to_machine_extension(
-        submission: &FragmentSubmission,
-        target: &super::emitter_backend_machine::X64ProductTarget,
-    ) -> Result<super::lowering::backends::machine::X64LoweredExtension> {
-        super::lowering::testing_lower_fragment_to_machine_extension(submission, target)
-    }
-
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)

@@ -215,11 +215,6 @@ pub fn any_returns_int64_array(methods: &[HostMethod]) -> bool {
     methods.iter().any(|method| method.returns == HostValueKind::Int64Array)
 }
 
-/// 任一导出是否接收 `utf8` 文本实参（决定宿主字符串读取导入）。
-pub fn any_takes_utf8(methods: &[HostMethod]) -> bool {
-    methods.iter().any(|method| method.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Utf8)))
-}
-
 fn python_wrapper_name(method: &str) -> String {
     format!("__nyar_py_wrap_{method}")
 }

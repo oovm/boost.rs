@@ -85,20 +85,27 @@ fn x64_assembly_service_signature_is_target_private() {
 
 #[test]
 fn machine_backend_entries_gate_before_lowering() {
-    // 三条机器码交付（进程镜像 / C ABI 库 / 宿主扩展）都必须先过同一道
-    // Semantic MIR 合同门；不再因为「有自己的入口/导出/布局检查」而绕开。
+    // 三条机器码交付入口（进程镜像 / C ABI 库 / 宿主扩展）已迁到语言侧直接
+    // 消费 MIR：每条入口都必须先闭合目标与交付合同门，再进入逐函数 lowering；
+    // 入口文件不得再引用任何跨目标共享程序的形状。
+    let machine = "../../language/language.valkyrie/src/compiler/emitter/pipeline/machine";
     let entries = [
-        ("src/lowering/backends/machine/mod.rs", "match target.arch {"),
-        ("src/lowering/backends/machine/library.rs", "collect_reachable_functions(submission)"),
-        ("src/lowering/backends/machine/extension.rs", "let (platform, host) = match target {"),
+        (format!("{machine}/exe.rs"), "match target.arch {"),
+        (format!("{machine}/library.rs"), "X64ProductTarget::from_resolved"),
+        (format!("{machine}/extension.rs"), "let (platform, host) = match &product"),
     ];
-    for (path, lowering_marker) in entries {
-        let source = read(path);
+    for (path, gate_marker) in entries {
+        let source = read(&path);
         let gate_at = source
-            .find("validate_machine_submission(submission)?")
-            .unwrap_or_else(|| panic!("{path} has no machine submission gate"));
-        let lowering_at = source.find(lowering_marker).unwrap_or_else(|| panic!("{path} has no lowering marker `{lowering_marker}`"));
-        assert!(gate_at < lowering_at, "{path} must validate Semantic MIR before machine lowering");
+            .find(gate_marker)
+            .unwrap_or_else(|| panic!("{path} has no machine target gate `{gate_marker}`"));
+        let lowering_at = source
+            .find("lowerer::lower_function")
+            .unwrap_or_else(|| panic!("{path} has no lowering marker `lowerer::lower_function`"));
+        assert!(gate_at < lowering_at, "{path} must gate the target contract before machine lowering");
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind"] {
+            assert!(!source.contains(banned), "{path} 作为语言侧 MIR 直消费入口不得引用 `{banned}`");
+        }
     }
 }
 

@@ -33,25 +33,25 @@
 use super::{X64Platform, X64TextInstruction as Lir, x86_64::X86_64OperatorCode};
 
 /// `[T]` 头部字节数：元素个数 + 分配字节数。
-pub(super) const ARRAY_HEADER_BYTES: i64 = 16;
+pub const ARRAY_HEADER_BYTES: i64 = 16;
 /// 元素个数在头部内的偏移。
-pub(super) const ARRAY_COUNT_OFFSET: i32 = 0;
+pub const ARRAY_COUNT_OFFSET: i32 = 0;
 /// 分配字节数在头部内的偏移（释放实现读回原长度）。
-pub(super) const ARRAY_ALLOCATION_BYTES_OFFSET: i32 = 8;
+pub const ARRAY_ALLOCATION_BYTES_OFFSET: i32 = 8;
 /// 元素槽字节宽度（元素载体必须落进单个 8 字节槽）。
-pub(super) const ARRAY_ELEMENT_BYTES: i64 = 8;
+pub const ARRAY_ELEMENT_BYTES: i64 = 8;
 /// 首个元素相对数组指针的偏移。
-pub(super) const ARRAY_ELEMENT_OFFSET: i32 = 16;
+pub const ARRAY_ELEMENT_OFFSET: i32 = 16;
 /// 元素槽对齐（分配实现必须满足；Win64 堆与 Linux `mmap` 都按页对齐）。
-pub(super) const ARRAY_ELEMENT_ALIGNMENT: i64 = 8;
+pub const ARRAY_ELEMENT_ALIGNMENT: i64 = 8;
 
 /// 单次分配允许的最大元素个数：保证 `16 + 8 * n` 不溢出 `i64`。
-pub(super) const ARRAY_MAX_ELEMENTS: i64 = (i64::MAX - ARRAY_HEADER_BYTES) / ARRAY_ELEMENT_BYTES;
+pub const ARRAY_MAX_ELEMENTS: i64 = (i64::MAX - ARRAY_HEADER_BYTES) / ARRAY_ELEMENT_BYTES;
 
 /// unite/sum 载体字节数：`{u32 tag, 4 字节填充, i64 payload}`。
-pub(super) const SUM_CARRIER_BYTES: i64 = 16;
+pub const SUM_CARRIER_BYTES: i64 = 16;
 /// sum 载荷相对载体的偏移。
-pub(super) const SUM_PAYLOAD_OFFSET: i32 = 8;
+pub const SUM_PAYLOAD_OFFSET: i32 = 8;
 
 // 布局在编译期冻结：头两格、首元素偏移与对齐必须互相一致，改动要么整体更新，
 // 要么在构建时失败（不允许某条路径悄悄按旧偏移发射）。
@@ -79,7 +79,7 @@ const KERNEL32_DLL: &str = "kernel32.dll";
 /// `PE32+` 走进程堆，`ELF64` 走 `mmap`/`munmap` 系统调用（不依赖宿主 libc，
 /// 静态 `ET_EXEC` 与 `ET_DYN` 扩展都可用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ArrayAllocator {
+pub enum ArrayAllocator {
     /// Win64：`GetProcessHeap` + `HeapAlloc(HEAP_ZERO_MEMORY)` / `HeapFree`。
     WindowsProcessHeap,
     /// SysV64/Linux：`mmap`（匿名、私有、读写）与 `munmap` 系统调用。
@@ -88,14 +88,14 @@ pub(super) enum ArrayAllocator {
 
 impl ArrayAllocator {
     /// 按冻结平台身份选择实现。
-    pub(super) fn for_platform(platform: X64Platform) -> Self {
+    pub fn for_platform(platform: X64Platform) -> Self {
         if platform.is_windows() { Self::WindowsProcessHeap } else { Self::LinuxMmap }
     }
 }
 
 /// 一次数组分配需要的帧槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ArrayAllocationSlots {
+pub struct ArrayAllocationSlots {
     /// 元素个数（输入时由 `rax` 写入）。
     pub count: u16,
     /// 分配字节数（也用于写回头部第二格）。
@@ -110,7 +110,7 @@ pub(super) struct ArrayAllocationSlots {
 ///
 /// 所有失败路径都跳到 `failure_label`；调用方必须在该标签处放置定义好的失败出口
 /// （guest 是 `Trap`，宿主桥是 `napi_throw_error`）。本序列内联写头部两格。
-pub(super) fn array_allocate(
+pub fn array_allocate(
     allocator: ArrayAllocator,
     slots: ArrayAllocationSlots,
     failure_label: u32,
@@ -171,7 +171,7 @@ pub(super) fn array_allocate(
 ///
 /// 与堆数组共用同一平台分配实现与失败出口，但**没有数组头**：字段偏移由物理布局
 /// 直接给出。对象归语言值图，native lane 不提供回收通道。
-pub(super) fn object_allocate(
+pub fn object_allocate(
     allocator: ArrayAllocator,
     size_slot: u16,
     auxiliary: u16,
@@ -210,7 +210,7 @@ pub(super) fn object_allocate(
 /// 释放一个由 [`array_allocate`] 建立的数组；`rax` 必须是指针。
 /// 只用于宿主桥的一次性副本：guest 值图没有回收通道，后端不释放语言数组。
 /// `slot.auxiliary` / `slot.condition` 是周转槽，返回后内容不再有意义。
-pub(super) fn array_free(allocator: ArrayAllocator, slot: ArrayAllocationSlots, zero_slot: u16) -> Vec<Lir> {
+pub fn array_free(allocator: ArrayAllocator, slot: ArrayAllocationSlots, zero_slot: u16) -> Vec<Lir> {
     let mut out = Vec::new();
     out.push(Lir::StoreSlot(slot.auxiliary));
     match allocator {
@@ -240,7 +240,7 @@ pub(super) fn array_free(allocator: ArrayAllocator, slot: ArrayAllocationSlots, 
 ///
 /// 这是 MIR `ArrayGet/Set` 与 provider `array.get/set` 两个入口共用的唯一定义检查。
 /// 检查结束后调用方自行重装访问寄存器。
-pub(super) fn array_bounds_check(
+pub fn array_bounds_check(
     array_slot: u16,
     index_slot: u16,
     condition_slot: u16,
@@ -259,7 +259,7 @@ pub(super) fn array_bounds_check(
 }
 
 /// 定义好的数组失败出口：显式陷入，不伪造值、不返回空指针。
-pub(super) fn array_failure_exit(label: u32) -> Vec<Lir> {
+pub fn array_failure_exit(label: u32) -> Vec<Lir> {
     vec![Lir::Label(label), Lir::Trap]
 }
 

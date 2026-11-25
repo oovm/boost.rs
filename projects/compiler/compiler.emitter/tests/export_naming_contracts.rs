@@ -1,22 +1,14 @@
 //! 导出命名合同：语言侧冻结源码名，各目标所有者按自己的命名合同投影。
 //!
-//! 覆盖机器码 lane 的三条合同与投影碰撞拒绝：
-//! - Node 扩展：有注解用注解名，否则源码名自动 camelCase 投影（`move_zeroes` → `moveZeroes`）；
-//! - CPython 扩展：源码名自动 snake_case 投影（`twoSum` → `two_sum`，忽略注解改名），
-//!   模块名是目标计划冻结的唯一事实，lowering 只消费不推导；
-//! - 普通共享库：C ABI 公开名就是源码名（忽略注解改名）；
-//! - 投影碰撞（Node：`foo_bar` 与 `fooBar` 同落 `fooBar`；CPython：同落 `foo_bar`）：写出前拒绝。
+//! 机器码 lane（Node / CPython / 普通共享库）的投影与碰撞拒绝已随 lowering
+//! 迁到语言侧 `language.valkyrie` 的机器码管道；本文件保留仍归 emitter 的
+//! wasm lane 命名合同与 CPython 模块名归一化纯函数。
 
 use std::collections::BTreeMap;
 
 use compiler_emitter::{
     FragmentSubmission,
     contracts::{Block, BlockRef, ExecutableFunction, Operand, Terminator, Value, ValueOrigin, ValueRef},
-    emitter_backend_machine::{
-        HostModule, MachineHostExport, MachineLibraryExport, X64LoweredExtension, X64LoweredLibrary, X64Platform, X64ProductTarget,
-        lower_fragment_to_machine_library,
-    },
-    testing::lower_fragment_to_machine_extension,
 };
 use compiler_target::cpython_module_name;
 use compiler_types::{Identifier, QualifiedName};
@@ -68,137 +60,14 @@ fn plan_with(sources: &[&str], annotations: &[(&str, &str)]) -> compiler_emitter
     plan
 }
 
-fn submission_for(sources: &[&str], annotations: &[(&str, &str)]) -> FragmentSubmission {
-    FragmentSubmission::from_backend_plan(plan_with(sources, annotations))
-}
-
-/// 构造形参可指定的函数体：返回首个形参，供宿主 ABI 载体合同的反例使用。
-#[allow(deprecated)]
-fn function_with_params(symbol: &str, params: Vec<compiler_types::SemanticType>) -> ExecutableFunction {
-    let value_types = params
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| (ValueRef(index as u32), ty.clone()))
-        .collect::<BTreeMap<_, _>>();
-    ExecutableFunction {
-        symbol: symbol.to_string(),
-        return_type: params.first().cloned().expect("反例函数至少一个形参"),
-        param_types: params.clone(),
-        value_types,
-        value_layouts: BTreeMap::new(),
-        return_layout: None,
-        entry: BlockRef(0),
-        values: params
-            .iter()
-            .enumerate()
-            .map(|(index, _)| Value { id: ValueRef(index as u32), origin: ValueOrigin::Parameter { index, name: format!("p{index}") } })
-            .collect(),
-        blocks: vec![Block {
-            id: BlockRef(0),
-            label: "entry".to_string(),
-            parameters: (0..params.len() as u32).map(ValueRef).collect(),
-            instructions: Vec::new(),
-            terminator: Terminator::Return { value: Some(Operand::Value(ValueRef(0))) },
-        }],
-    }
-}
-
-/// 从降低结果里取 (源码名, 公开名) 对，按公开名排序比较。
-fn pairs_of(exports: &[MachineHostExport]) -> Vec<(String, String)> {
-    exports.iter().map(|export| (export.source_name.clone(), export.public_name.clone())).collect()
-}
-
 #[test]
-fn node_extension_projects_unannotated_source_to_camel_case() {
-    let submission = submission_for(&["move_zeroes"], &[]);
-    let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let lowered: X64LoweredExtension = lower_fragment_to_machine_extension(&submission, &target).expect("Node 扩展降低成功");
-    assert_eq!(pairs_of(&lowered.host_exports), vec![("move_zeroes".to_string(), "moveZeroes".to_string())]);
-}
-
-#[test]
-fn node_extension_honors_export_annotation() {
-    let submission = submission_for(&["two_sum"], &[("two_sum", "twoSum")]);
-    let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let lowered = lower_fragment_to_machine_extension(&submission, &target).expect("Node 扩展降低成功");
-    assert_eq!(pairs_of(&lowered.host_exports), vec![("two_sum".to_string(), "twoSum".to_string())]);
-}
-
-#[test]
-fn cpython_extension_projects_source_to_snake_case_and_ignores_annotation() {
-    let submission = submission_for(&["moveZeroes", "two_sum"], &[("two_sum", "twoSum")]);
-    let target = X64ProductTarget::cpython_extension(X64Platform::linux_x64(), "app");
-    let lowered = lower_fragment_to_machine_extension(&submission, &target).expect("CPython 扩展降低成功");
-    // CPython 的公开面就是 Python 命名：源码名自动 snake_case 投影，注解改名在本 lane 被忽略。
-    let mut pairs = pairs_of(&lowered.host_exports);
-    pairs.sort();
-    assert_eq!(
-        pairs,
-        vec![("moveZeroes".to_string(), "move_zeroes".to_string()), ("two_sum".to_string(), "two_sum".to_string())]
-    );
-}
-
-#[test]
-fn plain_library_exports_source_name_and_ignores_annotation() {
-    let submission = submission_for(&["move_zeroes", "two_sum"], &[("two_sum", "twoSum")]);
-    let lowered: X64LoweredLibrary = lower_fragment_to_machine_library(&submission, X64Platform::linux_x64()).expect("普通库降低成功");
-    let pairs = lowered.exports.iter().map(|export: &MachineLibraryExport| (export.source_name.clone(), export.public_name.clone())).collect::<Vec<_>>();
-    assert_eq!(
-        pairs,
-        vec![("move_zeroes".to_string(), "move_zeroes".to_string()), ("two_sum".to_string(), "two_sum".to_string())]
-    );
-}
-
-#[test]
-fn node_projection_collision_is_rejected_with_both_source_names() {
-    // `foo_bar` 投影为 `fooBar`，与源码名 `fooBar`（首段原样保留）撞同一公开名。
-    let submission = submission_for(&["foo_bar", "fooBar"], &[]);
-    let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let error = lower_fragment_to_machine_extension(&submission, &target).expect_err("投影碰撞必须写出前拒绝");
-    assert!(error.contains("foo_bar"), "诊断应列出源码名 foo_bar：{error}");
-    assert!(error.contains("fooBar"), "诊断应列出源码名 fooBar：{error}");
-}
-
-#[test]
-fn cpython_module_name_normalizes_project_and_drives_entry_symbol() {
+fn cpython_module_name_normalizes_project() {
     // 工程名保留仓库身份，模块名是确定性的合法标识符：文件名、`PyInit_`、
     // 清单与宿主 `import` 必须共用同一个冻结值。
     assert_eq!(cpython_module_name("leetcode-multiply-strings").unwrap(), "leetcode_multiply_strings");
     assert_eq!(cpython_module_name("app").unwrap(), "app");
     assert_eq!(cpython_module_name("9lives").unwrap(), "_9lives");
     assert!(cpython_module_name("").is_err(), "空工程名无法归一化成合法模块名");
-
-    let submission = submission_for(&["move_zeroes"], &[]);
-    // 模块名由目标计划冻结一次（构建计划经 `freeze_cpython_module_name` 装配），
-    // lowering 只消费冻结事实。
-    let target = X64ProductTarget::cpython_extension(X64Platform::linux_x64(), &cpython_module_name("leetcode-multiply-strings").unwrap());
-    let lowered = lower_fragment_to_machine_extension(&submission, &target).expect("CPython 降低消费冻结模块名");
-    assert_eq!(lowered.module_name.as_deref(), Some("leetcode_multiply_strings"));
-    assert_eq!(lowered.entry_symbol, "PyInit_leetcode_multiply_strings");
-    assert_eq!(lowered.artifact_extension, ".so");
-
-    // 未冻结模块名的 CPython 目标必须失败闭合，绝不按工程名现场推导。
-    let unfrozen = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python);
-    let error = lower_fragment_to_machine_extension(&submission, &unfrozen).expect_err("缺冻结事实必须拒绝");
-    assert!(error.contains("未冻结"), "诊断应指出模块名未冻结：{error}");
-
-    let node = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let node_lowered = lower_fragment_to_machine_extension(&submission, &node).expect("Node 扩展降低成功");
-    assert_eq!(node_lowered.module_name, None, "Node 扩展不使用 CPython 模块名");
-}
-
-#[test]
-fn cpython_projection_collision_is_rejected_plain_library_passes() {
-    // CPython snake_case 投影：`foo_bar` 与 `fooBar` 都落到 `foo_bar`，写出前拒绝。
-    let submission = submission_for(&["foo_bar", "fooBar"], &[]);
-    let cpython = X64ProductTarget::cpython_extension(X64Platform::linux_x64(), "app");
-    let error = lower_fragment_to_machine_extension(&submission, &cpython).expect_err("CPython snake_case 投影碰撞必须写出前拒绝");
-    assert!(error.contains("foo_bar"), "诊断应列出源码名 foo_bar：{error}");
-    assert!(error.contains("fooBar"), "诊断应列出源码名 fooBar：{error}");
-    // 普通共享库按源码名导出：`foo_bar` 与 `fooBar` 是两个不同公开名，不碰撞。
-    let library_submission = submission_for(&["foo_bar", "fooBar"], &[]);
-    let library = lower_fragment_to_machine_library(&library_submission, X64Platform::linux_x64()).expect("普通库源码名合同不碰撞");
-    assert_eq!(library.exports.len(), 2);
 }
 
 #[test]
@@ -258,25 +127,4 @@ fn wasm_binary_rejects_duplicate_export_public_names() {
         .expect_err("重复导出公开名必须拒绝");
     assert!(error.contains("重复"), "诊断应说明重复：{error}");
     assert!(error.contains("dup"), "诊断应指出冲突名：{error}");
-}
-
-/// Win64 混合整型/浮点形参：宿主扩展只有整型/序列/文本载体，浮点形参必须在
-/// 写出前拒绝，不得静默窄化或按位重解释。
-#[test]
-fn windows_node_extension_rejects_mixed_int_float_parameters() {
-    let function = function_with_params(
-        "echo",
-        vec![compiler_types::SemanticType::Integer64 { signed: true }, compiler_types::SemanticType::Float64],
-    );
-    let mut plan = compiler_emitter::TargetExecutionPlan::from_functions(BTreeMap::from([(
-        QualifiedName::new(vec![Identifier::new("echo")]),
-        function,
-    )]));
-    let instance = plan.instances()[0];
-    plan.testing_export_names_mut().insert(instance, "echo".to_string());
-    let submission = FragmentSubmission::from_backend_plan(plan);
-    let target = X64ProductTarget::extension(X64Platform::windows_x64(), HostModule::Node);
-    let error = lower_fragment_to_machine_extension(&submission, &target).expect_err("混合 int/float 形参没有宿主载体，必须拒绝");
-    assert!(error.contains("没有无损宿主载体"), "诊断应说明缺少载体：{error}");
-    assert!(error.contains("f64") || error.contains("Float64"), "诊断应点名浮点形参：{error}");
 }

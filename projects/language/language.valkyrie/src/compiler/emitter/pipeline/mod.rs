@@ -19,6 +19,7 @@ mod error;
 mod evidence;
 mod host_bindings;
 mod link;
+pub(crate) mod machine;
 mod representation;
 pub mod target_plan;
 

@@ -73,20 +73,6 @@ pub(crate) fn testing_lower_fragment_to_clr_managed_surface(
     Ok((lowered.module, lowered.managed_abi))
 }
 
-pub(crate) fn testing_lower_fragment_to_machine_image(
-    submission: &FragmentSubmission,
-    target: compiler_target::abstractions::CanonicalTarget,
-) -> Result<backends::machine::X64LoweredProgram> {
-    backends::machine::lower_fragment_to_machine_image(submission, target)
-}
-
-pub(crate) fn testing_lower_fragment_to_machine_extension(
-    submission: &FragmentSubmission,
-    target: &backends::machine::X64ProductTarget,
-) -> Result<backends::machine::X64LoweredExtension> {
-    backends::machine::lower_fragment_to_machine_extension(submission, target)
-}
-
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
     wasm::decode_uleb128(bytes, pos)
 }
@@ -338,7 +324,7 @@ fn format_quoted_text(value: &str) -> String {
     escaped
 }
 
-pub(crate) fn sanitize_symbol(name: &str) -> String {
+pub fn sanitize_symbol(name: &str) -> String {
     // Non-alphanumeric chars must stay distinguishable: `infix ==` and `infix !=`
     // must not both collapse to `infix___` (duplicate MethodDef → BadImage / PEVerify).
     // Keep `_` as-is so already-sanitized / snake_case symbols are stable.

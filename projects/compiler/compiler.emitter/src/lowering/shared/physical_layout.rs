@@ -16,7 +16,7 @@ use compiler_types::{AggregateLayoutPlan, LayoutId, LayoutKey, SemanticType, Sto
 /// 只包含目标自己的物理事实：引用槽宽度、文本槽宽度与标量宽度规则。
 /// 语言层不得选择这些值。
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct LayoutPolicy {
+pub struct LayoutPolicy {
     /// 引用/句柄槽的字节宽度与对齐。
     pub reference_extent: (u32, u32),
     /// 文本槽的字节宽度与对齐。
@@ -34,12 +34,12 @@ impl LayoutPolicy {
     pub(crate) const OVM: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
 
     /// 原生 x86-64 策略：引用/句柄与文本描述符都是 8 字节槽。
-    pub(crate) const X64: Self = Self { reference_extent: (8, 8), text_extent: (8, 8) };
+    pub const X64: Self = Self { reference_extent: (8, 8), text_extent: (8, 8) };
 }
 
 /// 已解析的字段物理布局。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResolvedFieldLayout {
+pub struct ResolvedFieldLayout {
     /// 字段身份（来自语义布局）。
     pub name: String,
     /// 字段类型（来自语义布局）。
@@ -54,7 +54,7 @@ pub(crate) struct ResolvedFieldLayout {
 
 /// 已解析的聚合物理布局。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResolvedAggregateLayout {
+pub struct ResolvedAggregateLayout {
     /// 布局身份（与语义计划一致）。
     pub id: LayoutId,
     /// 类型简单名（诊断用）。
@@ -75,7 +75,7 @@ pub(crate) struct ResolvedAggregateLayout {
 
 /// 目标已解析的模块级布局计划。
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ResolvedLayoutPlan {
+pub struct ResolvedLayoutPlan {
     /// 按布局身份升序的物理布局。
     pub layouts: Vec<ResolvedAggregateLayout>,
     /// 合成 tuple / fixedarray 结构键到布局 id 的映射。
@@ -97,7 +97,7 @@ impl ResolvedLayoutPlan {
 ///
 /// 递归解析值存储的名义字段；引用存储的聚合与引用类型字段只占引用槽，
 /// 不展开 body。环检测与缺失布局都失败闭合，禁止回落到默认尺寸。
-pub(crate) fn resolve_physical_layouts(semantic: &AggregateLayoutPlan, policy: LayoutPolicy) -> Result<ResolvedLayoutPlan, String> {
+pub fn resolve_physical_layouts(semantic: &AggregateLayoutPlan, policy: LayoutPolicy) -> Result<ResolvedLayoutPlan, String> {
     let mut memo: BTreeMap<LayoutId, (u32, u32)> = BTreeMap::new();
     let mut layouts = Vec::with_capacity(semantic.layouts.len());
     for layout in &semantic.layouts {

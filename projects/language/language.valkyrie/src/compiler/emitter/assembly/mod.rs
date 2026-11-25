@@ -8,6 +8,7 @@ use compiler_emitter::{
 use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError};
 use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
+use super::pipeline::machine;
 use super::pipeline::target_plan::{self, TargetPlanError};
 use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;
 
@@ -97,24 +98,15 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
     }
 
     fn prepare(&self, request: &TargetInputRequest<'_>) -> compiler_emitter::Result<LoweredBackendInput> {
-        let plan = target_plan::from_compiled_program(
-            self.compiled_program,
-            &self.partition.fragment,
-            self.theory_bundle.clone(),
-            &self.roots,
-        )
-        .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
-        let submission = FragmentSubmission::from_backend_plan(plan);
         if request.backend_family == compiler_target::TargetBackendFamily::MachineCode {
-            // 原生镜像由 机器码 lane 的 LIR/编码服务产出；适配器只提交目标输入
-            // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
+            // 机器码 lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
+            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
+            // emitter 装配服务只做编码 + 容器 + 自检，不自行拼接机器码。
+            let ctx = machine::build_context(self.compiled_program, &self.partition.fragment, &self.roots)
+                .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             if request.artifact_purpose == compiler_target::ArtifactPurpose::Library {
                 // 普通共享库：导出面就是交付合同，没有进程入口，也不绑定宿主模块。
-                // 纵链两段式：先取目标私有共享库输入，再交装配服务。
-                let library_input = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_x64_library_input(
-                    &submission,
-                    &request.resolved,
-                )?;
+                let library_input = machine::library::build_library_input(&ctx, &request.resolved)?;
                 let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_library_image(&library_input)?;
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
@@ -139,10 +131,7 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             if request.artifact_purpose == compiler_target::ArtifactPurpose::HostExtension {
                 let product = compiler_emitter::emitter_backend_machine::X64ProductTarget::from_resolved(&request.resolved)
                     .map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
-                // 纵链两段式：先取目标私有宿主扩展输入，再交装配服务；装配签名
-                // 不再接触跨目标的共享程序。
-                let extension_input =
-                    compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_x64_extension_input(&submission, &request.resolved)?;
+                let extension_input = machine::extension::build_extension_input(&ctx, &request.resolved)?;
                 let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_extension_image(&extension_input)?;
                 return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                     executable: lowered.executable,
@@ -156,29 +145,31 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
                 // 清单与宿主 `import` 同值；工程名本身保持不变。
                 .with_artifact_base_name(lowered.module_name));
             }
-            let entry_symbol = submission
-                .backend_plan
-                .entry_operation()
-                .and_then(|instance| submission.backend_plan.abi_name_for_instance(instance))
-                .and_then(|name| name.parts().last().map(|part| part.as_str().to_string()))
+            // 原生可执行交付：先降成目标私有 x86-64 输入，再交装配服务。
+            let program_input = machine::exe::build_program_input(&ctx, &request.resolved, request.artifact_purpose)?;
+            let entry = ctx
+                .fragment()
+                .entry_operation
+                .and_then(|instance| machine::entry_symbol(&ctx, &instance))
                 .ok_or_else(|| "原生可执行交付缺少冻结的入口身份：计划未给出入口操作的 ABI 名".to_string())?;
-            // 纵链第一段：校验后把语言事实降成目标私有 x86-64 输入；第二段只做
-            // 编码 + 容器装配，其签名不再接触跨目标共享程序。
-            let program_input = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_x64_program_input(
-                &submission,
-                &request.resolved,
-                request.artifact_purpose,
-            )?;
             let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_program_image(&program_input)?;
             return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                 executable: lowered.executable,
                 output_dir: request.output_dir.to_path_buf(),
-                entry_symbol: Some(entry_symbol),
+                entry_symbol: Some(entry),
                 artifact_extension: None,
                 host_exports: Vec::new(),
                 host_module: None,
             }));
         }
+        let plan = target_plan::from_compiled_program(
+            self.compiled_program,
+            &self.partition.fragment,
+            self.theory_bundle.clone(),
+            &self.roots,
+        )
+        .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+        let submission = FragmentSubmission::from_backend_plan(plan);
         LoweredBackendInput::from_fragment_submission(
             &submission,
             request.backend_family,

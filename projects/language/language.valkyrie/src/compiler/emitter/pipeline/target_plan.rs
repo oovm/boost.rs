@@ -471,7 +471,7 @@ fn lower_function(program: &CompiledValkyrieProgram, function: &ValkyrieMirFunct
 }
 
 /// 该类型是否有 canonical 冻结的实例级 Reference 布局（GC struct 载体）。
-fn has_reference_instance_layout(program: &ValkyrieMirProgram, type_id: compiler_types::TypeId) -> bool {
+pub(crate) fn has_reference_instance_layout(program: &ValkyrieMirProgram, type_id: compiler_types::TypeId) -> bool {
     let Some(layout_id) = program.linked.aggregate_layout_by_type.get(&type_id).copied()
     else {
         return false;
@@ -501,7 +501,7 @@ fn canonical_sum_operations(
 /// variant 身份、discriminant 与 payload 类型来自链接程序。tag 的物理宽度不在
 /// 这里声明——它是各 lane 自己的物理事实，由后端在布局处冻结；语言适配器不再
 /// 按 backend family 预先取宽度。
-fn platform_sum_representations(canonical: &ValkyrieMirProgram) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
+pub(crate) fn platform_sum_representations(canonical: &ValkyrieMirProgram) -> Result<BTreeMap<NominalInstanceId, SumRepresentation>> {
     let mut reps = BTreeMap::new();
     for sum in &canonical.linked.sum_types {
         if !canonical.linked.nominal_instances.contains_key(&sum.nominal) {
@@ -744,7 +744,7 @@ fn lower_constant(constant: &ValkyrieMirConstant) -> Constant {
 ///
 /// 签名含 Generic 说明该实例是声明模板而非单态化后的闭合实例；目标层无法编码这种
 /// 签名，因此它只能作为失败原因，不能作为「可以跳过」的判据。
-fn signature_contains_generic(program: &ValkyrieMirProgram, function: &crate::compiler::valkyrie_mir::ValkyrieMirFunction) -> bool {
+pub(crate) fn signature_contains_generic(program: &ValkyrieMirProgram, function: &crate::compiler::valkyrie_mir::ValkyrieMirFunction) -> bool {
     function.parameters.iter().any(|(_, ty)| type_contains_generic_deep(program, *ty))
         || type_contains_generic_deep(program, function.return_type)
 }
@@ -796,7 +796,7 @@ fn semantic_of_canonical_primitive(kind: compiler_types::CanonicalPrimitiveType)
 }
 
 /// 按 canonical 类型图重建布局计划使用的**未结算**类型形态（`Nominal` 基 + `Apply` 实参）。
-fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Result<SemanticType> {
+pub(crate) fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Result<SemanticType> {
     let kind = &program.linked.types.get(&id).ok_or_else(|| "canonical 类型事实缺失".to_string())?.kind;
     match kind {
         CanonicalTypeKind::Nominal { declaration, arguments } => {
@@ -848,7 +848,7 @@ fn lower_unsettled_contract_key(program: &ValkyrieMirProgram, id: compiler_types
     }
 }
 
-fn lower_type(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Result<SemanticType> {
+pub(crate) fn lower_type(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Result<SemanticType> {
     let kind = &program.linked.types.get(&id).ok_or_else(|| format!("canonical 类型事实缺失"))?.kind;
     match kind {
         CanonicalTypeKind::Primitive(kind) => match kind {

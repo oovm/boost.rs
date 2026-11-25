@@ -29,8 +29,13 @@ mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
-pub use extension::{MachineHostExport, X64ExtensionProgramInput, X64LoweredExtension, lower_fragment_to_machine_extension};
-pub use library::{MachineLibraryExport, X64LibraryProgramInput, X64LoweredLibrary, lower_fragment_to_machine_library};
+pub use array_runtime::{
+    ARRAY_ALLOCATION_BYTES_OFFSET, ARRAY_COUNT_OFFSET, ARRAY_ELEMENT_ALIGNMENT, ARRAY_ELEMENT_BYTES, ARRAY_ELEMENT_OFFSET,
+    ARRAY_HEADER_BYTES, ARRAY_MAX_ELEMENTS, SUM_CARRIER_BYTES, SUM_PAYLOAD_OFFSET, ArrayAllocationSlots, ArrayAllocator, array_allocate,
+    array_bounds_check, array_failure_exit, array_free, object_allocate,
+};
+pub use extension::{MachineHostExport, X64ExtensionProgramInput, X64LoweredExtension};
+pub use library::{MachineLibraryExport, X64LibraryProgramInput, X64LoweredLibrary};
 
 pub use carrier::{
     HostMethod, HostParameterKind, HostProperty, HostValueKind, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool,
@@ -44,12 +49,7 @@ pub use x64_program::{
     encode_x64_program, encode_x64_program_with_data, encode_x64_program_with_dependencies, encode_x64_program_with_imports,
 };
 
-use compiler_target::{
-    ArtifactContract, ArtifactPurpose, ResolvedTarget,
-    abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget},
-};
-
-use crate::{FragmentSubmission, Result};
+use crate::Result;
 
 /// x86-64 的整数调用约定。
 ///
@@ -477,66 +477,12 @@ pub struct X64ProgramImage {
     pub host_dependencies: Vec<String>,
 }
 
-/// 正式 lane：把已冻结目标降低为原生进程镜像。
-///
-/// 只接受进程可执行用途（`Application` / `TestBundle`）与普通原生合同：库交付与
-/// 宿主扩展分别由库 lane 与宿主扩展降低承载，在这里结构化拒绝，不把进程镜像
-/// 改标成其他产物。入口身份必须已由计划冻结；缺失时由 lowering 报错，不回填
-/// 默认名。
-pub fn lower_resolved_fragment_to_machine_image(
-    submission: &FragmentSubmission,
-    resolved: &ResolvedTarget,
-    purpose: ArtifactPurpose,
-) -> Result<X64LoweredProgram> {
-    assemble_x64_program_image(&lower_resolved_fragment_to_x64_program_input(submission, resolved, purpose)?)
-}
-
-/// 正式 lane 纵链第一段：校验用途/合同后，把计划事实降成**目标私有**输入。
-///
-/// 返回之后，编码与容器装配只认 [`x86_64::X64ProgramInput`]；跨目标的共享程序
-/// 不再越过这条边界。
-pub fn lower_resolved_fragment_to_x64_program_input(
-    submission: &FragmentSubmission,
-    resolved: &ResolvedTarget,
-    purpose: ArtifactPurpose,
-) -> Result<x86_64::X64ProgramInput> {
-    match purpose {
-        ArtifactPurpose::Application | ArtifactPurpose::TestBundle => {}
-        ArtifactPurpose::Library => {
-            return Err("机器码库交付尚未接线：拒绝把进程镜像改标为库产物".to_string());
-        }
-        ArtifactPurpose::HostExtension => {
-            return Err("宿主扩展必须走宿主扩展降低：进程镜像不接受宿主扩展用途".to_string());
-        }
-    }
-    match &resolved.contract {
-        ArtifactContract::Native => {}
-        ArtifactContract::Platform => {
-            return Err(format!("机器码进程镜像不接受平台合同 `{}`：请使用 `native` 或显式机器目标", resolved.identity()));
-        }
-        ArtifactContract::NodeApi | ArtifactContract::Cpython(_) => {
-            return Err(format!(
-                "机器码进程镜像不接受 `{}` 宿主合同：宿主扩展必须走宿主扩展降低",
-                resolved.contract.as_str()
-            ));
-        }
-    }
-    build_machine_program_input(submission, resolved.platform)
-}
-
 /// 正式 lane 纵链第二段：目标私有输入 → 进程镜像（编码 + 容器 + 自检）。
+///
+/// 机器码 lane 的第一段（MIR → 目标私有输入）归语言适配器所有；这里只保留
+/// 不接触跨目标共享程序的装配服务。
 pub fn assemble_x64_program_image(input: &x86_64::X64ProgramInput) -> Result<X64LoweredProgram> {
     x86_64::assemble_x86_64_program_image(input)
-}
-
-/// C ABI 库纵链第一段：计划事实 → 目标私有共享库输入。
-pub fn lower_resolved_fragment_to_x64_library_input(
-    submission: &FragmentSubmission,
-    resolved: &ResolvedTarget,
-) -> Result<X64LibraryProgramInput> {
-    let product =
-        X64ProductTarget::from_resolved(resolved).map_err(|error| format!("普通共享库目标不合法：{error}"))?;
-    library::build_x64_library_program_input(submission, product.platform())
 }
 
 /// C ABI 库纵链第二段：目标私有输入 → 共享库镜像（编码 + 容器 + 自检）。
@@ -544,102 +490,7 @@ pub fn assemble_x64_library_image(input: &X64LibraryProgramInput) -> Result<X64L
     library::assemble_x64_library_image(input)
 }
 
-/// 宿主扩展纵链第一段：计划事实 → 目标私有宿主扩展输入。
-///
-/// 返回之后，宿主包装体编组、编码与容器装配只认
-/// [`X64ExtensionProgramInput`]；跨目标的共享程序不再越过这条边界。
-pub fn lower_resolved_fragment_to_x64_extension_input(
-    submission: &FragmentSubmission,
-    resolved: &ResolvedTarget,
-) -> Result<X64ExtensionProgramInput> {
-    let product = X64ProductTarget::from_resolved(resolved).map_err(|error| format!("宿主扩展目标不合法：{error}"))?;
-    extension::build_x64_extension_program_input(submission, &product)
-}
-
 /// 宿主扩展纵链第二段：目标私有输入 → 共享库镜像（包装体编组 + 编码 + 容器 + 自检）。
 pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<X64LoweredExtension> {
     extension::assemble_x64_extension_image(input)
-}
-
-/// 机器码 lane 的统一提交验证门。
-///
-/// 三条正式交付（进程镜像 / C ABI 库 / 宿主扩展）都必须在 lowering 之前经过与
-/// 其余目标家族相同的 Semantic MIR 合同校验；机器码不再因为「有自己的入口/导出
-/// 检查」而绕开这道门。输入取证来自实际提交的计划，不存在常量空检查。
-pub(crate) fn validate_machine_submission(submission: &FragmentSubmission) -> Result<()> {
-    crate::lowering::features::semantic_mir_contract::validate_submission(submission).map_err(|error| {
-        format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
-    })
-}
-
-/// 按解析后的规范目标四元组降低为原生镜像。
-///
-/// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选编码、
-/// 容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
-pub(crate) fn lower_fragment_to_machine_image(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<X64LoweredProgram> {
-    x86_64::assemble_x86_64_program_image(&build_machine_program_input(submission, target)?)
-}
-
-/// 目标四元组 → 目标私有 x86-64 输入。
-///
-/// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选
-/// 编码、容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
-fn build_machine_program_input(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<x86_64::X64ProgramInput> {
-    validate_machine_submission(submission)?;
-    match target.arch {
-        CanonicalArch::X86_64 => match target.specification {
-            CanonicalSpecification::Windows => match target.abi {
-                // x86-64 Windows 的 MSVC 与 GNU 目标共用 Win64 调用约定与 PE 容器。
-                None | Some(CanonicalAbi::Msvc) | Some(CanonicalAbi::Gnu) => x86_64::build_x86_64_windows_program_input(submission),
-                Some(other) => Err(format!(
-                    "机器码后端不支持 `x86_64` + `windows` + `{}` 的 ABI：只闭合 Win64 调用约定（target={}）",
-                    abi_name(other),
-                    target.as_canonical_str()
-                )),
-            },
-            // x86-64 Linux 只有 SysV64 调用约定 + ELF 容器；不借用 Win64 编码。
-            CanonicalSpecification::Linux => match target.abi {
-                None | Some(CanonicalAbi::Gnu) | Some(CanonicalAbi::SystemV) => x86_64::build_x86_64_linux_program_input(submission),
-                Some(other) => Err(format!(
-                    "机器码后端不支持 `x86_64` + `linux` + `{}` 的 ABI：只闭合 SysV64 调用约定（target={}）",
-                    abi_name(other),
-                    target.as_canonical_str()
-                )),
-            },
-            other => Err(format!(
-                "机器码后端没有 `x86_64` + `{}` 的容器实现：拒绝借用其他平台的镜像格式（target={}）",
-                specification_name(other),
-                target.as_canonical_str()
-            )),
-        },
-        other => Err(format!("机器码后端尚未实现架构 `{}` 的机器码降低（target={}）", other.as_str(), target.as_canonical_str())),
-    }
-}
-
-fn specification_name(specification: CanonicalSpecification) -> &'static str {
-    match specification {
-        CanonicalSpecification::Unknown => "unknown",
-        CanonicalSpecification::Browser => "browser",
-        CanonicalSpecification::Wasi => "wasi",
-        CanonicalSpecification::Windows => "windows",
-        CanonicalSpecification::Linux => "linux",
-        CanonicalSpecification::MacOs => "macos",
-        CanonicalSpecification::Android => "android",
-        CanonicalSpecification::Ios => "ios",
-    }
-}
-
-fn abi_name(abi: CanonicalAbi) -> &'static str {
-    match abi {
-        CanonicalAbi::Managed => "managed",
-        CanonicalAbi::Clr => "clr",
-        CanonicalAbi::Jvm => "jvm",
-        CanonicalAbi::WebAssembly => "wasm",
-        CanonicalAbi::Wasi => "wasi",
-        CanonicalAbi::WasiP3 => "wasip3",
-        CanonicalAbi::Msvc => "msvc",
-        CanonicalAbi::Gnu => "gnu",
-        CanonicalAbi::SystemV => "systemv",
-        CanonicalAbi::Aapcs64 => "aapcs64",
-    }
 }
