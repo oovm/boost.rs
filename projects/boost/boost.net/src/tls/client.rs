@@ -663,16 +663,15 @@ fn grease(seed: u8) -> u16 {
     0x0A0A + u16::from(seed % 16) * 0x1010
 }
 
-/// Cipher suites in Chromium's order: GREASE, the three TLS 1.3 suites, then
+/// Cipher suites in Chromium's order: GREASE, `TLS_AES_128_GCM_SHA256`, then
 /// the TLS 1.2 fallbacks a browser still offers.
 ///
-/// The server picks `TLS_AES_128_GCM_SHA256`, the only suite this client's key
-/// schedule implements; the rest are there so the list looks like a browser's.
-fn client_cipher_suites(grease: u16) -> [u16; 16] {
-    [
-        grease, 0x1301, 0x1302, 0x1303, 0xC02B, 0xC02F, 0xC02C, 0xC030, 0xCCA9, 0xCCA8, 0xC013, 0xC014, 0x009C, 0x009D,
-        0x002F, 0x0035,
-    ]
+/// `TLS_AES_256_GCM_SHA384` and `TLS_CHACHA20_POLY1305_SHA256` are left out on
+/// purpose: the key schedule here implements only AES-128-GCM with SHA-256
+/// transcripts, and a REALITY server that picks either would fail the
+/// handshake instead of falling back to `0x1301`.
+fn client_cipher_suites(grease: u16) -> [u16; 14] {
+    [grease, 0x1301, 0xC02B, 0xC02F, 0xC02C, 0xC030, 0xCCA9, 0xCCA8, 0xC013, 0xC014, 0x009C, 0x009D, 0x002F, 0x0035]
 }
 
 fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]>, alpn: Option<&[&str]>) -> TlsResult<(Vec<u8>, [u8; 32])> {
