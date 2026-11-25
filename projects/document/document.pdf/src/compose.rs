@@ -84,6 +84,16 @@ pub struct ComposeReport {
 /// dictionary comes from the first source. The output file is replaced only
 /// when `overwrite` is true.
 pub fn compose(plan: &PagePlan, out: &Path, overwrite: bool) -> Result<ComposeReport> {
+    compose_with_title(plan, out, overwrite, None)
+}
+
+/// Writes the pages named by a [`PagePlan`] and replaces the first source's
+/// `/Title` with `title` when one is given.
+///
+/// Behaves like [`compose`]; `title` is the only information field callers may
+/// override, and the remaining `/Info` entries still come from the first
+/// source unchanged. The output file is replaced only when `overwrite` is true.
+pub fn compose_with_title(plan: &PagePlan, out: &Path, overwrite: bool, title: Option<&str>) -> Result<ComposeReport> {
     if plan.placements.is_empty() {
         return Err(argument("compose needs at least one page placement"));
     }
@@ -126,7 +136,7 @@ pub fn compose(plan: &PagePlan, out: &Path, overwrite: bool) -> Result<ComposeRe
 
     let mut info = None;
     if let (Some(document), Some(map)) = (documents.first(), maps.first_mut()) {
-        info = copy_info(&mut writer, document, map, None)?;
+        info = copy_info(&mut writer, document, map, title)?;
     }
     let bytes = finish_document(&mut writer, &pages, info)?;
     write_file(out, &bytes, overwrite)?;
@@ -522,6 +532,50 @@ mod tests {
         assert_eq!(report.sources[0].used, 2);
         assert_eq!(report.sources[1].used, 2);
         assert_eq!(markers(&out), ["One", "Beta", "Two", "Alpha"]);
+    }
+
+    #[test]
+    fn compose_with_title_overrides_the_first_source_info() {
+        let workspace = Workspace::new();
+        let first = workspace.path("first.pdf");
+        create(&CreateRequest {
+            out: first.clone(),
+            title: Some("Source title".to_string()),
+            pages: vec!["One".to_string()],
+            overwrite: true,
+            ..CreateRequest::default()
+        })
+        .expect("create titled fixture");
+        let out = workspace.path("titled.pdf");
+        let plan = PagePlan { sources: vec![first], placements: vec![PagePlacement::Source { source: 0, page: 1 }] };
+
+        compose_with_title(&plan, &out, false, Some("Override")).expect("compose with a title");
+        assert_eq!(inspect(&out).expect("inspect output").metadata.title.as_deref(), Some("Override"));
+    }
+
+    #[test]
+    fn compose_without_a_title_keeps_or_omits_the_source_info() {
+        let workspace = Workspace::new();
+        let titled = workspace.path("titled.pdf");
+        create(&CreateRequest {
+            out: titled.clone(),
+            title: Some("Source title".to_string()),
+            pages: vec!["One".to_string()],
+            overwrite: true,
+            ..CreateRequest::default()
+        })
+        .expect("create titled fixture");
+        let plain = workspace.create("plain.pdf", &["Only"]);
+
+        let kept = workspace.path("kept.pdf");
+        let plan = PagePlan { sources: vec![titled], placements: vec![PagePlacement::Source { source: 0, page: 1 }] };
+        compose(&plan, &kept, false).expect("compose without a title");
+        assert_eq!(inspect(&kept).expect("inspect output").metadata.title.as_deref(), Some("Source title"));
+
+        let untitled = workspace.path("untitled.pdf");
+        let plan = PagePlan { sources: vec![plain], placements: vec![PagePlacement::Source { source: 0, page: 1 }] };
+        compose(&plan, &untitled, false).expect("compose an untitled source");
+        assert_eq!(inspect(&untitled).expect("inspect output").metadata.title, None);
     }
 
     #[test]

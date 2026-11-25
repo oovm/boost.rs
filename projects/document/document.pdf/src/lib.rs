@@ -19,8 +19,8 @@ mod links;
 mod stamp;
 
 pub use compose::{
-    ComposeReport, ComposedSource, PagePlan, PagePlacement, compose, duplicate_pages, insert_blank_pages, insert_pages,
-    interleave_pages, move_pages, replace_pages, reverse_pages, swap_pages,
+    ComposeReport, ComposedSource, PagePlan, PagePlacement, compose, compose_with_title, duplicate_pages, insert_blank_pages,
+    insert_pages, interleave_pages, move_pages, replace_pages, reverse_pages, swap_pages,
 };
 pub use fidelity::{FidelityCode, FidelityLoss};
 pub use links::{LinkKind, LinkRecord, NamedDestination, OutlineEntry, extract_links, list_destinations, list_outline};
