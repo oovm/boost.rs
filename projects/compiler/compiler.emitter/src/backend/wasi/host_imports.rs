@@ -5,6 +5,18 @@
 
 use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
 
+use super::{WasiPreview, component::wasi_versioned_import_module_for};
+
+/// WASI 进程入口 argv 载体导入的冻结事实：`(module, field)` + 包装用途。
+///
+/// 入口包装体从 `wasi:cli/environment#get-arguments` 取 argv out-pointer；这是宿主
+/// 边界内建，不由用户源码声明。wasm 降层不得按字段名在导入表里找导入——模块名取
+/// 自当前 preview 的版本化模块（与本模块签名表同源），用途固定为「进程入口 argv
+/// 载体」，签名由 [`wasi_import_signature`] 兑现，缺该导入即失败闭合。
+pub(crate) fn wasi_argv_import(preview: WasiPreview) -> (String, String) {
+    (wasi_versioned_import_module_for("wasi:cli/environment", preview), "get-arguments".to_string())
+}
+
 /// 查询 WASI core 导入的物理签名。
 ///
 /// `module` 是适配后的 core 导入模块名（可能带版本后缀），协议按模块族判定时钟/流

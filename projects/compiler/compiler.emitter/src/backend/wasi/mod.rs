@@ -10,7 +10,7 @@ pub mod component;
 mod host_imports;
 mod witness_dispatch;
 
-pub(crate) use host_imports::{expand_wasi_cli_stream_imports, wasi_import_signature};
+pub(crate) use host_imports::{expand_wasi_cli_stream_imports, wasi_argv_import, wasi_import_signature};
 
 use std::{collections::BTreeSet, path::PathBuf};
 

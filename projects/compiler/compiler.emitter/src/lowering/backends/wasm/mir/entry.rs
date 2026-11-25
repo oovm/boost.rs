@@ -136,8 +136,7 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
     // 入口包装体必须从 `wasi:cli/environment#get-arguments` 取值。该导入属于
     // 宿主边界本身，不由用户源码显式声明——否则 argv 形参永远只会拿到空数组。
     if wasi_mode && wasi_entry_declares_argv(submission) {
-        let key =
-            (crate::emitter_backend_wasi::wasi_versioned_import_module_for("wasi:cli/environment", wasi_preview), "get-arguments".to_string());
+        let key = crate::emitter_backend_wasi::wasi_argv_import(wasi_preview);
         if !host_imports.contains(&key) {
             host_imports.push(key);
         }
@@ -601,7 +600,11 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 .ok_or_else(|| format!("WASI 入口 `{entry_instance}` 缺少冻结函数体：无法确认入口形参合同，拒绝按零形参处理"))?;
             let entry_wasm_params = param_types_by_function_index.get(&index).cloned().expect("WASI 入口缺少物理签名");
 
-            let get_arguments_import = host_imports.iter().position(|(_, field)| field == "get-arguments").map(|index| index as u32);
+            // argv 载体导入按 WASI 协议所有者冻结的 (module, field) 精确匹配，
+            // 不再仅按字段名在导入表里找——同名字段不属于同一导入。
+            let argv_import_key = crate::emitter_backend_wasi::wasi_argv_import(wasi_preview);
+            let get_arguments_import =
+                host_imports.iter().position(|(module, field)| module == &argv_import_key.0 && field == &argv_import_key.1).map(|index| index as u32);
             let argv_array_ty = gc_array_type_indices.get("Utf8").copied();
             let entry_argv_plan = match entry_mir_params.as_slice() {
                 [] => None,
