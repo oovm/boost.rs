@@ -235,6 +235,41 @@ impl DeckEdit {
         Ok(new_id)
     }
 
+    /// Re-seats one slide in the deck order, keeping its identity and every element.
+    ///
+    /// The slide is detached first, so `index` counts the remaining slides;
+    /// an index beyond the end places the slide last. Returns the final position.
+    pub fn move_slide(&mut self, id: &SlideId, index: usize) -> Result<usize, DeckError> {
+        let position = self.slide_position(id)?;
+        let moved = self.document.slides.remove(position);
+        let index = index.min(self.document.slides.len());
+        self.document.slides.insert(index, moved);
+        Ok(index)
+    }
+
+    /// Swaps the positions of two slides, keeping every identity.
+    pub fn swap_slides(&mut self, first: &SlideId, second: &SlideId) -> Result<(), DeckError> {
+        let from = self.slide_position(first)?;
+        let to = self.slide_position(second)?;
+        self.document.slides.swap(from, to);
+        Ok(())
+    }
+
+    /// Applies or clears a slide's layout, rejecting unknown layouts.
+    pub fn set_slide_layout(&mut self, id: &SlideId, layout: Option<LayoutId>) -> Result<(), DeckError> {
+        if let Some(candidate) = &layout {
+            self.assert_layout(candidate)?;
+        }
+        self.slide_mut(id)?.layout = layout;
+        Ok(())
+    }
+
+    /// Sets or clears a slide's background override.
+    pub fn set_slide_background(&mut self, id: &SlideId, fill: Option<Fill>) -> Result<(), DeckError> {
+        self.slide_mut(id)?.background = fill;
+        Ok(())
+    }
+
     /// Sets or clears the hidden flag.
     pub fn set_slide_hidden(&mut self, id: &SlideId, hidden: bool) -> Result<(), DeckError> {
         self.slide_mut(id)?.hidden = hidden;

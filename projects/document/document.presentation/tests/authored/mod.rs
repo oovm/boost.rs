@@ -167,6 +167,7 @@ fn duplicated_slides_receive_fresh_identities() {
 mod images;
 mod layout;
 mod notes;
+mod slides;
 mod tables;
 mod text_runs;
 
