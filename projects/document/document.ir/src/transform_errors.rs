@@ -101,6 +101,11 @@ pub enum TransformError {
         /// 目标列表节点 id。
         target: NodeId,
     },
+    /// 删除唯一条目会留下空的列表块，应改为删除整个块。
+    CannotEmptyList {
+        /// 列表节点 id。
+        list: NodeId,
+    },
     /// 重排编号会把列表编号推过 `u32` 上限。
     NumberingOverflow,
     /// 该块的类型不参与互转。
@@ -156,6 +161,9 @@ impl std::fmt::Display for TransformError {
             }
             Self::MoveIntoDescendant { list, item, target } => {
                 write!(f, "item {item} of list {list:?} cannot move into list {target:?} nested inside it")
+            }
+            Self::CannotEmptyList { list } => {
+                write!(f, "removing the only item of list {list:?} would leave an empty list block")
             }
             Self::NumberingOverflow => write!(f, "renumbering the list would push a number beyond the u32 maximum"),
             Self::NotConvertible(id) => write!(f, "node {id:?} is not a convertible block kind"),

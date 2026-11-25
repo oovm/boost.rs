@@ -1,5 +1,5 @@
 //! 列表的图级变换 —— 嵌套（缩进、提升、跨列表移动）与非嵌套操作
-//! （排序、逆序）。
+//! （排序、逆序、插入、复制、删除）。
 //!
 //! 语义对齐下游产品模型的 `list.indentItem` / `list.unindentItem` /
 //! `list.moveItemTo`：IR 把嵌套存为 [`crate::ListItem::children`] 里的嵌套列表块，
@@ -12,7 +12,7 @@
 
 use std::collections::HashSet;
 
-use crate::{Block, DocumentGraph, ListItem, NodeId, TransformError};
+use crate::{Block, DocumentGraph, Inline, ListItem, NodeId, TransformError};
 
 impl DocumentGraph {
     /// 把一个条目缩进到它前一个兄弟条目之下。
@@ -309,6 +309,126 @@ impl DocumentGraph {
         };
         self.bump_revision();
         Ok(count)
+    }
+
+    /// 在位次 `item` 前插入一个新条目。
+    ///
+    /// 条目正文由调用方以内联序列给出，新条目不带任务标记与嵌套子块；
+    /// `item` 允许等于条目数以追加到末尾。有序列表从首个条目携带的编号起
+    /// 重新连续编号。
+    ///
+    /// 失败：[`TransformError::NotFound`]、[`TransformError::NotAList`]、
+    /// [`TransformError::IndexOutOfRange`]、[`TransformError::NumberingOverflow`]，
+    /// 均不产生任何改动。
+    pub fn insert_list_item(&mut self, list: NodeId, item: usize, content: Vec<Inline>) -> Result<(), TransformError> {
+        {
+            let node = self.blocks.iter_mut().find(|node| node.id == list).ok_or(TransformError::NotFound(list))?;
+            let Block::List { ordered, items } = &mut node.block
+            else {
+                return Err(TransformError::NotAList(list));
+            };
+            if item > items.len() {
+                return Err(TransformError::IndexOutOfRange { list, index: item, positions: items.len() + 1 });
+            }
+            let base = if *ordered { items.first().and_then(|entry| entry.number).unwrap_or(1) } else { 0 };
+            Self::renumber_fits(items.len() + 1, base)?;
+            items.insert(item, ListItem { content, ..Default::default() });
+            if *ordered {
+                Self::renumber_items(items, base)?;
+            }
+        }
+        self.bump_revision();
+        Ok(())
+    }
+
+    /// 复制一个条目连同其全部嵌套子块，副本紧随其后。
+    ///
+    /// 副本保留文本、任务标记与勾选状态；嵌套子块以全新节点深复制（携带
+    /// 来源跨度），修改一份副本不影响另一份；指向缺失子节点的引用被丢弃。
+    /// 有序列表从首个条目携带的编号起重新连续编号，副本编号由所在 run 接管。
+    ///
+    /// 失败：[`TransformError::NotFound`]、[`TransformError::NotAList`]、
+    /// [`TransformError::ItemOutOfRange`]、[`TransformError::NumberingOverflow`]，
+    /// 均不产生任何改动。
+    pub fn duplicate_list_item(&mut self, list: NodeId, item: usize) -> Result<(), TransformError> {
+        let (content, is_task, is_checked, children) = {
+            let node = self.blocks.iter().find(|node| node.id == list).ok_or(TransformError::NotFound(list))?;
+            let Block::List { ordered, items } = &node.block
+            else {
+                return Err(TransformError::NotAList(list));
+            };
+            let count = items.len();
+            if item >= count {
+                return Err(TransformError::ItemOutOfRange { list, item, items: count });
+            }
+            let base = if *ordered { items.first().and_then(|entry| entry.number).unwrap_or(1) } else { 0 };
+            Self::renumber_fits(count + 1, base)?;
+            let source = &items[item];
+            (source.content.clone(), source.is_task, source.is_checked, source.children.clone())
+        };
+        let mut mapping = std::collections::BTreeMap::new();
+        let mut copied_children = Vec::with_capacity(children.len());
+        for child in children {
+            if self.block(child).is_none() {
+                continue;
+            }
+            if let Some(copy) = mapping.get(&child).copied() {
+                copied_children.push(copy);
+                continue;
+            }
+            copied_children.push(self.copy_node_detached(child, &mut mapping));
+        }
+        {
+            let node = self.blocks.iter_mut().find(|node| node.id == list).expect("the list is still there");
+            let Block::List { ordered, items } = &mut node.block
+            else {
+                unreachable!("the list was just checked")
+            };
+            let base = if *ordered { items.first().and_then(|entry| entry.number).unwrap_or(1) } else { 0 };
+            items.insert(item + 1, ListItem { content, children: copied_children, is_task, is_checked, ..Default::default() });
+            if *ordered {
+                Self::renumber_items(items, base)?;
+            }
+        }
+        self.bump_revision();
+        Ok(())
+    }
+
+    /// 删除一个条目，并物理删除其全部嵌套子块。
+    ///
+    /// 有序列表从首个条目携带的编号起重新连续编号。删除唯一条目会留下空
+    /// 列表块，被拒绝；调用方应改为删除整个块。
+    ///
+    /// 失败：[`TransformError::NotFound`]、[`TransformError::NotAList`]、
+    /// [`TransformError::ItemOutOfRange`]、[`TransformError::CannotEmptyList`]、
+    /// [`TransformError::NumberingOverflow`]，均不产生任何改动。
+    pub fn remove_list_item(&mut self, list: NodeId, item: usize) -> Result<(), TransformError> {
+        let removed = {
+            let node = self.blocks.iter_mut().find(|node| node.id == list).ok_or(TransformError::NotFound(list))?;
+            let Block::List { ordered, items } = &mut node.block
+            else {
+                return Err(TransformError::NotAList(list));
+            };
+            let count = items.len();
+            if item >= count {
+                return Err(TransformError::ItemOutOfRange { list, item, items: count });
+            }
+            if count == 1 {
+                return Err(TransformError::CannotEmptyList { list });
+            }
+            let base = if *ordered { items.first().and_then(|entry| entry.number).unwrap_or(1) } else { 0 };
+            Self::renumber_fits(count - 1, base)?;
+            let removed = items.remove(item);
+            if *ordered {
+                Self::renumber_items(items, base)?;
+            }
+            removed
+        };
+        for child in removed.children {
+            self.remove_subtree_quiet(child);
+        }
+        self.bump_revision();
+        Ok(())
     }
 
     /// 读取一个列表节点的 marker 样式，非列表返回 [`TransformError::NotAList`]。

@@ -1,4 +1,4 @@
-//! 列表变换（indent / unindent / moveItemTo / sort / reverse）的集成测试。
+//! 列表变换（嵌套与排序、逆序、插入、复制、删除）的集成测试。
 
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, NodeId, SourceSpan, TransformError};
 
@@ -392,4 +392,142 @@ fn reverse_refuses_unknown_and_non_list_without_mutating() {
 
     assert_eq!(g.revision, before, "failed reversals consume no revision");
     assert_eq!(g.blocks, blocks, "failed reversals change nothing");
+}
+
+// ===========================================================================
+// insertItem / duplicateItem / removeItem
+// ===========================================================================
+
+#[test]
+fn insert_adds_a_plain_item_at_any_insertion_point() {
+    let (mut g, list) = bullet_list();
+    let before = g.revision;
+
+    g.insert_list_item(list, 0, text("Head")).expect("insert at the front");
+    g.insert_list_item(list, 2, text("Mid")).expect("insert before Beta");
+    g.insert_list_item(list, 5, text("Tail")).expect("insert at the end");
+
+    assert_eq!(texts(&g, list), vec!["Head", "Alpha", "Mid", "Beta", "Gamma", "Tail"]);
+    assert!(g.revision > before);
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn insert_renumbers_an_ordered_run_from_its_start() {
+    let mut g = DocumentGraph::new(DocumentId(1));
+    let list = g.push_block_at(
+        Block::List { ordered: true, items: vec![item_numbered("One", 7), item_numbered("Two", 8)] },
+        span(0, 16),
+    );
+
+    g.insert_list_item(list, 0, text("Zero")).expect("insert at the front");
+    g.insert_list_item(list, 3, text("Ten")).expect("insert at the end");
+    assert_eq!(
+        numbers(&g, list),
+        vec![("Zero".into(), Some(7)), ("One".into(), Some(8)), ("Two".into(), Some(9)), ("Ten".into(), Some(10))],
+        "the start number survives insertions"
+    );
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn insert_refuses_positions_beyond_the_end_without_mutating() {
+    let (mut g, list) = bullet_list();
+    let before = g.revision;
+    let blocks = g.blocks.clone();
+
+    assert_eq!(g.insert_list_item(list, 4, text("too far")), Err(TransformError::IndexOutOfRange { list, index: 4, positions: 4 }));
+    let missing = NodeId(999);
+    assert_eq!(g.insert_list_item(missing, 0, text("x")), Err(TransformError::NotFound(missing)));
+
+    assert_eq!(g.revision, before, "failed inserts consume no revision");
+    assert_eq!(g.blocks, blocks, "failed inserts change nothing");
+}
+
+#[test]
+fn duplicate_copies_the_item_and_deep_copies_nested_blocks() {
+    let mut g = DocumentGraph::new(DocumentId(1));
+    let body = g.push_block_at(Block::Paragraph { content: text("nested body") }, span(2, 9));
+    let list = g.push_block(Block::List {
+        ordered: false,
+        items: vec![ListItem { content: text("Alpha"), children: vec![body], ..Default::default() }, item("Beta", vec![])],
+    });
+
+    g.duplicate_list_item(list, 0).expect("duplicate Alpha");
+    let copies = shape(&g, list);
+    assert_eq!(copies.iter().map(|(value, _)| value.as_str()).collect::<Vec<_>>(), vec!["Alpha", "Alpha", "Beta"]);
+    let copied_body = copies[1].1[0];
+    assert_ne!(copied_body, body, "the nested block is deep-copied under a fresh id");
+    assert_eq!(copies[0].1, vec![body], "the source keeps its own nested block");
+    assert_eq!(g.block_span(copied_body), span(2, 9), "the copy carries the source span");
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn duplicate_keeps_task_state_and_renumbers_ordered_runs() {
+    let mut g = DocumentGraph::new(DocumentId(1));
+    let task = ListItem { content: text("Do"), number: Some(2), is_task: true, is_checked: Some(true), ..Default::default() };
+    let list = g.push_block(Block::List { ordered: true, items: vec![item_numbered("One", 1), task] });
+
+    g.duplicate_list_item(list, 0).expect("duplicate One");
+    g.duplicate_list_item(list, 2).expect("duplicate the task");
+    assert_eq!(
+        numbers(&g, list),
+        vec![("One".into(), Some(1)), ("One".into(), Some(2)), ("Do".into(), Some(3)), ("Do".into(), Some(4))]
+    );
+    let Block::List { items, .. } = &g.block(list).expect("the list").block
+    else {
+        panic!("expected a list")
+    };
+    assert!(items[2].is_task && items[2].is_checked == Some(true), "the task marker travels to the copy");
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn duplicate_refuses_out_of_range_without_mutating() {
+    let (mut g, list) = bullet_list();
+    let before = g.revision;
+    let blocks = g.blocks.clone();
+
+    assert_eq!(g.duplicate_list_item(list, 9), Err(TransformError::ItemOutOfRange { list, item: 9, items: 3 }));
+
+    assert_eq!(g.revision, before, "failed duplicates consume no revision");
+    assert_eq!(g.blocks, blocks, "failed duplicates change nothing");
+}
+
+#[test]
+fn remove_drops_the_item_and_sweeps_nested_blocks() {
+    let (mut g, list) = bullet_list();
+    g.indent_list_item(list, 1).expect("nest Beta under Alpha");
+    let nested = shape(&g, list)[0].1[0];
+    let before = g.blocks.len();
+
+    g.remove_list_item(list, 0).expect("remove Alpha with its nested run");
+    assert_eq!(texts(&g, list), vec!["Gamma"]);
+    assert!(g.block(nested).is_none(), "the nested list block is physically removed");
+    assert_eq!(g.blocks.len(), before - 1, "the nested run leaves the graph with its item");
+    assert_eq!(g.block_span(list), span(0, 20), "block_spans stay aligned with blocks");
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn remove_renumbers_ordered_runs_from_the_leading_number() {
+    let (mut g, list) = ordered_list();
+    g.remove_list_item(list, 0).expect("remove One");
+    assert_eq!(numbers(&g, list), vec![("Two".into(), Some(1)), ("Three".into(), Some(2))]);
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn remove_refuses_the_last_item_and_out_of_range_without_mutating() {
+    let (mut g, list) = bullet_list();
+    let solo = g.push_block(Block::List { ordered: false, items: vec![item("Solo", vec![])] });
+    let before = g.revision;
+    let blocks = g.blocks.clone();
+
+    assert_eq!(g.remove_list_item(list, 9), Err(TransformError::ItemOutOfRange { list, item: 9, items: 3 }));
+    assert_eq!(g.remove_list_item(solo, 0), Err(TransformError::CannotEmptyList { list: solo }));
+
+    assert_eq!(g.revision, before, "failed removals consume no revision");
+    assert_eq!(g.blocks, blocks, "failed removals change nothing");
 }
