@@ -84,14 +84,14 @@ pub struct WasmBinaryBackendInput {
     pub host_entry_export: Option<String>,
     /// 测试包逐入口映射：逻辑 `[test]` 名 → wasm 导出名。
     ///
-    /// 映射只在 lowering 由 `TargetExecutionPlan` 的冻结公开名生成；JS 启动壳按
+    /// 映射只在语言侧 lane 由冻结公开名生成并随目标输入交付；JS 启动壳按
     /// argv 查表选择导出，绝不重新推导、也不回退到第一个导出。非测试包为空。
     pub test_entry_exports: Vec<WasmTestEntryExport>,
 }
 
 /// 测试包启动壳的一条冻结入口：逻辑测试名与其 wasm 导出名。
 ///
-/// 两者都由 `TargetExecutionPlan::export_names` / `export_public_name` 冻结，
+/// 两者都由语言侧 lane 冻结的「逻辑测试名 → wasm 导出名」合同给出，
 /// 启动壳只按 argv 逻辑名查表，不按名字猜导出。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WasmTestEntryExport {

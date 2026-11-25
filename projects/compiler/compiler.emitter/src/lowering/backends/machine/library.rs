@@ -51,8 +51,8 @@ pub struct MachineLibraryExport {
 
 /// 普通共享库的目标私有输入：已降低的 LIR 程序 + 冻结导出描述符。
 ///
-/// 装配服务（编码 + 共享库容器 + 自检）只接受这个形状，不再接触跨目标的
-/// `FragmentSubmission` / `ExecutableFunction`。
+/// 装配服务（编码 + 共享库容器 + 自检）只接受这个形状，不再接触任何跨目标
+/// 共享 IR 形状。
 pub struct X64LibraryProgramInput {
     platform: X64Platform,
     functions: Vec<X64ProgramFunction>,

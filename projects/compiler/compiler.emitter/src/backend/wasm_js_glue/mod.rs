@@ -766,7 +766,7 @@ pub fn try_build_node_launcher(
     // 注意：这里只看 `"cli_get_target"` / `"cli_get_project"` / `"cli_get_output"`
     // 这三个 import **名**是否同时存在，用来决定启动壳是否生成 CLI 分派代码。
     //
-    // ❌ 这里**绝不**读取编译目标（`TargetExecutionPlan.target`）或 runner
+    // ❌ 这里**绝不**读取编译目标（目标输入里的 `target` 事实）或 runner
     //    默认值 `"node"` —— `cli_target` 的值是 Node 启动壳内部 JS 变量，
     //    和编译目标事实是两条完全独立的语义线。
     let cli_mode = imports.iter().any(|(_, field)| field == "cli_get_project")
@@ -948,7 +948,7 @@ let cli_project = "";
 // WASM 模块内部通过 `cli_get_target` import 读取到的就是这个运行时值，
 // 供测试矩阵选择执行宿主（node / deno / bun ...）。
 //
-// ⚠️  它和 `TargetExecutionPlan.target` / planner manifest 里的**编译目标事实**
+// ⚠️  它和 planner manifest 里的**编译目标事实**
 //      完全无关。emitter 构建链路在 Rust 侧从不读取本变量的值——
 //      `cli_mode` 开关（决定是否生成 CLI 分派代码）只看 `"cli_get_target"`
 //      这个 import **名**是否存在，与默认值字符串无关。

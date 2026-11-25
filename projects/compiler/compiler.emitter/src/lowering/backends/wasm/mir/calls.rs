@@ -470,7 +470,7 @@ impl<'a> WasmMirLowerer<'a> {
                 return self.emit_managed_utf8_to_host_handle(operand);
             }
         }
-        // 仅允许 TargetExecutionPlan 已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
+        // 仅允许目标私有输入已承诺的显式宽度转换；禁止用 0 / null 掩盖 carrier 失配。
         if expected == VALTYPE_I64 && (actual == WASM_GC_ANYREF || actual == WASM_GC_EXTERNREF) {
             self.emit_operand(operand)?;
             self.emit_unbox_i64_payload();
@@ -506,7 +506,7 @@ impl<'a> WasmMirLowerer<'a> {
         }
         Err(format!(
             "WASM ABI carrier mismatch in `{}`: slot={} actual={} operand={} origin={}; \
-             TargetExecutionPlan must provide an explicit conversion — refusing null/0 placeholders",
+             目标私有输入必须提供显式转换 — refusing null/0 placeholders",
             self.mir_fn.symbol,
             self.abi_valtype_label(expected),
             self.abi_valtype_label(actual),

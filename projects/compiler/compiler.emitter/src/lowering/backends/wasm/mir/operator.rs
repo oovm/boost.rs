@@ -1,7 +1,7 @@
 //! Wasm 平台私有的 `[wasm_operator("...")]` 冻结入口。
 //!
-//! 助记符表与数组操作身份归 Wasm backend 所有：共享 `TargetExecutionPlan` 只保存
-//! 逻辑导入链接，不再携带任何平台的冻结结果。计划构造阶段由本模块一次性冻结，
+//! 助记符表与数组操作身份归 Wasm backend 所有：跨目标公共计划已删除，目标私有
+//! 输入只保存逻辑导入链接，不再携带任何平台的冻结结果。计划构造阶段由本模块一次性冻结，
 //! 发射期只消费 [`WasmOperatorBinding`]，不得再从助记符字符串推断 arity 或配方。
 
 use data_binary_wasm::WasmOpcode;

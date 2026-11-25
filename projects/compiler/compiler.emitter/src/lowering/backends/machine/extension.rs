@@ -73,7 +73,7 @@ pub struct MachineHostExport {
 /// 宿主扩展的目标私有输入：已降低的 LIR 程序 + 冻结的宿主边界事实。
 ///
 /// 装配服务（宿主包装体编组 + 编码 + 共享库容器 + 自检）只接受这个形状，不再
-/// 接触跨目标的 `FragmentSubmission` / `ExecutableFunction`。
+/// 接触任何跨目标共享 IR 形状。
 pub struct X64ExtensionProgramInput {
     platform: X64Platform,
     host: HostModule,

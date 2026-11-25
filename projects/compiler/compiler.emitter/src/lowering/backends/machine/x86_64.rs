@@ -25,12 +25,12 @@ use std::collections::BTreeMap;
 
 use crate::{
     Result,
-    backend_plan_views::SemanticType,
     emitter_backend_machine::{MachineImageKind, classify_machine_image},
     target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::binary::pe::{NativePeImage, NativePeWriter},
 };
 use compiler_target::abstractions::BinaryArch;
+use compiler_types::SemanticType;
 
 use data_binary_pe::elf::{NativeElfImage, NativeElfWriter};
 
@@ -386,8 +386,7 @@ impl ContainerKind {
 /// x86-64 程序装配服务的目标私有输入。
 ///
 /// 内部只保存已降低的文本 LIR 程序、入口符号与容器选择；装配服务（编码 +
-/// 容器 + 自检）只接受这个形状，不再接触跨目标的 `FragmentSubmission` /
-/// `ExecutableFunction` / `InstructionKind`。
+/// 容器 + 自检）只接受这个形状，不再接触任何跨目标共享 IR 形状。
 pub struct X64ProgramInput {
     abi: X64CallConv,
     container: ContainerKind,
@@ -413,8 +412,8 @@ impl X64ProgramInput {
 
 /// 目标私有 LIR 程序 → 容器镜像。
 ///
-/// 这是本 lane 唯一的编码与容器装配入口：签名里没有 `FragmentSubmission` /
-/// `ExecutableFunction`，复用唯一程序装配器与 PE/ELF 容器写出。
+/// 这是本 lane 唯一的编码与容器装配入口：签名里没有跨目标共享 IR 形状，
+/// 复用唯一程序装配器与 PE/ELF 容器写出。
 pub(crate) fn assemble_x86_64_program_image(input: &X64ProgramInput) -> Result<X64LoweredProgram> {
     let container = input.container;
     // 唯一程序装配器：帧、符号布局、`rel32` 回填与导入/数据装配不再各写一遍。

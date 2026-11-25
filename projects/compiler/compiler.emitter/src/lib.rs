@@ -8,26 +8,20 @@ mod artifacts;
 pub mod assembly;
 #[doc(hidden)]
 pub mod backend;
-pub mod backend_plan_views;
-pub mod contracts;
 mod driver;
 #[doc(hidden)]
 pub mod lowering;
 pub mod ovm_abi;
-mod target_execution_plan;
 pub mod target_operator;
 
 mod error;
-pub use error::{EmitterError, FragmentLoweringError, Result};
+pub use error::{EmitterError, Result};
 
 pub mod managed_abi;
 pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry, managed_abi_sidecar_file};
 pub use ovm_abi::{OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_SUFFIX, OvmAbiContract, OvmAbiSidecar, ovm_abi_sidecar_file};
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
 use crate::{
     emitter_backend_clr::ClrBinaryBackendInput, emitter_backend_jvm::JvmBinaryBackendInput, emitter_backend_machine::MachineImageBackendInput,
@@ -37,26 +31,67 @@ pub use backend::{
     clr as emitter_backend_clr, jvm as emitter_backend_jvm, machine as emitter_backend_machine, vm as emitter_backend_vm,
     wasi as emitter_backend_wasi, wasm as emitter_backend_wasm, wasm_js_glue as emitter_backend_wasm_js_glue,
 };
-use compiler_optimize::{EntryReturnProjection, ProjectionPolicy, TheoryBundle};
+use compiler_optimize::{EntryReturnProjection, ProjectionPolicy};
 use compiler_target::PartitionBackendRequirement;
 use compiler_target::{
     ArtifactPurpose, BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag,
-    ClrSuspendStrategy, ExternalCallEdge, ExternalImportLink, HostProjectionBoundary, Identifier, InternalCallEdge, QualifiedName,
-    ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, backends::CompilationOptions, packaging::ArtifactSet,
-};
-use std::collections::{BTreeMap, BTreeSet};
-#[doc(hidden)]
-pub use target_execution_plan::{
-    BackendImport, ProgramTextRepresentation, SumRepresentation, SumVariantRepresentation, TargetExecutionPlan, TargetPlanInput,
+    HostProjectionBoundary, Identifier, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, backends::CompilationOptions,
+    packaging::ArtifactSet,
 };
 
-use crate::{
-    backend_plan_views::ExecutableFunction,
-    driver::partitioning::{backend_family_for_partition, merge_partition_reports, partition_artifact_name},
-    lowering::{lower_fragment_to_driver_input, write_wasm_wat_sidecar},
-};
+/// 已由 Compiler 绑定身份、签名和链接合同的导入。
+#[derive(Debug, Clone)]
+pub struct BackendImport {
+    /// Canonical 导入索引。
+    pub index: compiler_types::ImportIndex,
+    /// 外部链接候选（声明顺序；target 裁决归各后端自己的 interop 函数）。
+    pub links: Vec<compiler_types::ExternalImportLink>,
+    /// 参数类型列表。
+    pub parameter_types: Vec<compiler_types::SemanticType>,
+    /// 返回类型。
+    pub return_type: compiler_types::SemanticType,
+}
 
-pub(crate) use backend_plan_views::FunctionView;
+/// 程序级文本载体表示模式：表示计划的正式事实。
+///
+/// raw/managed 的选择必须由计划生产者显式声明并冻结进目标输入，发射期与
+/// ABI 合同只认这份声明；禁止由「布局注册表里没有 `utf8` 托管布局」反推
+/// 程序选择了 raw——上游漏登记整类布局时，missing 会被吸收成合法表示。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramTextRepresentation {
+    /// 程序显式选择 raw 宿主串表示；未逐槽冻结托管布局的文本槽才是合法 raw。
+    Raw,
+    /// 程序选择托管文本表示；没有逐值/逐槽载体事实的文本槽一律按 missing 拒收。
+    Managed,
+}
+
+/// sum 的语言事实：variant 身份、discriminant 与 payload 类型由语言冻结。
+///
+/// tag 的物理宽度与槽位表示**不在**这份合同里——它是各 lane 自己的物理事实
+/// （machine 4 字节 tag 槽、JVM `int` 字段、CLR `int32` 字段、Wasm GC `i32`
+/// 字段、OVM i32 槽 0），由后端在自己的布局处冻结，不由编排层按 backend
+/// family 预先取好传给语言适配器。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SumRepresentation {
+    /// 完整的 sum 名义实例身份。
+    pub nominal: compiler_types::NominalInstanceId,
+    /// variant 身份到 tag/payload 合同的稀疏表。
+    pub variants: std::collections::BTreeMap<compiler_types::VariantId, SumVariantRepresentation>,
+}
+
+/// 平台 sum variant 合同。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SumVariantRepresentation {
+    /// 语言稳定 variant 身份。
+    pub id: compiler_types::VariantId,
+    /// 平台 discriminant；不是语义身份。
+    pub tag: u32,
+    /// 已代入 payload 类型；无 payload 时为空。
+    pub payload_type: Option<compiler_types::TypeId>,
+}
+
+use crate::driver::partitioning::{backend_family_for_partition, merge_partition_reports, partition_artifact_name};
+use crate::lowering::write_wasm_wat_sidecar;
 
 /// canonical 原语拼写的测试载体映射（仅单测使用）。
 ///
@@ -96,70 +131,11 @@ pub mod testing {
     use crate::Result;
     use compiler_target::{PartitionBackendRequirement, backends::CompilationOptions};
 
-    use super::{
-        DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, compile_with_bundled_backends,
-    };
-    use compiler_types::SingletonInstancePlan;
-
-    /// Target profile used by normalized physical-contract observations.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum PhysicalContractTarget {
-        /// JVM classfile preparation.
-        Jvm,
-        /// CLR MSIL preparation.
-        Clr,
-        /// WASM core preparation without a host boundary.
-        WasmCore,
-        /// WASM core projected through Node/JavaScript glue.
-        WasmJsGlue,
-        /// WASM core projected through a WASI component boundary.
-        WasiComponent,
-    }
-
-    /// Return the canonical Semantic MIR observation for a Rust executable
-    /// submission.  Paired conformance tests compare this verbatim with the
-    /// frontend Semantic MIR observation; neither side exposes backend data.
-    pub fn semantic_mir_observation(submission: &FragmentSubmission, case_id: &str) -> String {
-        let result = super::lowering::features::semantic_mir_contract::validate_submission(submission);
-        super::lowering::features::semantic_mir_contract::observation(case_id, result.as_ref().map(|_| ()).map_err(|error| error))
-    }
-
-    /// Return the canonical physical-contract observation for a Rust
-    /// Semantic MIR submission and target profile.
-    pub fn physical_contract_observation(submission: &FragmentSubmission, case_id: &str, target: PhysicalContractTarget) -> String {
-        use super::lowering::features::physical_contract::PhysicalBackend;
-        let backend = match target {
-            PhysicalContractTarget::Jvm => PhysicalBackend::Jvm,
-            PhysicalContractTarget::Clr => PhysicalBackend::Clr,
-            PhysicalContractTarget::WasmCore => PhysicalBackend::WasmCore,
-            PhysicalContractTarget::WasmJsGlue => PhysicalBackend::WasmJsGlue,
-            PhysicalContractTarget::WasiComponent => PhysicalBackend::WasiComponent,
-        };
-        let result = super::lowering::features::physical_contract::validate_physical_submission(submission, backend);
-        super::lowering::features::physical_contract::observation(case_id, result.as_ref().map(|_| ()).map_err(|error| error))
-    }
+    use super::{DriverCompileReport, DriverCompileRequest, LoweredBackendInput, compile_with_bundled_backends};
 
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)
-    }
-
-    /// Render one singleton metadata line using the production schema.
-    pub fn singleton_metadata_line(plan: &SingletonInstancePlan) -> String {
-        super::lowering::testing_singleton_metadata_line(plan)
-    }
-
-    /// WASM-GC anyref marker byte for MIR contract tests.
-    pub const WASM_GC_ANYREF: u8 = super::lowering::TESTING_WASM_GC_ANYREF;
-
-    /// Empty submission for integration tests and pending contract migrations.
-    pub fn empty_fragment_submission() -> FragmentSubmission {
-        FragmentSubmission::from_backend_plan(TargetExecutionPlan::default())
-    }
-
-    /// Build a fragment submission from a completed backend-private plan.
-    pub fn fragment_submission_from_plan(plan: TargetExecutionPlan) -> FragmentSubmission {
-        FragmentSubmission::from_backend_plan(plan)
     }
 
     /// Stable Node utf8 host import count used by wasm MIR contract tests.
@@ -568,34 +544,6 @@ pub trait FrontendBuildBundle {
     }
 }
 
-/// 前端提交给驱动层的语义片段。
-#[derive(Clone)]
-pub struct FragmentSubmission {
-    /// 已完成语义闭包与表示合同的目标私有计划。
-    #[doc(hidden)]
-    pub backend_plan: Arc<TargetExecutionPlan>,
-}
-
-impl std::fmt::Debug for FragmentSubmission {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FragmentSubmission").finish()
-    }
-}
-
-impl Default for FragmentSubmission {
-    fn default() -> Self {
-        Self::from_backend_plan(TargetExecutionPlan::default())
-    }
-}
-
-impl FragmentSubmission {
-    /// 从目标私有计划构造片段提交。
-    #[doc(hidden)]
-    pub fn from_backend_plan(plan: TargetExecutionPlan) -> Self {
-        Self { backend_plan: Arc::new(plan) }
-    }
-}
-
 /// First-class suspend backend input (ovm / native continuation runtime).
 #[derive(Debug, Clone)]
 pub struct OvmBackendInput {
@@ -671,43 +619,6 @@ impl LoweredBackendInput {
     /// 直接提交 `ovm` backend 输入。
     pub fn ovm(input: OvmBackendInput) -> Self {
         Self::new(DriverBackendInput::Ovm(input))
-    }
-
-    /// 语言→平台适配器提交已准备的目标计划，生成驱动层 backend 输入。
-    ///
-    /// 只有适配器持有的目标计划会进入编码；编排层不读取语言 MIR。
-    pub fn from_fragment_submission(
-        submission: &FragmentSubmission,
-        backend_family: TargetBackendFamily,
-        host_boundary: HostProjectionBoundary,
-        output_dir: &Path,
-        host_flavor: &str,
-        artifact_purpose: compiler_target::ArtifactPurpose,
-        wasm_package_kind: emitter_backend_wasi::WasmPackageKind,
-    ) -> Result<Self> {
-        // 边界输入形状与分发形态不在这里另立空检查：对 `BackendInputShape::default()`
-        // 与常量 `Static` 的校验不读取任何实际提交事实，只会制造「已验证」的假象。
-        // 真正取证的门是 `lower_fragment_to_driver_input` 里的
-        // `semantic_mir_contract::validate_submission`，五个目标家族（含机器码）
-        // 都必须在 lowering 之前经过它。
-        Ok(Self {
-            input: lower_fragment_to_driver_input(
-                submission,
-                backend_family,
-                host_boundary,
-                output_dir.to_path_buf(),
-                host_flavor,
-                artifact_purpose,
-                wasm_package_kind,
-            )
-            .map_err(|error| error.to_string())?,
-            entry_artifact_name: submission
-                .backend_plan
-                .entry_operation()
-                .and_then(|instance| submission.backend_plan.abi_name_for_instance(instance))
-                .as_ref()
-                .and_then(entry_artifact_name),
-        })
     }
 
     pub(crate) fn into_driver_backend_input(self) -> DriverBackendInput {
@@ -983,12 +894,6 @@ fn emit_test_run_contracts(report: &mut DriverCompileReport, output_dir: &Path, 
     Ok(())
 }
 
-fn entry_artifact_name(entry_operation: &QualifiedName) -> Option<String> {
-    let name = entry_operation.parts().last()?.as_str();
-    let sanitized = name.chars().map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' }).collect::<String>();
-    (!sanitized.is_empty()).then_some(sanitized)
-}
-
 // ---------------------------------------------------------------------------
 // Integration-test-only re-exports. Not part of the public API contract.
 // ---------------------------------------------------------------------------
@@ -1007,5 +912,3 @@ pub use driver::families::driver_compiler_names;
 #[cfg(feature = "ovm-lane")]
 #[doc(hidden)]
 pub use driver::families::ovm::resolve_entry_symbols;
-#[doc(hidden)]
-pub use lowering::features::semantic_mir_contract::{observation, validate_function, validate_submission};

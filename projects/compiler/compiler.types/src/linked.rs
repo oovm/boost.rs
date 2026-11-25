@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// 完成 adaptor 选择与跨包闭包后的链接程序。
 ///
 /// 这是进入已校验 Semantic MIR 的**成功**类型——不是并行的
-/// `FrontendNeutralPlan` / `FragmentSubmission` 权威。
+/// `FrontendNeutralPlan` / 公共 IR 片段提交权威。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LinkedSemanticProgram {
     /// Module / package identity key.

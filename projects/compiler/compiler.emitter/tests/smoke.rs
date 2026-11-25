@@ -4,16 +4,9 @@
 //! proves the crate links and its shared contracts answer on the public surface.
 
 use compiler_emitter::{
-    BackendDispatchKind, BackendInputShape, BackendRoute, FragmentSubmission, bundled_backend_capability_descriptor, validate_backend_input,
-    validate_dispatch_for_route,
+    BackendDispatchKind, BackendInputShape, BackendRoute, bundled_backend_capability_descriptor, validate_backend_input, validate_dispatch_for_route,
 };
 use compiler_target::TargetBackendFamily;
-
-#[test]
-fn submission_default_is_constructible() {
-    let submission = FragmentSubmission::default();
-    assert!(format!("{submission:?}").contains("FragmentSubmission"));
-}
 
 #[test]
 fn bundled_capabilities_answer_for_managed_and_wasm_targets() {

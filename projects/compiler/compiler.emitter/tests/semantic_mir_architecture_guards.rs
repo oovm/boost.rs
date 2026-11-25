@@ -1,4 +1,4 @@
-//! Static guards for the Canonical Semantic MIR boundary.
+//! Static guards for the removed cross-target public IR surface.
 
 use std::{fs, path::PathBuf};
 
@@ -8,47 +8,69 @@ fn read(relative: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
 }
 
-fn production_source(source: String) -> String {
-    source.split("#[cfg(test)]").next().expect("source prefix must exist").to_string()
+fn collect_rs_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
+    if !dir.is_dir() {
+        return;
+    }
+    for entry in fs::read_dir(dir).unwrap_or_else(|error| panic!("failed to read {}: {error}", dir.display())) {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rs_files(&path, out);
+        }
+        else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
 }
 
 #[test]
-fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
-    let sources = vec![(
-        "SMIR-G001",
-        "name-based semantic dispatch".to_string(),
-        production_source(read("src/lowering/features/semantic_mir_contract.rs")),
-    )];
-    let forbidden = [
-        ("SMIR-G001", ".symbol.contains("),
-        ("SMIR-G001", ".symbol.starts_with("),
-        ("SMIR-G001", ".symbol.ends_with("),
-        ("SMIR-G001", "\"von\""),
-        ("SMIR-G001", "\"Option\""),
-        ("SMIR-G001", "\"Result\""),
-        ("SMIR-G002", "descriptor"),
-        ("SMIR-G003", "infer_output"),
-        ("SMIR-G004", "operand_stack"),
-        ("SMIR-G004", "stack_shape"),
-        ("SMIR-G005", "java.lang.String"),
-        ("SMIR-G005", "System.String"),
-        ("SMIR-G005", "JS string"),
-        ("SMIR-G005", "WASM_GC_ANYREF"),
-        ("SMIR-G006", "unwrap_or(SemanticType::Integer32"),
-        ("SMIR-G006", "unwrap_or(ValkyrieType::Integer32"),
-        ("SMIR-G006", "default_i32"),
-        ("SMIR-G006", "default_void"),
-        ("SMIR-G006", "default_object"),
-        ("SMIR-G006", "default_anyref"),
+fn public_ir_surface_is_fully_removed() {
+    // 阶段 F：跨目标公共 IR（旧计划、旧提交、旧合同与其构造面）已从 emitter
+    // 公共面彻底删除。全 src 树（含注释）不得再出现这些名字，防止旁路回填。
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    collect_rs_files(&root, &mut files);
+    assert!(!files.is_empty(), "emitter src 树必须存在被守卫的源文件");
+    let banned = [
+        "FragmentSubmission",
+        "TargetExecutionPlan",
+        "TargetPlanInput",
+        "ExecutableFunction",
+        "InstructionKind",
+        "backend_plan_views",
+        "from_fragment_submission",
+        "lower_fragment_to_driver_input",
+        "semantic_mir_contract",
+        "FragmentLoweringError",
     ];
-    for (rule, description, source) in sources {
-        for (forbidden_rule, pattern) in forbidden {
-            if rule == forbidden_rule || matches!(forbidden_rule, "SMIR-G003" | "SMIR-G004" | "SMIR-G006") {
-                assert!(
-                    !source.contains(pattern),
-                    "{rule}: {description} must not contain forbidden semantic reconstruction pattern `{pattern}`"
-                );
-            }
+    for path in &files {
+        let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for word in banned {
+            assert!(!source.contains(word), "{} 不得再出现已删除的公共 IR 名字 `{word}`", path.display());
+        }
+    }
+}
+
+#[test]
+fn language_side_emitter_never_imports_public_ir_surface() {
+    // 语言侧 emitter 目录不得再 import 已删除的公共 IR 模块或类型。
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../language/language.valkyrie/src/compiler/emitter");
+    let mut files = Vec::new();
+    collect_rs_files(&root, &mut files);
+    assert!(!files.is_empty(), "语言侧 emitter 目录必须存在被守卫的源文件");
+    let banned = [
+        "compiler_emitter::contracts",
+        "backend_plan_views",
+        "FragmentSubmission",
+        "TargetExecutionPlan",
+        "from_fragment_submission",
+        "target_plan::from_compiled_program",
+    ];
+    for path in &files {
+        let source = fs::read_to_string(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for word in banned {
+            assert!(!source.contains(word), "{} 不得再引用已删除的公共 IR 面 `{word}`", path.display());
         }
     }
 }

@@ -1,7 +1,7 @@
 //! JVM 数值指令绑定的唯一 operator 配方表。
 //!
 //! `[jvm_operator("long_divide")]` 只声明目标 operator 名；operator 名到**冻结配方**
-//! 的映射归 JVM backend 所有，并在 `TargetExecutionPlan` 构造时一次性写入计划（arity、
+//! 的映射归 JVM backend 所有，并在语言侧 JVM lane 构造目标私有输入时一次性写入计划（arity、
 //! 操作数发射配方、操作数/结果载体与冻结码）。emit 侧只编码计划里的配方，不再
 //! 从 operator 名字符串推断 arity 或操作数改写。
 //!

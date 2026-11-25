@@ -1,7 +1,7 @@
 //! WASM GC 数组指令绑定的唯一助记符表。
 //!
 //! `[wasm_operator("array.get")]` 只声明目标操作身份；助记符到**冻结计划**的映射归
-//! wasm backend 所有，并在 `TargetExecutionPlan` 构造时一次性写入计划（arity 与操作
+//! wasm backend 所有，并在语言侧 Wasm lane 构造目标私有输入时一次性写入计划（arity 与操作
 //! 身份）。数组 operator 是多步编码（`ref.cast` + `array.get`/`array.set`/
 //! `array.new_default`/`array.len`），arraytype 索引随元素类型在编码期从
 //! RepresentationPlan 注册表解析——与 MIR `ArrayNew`/`ArrayGet`/`ArraySet`/

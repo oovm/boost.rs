@@ -9,10 +9,17 @@ use crate::{
 };
 use data_binary_wasm::WasmOpcode;
 
-use crate::lowering::{
-    backends::wasm,
-    features::semantic_mir_contract::SemanticMirContractError,
-};
+use crate::lowering::backends::wasm;
+
+/// Wasm lane 私有的 singleton 合同拒绝事实：布局缺失等表示事实缺口按
+/// code / function / location / detail 结构化上报，由装配层收敛为失败文本。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WasmSingletonContractError {
+    pub code: &'static str,
+    pub function: String,
+    pub location: String,
+    pub detail: String,
+}
 
 pub(crate) fn singleton_metadata_line(fact: &WasmSingletonFact) -> String {
     let mode = if fact.is_lazy { "lazy" } else { "static" };
@@ -60,7 +67,7 @@ pub(crate) fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, 
 ///
 /// 尺寸与对齐只能来自 settle 结算的聚合物理布局；缺失时返回结构化拒绝，
 /// 不得由 backend 以目标默认值补造表示事实。
-pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModule, input: &WasmModuleInput) -> Result<(), SemanticMirContractError> {
+pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModule, input: &WasmModuleInput) -> Result<(), WasmSingletonContractError> {
     if input.singleton_facts.is_empty() {
         return Ok(());
     }
@@ -73,7 +80,7 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
         .iter()
         .map(|fact| match (fact.layout_size, fact.layout_align) {
             (Some(size), Some(align)) => Ok((size.max(8), align.max(1))),
-            _ => Err(SemanticMirContractError {
+            _ => Err(WasmSingletonContractError {
                 code: "SMIR010",
                 function: fact.name.clone(),
                 location: "singleton instance".to_string(),
@@ -83,7 +90,7 @@ pub(crate) fn augment_wasm_with_singleton_accessors(module: &mut WasmBinaryModul
                 ),
             }),
         })
-        .collect::<Result<Vec<_>, SemanticMirContractError>>()?;
+        .collect::<Result<Vec<_>, WasmSingletonContractError>>()?;
 
     let realloc_index = ensure_wasm_cabi_realloc(module);
 

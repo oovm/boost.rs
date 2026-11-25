@@ -24,8 +24,6 @@ use std::collections::BTreeMap;
 
 use compiler_types::{AggregateLayoutPlan, Identifier, LayoutId, NominalInstanceId, SemanticType, StorageKind, SumTypeLayout};
 
-use crate::{Result, backend_plan_views::ExecutableFunction, contracts::ValueOrigin};
-
 /// 目标中立的 ABI 语义结构。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AbiStructure {
@@ -532,43 +530,6 @@ pub fn sum_variants_of(sum: &SumTypeLayout) -> Vec<AbiVariant> {
     sum.variants.iter().map(|variant| AbiVariant { name: variant.name.clone(), tag: variant.tag }).collect()
 }
 
-/// 从函数 SSA 值提取入口参数身份 `(声明下标, canonical 参数名)`。
-///
-/// 身份必须来自 `ValueOrigin::Parameter`，数量必须与 `param_types` 一致，下标
-/// 必须连续且从 0 开始，参数名必须非空且不重复；任何偏离都在此结构化失败。
-/// wasm 与 ovm 的库导出合同共用这一份校验。
-pub(crate) fn canonical_parameter_identities<'a>(instance_label: &str, function: &'a ExecutableFunction) -> Result<Vec<(usize, &'a str)>> {
-    let mut identities = function
-        .values
-        .iter()
-        .filter_map(|value| match &value.origin {
-            ValueOrigin::Parameter { index, name } => Some((*index, name.as_str())),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if identities.len() != function.param_types.len() {
-        return Err(format!(
-            "库导出 `{instance_label}` 的入口参数身份数量与参数类型数量不一致: parameter_origins={} param_types={}",
-            identities.len(),
-            function.param_types.len()
-        ));
-    }
-    identities.sort_by_key(|(index, _)| *index);
-    let mut names = std::collections::BTreeSet::new();
-    for (position, (index, name)) in identities.iter().enumerate() {
-        if *index != position {
-            return Err(format!("库导出 `{instance_label}` 参数下标不连续: position={position} index={index}"));
-        }
-        if name.trim().is_empty() {
-            return Err(format!("库导出 `{instance_label}` 参数 {index} 缺少 canonical 参数名"));
-        }
-        if !names.insert(*name) {
-            return Err(format!("库导出 `{instance_label}` 参数 {index} 的参数名 `{name}` 重复"));
-        }
-    }
-    Ok(identities)
-}
-
 /// 从 `Identifier` 提取简单名（丢掉模块路径前缀）。
 pub fn simple_name_of(id: &Identifier) -> String {
     let full = id.as_str();
@@ -620,41 +581,10 @@ fn flatten_apply_identity(mut ty: &SemanticType) -> (String, String, Vec<Semanti
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::contracts::{Block, BlockRef, ExecutableFunction, Terminator, Value, ValueOrigin, ValueRef};
-
     use super::*;
 
     fn named_type(s: &str) -> SemanticType {
         crate::test_canonical_primitive(s)
-    }
-
-    #[allow(deprecated)]
-    fn identity_function(parameters: &[(usize, &str, SemanticType)], return_type: SemanticType) -> ExecutableFunction {
-        ExecutableFunction {
-            symbol: "exported".to_string(),
-            return_type,
-            param_types: parameters.iter().map(|(_, _, ty)| ty.clone()).collect(),
-            value_types: BTreeMap::new(),
-            value_layouts: BTreeMap::new(),
-            return_layout: None,
-            entry: BlockRef(0),
-            values: parameters
-                .iter()
-                .map(|(index, name, _)| Value {
-                    id: ValueRef(u32::try_from(*index).expect("test parameter index")),
-                    origin: ValueOrigin::Parameter { index: *index, name: (*name).to_string() },
-                })
-                .collect(),
-            blocks: vec![Block {
-                id: BlockRef(0),
-                label: "entry".to_string(),
-                parameters: Vec::new(),
-                instructions: Vec::new(),
-                terminator: Terminator::Return { value: None },
-            }],
-        }
     }
 
     #[test]
@@ -686,12 +616,5 @@ mod tests {
         assert_eq!(aggregate.generic_args, vec![AbiStructure::I64]);
         assert!(aggregate.fields.is_empty(), "没有布局事实时不得猜字段");
         assert_eq!(aggregate.layout, None);
-    }
-
-    #[test]
-    fn canonical_parameter_identities_reject_duplicates() {
-        let function = identity_function(&[(0, "value", named_type("i64")), (1, "value", named_type("i64"))], named_type("i64"));
-        let error = canonical_parameter_identities("identity", &function).expect_err("重复参数名必须失败");
-        assert!(error.contains("重复"), "got: {error}");
     }
 }

@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{Result, emitter_backend_wasi::WasmBinaryModule};
-use compiler_target::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily};
-use crate::{DriverBackendInput, FragmentSubmission};
+use crate::{Result, DriverBackendInput, emitter_backend_wasi::WasmBinaryModule};
 
 #[doc(hidden)]
 pub mod backends;
@@ -14,86 +12,6 @@ use self::backends::wasm;
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
     wasm::decode_uleb128(bytes, pos)
-}
-
-pub(crate) fn testing_mir_lowering_context(submission: &FragmentSubmission) -> Result<shared::executable::ExecutableLoweringContext<'_>> {
-    shared::executable::ExecutableLoweringContext::new(submission, shared::physical_layout::LayoutPolicy::WASM32)
-}
-
-pub(crate) const TESTING_WASM_GC_ANYREF: u8 = wasm::WASM_GC_ANYREF;
-
-pub(crate) fn testing_singleton_metadata_line(plan: &compiler_types::SingletonInstancePlan) -> String {
-    let fact = wasm::input::WasmSingletonFact {
-        namespace: plan.namespace.clone(),
-        name: plan.name.clone(),
-        instance_field: plan.instance_field.clone(),
-        is_lazy: plan.is_lazy,
-        constructor_symbol: plan.constructor_symbol.clone(),
-        finalizer_symbol: plan.finalizer_symbol.clone(),
-        layout_size: None,
-        layout_align: None,
-        accessor_method: plan.accessor_method().to_string(),
-        qualified_name: plan.qualified_name(),
-        supports_unload: plan.supports_unload(),
-    };
-    wasm::mir::singleton::singleton_metadata_line(&fact)
-}
-
-/// 将已完成语义装配的片段降低为驱动层目标输入（集成测试专用）。
-///
-/// 公共边界返回结构化 [`crate::FragmentLoweringError`]：Semantic MIR 合同门禁
-/// 有独立变体，其余目标降低/装配原因保留细节文本。
-#[doc(hidden)]
-pub fn lower_fragment_to_driver_input(
-    submission: &FragmentSubmission,
-    backend_family: TargetBackendFamily,
-    host_boundary: HostProjectionBoundary,
-    output_dir: PathBuf,
-    host_flavor: &str,
-    artifact_purpose: ArtifactPurpose,
-    wasm_package_kind: crate::emitter_backend_wasi::WasmPackageKind,
-) -> std::result::Result<DriverBackendInput, crate::FragmentLoweringError> {
-    features::semantic_mir_contract::validate_submission(submission).map_err(crate::FragmentLoweringError::SemanticContract)?;
-    build_driver_input(submission, backend_family, host_boundary, output_dir, host_flavor, artifact_purpose, wasm_package_kind)
-        .map_err(crate::FragmentLoweringError::from)
-}
-
-fn build_driver_input(
-    _submission: &FragmentSubmission,
-    backend_family: TargetBackendFamily,
-    _host_boundary: HostProjectionBoundary,
-    _output_dir: PathBuf,
-    _host_flavor: &str,
-    _artifact_purpose: ArtifactPurpose,
-    _wasm_package_kind: crate::emitter_backend_wasi::WasmPackageKind,
-) -> Result<DriverBackendInput> {
-    match backend_family {
-        // WASM lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
-        // `pipeline/wasm/`）：submission 公共 IR 解释阶段已删除，Wasm 家族不得
-        // 再经本路径静默产出产物，显式失败闭合。
-        TargetBackendFamily::Wasm => Err(format!(
-            "WASM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Wasm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 WASM 产物"
-        )),
-        // OVM lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
-        // `pipeline/ovm/`）：submission 公共 IR 解释阶段已删除，Ovm 家族不得
-        // 再经本路径静默产出产物，显式失败闭合。
-        TargetBackendFamily::Ovm => Err(format!(
-            "OVM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Ovm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 OVM 产物"
-        )),
-        // JVM lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
-        // `pipeline/jvm/`）：submission 公共 IR 解释阶段已删除，Jvm 家族不得
-        // 再经本路径静默产出产物，显式失败闭合。
-        TargetBackendFamily::Jvm => Err(format!(
-            "JVM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Jvm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 JVM 产物"
-        )),
-        // CLR lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
-        // `pipeline/clr/`）：submission 公共 IR 解释阶段已删除，Clr 家族不得
-        // 再经本路径静默产出产物，显式失败闭合。
-        TargetBackendFamily::Clr => Err(format!(
-            "CLR lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Clr 家族；拒绝经 `lower_fragment_to_driver_input` 产出 CLR 产物"
-        )),
-        other => Err(format!("目标 `{other:?}` 在当前构建中没有已启用的正式 lowering；拒绝切换目标或补造产物")),
-    }
 }
 
 pub(crate) fn write_wasm_wat_sidecar(output_dir: &Path, artifact_name: &str, input: &DriverBackendInput) -> Result<Option<PathBuf>> {

@@ -1,7 +1,7 @@
 //! CLR 数值指令绑定的唯一助记符表。
 //!
 //! `[clr_operator("i64.div")]` 只声明目标 operator 助记符；助记符到**冻结配方**
-//! 的映射归 CLR backend 所有，并在 `TargetExecutionPlan` 构造时一次性写入计划
+//! 的映射归 CLR backend 所有，并在语言侧 CLR lane 构造目标私有输入时一次性写入计划
 //! （arity、操作数发射配方、操作数/结果载体与 MSIL opcode）。emit 侧只编码计划
 //! 里的配方，不再从助记符字符串推断 arity 或操作数改写。
 //!
