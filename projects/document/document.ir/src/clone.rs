@@ -49,7 +49,7 @@ impl DocumentGraph {
                 continue;
             }
             let copy = self.copy_node_detached(*root, &mut clone.mapping);
-            self.attach_copy_after_source(*root, copy);
+            self.place_after(*root, copy);
             clone.roots.push(copy);
         }
         self.bump_revision();
@@ -114,18 +114,20 @@ impl DocumentGraph {
         new_id
     }
 
-    /// 把副本根接入源根之后：优先在源的容器列表中紧随源插入；源为顶层节点
-    /// 时在 `blocks` 顺序上移到源之后（`block_spans` 同步移动保持对齐）。
-    fn attach_copy_after_source(&mut self, source: NodeId, copy: NodeId) {
-        if self.insert_after_in_containers(source, copy) {
+    /// 把 `node` 直接放到 `anchor` 之后：`anchor` 在某个容器（Section / Quote /
+    /// List item / TableCell）的 children 列表中时插入其后；`anchor` 为顶层节点
+    /// 时在 `blocks` 顺序上移到 `anchor` 之后（`block_spans` 同步移动保持对齐）。
+    /// 供 [`DocumentGraph::clone_subtree`] 与块类型互转共享。
+    pub(crate) fn place_after(&mut self, anchor: NodeId, node: NodeId) {
+        if self.insert_after_in_containers(anchor, node) {
             return;
         }
-        let Some(source_pos) = self.blocks.iter().position(|node| node.id == source) else { return };
-        let Some(copy_pos) = self.blocks.iter().position(|node| node.id == copy) else { return };
-        let node = self.blocks.remove(copy_pos);
-        let span = if copy_pos < self.block_spans.len() { self.block_spans.remove(copy_pos) } else { None };
-        let insert = if copy_pos < source_pos { source_pos } else { source_pos + 1 };
-        self.blocks.insert(insert, node);
+        let Some(anchor_pos) = self.blocks.iter().position(|block| block.id == anchor) else { return };
+        let Some(node_pos) = self.blocks.iter().position(|block| block.id == node) else { return };
+        let moved = self.blocks.remove(node_pos);
+        let span = if node_pos < self.block_spans.len() { self.block_spans.remove(node_pos) } else { None };
+        let insert = if node_pos < anchor_pos { anchor_pos } else { anchor_pos + 1 };
+        self.blocks.insert(insert, moved);
         self.block_spans.insert(insert.min(self.block_spans.len()), span);
     }
 

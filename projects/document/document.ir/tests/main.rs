@@ -4,6 +4,7 @@ mod graph;
 
 mod clone_table;
 mod contract;
+mod convert;
 mod inline;
 mod list;
 mod transform;

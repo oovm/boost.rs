@@ -5,7 +5,7 @@
 //! - [`RewriteResult`]：visitor 闭包的有限返回值
 //! - [`Traversal`]：图遍历顺序
 
-use crate::id::NodeId;
+use crate::{convert::BlockKind, id::NodeId};
 
 // ---------------------------------------------------------------------------
 // TransformError
@@ -103,6 +103,24 @@ pub enum TransformError {
     },
     /// 重排编号会把列表编号推过 `u32` 上限。
     NumberingOverflow,
+    /// 该块的类型不参与互转。
+    NotConvertible(NodeId),
+    /// 该块已经是请求的类型。
+    AlreadyKind {
+        /// 块节点 id。
+        node: NodeId,
+        /// 请求的类型。
+        kind: BlockKind,
+    },
+    /// 请求的 (源类型, 目标类型) 不是受支持的转换对。
+    InvalidConversion {
+        /// 源类型。
+        from: BlockKind,
+        /// 目标类型。
+        to: BlockKind,
+    },
+    /// 转标题需要一个 1..=6 的层级。
+    MissingHeadingLevel(NodeId),
 }
 
 impl std::fmt::Display for TransformError {
@@ -140,6 +158,10 @@ impl std::fmt::Display for TransformError {
                 write!(f, "item {item} of list {list:?} cannot move into list {target:?} nested inside it")
             }
             Self::NumberingOverflow => write!(f, "renumbering the list would push a number beyond the u32 maximum"),
+            Self::NotConvertible(id) => write!(f, "node {id:?} is not a convertible block kind"),
+            Self::AlreadyKind { node, kind } => write!(f, "node {node:?} is already a `{}`", kind.label()),
+            Self::InvalidConversion { from, to } => write!(f, "cannot convert a `{}` into a `{}`", from.label(), to.label()),
+            Self::MissingHeadingLevel(id) => write!(f, "converting node {id:?} to a heading needs a level between 1 and 6"),
         }
     }
 }

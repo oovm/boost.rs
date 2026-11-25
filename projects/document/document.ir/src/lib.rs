@@ -8,6 +8,7 @@
 mod asset;
 mod block;
 mod clone;
+mod convert;
 mod graph;
 mod id;
 mod inline;
@@ -29,6 +30,7 @@ mod wire;
 pub use asset::{Asset, AssetKind};
 pub use block::{Block, BlockNode, ListItem, TableCell, TableRow};
 pub use clone::SubtreeClone;
+pub use convert::BlockKind;
 pub use graph::{DocumentGraph, DocumentMetadata, IdAllocator};
 pub use id::{AssetId, DocumentId, LinkId, NodeId};
 pub use inline::{AttributePair, Attributes, BreakKind, Inline};
