@@ -1,4 +1,5 @@
-//! 列表嵌套的图级变换 —— 缩进、提升与跨列表移动。
+//! 列表的图级变换 —— 嵌套（缩进、提升、跨列表移动）与非嵌套操作
+//! （排序、逆序）。
 //!
 //! 语义对齐下游产品模型的 `list.indentItem` / `list.unindentItem` /
 //! `list.moveItemTo`：IR 把嵌套存为 [`crate::ListItem::children`] 里的嵌套列表块，
@@ -254,6 +255,62 @@ impl DocumentGraph {
         Ok(())
     }
 
+    /// 按条目文本排序一个列表的顶层条目，返回参与排序的条目数。
+    ///
+    /// 排序键是条目的纯文本（[`crate::plain_text`]）：先去除首尾空白，空条目
+    /// 无论升降序都排在末尾；两个键都能解析为数字时按数值比较，否则按
+    /// 忽略大小写的字典序比较。条目携带自身的任务标记、勾选状态与全部嵌套
+    /// 子块一起移动；有序列表从排序前首个条目携带的编号起重新连续编号。
+    ///
+    /// 失败：[`TransformError::NotFound`]、[`TransformError::NotAList`]、
+    /// [`TransformError::NumberingOverflow`]，均不产生任何改动。
+    pub fn sort_list_items(&mut self, list: NodeId, ascending: bool) -> Result<usize, TransformError> {
+        let count = {
+            let node = self.blocks.iter_mut().find(|node| node.id == list).ok_or(TransformError::NotFound(list))?;
+            let Block::List { ordered, items } = &mut node.block
+            else {
+                return Err(TransformError::NotAList(list));
+            };
+            let base = if *ordered { items.first().and_then(|entry| entry.number).unwrap_or(1) } else { 0 };
+            Self::renumber_fits(items.len(), base)?;
+            items.sort_by(|left, right| {
+                compare_item_keys(&crate::plain_text(&left.content), &crate::plain_text(&right.content), ascending)
+            });
+            if *ordered {
+                Self::renumber_items(items, base)?;
+            }
+            items.len()
+        };
+        self.bump_revision();
+        Ok(count)
+    }
+
+    /// 逆序一个列表的顶层条目，返回条目数。
+    ///
+    /// 条目保留文本、任务标记、勾选状态与全部嵌套子块；有序列表从逆序前
+    /// 首个条目携带的编号起重新连续编号，可见编号段保持连续。
+    ///
+    /// 失败：[`TransformError::NotFound`]、[`TransformError::NotAList`]、
+    /// [`TransformError::NumberingOverflow`]，均不产生任何改动。
+    pub fn reverse_list_items(&mut self, list: NodeId) -> Result<usize, TransformError> {
+        let count = {
+            let node = self.blocks.iter_mut().find(|node| node.id == list).ok_or(TransformError::NotFound(list))?;
+            let Block::List { ordered, items } = &mut node.block
+            else {
+                return Err(TransformError::NotAList(list));
+            };
+            let base = if *ordered { items.first().and_then(|entry| entry.number).unwrap_or(1) } else { 0 };
+            Self::renumber_fits(items.len(), base)?;
+            items.reverse();
+            if *ordered {
+                Self::renumber_items(items, base)?;
+            }
+            items.len()
+        };
+        self.bump_revision();
+        Ok(count)
+    }
+
     /// 读取一个列表节点的 marker 样式，非列表返回 [`TransformError::NotAList`]。
     fn list_ordered(&self, id: NodeId) -> Result<bool, TransformError> {
         let node = self.block(id).ok_or(TransformError::NotFound(id))?;
@@ -284,4 +341,20 @@ impl DocumentGraph {
         let last = u32::try_from(items - 1).unwrap_or(u32::MAX);
         base.checked_add(last).map(|_| ()).ok_or(TransformError::NumberingOverflow)
     }
+}
+
+/// 排序键比较：空白先裁剪，空条目恒排末尾，数字按数值比较，
+/// 其余按忽略大小写的字典序比较；降序只翻转非空键的相对次序。
+fn compare_item_keys(left: &str, right: &str, ascending: bool) -> std::cmp::Ordering {
+    let (left, right) = (left.trim(), right.trim());
+    let left_blank = left.is_empty();
+    let right_blank = right.is_empty();
+    if left_blank != right_blank {
+        return if left_blank { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+    }
+    let ordering = match (left.parse::<f64>(), right.parse::<f64>()) {
+        (Ok(left), Ok(right)) => left.partial_cmp(&right).unwrap_or(std::cmp::Ordering::Equal),
+        _ => left.to_lowercase().cmp(&right.to_lowercase()),
+    };
+    if ascending { ordering } else { ordering.reverse() }
 }

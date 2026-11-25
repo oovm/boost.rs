@@ -1,4 +1,4 @@
-//! 列表嵌套变换（indent / unindent / moveItemTo）的集成测试。
+//! 列表变换（indent / unindent / moveItemTo / sort / reverse）的集成测试。
 
 use document_ir::{Block, DocumentGraph, DocumentId, Inline, ListItem, NodeId, SourceSpan, TransformError};
 
@@ -270,4 +270,126 @@ fn list_ops_keep_block_spans_aligned() {
     g.unindent_list_item(list, 0).expect("lift back");
     assert_eq!(g.block_span(list), span(0, 20));
     assert!(g.validate().is_valid());
+}
+
+// ===========================================================================
+// sortItems / reverseItems
+// ===========================================================================
+
+/// 无序列表（Gamma / alpha / 2 / 10 / 空），返回 (graph, list)。
+fn mixed_list() -> (DocumentGraph, NodeId) {
+    let mut g = DocumentGraph::new(DocumentId(1));
+    let list = g.push_block_at(
+        Block::List {
+            ordered: false,
+            items: vec![item("Gamma", vec![]), item("alpha", vec![]), item("2", vec![]), item("10", vec![]), item("  ", vec![])],
+        },
+        span(0, 30),
+    );
+    (g, list)
+}
+
+fn texts(g: &DocumentGraph, list: NodeId) -> Vec<String> {
+    shape(g, list).into_iter().map(|(value, _)| value).collect()
+}
+
+#[test]
+fn sort_orders_keys_numerically_then_case_insensitively_with_blanks_last() {
+    let (mut g, list) = mixed_list();
+    let before = g.revision;
+
+    let count = g.sort_list_items(list, true).expect("sort ascending");
+    assert_eq!(count, 5);
+    assert_eq!(texts(&g, list), vec!["2", "10", "alpha", "Gamma", "  "], "numbers compare numerically, blanks trail");
+
+    g.sort_list_items(list, false).expect("sort descending");
+    assert_eq!(texts(&g, list), vec!["Gamma", "alpha", "10", "2", "  "], "descending keeps blanks last");
+    assert!(g.revision > before);
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn sort_travels_with_nested_children_and_renumbers_ordered_runs() {
+    let (mut g, list) = ordered_list();
+    g.indent_list_item(list, 1).expect("nest Two under One");
+    let nested = shape(&g, list)[0].1[0];
+
+    // 降序把带嵌套 run 的 One 翻到末尾，编号从首个条目（Three 的 1）起连续。
+    g.sort_list_items(list, false).expect("sort the ordered run");
+    assert_eq!(numbers(&g, list), vec![("Three".into(), Some(1)), ("One".into(), Some(2))]);
+    assert_eq!(shape(&g, list)[1].1, vec![nested], "the nested run travels with its item");
+    assert_eq!(g.block_span(list), span(0, 24), "sorting keeps the list span");
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn sort_refuses_unknown_and_non_list_without_mutating() {
+    let (mut g, list) = mixed_list();
+    let paragraph = g.push_block(Block::Paragraph { content: text("not a list") });
+    let before = g.revision;
+    let blocks = g.blocks.clone();
+
+    let missing = NodeId(999);
+    assert_eq!(g.sort_list_items(missing, true), Err(TransformError::NotFound(missing)));
+    assert_eq!(g.sort_list_items(paragraph, true), Err(TransformError::NotAList(paragraph)));
+
+    assert_eq!(g.revision, before, "failed sorts consume no revision");
+    assert_eq!(g.blocks, blocks, "failed sorts change nothing");
+    assert_eq!(texts(&g, list), vec!["Gamma", "alpha", "2", "10", "  "]);
+}
+
+#[test]
+fn reverse_flips_items_and_renumbers_from_the_leading_number() {
+    let mut g = DocumentGraph::new(DocumentId(1));
+    let list = g.push_block_at(
+        Block::List {
+            ordered: true,
+            items: vec![item_numbered("a", 3), item_numbered("b", 4), item_numbered("c", 5)],
+        },
+        span(0, 20),
+    );
+    let before = g.revision;
+
+    let count = g.reverse_list_items(list).expect("reverse");
+    assert_eq!(count, 3);
+    assert_eq!(numbers(&g, list), vec![("c".into(), Some(3)), ("b".into(), Some(4)), ("a".into(), Some(5))]);
+    assert!(g.revision > before);
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn reverse_keeps_nested_runs_and_task_markers() {
+    let (mut g, list) = bullet_list();
+    g.indent_list_item(list, 1).expect("nest Beta under Alpha");
+    let nested = shape(&g, list)[0].1[0];
+    let task = ListItem { content: text("Gamma"), is_task: true, is_checked: Some(true), ..Default::default() };
+    if let Block::List { items, .. } = &mut g.blocks.iter_mut().find(|node| node.id == list).expect("the list").block {
+        items[1] = task;
+    }
+
+    g.reverse_list_items(list).expect("reverse");
+    let flipped = shape(&g, list);
+    assert_eq!(flipped.iter().map(|(value, _)| value.as_str()).collect::<Vec<_>>(), vec!["Gamma", "Alpha"]);
+    assert_eq!(flipped[1].1, vec![nested], "the nested run travels with Alpha");
+    let Block::List { items, .. } = &g.block(list).expect("the list").block
+    else {
+        panic!("expected a list")
+    };
+    assert!(items[0].is_task && items[0].is_checked == Some(true), "the task marker survives the flip");
+    assert!(g.validate().is_valid());
+}
+
+#[test]
+fn reverse_refuses_unknown_and_non_list_without_mutating() {
+    let (mut g, _list) = bullet_list();
+    let paragraph = g.push_block(Block::Paragraph { content: text("not a list") });
+    let before = g.revision;
+    let blocks = g.blocks.clone();
+
+    let missing = NodeId(999);
+    assert_eq!(g.reverse_list_items(missing), Err(TransformError::NotFound(missing)));
+    assert_eq!(g.reverse_list_items(paragraph), Err(TransformError::NotAList(paragraph)));
+
+    assert_eq!(g.revision, before, "failed reversals consume no revision");
+    assert_eq!(g.blocks, blocks, "failed reversals change nothing");
 }
