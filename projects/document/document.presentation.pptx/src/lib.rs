@@ -952,6 +952,65 @@ mod tests {
     }
 
     #[test]
+    fn deck_title_extent_and_grid_edits_reach_the_package() {
+        let mut deck = Deck::create(DeckCreateOptions::default());
+        deck.transaction(None, |edit| {
+            let slide = edit.add_slide(SlideAddOptions { layout: None, index: None })?;
+            let shape = edit.add_shape(
+                &slide,
+                ShapeElementInput {
+                    geometry: "rect".to_string(),
+                    transform: Some(Transform::from_points(20.0, 20.0, 100.0, 60.0).unwrap()),
+                    fill: None,
+                    line: None,
+                    alt: Some("Band".to_string()),
+                },
+            )?;
+            let table = edit.add_table(
+                &slide,
+                TableElementInput {
+                    column_widths_emu: vec![points_to_emu(60.0).unwrap(), points_to_emu(60.0).unwrap()],
+                    rows: vec![
+                        TableRow { height_emu: points_to_emu(24.0).unwrap(), cells: vec![TableCell::plain("A"), TableCell::plain("B")] },
+                        TableRow { height_emu: points_to_emu(24.0).unwrap(), cells: vec![TableCell::plain("1"), TableCell::plain("2")] },
+                    ],
+                    transform: Some(Transform::from_points(20.0, 120.0, 120.0, 48.0).unwrap()),
+                    alt: Some("Grid".to_string()),
+                },
+            )?;
+            edit.set_deck_title(Some("Edited deck".to_string()))?;
+            edit.set_deck_size(document_presentation::authored::DeckSize::from_points(1000.0, 562.5).unwrap())?;
+            edit.set_shape_fill(&slide, &shape, Some(Fill::Solid { color: "#445566".to_string() }))?;
+            edit.set_shape_line(&slide, &shape, Some(Line { color: Some("#778899".to_string()), width_emu: points_to_emu(2.0) }))?;
+            edit.set_table_column_widths(&slide, &table, vec![points_to_emu(40.0).unwrap(), points_to_emu(80.0).unwrap()])?;
+            edit.set_table_row_heights(&slide, &table, vec![points_to_emu(30.0).unwrap(), points_to_emu(50.0).unwrap()])?;
+            edit.set_table_cell_fill(&slide, &table, 1, 1, Some(Fill::Solid { color: "#AABBCC".to_string() }))?;
+            Ok(())
+        })
+        .expect("edited deck builds");
+
+        let (bytes, losses) = build(&deck, Format::Pptx).expect("package builds");
+        assert!(losses.is_empty(), "the edited deck loses nothing: {losses:?}");
+        let xml = String::from_utf8_lossy(&bytes);
+        assert!(xml.contains("<dc:title>Edited deck</dc:title>"), "the deck title reaches the package");
+        let size = document_presentation::authored::DeckSize::from_points(1000.0, 562.5).unwrap();
+        assert!(
+            xml.contains(&format!("<p:sldSz cx=\"{}\" cy=\"{}\"/>", size.width_emu, size.height_emu)),
+            "the deck extent reaches the package"
+        );
+        assert!(xml.contains("<a:gridCol w=\"508000\"/>"), "edited column widths reach the table grid");
+        assert!(xml.contains(&format!("<a:tr h=\"{}\">", points_to_emu(50.0).unwrap())), "edited row heights reach the table rows");
+        assert!(xml.contains("<a:srgbClr val=\"445566\"/>"), "the edited shape fill reaches the shape");
+        assert!(xml.contains("<a:srgbClr val=\"778899\"/>"), "the edited shape stroke reaches the shape");
+        assert!(xml.contains("<a:srgbClr val=\"AABBCC\"/>"), "the edited cell fill reaches the cell");
+
+        let imported = import_pptx_bytes("edited.pptx", &bytes).expect("the written package imports");
+        let table = imported.slides[0].shapes.iter().find_map(|shape| shape.table.as_ref()).expect("the table part is written");
+        assert_eq!(table.column_widths, vec![508_000, 1_016_000]);
+        assert_eq!(table.rows[1].height, points_to_emu(50.0).unwrap());
+    }
+
+    #[test]
     fn speaker_notes_are_written_and_reimported() {
         let mut deck = Deck::create(DeckCreateOptions::default());
         deck.transaction(None, |edit| {

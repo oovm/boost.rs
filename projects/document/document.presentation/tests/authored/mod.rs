@@ -164,6 +164,7 @@ fn duplicated_slides_receive_fresh_identities() {
     deck.document().validate().expect("identities stay unique");
 }
 
+mod deck_style;
 mod images;
 mod layout;
 mod notes;

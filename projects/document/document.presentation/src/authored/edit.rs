@@ -7,6 +7,7 @@
 use super::{
     error::{DeckError, codes},
     id::{AssetId, ElementId, LayoutId, SlideId},
+    size::DeckSize,
     model::{
         Asset, ChartContent, ChartData, ChartType, Deck, DeckDocument, DeckSlide, Element, ElementContent, ElementKind, ElementOrigin,
         ElementStyle, Fill, FormulaContent, ImageContent, Line, LockFlags, MediaContent, MediaKind, OriginKind, PlaceholderRef, ShapeContent,
@@ -279,6 +280,32 @@ impl DeckEdit {
     /// Sets or clears speaker notes.
     pub fn set_slide_notes(&mut self, id: &SlideId, notes: Option<String>) -> Result<(), DeckError> {
         self.slide_mut(id)?.notes = notes;
+        Ok(())
+    }
+
+    /// Sets or clears the deck title, rejecting a blank title.
+    ///
+    /// `None` clears it, so a deck may stay untitled. The accepted title is
+    /// trimmed once here, and the stored value is what the package writer emits.
+    pub fn set_deck_title(&mut self, title: Option<String>) -> Result<(), DeckError> {
+        if let Some(value) = &title
+            && value.trim().is_empty()
+        {
+            return Err(DeckError::new(codes::ARGUMENT_INVALID, "the deck title must not be blank; pass none to clear it"));
+        }
+        self.document.title = title.map(|value| value.trim().to_string());
+        Ok(())
+    }
+
+    /// Sets the slide extent, rejecting non-positive dimensions.
+    ///
+    /// Existing element boxes are not rescaled: placement belongs to the elements,
+    /// so shrinking the deck cannot silently move authored content.
+    pub fn set_deck_size(&mut self, size: DeckSize) -> Result<(), DeckError> {
+        if size.width_emu <= 0 || size.height_emu <= 0 {
+            return Err(DeckError::new(codes::ARGUMENT_INVALID, "deck width and height must be positive"));
+        }
+        self.document.size = size;
         Ok(())
     }
 

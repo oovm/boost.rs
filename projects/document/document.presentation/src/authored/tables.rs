@@ -17,7 +17,7 @@ use super::{
     edit::DeckEdit,
     error::{DeckError, codes},
     id::{ElementId, SlideId},
-    model::{Element, ElementContent, ElementOrigin, OriginKind, TableCell, TableContent, TableRow, TextContent},
+    model::{Element, ElementContent, ElementOrigin, Fill, OriginKind, TableCell, TableContent, TableRow, TextContent},
 };
 
 /// One row insertion accepted by [`DeckEdit::insert_table_row`].
@@ -73,14 +73,44 @@ impl DeckEdit {
     /// Writes the plain text of one cell, replacing its runs.
     pub fn set_table_cell_text(&mut self, slide: &SlideId, element: &ElementId, row: usize, column: usize, text: impl Into<String>) -> Result<(), DeckError> {
         let table = self.table_mut(slide, element, "only tables carry cells")?;
-        if row >= table.rows.len() {
-            return Err(invalid(format!("`row` {row} is outside the table's {} rows", table.rows.len())));
-        }
-        let columns = table.rows[row].cells.len();
-        if column >= columns {
-            return Err(invalid(format!("`column` {column} is outside row {row}'s {columns} cells")));
-        }
+        assert_cell_bounds(table, row, column)?;
         table.rows[row].cells[column].text = TextContent::plain(text);
+        Ok(())
+    }
+
+    /// Sets or clears the fill override of one cell.
+    pub fn set_table_cell_fill(&mut self, slide: &SlideId, element: &ElementId, row: usize, column: usize, fill: Option<Fill>) -> Result<(), DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry cells")?;
+        assert_cell_bounds(table, row, column)?;
+        table.rows[row].cells[column].fill = fill;
+        Ok(())
+    }
+
+    /// Replaces every column width, rejecting a count mismatch and non-positive widths.
+    pub fn set_table_column_widths(&mut self, slide: &SlideId, element: &ElementId, widths: Vec<i64>) -> Result<(), DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry columns")?;
+        if widths.len() != table.column_widths_emu.len() {
+            return Err(invalid(format!("`widths` lists {} entries but the table has {} columns", widths.len(), table.column_widths_emu.len())));
+        }
+        if widths.iter().any(|width| *width <= 0) {
+            return Err(invalid("table column widths must be positive"));
+        }
+        table.column_widths_emu = widths;
+        Ok(())
+    }
+
+    /// Replaces every row height, rejecting a count mismatch and non-positive heights.
+    pub fn set_table_row_heights(&mut self, slide: &SlideId, element: &ElementId, heights: Vec<i64>) -> Result<(), DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry rows")?;
+        if heights.len() != table.rows.len() {
+            return Err(invalid(format!("`heights` lists {} entries but the table has {} rows", heights.len(), table.rows.len())));
+        }
+        if heights.iter().any(|height| *height <= 0) {
+            return Err(invalid("table row heights must be positive"));
+        }
+        for (row, height) in table.rows.iter_mut().zip(heights) {
+            row.height_emu = height;
+        }
         Ok(())
     }
 
@@ -206,6 +236,107 @@ impl DeckEdit {
         Ok(())
     }
 
+    /// Re-seats one row, keeping its cells and its height.
+    ///
+    /// `to` counts the rows that remain after the row is detached, matching
+    /// [`DeckEdit::move_slide`](super::edit::DeckEdit::move_slide). Vertical
+    /// merges refuse the move, because re-seating would break the merge.
+    /// Returns the final position.
+    pub fn move_table_row(&mut self, slide: &SlideId, element: &ElementId, from: usize, to: usize) -> Result<usize, DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry rows")?;
+        if from >= table.rows.len() {
+            return Err(invalid(format!("`row` {from} is outside the table's {} rows", table.rows.len())));
+        }
+        if to >= table.rows.len() {
+            return Err(invalid(format!("`index` {to} is outside the table's {} rows", table.rows.len())));
+        }
+        if table.rows.iter().any(|row| row.cells.iter().any(|cell| cell.row_span > 1)) {
+            return Err(invalid("row moves need a table without vertical merges"));
+        }
+        let row = table.rows.remove(from);
+        table.rows.insert(to, row);
+        Ok(to)
+    }
+
+    /// Copies one row next to itself, returning the copy's position.
+    ///
+    /// The copy keeps the source cells and height; only the grid position is new.
+    /// `index` defaults to the row right after the source. Vertical merges refuse
+    /// the copy, because a duplicated merge would cover the copied row twice.
+    pub fn duplicate_table_row(&mut self, slide: &SlideId, element: &ElementId, row: usize, index: Option<usize>) -> Result<usize, DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry rows")?;
+        if row >= table.rows.len() {
+            return Err(invalid(format!("`row` {row} is outside the table's {} rows", table.rows.len())));
+        }
+        if table.rows.iter().any(|candidate| candidate.cells.iter().any(|cell| cell.row_span > 1)) {
+            return Err(invalid("row duplication needs a table without vertical merges"));
+        }
+        let index = index.unwrap_or(row + 1);
+        if index > table.rows.len() {
+            return Err(invalid(format!("`index` {index} is outside the table's insertion points 0..={}", table.rows.len())));
+        }
+        let copy = table.rows[row].clone();
+        table.rows.insert(index, copy);
+        Ok(index)
+    }
+
+    /// Re-seats one column, keeping its cells and its width.
+    ///
+    /// `to` counts the columns that remain after the column is detached.
+    /// Horizontal merges refuse the move. Returns the final position.
+    pub fn move_table_column(&mut self, slide: &SlideId, element: &ElementId, from: usize, to: usize) -> Result<usize, DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry columns")?;
+        let columns = table.column_widths_emu.len();
+        if from >= columns {
+            return Err(invalid(format!("`column` {from} is outside the table's {columns} columns")));
+        }
+        if to >= columns {
+            return Err(invalid(format!("`index` {to} is outside the table's {columns} columns")));
+        }
+        if table.rows.iter().any(|row| row.cells.iter().any(|cell| cell.column_span > 1)) {
+            return Err(invalid("column moves need a table without horizontal merges"));
+        }
+        if table.rows.iter().any(|row| row.cells.len() != columns) {
+            return Err(invalid("column moves need a rectangular table; every row must carry one cell per column"));
+        }
+        for row in &mut table.rows {
+            let cell = row.cells.remove(from);
+            row.cells.insert(to, cell);
+        }
+        let width = table.column_widths_emu.remove(from);
+        table.column_widths_emu.insert(to, width);
+        Ok(to)
+    }
+
+    /// Copies one column next to itself, returning the copy's position.
+    ///
+    /// `index` defaults to the column right after the source. Horizontal merges
+    /// refuse the copy for the same reason row duplication refuses vertical ones.
+    pub fn duplicate_table_column(&mut self, slide: &SlideId, element: &ElementId, column: usize, index: Option<usize>) -> Result<usize, DeckError> {
+        let table = self.table_mut(slide, element, "only tables carry columns")?;
+        let columns = table.column_widths_emu.len();
+        if column >= columns {
+            return Err(invalid(format!("`column` {column} is outside the table's {columns} columns")));
+        }
+        if table.rows.iter().any(|row| row.cells.iter().any(|cell| cell.column_span > 1)) {
+            return Err(invalid("column duplication needs a table without horizontal merges"));
+        }
+        if table.rows.iter().any(|row| row.cells.len() != columns) {
+            return Err(invalid("column duplication needs a rectangular table; every row must carry one cell per column"));
+        }
+        let index = index.unwrap_or(column + 1);
+        if index > columns {
+            return Err(invalid(format!("`index` {index} is outside the table's insertion points 0..={columns}")));
+        }
+        for row in &mut table.rows {
+            let copy = row.cells[column].clone();
+            row.cells.insert(index, copy);
+        }
+        let width = table.column_widths_emu[column];
+        table.column_widths_emu.insert(index, width);
+        Ok(index)
+    }
+
     /// Swaps rows and columns: the new row count is the old column count, new
     /// row heights take the old column widths and new column widths take the old
     /// row heights. The element identity is preserved.
@@ -293,6 +424,17 @@ fn assert_table(model: Option<&super::model::DeckSlide>, slide: &SlideId, elemen
         ElementContent::Table(_) => Ok(()),
         _ => Err(not_a_table(slide, element, needs)),
     }
+}
+
+fn assert_cell_bounds(table: &TableContent, row: usize, column: usize) -> Result<(), DeckError> {
+    if row >= table.rows.len() {
+        return Err(invalid(format!("`row` {row} is outside the table's {} rows", table.rows.len())));
+    }
+    let columns = table.rows[row].cells.len();
+    if column >= columns {
+        return Err(invalid(format!("`column` {column} is outside row {row}'s {columns} cells")));
+    }
+    Ok(())
 }
 
 fn invalid(message: impl Into<String>) -> DeckError {

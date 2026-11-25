@@ -20,6 +20,7 @@ pub mod model;
 pub mod notes;
 pub mod playback;
 pub mod project;
+pub mod shape;
 pub mod size;
 pub mod tables;
 pub mod text_runs;
