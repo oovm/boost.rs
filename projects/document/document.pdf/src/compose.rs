@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::error::{Result, argument, exists_error};
+use crate::fidelity::{self, FidelityLoss};
 use crate::object::{Dict, PdfObject, PdfStream};
 use crate::writer::{PdfWriter, copy_info, copy_page, media_box_object};
 use crate::{DocumentArrange, arrange, check_page_number, finish_document, load_document, write_file};
@@ -71,6 +72,8 @@ pub struct ComposeReport {
     pub bytes: usize,
     /// Per-source usage, in plan order.
     pub sources: Vec<ComposedSource>,
+    /// Objects the rebuilt catalog and unplaced pages left behind, never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// Writes the pages named by a [`PagePlan`] into one new classic PDF.
@@ -96,6 +99,7 @@ pub fn compose(plan: &PagePlan, out: &Path, overwrite: bool) -> Result<ComposeRe
     let mut writer = PdfWriter::new();
     let mut maps = vec![BTreeMap::new(); documents.len()];
     let mut used = vec![0usize; documents.len()];
+    let mut kept: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); documents.len()];
     let mut pages = Vec::with_capacity(plan.placements.len());
     let mut blank_pages = 0usize;
     for placement in &plan.placements {
@@ -110,6 +114,7 @@ pub fn compose(plan: &PagePlan, out: &Path, overwrite: bool) -> Result<ComposeRe
                 check_page_number(*page, document.pages.len())?;
                 pages.push(copy_page(&mut writer, document, &mut maps[*source], &document.pages[page - 1])?);
                 used[*source] += 1;
+                kept[*source].insert(*page);
             }
             PagePlacement::Blank { width_pt, height_pt } => {
                 check_blank_size(*width_pt, *height_pt)?;
@@ -136,7 +141,12 @@ pub fn compose(plan: &PagePlan, out: &Path, overwrite: bool) -> Result<ComposeRe
             used: *used,
         })
         .collect();
-    Ok(ComposeReport { path: out.display().to_string(), pages: pages.len(), blank_pages, bytes: bytes.len(), sources })
+    let fidelity = documents
+        .iter()
+        .enumerate()
+        .flat_map(|(index, document)| fidelity::losses(index, document, &kept[index]))
+        .collect();
+    Ok(ComposeReport { path: out.display().to_string(), pages: pages.len(), blank_pages, bytes: bytes.len(), sources, fidelity })
 }
 
 /// Repeats every selected page directly after itself `times` occurrences total.

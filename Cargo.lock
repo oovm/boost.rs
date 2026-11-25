@@ -3246,6 +3246,7 @@ dependencies = [
  "data-binary-pdf",
  "media-codec",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

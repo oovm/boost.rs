@@ -14,6 +14,7 @@ mod compose;
 mod create;
 mod error;
 mod extract;
+mod fidelity;
 mod links;
 mod stamp;
 
@@ -21,6 +22,7 @@ pub use compose::{
     ComposeReport, ComposedSource, PagePlan, PagePlacement, compose, duplicate_pages, insert_blank_pages, insert_pages,
     interleave_pages, move_pages, replace_pages, reverse_pages, swap_pages,
 };
+pub use fidelity::{FidelityCode, FidelityLoss};
 pub use links::{LinkKind, LinkRecord, NamedDestination, extract_links, list_destinations};
 
 // The byte-level engine lives in `data-binary-pdf`; the module aliases keep the
@@ -160,6 +162,8 @@ pub struct MergeReport {
     pub pages: usize,
     /// Output size in bytes.
     pub bytes: usize,
+    /// Objects the rebuilt catalog and dropped pages left behind, never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// One file produced by [`split`].
@@ -315,6 +319,8 @@ pub struct ArrangeReport {
     pub path: String,
     /// Pages written.
     pub pages: usize,
+    /// Objects the rebuilt catalog and dropped pages left behind, never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// Result of [`delete_pages`].
@@ -329,6 +335,8 @@ pub struct DeletePagesReport {
     pub removed: usize,
     /// Output size in bytes.
     pub bytes: usize,
+    /// Objects the rebuilt catalog and removed pages left behind, never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// Result of [`rotate_pages`].
@@ -343,6 +351,8 @@ pub struct RotatePagesReport {
     pub rotated: usize,
     /// Output size in bytes.
     pub bytes: usize,
+    /// Objects the rebuilt catalog left behind, never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// Result of [`set_page_boxes`].
@@ -357,6 +367,8 @@ pub struct SetPageBoxesReport {
     pub cropped: usize,
     /// Output size in bytes.
     pub bytes: usize,
+    /// Objects the rebuilt catalog left behind, never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// `/Info` fields accepted by [`set_metadata`].
@@ -553,7 +565,12 @@ pub fn merge(inputs: &[PathBuf], out: &Path, overwrite: bool, title: Option<&str
 
     let bytes = finish_document(&mut writer, &pages, info)?;
     write_file(out, &bytes, overwrite)?;
-    Ok(MergeReport { path: out.display().to_string(), pages: pages.len(), bytes: bytes.len() })
+    let fidelity = documents
+        .iter()
+        .enumerate()
+        .flat_map(|(index, document)| fidelity::losses(index, document, &all_pages(document.pages.len())))
+        .collect();
+    Ok(MergeReport { path: out.display().to_string(), pages: pages.len(), bytes: bytes.len(), fidelity })
 }
 
 /// Splits one PDF into files selected by a 1-based range list such as
@@ -610,7 +627,12 @@ pub fn arrange(input: &Path, out: &Path, ops: &DocumentArrange) -> Result<Arrang
     let info = copy_info(&mut writer, &document, &mut map, None)?;
     let bytes = finish_document(&mut writer, &pages, info)?;
     write_file(out, &bytes, true)?;
-    Ok(ArrangeReport { path: out.display().to_string(), pages: pages.len() })
+    let kept = plan.iter().copied().collect::<BTreeSet<_>>();
+    Ok(ArrangeReport {
+        path: out.display().to_string(),
+        pages: pages.len(),
+        fidelity: fidelity::losses(0, &document, &kept),
+    })
 }
 
 /// Removes the pages selected by a 1-based range list such as `2,5-7`.
@@ -640,11 +662,13 @@ pub fn delete_pages(input: &Path, pages: &str, out: &Path, overwrite: bool) -> R
     let info = copy_info(&mut writer, &document, &mut map, None)?;
     let bytes = finish_document(&mut writer, &kept, info)?;
     write_file(out, &bytes, overwrite)?;
+    let kept_pages = (1..=document.pages.len()).filter(|number| !selected.contains(number)).collect::<BTreeSet<_>>();
     Ok(DeletePagesReport {
         path: out.display().to_string(),
         pages: kept.len(),
         removed: selected.len(),
         bytes: bytes.len(),
+        fidelity: fidelity::losses(0, &document, &kept_pages),
     })
 }
 
@@ -686,6 +710,7 @@ pub fn rotate_pages(input: &Path, pages: &str, degrees: i32, out: &Path, overwri
         pages: written.len(),
         rotated,
         bytes: bytes.len(),
+        fidelity: fidelity::losses(0, &document, &all_pages(document.pages.len())),
     })
 }
 
@@ -726,7 +751,13 @@ pub fn set_page_boxes(input: &Path, pages: &str, crop: [f64; 4], out: &Path, ove
         pages: written.len(),
         cropped,
         bytes: bytes.len(),
+        fidelity: fidelity::losses(0, &document, &all_pages(document.pages.len())),
     })
+}
+
+/// The 1-based page numbers of a document that keeps every page.
+fn all_pages(page_count: usize) -> BTreeSet<usize> {
+    (1..=page_count).collect()
 }
 
 /// Expands a 1-based range list into the selected page numbers.

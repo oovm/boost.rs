@@ -12,3 +12,6 @@ boost-fs = { workspace = true }
 data-binary-pdf = { workspace = true }
 media-codec = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
