@@ -19,6 +19,8 @@ pub mod codes {
     pub const OBJECT_UNSUPPORTED: &str = "object/unsupported";
     /// A referenced asset has no bytes or record.
     pub const ASSET_MISSING: &str = "asset/missing";
+    /// An asset still placed by an element cannot be removed.
+    pub const ASSET_IN_USE: &str = "asset/in-use";
     /// An argument is unusable, such as an empty identity or a negative size.
     pub const ARGUMENT_INVALID: &str = "session/argument-invalid";
     /// A native project container is malformed or fails its own checks.

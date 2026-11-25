@@ -13,8 +13,10 @@
 pub mod edit;
 pub mod error;
 pub mod id;
+pub mod images;
 pub mod inspect;
 pub mod model;
+pub mod notes;
 pub mod playback;
 pub mod project;
 pub mod size;
@@ -33,6 +35,8 @@ pub use model::{
     MediaKind, OriginKind, PROJECT_FORMAT, PROJECT_VERSION, PlaceholderRef, ShapeContent, TableCell, TableContent, TableRow, TextAlign,
     TextContent, TextParagraph, TextRun, Theme, Transform,
 };
+pub use images::{ImageDuplicateOptions, ImageMoveTarget};
+pub use notes::NotesEntry;
 pub use playback::{PlaybackSession, PlaybackState};
 pub use project::{DECK_ENTRY, decode_project, encode_project};
 pub use size::{DeckSize, EMU_PER_POINT, emu_to_points, points_to_emu};

@@ -168,6 +168,10 @@ impl DeckEdit {
         &self.document
     }
 
+    pub(super) fn document_mut(&mut self) -> &mut DeckDocument {
+        &mut self.document
+    }
+
     /// Adds a slide at the requested position.
     pub fn add_slide(&mut self, options: SlideAddOptions) -> Result<SlideId, DeckError> {
         if let Some(layout) = &options.layout {
@@ -532,7 +536,7 @@ impl DeckEdit {
         }
     }
 
-    fn assert_asset(&self, asset: &AssetId) -> Result<(), DeckError> {
+    pub(super) fn assert_asset(&self, asset: &AssetId) -> Result<(), DeckError> {
         if self.document.assets.iter().any(|candidate| &candidate.id == asset) {
             Ok(())
         }
