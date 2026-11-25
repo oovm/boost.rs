@@ -26,9 +26,10 @@
 //! `5.5 % 2.0 = 1.5`，且 C# 的两处 `%` 都编译成 IL `rem`（字节 `0x5D`）；
 //! `Math.IEEERemainder` 才是 IEEE 754 remainder，与本表无关。
 //!
-//! `f32` 独立载体暂无冻结项：emit 侧槽位/形参/返回已支持 `float32`，但 MSIL 模型
-//! 没有 `ldc.r4`（也没有 `conv.r4`），`float32` 槽无法接收浮点常量，故不冻结
-//! `f32.*`，待常量载体补齐后再加。
+//! `f32` 形参算术/比较已冻结：ECMA-335 的 `add`/`sub`/`mul`/`div`/`rem`/`neg` 与
+//! `ceq`/`clt`/`cgt(.un)` 对 `float32` 栈载体同形，不依赖任何 `r4` 专属指令。
+//! 仍缺的是常量载体：MSIL 模型没有 `ldc.r4`/`conv.r4`，`float32` 槽无法接收浮点
+//! 常量，f32 常量路径在 emit 侧保持结构化失败，待 `data.binary.pe` 写端补齐。
 
 use crate::{
     target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
@@ -152,6 +153,14 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         // C# `%`/Java `%`/`fmod` 一致；实测 .NET 8 `(-5.5) % 2.0 = -1.5` 且编译为 `rem`。
         "f64.rem" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Rem),
         "f64.neg" => unary(TargetOperandType::F64, MsilOpcode::Neg),
+        // float32 算术：ECMA-335 的通用算术 opcode 对 `float32` 栈载体同形，
+        // `rem` 同样是截断余数、`neg` 保留 -0.0；不依赖 `ldc.r4`，形参即可运算。
+        "f32.add" => binary(TargetOperandType::F32, TargetOperandType::F32, MsilOpcode::Add),
+        "f32.sub" => binary(TargetOperandType::F32, TargetOperandType::F32, MsilOpcode::Sub),
+        "f32.mul" => binary(TargetOperandType::F32, TargetOperandType::F32, MsilOpcode::Mul),
+        "f32.div" => binary(TargetOperandType::F32, TargetOperandType::F32, MsilOpcode::Div),
+        "f32.rem" => binary(TargetOperandType::F32, TargetOperandType::F32, MsilOpcode::Rem),
+        "f32.neg" => unary(TargetOperandType::F32, MsilOpcode::Neg),
         // 比较：结果固定为 I32（0/1）；eq/lt/gt 是单 opcode，ne/le/ge 是取反组合。
         "i32.eq" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Ceq),
         "i32.ne" => not_equal(TargetOperandType::I32, TargetOperandType::I32),
@@ -189,6 +198,14 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         // 取反后才是 0，因此 `f64.le`/`f64.ge` 必须用无序变体。
         "f64.le" => inverted(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::CgtUn),
         "f64.ge" => inverted(TargetOperandType::F64, TargetOperandType::I32, MsilOpcode::CltUn),
+        // float32 比较：`ceq`/`clt`/`cgt` 对 `float32` 栈载体同形，结果固定 I32（0/1）；
+        // NaN 语义与 `f64` 一致，`le`/`ge` 必须取反无序 `cgt.un`/`clt.un`。
+        "f32.eq" => binary(TargetOperandType::F32, TargetOperandType::I32, MsilOpcode::Ceq),
+        "f32.ne" => not_equal(TargetOperandType::F32, TargetOperandType::I32),
+        "f32.lt" => binary(TargetOperandType::F32, TargetOperandType::I32, MsilOpcode::Clt),
+        "f32.gt" => binary(TargetOperandType::F32, TargetOperandType::I32, MsilOpcode::Cgt),
+        "f32.le" => inverted(TargetOperandType::F32, TargetOperandType::I32, MsilOpcode::CgtUn),
+        "f32.ge" => inverted(TargetOperandType::F32, TargetOperandType::I32, MsilOpcode::CltUn),
         _ => return None,
     })
 }
@@ -365,5 +382,59 @@ mod operator_binding_tests {
             .expect("冻结不得失败")
             .expect("必须是 CLR operator 绑定");
         assert!(matches!(unfrozen, ClrOperatorBinding::Unfrozen));
+    }
+
+    /// `f32` 形参算术/比较冻结：ECMA-335 通用 opcode 对 `float32` 载体同形，
+    /// 不依赖 `ldc.r4`；`le`/`ge` 与 `f64` 一样必须取反无序比较保住 NaN 语义。
+    #[test]
+    fn float32_operators_freeze_on_generic_msil_opcodes() {
+        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
+        let f32_ty = SemanticType::Float32;
+        for (mnemonic, encoding) in [
+            ("f32.add", MsilOpcode::Add),
+            ("f32.sub", MsilOpcode::Sub),
+            ("f32.mul", MsilOpcode::Mul),
+            ("f32.div", MsilOpcode::Div),
+            ("f32.rem", MsilOpcode::Rem),
+        ] {
+            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix arith", &[f32_ty.clone(), f32_ty.clone()], &f32_ty)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
+            let ClrOperatorBinding::Frozen(plan) = plan
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, ClrOperatorCode::Single(encoding), "`{mnemonic}` 编码");
+            assert_eq!(plan.operand_type, crate::target_operator::TargetOperandType::F32, "`{mnemonic}` 操作数槽");
+            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::F32, "`{mnemonic}` 结果槽");
+        }
+
+        let neg = freeze_clr_operator(&link("f32.neg"), instance, "prefix -", &[f32_ty.clone()], &f32_ty)
+            .expect("冻结不得失败")
+            .expect("必须是 CLR operator 绑定");
+        let ClrOperatorBinding::Frozen(neg) = neg
+        else {
+            panic!("`f32.neg` 必须冻结");
+        };
+        assert_eq!(neg.encoding, ClrOperatorCode::Single(MsilOpcode::Neg));
+
+        for (mnemonic, encoding) in [
+            ("f32.eq", ClrOperatorCode::Single(MsilOpcode::Ceq)),
+            ("f32.ne", ClrOperatorCode::InvertCompare(MsilOpcode::Ceq)),
+            ("f32.lt", ClrOperatorCode::Single(MsilOpcode::Clt)),
+            ("f32.gt", ClrOperatorCode::Single(MsilOpcode::Cgt)),
+            ("f32.le", ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("f32.ge", ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+        ] {
+            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix cmp", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
+            let ClrOperatorBinding::Frozen(plan) = plan
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
+            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
+        }
     }
 }

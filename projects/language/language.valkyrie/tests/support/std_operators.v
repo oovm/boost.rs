@@ -11,8 +11,8 @@
 #   OVM  freeze_ovm_operator_binding   (compiler.emitter/src/lowering/backends/ovm/mir.rs)
 #
 # 配方缺口（不编造助记符）：
-#   * CLR 无 `f32.*`：MSIL 模型缺 `ldc.r4`，`float32` 槽收不了浮点常量，emit 对
-#     f32 常量明确失败闭合（`f64.rem` 已可编码为 IL `rem`）；
+#   * CLR 的 f32 形参算术/比较已冻结（ECMA 通用 opcode 对 `float32` 载体同形），
+#     缺的只是常量载体 `ldc.r4`/`conv.r4`（`f64.rem` 已可编码为 IL `rem`）；
 #   * Wasm 无 `f64.rem` / `f32.rem`（wasm 只有整数 rem，没有浮点余数指令）；
 #   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术、位运算与比较头码；u32 的 `/`、`%`
 #     也没有无符号除余头码（`i32.div`/`i32.rem` 都是有符号）；f32 只有 `eq`、`lt`。
@@ -506,6 +506,7 @@ structure f64 {
 
     [infix]
     [jvm_operator("double.remainder")]
+    [clr_operator("f64.rem")]
     micro `%`(self: f64, other: f64) -> f64;
 
     [prefix]
@@ -552,73 +553,86 @@ structure f64 {
 }
 
 # 单精度 32 位浮点：载体是独立的 `F32`，不得借 f64/i32 槽中转。
-# CLR 整体缺席（MSIL 模型无 `ldc.r4`）；OVM 只有 `eq`/`lt` 头码，
-# 且没有浮点余数指令；Wasm 没有 `f32.rem`。
+# CLR 的形参算术/比较走 ECMA 通用 opcode；仍缺 `ldc.r4` 常量载体，f32 常量路径
+# 在 emit 侧失败闭合。OVM 只有 `eq`/`lt` 头码，且没有浮点余数指令；
+# Wasm 没有 `f32.rem`。
 [primitive("std::primitive::f32")]
 structure f32 {
     [infix]
     [jvm_operator("float.add")]
+    [clr_operator("f32.add")]
     [wasm_operator("f32.add")]
     [ovm_operator("f32.add")]
     micro `+`(self: f32, other: f32) -> f32;
 
     [infix]
     [jvm_operator("float.subtract")]
+    [clr_operator("f32.sub")]
     [wasm_operator("f32.sub")]
     [ovm_operator("f32.sub")]
     micro `-`(self: f32, other: f32) -> f32;
 
     [infix]
     [jvm_operator("float.multiply")]
+    [clr_operator("f32.mul")]
     [wasm_operator("f32.mul")]
     [ovm_operator("f32.mul")]
     micro `*`(self: f32, other: f32) -> f32;
 
     [infix]
     [jvm_operator("float.divide")]
+    [clr_operator("f32.div")]
     [wasm_operator("f32.div")]
     [ovm_operator("f32.div")]
     micro `/`(self: f32, other: f32) -> f32;
 
     [infix]
     [jvm_operator("float.remainder")]
+    [clr_operator("f32.rem")]
     micro `%`(self: f32, other: f32) -> f32;
 
     [prefix]
     [jvm_operator("float.negate")]
+    [clr_operator("f32.neg")]
     [wasm_operator("f32.neg")]
     [ovm_operator("f32.neg")]
     micro `-`(self: f32) -> f32;
 
     [infix]
     [jvm_operator("float.compare_equal")]
+    [clr_operator("f32.eq")]
     [wasm_operator("f32.eq")]
     [ovm_operator("f32.eq")]
     micro `==`(self: f32, other: f32) -> bool;
 
     [infix]
     [jvm_operator("float.compare_not_equal")]
+    [clr_operator("f32.ne")]
     [wasm_operator("f32.ne")]
     micro `!=`(self: f32, other: f32) -> bool;
 
     [infix]
     [jvm_operator("float.compare_less_than")]
+    [clr_operator("f32.lt")]
     [wasm_operator("f32.lt")]
     [ovm_operator("f32.lt")]
     micro `<`(self: f32, other: f32) -> bool;
 
     [infix]
     [jvm_operator("float.compare_less_or_equal")]
+    [clr_operator("f32.le")]
     [wasm_operator("f32.le")]
     micro `<=`(self: f32, other: f32) -> bool;
 
     [infix]
     [jvm_operator("float.compare_greater_than")]
+    [clr_operator("f32.gt")]
     [wasm_operator("f32.gt")]
     micro `>`(self: f32, other: f32) -> bool;
 
     [infix]
     [jvm_operator("float.compare_greater_or_equal")]
+    [clr_operator("f32.ge")]
     [wasm_operator("f32.ge")]
     micro `>=`(self: f32, other: f32) -> bool;
 }
