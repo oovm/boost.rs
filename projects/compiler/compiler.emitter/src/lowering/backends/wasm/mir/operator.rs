@@ -7,11 +7,13 @@
 use compiler_types::{ItemInstanceId, SemanticType};
 use data_binary_wasm::WasmOpcode;
 
-use crate::target_operator::{
-    TargetOperandType, TargetOperatorPlan, WasmGcArrayOperation, WasmGcArrayOperatorPlan, operand_carrier, validate_frozen_operator,
-};
+use crate::target_operator::{TargetOperandType, TargetOperatorPlan, operand_carrier, validate_frozen_operator};
 
-use super::{array::freeze_wasm_array_binding, numeric::freeze_wasm_float_remainder, numeric::freeze_wasm_numeric_binding};
+use super::{
+    array::{WasmGcArrayOperation, WasmGcArrayOperatorPlan, freeze_wasm_array_binding},
+    numeric::freeze_wasm_float_remainder,
+    numeric::freeze_wasm_numeric_binding,
+};
 
 /// 已冻结的 Wasm operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

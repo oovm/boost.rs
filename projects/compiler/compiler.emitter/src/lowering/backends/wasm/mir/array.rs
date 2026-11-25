@@ -10,7 +10,33 @@
 //! 本模块只接受下表列出的助记符，未知助记符返回 `None`，计划据此冻结为
 //! `对应 lane 的 `Unfrozen` 绑定`，由 emit 结构化失败，禁止猜默认指令。
 
-use crate::target_operator::{WasmGcArrayOperation, WasmGcArrayOperatorPlan};
+/// wasm GC 数组目标 operator 的冻结操作。
+///
+/// 数组 operator 不是单条 opcode：`array.get`/`array.set` 需要先按元素类型
+/// `ref.cast` 到具体 arraytype，`array.new` 的 arraytype 也随元素类型变化。
+/// arraytype 索引**不冻结**在计划里——它是模块装配期 RepresentationPlan 注册表
+/// （`gc_array_type_indices`）的事实，与 MIR `ArrayNew`/`ArrayGet`/`ArraySet`/
+/// `ArrayLength` 臂共用同一解析入口；计划只冻结 arity 与操作身份。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WasmGcArrayOperation {
+    /// `new<T>(length) -> [T]`：按元素 arraytype 分配默认值数组。
+    New,
+    /// `length<T>([T]) -> usize`：`ref.cast array` 后 `array.len`。
+    Length,
+    /// `get<T>([T], index) -> T`：`ref.cast` 元素 arraytype 后 `array.get`。
+    Get,
+    /// `set<T>([T], index, T) -> unit`：`ref.cast` 元素 arraytype 后 `array.set`。
+    Set,
+}
+
+/// 一个已冻结的 wasm GC 数组 operator 计划。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WasmGcArrayOperatorPlan {
+    /// 冻结的实参个数；编码前必须与调用实参个数一致。
+    pub(crate) arity: usize,
+    /// 冻结的数组操作身份。
+    pub(crate) operation: WasmGcArrayOperation,
+}
 
 const fn array_plan(arity: usize, operation: WasmGcArrayOperation) -> WasmGcArrayOperatorPlan {
     WasmGcArrayOperatorPlan { arity, operation }

@@ -38,11 +38,12 @@ pub enum TargetOperandStep {
         /// 常量值。
         value: i32,
     },
-    /// 把栈顶 `i64` 截窄为目标原生的 `i32` 载体（`l2i` / `conv.i4`）。
+    /// 把栈顶 `i64` 载体截窄为 `i32` 载体的机械栈动作。
     ///
-    /// 仅用于 JVM / MSIL 这类「位移量操作数必须窄成 `i32`」的目标：声明签名携带
-    /// `i64` 位移量，计划显式冻结截窄步骤，backend 只机械执行，不得按助记符推断。
-    /// Wasm 的 `i64.shl`/`i64.shr_s`/`i64.shr_u` 两个操作数仍是 `i64`，不套用该步骤。
+    /// 该动作只描述载体宽度变化，不绑定任何平台指令：物理编码由各 lane 在自己的
+    /// 冻结入口给出（JVM `l2i`、MSIL `conv.i4`、Wasm `i32.wrap_i64`），没有 `i64`
+    /// 栈载体的 lane（如 OVM）在发射期失败闭合。哪些配方携带该步骤完全由 lane 的
+    /// 冻结表决定，backend 只机械执行，不得按助记符推断。
     NarrowTopI64ToI32,
 }
 
@@ -160,34 +161,6 @@ pub(crate) fn validate_frozen_operator<E>(
         }
     }
     Ok(())
-}
-
-/// wasm GC 数组目标 operator 的冻结操作。
-///
-/// 数组 operator 不是单条 opcode：`array.get`/`array.set` 需要先按元素类型
-/// `ref.cast` 到具体 arraytype，`array.new` 的 arraytype 也随元素类型变化。
-/// arraytype 索引**不冻结**在计划里——它是模块装配期 RepresentationPlan 注册表
-/// （`gc_array_type_indices`）的事实，与 MIR `ArrayNew`/`ArrayGet`/`ArraySet`/
-/// `ArrayLength` 臂共用同一解析入口；计划只冻结 arity 与操作身份。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WasmGcArrayOperation {
-    /// `new<T>(length) -> [T]`：按元素 arraytype 分配默认值数组。
-    New,
-    /// `length<T>([T]) -> usize`：`ref.cast array` 后 `array.len`。
-    Length,
-    /// `get<T>([T], index) -> T`：`ref.cast` 元素 arraytype 后 `array.get`。
-    Get,
-    /// `set<T>([T], index, T) -> unit`：`ref.cast` 元素 arraytype 后 `array.set`。
-    Set,
-}
-
-/// 一个已冻结的 wasm GC 数组 operator 计划。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WasmGcArrayOperatorPlan {
-    /// 冻结的实参个数；编码前必须与调用实参个数一致。
-    pub arity: usize,
-    /// 冻结的数组操作身份。
-    pub operation: WasmGcArrayOperation,
 }
 
 #[cfg(test)]

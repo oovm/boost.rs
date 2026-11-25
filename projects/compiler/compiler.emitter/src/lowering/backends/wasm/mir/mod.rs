@@ -38,10 +38,10 @@ pub(super) use super::super::executable::ExecutableLoweringContext;
 pub(super) use compiler_types::{LayoutId, NominalInstanceId, VariantId};
 
 // 从 crate 顶层模块 re-export
-pub(super) use crate::{
-    contracts::{ArrayInitialization, instruction_primary_result},
-    target_operator::{WasmGcArrayOperation, WasmGcArrayOperatorPlan},
-};
+pub(super) use crate::contracts::{ArrayInitialization, instruction_primary_result};
+
+// GC 数组冻结计划是 wasm lane 私有事实，定义在本 lane 的 `array` 模块。
+pub(crate) use array::{WasmGcArrayOperation, WasmGcArrayOperatorPlan};
 
 pub(crate) use operator::{WasmOperatorBinding, freeze_wasm_operator_binding};
 
