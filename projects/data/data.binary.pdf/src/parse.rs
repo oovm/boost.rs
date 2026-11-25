@@ -741,17 +741,40 @@ fn decode_utf16(bytes: &[u8], big_endian: bool) -> String {
     char::decode_utf16(units).map(|unit| unit.unwrap_or('\u{FFFD}')).collect()
 }
 
+/// PDFDocEncoding code points for bytes `0x80..=0x9F`; `U+FFFD` marks a byte
+/// the encoding leaves undefined, so it has no inverse.
+const PDF_DOC_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{FFFD}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{02C6}', '\u{2030}',
+    '\u{0160}', '\u{2039}', '\u{0152}', '\u{FFFD}', '\u{017D}', '\u{FFFD}', '\u{FFFD}', '\u{2018}', '\u{2019}', '\u{201C}',
+    '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}', '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{FFFD}',
+    '\u{017E}', '\u{0178}',
+];
+
 fn pdf_doc_char(byte: u8) -> char {
-    const HIGH: [char; 32] = [
-        '\u{20AC}', '\u{FFFD}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{02C6}', '\u{2030}',
-        '\u{0160}', '\u{2039}', '\u{0152}', '\u{FFFD}', '\u{017D}', '\u{FFFD}', '\u{FFFD}', '\u{2018}', '\u{2019}', '\u{201C}',
-        '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}', '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{FFFD}',
-        '\u{017E}', '\u{0178}',
-    ];
     match byte {
-        0x80..=0x9F => HIGH.get((byte - 0x80) as usize).copied().unwrap_or('\u{FFFD}'),
+        0x80..=0x9F => PDF_DOC_HIGH.get((byte - 0x80) as usize).copied().unwrap_or('\u{FFFD}'),
         other => char::from(other),
     }
+}
+
+/// Inverse of [`decode_text_string`] for single-byte text strings.
+///
+/// Maps a character back to the one byte PDFDocEncoding assigns it, or `None`
+/// when the character has no single-byte form. Callers that rewrite a text
+/// string use this to refuse a substitution instead of writing a byte that
+/// would address a different glyph.
+pub fn encode_doc_char(character: char) -> Option<u8> {
+    let code = character as u32;
+    if code <= 0x7F {
+        return Some(code as u8);
+    }
+    if (0xA0..=0xFF).contains(&code) {
+        return Some(code as u8);
+    }
+    PDF_DOC_HIGH
+        .iter()
+        .position(|mapped| *mapped == character && *mapped != '\u{FFFD}')
+        .map(|index| 0x80u8.saturating_add(index as u8))
 }
 
 pub struct Parser<'a> {

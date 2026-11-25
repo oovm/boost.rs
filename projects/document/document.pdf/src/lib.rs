@@ -17,6 +17,7 @@ mod extract;
 mod fidelity;
 mod links;
 mod stamp;
+mod text;
 
 pub use compose::{
     ComposeReport, ComposedSource, PagePlan, PagePlacement, compose, compose_with_title, duplicate_pages, insert_blank_pages,
@@ -279,6 +280,88 @@ pub struct StampReport {
     pub pages: usize,
     /// Pages that received the stamp.
     pub pages_stamped: usize,
+    /// Output size in bytes.
+    pub bytes: usize,
+}
+
+/// Find-and-replace request accepted by [`replace_text`].
+///
+/// `find` is matched against the characters a page's text-showing operators
+/// decode to; the replacement is written with the page's own single-byte font
+/// encoding, so it must stay inside PDFDocEncoding.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaceTextRequest {
+    /// Text to look for; must not be empty.
+    pub find: String,
+    /// Replacement text; empty deletes the run.
+    #[serde(default)]
+    pub replace: String,
+    /// 1-based page ranges such as `1-3,5`; every page when absent.
+    #[serde(default)]
+    pub pages: Option<String>,
+}
+
+/// One page's replacement count.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageTextReplacement {
+    /// One-based page number.
+    pub page: usize,
+    /// Occurrences rewritten on that page.
+    pub replaced: usize,
+}
+
+/// Stable reason code for a [`TextReplaceLoss`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TextReplaceCode {
+    /// A content stream's filter chain cannot be decoded, so its text is unseen.
+    ContentFilterUnsupported,
+    /// A content stream's filter chain is invalid.
+    ContentFilterInvalid,
+    /// A decoded content stream could not be scanned to its end.
+    ContentStreamUnreadable,
+    /// The text run's font addresses glyph ids or remaps codes, so a byte
+    /// string cannot address the new characters.
+    FontEncodingUnsupported,
+    /// The rewritten run shares a string with characters that have no
+    /// single-byte form.
+    TextEncodingUnsupported,
+    /// The match spans several text-showing operations.
+    TextSplitAcrossRuns,
+    /// Nothing matched and the page draws its text from a Form XObject.
+    TextInFormXObject,
+}
+
+/// One run or page a text replacement could not rewrite.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextReplaceLoss {
+    /// One-based page number.
+    pub page: usize,
+    /// Stable reason code.
+    pub code: TextReplaceCode,
+    /// Human-readable explanation.
+    pub message: String,
+}
+
+/// Result of [`replace_text`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextReplaceReport {
+    /// Output path.
+    pub path: String,
+    /// Pages written to the output.
+    pub pages: usize,
+    /// Pages that received at least one replacement.
+    pub pages_changed: usize,
+    /// Occurrences rewritten across the document.
+    pub replaced: usize,
+    /// Per-page counts, changed pages only, in page order.
+    pub replacements: Vec<PageTextReplacement>,
+    /// Everything the rewrite could not touch, never silent.
+    pub losses: Vec<TextReplaceLoss>,
     /// Output size in bytes.
     pub bytes: usize,
 }
@@ -1299,6 +1382,18 @@ pub fn create(request: &CreateRequest) -> Result<CreateReport> {
 /// page's existing drawing operators.
 pub fn stamp(input: &Path, out: &Path, request: &StampRequest) -> Result<StampReport> {
     stamp::stamp(input, out, request)
+}
+
+/// Replaces text inside page content streams and writes a new PDF.
+///
+/// Only runs the rewriter can address are changed: a single string operand of
+/// `Tj`, `TJ`, `'` or `"` whose active font uses a standard single-byte
+/// encoding. Composite fonts, `/Differences` remaps, matches split across show
+/// operations and text inside Form XObjects are listed in
+/// [`TextReplaceReport::losses`] instead of being approximated, so a document
+/// never comes back half-rewritten without an explanation.
+pub fn replace_text(input: &Path, out: &Path, request: &ReplaceTextRequest, overwrite: bool) -> Result<TextReplaceReport> {
+    text::replace(input, out, request, overwrite)
 }
 
 /// Extracts text from content streams decoded through their filters.
