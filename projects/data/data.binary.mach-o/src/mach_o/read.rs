@@ -15,6 +15,13 @@ const LC_SEGMENT: u32 = 0x1;
 const LC_SEGMENT_64: u32 = 0x19;
 const LC_SYMTAB: u32 = 0x2;
 const LC_MAIN: u32 = 0x8000_0028;
+const LC_LOAD_DYLIB: u32 = 0xC;
+const LC_LOAD_WEAK_DYLIB: u32 = 0x8000_0018;
+const LC_REEXPORT_DYLIB: u32 = 0x8000_001F;
+const LC_LOAD_UPWARD_DYLIB: u32 = 0x8000_0023;
+const LC_ID_DYLIB: u32 = 0xD;
+const LC_DYLD_INFO: u32 = 0x22;
+const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
 
 /// 32 位头大小。
 const HEADER32_SIZE: usize = 28;
@@ -86,6 +93,23 @@ pub enum MachOParseError {
         /// `cmdsize`。
         size: u32,
     },
+    /// `dyld` 绑定流中出现未知或不允许的操作码。
+    BadBindOpcode {
+        /// 操作码在文件中的偏移。
+        offset: u64,
+        /// 操作码字节。
+        opcode: u8,
+    },
+    /// `dyld` 绑定流在设置符号前触发了绑定。
+    BindWithoutSymbol {
+        /// 操作码在文件中的偏移。
+        offset: u64,
+    },
+    /// 绑定流引用了不存在的段。
+    BindSegmentOutOfRange {
+        /// 段序号。
+        index: u8,
+    },
 }
 
 impl fmt::Display for MachOParseError {
@@ -108,6 +132,15 @@ impl fmt::Display for MachOParseError {
             }
             Self::SegmentSectionsOutOfRange { segment, count, size } => {
                 write!(f, "段 {segment} 声明 {count} 个节，超出 {size} 字节的命令长度")
+            }
+            Self::BadBindOpcode { offset, opcode } => {
+                write!(f, "0x{offset:X} 处的 `dyld` 绑定操作码 0x{opcode:02X} 无效")
+            }
+            Self::BindWithoutSymbol { offset } => {
+                write!(f, "0x{offset:X} 处的绑定在设置符号之前触发")
+            }
+            Self::BindSegmentOutOfRange { index } => {
+                write!(f, "绑定流引用了不存在的段 {index}")
             }
         }
     }
@@ -187,6 +220,79 @@ pub struct MachSymtab {
     pub string_size: u32,
 }
 
+/// 一条动态库加载命令。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MachDylibKind {
+    /// `LC_LOAD_DYLIB`。
+    Load,
+    /// `LC_LOAD_WEAK_DYLIB`。
+    Weak,
+    /// `LC_REEXPORT_DYLIB`。
+    Reexport,
+    /// `LC_LOAD_UPWARD_DYLIB`。
+    Upward,
+    /// `LC_ID_DYLIB`，不作为绑定序号。
+    Id,
+}
+
+impl MachDylibKind {
+    /// 报告中使用的稳定小写名。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Load => "load",
+            Self::Weak => "weak",
+            Self::Reexport => "reexport",
+            Self::Upward => "upward",
+            Self::Id => "id",
+        }
+    }
+
+    /// 是否占用 `dyld` 绑定序号。
+    pub fn has_ordinal(self) -> bool {
+        !matches!(self, Self::Id)
+    }
+}
+
+/// 一条动态库加载命令（`LC_LOAD_DYLIB` 家族）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MachDylib {
+    /// 安装名或路径。
+    pub name: String,
+    /// 命令种类。
+    pub kind: MachDylibKind,
+    /// `current_version`，编码为 `x.y.z`。
+    pub current_version: u32,
+    /// `compatibility_version`。
+    pub compatibility_version: u32,
+    /// 绑定序号（1 起，按加载顺序）；`LC_ID_DYLIB` 为 `None`。
+    pub ordinal: Option<u32>,
+}
+
+/// `LC_DYLD_INFO` / `LC_DYLD_INFO_ONLY` 给出的各条数据流位置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MachDyldInfo {
+    /// `rebase_off`。
+    pub rebase_offset: u32,
+    /// `rebase_size`。
+    pub rebase_size: u32,
+    /// `bind_off`。
+    pub bind_offset: u32,
+    /// `bind_size`。
+    pub bind_size: u32,
+    /// `weak_bind_off`。
+    pub weak_bind_offset: u32,
+    /// `weak_bind_size`。
+    pub weak_bind_size: u32,
+    /// `lazy_bind_off`。
+    pub lazy_bind_offset: u32,
+    /// `lazy_bind_size`。
+    pub lazy_bind_size: u32,
+    /// `export_off`。
+    pub export_offset: u32,
+    /// `export_size`。
+    pub export_size: u32,
+}
+
 /// 解析后的 `Mach-O` 镜像。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachOImage {
@@ -200,6 +306,10 @@ pub struct MachOImage {
     pub entry_offset: Option<u64>,
     /// `LC_SYMTAB` 给出的符号表。
     pub symtab: Option<MachSymtab>,
+    /// 动态库加载命令，按加载顺序排列。
+    pub dylibs: Vec<MachDylib>,
+    /// `LC_DYLD_INFO` 给出的绑定数据流。
+    pub dyld_info: Option<MachDyldInfo>,
 }
 
 /// 识别 `Mach-O` 魔数，返回 `(is_64, endian)`。
@@ -220,9 +330,8 @@ pub fn macho_magic(bytes: &[u8]) -> Option<(bool, MachOEndian)> {
 /// 该入口用于格式探测与头部摘要：`ncmds` 与 `sizeofcmds` 只做字段读取，
 /// 不要求命令区完整。
 pub fn parse_macho_header(bytes: &[u8]) -> Result<MachHeader, MachOParseError> {
-    let (is_64, endian) = macho_magic(bytes).ok_or_else(|| {
-        if is_fat(bytes) { MachOParseError::FatBinary } else { MachOParseError::BadMagic }
-    })?;
+    let (is_64, endian) =
+        macho_magic(bytes).ok_or_else(|| if is_fat(bytes) { MachOParseError::FatBinary } else { MachOParseError::BadMagic })?;
     let header_size = if is_64 { HEADER64_SIZE } else { HEADER32_SIZE };
     if bytes.len() < header_size {
         return Err(MachOParseError::TooShort);
@@ -253,7 +362,16 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
     }
 
     let reader = Reader { bytes, endian: header.endian };
-    let mut image = MachOImage { header, segments: Vec::new(), sections: Vec::new(), entry_offset: None, symtab: None };
+    let mut image = MachOImage {
+        header,
+        segments: Vec::new(),
+        sections: Vec::new(),
+        entry_offset: None,
+        symtab: None,
+        dylibs: Vec::new(),
+        dyld_info: None,
+    };
+    let mut ordinal = 0u32;
     let mut offset = header_size;
     for index in 0..image.header.command_count {
         if offset + u64::from(LOAD_COMMAND_MIN_SIZE) > commands_end {
@@ -291,6 +409,33 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
                         symbol_count: reader.u32(offset + 12)?,
                         string_offset: reader.u32(offset + 16)?,
                         string_size: reader.u32(offset + 20)?,
+                    });
+                }
+            }
+            LC_LOAD_DYLIB | LC_LOAD_WEAK_DYLIB | LC_REEXPORT_DYLIB | LC_LOAD_UPWARD_DYLIB | LC_ID_DYLIB => {
+                if let Some(dylib) = reader.dylib(offset, size, command)? {
+                    if dylib.kind.has_ordinal() {
+                        ordinal += 1;
+                        image.dylibs.push(MachDylib { ordinal: Some(ordinal), ..dylib });
+                    }
+                    else {
+                        image.dylibs.push(dylib);
+                    }
+                }
+            }
+            LC_DYLD_INFO | LC_DYLD_INFO_ONLY => {
+                if size >= 48 {
+                    image.dyld_info = Some(MachDyldInfo {
+                        rebase_offset: reader.u32(offset + 8)?,
+                        rebase_size: reader.u32(offset + 12)?,
+                        bind_offset: reader.u32(offset + 16)?,
+                        bind_size: reader.u32(offset + 20)?,
+                        weak_bind_offset: reader.u32(offset + 24)?,
+                        weak_bind_size: reader.u32(offset + 28)?,
+                        lazy_bind_offset: reader.u32(offset + 32)?,
+                        lazy_bind_size: reader.u32(offset + 36)?,
+                        export_offset: reader.u32(offset + 40)?,
+                        export_size: reader.u32(offset + 44)?,
                     });
                 }
             }
@@ -361,6 +506,35 @@ impl<'a> Reader<'a> {
         Ok(String::from_utf8_lossy(&raw[..length]).trim_end().to_string())
     }
 
+    /// 解析 `LC_LOAD_DYLIB` 家族命令。
+    fn dylib(&self, offset: u64, size: u32, command: u32) -> Result<Option<MachDylib>, MachOParseError> {
+        if size < 24 {
+            return Ok(None);
+        }
+        let name_offset = self.u32(offset + 8)?;
+        if name_offset == 0 || u64::from(name_offset) >= u64::from(size) {
+            return Ok(None);
+        }
+        let start = offset + u64::from(name_offset);
+        let raw = self.slice(start, u64::from(size) - u64::from(name_offset))?;
+        let length = raw.iter().position(|byte| *byte == 0).unwrap_or(raw.len());
+        let name = String::from_utf8_lossy(&raw[..length]).into_owned();
+        let kind = match command {
+            LC_LOAD_DYLIB => MachDylibKind::Load,
+            LC_LOAD_WEAK_DYLIB => MachDylibKind::Weak,
+            LC_REEXPORT_DYLIB => MachDylibKind::Reexport,
+            LC_LOAD_UPWARD_DYLIB => MachDylibKind::Upward,
+            _ => MachDylibKind::Id,
+        };
+        Ok(Some(MachDylib {
+            name,
+            kind,
+            current_version: self.u32(offset + 16)?,
+            compatibility_version: self.u32(offset + 20)?,
+            ordinal: None,
+        }))
+    }
+
     fn segment32(&self, offset: u64, size: u32) -> Result<MachSegment, MachOParseError> {
         if u64::from(size) < SEGMENT32_SIZE {
             return Err(MachOParseError::SegmentHeaderTooSmall { size });
@@ -391,21 +565,11 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn section32(
-        &self,
-        sections: &mut Vec<MachSection>,
-        offset: u64,
-        size: u32,
-        segment: &str,
-    ) -> Result<(), MachOParseError> {
+    fn section32(&self, sections: &mut Vec<MachSection>, offset: u64, size: u32, segment: &str) -> Result<(), MachOParseError> {
         let count = u64::from(self.u32(offset + 48)?);
         let first = offset + SEGMENT32_SIZE;
         if first + count * SECTION32_SIZE > offset + u64::from(size) {
-            return Err(MachOParseError::SegmentSectionsOutOfRange {
-                segment: segment.to_string(),
-                count: count as u32,
-                size,
-            });
+            return Err(MachOParseError::SegmentSectionsOutOfRange { segment: segment.to_string(), count: count as u32, size });
         }
         for index in 0..count {
             let base = first + index * SECTION32_SIZE;
@@ -422,21 +586,11 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    fn section64(
-        &self,
-        sections: &mut Vec<MachSection>,
-        offset: u64,
-        size: u32,
-        segment: &str,
-    ) -> Result<(), MachOParseError> {
+    fn section64(&self, sections: &mut Vec<MachSection>, offset: u64, size: u32, segment: &str) -> Result<(), MachOParseError> {
         let count = u64::from(self.u32(offset + 64)?);
         let first = offset + SEGMENT64_SIZE;
         if first + count * SECTION64_SIZE > offset + u64::from(size) {
-            return Err(MachOParseError::SegmentSectionsOutOfRange {
-                segment: segment.to_string(),
-                count: count as u32,
-                size,
-            });
+            return Err(MachOParseError::SegmentSectionsOutOfRange { segment: segment.to_string(), count: count as u32, size });
         }
         for index in 0..count {
             let base = first + index * SECTION64_SIZE;

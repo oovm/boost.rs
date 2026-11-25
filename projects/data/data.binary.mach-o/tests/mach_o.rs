@@ -1,8 +1,8 @@
 //! `mach_o`：64 位 `Mach-O` 可执行镜像的构建与读取。
 
 use data_binary_mach_o::mach_o::{
-    MachArchitecture, MachOEndian, MachOImageBuilder, MachOParseError, architecture, parse_macho, parse_macho_header,
-    read_macho_symbols,
+    MachArchitecture, MachDylibKind, MachOEndian, MachOImageBuilder, MachOParseError, architecture, parse_macho, parse_macho_header,
+    read_bindings, read_macho_symbols,
 };
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;
@@ -163,6 +163,109 @@ fn rejects_fat_and_truncated_input() {
     let mut bytes = macho64_bytes();
     put_u32(&mut bytes, 20, 4);
     assert!(matches!(parse_macho(&bytes), Err(MachOParseError::CommandOutOfRange { .. })));
+}
+
+/// 64 位小端镜像：`__TEXT` 段、`LC_LOAD_DYLIB`、`LC_DYLD_INFO_ONLY` 与两条绑定流。
+fn macho64_with_bindings() -> Vec<u8> {
+    const LC_LOAD_DYLIB: u32 = 0xC;
+    const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
+    let segment_size = 72u32;
+    let dylib_size = 56u32;
+    let dyld_info_size = 48u32;
+    let command_size = segment_size + dylib_size + dyld_info_size;
+    let mut bytes = vec![0u8; 0x400];
+
+    put_u32(&mut bytes, 0, MH_MAGIC_64);
+    put_u32(&mut bytes, 4, 0x0100_000C);
+    put_u32(&mut bytes, 12, 2);
+    put_u32(&mut bytes, 16, 3);
+    put_u32(&mut bytes, 20, command_size);
+
+    let segment = 32;
+    put_u32(&mut bytes, segment, LC_SEGMENT_64);
+    put_u32(&mut bytes, segment + 4, segment_size);
+    put_name(&mut bytes, segment + 8, b"__TEXT");
+    put_u64(&mut bytes, segment + 24, 0x1_0000_0000);
+    put_u64(&mut bytes, segment + 32, 0x4000);
+    put_u64(&mut bytes, segment + 40, 0);
+    put_u64(&mut bytes, segment + 48, 0x400);
+    put_u32(&mut bytes, segment + 56, 5);
+    put_u32(&mut bytes, segment + 60, 5);
+
+    let dylib = segment + segment_size as usize;
+    let name = b"/usr/lib/libSystem.B.dylib\0";
+    put_u32(&mut bytes, dylib, LC_LOAD_DYLIB);
+    put_u32(&mut bytes, dylib + 4, dylib_size);
+    put_u32(&mut bytes, dylib + 8, 24);
+    put_u32(&mut bytes, dylib + 12, 2);
+    put_u32(&mut bytes, dylib + 16, 0x1_0000);
+    put_u32(&mut bytes, dylib + 20, 0x1_0000);
+    bytes[dylib + 24..dylib + 24 + name.len()].copy_from_slice(name);
+
+    let bind = [0x11, 0x41, b'_', b'p', b'u', b't', b's', 0, 0x70, 0x80, 0x02, 0x90, 0x00];
+    let lazy = [
+        0x11, 0x40, b'_', b'e', b'x', b'i', b't', 0, 0x70, 0x30, 0x90, 0x00, 0x11, 0x40, b'_', b'a', b'b', b'o', b'r', b't', 0, 0x70, 0x40,
+        0x90, 0x00,
+    ];
+    bytes[0x300..0x300 + bind.len()].copy_from_slice(&bind);
+    bytes[0x320..0x320 + lazy.len()].copy_from_slice(&lazy);
+
+    let info = dylib + dylib_size as usize;
+    put_u32(&mut bytes, info, LC_DYLD_INFO_ONLY);
+    put_u32(&mut bytes, info + 4, dyld_info_size);
+    put_u32(&mut bytes, info + 16, 0x300);
+    put_u32(&mut bytes, info + 20, bind.len() as u32);
+    put_u32(&mut bytes, info + 32, 0x320);
+    put_u32(&mut bytes, info + 36, lazy.len() as u32);
+    bytes
+}
+
+#[test]
+fn reads_dylibs_and_bind_opcodes() {
+    let bytes = macho64_with_bindings();
+    let image = parse_macho(&bytes).expect("parse mach-o with bindings");
+    assert_eq!(image.dylibs.len(), 1);
+    assert_eq!(image.dylibs[0].name, "/usr/lib/libSystem.B.dylib");
+    assert_eq!(image.dylibs[0].kind, MachDylibKind::Load);
+    assert_eq!(image.dylibs[0].ordinal, Some(1));
+    let info = image.dyld_info.expect("dyld info");
+    assert_eq!(info.bind_offset, 0x300);
+    assert_eq!(info.lazy_bind_offset, 0x320);
+
+    let bindings = read_bindings(&bytes, &image).expect("bindings");
+    assert_eq!(bindings.len(), 3);
+    assert_eq!(bindings[0].symbol, "_puts");
+    assert_eq!(bindings[0].library_ordinal, 1);
+    assert_eq!(bindings[0].library.as_deref(), Some("/usr/lib/libSystem.B.dylib"));
+    assert_eq!(bindings[0].segment, "__TEXT");
+    assert_eq!(bindings[0].address, 0x1_0000_0100);
+    assert!(bindings[0].weak);
+    assert!(!bindings[0].lazy);
+    assert_eq!(bindings[0].stream, "bind");
+
+    assert_eq!(bindings[1].symbol, "_exit");
+    assert!(bindings[1].lazy);
+    assert!(!bindings[1].weak);
+    assert_eq!(bindings[1].stream, "lazy_bind");
+    assert_eq!(bindings[1].address, 0x1_0000_0030);
+    assert_eq!(bindings[2].symbol, "_abort");
+    assert!(bindings[2].lazy);
+    assert_eq!(bindings[2].address, 0x1_0000_0040);
+}
+
+#[test]
+fn rejects_unknown_bind_opcode() {
+    let mut bytes = macho64_with_bindings();
+    bytes[0x300] = 0xF0;
+    let image = parse_macho(&bytes).expect("parse mach-o");
+    assert!(matches!(read_bindings(&bytes, &image), Err(MachOParseError::BadBindOpcode { opcode: 0xF0, .. })));
+}
+
+#[test]
+fn missing_dyld_info_yields_no_bindings() {
+    let bytes = macho64_bytes();
+    let image = parse_macho(&bytes).expect("parse mach-o");
+    assert!(read_bindings(&bytes, &image).expect("bindings").is_empty());
 }
 
 #[test]

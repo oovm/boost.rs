@@ -1,12 +1,14 @@
 //! Mach-O 可执行文件构建（aarch64）与读取。
 
+mod bind;
 mod read;
 
 use crate::error::Result;
 
+pub use bind::{MachBind, read_bindings};
 pub use read::{
-    MachArchitecture, MachHeader, MachOEndian, MachOImage, MachOParseError, MachSection, MachSegment, MachSymbol, MachSymtab,
-    architecture, macho_magic, parse_macho, parse_macho_header, read_macho_symbols,
+    MachArchitecture, MachDyldInfo, MachDylib, MachDylibKind, MachHeader, MachOEndian, MachOImage, MachOParseError, MachSection, MachSegment,
+    MachSymbol, MachSymtab, architecture, macho_magic, parse_macho, parse_macho_header, read_macho_symbols,
 };
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;
