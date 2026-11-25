@@ -224,9 +224,9 @@ pub fn index_7z<S: ByteSource>(source: &S) -> Result<SevenZArchiveIndex, SevenZI
     let property = cursor.u8()?;
     if property == K_ENCODED_HEADER {
         // The header itself lives in a packed stream: parse its streams info, decode
-        // the single folder, and re-enter parsing on the decoded header bytes. The
-        // encoded header's own pack positions sit right after the encoded region.
-        let encoded = parse_streams_info(&mut cursor, next_offset + header.len() as u64)?;
+        // the single folder, and re-enter parsing on the decoded header bytes. All pack
+        // positions are relative to the end of the 32-byte start header (7zFormat).
+        let encoded = parse_streams_info(&mut cursor, SIGNATURE_HEADER_LEN)?;
         if encoded.folders.len() != 1 {
             return Err(SevenZIndexError::Malformed("encoded header without exactly one folder"));
         }
@@ -236,7 +236,7 @@ pub fn index_7z<S: ByteSource>(source: &S) -> Result<SevenZArchiveIndex, SevenZI
         if inner.u8()? != K_HEADER {
             return Err(SevenZIndexError::Malformed("encoded header does not yield a header"));
         }
-        return parse_main_header(&mut inner, version, next_offset + header.len() as u64);
+        return parse_main_header(&mut inner, version, SIGNATURE_HEADER_LEN);
     }
     if property != K_HEADER {
         return Err(SevenZIndexError::Malformed("next header without a header property"));

@@ -270,29 +270,20 @@ fn decodes_bcj_filter_chain() {
 
 #[test]
 fn decodes_encoded_header() {
-    // The main header is itself stored in an LZMA2 folder, then the data pack follows.
+    // Spec layout: every pack position is relative to the end of the start header, so
+    // the data pack sits at offset 32, then the encoded header's own pack stream, and
+    // the encoded header block last.
     let payload = b"encoded header payload";
     let data_pack = lzma2_uncompressed(payload);
-    // The inner header references the data pack that follows the encoded header, so its
-    // pack position is the size of the encoded header's own pack stream. Build once with
-    // a placeholder to learn that size, then rebuild (packed width is stable).
-    let draft =
+    // The inner header references the data pack at the start of the data area, so its
+    // pack position is zero.
+    let inner =
         build_header(&[coder(LZMA2, &[0x14])], 0, data_pack.len() as u64, &[payload.len() as u64], &[payload.len() as u64], &[file("x.bin")]);
-    let header_pack = lzma2_uncompressed(&draft);
-    let inner = build_header(
-        &[coder(LZMA2, &[0x14])],
-        header_pack.len() as u64,
-        data_pack.len() as u64,
-        &[payload.len() as u64],
-        &[payload.len() as u64],
-        &[file("x.bin")],
-    );
-    assert_eq!(inner.len(), draft.len());
     let header_pack = lzma2_uncompressed(&inner);
 
     let mut encoded = vec![0x17]; // kEncodedHeader
     encoded.push(0x06); // kPackInfo
-    encoded.extend(packed(0));
+    encoded.extend(packed(data_pack.len() as u64)); // own pack stream follows the data pack
     encoded.extend(packed(1));
     encoded.push(0x09); // kSize
     encoded.extend(packed(header_pack.len() as u64));
@@ -314,15 +305,14 @@ fn decodes_encoded_header() {
     let mut out = SIGNATURE.to_vec();
     out.extend_from_slice(&[0, 4]);
     let mut record = Vec::new();
-    record.extend(0u64.to_le_bytes());
+    record.extend((data_pack.len() as u64 + header_pack.len() as u64).to_le_bytes()); // encoded block follows both packs
     record.extend((encoded.len() as u64).to_le_bytes());
     record.extend(0u32.to_le_bytes());
     out.extend(data_checksum::crc32(&record).to_le_bytes());
     out.extend(record);
-    out.extend(&encoded);
-    out.extend(&header_pack);
-    // The inner header's pack position is relative to the end of the encoded header.
     out.extend(&data_pack);
+    out.extend(&header_pack);
+    out.extend(&encoded);
 
     let archive = out;
     let index = index_7z_slice(&archive).expect("encoded header indexes");
