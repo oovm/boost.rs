@@ -140,8 +140,9 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
     let requested_target = args.resolved.clone();
     let members_dirs = workspace.legions_member_dirs();
     let mut members = Vec::with_capacity(members_dirs.len());
-    // CPython 模块名由工程名归一化而来：同一输出目录里两个成员归一到同名会互相
-    // 覆盖 `.pyd`/`PyInit_`，必须在写出前拒绝并同时指名两个工程。
+    // CPython 模块名由构建计划按工程名冻结一次：同一输出目录里两个成员归一到
+    // 同名会互相覆盖 `.pyd`/`PyInit_`，必须在写出前拒绝并同时指名两个工程。
+    // 预检只消费冻结事实，不重新归一化。
     let mut cpython_modules: Vec<(String, String)> = Vec::new();
     for project_dir in members_dirs {
         let request = BuildRequest {
@@ -152,9 +153,10 @@ fn run_all_workspace_members(args: &BuildArgs) -> LegionResult<ExitCode> {
         };
         match workspace.build_plan(&request) {
             Ok(plan) => {
-                if matches!(plan.project.resolved.contract, ArtifactContract::Cpython(_)) {
-                    let module = compiler_emitter::emitter_backend_machine::cpython_module_name(&plan.project.name)
-                        .map_err(|error| LegionError::msg(report!("{error}")))?;
+                if let ArtifactContract::Cpython(config) = &plan.project.resolved.contract {
+                    let module = config.module_name.clone().ok_or_else(|| {
+                        LegionError::msg(report!("CPython 目标计划未冻结模块名：工程 `{}`", plan.project.name))
+                    })?;
                     ensure_cpython_module_unique(&mut cpython_modules, module, &plan.project.name)?;
                 }
                 members.push(project_dir);
@@ -869,12 +871,12 @@ fn write_execution_manifest(
             validate: spec.validate.clone(),
         })
         .collect::<Vec<_>>();
-    // 依赖模块名的宿主（CPython）在清单里冻结与文件名/`PyInit_` 同源的模块名。
-    let cpython_module = match plan.project.resolved.contract {
-        ArtifactContract::Cpython(_) => Some(
-            compiler_emitter::emitter_backend_machine::cpython_module_name(&plan.project.name)
-                .map_err(|error| LegionError::msg(report!("{error}")))?,
-        ),
+    // 依赖模块名的宿主（CPython）在清单里写目标计划已冻结的模块名——与
+    // 文件名/`PyInit_` 同源同值；清单写出端不再重新归一化。
+    let cpython_module = match &plan.project.resolved.contract {
+        ArtifactContract::Cpython(config) => Some(config.module_name.clone().ok_or_else(|| {
+            LegionError::msg(report!("CPython 目标计划未冻结模块名：工程 `{}`", plan.project.name))
+        })?),
         _ => None,
     };
     let exports = library_exports

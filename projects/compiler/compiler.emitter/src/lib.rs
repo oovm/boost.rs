@@ -214,9 +214,8 @@ pub mod testing {
     pub fn lower_fragment_to_machine_extension(
         submission: &FragmentSubmission,
         target: &super::emitter_backend_machine::X64ProductTarget,
-        module_name: &str,
     ) -> Result<super::lowering::backends::machine::X64LoweredExtension> {
-        super::lowering::testing_lower_fragment_to_machine_extension(submission, target, module_name)
+        super::lowering::testing_lower_fragment_to_machine_extension(submission, target)
     }
 
     /// Decode one WASM uleb128 integer (test helper for section parsing).

@@ -381,6 +381,13 @@ pub enum PlannerError {
         /// 实际达到的值。
         actual: usize,
     },
+    /// CPython 工程名无法归一化为合法模块名（目标计划冻结失败）。
+    CpythonModuleNameInvalid {
+        /// 工程名称。
+        project: String,
+        /// 归一化失败原因。
+        reason: String,
+    },
 }
 
 impl Display for PlannerError {
@@ -452,6 +459,9 @@ impl Display for PlannerError {
             Self::Script(error) => Display::fmt(error, f),
             Self::ResourceLimitExceeded { kind, limit, actual } => {
                 write!(f, "planner {kind} exceeded limit {limit} (actual {actual})")
+            }
+            Self::CpythonModuleNameInvalid { project, reason } => {
+                write!(f, "project '{project}' cannot freeze a valid CPython module name: {reason}")
             }
         }
     }

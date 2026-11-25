@@ -114,6 +114,29 @@ pub struct CpythonHostConfig {
     pub module_suffix: Option<String>,
     /// Windows 上 CPython 扩展链接的导入库名（含版本）。
     pub import_library: Option<String>,
+    /// 工程名归一化后的 Python 导入模块名（例如 `leetcode_multiply_strings`）。
+    ///
+    /// 这是 CPython 目标计划冻结的唯一事实：构建计划在解析目标后按工程名冻结
+    /// 一次（[`ResolvedTarget::freeze_cpython_module_name`]），lowering、清单
+    /// 写出与宿主 `import` 共同消费，禁止任何消费端重新归一化。
+    pub module_name: Option<String>,
+}
+
+/// 把工程名归一化为合法的 CPython 模块名（唯一命名规则实现）。
+///
+/// 工程名保留仓库/题库身份（例如 `leetcode-multiply-strings`），模块名必须是
+/// 合法 Python/C 标识符（例如 `leetcode_multiply_strings`）。归一化确定性：
+/// 非 `[A-Za-z0-9_]` 字符替换为 `_`，首字符为数字时前置 `_`，结果为空则拒绝。
+/// 规则只在这里定义；冻结发生在构建计划，消费发生在 lowering / 清单 / 宿主 import。
+pub fn cpython_module_name(project_name: &str) -> Result<String, TargetResolutionError> {
+    let mut name: String = project_name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+    if name.is_empty() {
+        return Err(TargetResolutionError::new(format!("CPython 扩展模块名不能为空（工程名 `{project_name}` 归一化后为空）")));
+    }
+    if name.as_bytes()[0].is_ascii_digit() {
+        name.insert(0, '_');
+    }
+    Ok(name)
 }
 
 /// 产物与宿主合同。
@@ -161,6 +184,18 @@ impl ResolvedTarget {
     /// 占位符必须经 [`TargetResolver`] 展开，不能走本构造绕过合同解析。
     pub fn platform_only(target: CanonicalTarget) -> Self {
         Self { request: TargetRequest::Platform(target), platform: target, contract: ArtifactContract::Platform }
+    }
+
+    /// 按工程名冻结 CPython 模块名（构建计划在解析目标后调用一次）。
+    ///
+    /// 非 CPython 合同为空操作；CPython 合同重复冻结会覆盖旧值，调用方应只在
+    /// 计划装配点调用一次。归一化失败（非法标识符）在该阶段直接报错，
+    /// 下游消费端只读不推导。
+    pub fn freeze_cpython_module_name(&mut self, project_name: &str) -> Result<(), TargetResolutionError> {
+        if let ArtifactContract::Cpython(config) = &mut self.contract {
+            config.module_name = Some(cpython_module_name(project_name)?);
+        }
+        Ok(())
     }
 
     /// 缓存与产物目录使用的完整身份。
@@ -418,6 +453,9 @@ impl PythonHostProbe {
             config: CpythonHostConfig {
                 module_suffix: Some(module_suffix.trim().to_string()),
                 import_library: import_library.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+                // 模块名是工程级事实，由构建计划在装配时经
+                // `freeze_cpython_module_name` 冻结，解析服务只探测宿主不填。
+                module_name: None,
             },
         })
     }

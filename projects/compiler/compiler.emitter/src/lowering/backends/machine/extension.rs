@@ -53,27 +53,15 @@ pub struct X64LoweredExtension {
     pub module_name: Option<String>,
 }
 
-/// CPython 扩展的导入模块名：工程名与模块名是两个独立事实。
-///
-/// 工程名保留仓库/题库身份（例如 `leetcode-multiply-strings`），模块名必须是
-/// 合法 Python/C 标识符（例如 `leetcode_multiply_strings`）。归一化确定性：
-/// 非 `[A-Za-z0-9_]` 字符替换为 `_`，首字符为数字时前置 `_`，结果为空则拒绝。
-pub fn cpython_module_name(project_name: &str) -> Result<String> {
-    let mut name: String =
-        project_name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
-    if name.is_empty() {
-        return Err(format!("CPython 扩展模块名不能为空（工程名 `{project_name}` 归一化后为空）"));
-    }
-    if name.as_bytes()[0].is_ascii_digit() {
-        name.insert(0, '_');
-    }
-    Ok(name)
-}
+/// CPython 模块名归一化的唯一实现已上收 `compiler_target::target_resolution`
+/// （`cpython_module_name` / `ResolvedTarget::freeze_cpython_module_name`）：
+/// 构建计划按工程名冻结一次，lowering 与清单只消费冻结事实，不再各自归一化。
 
 /// 机器码交付的一条宿主导出：语言侧源码名与目标公开名。
 ///
 /// Node 扩展的命名合同是「有注解用注解名，否则源码名自动 camelCase 投影」；
-/// CPython 的命名合同是源码名。公开名是宿主装载面，源码名保留用于跨目标追溯。
+/// CPython 的命名合同是源码名自动 snake_case 投影（忽略注解改名）。公开名是宿主
+/// 装载面，源码名保留用于跨目标追溯；投影碰撞在写出前拒绝。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachineHostExport {
     /// 语言侧冻结的源码声明名。
@@ -92,22 +80,24 @@ pub struct MachineHostExport {
 
 /// 把已冻结的目标计划降低为宿主扩展共享库。
 ///
-/// `target` 必须来自统一目标解析服务的宿主合同；`module_name` 是工程名
-/// （Node-API 不使用模块名，但仍参与产物身份命名；CPython 由 [`cpython_module_name`]
-/// 归一化为合法导入名，工程名本身保持不变）。
-pub fn lower_fragment_to_machine_extension(
-    submission: &FragmentSubmission,
-    target: &X64ProductTarget,
-    module_name: &str,
-) -> Result<X64LoweredExtension> {
+/// `target` 必须来自统一目标解析服务的宿主合同；CPython 模块名是目标计划已冻结
+/// 的事实（`X64ProductTarget::cpython_module_name`），缺失即失败闭合，lowering
+/// 不再接收工程名、也不重新归一化。
+pub fn lower_fragment_to_machine_extension(submission: &FragmentSubmission, target: &X64ProductTarget) -> Result<X64LoweredExtension> {
     let (platform, host) = match target {
         X64ProductTarget::Extension { platform, module, .. } => (*platform, *module),
         X64ProductTarget::Library(_) => return Err("目标不是宿主扩展合同；普通共享库交付尚未接线".to_string()),
     };
     let abi = platform.abi();
-    // CPython 的模块名先行归一化：文件名、`PyInit_`、清单与 `import` 必须同值。
+    // CPython 的模块名由构建计划冻结一次：文件名、`PyInit_`、清单与 `import`
+    // 共用这一个事实，任何消费端不得再按工程名推导。
     let python_module = match host {
-        HostModule::Python => Some(cpython_module_name(module_name)?),
+        HostModule::Python => Some(
+            target
+                .cpython_module_name()
+                .ok_or("CPython 目标计划未冻结模块名：构建计划必须经 `freeze_cpython_module_name` 装配后再 lowering")?
+                .to_string(),
+        ),
         HostModule::Node => None,
     };
 
@@ -274,7 +264,8 @@ pub fn lower_fragment_to_machine_extension(
 ///
 /// - Node 有 `name:` / `case:` 注解：公开名就是注解解析名；
 /// - Node 无注解：源码名自动 camelCase 投影（`move_zeroes` → `moveZeroes`）；
-/// - CPython：源码名原样（Python 命名就是 snake_case，忽略注解改名）。
+/// - CPython：源码名自动 snake_case 投影（`twoSum` → `two_sum`），忽略注解改名；
+///   投影碰撞（`foo_bar` 与 `fooBar` 同落 `foo_bar`）由 `frozen_host_methods` 写出前拒绝。
 fn host_export_public_name(plan: &crate::TargetExecutionPlan, instance: &ItemInstanceId, host: HostModule) -> String {
     if host != HostModule::Python {
         if let Some(annotation) = plan.export_annotations().get(instance) {
@@ -284,7 +275,7 @@ fn host_export_public_name(plan: &crate::TargetExecutionPlan, instance: &ItemIns
     let source = plan.export_names().get(instance).cloned().unwrap_or_default();
     match host {
         HostModule::Node => compiler_types::naming::snake_case_to_camel_case(&source),
-        HostModule::Python => source,
+        HostModule::Python => compiler_types::naming::camel_case_to_snake_case(&source),
     }
 }
 

@@ -37,7 +37,7 @@ pub use self::{
     },
     target_resolution::{
         ArtifactContract, CpythonHostConfig, NodeHostProbe, PythonHostProbe, ResolvedTarget, TargetRequest, TargetResolutionError,
-        TargetResolver, probe_build_host,
+        TargetResolver, cpython_module_name, probe_build_host,
     },
 };
 pub use compiler_analysis::{EntryContract, ExportContract, FunctionAnalysis, ImportContract, ProgramFacts};

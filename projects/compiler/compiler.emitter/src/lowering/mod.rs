@@ -83,9 +83,8 @@ pub(crate) fn testing_lower_fragment_to_machine_image(
 pub(crate) fn testing_lower_fragment_to_machine_extension(
     submission: &FragmentSubmission,
     target: &backends::machine::X64ProductTarget,
-    module_name: &str,
 ) -> Result<backends::machine::X64LoweredExtension> {
-    backends::machine::lower_fragment_to_machine_extension(submission, target, module_name)
+    backends::machine::lower_fragment_to_machine_extension(submission, target)
 }
 
 pub(crate) fn testing_decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {

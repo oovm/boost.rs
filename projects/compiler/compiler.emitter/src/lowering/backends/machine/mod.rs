@@ -29,7 +29,7 @@ mod x64_program;
 pub mod x86_64;
 
 pub use container::compile_shared_container;
-pub use extension::{MachineHostExport, X64LoweredExtension, cpython_module_name, lower_fragment_to_machine_extension};
+pub use extension::{MachineHostExport, X64LoweredExtension, lower_fragment_to_machine_extension};
 pub use library::{MachineLibraryExport, X64LoweredLibrary, lower_fragment_to_machine_library};
 
 pub use carrier::{

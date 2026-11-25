@@ -196,14 +196,8 @@ pub fn reset_text_arena(reset_slot: u16, arena_offset: u32) -> Vec<X64TextInstru
 }
 
 /// 模块名必须是合法 C 标识符：`PyInit_<module>` 要能在 C 中声明。
-pub fn is_c_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    match chars.next() {
-        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
-        _ => return false,
-    }
-    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-}
+/// 谓词唯一实现已上收 `compiler_types::naming`，此处只做 lane 内再导出。
+pub use compiler_types::naming::is_c_identifier;
 
 /// 任一导出是否以布尔跨越宿主边界（决定 `napi_get_boolean` / `PyBool_FromLong` 导入）。
 pub fn any_returns_bool(properties: &[HostProperty], methods: &[HostMethod]) -> bool {

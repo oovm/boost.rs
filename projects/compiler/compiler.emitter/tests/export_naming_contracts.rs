@@ -2,9 +2,10 @@
 //!
 //! 覆盖机器码 lane 的三条合同与投影碰撞拒绝：
 //! - Node 扩展：有注解用注解名，否则源码名自动 camelCase 投影（`move_zeroes` → `moveZeroes`）；
-//! - CPython 扩展：公开名就是源码名（忽略注解改名）；
+//! - CPython 扩展：源码名自动 snake_case 投影（`twoSum` → `two_sum`，忽略注解改名），
+//!   模块名是目标计划冻结的唯一事实，lowering 只消费不推导；
 //! - 普通共享库：C ABI 公开名就是源码名（忽略注解改名）；
-//! - 投影碰撞（`foo_bar` 与 `fooBar` 同落 `fooBar`）：Node 写出前拒绝，CPython/普通库不受影响。
+//! - 投影碰撞（Node：`foo_bar` 与 `fooBar` 同落 `fooBar`；CPython：同落 `foo_bar`）：写出前拒绝。
 
 use std::collections::BTreeMap;
 
@@ -13,10 +14,11 @@ use compiler_emitter::{
     contracts::{Block, BlockRef, ExecutableFunction, Operand, Terminator, Value, ValueOrigin, ValueRef},
     emitter_backend_machine::{
         HostModule, MachineHostExport, MachineLibraryExport, X64LoweredExtension, X64LoweredLibrary, X64Platform, X64ProductTarget,
-        cpython_module_name, lower_fragment_to_machine_library,
+        lower_fragment_to_machine_library,
     },
     testing::lower_fragment_to_machine_extension,
 };
+use compiler_target::cpython_module_name;
 use compiler_types::{Identifier, QualifiedName};
 
 /// 构造一个 `i64 -> i64` 的恒等导出函数体（宿主 ABI 合同内的最小可发射形状）。
@@ -79,7 +81,7 @@ fn pairs_of(exports: &[MachineHostExport]) -> Vec<(String, String)> {
 fn node_extension_projects_unannotated_source_to_camel_case() {
     let submission = submission_for(&["move_zeroes"], &[]);
     let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let lowered: X64LoweredExtension = lower_fragment_to_machine_extension(&submission, &target, "app").expect("Node 扩展降低成功");
+    let lowered: X64LoweredExtension = lower_fragment_to_machine_extension(&submission, &target).expect("Node 扩展降低成功");
     assert_eq!(pairs_of(&lowered.host_exports), vec![("move_zeroes".to_string(), "moveZeroes".to_string())]);
 }
 
@@ -87,19 +89,21 @@ fn node_extension_projects_unannotated_source_to_camel_case() {
 fn node_extension_honors_export_annotation() {
     let submission = submission_for(&["two_sum"], &[("two_sum", "twoSum")]);
     let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let lowered = lower_fragment_to_machine_extension(&submission, &target, "app").expect("Node 扩展降低成功");
+    let lowered = lower_fragment_to_machine_extension(&submission, &target).expect("Node 扩展降低成功");
     assert_eq!(pairs_of(&lowered.host_exports), vec![("two_sum".to_string(), "twoSum".to_string())]);
 }
 
 #[test]
-fn cpython_extension_exports_source_name_and_ignores_annotation() {
-    let submission = submission_for(&["move_zeroes", "two_sum"], &[("two_sum", "twoSum")]);
-    let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python);
-    let lowered = lower_fragment_to_machine_extension(&submission, &target, "app").expect("CPython 扩展降低成功");
-    // CPython 的公开面就是 Python 命名：注解改名在本 lane 被忽略。
+fn cpython_extension_projects_source_to_snake_case_and_ignores_annotation() {
+    let submission = submission_for(&["moveZeroes", "two_sum"], &[("two_sum", "twoSum")]);
+    let target = X64ProductTarget::cpython_extension(X64Platform::linux_x64(), "app");
+    let lowered = lower_fragment_to_machine_extension(&submission, &target).expect("CPython 扩展降低成功");
+    // CPython 的公开面就是 Python 命名：源码名自动 snake_case 投影，注解改名在本 lane 被忽略。
+    let mut pairs = pairs_of(&lowered.host_exports);
+    pairs.sort();
     assert_eq!(
-        pairs_of(&lowered.host_exports),
-        vec![("move_zeroes".to_string(), "move_zeroes".to_string()), ("two_sum".to_string(), "two_sum".to_string())]
+        pairs,
+        vec![("moveZeroes".to_string(), "move_zeroes".to_string()), ("two_sum".to_string(), "two_sum".to_string())]
     );
 }
 
@@ -119,7 +123,7 @@ fn node_projection_collision_is_rejected_with_both_source_names() {
     // `foo_bar` 投影为 `fooBar`，与源码名 `fooBar`（首段原样保留）撞同一公开名。
     let submission = submission_for(&["foo_bar", "fooBar"], &[]);
     let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let error = lower_fragment_to_machine_extension(&submission, &target, "app").expect_err("投影碰撞必须写出前拒绝");
+    let error = lower_fragment_to_machine_extension(&submission, &target).expect_err("投影碰撞必须写出前拒绝");
     assert!(error.contains("foo_bar"), "诊断应列出源码名 foo_bar：{error}");
     assert!(error.contains("fooBar"), "诊断应列出源码名 fooBar：{error}");
 }
@@ -127,34 +131,40 @@ fn node_projection_collision_is_rejected_with_both_source_names() {
 #[test]
 fn cpython_module_name_normalizes_project_and_drives_entry_symbol() {
     // 工程名保留仓库身份，模块名是确定性的合法标识符：文件名、`PyInit_`、
-    // 清单与宿主 `import` 必须共用同一个值。
+    // 清单与宿主 `import` 必须共用同一个冻结值。
     assert_eq!(cpython_module_name("leetcode-multiply-strings").unwrap(), "leetcode_multiply_strings");
     assert_eq!(cpython_module_name("app").unwrap(), "app");
     assert_eq!(cpython_module_name("9lives").unwrap(), "_9lives");
     assert!(cpython_module_name("").is_err(), "空工程名无法归一化成合法模块名");
 
     let submission = submission_for(&["move_zeroes"], &[]);
-    let target = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python);
-    let lowered = lower_fragment_to_machine_extension(&submission, &target, "leetcode-multiply-strings").expect("CPython 模块名归一化");
+    // 模块名由目标计划冻结一次（构建计划经 `freeze_cpython_module_name` 装配），
+    // lowering 只消费冻结事实。
+    let target = X64ProductTarget::cpython_extension(X64Platform::linux_x64(), &cpython_module_name("leetcode-multiply-strings").unwrap());
+    let lowered = lower_fragment_to_machine_extension(&submission, &target).expect("CPython 降低消费冻结模块名");
     assert_eq!(lowered.module_name.as_deref(), Some("leetcode_multiply_strings"));
     assert_eq!(lowered.entry_symbol, "PyInit_leetcode_multiply_strings");
     assert_eq!(lowered.artifact_extension, ".so");
 
+    // 未冻结模块名的 CPython 目标必须失败闭合，绝不按工程名现场推导。
+    let unfrozen = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python);
+    let error = lower_fragment_to_machine_extension(&submission, &unfrozen).expect_err("缺冻结事实必须拒绝");
+    assert!(error.contains("未冻结"), "诊断应指出模块名未冻结：{error}");
+
     let node = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Node);
-    let node_lowered = lower_fragment_to_machine_extension(&submission, &node, "leetcode-multiply-strings").expect("Node 扩展降低成功");
+    let node_lowered = lower_fragment_to_machine_extension(&submission, &node).expect("Node 扩展降低成功");
     assert_eq!(node_lowered.module_name, None, "Node 扩展不使用 CPython 模块名");
 }
 
 #[test]
-fn collision_sources_pass_cpython_and_plain_library() {
-    // CPython/普通库按源码名导出：`foo_bar` 与 `fooBar` 是两个不同公开名，不碰撞。
+fn cpython_projection_collision_is_rejected_plain_library_passes() {
+    // CPython snake_case 投影：`foo_bar` 与 `fooBar` 都落到 `foo_bar`，写出前拒绝。
     let submission = submission_for(&["foo_bar", "fooBar"], &[]);
-    let cpython = X64ProductTarget::extension(X64Platform::linux_x64(), HostModule::Python);
-    let lowered = lower_fragment_to_machine_extension(&submission, &cpython, "app").expect("CPython 源码名合同不碰撞");
-    assert_eq!(
-        pairs_of(&lowered.host_exports),
-        vec![("fooBar".to_string(), "fooBar".to_string()), ("foo_bar".to_string(), "foo_bar".to_string())]
-    );
+    let cpython = X64ProductTarget::cpython_extension(X64Platform::linux_x64(), "app");
+    let error = lower_fragment_to_machine_extension(&submission, &cpython).expect_err("CPython snake_case 投影碰撞必须写出前拒绝");
+    assert!(error.contains("foo_bar"), "诊断应列出源码名 foo_bar：{error}");
+    assert!(error.contains("fooBar"), "诊断应列出源码名 fooBar：{error}");
+    // 普通共享库按源码名导出：`foo_bar` 与 `fooBar` 是两个不同公开名，不碰撞。
     let library_submission = submission_for(&["foo_bar", "fooBar"], &[]);
     let library = lower_fragment_to_machine_library(&library_submission, X64Platform::linux_x64()).expect("普通库源码名合同不碰撞");
     assert_eq!(library.exports.len(), 2);

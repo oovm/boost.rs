@@ -26,6 +26,19 @@ use super::{
 };
 
 impl WorkspaceResolver {
+    /// 装配计划前把 CPython 模块名冻结进已解析目标合同。
+    ///
+    /// 模块名是工程级事实：构建计划在解析目标后按工程名冻结一次，lowering、
+    /// workspace 预检与执行清单写出共同消费这份冻结事实，任何消费端不得再归一化。
+    /// 非 CPython 合同为空操作。
+    fn frozen_resolved(mut resolved: compiler_target::ResolvedTarget, project_name: &str) -> PlannerResult<compiler_target::ResolvedTarget> {
+        resolved.freeze_cpython_module_name(project_name).map_err(|error| PlannerError::CpythonModuleNameInvalid {
+            project: project_name.to_string(),
+            reason: error.to_string(),
+        })?;
+        Ok(resolved)
+    }
+
     /// 从 `start` 向上查找 workspace 根，并加载其全部成员工程清单。
     pub fn discover(start: impl AsRef<Path>) -> PlannerResult<Self> {
         let start = start.as_ref();
@@ -276,7 +289,7 @@ impl WorkspaceResolver {
                 selected_host_providers: host_inventory.selected_providers,
                 gated_out_host_providers: host_inventory.gated_out_providers,
                 build_target,
-                resolved: request.resolved.clone(),
+                resolved: Self::frozen_resolved(request.resolved.clone(), &manifest.name)?,
                 artifact_kind: manifest.artifact,
                 dependencies,
                 is_test: false,
@@ -360,7 +373,7 @@ impl WorkspaceResolver {
                     selected_host_providers: host_inventory.selected_providers,
                     gated_out_host_providers: host_inventory.gated_out_providers,
                     build_target,
-                    resolved: request.resolved.clone(),
+                    resolved: Self::frozen_resolved(request.resolved.clone(), &manifest.name)?,
                     artifact_kind: manifest.artifact,
                     dependencies,
                     is_test: true,
@@ -572,7 +585,7 @@ impl WorkspaceResolver {
                 selected_host_providers: host_inventory.selected_providers,
                 gated_out_host_providers: host_inventory.gated_out_providers,
                 build_target,
-                resolved: request.resolved.clone(),
+                resolved: Self::frozen_resolved(request.resolved.clone(), &manifest.name)?,
                 artifact_kind: manifest.artifact,
                 dependencies,
                 is_test: false,

@@ -153,6 +153,25 @@ impl X64ProductTarget {
         Self::Extension { platform, module, cpython: None }
     }
 
+    /// 便捷构造：已冻结模块名的 CPython 扩展目标（构建计划装配与测试路径）。
+    pub fn cpython_extension(platform: X64Platform, module_name: &str) -> Self {
+        Self::Extension {
+            platform,
+            module: HostModule::Python,
+            cpython: Some(CpythonHostConfig { module_name: Some(module_name.to_string()), ..Default::default() }),
+        }
+    }
+
+    /// 构建计划冻结的 CPython 模块名；Node 或未冻结时为 `None`。
+    ///
+    /// 这是 lowering 唯一的模块名事实来源：缺失即失败闭合，禁止按工程名重新推导。
+    pub fn cpython_module_name(&self) -> Option<&str> {
+        match self {
+            Self::Extension { cpython: Some(config), .. } => config.module_name.as_deref(),
+            _ => None,
+        }
+    }
+
     /// 探测/配置冻结的 CPython 导入 DLL 名。
     pub fn cpython_import_library(&self) -> Option<&str> {
         match self {
