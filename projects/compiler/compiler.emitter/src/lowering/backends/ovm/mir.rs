@@ -353,8 +353,9 @@ fn lower_fragment_mir_to_ovm_module_impl(
         for (index, instance) in operations.iter().enumerate() {
             function_index_by_instance.insert(*instance, index as i32);
         }
-        let function_entry_arities = build_nyar_function_entry_arities(exec.as_ref(), &operations);
-        let param_types_by_function_index = build_nyar_function_param_types(exec.as_ref(), &operations)?;
+        let entry_slots = build_nyar_function_entry_slots(exec.as_ref(), &operations)?;
+        let function_entry_arities = entry_slots.iter().map(|(index, (arity, _))| (*index, *arity)).collect::<BTreeMap<i32, usize>>();
+        let param_types_by_function_index = entry_slots.into_iter().map(|(index, (_, types))| (index, types)).collect::<BTreeMap<i32, Vec<SemanticType>>>();
         let param_layouts_by_function_index = build_nyar_function_param_layouts(exec.as_ref(), &operations);
 
         for instance in operations {
@@ -479,32 +480,14 @@ fn register_sum_layouts(submission: &FragmentSubmission, layouts: &mut Vec<OdinL
 }
 
 /// 在降低函数体之前登记全部 operation → 稠密下标，供 `Call` 解析（含前向引用）。
-fn build_nyar_function_entry_arities(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> BTreeMap<i32, usize> {
-    let mut map = BTreeMap::new();
-    for (index, instance) in operations.iter().enumerate() {
-        let Some(view) = exec.get_function(instance)
-        else {
-            continue;
-        };
-        let entry_arity = view
-            .function
-            .blocks
-            .get(view.function.entry.0 as usize)
-            .map(|block| block.parameters.len())
-            .unwrap_or(view.function.param_types.len());
-        map.insert(index as i32, entry_arity);
-    }
-    map
-}
-
-/// 被调函数的入口形参槽类型表（与 arity 同源：入口块 SSA 形参的冻结槽类型）。
 ///
-/// 常量实参的位宽必须由它决定；计划侧没有这张表时，Call 操作数位只能回落到
+/// 入口块是内部函数调用 arity 与形参槽类型的唯一来源，两份事实一次结算：
+/// arity 不再用 `param_types.len()` 顶替，形参表也不再把同一情形当成空参数。
+/// 有函数体却缺入口块属目标输入合同破坏，结构化失败，不做回退猜测。
+///
+/// 常量实参的位宽由形参槽类型决定；缺这张表时，Call 操作数位只能回落到
 /// semantic MIR 合同（`Constant::Int` = Integer64），会把 i32 形参静默拓宽。
-fn build_nyar_function_param_types(
-    exec: &TargetExecutionPlan,
-    operations: &[ItemInstanceId],
-) -> crate::Result<BTreeMap<i32, Vec<SemanticType>>> {
+fn build_nyar_function_entry_slots(exec: &TargetExecutionPlan, operations: &[ItemInstanceId]) -> crate::Result<BTreeMap<i32, (usize, Vec<SemanticType>)>> {
     let mut map = BTreeMap::new();
     for (index, instance) in operations.iter().enumerate() {
         let Some(view) = exec.get_function(instance)
@@ -512,9 +495,12 @@ fn build_nyar_function_param_types(
             continue;
         };
         let mir_fn = &view.function;
+        let block = mir_fn.blocks.get(mir_fn.entry.0 as usize).ok_or_else(|| {
+            format!("OVM 入口槽合同破坏：symbol=`{}` 声明了入口块 {}，但块表中不存在该入口块", mir_fn.symbol, mir_fn.entry.0)
+        })?;
         let slots = ExecutableSlotPlan::plan_semantic(mir_fn);
-        let parameters = mir_fn.blocks.get(mir_fn.entry.0 as usize).map(|block| block.parameters.as_slice()).unwrap_or(&[]);
-        let types = parameters
+        let types = block
+            .parameters
             .iter()
             .map(|parameter| {
                 slots
@@ -525,7 +511,7 @@ fn build_nyar_function_param_types(
                     .ok_or_else(|| format!("OVM 形参 SSA 值缺少已规划槽类型：%{}（symbol=`{}`）", parameter.0, mir_fn.symbol))
             })
             .collect::<crate::Result<Vec<_>>>()?;
-        map.insert(index as i32, types);
+        map.insert(index as i32, (types.len(), types));
     }
     Ok(map)
 }
