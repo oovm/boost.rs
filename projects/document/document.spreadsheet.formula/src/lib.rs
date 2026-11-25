@@ -16,7 +16,7 @@ mod model;
 
 use std::collections::{HashMap, HashSet};
 
-pub use engine::{CellKey, FUNCTIONS, evaluate, find_cycles, validate};
+pub use engine::{CellKey, FUNCTION_ALIASES, FUNCTIONS, canonical_function, evaluate, find_cycles, validate};
 pub use model::{CellRange, CellValue, format_number, parse_reference};
 
 /// One formula cell the engine must evaluate.
@@ -164,5 +164,179 @@ mod tests {
         assert_eq!((range.start_row, range.end_row, range.start_column, range.end_column), (2, 5, 2, 4));
         assert_eq!(range.rows(), 4);
         assert_eq!(range.columns(), 3);
+    }
+
+    /// Single sheet of literals plus formula cells that may carry a cached value.
+    #[derive(Default)]
+    struct MatrixWorkbook {
+        cells: HashMap<(u32, u32), (CellValue, Option<String>, Option<CellValue>)>,
+    }
+
+    impl MatrixWorkbook {
+        fn set(&mut self, row: u32, column: u32, value: CellValue) -> &mut Self {
+            self.cells.insert((row, column), (value, None, None));
+            self
+        }
+
+        fn formula(&mut self, row: u32, column: u32, source: &str) -> &mut Self {
+            self.cells.insert((row, column), (CellValue::Empty, Some(source.to_owned()), None));
+            self
+        }
+
+        fn cached_formula(&mut self, row: u32, column: u32, source: &str, cached: CellValue) -> &mut Self {
+            self.cells.insert((row, column), (CellValue::Empty, Some(source.to_owned()), Some(cached)));
+            self
+        }
+
+        /// `B1:B4 = 1,2,2,3`, `D1:D4 = 1,1,2,2` (a tie) and `F1:F5` with a text
+        /// cell inside the range; column `G` stays empty.
+        fn seeded() -> Self {
+            let mut book = MatrixWorkbook::default();
+            for (row, value) in [(1u32, 1.0), (2, 2.0), (3, 2.0), (4, 3.0)] {
+                book.set(row, 2, CellValue::number(value));
+            }
+            for (row, value) in [(1u32, 1.0), (2, 1.0), (3, 2.0), (4, 2.0)] {
+                book.set(row, 4, CellValue::number(value));
+            }
+            for (row, value) in [(1u32, 1.0), (2, 2.0), (3, 2.0), (4, 3.0)] {
+                book.set(row, 6, CellValue::number(value));
+            }
+            book.set(5, 6, CellValue::text("x"));
+            book
+        }
+    }
+
+    impl Workbook for MatrixWorkbook {
+        fn sheet_index(&self, name: &str) -> Option<usize> {
+            if name.eq_ignore_ascii_case("Sheet1") { Some(0) } else { None }
+        }
+
+        fn cell(&self, sheet: usize, row: u32, column: u32) -> Option<CellSnapshot> {
+            if sheet != 0 {
+                return None;
+            }
+            let (value, formula, cached) = self.cells.get(&(row, column))?;
+            Some(CellSnapshot { value: value.clone(), has_formula: formula.is_some(), cached: cached.clone() })
+        }
+
+        fn formula_cells(&self) -> Vec<FormulaCell> {
+            let mut cells: Vec<FormulaCell> = self
+                .cells
+                .iter()
+                .filter_map(|(&(row, column), entry)| {
+                    entry.1.as_ref().map(|source| FormulaCell { sheet: 0, row, column, source: source.clone() })
+                })
+                .collect();
+            cells.sort_by_key(|cell| (cell.row, cell.column));
+            cells
+        }
+    }
+
+    /// Evaluates one formula cell on its own and fails when the engine had to
+    /// fall back to the unsupported path.
+    fn evaluate_formula(source: &str) -> CellValue {
+        let mut book = MatrixWorkbook::seeded();
+        book.formula(1, 1, source);
+        let report = evaluate(&book);
+        assert!(!report.unsupported.contains(&(0, 1, 1)), "`{source}` must reach a registered implementation");
+        report.values.get(&(0, 1, 1)).cloned().expect("the formula cell computed")
+    }
+
+    /// Evaluates an alias and its canonical spelling and requires the same value.
+    fn assert_alias_matches_canonical(alias: &str, canonical: &str) {
+        assert_eq!(evaluate_formula(alias), evaluate_formula(canonical), "`{alias}` must evaluate as `{canonical}`");
+    }
+
+    #[test]
+    fn concatenate_alias_shares_the_concat_implementation() {
+        assert_eq!(evaluate_formula("CONCATENATE(\"a\",\"b\",1+1)"), CellValue::text("ab2"));
+        assert_eq!(evaluate_formula("CONCATENATE(B1:B4)"), CellValue::text("1223"));
+        assert_alias_matches_canonical("CONCATENATE(B1:B4)", "CONCAT(B1:B4)");
+        // The engine never rewrites formula text, so literals keep their spelling.
+        assert_eq!(evaluate_formula("\"CONCATENATE(\""), CellValue::text("CONCATENATE("));
+        let mut book = MatrixWorkbook::seeded();
+        book.formula(1, 1, "CONCATENATE(\"a\",\"b\",1+1)");
+        assert_eq!(book.formula_cells()[0].source, "CONCATENATE(\"a\",\"b\",1+1)");
+    }
+
+    #[test]
+    fn mode_sngl_matches_mode_with_tie_and_empty_boundaries() {
+        assert_eq!(evaluate_formula("MODE.SNGL(B1:B4)"), CellValue::number(2.0));
+        assert_alias_matches_canonical("MODE.SNGL(B1:B4)", "MODE(B1:B4)");
+        assert_eq!(evaluate_formula("MODE.SNGL(D1:D4)"), CellValue::number(1.0), "a tie reports the smallest mode");
+        assert_eq!(evaluate_formula("MODE.SNGL(B1:B2)"), CellValue::error("#N/A"), "no repeated value has no mode");
+        assert_eq!(evaluate_formula("MODE.SNGL(G1:G2)"), CellValue::error("#N/A"), "an empty range has no mode");
+        assert_eq!(evaluate_formula("MODE.SNGL(\"x\")"), CellValue::error("#VALUE!"), "a non-numeric scalar is rejected");
+    }
+
+    #[test]
+    fn stdev_aliases_match_stdev_and_stdevp_with_sample_boundaries() {
+        assert_eq!(evaluate_formula("STDEV.S(B1:B4)"), CellValue::number((2.0f64 / 3.0).sqrt()));
+        assert_eq!(evaluate_formula("STDEV.P(B1:B4)"), CellValue::number(0.5f64.sqrt()));
+        assert_alias_matches_canonical("STDEV.S(B1:B4)", "STDEV(B1:B4)");
+        assert_alias_matches_canonical("STDEV.P(B1:B4)", "STDEVP(B1:B4)");
+        assert_eq!(evaluate_formula("STDEV.S(B1:B1)"), CellValue::error("#DIV/0!"), "one sample has no degrees of freedom");
+        assert_eq!(evaluate_formula("STDEV.P(B1:B1)"), CellValue::number(0.0), "one population value deviates by zero");
+        assert_eq!(evaluate_formula("STDEV.S(G1:G2)"), CellValue::error("#DIV/0!"), "an empty range divides by zero");
+        assert_eq!(evaluate_formula("STDEV.P(G1:G2)"), CellValue::error("#DIV/0!"), "an empty range divides by zero");
+        assert_eq!(evaluate_formula("STDEV.S(\"x\")"), CellValue::error("#VALUE!"), "a non-numeric scalar is rejected");
+        assert_eq!(evaluate_formula("STDEV.S(F1:F5)"), evaluate_formula("STDEV.S(B1:B4)"), "text inside a range is ignored");
+    }
+
+    #[test]
+    fn var_aliases_match_var_and_varp_with_sample_boundaries() {
+        assert_eq!(evaluate_formula("VAR.S(B1:B4)"), CellValue::number(2.0 / 3.0));
+        assert_eq!(evaluate_formula("VAR.P(B1:B4)"), CellValue::number(0.5));
+        assert_alias_matches_canonical("VAR.S(B1:B4)", "VAR(B1:B4)");
+        assert_alias_matches_canonical("VAR.P(B1:B4)", "VARP(B1:B4)");
+        assert_eq!(evaluate_formula("VAR.S(B1:B1)"), CellValue::error("#DIV/0!"), "one sample has no degrees of freedom");
+        assert_eq!(evaluate_formula("VAR.P(B1:B1)"), CellValue::number(0.0), "one population value deviates by zero");
+        assert_eq!(evaluate_formula("VAR.S(G1:G2)"), CellValue::error("#DIV/0!"), "an empty range divides by zero");
+        assert_eq!(evaluate_formula("VAR.P(G1:G2)"), CellValue::error("#DIV/0!"), "an empty range divides by zero");
+        assert_eq!(evaluate_formula("VAR.S(\"x\")"), CellValue::error("#VALUE!"), "a non-numeric scalar is rejected");
+    }
+
+    #[test]
+    fn rank_eq_matches_rank_including_ties_and_missing_values() {
+        assert_eq!(evaluate_formula("RANK.EQ(2,B1:B4)"), CellValue::number(2.0));
+        assert_alias_matches_canonical("RANK.EQ(2,B1:B4)", "RANK(2,B1:B4)");
+        assert_eq!(evaluate_formula("RANK.EQ(2,B2:B3)"), CellValue::number(1.0), "tied values share the best rank");
+        assert_eq!(evaluate_formula("RANK.EQ(1,B1:B4)"), CellValue::number(4.0), "the default order is descending");
+        assert_eq!(evaluate_formula("RANK.EQ(1,B1:B4,1)"), CellValue::number(1.0), "a non-zero order ranks ascending");
+        assert_eq!(evaluate_formula("RANK.EQ(9,B1:B4)"), CellValue::error("#N/A"), "a value outside the range is not ranked");
+    }
+
+    #[test]
+    fn alias_lookup_ignores_case_and_near_misses_never_fold() {
+        assert_eq!(evaluate_formula("stdev.s(B1:B4)"), evaluate_formula("STDEV(B1:B4)"));
+        assert_eq!(evaluate_formula("Mode.Sngl(B1:B4)"), evaluate_formula("MODE(B1:B4)"));
+        let mut book = MatrixWorkbook::seeded();
+        book.formula(1, 1, "CONCATENATEX(1)");
+        book.cached_formula(2, 1, "CONCATENATEX(1)", CellValue::number(42.0));
+        let report = evaluate(&book);
+        assert!(report.unsupported.contains(&(0, 1, 1)), "a near-miss name is not an alias");
+        assert_eq!(report.values.get(&(0, 1, 1)), Some(&CellValue::error("#NAME?")), "without a cache the error stands");
+        assert_eq!(report.values.get(&(0, 2, 1)), Some(&CellValue::number(42.0)), "the imported cached value survives");
+    }
+
+    #[test]
+    fn capability_matrix_registers_every_alias_on_a_canonical_function() {
+        let registered = FUNCTION_ALIASES.iter().copied().collect::<std::collections::HashSet<_>>();
+        for pair in [
+            ("CONCATENATE", "CONCAT"),
+            ("MODE.SNGL", "MODE"),
+            ("RANK.EQ", "RANK"),
+            ("STDEV.P", "STDEVP"),
+            ("STDEV.S", "STDEV"),
+            ("VAR.P", "VARP"),
+            ("VAR.S", "VAR"),
+        ] {
+            assert!(registered.contains(&pair), "`{}` is missing from the alias registry", pair.0);
+            assert!(FUNCTIONS.contains(&pair.1), "`{}` must stay a canonical engine function", pair.1);
+            assert_eq!(canonical_function(pair.0), pair.1);
+            assert_eq!(canonical_function(&pair.0.to_lowercase()), pair.1);
+        }
+        assert_eq!(canonical_function("SUM"), "SUM", "canonical names pass through");
+        assert_eq!(canonical_function("CONCATENATEX"), "CONCATENATEX", "near misses pass through");
     }
 }

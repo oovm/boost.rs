@@ -116,6 +116,27 @@ pub const FUNCTIONS: &[&str] = &[
     "YEAR",
 ];
 
+/// Legacy and dotted Excel spellings folded onto a canonical [`FUNCTIONS`]
+/// entry at dispatch, so `CONCATENATE` computes as `CONCAT`, `STDEV.S` as
+/// `STDEV` and so on. Aliases share the single registry and evaluation path;
+/// no alias carries its own implementation.
+pub const FUNCTION_ALIASES: &[(&str, &str)] = &[
+    ("CONCATENATE", "CONCAT"),
+    ("MODE.SNGL", "MODE"),
+    ("RANK.EQ", "RANK"),
+    ("STDEV.P", "STDEVP"),
+    ("STDEV.S", "STDEV"),
+    ("VAR.P", "VARP"),
+    ("VAR.S", "VAR"),
+];
+
+/// Resolves a called name to the canonical function that evaluates it,
+/// ignoring ASCII case. Names that are not registered aliases pass through
+/// unchanged, so near misses such as `CONCATENATEX` never fold onto `CONCAT`.
+pub fn canonical_function(name: &str) -> &str {
+    FUNCTION_ALIASES.iter().find(|(alias, _)| alias.eq_ignore_ascii_case(name)).map_or(name, |(_, target)| *target)
+}
+
 const MAX_ROW: u32 = 1_048_576;
 const MAX_COLUMN: u32 = 16_384;
 /// Upper bound on the cells one range argument may expand into.
@@ -971,6 +992,7 @@ impl Evaluator<'_> {
     }
 
     fn call(&mut self, name: &str, args: &[Expr], current: usize) -> CellValue {
+        let name = canonical_function(name);
         if !FUNCTIONS.contains(&name) {
             // The engine does not know this function. Mark the cell so the
             // imported cached value survives instead of `#NAME?`.
