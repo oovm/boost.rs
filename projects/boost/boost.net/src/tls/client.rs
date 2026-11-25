@@ -33,15 +33,24 @@ use super::{
 };
 
 const EXT_SERVER_NAME: u16 = 0;
+const EXT_STATUS_REQUEST: u16 = 5;
 const EXT_SUPPORTED_GROUPS: u16 = 10;
+const EXT_EC_POINT_FORMATS: u16 = 11;
 const EXT_SIGNATURE_ALGORITHMS: u16 = 13;
 const EXT_ALPN: u16 = 16;
+const EXT_SCT: u16 = 18;
+const EXT_EXTENDED_MASTER_SECRET: u16 = 23;
+const EXT_SESSION_TICKET: u16 = 35;
 const EXT_COOKIE: u16 = 33;
 const EXT_SUPPORTED_VERSIONS: u16 = 43;
+const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 45;
 const EXT_KEY_SHARE: u16 = 51;
 const EXT_HELLO_RETRY_REQUEST: u16 = 0xFF01;
+const EXT_RENEGOTIATION_INFO: u16 = 0xFF01;
 
 const GROUP_X25519: u16 = 29;
+const GROUP_SECP256R1: u16 = 23;
+const GROUP_SECP384R1: u16 = 24;
 
 const SIG_ECDSA_P256_SHA256: u16 = 0x0403;
 const SIG_ECDSA_P384_SHA384: u16 = 0x0503;
@@ -646,14 +655,38 @@ fn extension(out: &mut Vec<u8>, kind: u16, body: &[u8]) {
     out.extend_from_slice(body);
 }
 
+/// One GREASE value (`0x0a0a`, `0x1a1a`, ...) sampled like a browser does.
+///
+/// A middlebox that parses TLS to classify traffic by its cipher and extension
+/// list sees a slot it must ignore, the same shape Chrome and Firefox present.
+fn grease(seed: u8) -> u16 {
+    0x0A0A + u16::from(seed % 16) * 0x1010
+}
+
+/// Cipher suites in Chromium's order: GREASE, the three TLS 1.3 suites, then
+/// the TLS 1.2 fallbacks a browser still offers.
+///
+/// The server picks `TLS_AES_128_GCM_SHA256`, the only suite this client's key
+/// schedule implements; the rest are there so the list looks like a browser's.
+fn client_cipher_suites(grease: u16) -> [u16; 16] {
+    [
+        grease, 0x1301, 0x1302, 0x1303, 0xC02B, 0xC02F, 0xC02C, 0xC030, 0xCCA9, 0xCCA8, 0xC013, 0xC014, 0x009C, 0x009D,
+        0x002F, 0x0035,
+    ]
+}
+
 fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]>, alpn: Option<&[&str]>) -> TlsResult<(Vec<u8>, [u8; 32])> {
     let mut random = [0u8; 32];
     let mut session_id = [0u8; 32];
     let mut entropy = Secure::system();
     entropy.fill(&mut random).map_err(|error| TlsError::Unsupported(format!("host entropy: {error}")))?;
     entropy.fill(&mut session_id).map_err(|error| TlsError::Unsupported(format!("host entropy: {error}")))?;
+    let grease = grease(random[0]);
 
+    // The extension order follows a Chromium ClientHello, including the GREASE
+    // slot first and the deprecated `renegotiation_info` a browser still sends.
     let mut extensions = Vec::new();
+    extension(&mut extensions, grease, &[]);
     {
         let mut sni = Vec::new();
         let host = hostname.as_bytes();
@@ -663,8 +696,18 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
         sni.extend_from_slice(host);
         extension(&mut extensions, EXT_SERVER_NAME, &sni);
     }
-    extension(&mut extensions, EXT_SUPPORTED_GROUPS, &[0, 6, 0, 29, 0, 23, 0, 24]);
-    extension(&mut extensions, EXT_SIGNATURE_ALGORITHMS, &[0, 14, 4, 3, 5, 3, 8, 4, 8, 5, 4, 1, 5, 1, 8, 7]);
+    extension(&mut extensions, EXT_EXTENDED_MASTER_SECRET, &[]);
+    extension(&mut extensions, EXT_RENEGOTIATION_INFO, &[0]);
+    {
+        let mut groups = Vec::new();
+        groups.extend_from_slice(&[0, 8]);
+        groups.extend_from_slice(&grease.to_be_bytes());
+        groups.extend_from_slice(&GROUP_X25519.to_be_bytes());
+        groups.extend_from_slice(&GROUP_SECP256R1.to_be_bytes());
+        groups.extend_from_slice(&GROUP_SECP384R1.to_be_bytes());
+        extension(&mut extensions, EXT_SUPPORTED_GROUPS, &groups);
+    }
+    extension(&mut extensions, EXT_EC_POINT_FORMATS, &[1, 0]);
     {
         let mut protocols = Vec::new();
         for protocol in alpn.unwrap_or(&["http/1.1"]) {
@@ -682,32 +725,51 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
         body.extend_from_slice(&protocols);
         extension(&mut extensions, EXT_ALPN, &body);
     }
+    // OCSP status request with an empty responder list and no request extensions.
+    extension(&mut extensions, EXT_STATUS_REQUEST, &[1, 0, 0, 0, 0]);
+    // Only the algorithms this client can verify a server chain with, ordered as
+    // a browser orders them.
+    extension(
+        &mut extensions,
+        EXT_SIGNATURE_ALGORITHMS,
+        &[0, 14, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03, 0x08, 0x05, 0x05, 0x01, 0x08, 0x07],
+    );
+    extension(&mut extensions, EXT_SCT, &[]);
+    {
+        // A GREASE share with one byte of payload, then the real X25519 share.
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0, 41]);
+        body.extend_from_slice(&grease.to_be_bytes());
+        body.extend_from_slice(&[0, 1, 0]);
+        body.extend_from_slice(&GROUP_X25519.to_be_bytes());
+        body.extend_from_slice(&[0, 32]);
+        body.extend_from_slice(key_share);
+        extension(&mut extensions, EXT_KEY_SHARE, &body);
+    }
+    extension(&mut extensions, EXT_PSK_KEY_EXCHANGE_MODES, &[1, 1]);
+    // The inner `versions` list of `supported_versions` carries a one-byte
+    // length, unlike the other extension lists. Real-world stacks advertise
+    // TLS 1.3 and TLS 1.2; servers in the field reject a 1.3-only list with
+    // `protocol_version`.
+    extension(&mut extensions, EXT_SUPPORTED_VERSIONS, &[4, 0x03, 0x04, 0x03, 0x03]);
+    extension(&mut extensions, EXT_SESSION_TICKET, &[]);
     if let Some(cookie) = cookie {
         let mut body = Vec::new();
         body.extend_from_slice(&(cookie.len() as u16).to_be_bytes());
         body.extend_from_slice(cookie);
         extension(&mut extensions, EXT_COOKIE, &body);
     }
-    // The inner `versions` list of `supported_versions` carries a one-byte
-    // length, unlike the other extension lists. Real-world stacks advertise
-    // TLS 1.3 and TLS 1.2; servers in the field reject a 1.3-only list with
-    // `protocol_version`.
-    extension(&mut extensions, EXT_SUPPORTED_VERSIONS, &[4, 0x03, 0x04, 0x03, 0x03]);
-    {
-        let mut body = Vec::new();
-        body.extend_from_slice(&[0, 36]);
-        body.extend_from_slice(&GROUP_X25519.to_be_bytes());
-        body.extend_from_slice(&[0, 32]);
-        body.extend_from_slice(key_share);
-        extension(&mut extensions, EXT_KEY_SHARE, &body);
-    }
 
+    let ciphers = client_cipher_suites(grease);
     let mut body = Vec::new();
     body.extend_from_slice(&[0x03, 0x03]);
     body.extend_from_slice(&random);
     body.push(32);
     body.extend_from_slice(&session_id);
-    body.extend_from_slice(&[0, 2, 0x13, 0x01]);
+    body.extend_from_slice(&((ciphers.len() * 2) as u16).to_be_bytes());
+    for cipher in ciphers {
+        body.extend_from_slice(&cipher.to_be_bytes());
+    }
     body.extend_from_slice(&[1, 0]);
     body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
     body.extend_from_slice(&extensions);
