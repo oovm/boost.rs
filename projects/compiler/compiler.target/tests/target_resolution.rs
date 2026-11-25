@@ -13,8 +13,10 @@ fn resolver() -> TargetResolver {
 fn placeholders_share_platform_but_keep_distinct_contracts() {
     let resolver = resolver();
     let native = resolver.resolve_label("native").expect("native");
-    let node = resolver.resolve_label("node").expect("node");
-    let python = resolver.resolve_label("python").expect("python");
+    // 宿主合同占位符必须显式给出平台（交叉构建）或走真实探测；这里用显式宿主平台
+    // 验证三者的平台/合同区分，不依赖本机装了 Node/Python。
+    let node = resolver.resolve_with_platform(TargetRequest::Node, resolver.host()).expect("node");
+    let python = resolver.resolve_with_platform(TargetRequest::Python, resolver.host()).expect("python");
 
     assert_eq!(native.platform, resolver.host());
     assert_eq!(node.platform, native.platform, "同一宿主上三个占位符得到同一平台身份");
@@ -27,6 +29,20 @@ fn placeholders_share_platform_but_keep_distinct_contracts() {
     assert_ne!(native.identity(), node.identity(), "同一平台的普通产物与 Node-API 扩展身份必须可区分");
     assert_ne!(node.identity(), python.identity());
     assert_eq!(node.platform.abi, Some(resolver.host().resolved_abi()), "解析结果必须带冻结 ABI");
+}
+
+#[test]
+fn host_contract_placeholders_require_probing() {
+    let resolver = resolver();
+    // 非探测路径不得用编译宿主平台与默认 CPython 配置构造 `node` / `python`。
+    for label in ["node", "python"] {
+        let error = resolver.resolve_label(label).expect_err("无探测的宿主合同占位符必须失败闭合");
+        assert!(error.to_string().contains(label), "错误必须指名占位符: {error}");
+        assert!(error.to_string().contains("探测"), "错误必须指向宿主探测: {error}");
+    }
+    // 显式平台 override 仍是合法的交叉构建路径。
+    let windows = CanonicalTarget::parse("x86_64-pc-windows-msvc").expect("windows quad");
+    assert!(resolver.resolve_with_platform(TargetRequest::Node, windows).is_ok());
 }
 
 #[test]

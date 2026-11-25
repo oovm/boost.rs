@@ -246,9 +246,16 @@ impl TargetResolver {
     }
 
     /// 解析目标请求；占位符使用当前宿主平台展开。
+    ///
+    /// `node` / `python` 依赖真实宿主进程的平台、扩展后缀与导入库，**不能**用编译
+    /// 宿主平台与默认 CPython 配置冒充；这两者必须走 [`Self::resolve_probed`]。
     pub fn resolve(&self, request: TargetRequest) -> Result<ResolvedTarget, TargetResolutionError> {
         match request {
             TargetRequest::Platform(platform) => self.resolve_explicit(request, platform),
+            probed_only @ (TargetRequest::Node | TargetRequest::Python) => Err(TargetResolutionError::new(format!(
+                "`{probed_only}` 目标必须经宿主探测解析（`resolve_probed` / `resolve_label_probed`）：\
+                 禁止用编译宿主平台与默认 CPython 配置构造结果"
+            ))),
             placeholder => self.resolve_placeholder(placeholder, self.host),
         }
     }

@@ -24,7 +24,7 @@ pub fn resolve_publish_artifact(package_path: &Path, build_target: &str) -> Resu
 
     let resolver = TargetResolver::for_build_host().map_err(|error| PublishError::Target(format!("无法探测构建宿主：{error}")))?;
     let resolved = resolver
-        .resolve_label(target_input)
+        .resolve_label_probed(target_input)
         .map_err(|error| PublishError::Target(format!("无法解析 publish target `{target_input}`：{error}")))?;
     let canonical_label = resolved.identity();
     let canonical_target = resolved.platform;
