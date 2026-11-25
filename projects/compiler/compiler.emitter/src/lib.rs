@@ -146,39 +146,12 @@ pub mod testing {
         super::lowering::testing_lower_fragment_to_wasm_mir_module(submission, export_name)
     }
 
-    /// Resolve the JVM carrier descriptor for a frozen platform type (carrier contract tests).
-    pub fn jvm_type_descriptor(
-        layouts: &compiler_types::AggregateLayoutPlan,
-        ty: &compiler_types::SemanticType,
-    ) -> Result<super::emitter_backend_jvm::JvmTypeDescriptor> {
-        super::lowering::testing_jvm_type_descriptor(layouts, ty)
-    }
-
     /// Resolve the CLR carrier type for a frozen platform type (carrier contract tests).
     pub fn msil_type(
         layouts: &compiler_types::AggregateLayoutPlan,
         ty: &compiler_types::SemanticType,
     ) -> Result<super::emitter_backend_clr::MsilType> {
         super::lowering::testing_msil_type(layouts, ty)
-    }
-
-    /// Lower a fragment submission to an OVM module.
-    /// Lower a fragment submission to a JVM class file.
-    pub fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<super::emitter_backend_jvm::JvmClassFile> {
-        super::lowering::testing_lower_fragment_to_jvm_class(submission)
-    }
-
-    /// Lower a fragment submission to the JVM main class, argv launcher companions,
-    /// and the managed ABI contract.
-    pub fn lower_fragment_to_jvm_managed_surface(
-        submission: &FragmentSubmission,
-    ) -> Result<(
-        super::emitter_backend_jvm::JvmClassFile,
-        Vec<super::emitter_backend_jvm::JvmClassFile>,
-        Option<super::ManagedAbiContract>,
-        Option<String>,
-    )> {
-        super::lowering::testing_lower_fragment_to_jvm_managed_surface(submission)
     }
 
     /// Lower a fragment submission to a CLR MSIL module.

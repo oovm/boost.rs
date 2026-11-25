@@ -22,6 +22,23 @@ pub use crate::transitional::binary::{
     jar::{JvmJarEntry, JvmJarError, JvmJarPackage},
 };
 
+// JVM 目标私有编码原语：语言侧 JVM lane 直读 MIR 结算计划事实后，只经这些
+// 原语完成载体 descriptor 派生、槽位种类、operator 绑定、argv 编码与类装配；
+// emitter 不再解释跨目标共享程序载荷。
+pub use crate::lowering::backends::argv_encoding::{ArgvEncoding, ArgvKind, argv_encoding};
+pub use crate::lowering::backends::jvm::JvmOperatorCode;
+pub use crate::lowering::backends::jvm::emit::{
+    JvmLoweredFragment, JvmProgramInput, JvmSlotKind, assemble_jvm_class, jvm_array_element_descriptor, jvm_layout_class_name,
+    jvm_parameter_descriptor, jvm_return_descriptor, jvm_type_descriptor,
+};
+pub use crate::lowering::backends::jvm::recipe::{JvmOperatorBinding, freeze_jvm_operator, jvm_operator_target};
+pub use crate::lowering::sanitize_jvm_method_symbol;
+pub use crate::lowering::shared::interop::select_unique_target;
+pub use crate::lowering::shared::value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth};
+pub use crate::lowering::sanitize_symbol;
+pub use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
+pub use compiler_types::{AggregateLayout, AggregateLayoutPlan};
+
 /// `JVM` 二进制后端输入。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JvmBinaryBackendInput {

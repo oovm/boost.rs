@@ -12,13 +12,13 @@ use compiler_types::{AggregateLayout, AggregateLayoutPlan, LayoutId, SemanticTyp
 ///
 /// 值语义聚合按值内联，类型上不可能形成无限递归；该上限只用于把损坏的布局
 /// 事实变成结构化失败，而不是耗尽编译器栈。
-pub(crate) const MAX_VALUE_AGGREGATE_COPY_DEPTH: u32 = 32;
+pub const MAX_VALUE_AGGREGATE_COPY_DEPTH: u32 = 32;
 
 /// 字段类型是否为需要递归复制的嵌套值聚合。
 ///
 /// 返回嵌套布局身份；标量、引用语义聚合、空聚合与数组/闭包等返回 `None`
 /// （按引用共享或本来就按值搬运）。
-pub(crate) fn nested_value_aggregate_layout(plan: &AggregateLayoutPlan, ty: &SemanticType) -> Option<LayoutId> {
+pub fn nested_value_aggregate_layout(plan: &AggregateLayoutPlan, ty: &SemanticType) -> Option<LayoutId> {
     let SemanticType::Nominal { layout, .. } = ty
     else {
         return None;
@@ -31,7 +31,7 @@ pub(crate) fn nested_value_aggregate_layout(plan: &AggregateLayoutPlan, ty: &Sem
 ///
 /// 后端据此预留临时引用槽与递归预算；超过 [`MAX_VALUE_AGGREGATE_COPY_DEPTH`]
 /// 的布局事实视为损坏，由调用方结构化拒绝。
-pub(crate) fn value_aggregate_copy_depth(plan: &AggregateLayoutPlan, layout: &AggregateLayout) -> u32 {
+pub fn value_aggregate_copy_depth(plan: &AggregateLayoutPlan, layout: &AggregateLayout) -> u32 {
     fn walk(plan: &AggregateLayoutPlan, layout: &AggregateLayout, depth: u32) -> u32 {
         let mut max_depth = depth;
         for field in &layout.fields {

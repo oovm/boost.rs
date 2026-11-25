@@ -277,7 +277,7 @@ impl JvmOperatorCode {
 
     /// 展开是否消费发射方预留的 scratch `long` 槽：`u64` 无符号有序比较都要把一侧
     /// 翻转结果经局部槽周转（JVM 没有 `swap2`）。
-    pub(crate) fn requires_scratch_long_slot(self) -> bool {
+    pub fn requires_scratch_long_slot(self) -> bool {
         matches!(
             self,
             Self::LongCompareLessThanUnsigned

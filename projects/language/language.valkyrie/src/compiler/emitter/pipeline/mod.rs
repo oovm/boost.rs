@@ -20,6 +20,7 @@ mod evidence;
 mod host_bindings;
 pub(crate) mod lane;
 mod link;
+pub(crate) mod jvm;
 pub(crate) mod machine;
 #[cfg(feature = "ovm-lane")]
 pub(crate) mod ovm;

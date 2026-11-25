@@ -39,7 +39,7 @@ use crate::Result;
 
 /// argv 可表达载体的语义类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ArgvKind {
+pub enum ArgvKind {
     /// `void`：只允许作为返回值。
     Void,
     /// 严格布尔。
@@ -63,11 +63,11 @@ pub(crate) enum ArgvKind {
 
 /// 冻结的 argv 编码条目。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ArgvEncoding {
+pub struct ArgvEncoding {
     /// 载体语义类别。
-    pub(crate) kind: ArgvKind,
+    pub kind: ArgvKind,
     /// 无符号整型的包含上界；其它类别为 `None`。
-    pub(crate) unsigned_max: Option<u128>,
+    pub unsigned_max: Option<u128>,
 }
 
 const fn entry(kind: ArgvKind, unsigned_max: Option<u128>) -> ArgvEncoding {
@@ -75,7 +75,7 @@ const fn entry(kind: ArgvKind, unsigned_max: Option<u128>) -> ArgvEncoding {
 }
 
 /// 唯一匹配函数：载体逻辑名 → 冻结编码；被拒绝的载体在此给出真实缺口。
-pub(crate) fn argv_encoding(logical_type: &str) -> Result<ArgvEncoding> {
+pub fn argv_encoding(logical_type: &str) -> Result<ArgvEncoding> {
     Ok(match logical_type {
         "void" => entry(ArgvKind::Void, None),
         "bool" => entry(ArgvKind::Bool, None),

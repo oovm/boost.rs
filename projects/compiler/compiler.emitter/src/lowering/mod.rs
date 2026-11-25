@@ -13,17 +13,10 @@ pub mod backends;
 pub mod features;
 pub(crate) mod shared;
 
-use self::backends::{clr, jvm, wasm};
+use self::backends::{clr, wasm};
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
     backends::wasm::lower_fragment_mir_to_wasm_module(submission, export_name).map(|(module, _)| module)
-}
-
-pub(crate) fn testing_jvm_type_descriptor(
-    layouts: &compiler_types::AggregateLayoutPlan,
-    ty: &crate::backend_plan_views::SemanticType,
-) -> Result<crate::emitter_backend_jvm::JvmTypeDescriptor> {
-    jvm::emit::jvm_type_descriptor(layouts, ty)
 }
 
 pub(crate) fn testing_msil_type(
@@ -31,22 +24,6 @@ pub(crate) fn testing_msil_type(
     ty: &crate::backend_plan_views::SemanticType,
 ) -> Result<crate::emitter_backend_clr::MsilType> {
     clr::emit::msil_type(layouts, ty)
-}
-
-pub(crate) fn testing_lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<crate::emitter_backend_jvm::JvmClassFile> {
-    jvm::emit::lower_fragment_to_jvm_class(submission).map(|lowered| lowered.class_file)
-}
-
-pub(crate) fn testing_lower_fragment_to_jvm_managed_surface(
-    submission: &FragmentSubmission,
-) -> Result<(
-    crate::emitter_backend_jvm::JvmClassFile,
-    Vec<crate::emitter_backend_jvm::JvmClassFile>,
-    Option<crate::ManagedAbiContract>,
-    Option<String>,
-)> {
-    let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
-    Ok((lowered.class_file, lowered.companion_classes, lowered.managed_abi, lowered.entry_launcher))
 }
 
 pub(crate) fn testing_lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<crate::emitter_backend_clr::MsilModule> {
@@ -232,18 +209,12 @@ fn build_driver_input(
         TargetBackendFamily::Ovm => Err(format!(
             "OVM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Ovm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 OVM 产物"
         )),
-        TargetBackendFamily::Jvm => {
-            let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
-            Ok(DriverBackendInput::Jvm(crate::emitter_backend_jvm::JvmBinaryBackendInput {
-                class_file: lowered.class_file,
-                output_dir,
-                emit_class_file: false,
-                companion_classes: lowered.companion_classes,
-                managed_abi: lowered.managed_abi,
-                entry_launcher: lowered.entry_launcher,
-                run_contracts: Vec::new(),
-            }))
-        }
+        // JVM lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
+        // `pipeline/jvm/`）：submission 公共 IR 解释阶段已删除，Jvm 家族不得
+        // 再经本路径静默产出产物，显式失败闭合。
+        TargetBackendFamily::Jvm => Err(format!(
+            "JVM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Jvm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 JVM 产物"
+        )),
         TargetBackendFamily::Clr => {
             let lowered = clr::emit::lower_fragment_to_clr_module(submission)?;
             // 库导出面自带合成入口点，仍必须写成 `.dll`；无导出的可执行镜像继续
@@ -358,7 +329,7 @@ pub(crate) fn sanitize_operation_symbol(operation: &compiler_target::QualifiedNa
 ///
 /// `demo::main` → `["demo", "main"]` → join `__` → `"demo__main"`
 /// `sanitize_operation_symbol`（`.` join → `demo_main`）とは区別する。
-pub(crate) fn sanitize_jvm_method_symbol(operation: &compiler_target::QualifiedName) -> String {
+pub fn sanitize_jvm_method_symbol(operation: &compiler_target::QualifiedName) -> String {
     let underscored = operation.parts().iter().map(|part| part.as_str()).collect::<Vec<_>>().join("__");
     sanitize_symbol(&underscored)
 }
