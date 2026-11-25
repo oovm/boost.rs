@@ -22,7 +22,7 @@ use data_binary_odin::{IntrinsicOpcode, OdinConstant, OdinHeadCode, OdinLayout};
 
 use crate::compiler::emitter::pipeline::lane::FunctionView;
 use crate::compiler::emitter::pipeline::lane::LaneContext;
-use crate::compiler::emitter::pipeline::target_plan::{AdapterStage, TargetPlanError};
+use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::valkyrie_mir::{
     ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind, ValkyrieMirFunction,
     ValkyrieMirInstruction, ValkyrieMirOperand, ValkyrieMirOperation, ValkyrieMirTerminator,
@@ -1707,8 +1707,8 @@ impl<'a> OvmFunctionLowering<'a> {
 
     /// 操作数的 semantic MIR 冻结类型。
     ///
-    /// `Value` 读 [`Self::value_semantic_type`]；常量回落 `semantic_mir_contract`
-    /// 的同一张合同（`Int → Integer64{signed}` 等）。
+    /// `Value` 读 [`Self::value_semantic_type`]；常量回落 canonical 类型合同
+    /// 的同一张表（`Int → Integer64{signed}` 等）。
     fn operand_semantic_type(&self, operand: &ValkyrieMirOperand) -> Result<SemanticType, TargetPlanError> {
         match operand {
             ValkyrieMirOperand::Value(value) => self

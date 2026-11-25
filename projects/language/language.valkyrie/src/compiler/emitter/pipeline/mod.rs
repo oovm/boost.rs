@@ -2,11 +2,11 @@
 //!
 //! ```text
 //! Analysis:   AST → HIR → Semantic MIR → Link → Validate (M2) → ValkyrieMirProgram
-//! Processing: ValkyrieMirProgram → RepresentationPlan → 目标适配器 → TargetExecutionPlan → Emit
+//! Processing: ValkyrieMirProgram → RepresentationPlan → 语言 × 目标 lane 直出目标私有输入 → Emit
 //! ```
 //!
 //! 本模块只负责 Valkyrie 侧编排。不得复活并行权威
-//! （旧前端计划、`FragmentSubmission` 体旁路、God Call 字段）。
+//! （旧前端计划、公共 IR 片段提交体旁路、God Call 字段）。
 //! 语义与表示成功载荷归 Valkyrie 自有 MIR；目标输入由语言 × 目标适配器准备。
 
 mod backend_bundle;
@@ -27,7 +27,6 @@ pub(crate) mod machine;
 pub(crate) mod ovm;
 pub(crate) mod wasm;
 mod representation;
-pub mod target_plan;
 
 pub use backend_bundle::{
     CompilerArtifactReport, CompilerBuildBundle, compile_source_groups_to_artifacts, compile_source_groups_to_backend_bundle,
@@ -43,6 +42,7 @@ pub use host_bindings::{
     ResolvedHostProviderBinding, apply_host_provider_bindings, enforce_resolved_host_contract_bindings, host_provider_instantiation_seeds,
     host_provider_root_declarations, prune_unselected_host_provider_external_calls, resolve_host_provider_bindings,
 };
+pub use lane::{AdapterStage, TargetPlanError};
 pub use link::{link_reachable_dependency_mir, link_reachable_dependency_mir_with_hir, merge_aggregate_layouts, merge_entry_group_surface};
 pub use representation::CanonicalRepresentationPlanner;
 
@@ -63,7 +63,7 @@ pub fn stream_half(stage: CompileStage) -> StreamHalf {
         CompileStage::Ast | CompileStage::Hir | CompileStage::SemanticMir | CompileStage::LinkTime | CompileStage::ValidateMir => {
             StreamHalf::Analysis
         }
-        CompileStage::RepresentationPlan | CompileStage::TargetExecutionPlan | CompileStage::Emit => StreamHalf::Processing,
+        CompileStage::RepresentationPlan | CompileStage::LaneLowering | CompileStage::Emit => StreamHalf::Processing,
     }
 }
 
@@ -72,4 +72,4 @@ pub const ANALYSIS_STAGE_ORDER: &[CompileStage] =
     &[CompileStage::Ast, CompileStage::Hir, CompileStage::SemanticMir, CompileStage::LinkTime, CompileStage::ValidateMir];
 
 /// Documented processing stage order.
-pub const PROCESSING_STAGE_ORDER: &[CompileStage] = &[CompileStage::RepresentationPlan, CompileStage::TargetExecutionPlan, CompileStage::Emit];
+pub const PROCESSING_STAGE_ORDER: &[CompileStage] = &[CompileStage::RepresentationPlan, CompileStage::LaneLowering, CompileStage::Emit];

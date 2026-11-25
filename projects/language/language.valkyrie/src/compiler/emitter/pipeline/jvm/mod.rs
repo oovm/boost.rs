@@ -18,7 +18,7 @@ use compiler_emitter::{ManagedAbiContract, ManagedAbiEntry};
 use compiler_types::{ItemInstanceId, SemanticType};
 
 use crate::compiler::emitter::pipeline::lane::{FunctionView, LaneContext};
-use crate::compiler::emitter::pipeline::target_plan::{AdapterStage, TargetPlanError};
+use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::valkyrie_mir::ValkyrieMirFunction;
 
 use lowerer::{JvmMethodPlan, JVM_ACC_PUBLIC, JVM_ACC_STATIC, build_layout_classes, build_sum_classes, lower_function};

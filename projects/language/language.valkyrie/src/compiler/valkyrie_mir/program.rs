@@ -105,7 +105,7 @@ impl ValkyrieMirProgram {
 ///
 /// 该类型只允许把已验证的 Valkyrie MIR 与对应的稀疏表示计划
 /// 一起交给后续阶段。它不包含 HIR、字符串 callable、旧 executable 或
-/// `FragmentSubmission` 字段；后端若需要这些信息，说明上游合同仍未闭合。
+/// 公共 IR 片段提交字段；后端若需要这些信息，说明上游合同仍未闭合。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledValkyrieProgram {
     program: ValkyrieMirProgram,

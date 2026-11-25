@@ -24,8 +24,8 @@ pub enum CompileStage {
     ValidateMir,
     /// Sparse representation / layout planning.
     RepresentationPlan,
-    /// Target-private plan.
-    TargetExecutionPlan,
+    /// 语言侧 lane 直出目标私有输入。
+    LaneLowering,
     /// Artifact emit.
     Emit,
 }
@@ -90,6 +90,6 @@ pub const STAGE_ORDER: &[CompileStage] = &[
     CompileStage::LinkTime,
     CompileStage::ValidateMir,
     CompileStage::RepresentationPlan,
-    CompileStage::TargetExecutionPlan,
+    CompileStage::LaneLowering,
     CompileStage::Emit,
 ];

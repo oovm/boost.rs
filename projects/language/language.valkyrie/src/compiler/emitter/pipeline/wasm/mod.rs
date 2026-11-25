@@ -18,7 +18,7 @@ use compiler_emitter::{
 use compiler_target::{ArtifactPurpose, HostProjectionBoundary};
 
 use crate::compiler::emitter::pipeline::lane::LaneContext;
-use crate::compiler::emitter::pipeline::target_plan::{AdapterStage, TargetPlanError};
+use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::emitter::pipeline::wasm::lowerer::build_module_input;
 
 pub(crate) mod lowerer;

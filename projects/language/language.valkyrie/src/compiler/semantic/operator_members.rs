@@ -135,7 +135,6 @@ fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use compiler_optimize::{RewriteTheory, TheoryBundle};
     use compiler_types::SemanticType;
 
     use crate::compiler::hir::lowering::{CompilerSourceFile, CompilerSourceGroup};
@@ -178,28 +177,23 @@ micro negate(a: i32) -> i32 { return -a }
     }
 
     /// 前端闭环：`[infix] micro \`+\`` 是普通成员声明；调用点解析到该声明，
-    /// 目标绑定注解在目标计划里成为 operator 导入链接（不是 Unfrozen，也不是宿主导入）。
+    /// 目标绑定注解在 lane 共享上下文里成为 operator 导入链接（不是 Unfrozen，也不是宿主导入）。
     #[test]
     fn scalar_operator_member_declarations_resolve_and_link_target_bindings() {
         let program = compile_scalar_operator_probe();
         let canonical = program.mir_program();
         let fragment = canonical.linked.fragments.keys().next().cloned().expect("程序必须至少声明一个片段");
         let roots: Vec<_> = canonical.mir.functions.keys().copied().collect();
-        let build_plan = || {
-            crate::compiler::emitter::pipeline::target_plan::from_compiled_program(
-                &program,
-                &fragment,
-                TheoryBundle { shared: RewriteTheory::default(), fragment: RewriteTheory::default() },
-                &roots,
-            )
-            .unwrap_or_else(|error| panic!("运算符实例必须能冻结进目标计划: {error}"))
-        };
-        let assert_plan = |plan: &compiler_emitter::TargetExecutionPlan| {
+        // lane 共享上下文与旧公共计划同源结算链接事实：operator 导入链接直接从
+        // `LaneContext::imports()` 核对。
+        let ctx = crate::compiler::emitter::pipeline::lane::build_lane_context(&program, &fragment, &roots)
+            .unwrap_or_else(|error| panic!("运算符实例必须能冻结进 lane 共享上下文: {error}"));
+        {
             let by_segment = |segment: &str| {
-                plan.imports()
+                ctx.imports()
                     .values()
                     .find(|import| import.links.iter().any(|link| link.locator_segments().iter().any(|part| part == segment)))
-                    .unwrap_or_else(|| panic!("目标计划缺少 `{segment}` operator 导入"))
+                    .unwrap_or_else(|| panic!("lane 共享上下文缺少 `{segment}` operator 导入"))
             };
 
             let add = by_segment("integer.add");
@@ -259,11 +253,10 @@ micro negate(a: i32) -> i32 { return -a }
             let negate = by_segment("integer.negate");
             assert_eq!(negate.parameter_types, vec![SemanticType::Integer32 { signed: true }]);
             assert_eq!(negate.return_type, SemanticType::Integer32 { signed: true });
-        };
+        }
 
-        // 目标计划不再按 backend family 分化（sum tag 宽度已归各 lane 冻结）：
-        // 一份 `std_operators.v` 产出的计划必须保留全部四条候选链接，
-        // target 裁决在各后端自己的边界发生，不在语言计划里 first-wins。
-        assert_plan(&build_plan());
+        // lane 共享上下文不再按 backend family 分化（sum tag 宽度已归各 lane 冻结）：
+        // 一份 `std_operators.v` 产出的上下文必须保留全部四条候选链接，
+        // target 裁决在各后端自己的边界发生，不在语言侧事实里 first-wins。
     }
 }

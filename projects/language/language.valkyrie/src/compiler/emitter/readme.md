@@ -31,7 +31,7 @@ flowchart LR
 
 `pipeline` 文档中的 `StreamHalf`（Analysis vs Processing）与此对应：本目录 **消费** 已闭合的 Valkyrie 语义事实，**不** 向上补类型或绑定。平台可以向适配器暴露受验证的 LIR builder/service；API 中出现平台 LIR 并非越界，重新定义平台指令或绕过平台验证才是越界。
 
-Valkyrie 语义载荷（`ValkyrieMirProgram` / `CompiledValkyrieProgram`）已迁入本语言 crate；正式接入口只接受 `AdaptedFragmentInput` 适配器，不保留共享语义子集入口。共用 `TargetExecutionPlan` 按平台拆分仍是未完成工作。
+Valkyrie 语义载荷（`ValkyrieMirProgram` / `CompiledValkyrieProgram`）已迁入本语言 crate；正式接入口只接受 `AdaptedFragmentInput` 适配器，不保留共享语义子集入口。共用目标计划已按平台拆除：五条 lane 经 `pipeline::lane::LaneContext` 直出各自目标私有输入，公共 IR（God IR）兼容层已删除。
 
 ## 依赖方向
 

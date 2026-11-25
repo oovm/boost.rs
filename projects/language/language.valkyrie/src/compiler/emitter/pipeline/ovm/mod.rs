@@ -18,7 +18,7 @@ use compiler_types::semantic_ids::NominalInstanceId;
 use data_binary_odin::{OdinExport, OdinExportKind, OdinFunction, OdinLayout, OdinModuleData, Odin_VERSION};
 
 use crate::compiler::emitter::pipeline::lane::LaneContext;
-use crate::compiler::emitter::pipeline::target_plan::{AdapterStage, TargetPlanError};
+use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 
 use lowerer::{OvmFunctionLowering, OvmModuleFacts};
 

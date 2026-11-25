@@ -28,7 +28,7 @@ use compiler_types::ItemInstanceId;
 
 use crate::compiler::emitter::pipeline::clr::lowerer::{ClrMethodPlan, lower_function};
 use crate::compiler::emitter::pipeline::lane::{FunctionView, LaneContext};
-use crate::compiler::emitter::pipeline::target_plan::{AdapterStage, TargetPlanError};
+use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::valkyrie_mir::ValkyrieMirFunction;
 
 pub(crate) mod lowerer;

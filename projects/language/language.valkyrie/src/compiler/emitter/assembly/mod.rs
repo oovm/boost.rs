@@ -2,16 +2,14 @@
 //!
 //! 分区选择不重新生产语义事实；Valkyrie 通过语言 × 目标适配器准备目标输入，
 //! 编排层只核对分区身份，不要求任何公共 MIR 作为成功载荷。
-use compiler_emitter::{
-    AdaptedFragmentInput, AssembledFragment, FragmentSubmission, LoweredBackendInput, TargetInputRequest,
-};
+use compiler_emitter::{AdaptedFragmentInput, AssembledFragment, LoweredBackendInput, TargetInputRequest};
 use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError};
 use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
 use super::pipeline::{clr, jvm, lane, machine, wasm};
 #[cfg(feature = "ovm-lane")]
 use super::pipeline::ovm;
-use super::pipeline::target_plan::{self, TargetPlanError};
+use super::pipeline::TargetPlanError;
 use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;
 
 /// 装配边界失败：身份核对失败保留一句说明，适配器失败保留结构化的
@@ -101,9 +99,9 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
 
     fn prepare(&self, request: &TargetInputRequest<'_>) -> compiler_emitter::Result<LoweredBackendInput> {
         if request.backend_family == compiler_target::TargetBackendFamily::MachineCode {
-            // 机器码 lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
-            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
-            // emitter 装配服务只做编码 + 容器 + 自检，不自行拼接机器码。
+            // 机器码 lane 直接消费语言 MIR：公共 IR 中间计划已删除。纵链两段式不变——
+            // 语言侧产出目标私有输入，emitter 装配服务只做编码 + 容器 + 自检，
+            // 不自行拼接机器码。
             let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
                 .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             if request.artifact_purpose == compiler_target::ArtifactPurpose::Library {
@@ -166,9 +164,8 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
         }
         #[cfg(feature = "ovm-lane")]
         if request.backend_family == compiler_target::TargetBackendFamily::Ovm {
-            // OVM lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
-            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
-            // emitter 装配服务只做模块形状自检与容器编码。
+            // OVM lane 直接消费语言 MIR：公共 IR 中间计划已删除。纵链两段式不变——
+            // 语言侧产出目标私有输入，emitter 装配服务只做模块形状自检与容器编码。
             let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
                 .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             let program_input = ovm::build_ovm_program_input(&ctx)
@@ -185,9 +182,8 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             .with_artifact_base_name(entry_artifact_name(&ctx)));
         }
         if request.backend_family == compiler_target::TargetBackendFamily::Jvm {
-            // JVM lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
-            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
-            // emitter 装配服务只做 companion 唯一性自检并封装主类。
+            // JVM lane 直接消费语言 MIR：公共 IR 中间计划已删除。纵链两段式不变——
+            // 语言侧产出目标私有输入，emitter 装配服务只做 companion 唯一性自检并封装主类。
             let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
                 .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             let program_input = jvm::build_jvm_program_input(&ctx)
@@ -207,9 +203,8 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             .with_artifact_base_name(entry_artifact_name(&ctx)));
         }
         if request.backend_family == compiler_target::TargetBackendFamily::Clr {
-            // CLR lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
-            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
-            // emitter 装配服务只做模块非空自检并封装。
+            // CLR lane 直接消费语言 MIR：公共 IR 中间计划已删除。纵链两段式不变——
+            // 语言侧产出目标私有输入，emitter 装配服务只做模块非空自检并封装。
             let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
                 .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             let program_input = clr::build_clr_program_input(&ctx, self.partition.clr_suspend_strategy)
@@ -231,9 +226,8 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
         }
         if request.backend_family == compiler_target::TargetBackendFamily::Wasm {
             // Wasm lane 已切到语言直出（`pipeline/wasm`）：合同门、私有结算与交付
-            // 事实都在语言侧一次完成，公共 IR 解释阶段（`from_fragment_submission`）
-            // 已删除。这里只装配 emitter 的 wasm 编码服务（段编码、自定义段装配、
-            // 模块形状自检）。
+            // 事实都在语言侧一次完成，公共 IR 解释阶段已删除。这里只装配 emitter 的
+            // wasm 编码服务（段编码、自定义段装配、模块形状自检）。
             let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
                 .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
             let program_input = wasm::build_wasm_program_input(
@@ -262,23 +256,12 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             // 回落工程名（`with_artifact_base_name(None)` 不覆盖）。
             .with_artifact_base_name(entry_artifact_name(&ctx)));
         }
-        let plan = target_plan::from_compiled_program(
-            self.compiled_program,
-            &self.partition.fragment,
-            self.theory_bundle.clone(),
-            &self.roots,
-        )
-        .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
-        let submission = FragmentSubmission::from_backend_plan(plan);
-        LoweredBackendInput::from_fragment_submission(
-            &submission,
-            request.backend_family,
-            request.host_boundary,
-            request.output_dir,
-            request.host_flavor,
-            request.artifact_purpose,
-            request.wasm_package_kind,
-        )
+        // 五条后端 lane 已全部切到语言侧直出目标私有输入，公共 IR 兼容回退已删除。
+        // 未支持的 backend family 在此失败闭合，禁止回退旧共享计划成功路径。
+        Err(format!(
+            "分区 `{}` 的 backend family `{:?}` 没有已验证的语言侧 lane：公共 IR 兼容路径已删除，拒绝回退旧共享计划",
+            self.partition.name, request.backend_family
+        ))
     }
 }
 
