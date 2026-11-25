@@ -1275,17 +1275,26 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
         wasmInstance = await wasmResolveInstance(wasmBytes, importObject);
         exports = wasmInstance.exports;
     }}
+    // 公开调用面只接收正式导出表：缺 schema 即未知导出或私有桥接符号，
+    // 必须在进入 guest 前拒绝，禁止回退到裸 `fn(...args)`。
+    const spec = LIBRARY_INVOKE?.exports?.[name];
+    if (!spec || !Array.isArray(spec.params)) {{
+        throw new Error(
+            `[wasm-js-glue] callExport("${{name}}"): not a published library export; unknown exports and private bridge symbols are not callable through the public surface.`
+        );
+    }}
+    // 实参数量在进入 guest 前按冻结形参表核对，缺参/多参一律拒绝，
+    // 不得让 arity 错误以 `undefined` 形参的形式静默进入 wasm。
+    if (args.length !== spec.params.length) {{
+        throw new Error(`[wasm-js-glue] callExport("${{name}}"): expects ${{spec.params.length}} argument(s), got ${{args.length}}.`);
+    }}
     const fn = exports[name];
     if (typeof fn !== "function") {{
         throw new Error(`wasm export not found: ${{name}}`);
     }}
-    const spec = LIBRARY_INVOKE?.exports?.[name];
-    if (spec?.params) {{
-        const marshaled = spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index], `arg${{index}}`));
-        const raw = fn(...marshaled);
-        return demarshalLibraryReturn(spec.returns, raw, "return");
-    }}
-    return fn(...args);
+    const marshaled = spec.params.map((param, index) => marshalLibraryArg(paramType(param), args[index], `arg${{index}}`));
+    const raw = fn(...marshaled);
+    return demarshalLibraryReturn(spec.returns, raw, "return");
 }}
 "#,
                 marshaler = marshaler
@@ -1387,6 +1396,17 @@ mod tests {
         assert!(launcher.contains(r#"const TEST_EXPORT_ENTRIES = {"tests::a":"tests_a"};"#), "{launcher}");
         assert!(launcher.contains("callExport(testExportName)"), "{launcher}");
         assert!(launcher.contains("process.exit(2)"), "{launcher}");
+    }
+
+    /// 公开调用面不得保留裸调用旁路：缺 schema、缺形参表与实参数量不符
+    /// 都必须在进入 guest 前拒绝。
+    #[test]
+    fn library_launcher_rejects_bare_calls() {
+        let launcher = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &[])
+            .expect("库启动壳必须能生成");
+        assert!(launcher.contains("not a published library export"), "{launcher}");
+        assert!(launcher.contains("expects ${spec.params.length} argument(s), got ${args.length}"), "{launcher}");
+        assert!(!launcher.contains("return fn(...args);"), "公开调用面不得保留裸调用旁路");
     }
 
     /// 测试包不自带导出编组时拒绝生成一个没有分发入口的壳。
