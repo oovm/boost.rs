@@ -17,7 +17,7 @@ use std::{
 use crate::{
     PageTextReplacement, ReplaceTextRequest, TextReplaceCode, TextReplaceLoss, TextReplaceReport,
     error::{Result, argument, invalid},
-    filters, finish_document, load_document,
+    fidelity, filters, finish_document, load_document,
     object::{Dict, PdfObject, PdfStream},
     parse::{Parser, PdfDocument, PdfPage, decode_text_string, encode_doc_char, is_delimiter, is_whitespace, resolve_object},
     parse_ranges, write_file,
@@ -81,6 +81,10 @@ pub(crate) fn replace(input: &Path, out: &Path, request: &ReplaceTextRequest, ov
     let info = copy_info(&mut writer, &document, &mut map, None)?;
     let bytes = finish_document(&mut writer, &pages, info)?;
     write_file(out, &bytes, overwrite)?;
+    // Rebuilding keeps the page tree and the information dictionary only, so a
+    // source with outlines, an AcroForm or named destinations must say what
+    // the rewrite could not carry over.
+    let fidelity = fidelity::losses(0, &document, &(1..=total).collect());
     Ok(TextReplaceReport {
         path: out.display().to_string(),
         pages: total,
@@ -88,6 +92,7 @@ pub(crate) fn replace(input: &Path, out: &Path, request: &ReplaceTextRequest, ov
         replaced,
         replacements,
         losses,
+        fidelity,
         bytes: bytes.len(),
     })
 }
@@ -767,6 +772,30 @@ mod tests {
         assert!(report.losses.is_empty(), "{:?}", report.losses);
         let text = extract_text(&out).expect("extract");
         assert!(text.markdown.contains("nothing here"));
+    }
+
+    #[test]
+    fn catalog_entries_the_rebuild_drops_are_reported() {
+        let workspace = Workspace::new();
+        let source = workspace.write(
+            "outlined.pdf",
+            &assemble(&[
+                "<< /Type /Catalog /Pages 2 0 R /Outlines 5 0 R /AcroForm 6 0 R >>",
+                "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 400] /Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>",
+                "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+                "<< /Type /Outlines /Count 0 >>",
+                "<< /Fields [] >>",
+                "<< /Length 38 >>\nstream\nBT /F1 12 Tf 20 40 Td (Hello) Tj ET\nendstream",
+            ]),
+        );
+        let out = workspace.path("outlined-out.pdf");
+
+        let report = replace(&source, &out, &request("Hello", "World"), true).expect("replace");
+        assert_eq!(report.replaced, 1);
+        let codes: Vec<_> = report.fidelity.iter().map(|loss| loss.code).collect();
+        assert!(codes.contains(&crate::FidelityCode::OutlinesDropped), "{:?}", report.fidelity);
+        assert!(codes.contains(&crate::FidelityCode::AcroFormDropped), "{:?}", report.fidelity);
     }
 
     #[test]

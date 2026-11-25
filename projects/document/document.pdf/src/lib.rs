@@ -362,6 +362,8 @@ pub struct TextReplaceReport {
     pub replacements: Vec<PageTextReplacement>,
     /// Everything the rewrite could not touch, never silent.
     pub losses: Vec<TextReplaceLoss>,
+    /// Catalog entries the rebuilt document does not carry, never silent.
+    pub fidelity: Vec<FidelityLoss>,
     /// Output size in bytes.
     pub bytes: usize,
 }
