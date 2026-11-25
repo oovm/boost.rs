@@ -12,6 +12,14 @@ use super::read::{PeImage, rva_to_offset};
 const IMPORT_DIRECTORY: usize = 1;
 /// 导出目录在数据目录中的索引。
 const EXPORT_DIRECTORY: usize = 0;
+/// 调试目录在数据目录中的索引。
+const DEBUG_DIRECTORY: usize = 6;
+/// 单条调试目录条目的大小。
+const DEBUG_ENTRY_SIZE: usize = 28;
+/// 最多读取的调试目录条目数。
+const MAX_DEBUG_ENTRIES: usize = 256;
+/// `IMAGE_DEBUG_TYPE_CODEVIEW`。
+const DEBUG_TYPE_CODEVIEW: u32 = 2;
 /// 单个名称或字符串的最大长度。
 const MAX_STRING: usize = 4096;
 /// 单个导入表最多遍历的 thunk 数。
@@ -131,12 +139,8 @@ pub fn read_imports(image: &PeImage, bytes: &[u8]) -> Result<Vec<PeImport>, PeAn
             let lookup_offset = view.rva_offset(lookup_rva)?;
             for index in 0..MAX_THUNKS {
                 let entry_offset = lookup_offset + index as u64 * thunk_size;
-                let raw = if is_64 {
-                    view.u64(entry_offset, "导入地址表")?
-                }
-                else {
-                    u64::from(view.u32(entry_offset, "导入地址表")?)
-                };
+                let raw =
+                    if is_64 { view.u64(entry_offset, "导入地址表")? } else { u64::from(view.u32(entry_offset, "导入地址表")?) };
                 if raw == 0 {
                     break;
                 }
@@ -215,6 +219,111 @@ pub fn read_exports(image: &PeImage, bytes: &[u8]) -> Result<Vec<PeExport>, PeAn
     Ok(exports)
 }
 
+/// 一条调试目录条目。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeDebugEntry {
+    /// `Characteristics`。
+    pub characteristics: u32,
+    /// `TimeDateStamp`。
+    pub timestamp: u32,
+    /// `MajorVersion`。
+    pub major_version: u16,
+    /// `MinorVersion`。
+    pub minor_version: u16,
+    /// `IMAGE_DEBUG_TYPE_*`。
+    pub debug_type: u32,
+    /// `SizeOfData`。
+    pub size_of_data: u32,
+    /// 调试数据的 `RVA`。
+    pub address_of_raw_data: u32,
+    /// 调试数据的文件偏移。
+    pub pointer_to_raw_data: u32,
+    /// `CodeView` 载荷；非 `CodeView` 条目为 `None`。
+    pub code_view: Option<PeCodeView>,
+}
+
+impl PeDebugEntry {
+    /// 调试类型名，未知类型返回 `unknown`。
+    pub fn type_name(&self) -> &'static str {
+        match self.debug_type {
+            0 => "unknown",
+            1 => "coff",
+            2 => "codeview",
+            3 => "fpo",
+            4 => "misc",
+            5 => "exception",
+            6 => "fixup",
+            9 => "borland",
+            10 => "reserved10",
+            11 => "clsid",
+            12 => "vc_feature",
+            13 => "pogo",
+            14 => "iltcg",
+            16 => "repro",
+            17 => "embedded_portable_pdb",
+            19 => "embedded_pdb",
+            20 => "pdb_checksum",
+            _ => "unknown",
+        }
+    }
+}
+
+/// `CodeView` 调试载荷（`RSDS` / `NB10`）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeCodeView {
+    /// 四字节魔数，`RSDS` 或 `NB10`。
+    pub signature: String,
+    /// `RSDS` 携带的 16 字节 `GUID`。
+    pub guid: Option<[u8; 16]>,
+    /// `RSDS` 的 `age` 或 `NB10` 的 `age`。
+    pub age: u32,
+    /// `PDB` 文件路径。
+    pub path: String,
+}
+
+/// 读取调试目录。
+///
+/// 目录项按 28 字节顺序解析；`CodeView` 条目会继续读取 `RSDS`（`GUID`、
+/// `age`、`PDB` 路径）或 `NB10`（`age`、`PDB` 路径）。数据定位优先用
+/// `PointerToRawData`，为 0 时退回 `AddressOfRawData` 的 `RVA` 映射。
+pub fn read_debug_directory(image: &PeImage, bytes: &[u8]) -> Result<Vec<PeDebugEntry>, PeAnalysisError> {
+    let directory = image.optional.data_directories[DEBUG_DIRECTORY];
+    if directory.rva == 0 || directory.size == 0 {
+        return Ok(Vec::new());
+    }
+    let view = View { image, bytes };
+    let base = view.rva_offset(directory.rva)?;
+    let count = (directory.size as usize / DEBUG_ENTRY_SIZE).min(MAX_DEBUG_ENTRIES);
+    view.slice(base, (count * DEBUG_ENTRY_SIZE) as u64, "调试目录")?;
+
+    let mut entries = Vec::with_capacity(count);
+    for index in 0..count {
+        let cursor = base + (index * DEBUG_ENTRY_SIZE) as u64;
+        let debug_type = view.u32(cursor + 12, "调试目录")?;
+        let size_of_data = view.u32(cursor + 16, "调试目录")?;
+        let address_of_raw_data = view.u32(cursor + 20, "调试目录")?;
+        let pointer_to_raw_data = view.u32(cursor + 24, "调试目录")?;
+        let code_view = if debug_type == DEBUG_TYPE_CODEVIEW && size_of_data >= 8 {
+            view.code_view(pointer_to_raw_data, address_of_raw_data, size_of_data)?
+        }
+        else {
+            None
+        };
+        entries.push(PeDebugEntry {
+            characteristics: view.u32(cursor, "调试目录")?,
+            timestamp: view.u32(cursor + 4, "调试目录")?,
+            major_version: view.u16(cursor + 8, "调试目录")?,
+            minor_version: view.u16(cursor + 10, "调试目录")?,
+            debug_type,
+            size_of_data,
+            address_of_raw_data,
+            pointer_to_raw_data,
+            code_view,
+        });
+    }
+    Ok(entries)
+}
+
 /// 读取 `COFF` 符号表。
 ///
 /// 名称超过 8 字节时从符号表后的字符串表读取；辅助符号记录会被跳过。
@@ -239,12 +348,7 @@ pub fn read_coff_symbols(image: &PeImage, bytes: &[u8]) -> Result<Vec<PeSymbol>,
         let record = view.slice(entry, 18, "COFF 符号表")?;
         let name = if record[0..4] == [0, 0, 0, 0] {
             let name_offset = u32::from_le_bytes(record[4..8].try_into().expect("slice"));
-            if name_offset >= strings_size {
-                String::new()
-            }
-            else {
-                read_cstring(bytes, (strings_offset + u64::from(name_offset)) as usize)
-            }
+            if name_offset >= strings_size { String::new() } else { read_cstring(bytes, (strings_offset + u64::from(name_offset)) as usize) }
         }
         else {
             let length = record[..8].iter().position(|byte| *byte == 0).unwrap_or(8);
@@ -307,6 +411,42 @@ impl<'a> View<'a> {
         let offset = self.rva_offset(rva)?;
         Ok(read_cstring(self.bytes, offset as usize))
     }
+
+    /// 读取 `CodeView` 载荷。
+    fn code_view(&self, pointer_to_raw_data: u32, address_of_raw_data: u32, size_of_data: u32) -> Result<Option<PeCodeView>, PeAnalysisError> {
+        let offset = if pointer_to_raw_data != 0 {
+            u64::from(pointer_to_raw_data)
+        }
+        else if address_of_raw_data != 0 {
+            self.rva_offset(address_of_raw_data)?
+        }
+        else {
+            return Ok(None);
+        };
+        let length = u64::from(size_of_data);
+        let available = (self.bytes.len() as u64).saturating_sub(offset);
+        let read_len = length.min(MAX_STRING as u64).min(available);
+        if read_len < 8 {
+            return Ok(None);
+        }
+        let data = self.slice(offset, read_len, "调试数据")?;
+        let signature = String::from_utf8_lossy(&data[0..4]).into_owned();
+        match &data[0..4] {
+            b"RSDS" if read_len >= 24 => {
+                let mut guid = [0u8; 16];
+                guid.copy_from_slice(&data[4..20]);
+                let age = u32::from_le_bytes([data[20], data[21], data[22], data[23]]);
+                let path = read_cstring_limited(&data[24..], length.saturating_sub(24) as usize);
+                Ok(Some(PeCodeView { signature, guid: Some(guid), age, path }))
+            }
+            b"NB10" if read_len >= 16 => {
+                let age = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
+                let path = read_cstring_limited(&data[16..], length.saturating_sub(16) as usize);
+                Ok(Some(PeCodeView { signature, guid: None, age, path }))
+            }
+            _ => Ok(Some(PeCodeView { signature, guid: None, age: 0, path: String::new() })),
+        }
+    }
 }
 
 /// 读取以 `0` 结尾的字符串，越界时返回空串，长度限制为 [`MAX_STRING`]。
@@ -315,13 +455,19 @@ fn read_cstring(bytes: &[u8], offset: usize) -> String {
     else {
         return String::new();
     };
-    let length = tail.iter().take(MAX_STRING).position(|byte| *byte == 0).unwrap_or(tail.len().min(MAX_STRING));
-    String::from_utf8_lossy(&tail[..length]).into_owned()
+    read_cstring_limited(tail, MAX_STRING)
+}
+
+/// 在给定字节区间内读取以 `0` 结尾的字符串。
+fn read_cstring_limited(bytes: &[u8], max: usize) -> String {
+    let limit = max.min(MAX_STRING).min(bytes.len());
+    let length = bytes[..limit].iter().position(|byte| *byte == 0).unwrap_or(limit);
+    String::from_utf8_lossy(&bytes[..length]).into_owned()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{read_coff_symbols, read_exports, read_imports};
+    use super::{read_coff_symbols, read_debug_directory, read_exports, read_imports};
     use crate::pe::parse_pe;
 
     fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
@@ -397,6 +543,22 @@ mod tests {
         put_u16(&mut bytes, 0x60e, 0x20);
         bytes[0x610] = 2;
         put_u32(&mut bytes, 0x612, 4);
+
+        // 调试目录：一条 `CodeView` 条目指向 0x400 处的 `RSDS` 记录。
+        put_u32(&mut bytes, 0x98 + 112 + 6 * 8, 0x1180);
+        put_u32(&mut bytes, 0x98 + 112 + 6 * 8 + 4, 28);
+        put_u32(&mut bytes, 0x380 + 4, 0x1122_3344);
+        put_u32(&mut bytes, 0x380 + 12, 2);
+        let path = b"C:\\sample.pdb\0";
+        put_u32(&mut bytes, 0x380 + 16, (4 + 16 + 4 + path.len()) as u32);
+        put_u32(&mut bytes, 0x380 + 20, 0x1200);
+        put_u32(&mut bytes, 0x380 + 24, 0x400);
+        bytes[0x400..0x404].copy_from_slice(b"RSDS");
+        for (index, byte) in bytes[0x404..0x414].iter_mut().enumerate() {
+            *byte = index as u8;
+        }
+        put_u32(&mut bytes, 0x414, 7);
+        bytes[0x418..0x418 + path.len()].copy_from_slice(path);
         bytes
     }
 
@@ -437,6 +599,32 @@ mod tests {
         assert_eq!(symbols[0].value, 0x1000);
         assert_eq!(symbols[0].section_number, 1);
         assert!(symbols[0].is_function());
+    }
+
+    #[test]
+    fn debug_directory_reads_codeview_rsds() {
+        let bytes = sample_pe();
+        let image = parse_pe(&bytes).expect("parse");
+        let entries = read_debug_directory(&image, &bytes).expect("debug");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].debug_type, 2);
+        assert_eq!(entries[0].type_name(), "codeview");
+        assert_eq!(entries[0].timestamp, 0x1122_3344);
+        let code_view = entries[0].code_view.as_ref().expect("codeview");
+        assert_eq!(code_view.signature, "RSDS");
+        assert_eq!(code_view.age, 7);
+        assert_eq!(code_view.path, "C:\\sample.pdb");
+        let guid = code_view.guid.expect("guid");
+        assert_eq!(guid[0], 0);
+        assert_eq!(guid[15], 15);
+    }
+
+    #[test]
+    fn missing_debug_directory_yields_empty_list() {
+        let mut bytes = sample_pe();
+        put_u32(&mut bytes, 0x98 + 112 + 6 * 8, 0);
+        let image = parse_pe(&bytes).expect("parse");
+        assert!(read_debug_directory(&image, &bytes).unwrap().is_empty());
     }
 
     #[test]

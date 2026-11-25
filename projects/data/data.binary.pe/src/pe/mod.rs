@@ -6,7 +6,10 @@ mod native;
 mod read;
 mod writer;
 
-pub use analysis::{PeAnalysisError, PeExport, PeImport, PeSymbol, read_coff_symbols, read_exports, read_imports};
+pub use analysis::{
+    PeAnalysisError, PeCodeView, PeDebugEntry, PeExport, PeImport, PeSymbol, read_coff_symbols, read_debug_directory, read_exports,
+    read_imports,
+};
 pub use clr::{
     ClrImageKind, ClrMetadataBuilder, ClrMetadataError, PeWriter, PeWriterError, PeWriterOptions, UserStringsHeap,
     method_body::{FatFormat, IlInstruction, LocalVarFlags, LocalVarType, MethodBody, MethodBodyFlags, parse_method_body_il},
