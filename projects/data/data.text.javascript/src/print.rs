@@ -23,9 +23,8 @@ pub struct SourceMapSegment {
 /// positions in the original text.
 ///
 /// Callers that already erased TypeScript syntax pass no deletions. Token
-/// boundaries are the same contract as [`print_js_source`]'s minify path:
-/// identifier renaming, dead-code elimination and statement folding are not
-/// performed.
+/// boundaries are the same contract as the minifier's token path: identifier
+/// renaming, dead-code elimination and statement folding are not performed.
 pub fn minify_source(source: &str) -> Result<(String, Vec<SourceMapSegment>), String> {
     minify_tokens(source, &[])
 }

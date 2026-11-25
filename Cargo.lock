@@ -591,7 +591,7 @@ dependencies = [
  "boost-collection",
  "boost-fs",
  "boost-math",
- "compiler-emitter",
+ "data-text-javascript",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -611,7 +611,6 @@ dependencies = [
  "data-binary-pe",
  "data-binary-wasm",
  "data-text-core",
- "data-text-typescript",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -1734,6 +1733,7 @@ dependencies = [
  "data-text-pretty",
  "data-text-typescript",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

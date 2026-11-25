@@ -58,7 +58,7 @@
 //!
 //! 行级 source map 合同：每个活跃语句切片的生成行在列 0 记一条回指段，
 //! 映射链为 生成行起点 → 类型擦除删除表 → 切片内替换表 → 模块源行列，
-//! 逐段复合（复用 `compiler_emitter::js` 的擦除偏移映射，不平行重写）。
+//! 逐段复合（复用 `data_text_javascript` 的擦除偏移映射，不平行重写）。
 //! 合成行（跨 chunk import/export、JSON `const` 内联）无原文来源，不产段；
 //! `imports_text` 定稿后按行数整体平移段号。
 
@@ -198,7 +198,7 @@ pub(crate) fn assemble_chunk(
         };
         let module_path = normalize_path(&node.resolved.path);
         let record = &node.record;
-        let source_lines = compiler_emitter::js::SourceLines::new(source);
+        let source_lines = data_text_javascript::SourceLines::new(source);
         // 表达式 default 物化目标：本模块首个 `export default <表达式>` 事实
         // 的语句 span；语句切片命中时加前缀替换（活跃性由切片循环天然保证，
         // 与 `chunk_default_bindings` 同一口径）。
@@ -501,7 +501,7 @@ pub(crate) fn assemble_chunk(
                     continue;
                 }
             };
-            let (erased, deletions) = match compiler_emitter::js::erase_types_with_deletions(&replaced) {
+            let (erased, deletions) = match data_text_javascript::erase_types_with_deletions(&replaced) {
                 Ok(pair) => pair,
                 Err(err) => {
                     errors.push(
@@ -517,7 +517,7 @@ pub(crate) fn assemble_chunk(
                 // 行级映射：生成行起点 → 擦除删除表 → 切片替换表 → 模块行列。
                 let mut line_off = 0usize;
                 for (line_index, generated) in erased.split('\n').enumerate() {
-                    let replaced_off = compiler_emitter::js::map_erased_offset(line_off, &deletions);
+                    let replaced_off = data_text_javascript::map_erased_offset(line_off, &deletions);
                     let raw_off = map_replaced_offset(replaced_off, raw, statement.span.0, &replacements);
                     let (src_line, src_col) = source_lines.line_col(statement.span.0 + raw_off);
                     segments.push(ChunkSegment { gen_line: body_line + line_index as u32, source: module_path.clone(), src_line, src_col });

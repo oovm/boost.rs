@@ -4,13 +4,13 @@
 //! 指纹只覆盖第一遍装配文本（含占位符）：chunk 间引用成环时无法拓扑定名，
 //! 占位符把「引用目标」与「目标最终名」解耦，同输入必同输出，禁止随机或
 //! 时间戳。第三遍占位符替换不增删行且段全在列 0；随后按装配行映射压缩
-//! （`compiler_emitter::js::minify_source`，token 级、不重命名标识符）并把压缩
+//! （`data_text_javascript::minify_source`，token 级、不重命名标识符）并把压缩
 //! token 位置复合回原模块，`sourceMappingURL` 注释行在压缩完成后追加，
 //! 压缩与注释都不参与指纹。manifest 合同版本命名空间固定 `v0`。
 
 use std::collections::BTreeMap;
 
-use compiler_emitter::js::{SourceMapSegment, source_map_json};
+use data_text_javascript::{SourceMapSegment, source_map_json};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -134,7 +134,7 @@ pub(crate) fn finalize(
                 }
                 let mut text = codes[index].clone();
                 let mut mapped: Vec<SourceMapSegment> = if options.minify {
-                    let (minified, tokens) = compiler_emitter::js::minify_source(&codes[index])
+                    let (minified, tokens) = data_text_javascript::minify_source(&codes[index])
                         .map_err(|error| vec![PackDiagnostic::new("vmz::pack::emit::minify_failed", error).with_path(&file_names[index])])?;
                     // 压缩段把压缩文本 token 位置映射回 chunk 文本行，再经装配行映射
                     // 复合到原模块：生成侧列精确到 token，源侧列仍是行级切片起点列。

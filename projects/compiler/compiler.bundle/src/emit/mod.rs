@@ -5,7 +5,7 @@
 //!   切片内做动态 import 占位符替换与资源引用重写（只重写
 //!   `new URL('<lit>', import.meta.url)` 的第一参数为指纹化相对路径，
 //!   保留 URL 构造外壳；chunk 与资产同目录写出，运行时解析成立），再经
-//!   `compiler_emitter::js::erase_types` 擦除 TypeScript 类型语法；跨 chunk
+//!   `data_text_javascript::erase_types` 擦除 TypeScript 类型语法；跨 chunk
 //!   的 import/export 语义用合成语句表达。
 //! - 求值保留：链接层按可观察求值保留的静态边目标
 //!   （[`crate::link::effectful_modules`]），如果它的 import / re-export
@@ -32,7 +32,7 @@
 //!   文本原样保留、由站点 origin 运行时解析，给非致命诊断
 //!   `vmz::pack::emit::dynamic_url_kept`；其余未解析动态 import 仍显式拒绝。
 //! - 每个 chunk 产出压缩文本与 source map v3（复合映射合同，见 `manifest`
-//!   模块文档）：装配文本经 `compiler_emitter::js::minify_source` 做 token 级
+//!   模块文档）：装配文本经 `data_text_javascript::minify_source` 做 token 级
 //!   压缩（不重命名标识符、不做死代码消除与语句折叠），压缩段的 token
 //!   位置再经装配行映射复合回原模块；`code` 末尾追加
 //!   `//# sourceMappingURL=<file_name>.map` 注释行，map JSON 内容不上 wire、
@@ -110,7 +110,7 @@ pub struct EmitOptions {
     /// 与产物内联的资源字符串，不影响 chunk 文件互引（相对路径）。
     pub public_base: String,
     /// chunk 文本压缩：开启后产物经
-    /// [`compiler_emitter::js::minify_source`] 做 token 级压缩（不改名标识符、
+    /// [`data_text_javascript::minify_source`] 做 token 级压缩（不改名标识符、
     /// 不做死代码消除），source map 也相应切换为压缩后的 token 级复合映射。
     /// 交付链（N-API `packWrite`）恒开启；关闭时产物为装配文本原文、map
     /// 为行级映射，仅供调试与合同测试对照。

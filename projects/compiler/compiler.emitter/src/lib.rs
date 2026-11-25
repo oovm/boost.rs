@@ -12,8 +12,6 @@ pub mod backend_plan_views;
 pub mod contracts;
 mod driver;
 #[doc(hidden)]
-pub mod js;
-#[doc(hidden)]
 pub mod lowering;
 pub mod ovm_abi;
 mod target_execution_plan;

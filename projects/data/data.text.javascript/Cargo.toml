@@ -15,6 +15,7 @@ data-text-core = { workspace = true }
 data-text-pretty = { workspace = true }
 data-text-typescript = { workspace = true }
 serde = { workspace = true, optional = true }
+serde_json = { workspace = true }
 
 
 

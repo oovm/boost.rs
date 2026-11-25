@@ -397,7 +397,7 @@ pub(crate) fn assemble_isolated(
             return None;
         }
     };
-    let (erased, deletions) = match compiler_emitter::js::erase_types_with_deletions(&replaced) {
+    let (erased, deletions) = match data_text_javascript::erase_types_with_deletions(&replaced) {
         Ok(pair) => pair,
         Err(err) => {
             errors.push(
@@ -409,11 +409,11 @@ pub(crate) fn assemble_isolated(
 
     // 行级映射：整文件单切片 (0, len)，生成行起点 → 擦除删除表 →
     // 整文件替换表 → 模块源行列，与平铺路径同一复合链。
-    let source_lines = compiler_emitter::js::SourceLines::new(source);
+    let source_lines = data_text_javascript::SourceLines::new(source);
     let mut segments: Vec<ChunkSegment> = Vec::new();
     let mut line_off = 0usize;
     for (line_index, generated) in erased.split('\n').enumerate() {
-        let replaced_off = compiler_emitter::js::map_erased_offset(line_off, &deletions);
+        let replaced_off = data_text_javascript::map_erased_offset(line_off, &deletions);
         let raw_off = map_replaced_offset(replaced_off, source, 0, &replacements);
         let (src_line, src_col) = source_lines.line_col(raw_off);
         segments.push(ChunkSegment { gen_line: line_index as u32, source: module_path.clone(), src_line, src_col });
@@ -681,7 +681,7 @@ fn assemble_cjs(
             return None;
         }
     };
-    let (body, _deletions) = match compiler_emitter::js::erase_types_with_deletions(&replaced) {
+    let (body, _deletions) = match data_text_javascript::erase_types_with_deletions(&replaced) {
         Ok(pair) => pair,
         Err(err) => {
             errors.push(
