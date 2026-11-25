@@ -214,6 +214,7 @@ members = [
     "projects/database/facades/yydb-client",
     "projects/database/facades/yyds",
     "projects/database/facades/yyds-client",
+    "projects/data/data.binary.7z",
     "projects/data/data.binary.aarch64",
     "projects/data/data.binary.asn1",
     "projects/data/data.binary.cfb",
@@ -953,6 +954,7 @@ data-binary-onnx = { path = "projects/data/data.binary.onnx" }
 data-binary-pe = { path = "projects/data/data.binary.pe" }
 data-binary-probe = { path = "projects/data/data.binary.probe" }
 data-binary-protobuf = { path = "projects/data/data.binary.protobuf" }
+data-binary-sevenz = { path = "projects/data/data.binary.7z" }
 data-binary-spirv = { path = "projects/data/data.binary.spirv" }
 data-binary-tar = { path = "projects/data/data.binary.tar" }
 data-binary-ttf = { path = "projects/data/data.binary.ttf" }

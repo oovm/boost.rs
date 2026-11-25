@@ -1,0 +1,24 @@
+[package]
+name = "data-binary-sevenz"
+version.workspace = true
+authors.workspace = true
+description = "7z container facts, header indexing, and entry decoding."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing"]
+keywords = ["binary", "7z", "archive", "container", "lzma"]
+
+[dependencies]
+data-binary-core = { workspace = true }
+boost-source = { workspace = true }
+data-compression = { workspace = true, features = ["lzma"] }
+data-checksum = { workspace = true }
+
+[dev-dependencies]
+data-compression = { workspace = true, features = ["lzma"] }
+data-checksum = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
