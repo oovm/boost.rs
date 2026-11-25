@@ -14,7 +14,7 @@
 #   * CLR 无 `f32.*`：MSIL 模型缺 `ldc.r4`，`float32` 槽收不了浮点常量，emit 对
 #     f32 常量明确失败闭合（`f64.rem` 已可编码为 IL `rem`）；
 #   * Wasm 无 `f64.rem` / `f32.rem`（wasm 只有整数 rem，没有浮点余数指令）；
-#   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术与比较头码；u32 的 `/`、`%`
+#   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术、位运算与比较头码；u32 的 `/`、`%`
 #     也没有无符号除余头码（`i32.div`/`i32.rem` 都是有符号）；f32 只有 `eq`、`lt`。
 # 因此某些 (类型, 运算, target) 组合不会出现该 target 的注解。
 
@@ -105,6 +105,41 @@ structure i32 {
     [wasm_operator("i32.ge_s")]
     [ovm_operator("i32.ge")]
     micro `>=`(self: i32, other: i32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.and")]
+    [clr_operator("i32.and")]
+    [wasm_operator("i32.and")]
+    [ovm_operator("i32.and")]
+    micro `&`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.or")]
+    [clr_operator("i32.or")]
+    [wasm_operator("i32.or")]
+    [ovm_operator("i32.or")]
+    micro `|`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.xor")]
+    [clr_operator("i32.xor")]
+    [wasm_operator("i32.xor")]
+    [ovm_operator("i32.xor")]
+    micro `^`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.shift_left")]
+    [clr_operator("i32.shl")]
+    [wasm_operator("i32.shl")]
+    [ovm_operator("i32.shl")]
+    micro `<<`(self: i32, other: i32) -> i32;
+
+    [infix]
+    [jvm_operator("integer.shift_right")]
+    [clr_operator("i32.shr")]
+    [wasm_operator("i32.shr_s")]
+    [ovm_operator("i32.shr_s")]
+    micro `>>`(self: i32, other: i32) -> i32;
 }
 
 # 无符号 32 位：加减乘与有符号同形（二进制补码），除/余与有序比较必须用无符号助记符。
@@ -192,6 +227,42 @@ structure u32 {
     [wasm_operator("i32.ge_u")]
     [ovm_operator("i32.ge_u")]
     micro `>=`(self: u32, other: u32) -> bool;
+
+    [infix]
+    [jvm_operator("integer.and")]
+    [clr_operator("i32.and")]
+    [wasm_operator("i32.and")]
+    [ovm_operator("i32.and")]
+    micro `&`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.or")]
+    [clr_operator("i32.or")]
+    [wasm_operator("i32.or")]
+    [ovm_operator("i32.or")]
+    micro `|`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.xor")]
+    [clr_operator("i32.xor")]
+    [wasm_operator("i32.xor")]
+    [ovm_operator("i32.xor")]
+    micro `^`(self: u32, other: u32) -> u32;
+
+    [infix]
+    [jvm_operator("integer.shift_left")]
+    [clr_operator("i32.shl")]
+    [wasm_operator("i32.shl")]
+    [ovm_operator("i32.shl")]
+    micro `<<`(self: u32, other: u32) -> u32;
+
+    # `u32` 右移必须是逻辑右移（`i32.shr_u`/`i32.shr.un`/`iushr`），不得借有符号 `>>`。
+    [infix]
+    [jvm_operator("integer.shift_right_unsigned")]
+    [clr_operator("i32.shr.un")]
+    [wasm_operator("i32.shr_u")]
+    [ovm_operator("i32.shr_u")]
+    micro `>>`(self: u32, other: u32) -> u32;
 }
 
 [primitive("std::primitive::i64")]
@@ -267,6 +338,37 @@ structure i64 {
     [clr_operator("i64.ge")]
     [wasm_operator("i64.ge_s")]
     micro `>=`(self: i64, other: i64) -> bool;
+
+    [infix]
+    [jvm_operator("long.and")]
+    [clr_operator("i64.and")]
+    [wasm_operator("i64.and")]
+    micro `&`(self: i64, other: i64) -> i64;
+
+    [infix]
+    [jvm_operator("long.or")]
+    [clr_operator("i64.or")]
+    [wasm_operator("i64.or")]
+    micro `|`(self: i64, other: i64) -> i64;
+
+    [infix]
+    [jvm_operator("long.xor")]
+    [clr_operator("i64.xor")]
+    [wasm_operator("i64.xor")]
+    micro `^`(self: i64, other: i64) -> i64;
+
+    [infix]
+    [jvm_operator("long.shift_left")]
+    [clr_operator("i64.shl")]
+    [wasm_operator("i64.shl")]
+    micro `<<`(self: i64, other: i64) -> i64;
+
+    # 宽载体右移：JVM/CLR 由冻结配方先把位移量截窄到 i32，Wasm 的 `i64.shr_s` 直接收 i64。
+    [infix]
+    [jvm_operator("long.shift_right")]
+    [clr_operator("i64.shr")]
+    [wasm_operator("i64.shr_s")]
+    micro `>>`(self: i64, other: i64) -> i64;
 }
 
 # 无符号 64 位：OVM 没有任何 i64 头码，因此不含 ovm 绑定。
@@ -343,6 +445,37 @@ structure u64 {
     [clr_operator("i64.ge.un")]
     [wasm_operator("i64.ge_u")]
     micro `>=`(self: u64, other: u64) -> bool;
+
+    [infix]
+    [jvm_operator("long.and")]
+    [clr_operator("i64.and")]
+    [wasm_operator("i64.and")]
+    micro `&`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.or")]
+    [clr_operator("i64.or")]
+    [wasm_operator("i64.or")]
+    micro `|`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.xor")]
+    [clr_operator("i64.xor")]
+    [wasm_operator("i64.xor")]
+    micro `^`(self: u64, other: u64) -> u64;
+
+    [infix]
+    [jvm_operator("long.shift_left")]
+    [clr_operator("i64.shl")]
+    [wasm_operator("i64.shl")]
+    micro `<<`(self: u64, other: u64) -> u64;
+
+    # `u64` 右移必须是逻辑右移（`i64.shr_u`/`i64.shr.un`/`lushr`）。
+    [infix]
+    [jvm_operator("long.shift_right_unsigned")]
+    [clr_operator("i64.shr.un")]
+    [wasm_operator("i64.shr_u")]
+    micro `>>`(self: u64, other: u64) -> u64;
 }
 
 [primitive("std::primitive::f64")]
