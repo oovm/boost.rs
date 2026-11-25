@@ -407,23 +407,45 @@ fn staging_dir_for(output_dir: &Path) -> PathBuf {
     output_dir.join(format!(".nyar-staging-{}-{seq}", std::process::id()))
 }
 
-/// 受管理制品的 generation 身份文件：记录最近一次成功提交的受管理文件清单。
+/// 受管理制品的 generation 身份文件：记录最近一次成功提交的整代文件清单与逐文件摘要。
 ///
 /// 消费者只应把这份清单列出的文件当作上一代交付；清单之外的文件是用户内容，
 /// 提交事务不清空它们。文件本身是元数据，不在受管理清单内。
+///
+/// 整代一致性合同：提交点是本文件的一次原子 rename 切换；清单内每个产物携带
+/// 提交时冻结的字节摘要，读者先读清单固定一代、再读产物并按摘要核对，摘要不符
+/// 即说明读取跨越了切换点，必须重读清单而不是接受混合代。
 pub(crate) const DELIVERY_MANIFEST_FILE: &str = ".nyar-delivery.json";
 
 /// 并发提交事务的锁文件：只在一代提交期间存在，不是产物。
 pub(crate) const BUILD_LOCK_FILE: &str = ".nyar-build.lock";
 
+/// 整代索引中的单个受管理产物。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct ManagedFile {
+    /// 受管理产物文件名（相对输出目录）。
+    name: String,
+    /// 提交时冻结的字节摘要（sha256 小写 hex）：跨代读取的唯一可检测证据。
+    sha256: String,
+}
+
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct DeliveryManifest {
-    /// 身份 schema 版本。
+    /// 身份 schema 版本（v1 起 `files` 携带逐文件摘要）。
     schema_version: u32,
     /// 本代身份（目标三元组 + IR 摘要）。
     generation: String,
-    /// 受管理产物文件名（相对输出目录）。
-    files: Vec<String>,
+    /// 整代受管理文件与提交时冻结的摘要。
+    files: Vec<ManagedFile>,
+}
+
+/// 暂存产物的字节摘要（sha256 小写 hex）。
+fn sha256_of_file(path: &Path) -> LegionResult<String> {
+    let bytes = fs::read(path).map_err(|e| LegionError::msg(format!("读取暂存产物做摘要失败: {}: {e}", path.display())))?;
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&bytes);
+    Ok(hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 /// 并发序列化：同一输出目录同时只允许一个提交事务。
@@ -451,18 +473,43 @@ fn acquire_build_lock(output_dir: &Path) -> LegionResult<BuildLock> {
 
 fn read_delivery_manifest(output_dir: &Path) -> DeliveryManifest {
     // 读不到的清单按"无受管理上一代"处理：首次提交或被中断的旧格式交付。
-    fs::read(output_dir.join(DELIVERY_MANIFEST_FILE)).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+    let Some(bytes) = fs::read(output_dir.join(DELIVERY_MANIFEST_FILE)).ok() else {
+        return DeliveryManifest::default();
+    };
+    if let Ok(manifest) = serde_json::from_slice::<DeliveryManifest>(&bytes) {
+        return manifest;
+    }
+    // v0 历史格式：`files` 是纯文件名数组，没有逐文件摘要；按无摘要读入，
+    // 保证升级后的 retire 集合仍能识别上一代受管理文件。
+    #[derive(serde::Deserialize)]
+    struct LegacyManifest {
+        #[serde(default)]
+        generation: String,
+        #[serde(default)]
+        files: Vec<String>,
+    }
+    match serde_json::from_slice::<LegacyManifest>(&bytes) {
+        Ok(legacy) => DeliveryManifest {
+            schema_version: 0,
+            generation: legacy.generation,
+            files: legacy.files.into_iter().map(|name| ManagedFile { name, sha256: String::new() }).collect(),
+        },
+        Err(_) => DeliveryManifest::default(),
+    }
 }
 
 /// 提交整组暂存产物为新一代受管理交付，可回滚。
 ///
-/// 顺序：预校验暂存集合 → 把将被覆盖与退出的上一代受管理文件移入备份目录 →
-/// 移入本代文件 → 写 generation 清单 → 清理备份。任何一步失败都把备份移回，
-/// 输出目录恢复上一代完整状态；消费者不会看到半代交付，也不会因本代缺失而
-/// 残留旧受管理制品（运行合同退出同样由删除集覆盖，不再有提交后补删）。
+/// 顺序：预校验暂存集合并冻结逐文件摘要 → 把将被覆盖与退出的上一代受管理文件
+/// 移入备份目录 → 移入本代文件 → **一次原子 rename 切换整代索引** → 清理备份。
+/// 提交点是 generation 清单的一次切换：清单携带每个产物的字节摘要，读者按
+/// 「先读清单、再读产物、核对摘要」固定整代，切换窗口内的跨代读取由摘要不符
+/// 显式暴露，不会被当成合法交付。任何一步失败都把备份移回，输出目录恢复上一代
+/// 完整状态；消费者不会看到半代交付，也不会因本代缺失而残留旧受管理制品
+/// （运行合同退出同样由删除集覆盖，不再有提交后补删）。
 fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, ir_hash: &str) -> LegionResult<()> {
-    // 预校验：只允许普通文件，先把本代集合固定下来。
-    let mut staged = Vec::new();
+    // 预校验：只允许普通文件，先把本代集合与字节摘要固定下来。
+    let mut staged: Vec<(PathBuf, String, String)> = Vec::new();
     for entry in fs::read_dir(staging_dir).map_err(|e| LegionError::msg(format!("枚举暂存目录失败: {}: {e}", staging_dir.display())))? {
         let entry = entry.map_err(|e| LegionError::msg(format!("读取暂存目录项失败: {e}")))?;
         let file_type = entry.file_type().map_err(|e| LegionError::msg(format!("暂存目录项类型不可读: {}: {e}", entry.path().display())))?;
@@ -476,9 +523,10 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
         if name == DELIVERY_MANIFEST_FILE || name.starts_with(".nyar-") {
             return Err(LegionError::msg(format!("暂存目录不应包含事务元数据: {name}")));
         }
-        staged.push((entry.path(), name));
+        let digest = sha256_of_file(&entry.path())?;
+        staged.push((entry.path(), name, digest));
     }
-    let staged_names: Vec<&str> = staged.iter().map(|(_, name)| name.as_str()).collect();
+    let staged_names: Vec<&str> = staged.iter().map(|(_, name, _)| name.as_str()).collect();
 
     let previous = read_delivery_manifest(output_dir);
     static BACKUP_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -489,7 +537,7 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
     // 回滚记录按对读者的影响分三类，保证替换项不留「文件缺失」窗口：
     // - created：本代新建、原目录不存在的文件，回滚时删除。
     // - overwritten：本代覆盖旧文件的文件，旧字节先按副本留在备份目录，原位文件保持在场，
-    //   回滚时把副本写回原位（同卷 rename 覆盖是原子的，读者始终看到完整一代）。
+    //   回滚时把备份 rename 回原位（同卷 rename 覆盖是原子的，读者不会看到半写文件）。
     // - retired：上一代受管理而本代退出的文件，整体移入备份目录，回滚时移回原位。
     let mut created: Vec<PathBuf> = Vec::new();
     let mut overwritten: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -501,7 +549,9 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
         }
         let mut restore_failed = false;
         for (backup, original) in overwritten.iter().rev() {
-            if fs::copy(backup, original).is_err() {
+            // 同卷 rename 原子覆盖：回滚不把备份逐字节写回原位，否则读者能在
+            // 写入中途看到半旧半新的产物。
+            if fs::rename(backup, original).is_err() {
                 restore_failed = true;
             }
         }
@@ -526,7 +576,7 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
     };
 
     // 1) 备份将被覆盖的旧文件（留在原位，读者仍见完整旧代），并把退出项整体移入备份。
-    let retire: Vec<&str> = previous.files.iter().map(String::as_str).filter(|name| !staged_names.contains(name)).collect();
+    let retire: Vec<&str> = previous.files.iter().map(|file| file.name.as_str()).filter(|name| !staged_names.contains(name)).collect();
     for name in &staged_names {
         let existing = output_dir.join(name);
         if existing.is_file() {
@@ -551,7 +601,7 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
     }
 
     // 2) 移入本代：同卷 rename 原子覆盖，替换项全程在场，不再出现「先移走再移入」的缺失窗口。
-    for (from, name) in &staged {
+    for (from, name, _) in &staged {
         let to = output_dir.join(name);
         let overwrites = overwritten.iter().any(|(_, original)| original == &to);
         if let Err(error) = fs::rename(from, &to) {
@@ -563,13 +613,14 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
         }
     }
 
-    // 3) 写 generation 清单：这是唯一的提交点，读者据此固定整代直到加载结束。
+    // 3) 切换整代索引：这是唯一的提交点。清单先写临时文件，再一次 rename 落到
+    //    正式路径——读者要么看到完整的上一代清单，要么看到完整的本代清单，
+    //    不会读到半份索引。清单自身是元数据，不进入受管理文件集合。
     let manifest = DeliveryManifest {
-        schema_version: 0,
+        schema_version: 1,
         generation: format!("{triple}-{ir_hash}"),
-        files: staged.iter().map(|(_, name)| name.clone()).chain(std::iter::once(DELIVERY_MANIFEST_FILE.to_string())).collect(),
+        files: staged.iter().map(|(_, name, digest)| ManagedFile { name: name.clone(), sha256: digest.clone() }).collect(),
     };
-    // 清单自身作为受管理文件在下一代表达；此处直接写入输出目录。
     let manifest_bytes = match serde_json::to_vec_pretty(&manifest) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -577,9 +628,17 @@ fn commit_staged_delivery(staging_dir: &Path, output_dir: &Path, triple: &str, i
             return Err(report_rollback(kept, format!("序列化 generation 清单失败: {error}")));
         }
     };
-    if let Err(error) = fs::write(output_dir.join(DELIVERY_MANIFEST_FILE), manifest_bytes) {
+    let manifest_path = output_dir.join(DELIVERY_MANIFEST_FILE);
+    let manifest_tmp = output_dir.join(format!("{DELIVERY_MANIFEST_FILE}.tmp"));
+    if let Err(error) = fs::write(&manifest_tmp, &manifest_bytes) {
+        let _ = fs::remove_file(&manifest_tmp);
         let kept = rollback(&created, &overwritten, &retired);
-        return Err(report_rollback(kept, format!("写入 generation 清单失败: {error}")));
+        return Err(report_rollback(kept, format!("写入 generation 清单临时文件失败: {error}")));
+    }
+    if let Err(error) = fs::rename(&manifest_tmp, &manifest_path) {
+        let _ = fs::remove_file(&manifest_tmp);
+        let kept = rollback(&created, &overwritten, &retired);
+        return Err(report_rollback(kept, format!("切换 generation 清单失败: {error}")));
     }
 
     // 4) 提交成功：清理备份副本与暂存目录。
@@ -614,8 +673,9 @@ mod artifact_transaction_tests {
         assert!(!staging.exists(), "提交成功后暂存目录必须清空");
         let manifest = read_delivery_manifest(&output);
         assert_eq!(manifest.generation, "wasm32-unknown-unknown-ir1");
-        assert!(manifest.files.iter().any(|name| name == "app.wasm"), "{manifest:?}");
-        assert!(manifest.files.iter().any(|name| name == DELIVERY_MANIFEST_FILE), "清单自身受管理: {manifest:?}");
+        let app = manifest.files.iter().find(|file| file.name == "app.wasm").unwrap_or_else(|| panic!("清单必须列出 app.wasm: {manifest:?}"));
+        assert_eq!(app.sha256, sha256_of_file(&output.join("app.wasm")).expect("digest"), "清单摘要必须冻结提交时的字节");
+        assert!(!manifest.files.iter().any(|file| file.name == DELIVERY_MANIFEST_FILE), "清单自身是元数据，不进入受管理集合: {manifest:?}");
     }
 
     /// 上一代受管理而本代消失的制品（如运行合同）随提交退出；用户文件保留。
@@ -628,11 +688,12 @@ mod artifact_transaction_tests {
         fs::write(output.join("app.wasm"), b"g1").expect("write g1");
         fs::write(output.join("run-contracts.txt"), b"g1 contracts").expect("write g1 contracts");
         fs::write(output.join("user-notes.md"), b"keep me").expect("write user file");
-        let previous = DeliveryManifest {
-            schema_version: 0,
-            generation: "g1".to_string(),
-            files: vec!["app.wasm".to_string(), "run-contracts.txt".to_string(), DELIVERY_MANIFEST_FILE.to_string()],
-        };
+        // 用 v0 历史格式布置上一代，同时覆盖 legacy 解析路径。
+        let previous = serde_json::json!({
+            "schema_version": 0,
+            "generation": "g1",
+            "files": ["app.wasm", "run-contracts.txt", DELIVERY_MANIFEST_FILE],
+        });
         fs::write(output.join(DELIVERY_MANIFEST_FILE), serde_json::to_vec(&previous).expect("serialize")).expect("write manifest");
 
         let staging = staging_dir_for(&output);
@@ -657,9 +718,9 @@ mod artifact_transaction_tests {
         // 注入失败：本代第二个目标位置是一个目录，rename 无法覆盖它。
         fs::create_dir_all(output.join("run-contracts.txt")).expect("blocking directory");
         let previous = DeliveryManifest {
-            schema_version: 0,
+            schema_version: 1,
             generation: "g1".to_string(),
-            files: vec!["app.wasm".to_string(), DELIVERY_MANIFEST_FILE.to_string()],
+            files: vec![ManagedFile { name: "app.wasm".to_string(), sha256: sha256_of_file(&output.join("app.wasm")).expect("digest") }],
         };
         fs::write(output.join(DELIVERY_MANIFEST_FILE), serde_json::to_vec(&previous).expect("serialize")).expect("write manifest");
 
@@ -675,9 +736,9 @@ mod artifact_transaction_tests {
         assert!(read_delivery_manifest(&output).generation == "g1", "清单仍指向上第一代");
     }
 
-    /// 被覆盖的旧产物在回滚时按副本写回原位，且成功恢复后备份目录被清理。
+    /// 被覆盖的旧产物在回滚时按备份 rename 回原位，且成功恢复后备份目录被清理。
     #[test]
-    fn commit_restores_overwritten_files_from_copy_backup() {
+    fn commit_restores_overwritten_files_by_rename() {
         let root = boost_fs::temp::create_folder().expect("temp dir");
         let output = root.path().join("dist");
         fs::create_dir_all(&output).expect("output dir");
@@ -686,9 +747,12 @@ mod artifact_transaction_tests {
         // 注入失败：第三个目标位置是目录，rename 无法覆盖。
         fs::create_dir_all(output.join("broken.txt")).expect("blocking directory");
         let previous = DeliveryManifest {
-            schema_version: 0,
+            schema_version: 1,
             generation: "g1".to_string(),
-            files: vec!["app.wasm".to_string(), "lib.wasm".to_string(), DELIVERY_MANIFEST_FILE.to_string()],
+            files: vec![
+                ManagedFile { name: "app.wasm".to_string(), sha256: sha256_of_file(&output.join("app.wasm")).expect("digest") },
+                ManagedFile { name: "lib.wasm".to_string(), sha256: sha256_of_file(&output.join("lib.wasm")).expect("digest") },
+            ],
         };
         fs::write(output.join(DELIVERY_MANIFEST_FILE), serde_json::to_vec(&previous).expect("serialize")).expect("write manifest");
 
@@ -700,8 +764,8 @@ mod artifact_transaction_tests {
 
         commit_staged_delivery(&staging, &output, "wasm32-unknown-unknown", "ir2").expect_err("目标被占用必须整组失败");
 
-        assert_eq!(fs::read(output.join("app.wasm")).expect("read after rollback"), b"g1", "被覆盖产物按副本写回");
-        assert_eq!(fs::read(output.join("lib.wasm")).expect("read after rollback"), b"g1", "被覆盖产物按副本写回");
+        assert_eq!(fs::read(output.join("app.wasm")).expect("read after rollback"), b"g1", "被覆盖产物按备份 rename 回原位");
+        assert_eq!(fs::read(output.join("lib.wasm")).expect("read after rollback"), b"g1", "被覆盖产物按备份 rename 回原位");
         assert_eq!(read_delivery_manifest(&output).generation, "g1", "清单仍指向上第一代");
         let leftovers = fs::read_dir(&output)
             .expect("read output")

@@ -872,6 +872,7 @@ fn is_execution_metadata_file(path: &Path) -> bool {
             || value.eq_ignore_ascii_case(BACKEND_REQUEST_SNAPSHOT_FILE_NAME)
             || value.eq_ignore_ascii_case(BACKEND_RESULT_SNAPSHOT_FILE_NAME)
             || value.eq_ignore_ascii_case(COMPILE_EVIDENCE_FILE_NAME)
+            || value.starts_with(".nyar-")
             || value.eq_ignore_ascii_case(super::build::DELIVERY_MANIFEST_FILE)
             || value.eq_ignore_ascii_case(super::build::BUILD_LOCK_FILE)
     })
