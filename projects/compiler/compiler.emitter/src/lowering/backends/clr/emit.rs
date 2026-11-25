@@ -94,12 +94,40 @@ pub(crate) struct ClrLoweredFragment {
     pub managed_abi: Option<ManagedAbiContract>,
 }
 
+/// CLR 目标私有输入：已降低的 `MSIL` 模块与导出入口的 managed ABI 契约。
+///
+/// 计划事实（可达导出面、方法命名与签名、布局/sum 类型、入口投影桩、managed
+/// ABI）在 [`build_clr_program_input`] 里一次结算；装配服务
+/// [`assemble_clr_module`] 只接受这个形状，不再接触跨目标的
+/// `FragmentSubmission` / `ExecutableFunction` / `InstructionKind` / `Terminator`。
+pub(crate) struct ClrProgramInput {
+    module: MsilModule,
+    managed_abi: Option<ManagedAbiContract>,
+}
+
+impl ClrProgramInput {
+    /// 已降低的 `MSIL` 模块。
+    pub(crate) fn module(&self) -> &MsilModule {
+        &self.module
+    }
+
+    /// 导出入口的 managed ABI 契约。
+    pub(crate) fn managed_abi(&self) -> Option<&ManagedAbiContract> {
+        self.managed_abi.as_ref()
+    }
+}
+
 /// 将片段降低为单个 `MSIL` 模块，并为导出入口合成 argv 分发入口。
 ///
 /// 只降低导出面（`export_names` / `exported_operations` / 入口操作）以及
 /// 从它们出发、经同片段静态调用可达的函数；其余函数不进入模块，避免为不可达
 /// 形状发明载体。
 pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> Result<ClrLoweredFragment> {
+    assemble_clr_module(&build_clr_program_input(submission)?)
+}
+
+/// 计划事实 → CLR 目标私有输入（不做装配自检、不写 PE 容器）。
+pub(crate) fn build_clr_program_input(submission: &FragmentSubmission) -> Result<ClrProgramInput> {
     let plan = &submission.backend_plan;
     let operations = collect_clr_operations(submission);
     if operations.is_empty() {
@@ -162,7 +190,21 @@ pub(crate) fn lower_fragment_to_clr_module(submission: &FragmentSubmission) -> R
     }
 
     let managed_abi = build_managed_abi_surface(&mut module, plan, plan.export_names(), &method_plans)?;
-    Ok(ClrLoweredFragment { module, managed_abi })
+    Ok(ClrProgramInput { module, managed_abi })
+}
+
+/// CLR 目标私有输入 → 片段产物：只做模块非空自检并封装。
+///
+/// 签名里没有跨目标共享程序：`MSIL` 与 PE 容器由后端在同一份目标私有输入上完成。
+pub(crate) fn assemble_clr_module(input: &ClrProgramInput) -> Result<ClrLoweredFragment> {
+    let module = input.module();
+    if module.assembly.name.trim().is_empty() {
+        return Err("CLR 最小 lowering：目标私有输入的 assembly 名为空，拒绝装配".to_string());
+    }
+    if module.types.is_empty() && module.global_methods.is_empty() {
+        return Err("CLR 最小 lowering：目标私有输入既无类型也无全局方法，拒绝装配空模块".to_string());
+    }
+    Ok(ClrLoweredFragment { module: input.module().clone(), managed_abi: input.managed_abi().cloned() })
 }
 
 /// 为 CLR 入口投影语言入口的返回值。
@@ -2535,5 +2577,51 @@ mod managed_abi_vocabulary_tests {
                 && reference.signature.parameter_types == vec![MsilType::Float32]),
             "f32 返回值必须用 `WriteLine(float32)`: {calls:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod program_input_tests {
+    use super::*;
+    use crate::TargetExecutionPlan;
+    use compiler_target::{Identifier, QualifiedName};
+
+    /// 仅含返回类型的最小可执行函数，入口身份来自计划冻结的 `entry_operation`。
+    fn probe_submission() -> FragmentSubmission {
+        let function = MirFunction {
+            symbol: "probe".to_string(),
+            return_type: SemanticType::Unit,
+            param_types: Vec::new(),
+            value_types: BTreeMap::new(),
+            value_layouts: BTreeMap::new(),
+            return_layout: None,
+            entry: crate::contracts::BlockRef(0),
+            values: Vec::new(),
+            #[allow(deprecated)]
+            blocks: vec![crate::contracts::Block {
+                id: crate::contracts::BlockRef(0),
+                label: "entry".to_string(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: Terminator::Return { value: None },
+            }],
+        };
+        let name = QualifiedName::new(vec![Identifier::new("probe")]);
+        let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name.clone(), function)]));
+        plan.testing_entry_operation(name);
+        FragmentSubmission::from_backend_plan(plan)
+    }
+
+    /// 两段式拆分不改变产物：装配段只读目标私有输入，结果与直接降低逐项等价。
+    #[test]
+    fn build_then_assemble_matches_direct_lowering() {
+        let submission = probe_submission();
+        let direct = lower_fragment_to_clr_module(&submission).expect("正式入口必须降低");
+        let input = build_clr_program_input(&submission).expect("计划事实必须冻结为目标私有输入");
+        assert_eq!(input.module(), &direct.module);
+        assert_eq!(input.managed_abi(), direct.managed_abi.as_ref());
+        let assembled = assemble_clr_module(&input).expect("目标私有输入必须装配");
+        assert_eq!(assembled.module, direct.module);
+        assert_eq!(assembled.managed_abi, direct.managed_abi);
     }
 }

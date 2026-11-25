@@ -138,3 +138,55 @@ fn jvm_assembly_service_signature_is_target_private() {
         assert!(!backend.contains(banned), "src/backend/jvm/mod.rs 作为 JVM 目标私有装配层不得引用 `{banned}`");
     }
 }
+
+#[test]
+fn clr_assembly_service_signature_is_target_private() {
+    // CLR 纵链与 JVM 同构：第一段把计划事实冻结成目标私有输入，第二段只做模块
+    // 自检并封装，签名与函数体都不得出现跨目标共享程序的形状。
+    let emit = read("src/lowering/backends/clr/emit.rs");
+    let assembly = function_definition(&emit, "assemble_clr_module");
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!assembly.contains(banned), "CLR 装配服务不得引用 `{banned}`");
+    }
+    // `MSIL` 与 PE 容器写出同样只吃目标私有输入。
+    for path in ["src/backend/clr/mod.rs", "src/backend/clr/msil_text_writer.rs", "src/backend/clr/host_process.rs"] {
+        let backend = read(path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+            assert!(!backend.contains(banned), "{path} 作为 CLR 目标私有装配层不得引用 `{banned}`");
+        }
+    }
+}
+
+#[test]
+fn wasm_assembly_service_signature_is_target_private() {
+    // Wasm 纵链同样两段式：第一段完成合同门与段编码并冻结成目标私有输入，
+    // 第二段只做模块形状自检与封装。
+    let wasm = read("src/lowering/backends/wasm/mod.rs");
+    let assembly = function_definition(&wasm, "assemble_wasm_module");
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!assembly.contains(banned), "WASM 装配服务不得引用 `{banned}`");
+    }
+    // WASI 打包与 JS glue 宿主壳只消费已编码模块。
+    for path in ["src/backend/wasi/mod.rs", "src/backend/wasm_js_glue/mod.rs"] {
+        let backend = read(path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+            assert!(!backend.contains(banned), "{path} 作为 WASM 目标私有装配层不得引用 `{banned}`");
+        }
+    }
+}
+
+#[test]
+fn ovm_assembly_service_signature_is_target_private() {
+    // OVM 纵链同样两段式：第一段完成实例门与函数体编码并冻结成目标私有输入，
+    // 第二段只做模块形状自检与封装。
+    let ovm = read("src/lowering/backends/ovm/mod.rs");
+    let assembly = function_definition(&ovm, "assemble_ovm_module");
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!assembly.contains(banned), "OVM 装配服务不得引用 `{banned}`");
+    }
+    // `.odin` 容器写出只消费已编码模块。
+    let backend = read("src/backend/vm/mod.rs");
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!backend.contains(banned), "src/backend/vm/mod.rs 作为 OVM 目标私有装配层不得引用 `{banned}`");
+    }
+}

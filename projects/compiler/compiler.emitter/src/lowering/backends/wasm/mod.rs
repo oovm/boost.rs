@@ -56,6 +56,29 @@ pub(crate) fn host_entry_export_name(host_boundary: HostProjectionBoundary) -> R
     }
 }
 
+/// Wasm 目标私有输入：已编码模块与导出/导入事实。
+///
+/// 计划事实（语义/物理合同门、导出面判据、入口符号、各段编码、singleton 与
+/// 值聚合元数据）在 [`build_wasm_program_input`] 里一次结算；装配服务
+/// [`assemble_wasm_module`] 只接受这个形状，不再接触跨目标的
+/// `FragmentSubmission` / `ExecutableFunction` / `InstructionKind` / `Terminator`。
+pub(crate) struct WasmProgramInput {
+    module: WasmBinaryModule,
+    imports: Vec<(String, String)>,
+}
+
+impl WasmProgramInput {
+    /// 已编码的 wasm 模块。
+    pub(crate) fn module(&self) -> &WasmBinaryModule {
+        &self.module
+    }
+
+    /// 导出/导入事实（`(module, name)`）。
+    pub(crate) fn imports(&self) -> &[(String, String)] {
+        &self.imports
+    }
+}
+
 /// 将片段降低为显式 WASI 打包链的 wasm 模块（集成测试专用）。
 ///
 /// Lower a fragment for a wasm host boundary with an explicit WASI package train.
@@ -68,6 +91,16 @@ pub fn lower_fragment_to_wasm_module_for(
     wasi_preview: WasiPreview,
     wasm_package_kind: WasmPackageKind,
 ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
+    assemble_wasm_module(&build_wasm_program_input(submission, host_boundary, wasi_preview, wasm_package_kind)?)
+}
+
+/// 计划事实 → Wasm 目标私有输入（不装配边界壳、不做模块自检）。
+pub(crate) fn build_wasm_program_input(
+    submission: &FragmentSubmission,
+    host_boundary: HostProjectionBoundary,
+    wasi_preview: WasiPreview,
+    wasm_package_kind: WasmPackageKind,
+) -> Result<WasmProgramInput> {
     let boundary_entry_name = host_entry_export_name(host_boundary)?;
     crate::lowering::features::semantic_mir_contract::validate_submission(submission)
         .map_err(|error| format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
@@ -142,7 +175,18 @@ pub fn lower_fragment_to_wasm_module_for(
     mir::singleton::augment_wasm_with_singleton_accessors(&mut module, submission)
         .map_err(|error| format!("singleton contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
     mir::augment_wasm_with_value_aggregate_metadata(&mut module, submission);
-    Ok((module, imports))
+    Ok(WasmProgramInput { module, imports })
+}
+
+/// Wasm 目标私有输入 → 模块产物：只做模块形状自检。
+///
+/// 签名里没有跨目标共享程序：宿主包装、WAT sidecar 与 WASI 打包都在同一份
+/// 目标私有输入上完成。
+pub(crate) fn assemble_wasm_module(input: &WasmProgramInput) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
+    if input.module().version == 0 || input.module().sections.is_empty() {
+        return Err("WASM 装配：目标私有输入不是有效模块（版本为 0 或没有段），拒绝装配".to_string());
+    }
+    Ok((input.module().clone(), input.imports().to_vec()))
 }
 
 /// 文本 ABI 站点的准入守卫：编码身份只由声明的 `SemanticType` 与 `host_boundary`
