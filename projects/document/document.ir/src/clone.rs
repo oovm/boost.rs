@@ -66,6 +66,13 @@ impl DocumentGraph {
         if self.block(id).is_none() {
             return Err(TransformError::NotFound(id));
         }
+        let removed = self.remove_subtree_quiet(id);
+        self.bump_revision();
+        Ok(removed)
+    }
+
+    /// [`DocumentGraph::delete_subtree`] 的不 bump 版本，供组合变换统一收尾。
+    pub(crate) fn remove_subtree_quiet(&mut self, id: NodeId) -> usize {
         let mut doomed = HashSet::new();
         self.collect_subtree_ids(id, &mut doomed);
         for node in &mut self.blocks {
@@ -83,8 +90,7 @@ impl DocumentGraph {
         }
         self.blocks = kept_blocks;
         self.block_spans = kept_spans;
-        self.bump_revision();
-        Ok(before - self.blocks.len())
+        before - self.blocks.len()
     }
 
     /// 深复制单个节点及其后代（不接入任何容器），返回新根 id。
@@ -220,4 +226,3 @@ fn retain_copies(children: &mut Vec<NodeId>, mapping: &BTreeMap<NodeId, NodeId>)
         None => false,
     });
 }
-

@@ -63,6 +63,46 @@ pub enum TransformError {
     },
     /// 表格没有可插入的网格列。
     EmptyTable(NodeId),
+    /// 请求的列表节点不存在，或不是 [`crate::Block::List`]。
+    NotAList(NodeId),
+    /// 条目下标超出列表的条目数。
+    ItemOutOfRange {
+        /// 列表节点 id。
+        list: NodeId,
+        /// 请求的条目下标。
+        item: usize,
+        /// 列表当前条目数。
+        items: usize,
+    },
+    /// 移动/插入下标超出目标列表的合法位次（含末尾插入点）。
+    IndexOutOfRange {
+        /// 目标列表节点 id。
+        list: NodeId,
+        /// 请求的下标。
+        index: usize,
+        /// 合法下标数量。
+        positions: usize,
+    },
+    /// 首条目没有可依附的前驱兄弟。
+    NoPreviousSibling(NodeId),
+    /// 条目末尾没有可提升的同样式嵌套列表。
+    NothingToLift {
+        /// 列表节点 id。
+        list: NodeId,
+        /// 条目下标。
+        item: usize,
+    },
+    /// 移动目标嵌套在被移动条目内部，移动会形成环。
+    MoveIntoDescendant {
+        /// 源列表节点 id。
+        list: NodeId,
+        /// 被移动的条目下标。
+        item: usize,
+        /// 目标列表节点 id。
+        target: NodeId,
+    },
+    /// 重排编号会把列表编号推过 `u32` 上限。
+    NumberingOverflow,
 }
 
 impl std::fmt::Display for TransformError {
@@ -87,6 +127,19 @@ impl std::fmt::Display for TransformError {
                 write!(f, "cell list needs {expected} entries for the table {table:?} grid but has {actual}")
             }
             Self::EmptyTable(table) => write!(f, "table {table:?} has no grid columns"),
+            Self::NotAList(id) => write!(f, "node {id:?} is not a list block"),
+            Self::ItemOutOfRange { list, item, items } => write!(f, "item {item} is outside the list {list:?}'s {items} items"),
+            Self::IndexOutOfRange { list, index, positions } => {
+                write!(f, "index {index} is outside the list {list:?}'s {positions} positions")
+            }
+            Self::NoPreviousSibling(list) => write!(f, "the first item of list {list:?} has no previous sibling to indent under"),
+            Self::NothingToLift { list, item } => {
+                write!(f, "item {item} of list {list:?} has no nested list of the same marker style to lift")
+            }
+            Self::MoveIntoDescendant { list, item, target } => {
+                write!(f, "item {item} of list {list:?} cannot move into list {target:?} nested inside it")
+            }
+            Self::NumberingOverflow => write!(f, "renumbering the list would push a number beyond the u32 maximum"),
         }
     }
 }

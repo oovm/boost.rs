@@ -5,5 +5,6 @@ mod graph;
 mod clone_table;
 mod contract;
 mod inline;
+mod list;
 mod transform;
 mod validate;

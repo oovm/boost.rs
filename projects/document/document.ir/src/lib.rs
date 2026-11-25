@@ -11,6 +11,7 @@ mod clone;
 mod graph;
 mod id;
 mod inline;
+mod list;
 mod math;
 mod metadata;
 mod page;
