@@ -492,8 +492,22 @@ pub enum JvmInstruction {
     I2D,
     /// `l2d` 指令，`long` 转 `double` (0x8A)。
     L2D,
-    /// `d2i` 指令，`double` 转 `int` (0x8B)。
+    /// `d2i` 指令，`double` 转 `int` (0x8E)。
     D2I,
+    /// `i2f` 指令，`int` 转 `float` (0x86)。
+    I2F,
+    /// `l2f` 指令，`long` 转 `float` (0x89)。
+    L2F,
+    /// `f2i` 指令，`float` 转 `int` (0x8B)。
+    F2I,
+    /// `f2l` 指令，`float` 转 `long` (0x8C)。
+    F2L,
+    /// `f2d` 指令，`float` 转 `double` (0x8D)。
+    F2D,
+    /// `d2l` 指令，`double` 转 `long` (0x8F)。
+    D2L,
+    /// `d2f` 指令，`double` 转 `float` (0x90)。
+    D2F,
     /// `ineg` 指令，`int` 取负。
     INeg,
     /// `lneg` 指令，`long` 取负。
@@ -1392,6 +1406,13 @@ fn instruction_size(instruction: &JvmInstruction) -> usize {
         | JvmInstruction::I2D
         | JvmInstruction::L2D
         | JvmInstruction::D2I
+        | JvmInstruction::I2F
+        | JvmInstruction::L2F
+        | JvmInstruction::F2I
+        | JvmInstruction::F2L
+        | JvmInstruction::F2D
+        | JvmInstruction::D2L
+        | JvmInstruction::D2F
         | JvmInstruction::INeg
         | JvmInstruction::LNeg
         | JvmInstruction::FNeg
@@ -1704,7 +1725,14 @@ fn encode_instruction(
         JvmInstruction::L2I => bytes.push(0x88),
         JvmInstruction::I2D => bytes.push(0x87),
         JvmInstruction::L2D => bytes.push(0x8A),
-        JvmInstruction::D2I => bytes.push(0x8B),
+        JvmInstruction::D2I => bytes.push(0x8E),
+        JvmInstruction::I2F => bytes.push(0x86),
+        JvmInstruction::L2F => bytes.push(0x89),
+        JvmInstruction::F2I => bytes.push(0x8B),
+        JvmInstruction::F2L => bytes.push(0x8C),
+        JvmInstruction::F2D => bytes.push(0x8D),
+        JvmInstruction::D2L => bytes.push(0x8F),
+        JvmInstruction::D2F => bytes.push(0x90),
         JvmInstruction::IReturn => bytes.push(0xAC),
         JvmInstruction::LReturn => bytes.push(0xAD),
         JvmInstruction::FReturn => bytes.push(0xAE),
