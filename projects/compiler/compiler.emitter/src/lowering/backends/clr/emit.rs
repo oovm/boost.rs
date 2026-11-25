@@ -242,7 +242,10 @@ fn build_managed_abi_surface(
 
     let mut entries = Vec::with_capacity(export_names.len());
     let mut dispatch_targets = Vec::new();
-    for (instance, logical_entry) in export_names {
+    for (instance, source_name) in export_names {
+        // 声明身份按「有导出注解用注解名，否则源码名」合同取；源码声明名是
+        // 独立冻结事实，两个轴不得在契约里互相复制。
+        let logical_entry = plan.export_public_name(instance).cloned().unwrap_or_else(|| source_name.clone());
         let method = method_plans
             .get(instance)
             .ok_or_else(|| format!("CLR managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
@@ -256,7 +259,7 @@ fn build_managed_abi_surface(
             .ok_or_else(|| format!("CLR managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 缺少函数体"))?;
         // 形参声明名的唯一权威是冻结的 `ValueOrigin::Parameter`；数量/下标/空名/
         // 重名非法时结构化失败，禁止按位置或类型名猜测，也不写空名字伪造。
-        let parameter_names = crate::abi_structure::canonical_parameter_identities(logical_entry, &view.function)?
+        let parameter_names = crate::abi_structure::canonical_parameter_identities(&logical_entry, &view.function)?
             .into_iter()
             .map(|(_, name)| name.to_string())
             .collect::<Vec<_>>();
@@ -276,7 +279,8 @@ fn build_managed_abi_surface(
             });
         }
         entries.push(ManagedAbiEntry {
-            logical_entry: logical_entry.clone(),
+            logical_entry,
+            source_name: source_name.clone(),
             owner: GLOBAL_METHODS_TYPE.to_string(),
             method: method.name.clone(),
             signature: method.signature.to_string(),
@@ -2482,6 +2486,7 @@ mod managed_abi_vocabulary_tests {
         );
         let entry = ManagedAbiEntry {
             logical_entry: "score".to_string(),
+            source_name: "score".to_string(),
             owner: GLOBAL_METHODS_TYPE.to_string(),
             method: "score".to_string(),
             signature: signature.to_string(),

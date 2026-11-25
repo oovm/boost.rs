@@ -174,8 +174,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             logical_parameter_names.insert(*instance, names);
         }
         let base = plan
-            .export_names()
-            .get(instance)
+            .export_public_name(instance)
             .cloned()
             .or_else(|| plan.abi_name_for_instance(*instance).map(|name| crate::lowering::sanitize_jvm_method_symbol(&name)))
             .unwrap_or_else(|| format!("function_{ordinal}"));
@@ -214,9 +213,16 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             (entry, logical)
         })
     });
+    // 公开名映射按冻结合同从计划取：有导出注解用注解名，否则源码名。
+    let public_names = plan
+        .export_names()
+        .keys()
+        .filter_map(|instance| plan.export_public_name(instance).cloned().map(|name| (*instance, name)))
+        .collect::<BTreeMap<_, _>>();
     let (launcher_classes, managed_abi, entry_launcher) = build_managed_abi_surface(
         &class_file,
         plan.export_names(),
+        &public_names,
         &method_plans,
         &logical_signatures,
         &logical_parameter_names,
@@ -245,6 +251,7 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
 fn build_managed_abi_surface(
     class_file: &JvmClassFile,
     export_names: &BTreeMap<ItemInstanceId, String>,
+    public_names: &BTreeMap<ItemInstanceId, String>,
     method_plans: &BTreeMap<ItemInstanceId, JvmMethodPlan>,
     logical_signatures: &BTreeMap<ItemInstanceId, (Vec<SemanticType>, SemanticType)>,
     logical_parameter_names: &BTreeMap<ItemInstanceId, Vec<String>>,
@@ -254,7 +261,10 @@ fn build_managed_abi_surface(
     let mut companion_classes = Vec::with_capacity(export_names.len());
     let mut used_launcher_names = BTreeSet::new();
     let mut entry_launcher = None;
-    for (instance, logical_entry) in export_names {
+    for (instance, source_name) in export_names {
+        // 声明身份按「有导出注解用注解名，否则源码名」合同取；源码声明名是
+        // 独立冻结事实，两个轴不得在契约里互相复制。
+        let logical_entry = public_names.get(instance).cloned().unwrap_or_else(|| source_name.clone());
         let method = method_plans
             .get(instance)
             .ok_or_else(|| format!("JVM managed ABI：导出入口 `{logical_entry}` 的实例 `{instance:?}` 没有已降低方法"))?;
@@ -286,7 +296,7 @@ fn build_managed_abi_surface(
         // 解析时才生成；否则入口照常写进契约，但 `launcher_class` 为 `None`。
         let argv_expressible = logical_params.iter().chain(std::iter::once(logical_return)).all(|ty| argv_expressible_type_name(ty).is_ok());
         let launcher_class = if argv_expressible {
-            let launcher_class = managed_launcher_internal_name(logical_entry, &mut used_launcher_names)?;
+            let launcher_class = managed_launcher_internal_name(&logical_entry, &mut used_launcher_names)?;
             if entry.as_ref().is_some_and(|(entry_instance, _)| entry_instance == instance) {
                 // 程序入口同时是导出入口：复用该 ABI 入口的 launcher 身份。
                 entry_launcher = Some(launcher_class.clone());
@@ -304,7 +314,8 @@ fn build_managed_abi_surface(
             None
         };
         entries.push(ManagedAbiEntry {
-            logical_entry: logical_entry.clone(),
+            logical_entry,
+            source_name: source_name.clone(),
             owner: class_file.internal_name.clone(),
             method: method.name.clone(),
             signature: method.descriptor.to_string(),
@@ -2935,9 +2946,16 @@ mod managed_abi_type_tests {
         let logical_parameter_names = BTreeMap::from([(instance, vec!["nums".to_string(), "target".to_string()])]);
         let export_names = BTreeMap::from([(instance, "twoSum".to_string())]);
 
-        let (companion_classes, managed_abi, entry_launcher) =
-            build_managed_abi_surface(&class_file, &export_names, &method_plans, &logical_signatures, &logical_parameter_names, None)
-                .expect("数组导出入口必须作为 ABI 事实产出");
+        let (companion_classes, managed_abi, entry_launcher) = build_managed_abi_surface(
+            &class_file,
+            &export_names,
+            &export_names,
+            &method_plans,
+            &logical_signatures,
+            &logical_parameter_names,
+            None,
+        )
+        .expect("数组导出入口必须作为 ABI 事实产出");
 
         assert!(companion_classes.is_empty(), "不可 argv 表达的入口不得生成 launcher 类");
         assert_eq!(entry_launcher, None);

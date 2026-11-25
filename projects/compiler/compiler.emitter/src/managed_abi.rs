@@ -24,7 +24,11 @@ use sha2::{Digest, Sha256};
 /// 版本 3 起 `launcher_class` 是 `Option`：入口事实与 argv 包装能力分离。
 /// `None` 是「签名不可由 argv 无损表达」的显式事实，消费侧必须按静态方法绑定
 /// 实参，不得据此推断入口不存在。
-pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 3;
+///
+/// 版本 4 起入口携带独立 `source_name`：声明身份（`logical_entry`，目标公开名）
+/// 与语言侧冻结的源码声明名是两个轴，不得由驱动层互相复制；`source_name` 同时
+/// 进入合同摘要，旧版本清单失效。
+pub const MANAGED_ABI_SCHEMA_VERSION: u32 = 4;
 
 /// managed ABI sidecar 文件名：每个物理产物一份，`app.jar` → `app.jar.managed-abi.json`。
 ///
@@ -96,8 +100,9 @@ impl ManagedAbiContract {
         lines.push(format!("calling_convention={}", self.calling_convention));
         for entry in &self.entries {
             lines.push(format!(
-                "{}|{}|{}|{}|{}|{}|{}|{}",
+                "{}|{}|{}|{}|{}|{}|{}|{}|{}",
                 entry.logical_entry,
+                entry.source_name,
                 entry.owner,
                 entry.method,
                 entry.signature,
@@ -121,8 +126,13 @@ impl ManagedAbiContract {
 /// 单个 managed 入口。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedAbiEntry {
-    /// 逻辑入口名（导出名）。
+    /// 逻辑入口名（目标公开名，声明身份）。
     pub logical_entry: String,
+    /// 语言侧冻结的源码声明名。
+    ///
+    /// 与 [`Self::logical_entry`] 是两个独立事实：改名由各托管目标的命名合同决定，
+    /// 驱动层不得把其中一个复制成另一个。该字段进入合同摘要。
+    pub source_name: String,
     /// 主类内部名（JVM 形态带 `/`）。
     pub owner: String,
     /// 主类中的静态方法名。
@@ -161,6 +171,7 @@ mod tests {
     fn entry_with_names(names: &[&str]) -> ManagedAbiEntry {
         ManagedAbiEntry {
             logical_entry: "sum".to_string(),
+            source_name: "sum".to_string(),
             owner: "nyar/App".to_string(),
             method: "sum".to_string(),
             signature: "(JJ)J".to_string(),
@@ -171,10 +182,23 @@ mod tests {
         }
     }
 
+    /// 声明身份与源码声明名是两个轴：`source_name` 变化必须改变合同摘要，
+    /// 驱动层不得把 `logical_entry` 复制成 `source_name` 冒充两个事实。
+    #[test]
+    fn digest_input_covers_source_name() {
+        let declared = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["left", "right"])]);
+        let mut renamed = entry_with_names(&["left", "right"]);
+        renamed.logical_entry = "sum".to_string();
+        renamed.source_name = "two_sum".to_string();
+        let renamed = ManagedAbiContract::new("jvm", "app.jar", vec![renamed]);
+        assert_ne!(declared.contract_digest, renamed.contract_digest, "source_name 变化必须改变合同摘要");
+        assert!(renamed.canonical_digest_input().contains("sum|two_sum|nyar/App"), "got: {}", renamed.canonical_digest_input());
+    }
+
     /// 形参声明名进入摘要：同名类型不同参数名必须产生不同合同摘要。
     #[test]
     fn digest_input_covers_parameter_names() {
-        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 3);
+        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 4);
         let left = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["left", "right"])]);
         let right = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["first", "second"])]);
         assert!(left.canonical_digest_input().contains("i64,i64|left,right|i64"), "got: {}", left.canonical_digest_input());
@@ -185,7 +209,7 @@ mod tests {
     /// 且不得写成空字符串冒充。
     #[test]
     fn digest_input_covers_launcher_presence() {
-        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 3);
+        assert_eq!(MANAGED_ABI_SCHEMA_VERSION, 4);
         let with_launcher = ManagedAbiContract::new("jvm", "app.jar", vec![entry_with_names(&["left", "right"])]);
         let mut entry = entry_with_names(&["left", "right"]);
         entry.launcher_class = None;
