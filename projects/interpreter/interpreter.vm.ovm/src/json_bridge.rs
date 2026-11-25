@@ -517,6 +517,7 @@ mod tests {
     fn export(param: OvmAbiType, returns: OvmAbiType) -> OvmAbiExport {
         OvmAbiExport {
             logical_name: "entry".to_string(),
+            source_name: "entry".to_string(),
             params: vec![OvmAbiParam { index: 0, name: "value".to_string(), ty: param, carrier: "handle".to_string() }],
             returns,
             returns_carrier: "handle".to_string(),
@@ -582,6 +583,7 @@ mod tests {
             "[null,{\"$some\":null},{\"$some\":7}]",
             &OvmAbiExport {
                 logical_name: "entry".to_string(),
+                source_name: "entry".to_string(),
                 params: (0..3)
                     .map(|index| OvmAbiParam { index, name: format!("value{index}"), ty: option.clone(), carrier: "handle".to_string() })
                     .collect(),

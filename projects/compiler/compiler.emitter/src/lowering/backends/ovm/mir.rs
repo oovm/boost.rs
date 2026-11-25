@@ -1586,8 +1586,17 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
         arguments: &[MirOperand],
         output: Option<MirValueRef>,
     ) -> crate::Result<()> {
-        let expected = self.function_entry_arities.get(&function_index).copied().unwrap_or(arguments.len());
-        assert_eq!(arguments.len(), expected, "validated call arity differs from function entry: {path:?} index={function_index}");
+        // 入口 arity 是被调函数入口块 SSA 形参的冻结事实；查不到即模块构造
+        // 不一致，必须结构化失败，绝不回落到调用方实参数量让缺失事实通过检查。
+        let expected = self.function_entry_arities.get(&function_index).copied().ok_or_else(|| {
+            format!("OVM 内部调用 `{path:?}`（function index={function_index}）缺少已冻结的入口 arity：禁止回落到调用方实参数量")
+        })?;
+        if arguments.len() != expected {
+            return Err(format!(
+                "OVM 内部调用 `{path:?}`（function index={function_index}）实参数量 {} 与冻结入口 arity {expected} 不符",
+                arguments.len()
+            ));
+        }
         for (index, argument) in arguments.iter().enumerate() {
             // 常量实参的位宽来自被调函数已冻结的入口形参槽类型；没有该槽时
             // 才回落到 semantic MIR 合同，绝不按字面量大小选位宽。

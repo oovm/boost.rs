@@ -65,9 +65,16 @@ pub fn derive_contract(
     let mut entries = Vec::with_capacity(ordered.len());
     for (instance, logical_name) in ordered {
         let view = plan.get_function(instance).ok_or_else(|| format!("库导出 `{logical_name}` 缺少 Compiler 函数体，无法派生 OVM ABI 合同"))?;
+        // 源码声明名是计划导出登记表的冻结事实；缺失即失败闭合，绝不拿逻辑名复制冒充。
+        let source_name = plan
+            .export_names()
+            .get(instance)
+            .ok_or_else(|| format!("库导出 `{logical_name}` 缺少计划冻结的源码声明名，无法派生 OVM ABI 合同"))?
+            .clone();
         entries.push(derive_export(
             plan,
             logical_name,
+            &source_name,
             &view.function,
             module_layouts,
             layout_indices,
@@ -132,6 +139,7 @@ pub(crate) fn frozen_entry_parameter_layouts(plan: &TargetExecutionPlan, functio
 fn derive_export(
     plan: &TargetExecutionPlan,
     logical_name: &str,
+    source_name: &str,
     function: &ExecutableFunction,
     module_layouts: &mut Vec<OdinLayout>,
     layout_indices: &mut BTreeMap<LayoutId, i32>,
@@ -168,7 +176,13 @@ fn derive_export(
     let returns = projection
         .project(&return_structure, TextSlot::Return)
         .map_err(|reason| format!("库导出 `{logical_name}` 返回类型没有 OVM ABI 合同: {reason}"))?;
-    Ok(OvmAbiExport { logical_name: logical_name.to_string(), params, returns_carrier: carrier_label(&returns).to_string(), returns })
+    Ok(OvmAbiExport {
+        logical_name: logical_name.to_string(),
+        source_name: source_name.to_string(),
+        params,
+        returns_carrier: carrier_label(&returns).to_string(),
+        returns,
+    })
 }
 
 /// 结构 → OVM 物理投影。

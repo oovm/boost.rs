@@ -94,8 +94,8 @@ fn library_export_from_contract(entry: &str, artifact: &str, contract: &OvmAbiCo
     })?;
     Ok(DriverLibraryExport {
         logical_name: entry.to_string(),
-        // ovm lane 没有注解改名合同，公开名就是源码名。
-        source_name: entry.to_string(),
+        // 两个身份轴各自取自合同冻结事实，不互相复制。
+        source_name: export.source_name.clone(),
         physical_artifact: format!("{artifact}.odin"),
         invocation: "ovm run --entry".to_string(),
         abi_digest: contract.digest.clone(),
@@ -175,7 +175,13 @@ mod tests {
     }
 
     fn export(logical_name: &str, params: Vec<OvmAbiParam>, returns: OvmAbiType, returns_carrier: &str) -> OvmAbiExport {
-        OvmAbiExport { logical_name: logical_name.to_string(), params, returns, returns_carrier: returns_carrier.to_string() }
+        OvmAbiExport {
+            logical_name: logical_name.to_string(),
+            source_name: logical_name.to_string(),
+            params,
+            returns,
+            returns_carrier: returns_carrier.to_string(),
+        }
     }
 
     #[test]

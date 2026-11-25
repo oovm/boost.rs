@@ -21,7 +21,11 @@ use crate::OdinLayout;
 ///
 /// 对外合同命名空间在 `1.0.0` 之前统一为 `/v0`；本常量只标识 sidecar 结构修订，
 /// 新增/变更字段时递增，旧产物由消费端显式拒绝，不做兼容读取。
-pub const OVM_ABI_SCHEMA_VERSION: u32 = 1;
+///
+/// rev 2：导出条目新增 `source_name`（源码声明名冻结事实），与 `logical_name`
+/// （`.odin` 模块物理导出符号）分轴。旧 rev 1 sidecar 缺少该字段，读取端在
+/// 反序列化即失败闭合；`.odin` 二进制本身不变，但 sidecar 必须由新编译器重建。
+pub const OVM_ABI_SCHEMA_VERSION: u32 = 2;
 
 /// OVM 库导出 ABI 合同。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,8 +43,11 @@ pub struct OvmAbiContract {
 /// 单个库导出的 OVM ABI 合同。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OvmAbiExport {
-    /// 逻辑导出名。
+    /// 逻辑导出名（`.odin` 模块导出表里的物理符号）。
     pub logical_name: String,
+    /// 源码声明名：由目标计划在导出登记时冻结，消费端不得用 `logical_name`
+    /// 或物理入口字符串复制冒充。
+    pub source_name: String,
     /// 按声明顺序排列的参数。
     pub params: Vec<OvmAbiParam>,
     /// 返回值结构；无返回值时为 [`OvmAbiType::Unit`]。
