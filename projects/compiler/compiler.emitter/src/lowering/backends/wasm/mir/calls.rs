@@ -540,6 +540,9 @@ impl<'a> WasmMirLowerer<'a> {
             if let WasmOperatorBinding::GcArray(array_plan) = binding {
                 return self.try_emit_wasm_gc_array_operator(mnemonic, *array_plan, arguments, output, instance).map(|()| true);
             }
+            if let WasmOperatorBinding::FloatRemainder(carrier) = binding {
+                return self.emit_wasm_float_remainder(mnemonic, *carrier, arguments, output).map(|()| true);
+            }
             return Err(format!("WASM `wasm_operator` 绑定缺少可编码助记符 `{mnemonic}`: callee={instance:?} function={}", self.mir_fn.symbol));
         };
         let opcode = plan.encoding;
@@ -609,6 +612,189 @@ impl<'a> WasmMirLowerer<'a> {
             WasmGcArrayOperation::Length => self.emit_array_length_ops(&arguments[0], output),
             WasmGcArrayOperation::Get => self.emit_array_get_ops(arguments, output),
             WasmGcArrayOperation::Set => self.emit_array_set_ops(arguments, output),
+        }
+    }
+
+    /// `[wasm_operator("f32.rem")]` / `("f64.rem")`：精确截断余数的正式 lowering。
+    ///
+    /// wasm 没有原生浮点余数指令；语言合同（与 JVM `drem`、CLR `rem` 一致）是
+    /// **精确**余数：符号随被除数、`|r| < |b|`、`x % ±inf = x`（有限 x）、
+    /// `±inf % y = NaN`、`x % 0 = NaN`、`fmod(-5, 5) = -0`。naive 展开
+    /// `a - trunc(a/b)*b` 在商超过 2^53 时不精确（`1e17 % 7` 合同值是 5，展开得
+    /// 0），不得用作兑现手段。本序列只用 MVP 指令做「指数对齐 + 二分归约」：
+    /// 倍增/减半是精确操作；每次减法前不变式 `s <= r < 2s` 成立，由 Sterbenz
+    /// 引理减法精确。算法事实冻结在本函数体内，签名（arity、载体）已由计划
+    /// 校验，发射只机械展开，不按助记符推断任何形状。
+    fn emit_wasm_float_remainder(&mut self, mnemonic: &str, carrier: TargetOperandType, arguments: &[MirOperand], output: Option<MirValueRef>) -> crate::Result<()> {
+        if arguments.len() != 2 {
+            return Err(format!(
+                "WASM `wasm_operator` 绑定 `{mnemonic}` 实参数量与冻结 arity 不符: expected=2 actual={} function={}",
+                arguments.len(),
+                self.mir_fn.symbol
+            ));
+        }
+        let stack_type = wasm_stack_type(carrier);
+        let (op_abs, op_ne, op_eq, op_lt, op_le, op_ge, op_mul, op_div, op_sub, op_copysign) = match carrier {
+            TargetOperandType::F32 => (
+                WasmOpcode::F32Abs,
+                WasmOpcode::F32Ne,
+                WasmOpcode::F32Eq,
+                WasmOpcode::F32Lt,
+                WasmOpcode::F32Le,
+                WasmOpcode::F32Ge,
+                WasmOpcode::F32Mul,
+                WasmOpcode::F32Div,
+                WasmOpcode::F32Sub,
+                WasmOpcode::F32Copysign,
+            ),
+            TargetOperandType::F64 => (
+                WasmOpcode::F64Abs,
+                WasmOpcode::F64Ne,
+                WasmOpcode::F64Eq,
+                WasmOpcode::F64Lt,
+                WasmOpcode::F64Le,
+                WasmOpcode::F64Ge,
+                WasmOpcode::F64Mul,
+                WasmOpcode::F64Div,
+                WasmOpcode::F64Sub,
+                WasmOpcode::F64Copysign,
+            ),
+            other => {
+                return Err(format!(
+                    "WASM `wasm_operator` 绑定 `{mnemonic}` 的冻结载体不是浮点: carrier={other:?} function={}",
+                    self.mir_fn.symbol
+                ));
+            }
+        };
+        self.emit_wasm_operator_operands(mnemonic, stack_type, arguments)?;
+        // 栈上 `[a, b]`（b 在顶）：先收进两个输入 local，后续序列只读 local。
+        let ly = self.alloc_scalar_local_for_stack_type(stack_type);
+        self.emit_local_set(ly);
+        let lx = self.alloc_scalar_local_for_stack_type(stack_type);
+        self.emit_local_set(lx);
+        let lr = self.alloc_scalar_local_for_stack_type(stack_type);
+        let ls = self.alloc_scalar_local_for_stack_type(stack_type);
+        let la = self.alloc_scalar_local_for_stack_type(stack_type);
+        let lt = self.alloc_scalar_local_for_stack_type(stack_type);
+        let lres = self.alloc_scalar_local_for_stack_type(stack_type);
+
+        // block $done：三个早退守卫 + 归约主循环，结果统一写入 lres。
+        self.emit_block_type(WasmOpcode::Block);
+        self.emit_local_get(lx);
+        self.code.push(WasmBodyInstruction::Opcode(op_abs));
+        self.emit_local_set(lr);
+        self.emit_local_get(ly);
+        self.code.push(WasmBodyInstruction::Opcode(op_abs));
+        self.emit_local_set(ls);
+        self.emit_local_get(ls);
+        self.emit_local_set(la);
+        // 守卫 1：`a != a | b != b | b == 0 | |a| == inf` → NaN。
+        // `ne` 自反比较识别 NaN；`eq inf` 在 NaN 上为假，不会误捕。
+        self.emit_local_get(lr);
+        self.emit_local_get(lr);
+        self.code.push(WasmBodyInstruction::Opcode(op_ne));
+        self.emit_local_get(ls);
+        self.emit_local_get(ls);
+        self.code.push(WasmBodyInstruction::Opcode(op_ne));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Or));
+        self.emit_local_get(ls);
+        self.emit_float_const(stack_type, 0.0);
+        self.code.push(WasmBodyInstruction::Opcode(op_eq));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Or));
+        self.emit_local_get(lr);
+        self.emit_float_const(stack_type, f64::INFINITY);
+        self.code.push(WasmBodyInstruction::Opcode(op_eq));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Or));
+        self.emit_block_type(WasmOpcode::If);
+        self.emit_float_const(stack_type, f64::NAN);
+        self.emit_local_set(lres);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 1 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        // 守卫 2：有限 `x % ±inf = x`（`|a| == inf` 已在守卫 1 判 NaN）。
+        self.emit_local_get(ls);
+        self.emit_float_const(stack_type, f64::INFINITY);
+        self.code.push(WasmBodyInstruction::Opcode(op_eq));
+        self.emit_block_type(WasmOpcode::If);
+        self.emit_local_get(lx);
+        self.emit_local_set(lres);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 1 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        // 守卫 3：`x == 0`（含 ±0，返回 x 保留符号）或 `|x| < |y|` → x。
+        self.emit_local_get(lr);
+        self.emit_float_const(stack_type, 0.0);
+        self.code.push(WasmBodyInstruction::Opcode(op_eq));
+        self.emit_local_get(lr);
+        self.emit_local_get(ls);
+        self.code.push(WasmBodyInstruction::Opcode(op_lt));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32Or));
+        self.emit_block_type(WasmOpcode::If);
+        self.emit_local_get(lx);
+        self.emit_local_set(lres);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 1 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        // 对齐：倍增 `s` 直到 `s <= r < 2s`（`s*2` 溢出为 inf 时比较为假，自然停止）。
+        self.emit_block_type(WasmOpcode::Loop);
+        self.emit_local_get(ls);
+        self.emit_float_const(stack_type, 2.0);
+        self.code.push(WasmBodyInstruction::Opcode(op_mul));
+        self.emit_local_tee(lt);
+        self.emit_local_get(lr);
+        self.code.push(WasmBodyInstruction::Opcode(op_le));
+        self.emit_block_type(WasmOpcode::If);
+        self.emit_local_get(lt);
+        self.emit_local_set(ls);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 1 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        // 归约：减半回 `|b|`，每层 `r >= s` 时减一次；减法前 `s <= r < 2s`，
+        // Sterbenz 引理保证精确。`s == la` 时归约完成。
+        self.emit_block_type(WasmOpcode::Block);
+        self.emit_block_type(WasmOpcode::Loop);
+        self.emit_local_get(lr);
+        self.emit_local_get(ls);
+        self.code.push(WasmBodyInstruction::Opcode(op_ge));
+        self.emit_block_type(WasmOpcode::If);
+        self.emit_local_get(lr);
+        self.emit_local_get(ls);
+        self.code.push(WasmBodyInstruction::Opcode(op_sub));
+        self.emit_local_set(lr);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.emit_local_get(ls);
+        self.emit_local_get(la);
+        self.code.push(WasmBodyInstruction::Opcode(op_eq));
+        self.emit_block_type(WasmOpcode::If);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 2 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.emit_local_get(ls);
+        self.emit_float_const(stack_type, 2.0);
+        self.code.push(WasmBodyInstruction::Opcode(op_div));
+        self.emit_local_set(ls);
+        self.code.push(WasmBodyInstruction::U32 { opcode: WasmOpcode::Br, operand: 0 });
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        // 结果符号随被除数（`r` 由绝对值算出，恒 ≥ 0；零结果也取 x 的符号）。
+        self.emit_local_get(lr);
+        self.emit_local_get(lx);
+        self.code.push(WasmBodyInstruction::Opcode(op_copysign));
+        self.emit_local_set(lres);
+        self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::End));
+        self.emit_local_get(lres);
+        match output {
+            None => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::Drop)),
+            Some(output) => {
+                self.validate_output_slot_type(output, stack_type)?;
+                self.assign_output_local(output);
+            }
+        }
+        Ok(())
+    }
+
+    /// 按栈类型发射浮点常量（`f64::INFINITY`/`f64::NAN` 在 f32 上即 f32 语义值）。
+    fn emit_float_const(&mut self, stack_type: u8, value: f64) {
+        if stack_type == VALTYPE_F32 {
+            self.code.push(WasmBodyInstruction::F32Const(value as f32));
+        } else {
+            self.code.push(WasmBodyInstruction::F64Const(value));
         }
     }
 

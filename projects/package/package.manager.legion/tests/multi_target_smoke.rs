@@ -200,12 +200,14 @@ const U32_UNSIGNED_DIVISION: &[Operator] = &[
     infix(">>", false, Some("integer.shift_right_unsigned"), Some("i32.shr.un"), Some("i32.shr_u"), Some("i32.shr_u")),
 ];
 
-/// `f64` 算术与比较：OVM 没有 f64 头码，CLR/Wasm 没有浮点余数，故不声明 `%`。
+/// `f64` 算术与比较：OVM 没有 f64 头码；CLR 用通用 `rem`，Wasm 用正式
+/// lowering 序列兑现精确截断余数合同，故 `%` 三 target 齐全、OVM 缺省。
 const F64_OPERATORS: &[Operator] = &[
     infix("+", false, Some("double.add"), Some("f64.add"), Some("f64.add"), None),
     infix("-", false, Some("double.subtract"), Some("f64.sub"), Some("f64.sub"), None),
     infix("*", false, Some("double.multiply"), Some("f64.mul"), Some("f64.mul"), None),
     infix("/", false, Some("double.divide"), Some("f64.div"), Some("f64.div"), None),
+    infix("%", false, Some("double.remainder"), Some("f64.rem"), Some("f64.rem"), None),
     prefix("-", Some("double.negate"), Some("f64.neg"), Some("f64.neg"), None),
     infix("==", true, Some("double.compare_equal"), Some("f64.eq"), Some("f64.eq"), None),
     infix("!=", true, Some("double.compare_not_equal"), Some("f64.ne"), Some("f64.ne"), None),
@@ -334,11 +336,15 @@ micro main() -> i32 {
 }
 "#;
 
-/// `f64` 用例入口：`classify(1.5)` 走 `+ - * /`、前缀 `-` 与六个比较。
+/// `f64` 用例入口：`classify(1.5)` 走 `+ - * / %`、前缀 `-` 与六个比较。
 ///
 /// `x = 1.5 * 2.0 + 0.5 = 3.5`，`y = x / 2.0 = 1.75`，`neg = -y = -1.75`，
 /// `y - neg = 3.5` 在二进制里精确。六个比较按嵌套顺序各带一个独立错误分支
 /// （2/3/4/5/6），全部成立才返回 17，因此 17 能同时判定六个比较助记符。
+/// 余数三连判定精确截断合同：`1.5 % 1.0 = 0.5`（基本形状）、`-1.75 % 1.0 =
+/// -0.75`（符号随被除数）、`1e17 % 7 = 5.0`（商超过 2^53 的精确性判别——
+/// naive 展开 `a - trunc(a/b)*b` 得 0，只有 JVM `drem`/CLR `fmod`/Wasm 正式
+/// lowering 的精确余数得 5，分别落到错误分支 8/9/10）。
 const FLOAT_SOURCE: &str = r#"namespace app;
 
 micro classify(a: f64) -> i32 {
@@ -351,7 +357,16 @@ micro classify(a: f64) -> i32 {
                 if y >= neg {
                     if neg < y {
                         if neg <= y {
-                            return 17
+                            if a % 1.0 == 0.5 {
+                                if neg % 1.0 == -0.75 {
+                                    if 100000000000000000.0 % 7.0 == 5.0 {
+                                        return 17
+                                    }
+                                    return 10
+                                }
+                                return 9
+                            }
+                            return 8
                         }
                         return 6
                     }

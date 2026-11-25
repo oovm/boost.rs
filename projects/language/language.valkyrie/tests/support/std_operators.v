@@ -13,7 +13,8 @@
 # 配方缺口（不编造助记符）：
 #   * CLR 的 f32 形参算术/比较已冻结（ECMA 通用 opcode 对 `float32` 载体同形），
 #     缺的只是常量载体 `ldc.r4`/`conv.r4`（`f64.rem` 已可编码为 IL `rem`）；
-#   * Wasm 无 `f64.rem` / `f32.rem`（wasm 只有整数 rem，没有浮点余数指令）；
+#   * Wasm 没有原生浮点余数指令（只有整数 rem），`f64.rem`/`f32.rem` 由
+#     wasm backend 的正式 lowering（精确截断余数序列）兑现，不是单条 opcode；
 #   * OVM 只覆盖 i32 与 f32，没有 i64 / f64 的算术、位运算与比较头码；u32 的 `/`、`%`
 #     也没有无符号除余头码（`i32.div`/`i32.rem` 都是有符号）；f32 有 `eq`/`lt` 头码，
 #     `ne`/`gt` 走显式组合编码，`le`/`ge` 缺头码且无法在 NaN 语义下组合。
@@ -508,6 +509,7 @@ structure f64 {
     [infix]
     [jvm_operator("double.remainder")]
     [clr_operator("f64.rem")]
+    [wasm_operator("f64.rem")]
     micro `%`(self: f64, other: f64) -> f64;
 
     [prefix]
@@ -556,7 +558,8 @@ structure f64 {
 # 单精度 32 位浮点：载体是独立的 `F32`，不得借 f64/i32 槽中转。
 # CLR 的形参算术/比较走 ECMA 通用 opcode；仍缺 `ldc.r4` 常量载体，f32 常量路径
 # 在 emit 侧失败闭合。OVM 有 `eq`/`lt` 头码，`ne`/`gt` 走显式组合编码，`le`/`ge`
-# 因 NaN 语义无法组合、仍缺头码；OVM 没有浮点余数指令；Wasm 没有 `f32.rem`。
+# 因 NaN 语义无法组合、仍缺头码；OVM 没有浮点余数指令；Wasm 的 `f32.rem`
+# 走精确截断余数的正式 lowering 序列。
 [primitive("std::primitive::f32")]
 structure f32 {
     [infix]
@@ -590,6 +593,7 @@ structure f32 {
     [infix]
     [jvm_operator("float.remainder")]
     [clr_operator("f32.rem")]
+    [wasm_operator("f32.rem")]
     micro `%`(self: f32, other: f32) -> f32;
 
     [prefix]

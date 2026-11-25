@@ -133,8 +133,9 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.reinterpret_f32" => unary_to(TargetOperandType::F32, TargetOperandType::I32, WasmOpcode::I32ReinterpretF32),
         "f32.reinterpret_i32" => unary_to(TargetOperandType::I32, TargetOperandType::F32, WasmOpcode::F32ReinterpretI32),
 
-        // f64 算术。wasm 没有浮点余数指令（只有整数 `rem_s`/`rem_u`），
-        // `f64.rem` 保持缺口，不得伪造助记符。
+        // f64 算术。wasm 没有原生浮点余数指令（只有整数 `rem_s`/`rem_u`），
+        // `f64.rem`/`f32.rem` 走 [`freeze_wasm_float_remainder`] 的正式 lowering，
+        // 不在单指令表内，不得伪造助记符。
         "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, WasmOpcode::F64Add),
         "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, WasmOpcode::F64Sub),
         "f64.mul" => binary(TargetOperandType::F64, TargetOperandType::F64, WasmOpcode::F64Mul),
@@ -155,6 +156,23 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
 
         _ => return None,
     })
+}
+
+/// 浮点余数助记符 → 冻结载体（`f32.rem` / `f64.rem`）。
+///
+/// wasm 没有原生浮点余数指令，但语言合同（与 JVM `drem`、CLR `rem` 一致）是
+/// **精确截断余数**：符号随被除数、`|r| < |b|`、`x % ±inf = x`（有限 x）、
+/// `±inf % y = NaN`、`x % 0 = NaN`、`fmod(-5, 5) = -0`。naive 展开
+/// `a - trunc(a/b)*b` 在商超过 2^53 时不精确（如 `1e17 % 7` 合同值是 5，
+/// 展开得 0），不得用作兑现手段。正式 lowering 是「指数对齐 + 二分归约」：
+/// 倍增/减半精确，每次减法满足 Sterbenz 引理（`s <= r < 2s`）也精确，
+/// 全部用 MVP 指令表达，序列事实由 emit 侧机械展开。
+pub(crate) fn freeze_wasm_float_remainder(mnemonic: &str) -> Option<TargetOperandType> {
+    match mnemonic {
+        "f32.rem" => Some(TargetOperandType::F32),
+        "f64.rem" => Some(TargetOperandType::F64),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -217,13 +235,18 @@ mod tests {
         assert!(freeze_wasm_numeric_binding("i64.reinterpret_f32").is_none());
     }
 
-    /// 未知助记符不得猜默认指令；浮点余数在 wasm 上不存在（只有整数 rem），
-    /// 因此 `f64.rem`/`f32.rem` 必须保持缺口。
+    /// 未知助记符不得猜默认指令；浮点余数没有原生指令，不进单指令表，
+    /// 只能由 [`freeze_wasm_float_remainder`] 冻结为正式 lowering 载体。
     #[test]
     fn unknown_mnemonic_stays_unfrozen() {
         assert!(freeze_wasm_numeric_binding("f32.unknown").is_none());
         assert!(freeze_wasm_numeric_binding("i64.rotl").is_none());
-        assert!(freeze_wasm_numeric_binding("f64.rem").is_none(), "wasm 没有 f64 余数指令");
-        assert!(freeze_wasm_numeric_binding("f32.rem").is_none(), "wasm 没有 f32 余数指令");
+        assert!(freeze_wasm_numeric_binding("f64.rem").is_none(), "`f64.rem` 没有单指令编码，不得进单指令表");
+        assert!(freeze_wasm_numeric_binding("f32.rem").is_none(), "`f32.rem` 没有单指令编码，不得进单指令表");
+
+        assert_eq!(freeze_wasm_float_remainder("f64.rem"), Some(TargetOperandType::F64));
+        assert_eq!(freeze_wasm_float_remainder("f32.rem"), Some(TargetOperandType::F32));
+        assert_eq!(freeze_wasm_float_remainder("f64.rem.unknown"), None);
+        assert_eq!(freeze_wasm_float_remainder("i32.rem_s"), None, "整数 rem 走单指令表，不是 lowering");
     }
 }
