@@ -210,6 +210,35 @@ const F64_OPERATORS: &[Operator] = &[
     infix(">=", true, Some("double.compare_greater_or_equal"), Some("f64.ge"), Some("f64.ge"), None),
 ];
 
+/// 有符号 `i64` 算术与比较：jvm / clr / wasm 齐全，OVM 没有 i64 头码。
+const I64_OPERATORS: &[Operator] = &[
+    infix("+", false, Some("long.add"), Some("i64.add"), Some("i64.add"), None),
+    infix("-", false, Some("long.subtract"), Some("i64.sub"), Some("i64.sub"), None),
+    infix("*", false, Some("long.multiply"), Some("i64.mul"), Some("i64.mul"), None),
+    infix("/", false, Some("long.divide"), Some("i64.div"), Some("i64.div_s"), None),
+    infix("%", false, Some("long.remainder"), Some("i64.rem"), Some("i64.rem_s"), None),
+    prefix("-", Some("long.negate"), Some("i64.neg"), Some("i64.neg"), None),
+    infix("==", true, Some("long.compare_equal"), Some("i64.eq"), Some("i64.eq"), None),
+    infix("!=", true, Some("long.compare_not_equal"), Some("i64.ne"), Some("i64.ne"), None),
+    infix("<", true, Some("long.compare_less_than"), Some("i64.lt"), Some("i64.lt_s"), None),
+    infix("<=", true, Some("long.compare_less_or_equal"), Some("i64.le"), Some("i64.le_s"), None),
+    infix(">", true, Some("long.compare_greater_than"), Some("i64.gt"), Some("i64.gt_s"), None),
+    infix(">=", true, Some("long.compare_greater_or_equal"), Some("i64.ge"), Some("i64.ge_s"), None),
+];
+
+/// 无符号 `u64`：除/余与六个有序比较都必须用无符号助记符；OVM 没有 i64 头码。
+const U64_OPERATORS: &[Operator] = &[
+    prefix("-", Some("long.negate"), Some("i64.neg"), Some("i64.neg"), None),
+    infix("/", false, Some("long.divide_unsigned"), Some("i64.div.un"), Some("i64.div_u"), None),
+    infix("%", false, Some("long.remainder_unsigned"), Some("i64.rem.un"), Some("i64.rem_u"), None),
+    infix("==", true, Some("long.compare_equal"), Some("i64.eq"), Some("i64.eq"), None),
+    infix("!=", true, Some("long.compare_not_equal"), Some("i64.ne"), Some("i64.ne"), None),
+    infix("<", true, Some("long.compare_less_than_unsigned"), Some("i64.lt.un"), Some("i64.lt_u"), None),
+    infix("<=", true, Some("long.compare_less_or_equal_unsigned"), Some("i64.le.un"), Some("i64.le_u"), None),
+    infix(">", true, Some("long.compare_greater_than_unsigned"), Some("i64.gt.un"), Some("i64.gt_u"), None),
+    infix(">=", true, Some("long.compare_greater_or_equal_unsigned"), Some("i64.ge.un"), Some("i64.ge_u"), None),
+];
+
 /// 只作为返回/比较结果载体出现、不参与任何运算的 primitive。
 const NO_OPERATORS: &[Operator] = &[];
 
@@ -217,6 +246,8 @@ const I32_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i32", n
 const U32_ARITHMETIC_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_NEGATE_AND_COMPARE };
 const U32_DIVISION_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_UNSIGNED_DIVISION };
 const F64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::f64", name: "f64", operators: F64_OPERATORS };
+const I64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i64", name: "i64", operators: I64_OPERATORS };
+const U64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u64", name: "u64", operators: U64_OPERATORS };
 const CARRIER_I32: Primitive = Primitive { canonical: "std::primitive::i32", name: "i32", operators: NO_OPERATORS };
 const CARRIER_BOOL: Primitive = Primitive { canonical: "std::primitive::bool", name: "bool", operators: NO_OPERATORS };
 
@@ -335,6 +366,83 @@ micro main() -> i32 {
 }
 "#;
 
+/// `i64` 用例入口：`wide(5)` 在宽载体上走 `+ - * / %`、前缀 `-` 与六个比较。
+///
+/// `x = 5 * 4 - 4 + 1 = 17`，`y = 17 / 5 = 3`，`r = 17 % 5 = 2`，`neg = -2`。
+/// 六个比较按嵌套顺序各带独立错误分支（2/3/4/5/6），全部成立返回 23，
+/// 因此 23 能同时判定宽载体的六个比较助记符与除法/取余/取负。
+const INT64_SOURCE: &str = r#"namespace app;
+
+micro wide(a: i64) -> i32 {
+    let x = a * 4 - 4 + 1
+    let y = x / 5
+    let r = x % 5
+    let neg = -r
+    if x == 17 {
+        if x > y {
+            if y >= r {
+                if y != neg {
+                    if x <= 17 {
+                        if neg < r {
+                            return 23
+                        }
+                        return 6
+                    }
+                    return 5
+                }
+                return 4
+            }
+            return 3
+        }
+        return 2
+    }
+    return 1
+}
+
+[main]
+micro main() -> i32 {
+    return app::wide(5)
+}
+"#;
+
+/// 无符号 `u64` 用例入口：`0xFFFF_FFFF_FFFF_FFFF` 上的除/余与六个无符号比较。
+///
+/// 无符号：`/ 2 = 0x7FFF_FFFF_FFFF_FFFF`、`% 7 = 1`；若误用有符号裁决，商为 0、
+/// 余数为 `0xFFFF_FFFF_FFFF_FFFF`，`q > a` 与 `r < 7` 都会改变，返回 1/2；
+/// 六个比较各带独立错误分支（3/4/5/6），全部成立返回 31。
+const UINT64_SOURCE: &str = r#"namespace app;
+
+micro wide_unsigned(a: u64) -> i32 {
+    let big = -a
+    let q = big / 2
+    let r = big % 7
+    if q > a {
+        if q >= a {
+            if r < 7 {
+                if r <= 7 {
+                    if a != big {
+                        if a == 1 {
+                            return 31
+                        }
+                        return 6
+                    }
+                    return 5
+                }
+                return 4
+            }
+            return 3
+        }
+        return 2
+    }
+    return 1
+}
+
+[main]
+micro main() -> i32 {
+    return app::wide_unsigned(1)
+}
+"#;
+
 /// 一个数值算子 e2e 用例：夹具声明 + 可观测入口。
 struct Case {
     /// 临时目录与产物目录的去重标签。
@@ -368,12 +476,16 @@ impl Case {
 const ARITHMETIC_PRIMITIVES: &[Primitive] = &[I32_PRIMITIVE, U32_ARITHMETIC_PRIMITIVE, CARRIER_BOOL];
 const FLOAT_PRIMITIVES: &[Primitive] = &[CARRIER_I32, F64_PRIMITIVE, CARRIER_BOOL];
 const UNSIGNED_DIVISION_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U32_DIVISION_PRIMITIVE, CARRIER_BOOL];
+const INT64_PRIMITIVES: &[Primitive] = &[CARRIER_I32, I64_PRIMITIVE, CARRIER_BOOL];
+const UINT64_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U64_PRIMITIVE, CARRIER_BOOL];
 
 /// 全部数值算子用例。`expected` 是入口返回值，不是产物存在性。
 const NUMERIC_CASES: &[Case] = &[
     Case { label: "arithmetic", primitives: ARITHMETIC_PRIMITIVES, source: ARITHMETIC_SOURCE, expected: 13 },
     Case { label: "float64", primitives: FLOAT_PRIMITIVES, source: FLOAT_SOURCE, expected: 17 },
     Case { label: "unsigned-division", primitives: UNSIGNED_DIVISION_PRIMITIVES, source: UNSIGNED_DIVISION_SOURCE, expected: 5 },
+    Case { label: "int64", primitives: INT64_PRIMITIVES, source: INT64_SOURCE, expected: 23 },
+    Case { label: "uint64", primitives: UINT64_PRIMITIVES, source: UINT64_SOURCE, expected: 31 },
 ];
 
 const MANIFEST_TEMPLATE: &str = r#"{
