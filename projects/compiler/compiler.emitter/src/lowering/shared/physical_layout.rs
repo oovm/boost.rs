@@ -31,7 +31,7 @@ impl LayoutPolicy {
     pub(crate) const WASM32: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
 
     /// Odin VM 策略。
-    pub(crate) const OVM: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
+    pub const OVM: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
 
     /// 原生 x86-64 策略：引用/句柄与文本描述符都是 8 字节槽。
     pub const X64: Self = Self { reference_extent: (8, 8), text_extent: (8, 8) };

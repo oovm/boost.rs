@@ -246,6 +246,9 @@ pub(crate) fn build_lane_context<'a>(
     }
     let mut visited = BTreeSet::new();
     let mut reachable = Vec::new();
+    // 闭包引用到的导入 callee：不进 `reachable`（它们没有函数体），但导入签名
+    // 事实必须结算，与旧公共路径 `pending.extend(callees)` 后逐 callee 解析同源。
+    let mut external_refs = BTreeSet::new();
     loop {
         let Some(instance) = pending_roots.iter().copied().find(|instance| !visited.contains(instance)) else {
             break;
@@ -256,11 +259,27 @@ pub(crate) fn build_lane_context<'a>(
         };
         for block in function.blocks.values() {
             for instruction in &block.instructions {
-                if let ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Item(callee), .. } = &instruction.operation
-                    && canonical.mir.functions.contains_key(callee)
-                    && !declared_imports.contains_key(callee)
-                {
-                    pending_roots.insert(*callee);
+                match &instruction.operation {
+                    ValkyrieMirOperation::Invoke { callee: ValkyrieMirCallee::Item(callee), .. } => {
+                        if declared_imports.contains_key(callee) {
+                            external_refs.insert(*callee);
+                        }
+                        else if canonical.mir.functions.contains_key(callee) {
+                            pending_roots.insert(*callee);
+                        }
+                    }
+                    // 闭包值（`LoadFunctionRef`）不经静态调用边，但代码指针同样是必须
+                    // 链接的事实；旧公共路径经 `lower_operation` 把它登记进闭包，
+                    // OVM 闭包载体要求 instance 属于本模块函数表。
+                    ValkyrieMirOperation::LoadFunctionRef { instance: referenced, .. } => {
+                        if declared_imports.contains_key(referenced) {
+                            external_refs.insert(*referenced);
+                        }
+                        else if canonical.mir.functions.contains_key(referenced) {
+                            pending_roots.insert(*referenced);
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -270,16 +289,19 @@ pub(crate) fn build_lane_context<'a>(
     let mut imports = BTreeMap::new();
     let mut abi_names = BTreeMap::new();
     let mut views = BTreeMap::new();
+    let resolve_import = |instance: &ItemInstanceId, index: &ImportIndex, import: &compiler_types::ImportRecord| {
+        let parameter_types = import
+            .parameter_types
+            .iter()
+            .map(|ty| target_plan::lower_type(canonical, *ty).map_err(|reason| unsound(AdapterStage::Type, Some(*instance), None, reason)))
+            .collect::<std::result::Result<Vec<_>, TargetPlanError>>()?;
+        let return_type = target_plan::lower_type(canonical, import.return_type)
+            .map_err(|reason| unsound(AdapterStage::Type, Some(*instance), None, reason))?;
+        Ok::<BackendImport, TargetPlanError>(BackendImport { index: *index, links: import.links.clone(), parameter_types, return_type })
+    };
     for instance in &reachable {
         if let Some((index, import)) = declared_imports.get(instance) {
-            let parameter_types = import
-                .parameter_types
-                .iter()
-                .map(|ty| target_plan::lower_type(canonical, *ty).map_err(|reason| unsound(AdapterStage::Type, Some(*instance), None, reason)))
-                .collect::<std::result::Result<Vec<_>, TargetPlanError>>()?;
-            let return_type = target_plan::lower_type(canonical, import.return_type)
-                .map_err(|reason| unsound(AdapterStage::Type, Some(*instance), None, reason))?;
-            imports.insert(*instance, BackendImport { index: *index, links: import.links.clone(), parameter_types, return_type });
+            imports.insert(*instance, resolve_import(instance, index, import)?);
             continue;
         }
         let name = canonical.linked.callable_names.get(instance).ok_or_else(|| {
@@ -306,6 +328,16 @@ pub(crate) fn build_lane_context<'a>(
         let view = build_function_view(program, canonical, function)
             .map_err(|reason| unsound(AdapterStage::Function, Some(*instance), Some(name.to_string()), reason))?;
         views.insert(*instance, view);
+    }
+    // 闭包引用到的导入 callee：签名事实与旧公共路径同源结算（外部调用 arity 与
+    // 实参位宽只认这张冻结表，禁止消费点回落实参数量猜测）。
+    for instance in &external_refs {
+        if imports.contains_key(instance) {
+            continue;
+        }
+        if let Some((index, import)) = declared_imports.get(instance) {
+            imports.insert(*instance, resolve_import(instance, index, import)?);
+        }
     }
     // 字段声明侧的身份：布局计划只记构造器拼写，SSA 记结算布局；字段合同
     // 必须以 canonical 为两侧冻结的同一布局身份比对，而不是比较拼写形态。

@@ -5,11 +5,6 @@ use crate::{
     emitter_backend_wasi::{WasmBinaryBackendInput, WasmBinaryModule, WasmTestEntryExport},
 };
 use compiler_target::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily};
-#[cfg(feature = "ovm-lane")]
-use data_binary_odin::OdinModuleData;
-
-#[cfg(feature = "ovm-lane")]
-use crate::OvmBackendInput;
 use crate::{DriverBackendInput, FragmentSubmission};
 
 #[doc(hidden)]
@@ -18,9 +13,6 @@ pub mod backends;
 pub mod features;
 pub(crate) mod shared;
 
-#[cfg(feature = "ovm-lane")]
-use self::backends::{clr, jvm, ovm, wasm};
-#[cfg(not(feature = "ovm-lane"))]
 use self::backends::{clr, jvm, wasm};
 
 pub(crate) fn testing_lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
@@ -39,11 +31,6 @@ pub(crate) fn testing_msil_type(
     ty: &crate::backend_plan_views::SemanticType,
 ) -> Result<crate::emitter_backend_clr::MsilType> {
     clr::emit::msil_type(layouts, ty)
-}
-
-#[cfg(feature = "ovm-lane")]
-pub(crate) fn testing_lower_fragment_to_ovm_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
-    ovm::lower_fragment_to_ovm_module(submission)
 }
 
 pub(crate) fn testing_lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<crate::emitter_backend_jvm::JvmClassFile> {
@@ -239,16 +226,12 @@ fn build_driver_input(
                 test_entry_exports,
             }))
         }
-        #[cfg(feature = "ovm-lane")]
-        TargetBackendFamily::Ovm => {
-            let (module, abi_contract) = ovm::lower_fragment_to_ovm_module_with_abi(submission)?;
-            Ok(DriverBackendInput::Ovm(OvmBackendInput {
-                ovm_module: Some(module),
-                abi_contract,
-                library_public_exports: self::backends::ovm_mir::nyar_library_public_export_names(submission),
-                output_dir,
-            }))
-        }
+        // OVM lane 已切到语言侧直出目标私有输入（`language.valkyrie` 的
+        // `pipeline/ovm/`）：submission 公共 IR 解释阶段已删除，Ovm 家族不得
+        // 再经本路径静默产出产物，显式失败闭合。
+        TargetBackendFamily::Ovm => Err(format!(
+            "OVM lane 已由语言侧直出目标私有输入，submission 公共路径不再承载 Ovm 家族；拒绝经 `lower_fragment_to_driver_input` 产出 OVM 产物"
+        )),
         TargetBackendFamily::Jvm => {
             let lowered = jvm::emit::lower_fragment_to_jvm_class(submission)?;
             Ok(DriverBackendInput::Jvm(crate::emitter_backend_jvm::JvmBinaryBackendInput {

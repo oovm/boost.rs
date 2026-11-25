@@ -9,6 +9,8 @@ use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError}
 use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
 use super::pipeline::{lane, machine};
+#[cfg(feature = "ovm-lane")]
+use super::pipeline::ovm;
 use super::pipeline::target_plan::{self, TargetPlanError};
 use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;
 
@@ -162,6 +164,26 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
                 host_module: None,
             }));
         }
+        #[cfg(feature = "ovm-lane")]
+        if request.backend_family == compiler_target::TargetBackendFamily::Ovm {
+            // OVM lane 直接消费语言 MIR：不再构造 `FragmentSubmission` /
+            // `TargetExecutionPlan`。纵链两段式不变——语言侧产出目标私有输入，
+            // emitter 装配服务只做模块形状自检与容器编码。
+            let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
+                .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+            let program_input = ovm::build_ovm_program_input(&ctx)
+                .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+            let (ovm_module, abi_contract) = compiler_emitter::emitter_backend_vm::assemble_ovm_module(&program_input)?;
+            return Ok(LoweredBackendInput::ovm(compiler_emitter::OvmBackendInput {
+                ovm_module: Some(ovm_module),
+                abi_contract,
+                library_public_exports: ovm::library_public_export_names(&ctx),
+                output_dir: request.output_dir.to_path_buf(),
+            })
+            // 产物基名沿用旧公共路径的合同：入口操作 ABI 名末段清洗；无入口时
+            // 回落工程名（`with_artifact_base_name(None)` 不覆盖）。
+            .with_artifact_base_name(entry_artifact_name(&ctx)));
+        }
         let plan = target_plan::from_compiled_program(
             self.compiled_program,
             &self.partition.fragment,
@@ -180,6 +202,15 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
             request.wasm_package_kind,
         )
     }
+}
+
+/// 入口产物基名：入口操作 ABI 名末段清洗（与旧公共路径 `entry_artifact_name` 同合同）。
+#[cfg(feature = "ovm-lane")]
+fn entry_artifact_name(ctx: &lane::LaneContext) -> Option<String> {
+    let name = ctx.fragment().entry_operation.and_then(|instance| ctx.abi_name(&instance))?;
+    let tail = name.parts().last()?.as_str();
+    let sanitized = tail.chars().map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '_' }).collect::<String>();
+    (!sanitized.is_empty()).then_some(sanitized)
 }
 
 /// 从指定分区装配目标载荷，拒绝任何与链接身份不一致的计划。

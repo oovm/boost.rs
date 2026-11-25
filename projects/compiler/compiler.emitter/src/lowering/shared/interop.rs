@@ -5,7 +5,7 @@
 //! JVM 在 [`crate::lowering::backends::jvm::recipe`]、CLR 在
 //! [`crate::lowering::backends::clr::mir`]、Wasm 在
 //! `wasm::interop`（测试门）、OVM 在
-//! [`crate::lowering::backends::ovm_mir`]、x86-64 在
+//! [`crate::lowering::backends::ovm::operator`]、x86-64 在
 //! [`crate::lowering::backends::machine::x86_64`]。本模块只保留可跨 lane 复用的
 //! **候选唯一性校验**，不携带任何平台的绑定词汇。
 
@@ -52,7 +52,7 @@ mod tests {
         wasm::interop::{wasi_host_import_target, wasm_operator_target},
     };
     #[cfg(feature = "ovm-lane")]
-    use crate::lowering::backends::ovm_mir::{ovm_host_import_target, ovm_operator_target};
+    use crate::lowering::backends::ovm::operator::{ovm_host_import_target, ovm_operator_target};
 
     /// 同一份声明携带的四个目标绑定（与 `std_operators.v` 的 `i32` `+` 一致）。
     fn four_target_candidates() -> Vec<ExternalImportLink> {

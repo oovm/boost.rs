@@ -101,8 +101,6 @@ pub mod testing {
         emitter_backend_wasi::WasmBinaryModule,
     };
     use compiler_types::SingletonInstancePlan;
-    #[cfg(feature = "ovm-lane")]
-    use data_binary_odin::OdinModuleData;
 
     /// Target profile used by normalized physical-contract observations.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,11 +163,6 @@ pub mod testing {
     }
 
     /// Lower a fragment submission to an OVM module.
-    #[cfg(feature = "ovm-lane")]
-    pub fn lower_fragment_to_ovm_module(submission: &FragmentSubmission) -> Result<OdinModuleData> {
-        super::lowering::testing_lower_fragment_to_ovm_module(submission)
-    }
-
     /// Lower a fragment submission to a JVM class file.
     pub fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<super::emitter_backend_jvm::JvmClassFile> {
         super::lowering::testing_lower_fragment_to_jvm_class(submission)

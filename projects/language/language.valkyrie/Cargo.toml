@@ -8,6 +8,8 @@ authors.workspace = true
 publish = false
 
 [features]
+# OVM lane：语言侧直读 MIR 产出目标私有输入，并联动开启 emitter 侧 OVM 编码服务。
+ovm-lane = ["compiler-emitter/ovm-lane"]
 default = []
 serde = ["compiler-types/serde"]
 

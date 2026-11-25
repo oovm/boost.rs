@@ -24,7 +24,7 @@ compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true, features = ["ovm-lane"] }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
-language-valkyrie = { workspace = true }
+language-valkyrie = { workspace = true, features = ["ovm-lane"] }
 language-von = { workspace = true }
 document-formats = { workspace = true }
 document-ir = { workspace = true }

@@ -21,6 +21,8 @@ mod host_bindings;
 pub(crate) mod lane;
 mod link;
 pub(crate) mod machine;
+#[cfg(feature = "ovm-lane")]
+pub(crate) mod ovm;
 mod representation;
 pub mod target_plan;
 
