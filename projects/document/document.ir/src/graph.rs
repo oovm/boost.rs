@@ -55,7 +55,7 @@ pub struct DocumentGraph {
     pub page_setup: Option<PageSetup>,
     /// Source spans aligned with `blocks`, when an importer knew them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    block_spans: Vec<Option<SourceSpan>>,
+    pub(crate) block_spans: Vec<Option<SourceSpan>>,
     /// Source spans aligned with `coverage.loss`, when an importer knew them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     loss_spans: Vec<Option<SourceSpan>>,
@@ -418,7 +418,7 @@ impl DocumentGraph {
     /// 删除一个 block 节点。
     ///
     /// 行为：
-    /// 1. 从 `blocks` Vec 中移除该节点
+    /// 1. 从 `blocks` Vec 中移除该节点（`block_spans` 同步移除，保持与 `blocks` 对齐）
     /// 2. 从所有 Section / ListItem 的 children 列表中清除对它的引用
     /// 3. relations / sources 中对它的引用**不会**自动清理 ——
     ///    [`validate`] 会把它们报告为 dangling。由调用方决定是否同步清理。
@@ -427,6 +427,9 @@ impl DocumentGraph {
     pub fn delete_block(&mut self, id: NodeId) -> Result<(), TransformError> {
         let pos = self.blocks.iter().position(|n| n.id == id).ok_or(TransformError::NotFound(id))?;
         self.blocks.remove(pos);
+        if pos < self.block_spans.len() {
+            self.block_spans.remove(pos);
+        }
 
         // 从所有 Section children / ListItem children 中移除引用
         for node in &mut self.blocks {

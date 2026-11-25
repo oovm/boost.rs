@@ -8,7 +8,7 @@ pub struct DocumentId(
 );
 
 /// Semantic content node identity inside a document graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(
     /// Opaque numeric identity.
     pub u64,

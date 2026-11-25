@@ -7,6 +7,7 @@
 
 mod asset;
 mod block;
+mod clone;
 mod graph;
 mod id;
 mod inline;
@@ -17,13 +18,16 @@ mod projection;
 mod relation;
 mod source;
 mod status;
+mod table;
 mod transform_errors;
+mod transaction;
 mod validate;
 mod walk;
 mod wire;
 
 pub use asset::{Asset, AssetKind};
 pub use block::{Block, BlockNode, ListItem, TableCell, TableRow};
+pub use clone::SubtreeClone;
 pub use graph::{DocumentGraph, DocumentMetadata, IdAllocator};
 pub use id::{AssetId, DocumentId, LinkId, NodeId};
 pub use inline::{AttributePair, Attributes, BreakKind, Inline};
@@ -42,5 +46,6 @@ pub use relation::{Relation, RelationEndpoint, RelationKind};
 pub use source::{CoverageReport, SourceKind, SourceRef, SourceSpan};
 pub use status::{LossMarker, SemanticStatus};
 pub use transform_errors::{Diagnostic, RewriteResult, TransformError, Traversal};
+pub use transaction::GraphTransaction;
 pub use validate::{ValidationIssue, ValidationReport};
 pub use wire::{DocumentEnvelope, SCHEMA_VERSION, WireError};

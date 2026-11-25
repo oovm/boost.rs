@@ -25,6 +25,44 @@ pub enum TransformError {
         /// 缺失的子节点 id。
         child: NodeId,
     },
+    /// 请求的表格节点不存在，或不是 [`crate::Block::Table`]。
+    NotATable(NodeId),
+    /// 请求的 colspan / rowspan 超出支持的 1..=65535 范围。
+    InvalidSpan {
+        /// 请求的列跨度。
+        colspan: u32,
+        /// 请求的行跨度。
+        rowspan: u32,
+    },
+    /// 网格行下标超出表格的行数。
+    RowOutOfRange {
+        /// 表格节点 id。
+        table: NodeId,
+        /// 请求的行下标。
+        row: usize,
+        /// 表格当前行数（head + body + foot）。
+        rows: usize,
+    },
+    /// 网格列下标超出表格的列宽。
+    ColumnOutOfRange {
+        /// 表格节点 id。
+        table: NodeId,
+        /// 请求的列下标。
+        column: usize,
+        /// 可用列宽（插入时含末尾插入点）。
+        columns: usize,
+    },
+    /// 占位单元格数量与表格网格不匹配。
+    CellCountMismatch {
+        /// 表格节点 id。
+        table: NodeId,
+        /// 网格要求的单元格数。
+        expected: usize,
+        /// 实际提供的单元格数。
+        actual: usize,
+    },
+    /// 表格没有可插入的网格列。
+    EmptyTable(NodeId),
 }
 
 impl std::fmt::Display for TransformError {
@@ -35,6 +73,20 @@ impl std::fmt::Display for TransformError {
             Self::ChildNotFound { parent, child } => {
                 write!(f, "child {child:?} not found in parent {parent:?} children")
             }
+            Self::NotATable(id) => write!(f, "node {id:?} is not a table block"),
+            Self::InvalidSpan { colspan, rowspan } => {
+                write!(f, "colspan {colspan} and rowspan {rowspan} must each be between 1 and 65535")
+            }
+            Self::RowOutOfRange { table, row, rows } => {
+                write!(f, "row {row} is outside the table {table:?}'s {rows} rows")
+            }
+            Self::ColumnOutOfRange { table, column, columns } => {
+                write!(f, "column {column} is outside the table {table:?}'s {columns} grid columns")
+            }
+            Self::CellCountMismatch { table, expected, actual } => {
+                write!(f, "cell list needs {expected} entries for the table {table:?} grid but has {actual}")
+            }
+            Self::EmptyTable(table) => write!(f, "table {table:?} has no grid columns"),
         }
     }
 }
