@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::error::{Result, argument, exists_error};
+use crate::error::{Result, argument, exists_error_at};
 use crate::fidelity::{self, FidelityLoss};
 use crate::object::{Dict, PdfObject, PdfStream};
 use crate::writer::{PdfWriter, copy_info, copy_page, media_box_object};
@@ -98,7 +98,7 @@ pub fn compose_with_title(plan: &PagePlan, out: &Path, overwrite: bool, title: O
         return Err(argument("compose needs at least one page placement"));
     }
     if out.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", out.display())));
+        return Err(exists_error_at(out, format!("{} already exists", out.display())));
     }
 
     let mut documents = Vec::with_capacity(plan.sources.len());
@@ -453,7 +453,7 @@ fn blank_page(writer: &mut PdfWriter, width: f64, height: f64) -> u32 {
 /// Applies a full output permutation through [`arrange`] with overwrite gating.
 fn arrange_order(input: &Path, order: &[usize], out: &Path, overwrite: bool) -> Result<crate::ArrangeReport> {
     if out.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", out.display())));
+        return Err(exists_error_at(out, format!("{} already exists", out.display())));
     }
     arrange(input, out, &DocumentArrange { order: Some(order.to_vec()), rotate: None, remove: None })
 }

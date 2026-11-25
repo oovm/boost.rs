@@ -1074,6 +1074,7 @@ version = "0.1.0"
 dependencies = [
  "data-compression",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

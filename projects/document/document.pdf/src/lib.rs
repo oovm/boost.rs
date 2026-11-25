@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use boost_fs::{OverwritePolicy, PublishOptions, publish_bytes_with_options};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Result, argument, exists_error, read_error, write_error};
+use crate::error::{Result, argument, exists_error_at, read_error_at, write_error_at};
 use crate::object::{Dict, PdfObject, encode_text};
 use crate::parse::{PdfDocument, decode_text_string, parse_document, resolve_object};
 use crate::writer::{
@@ -44,6 +44,7 @@ use crate::writer::{
 };
 
 pub use crate::error::ServiceError;
+pub use crate::error::{ErrorParams, ParamError, codes, params};
 
 /// Document metadata as reported by [`inspect`].
 #[derive(Debug, Clone, Serialize)]
@@ -488,7 +489,8 @@ pub struct ExtractReport {
 
 /// Reads a PDF and reports its version, page geometry, metadata and outlines.
 pub fn inspect(path: &Path) -> Result<InspectReport> {
-    let bytes = fs::read(path).map_err(|error| read_error(format!("cannot read {}: {error}", path.display())))?;
+    let bytes = fs::read(path)
+        .map_err(|error| read_error_at(path, format!("{:?}", error.kind()), format!("cannot read {}: {error}", path.display())))?;
     let mut report = inspect_bytes(&bytes)?;
     report.label = label_of(path);
     Ok(report)
@@ -545,7 +547,7 @@ pub fn merge(inputs: &[PathBuf], out: &Path, overwrite: bool, title: Option<&str
         return Err(argument("merge needs at least one input file"));
     }
     if out.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", out.display())));
+        return Err(exists_error_at(out, format!("{} already exists", out.display())));
     }
 
     let mut documents = Vec::with_capacity(inputs.len());
@@ -650,7 +652,7 @@ pub fn delete_pages(input: &Path, pages: &str, out: &Path, overwrite: bool) -> R
         return Err(argument("delete_pages cannot remove every page"));
     }
     if out.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", out.display())));
+        return Err(exists_error_at(out, format!("{} already exists", out.display())));
     }
 
     let mut writer = PdfWriter::new();
@@ -689,7 +691,7 @@ pub fn rotate_pages(input: &Path, pages: &str, degrees: i32, out: &Path, overwri
     let document = load_document(input)?;
     let selected = selected_pages(pages, document.pages.len())?;
     if out.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", out.display())));
+        return Err(exists_error_at(out, format!("{} already exists", out.display())));
     }
 
     let mut writer = PdfWriter::new();
@@ -729,7 +731,7 @@ pub fn set_page_boxes(input: &Path, pages: &str, crop: [f64; 4], out: &Path, ove
     let selected = selected_pages(pages, document.pages.len())?;
     validate_crop_box(crop, &document, &selected)?;
     if out.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", out.display())));
+        return Err(exists_error_at(out, format!("{} already exists", out.display())));
     }
 
     let mut writer = PdfWriter::new();
@@ -1252,7 +1254,7 @@ fn normalize_rotation(value: i64) -> i64 {
 }
 
 fn prepare_out_dir(out_dir: &Path) -> Result<()> {
-    fs::create_dir_all(out_dir).map_err(|error| write_error(format!("cannot create {}: {error}", out_dir.display())))
+    fs::create_dir_all(out_dir).map_err(|error| write_error_at(out_dir, format!("cannot create {}: {error}", out_dir.display())))
 }
 
 fn document_stem(path: &Path) -> String {
@@ -1283,7 +1285,7 @@ pub fn create(request: &CreateRequest) -> Result<CreateReport> {
         return Err(argument("create needs at least one page"));
     }
     if request.out.exists() && !request.overwrite {
-        return Err(exists_error(format!("{} already exists", request.out.display())));
+        return Err(exists_error_at(&request.out, format!("{} already exists", request.out.display())));
     }
     let outcome = create::build(request)?;
     write_file(&request.out, &outcome.bytes, request.overwrite)?;
@@ -1305,7 +1307,8 @@ pub fn stamp(input: &Path, out: &Path, request: &StampRequest) -> Result<StampRe
 /// codecs are reported in [`ExtractReport::losses`] instead of being
 /// approximated.
 pub fn extract_text(path: &Path) -> Result<ExtractReport> {
-    let bytes = fs::read(path).map_err(|error| read_error(format!("cannot read {}: {error}", path.display())))?;
+    let bytes = fs::read(path)
+        .map_err(|error| read_error_at(path, format!("{:?}", error.kind()), format!("cannot read {}: {error}", path.display())))?;
     extract_text_bytes(&bytes)
 }
 
@@ -1344,7 +1347,8 @@ pub fn extract_images_bytes(bytes: &[u8], out_dir: &Path, stem: &str) -> Result<
 }
 
 pub(crate) fn load_document(path: &Path) -> Result<PdfDocument> {
-    let bytes = fs::read(path).map_err(|error| read_error(format!("cannot read {}: {error}", path.display())))?;
+    let bytes = fs::read(path)
+        .map_err(|error| read_error_at(path, format!("{:?}", error.kind()), format!("cannot read {}: {error}", path.display())))?;
     parse_document(&bytes)
 }
 
@@ -1441,19 +1445,19 @@ pub(crate) fn parse_ranges(ranges: &str, page_count: usize) -> Result<Vec<(usize
 
 pub(crate) fn write_file(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
     if path.exists() && !overwrite {
-        return Err(exists_error(format!("{} already exists", path.display())));
+        return Err(exists_error_at(path, format!("{} already exists", path.display())));
     }
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        fs::create_dir_all(parent).map_err(|error| write_error(format!("cannot create {}: {error}", parent.display())))?;
+        fs::create_dir_all(parent).map_err(|error| write_error_at(parent, format!("cannot create {}: {error}", parent.display())))?;
     }
     let options = PublishOptions {
         overwrite: if overwrite { OverwritePolicy::Replace } else { OverwritePolicy::RefuseExisting },
         ..PublishOptions::default()
     };
     publish_bytes_with_options(publish_target(path), bytes, options)
-        .map_err(|error| write_error(format!("cannot write {}: {error}", path.display())))
+        .map_err(|error| write_error_at(path, format!("cannot write {}: {error}", path.display())))
 }
 
 /// Keeps a bare file name anchored to the working directory so the publisher

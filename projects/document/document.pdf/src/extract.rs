@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use media_codec::PngColor;
 
 use crate::ExtractedImage;
-use crate::error::{Result, invalid, write_error};
+use crate::error::{Result, invalid, write_error_at};
 use crate::filters;
 use crate::object::{Dict, PdfObject, PdfStream};
 use crate::parse::{PdfPage, PdfDocument, Parser, decode_text_string, is_delimiter, is_whitespace, resolve_object};
@@ -227,7 +227,7 @@ struct ImageCollector<'a> {
 /// `loss` explanation; a malformed resource entry is skipped rather than
 /// failing the whole document.
 pub(crate) fn extract_images(document: &PdfDocument, out_dir: &Path, stem: &str) -> Result<Vec<ExtractedImage>> {
-    fs::create_dir_all(out_dir).map_err(|error| write_error(format!("cannot create {}: {error}", out_dir.display())))?;
+    fs::create_dir_all(out_dir).map_err(|error| write_error_at(out_dir, format!("cannot create {}: {error}", out_dir.display())))?;
 
     let mut images = Vec::new();
     for (index, page) in document.pages.iter().enumerate() {
@@ -317,7 +317,7 @@ fn handle_image(document: &PdfDocument, name: &str, stream: &PdfStream, collecto
             return Ok(());
         }
         let path = collector.unique_path(index, "jpg");
-        fs::write(&path, &stream.data).map_err(|error| write_error(format!("cannot write {}: {error}", path.display())))?;
+        fs::write(&path, &stream.data).map_err(|error| write_error_at(&path, format!("cannot write {}: {error}", path.display())))?;
         collector.images.push(ExtractedImage {
             page: collector.page,
             index,
@@ -427,7 +427,7 @@ fn handle_image(document: &PdfDocument, name: &str, stream: &PdfStream, collecto
     };
 
     let path = collector.unique_path(index, "png");
-    fs::write(&path, &png).map_err(|error| write_error(format!("cannot write {}: {error}", path.display())))?;
+    fs::write(&path, &png).map_err(|error| write_error_at(&path, format!("cannot write {}: {error}", path.display())))?;
     collector.images.push(ExtractedImage {
         page: collector.page,
         index,
