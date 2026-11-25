@@ -3,7 +3,7 @@ use crate::{
     bundled_backend_capability_descriptor, emitter_backend_clr::ClrBinaryBackend,
 };
 use compiler_target::{
-    BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
+    BackendInputKind, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
     backends::TargetCodeGenBackend,
 };
 
@@ -110,6 +110,8 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                         logical_entry: entry.logical_entry.clone(),
                         physical_entry: artifact_file.clone(),
                         boundary: HostProjectionBoundary::Clr,
+                        // `managed_entry` 包装把入口返回值作为进程退出码交付（低 8 位截断）。
+                        return_projection: EntryReturnProjection::ProcessExitCode,
                         // `managed_entry` 按 `args[0]` 分派入口名，逐入口合同必须把
                         // 逻辑入口作为 argv 传给镜像，不能只启动镜像本身。
                         launch: vec!["dotnet".to_string(), "exec".to_string(), "{artifact}".to_string(), entry.logical_entry.clone()],
@@ -123,6 +125,8 @@ impl BundledBackendCompiler for ClrFamilyCompiler {
                 logical_entry: "main".to_string(),
                 physical_entry: artifact_file.clone(),
                 boundary: HostProjectionBoundary::Clr,
+                // 冻结程序入口的返回值就是 CLR 进程退出码（低 8 位截断）。
+                return_projection: EntryReturnProjection::ProcessExitCode,
                 launch: vec!["dotnet".to_string(), "exec".to_string(), "{artifact}".to_string()],
                 validate: format!("dotnet exec {}", artifact_file),
             }]

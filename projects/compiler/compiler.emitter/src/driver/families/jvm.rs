@@ -3,7 +3,7 @@ use crate::{
     bundled_backend_capability_descriptor, emitter_backend_jvm::JvmBinaryBackend,
 };
 use compiler_target::{
-    BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
+    BackendInputKind, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
     backends::TargetCodeGenBackend,
 };
 
@@ -85,6 +85,9 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                 logical_entry: "main".to_string(),
                 physical_entry: format!("{}.jar", request.artifact_name),
                 boundary: HostProjectionBoundary::Jvm,
+                // 冻结入口 launcher 包装把 main 的 i32 返回值以十进制行打印到
+                // stdout 并以 0 退出；这是该包装的通道选择，不是 JVM 边界的推论。
+                return_projection: EntryReturnProjection::StdoutInteger,
                 launch: vec!["java".to_string(), "-jar".to_string(), "{artifact}".to_string()],
                 validate: format!("java -cp {}.jar {}", request.artifact_name, launcher.replace('/', ".")),
             }]
@@ -100,6 +103,8 @@ impl BundledBackendCompiler for JvmFamilyCompiler {
                         logical_entry: entry.logical_entry.clone(),
                         physical_entry: format!("{}.jar", request.artifact_name),
                         boundary: HostProjectionBoundary::Jvm,
+                        // 逐入口 launcher 与主入口 launcher 同一包装策略：返回值走 stdout。
+                        return_projection: EntryReturnProjection::StdoutInteger,
                         // 逐入口启动的 argv 是 launcher 类：`java -jar` 只会启动
                         // manifest 里的 Main-Class，无法按测试名选择入口。
                         launch: vec![

@@ -4,7 +4,8 @@ use crate::{
     emitter_backend_wasi::{WasmBinaryBackend, WasmTestEntryExport},
 };
 use compiler_target::{
-    ArtifactPurpose, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend,
+    ArtifactPurpose, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
+    backends::TargetCodeGenBackend,
 };
 
 use super::BundledBackendCompiler;
@@ -106,6 +107,8 @@ fn wasm_test_run_contract(artifact_name: &str, entry: &WasmTestEntryExport) -> D
         logical_entry: entry.logical_name.clone(),
         physical_entry: format!("{}.mjs", physical_name),
         boundary: HostProjectionBoundary::WasmJsGlue,
+        // 启动壳把测试入口的返回值作为 node 进程退出码交付（低 8 位截断）。
+        return_projection: EntryReturnProjection::ProcessExitCode,
         launch: vec!["node".to_string(), "{artifact}".to_string(), entry.logical_name.clone()],
         validate: format!("node --check {}.mjs", physical_name),
     }
@@ -122,6 +125,8 @@ fn wasm_run_contract(
             logical_entry: "main".to_string(),
             physical_entry: format!("{}.mjs", physical_name),
             boundary: HostProjectionBoundary::WasmJsGlue,
+            // 启动壳把入口返回值作为 node 进程退出码交付（低 8 位截断）。
+            return_projection: EntryReturnProjection::ProcessExitCode,
             launch: vec!["node".to_string(), "{artifact}".to_string()],
             validate: format!("node {}.mjs", physical_name),
         },
@@ -151,6 +156,8 @@ fn wasm_run_contract(
                 logical_entry: "_start".to_string(),
                 physical_entry: format!("{}.wasi", physical_name),
                 boundary: HostProjectionBoundary::WasiComponent,
+                // WASI `_start` 没有返回值：进程状态只有成功/失败退出码，无入口结果可观测。
+                return_projection: EntryReturnProjection::NoReturnValue,
                 launch,
                 validate: format!("wasmtime run -W gc -W max-memory-size=16777216{p3_flag} {}.wasi", physical_name),
             }

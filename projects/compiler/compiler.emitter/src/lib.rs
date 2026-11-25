@@ -41,7 +41,8 @@ pub use backend::{
 };
 use compiler_target::{
     ArtifactPurpose, BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag,
-    ClrSuspendStrategy, ExternalCallEdge, ExternalImportLink, HostProjectionBoundary, Identifier, InternalCallEdge, PartitionBackendRequirement,
+    ClrSuspendStrategy, EntryReturnProjection, ExternalCallEdge, ExternalImportLink, HostProjectionBoundary, Identifier, InternalCallEdge,
+    PartitionBackendRequirement,
     ProjectionPolicy, QualifiedName, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, TheoryBundle,
     backends::CompilationOptions, packaging::ArtifactSet,
 };
@@ -868,6 +869,11 @@ pub struct DriverRunContract {
     pub physical_entry: String,
     /// 产物唯一的宿主边界身份；消费侧据此选择宿主，不按命令名或扩展名猜测。
     pub boundary: HostProjectionBoundary,
+    /// 本条合同的入口返回值观测投影：由生成入口包装的后端按其实际包装策略冻结。
+    ///
+    /// 结果通道、值宽与解码规则是包装的事实，不是宿主边界的推论——同一边界上
+    /// 不同包装可以选择不同通道，消费侧（Legion、e2e）只读本字段，不再派生。
+    pub return_projection: EntryReturnProjection,
     /// 冻结的启动 argv：第 0 项是可执行文件，其余是参数。
     ///
     /// 只允许 `{artifact}` 占位符（由消费侧展开为解析后的物理入口路径）；

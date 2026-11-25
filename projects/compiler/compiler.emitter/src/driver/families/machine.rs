@@ -8,7 +8,7 @@ use crate::{
     emitter_backend_machine::MachineImageBackend,
 };
 use compiler_target::{
-    BackendInputKind, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
+    BackendInputKind, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
     backends::TargetCodeGenBackend,
 };
 
@@ -171,6 +171,8 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 logical_entry: entry_symbol.clone(),
                 physical_entry: artifact.path.clone(),
                 boundary: HostProjectionBoundary::MachineCode,
+                // 原生入口包装把入口返回值交付为进程退出码（低 8 位截断）。
+                return_projection: EntryReturnProjection::ProcessExitCode,
                 // 原生可执行文件自己就是宿主入口：OS 直接启动该文件，无解释器前缀。
                 launch: vec![artifact.path.clone()],
                 validate: artifact.path.clone(),

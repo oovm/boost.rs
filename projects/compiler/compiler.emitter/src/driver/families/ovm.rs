@@ -5,8 +5,8 @@ use crate::{
     bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module, ovm_abi::OvmAbiContract,
 };
 use compiler_target::{
-    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
-    TargetLane,
+    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement,
+    TargetBackendFamily, TargetLane,
 };
 use data_binary_odin::{OdinExportKind, OdinModuleData, decode_module};
 
@@ -152,6 +152,8 @@ fn ovm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
         logical_entry: entry.to_string(),
         physical_entry: format!("{artifact_name}.odin"),
         boundary: HostProjectionBoundary::Vm,
+        // OVM 宿主在进程内调用入口，返回值是 VM 内的 i32 值，不经退出码/stdout 通道。
+        return_projection: EntryReturnProjection::InProcessValue,
         launch: vec![
             "ovm".to_string(),
             "run".to_string(),

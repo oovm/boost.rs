@@ -369,6 +369,7 @@ mod run_contract_surface_tests {
             logical_entry: entry.to_string(),
             physical_entry: physical.to_string(),
             boundary: compiler_target::HostProjectionBoundary::WasmJsGlue,
+            return_projection: compiler_target::EntryReturnProjection::ProcessExitCode,
             launch: vec!["node".to_string(), "{artifact}".to_string()],
             validate: "node --check".to_string(),
         }
