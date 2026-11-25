@@ -142,6 +142,32 @@ fn linux_target_emits_sysv_elf_from_the_same_source() {
 }
 
 #[test]
+fn same_source_builds_both_native_image_and_jvm_lane() {
+    // 同一份源码分别走 x86-64 进程镜像与 JVM 两条正式产物路径。两条路径必须各自
+    // 完成验证并产出自己的产物：JVM lane 不借用机器码结果，机器码 lane 也不依赖
+    // JVM 的 class 输出。
+    let (native, native_root) = build("same-source-native", SOURCE, "native");
+    assert!(native.ok, "native lane build 失败: {:?}", native.error);
+    assert!(
+        native.artifacts.iter().any(|artifact| artifact.ends_with(".exe") || artifact.ends_with(".elf")),
+        "native lane 必须产出机器码镜像: {:?}",
+        native.artifacts
+    );
+
+    let (jvm, jvm_root) = build("same-source-jvm", SOURCE, "jvm");
+    assert!(jvm.ok, "jvm lane build 失败: {:?}", jvm.error);
+    assert!(!jvm.artifacts.is_empty(), "jvm lane 必须产出自己的产物");
+    assert!(
+        !jvm.artifacts.iter().any(|artifact| artifact.ends_with(".exe") || artifact.ends_with(".elf")),
+        "jvm lane 不得借用机器码镜像: {:?}",
+        jvm.artifacts
+    );
+
+    let _ = fs::remove_dir_all(&native_root);
+    let _ = fs::remove_dir_all(&jvm_root);
+}
+
+#[test]
 fn binary_without_frozen_entry_fails_at_entry_stage() {
     let (outcome, root) = build(
         "missing-entry",
