@@ -488,6 +488,18 @@ pub fn lower_resolved_fragment_to_machine_image(
     resolved: &ResolvedTarget,
     purpose: ArtifactPurpose,
 ) -> Result<X64LoweredProgram> {
+    assemble_x64_program_image(&lower_resolved_fragment_to_x64_program_input(submission, resolved, purpose)?)
+}
+
+/// 正式 lane 纵链第一段：校验用途/合同后，把计划事实降成**目标私有**输入。
+///
+/// 返回之后，编码与容器装配只认 [`x86_64::X64ProgramInput`]；跨目标的共享程序
+/// 不再越过这条边界。
+pub fn lower_resolved_fragment_to_x64_program_input(
+    submission: &FragmentSubmission,
+    resolved: &ResolvedTarget,
+    purpose: ArtifactPurpose,
+) -> Result<x86_64::X64ProgramInput> {
     match purpose {
         ArtifactPurpose::Application | ArtifactPurpose::TestBundle => {}
         ArtifactPurpose::Library => {
@@ -509,7 +521,12 @@ pub fn lower_resolved_fragment_to_machine_image(
             ));
         }
     }
-    lower_fragment_to_machine_image(submission, resolved.platform)
+    build_machine_program_input(submission, resolved.platform)
+}
+
+/// 正式 lane 纵链第二段：目标私有输入 → 进程镜像（编码 + 容器 + 自检）。
+pub fn assemble_x64_program_image(input: &x86_64::X64ProgramInput) -> Result<X64LoweredProgram> {
+    x86_64::assemble_x86_64_program_image(input)
 }
 
 /// 机器码 lane 的统一提交验证门。
@@ -528,12 +545,20 @@ pub(crate) fn validate_machine_submission(submission: &FragmentSubmission) -> Re
 /// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选编码、
 /// 容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
 pub(crate) fn lower_fragment_to_machine_image(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<X64LoweredProgram> {
+    x86_64::assemble_x86_64_program_image(&build_machine_program_input(submission, target)?)
+}
+
+/// 目标四元组 → 目标私有 x86-64 输入。
+///
+/// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选
+/// 编码、容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
+fn build_machine_program_input(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<x86_64::X64ProgramInput> {
     validate_machine_submission(submission)?;
     match target.arch {
         CanonicalArch::X86_64 => match target.specification {
             CanonicalSpecification::Windows => match target.abi {
                 // x86-64 Windows 的 MSVC 与 GNU 目标共用 Win64 调用约定与 PE 容器。
-                None | Some(CanonicalAbi::Msvc) | Some(CanonicalAbi::Gnu) => x86_64::lower_x86_64_windows_pe(submission),
+                None | Some(CanonicalAbi::Msvc) | Some(CanonicalAbi::Gnu) => x86_64::build_x86_64_windows_program_input(submission),
                 Some(other) => Err(format!(
                     "机器码后端不支持 `x86_64` + `windows` + `{}` 的 ABI：只闭合 Win64 调用约定（target={}）",
                     abi_name(other),
@@ -542,7 +567,7 @@ pub(crate) fn lower_fragment_to_machine_image(submission: &FragmentSubmission, t
             },
             // x86-64 Linux 只有 SysV64 调用约定 + ELF 容器；不借用 Win64 编码。
             CanonicalSpecification::Linux => match target.abi {
-                None | Some(CanonicalAbi::Gnu) | Some(CanonicalAbi::SystemV) => x86_64::lower_x86_64_linux_elf(submission),
+                None | Some(CanonicalAbi::Gnu) | Some(CanonicalAbi::SystemV) => x86_64::build_x86_64_linux_program_input(submission),
                 Some(other) => Err(format!(
                     "机器码后端不支持 `x86_64` + `linux` + `{}` 的 ABI：只闭合 SysV64 调用约定（target={}）",
                     abi_name(other),

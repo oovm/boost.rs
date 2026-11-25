@@ -65,6 +65,25 @@ fn wasm_backend_entries_gate_before_preparation() {
 }
 
 #[test]
+fn x64_assembly_service_signature_is_target_private() {
+    // 纵链第二段（编码 + 容器装配）只接受目标私有输入：签名里不得出现跨目标
+    // 共享程序的任何形状。唯一程序装配器与容器写出同样不得读取它们。
+    let x64 = read("src/lowering/backends/machine/x86_64.rs");
+    let start = x64.find("pub(crate) fn assemble_x86_64_program_image").expect("缺少 x64 装配服务入口");
+    let signature_end = x64[start..].find('{').map(|offset| start + offset).expect("装配服务缺少函数体");
+    let signature = &x64[start..signature_end];
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!signature.contains(banned), "x64 装配服务签名不得出现 `{banned}`");
+    }
+    for path in ["src/lowering/backends/machine/x64_program.rs", "src/lowering/backends/machine/container.rs"] {
+        let source = read(path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+            assert!(!source.contains(banned), "{path} 作为目标私有装配层不得引用 `{banned}`");
+        }
+    }
+}
+
+#[test]
 fn machine_backend_entries_gate_before_lowering() {
     // 三条机器码交付（进程镜像 / C ABI 库 / 宿主扩展）都必须先过同一道
     // Semantic MIR 合同门；不再因为「有自己的入口/导出/布局检查」而绕开。

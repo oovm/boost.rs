@@ -401,20 +401,47 @@ impl ContainerKind {
     }
 }
 
-/// 把 `x86_64-pc-windows-msvc` 片段降低为 `PE32+` 可执行文件。
-pub(crate) fn lower_x86_64_windows_pe(submission: &FragmentSubmission) -> Result<X64LoweredProgram> {
-    lower_x86_64(submission, X64CallConv::Win64, ContainerKind::Pe)
-}
-
-/// 把 `x86_64-unknown-linux-gnu` 片段降低为 `ELF64 ET_EXEC` 可执行文件。
-pub(crate) fn lower_x86_64_linux_elf(submission: &FragmentSubmission) -> Result<X64LoweredProgram> {
-    lower_x86_64(submission, X64CallConv::SystemV64, ContainerKind::Elf)
-}
-
-/// 共享的 x86-64 降低流程：计划事实 → 文本 LIR → 唯一程序装配器 → 指定容器。
+/// x86-64 程序装配服务的目标私有输入。
 ///
-/// 调用约定与容器都由调用方按规范目标显式给出；本函数不按 `arch` 猜 `os`/`abi`。
-fn lower_x86_64(submission: &FragmentSubmission, abi: X64CallConv, container: ContainerKind) -> Result<X64LoweredProgram> {
+/// 内部只保存已降低的文本 LIR 程序、入口符号与容器选择；装配服务（编码 +
+/// 容器 + 自检）只接受这个形状，不再接触跨目标的 `FragmentSubmission` /
+/// `ExecutableFunction` / `InstructionKind`。
+pub struct X64ProgramInput {
+    abi: X64CallConv,
+    container: ContainerKind,
+    functions: Vec<X64ProgramFunction>,
+    entry_name: String,
+}
+
+impl X64ProgramInput {
+    /// 目标平台身份：由容器一次冻结，不从 `arch` 推断 `os`/`abi`。
+    pub fn platform(&self) -> X64Platform {
+        match self.container {
+            ContainerKind::Pe => X64Platform::windows_x64(),
+            ContainerKind::Elf => X64Platform::linux_x64(),
+        }
+    }
+}
+
+/// `x86_64-pc-windows-msvc` 的目标私有输入（Win64 + PE）。
+pub(crate) fn build_x86_64_windows_program_input(submission: &FragmentSubmission) -> Result<X64ProgramInput> {
+    build_x86_64_program_input(submission, X64CallConv::Win64, ContainerKind::Pe)
+}
+
+/// `x86_64-unknown-linux-gnu` 的目标私有输入（SysV64 + ELF）。
+pub(crate) fn build_x86_64_linux_program_input(submission: &FragmentSubmission) -> Result<X64ProgramInput> {
+    build_x86_64_program_input(submission, X64CallConv::SystemV64, ContainerKind::Elf)
+}
+
+/// 计划事实 → 目标私有 LIR 程序（不编码、不写容器）。
+///
+/// 这是语言语义最后一次以计划形状出现的地方；返回值之后的装配服务只认
+/// [`X64ProgramInput`]。
+pub(crate) fn build_x86_64_program_input(
+    submission: &FragmentSubmission,
+    abi: X64CallConv,
+    container: ContainerKind,
+) -> Result<X64ProgramInput> {
     let plan = &submission.backend_plan;
     let reachable = collect_reachable_functions(submission);
     if reachable.is_empty() {
@@ -452,14 +479,23 @@ fn lower_x86_64(submission: &FragmentSubmission, abi: X64CallConv, container: Co
         functions.push(lower_function_to_text_program(instance, submission, &view.function, &reachable, &names, platform, &layouts)?);
     }
 
-    // 唯一程序装配器：帧、符号布局、`rel32` 回填与导入/数据装配不再各写一遍。
-    let image = encode_x64_program(&functions, abi)?;
     let entry_name = names.get(&entry).expect("入口实例在可达函数符号表内").clone();
+    Ok(X64ProgramInput { abi, container, functions, entry_name })
+}
+
+/// 目标私有 LIR 程序 → 容器镜像。
+///
+/// 这是本 lane 唯一的编码与容器装配入口：签名里没有 `FragmentSubmission` /
+/// `ExecutableFunction`，复用唯一程序装配器与 PE/ELF 容器写出。
+pub(crate) fn assemble_x86_64_program_image(input: &X64ProgramInput) -> Result<X64LoweredProgram> {
+    let container = input.container;
+    // 唯一程序装配器：帧、符号布局、`rel32` 回填与导入/数据装配不再各写一遍。
+    let image = encode_x64_program(&input.functions, input.abi)?;
     let entry_function = u32::try_from(
         image
             .symbols
             .iter()
-            .find(|(name, _)| *name == entry_name)
+            .find(|(name, _)| *name == input.entry_name)
             .map(|(_, offset)| *offset as usize)
             .ok_or_else(|| "x86_64 lowering：入口函数没有生成代码".to_string())?,
     )

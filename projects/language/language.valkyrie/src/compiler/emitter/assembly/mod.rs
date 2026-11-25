@@ -160,11 +160,14 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
                 .and_then(|instance| submission.backend_plan.abi_name_for_instance(instance))
                 .and_then(|name| name.parts().last().map(|part| part.as_str().to_string()))
                 .ok_or_else(|| "原生可执行交付缺少冻结的入口身份：计划未给出入口操作的 ABI 名".to_string())?;
-            let lowered = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_machine_image(
+            // 纵链第一段：校验后把语言事实降成目标私有 x86-64 输入；第二段只做
+            // 编码 + 容器装配，其签名不再接触跨目标共享程序。
+            let program_input = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_x64_program_input(
                 &submission,
                 &request.resolved,
                 request.artifact_purpose,
             )?;
+            let lowered = compiler_emitter::emitter_backend_machine::assemble_x64_program_image(&program_input)?;
             return Ok(LoweredBackendInput::machine(compiler_emitter::emitter_backend_machine::MachineImageBackendInput {
                 executable: lowered.executable,
                 output_dir: request.output_dir.to_path_buf(),
