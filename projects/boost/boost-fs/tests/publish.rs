@@ -115,8 +115,11 @@ fn concurrent_refused_publishers_elect_one_winner() {
         (tag, outcome.map_err(|error| error.kind()))
     };
 
+    // Spawn both handles before joining either, otherwise the barrier waits forever.
     let (first, second) = std::thread::scope(|scope| {
-        (scope.spawn(|| publish("first")).join().unwrap(), scope.spawn(|| publish("second")).join().unwrap())
+        let one = scope.spawn(|| publish("first"));
+        let two = scope.spawn(|| publish("second"));
+        (one.join().unwrap(), two.join().unwrap())
     });
     let outcomes = [first, second];
     let winners = outcomes.iter().filter(|(_, outcome)| outcome.is_ok()).count();
@@ -177,8 +180,12 @@ fn publish_batch_reports_published_files_on_midway_failure() {
     assert_eq!(read_to_string(&first).expect("read"), "a");
     assert!(blocked.is_dir());
 
-    let leftovers: Vec<_> = base.path().read_dir().expect("read dir").map(|entry| entry.expect("dir entry").file_name()).collect();
-    assert_eq!(leftovers, vec![std::ffi::OsString::from("first.json"), std::ffi::OsString::from("blocked")]);
+    // `read_dir` gives no ordering guarantee, so compare as a sorted set.
+    let mut leftovers: Vec<_> = base.path().read_dir().expect("read dir").map(|entry| entry.expect("dir entry").file_name()).collect();
+    leftovers.sort();
+    let mut expected = vec![std::ffi::OsString::from("blocked"), std::ffi::OsString::from("first.json")];
+    expected.sort();
+    assert_eq!(leftovers, expected);
 }
 
 /// A clean batch publishes every destination in order and leaves only those files behind.
@@ -197,6 +204,9 @@ fn publish_batch_writes_all_entries() {
     assert_eq!(read_to_string(&first).expect("read first"), "a");
     assert_eq!(read_to_string(&second).expect("read second"), "b");
 
-    let entries: Vec<_> = base.path().read_dir().expect("read dir").map(|entry| entry.expect("dir entry").file_name()).collect();
-    assert_eq!(entries, vec![std::ffi::OsString::from("first.json"), std::ffi::OsString::from("second.json")]);
+    let mut entries: Vec<_> = base.path().read_dir().expect("read dir").map(|entry| entry.expect("dir entry").file_name()).collect();
+    entries.sort();
+    let mut expected = vec![std::ffi::OsString::from("first.json"), std::ffi::OsString::from("second.json")];
+    expected.sort();
+    assert_eq!(entries, expected);
 }
