@@ -5,6 +5,8 @@
 //! Independent from syntax tree, text parsers, Acorn binary views, and Panduck
 //! writers.
 
+pub mod error;
+
 mod asset;
 mod block;
 mod clone;
