@@ -217,6 +217,21 @@ const F64_OPERATORS: &[Operator] = &[
     infix(">=", true, Some("double.compare_greater_or_equal"), Some("f64.ge"), Some("f64.ge"), None),
 ];
 
+/// `f32` 算术与比较：只声明四 target 齐全的 9 个算子（OVM 缺 `le`/`ge` 头码与
+/// 浮点余数；CLR 的 f32 常量载体 `ldc.r4` 未闭合，故不声明 `%` 与 `<=`/`>=`）。
+/// f32 值一律经 `as f32` 显式转换合同取得，不依赖 f32 字面量。
+const F32_OPERATORS: &[Operator] = &[
+    infix("+", false, Some("float.add"), Some("f32.add"), Some("f32.add"), Some("f32.add")),
+    infix("-", false, Some("float.subtract"), Some("f32.sub"), Some("f32.sub"), Some("f32.sub")),
+    infix("*", false, Some("float.multiply"), Some("f32.mul"), Some("f32.mul"), Some("f32.mul")),
+    infix("/", false, Some("float.divide"), Some("f32.div"), Some("f32.div"), Some("f32.div")),
+    prefix("-", Some("float.negate"), Some("f32.neg"), Some("f32.neg"), Some("f32.neg")),
+    infix("==", true, Some("float.compare_equal"), Some("f32.eq"), Some("f32.eq"), Some("f32.eq")),
+    infix("!=", true, Some("float.compare_not_equal"), Some("f32.ne"), Some("f32.ne"), Some("f32.ne")),
+    infix("<", true, Some("float.compare_less_than"), Some("f32.lt"), Some("f32.lt"), Some("f32.lt")),
+    infix(">", true, Some("float.compare_greater_than"), Some("f32.gt"), Some("f32.gt"), Some("f32.gt")),
+];
+
 /// 有符号 `i64` 算术与比较：jvm / clr / wasm 齐全，OVM 没有 i64 头码。
 const I64_OPERATORS: &[Operator] = &[
     infix("+", false, Some("long.add"), Some("i64.add"), Some("i64.add"), None),
@@ -278,6 +293,7 @@ const I32_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i32", n
 const U32_ARITHMETIC_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_NEGATE_AND_COMPARE };
 const U32_DIVISION_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_UNSIGNED_DIVISION };
 const F64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::f64", name: "f64", operators: F64_OPERATORS };
+const F32_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::f32", name: "f32", operators: F32_OPERATORS };
 const I64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i64", name: "i64", operators: I64_OPERATORS };
 const BITWISE_I32_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i32", name: "i32", operators: I32_BITWISE };
 const BITWISE_I64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i64", name: "i64", operators: I64_BITWISE };
@@ -384,6 +400,43 @@ micro classify(a: f64) -> i32 {
 [main]
 micro main() -> i32 {
     return app::classify(1.5)
+}
+"#;
+
+/// `f32` 形参用例入口：`probe(1.5 as f32, 0.5 as f32)` 验收 f32 的调用、算术、
+/// 比较与返回——f32 值全部经已有的显式转换合同（`as f32`）取得，不依赖 f32 字面量。
+///
+/// `x = a + b = 2.0`、`y = x * b = 1.0`、`w = a / b = 3.0`、`neg = -y = -1.0`、
+/// `y - a = -0.5`。五条断言各带独立错误分支（1/2/3/4/5），全部成立才返回 23，
+/// 因此 23 同时判定调用 ABI、`+ * /`、前缀 `-` 与 `== != < >` 四个比较助记符。
+const F32_SOURCE: &str = r#"namespace app;
+
+micro probe(a: f32, b: f32) -> i32 {
+    let x = a + b
+    let y = x * b
+    let w = a / b
+    let neg = -y
+    if w == (3.0 as f32) {
+        if neg < a {
+            if a > neg {
+                if x != neg {
+                    if y - a < (0.0 as f32) {
+                        return 23
+                    }
+                    return 5
+                }
+                return 4
+            }
+            return 3
+        }
+        return 2
+    }
+    return 1
+}
+
+[main]
+micro main() -> i32 {
+    return app::probe(1.5 as f32, 0.5 as f32)
 }
 "#;
 
@@ -612,6 +665,7 @@ impl Case {
 
 const ARITHMETIC_PRIMITIVES: &[Primitive] = &[I32_PRIMITIVE, U32_ARITHMETIC_PRIMITIVE, CARRIER_BOOL];
 const FLOAT_PRIMITIVES: &[Primitive] = &[CARRIER_I32, F64_PRIMITIVE, CARRIER_BOOL];
+const FLOAT32_PRIMITIVES: &[Primitive] = &[CARRIER_I32, F32_PRIMITIVE, CARRIER_BOOL];
 const UNSIGNED_DIVISION_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U32_DIVISION_PRIMITIVE, CARRIER_BOOL];
 const INT64_PRIMITIVES: &[Primitive] = &[CARRIER_I32, I64_PRIMITIVE, CARRIER_BOOL];
 const UINT64_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U64_PRIMITIVE, CARRIER_BOOL];
@@ -622,6 +676,7 @@ const WIDE_BITWISE_PRIMITIVES: &[Primitive] = &[CARRIER_I32, BITWISE_I64_PRIMITI
 const NUMERIC_CASES: &[Case] = &[
     Case { label: "arithmetic", primitives: ARITHMETIC_PRIMITIVES, source: ARITHMETIC_SOURCE, expected: 13 },
     Case { label: "float64", primitives: FLOAT_PRIMITIVES, source: FLOAT_SOURCE, expected: 17 },
+    Case { label: "float32", primitives: FLOAT32_PRIMITIVES, source: F32_SOURCE, expected: 23 },
     Case { label: "unsigned-division", primitives: UNSIGNED_DIVISION_PRIMITIVES, source: UNSIGNED_DIVISION_SOURCE, expected: 5 },
     Case { label: "int64", primitives: INT64_PRIMITIVES, source: INT64_SOURCE, expected: 23 },
     Case { label: "uint64", primitives: UINT64_PRIMITIVES, source: UINT64_SOURCE, expected: 31 },
