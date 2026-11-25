@@ -38,6 +38,9 @@ pub struct CachedRunContract {
     pub logical_entry: String,
     /// Physical entry file.
     pub physical_entry: String,
+    /// Frozen host boundary; consumers derive how the entry return is observed.
+    #[serde(default)]
+    pub boundary: crate::legion::runner::RunHostBoundary,
     /// Frozen launch argv (element 0 is the program, `{artifact}` is expanded by consumers).
     #[serde(default)]
     pub launch: Vec<String>,
@@ -50,6 +53,7 @@ impl From<&DriverRunContract> for CachedRunContract {
         Self {
             logical_entry: value.logical_entry.clone(),
             physical_entry: value.physical_entry.clone(),
+            boundary: value.boundary.into(),
             launch: value.launch.clone(),
             validate: value.validate.clone(),
         }

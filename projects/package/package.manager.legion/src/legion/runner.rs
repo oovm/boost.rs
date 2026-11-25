@@ -40,11 +40,113 @@ pub struct RunContract {
     pub logical_entry: String,
     /// 物理入口（产物中的文件名或符号）。
     pub physical_entry: String,
+    /// 冻结的宿主边界；消费者据此派生入口返回值的观测方式。
+    /// 旧 manifest 缺少该字段时按 [`RunHostBoundary::Unknown`] 读取，新鲜度校验
+    /// 必须判 stale，不得静默放行。
+    #[serde(default)]
+    pub boundary: RunHostBoundary,
     /// 冻结的启动 argv；旧 manifest 缺少该字段时为空。
     #[serde(default)]
     pub launch: Vec<String>,
     /// 校验入口可用的命令模板。
     pub validate: String,
+}
+
+/// 运行合同冻结的宿主边界在 VON 清单里的传输形态。
+///
+/// VON 能序列化 unit variant，但不能反序列化枚举，因此清单字段使用本枚举的显式
+/// 词表。词表与 [`compiler_target::HostProjectionBoundary`] 一一对应：新增边界
+/// 会因转换 `match` 不穷尽而在编译期暴露，不会静默漂移。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RunHostBoundary {
+    /// 旧清单缺失或词表未知：fail-closed，不得据此启动或观测返回值。
+    #[default]
+    Unknown,
+    /// `.NET` 宿主边界。
+    Clr,
+    /// `JVM` 宿主边界。
+    Jvm,
+    /// `WASM + JS glue` 宿主边界。
+    WasmJsGlue,
+    /// `WASI component model` 宿主边界。
+    WasiComponent,
+    /// 机器码宿主边界。
+    MachineCode,
+    /// 字节码虚拟机宿主边界。
+    Vm,
+}
+
+impl From<compiler_target::HostProjectionBoundary> for RunHostBoundary {
+    fn from(value: compiler_target::HostProjectionBoundary) -> Self {
+        match value {
+            compiler_target::HostProjectionBoundary::Clr => Self::Clr,
+            compiler_target::HostProjectionBoundary::Jvm => Self::Jvm,
+            compiler_target::HostProjectionBoundary::WasmJsGlue => Self::WasmJsGlue,
+            compiler_target::HostProjectionBoundary::WasiComponent => Self::WasiComponent,
+            compiler_target::HostProjectionBoundary::MachineCode => Self::MachineCode,
+            compiler_target::HostProjectionBoundary::Vm => Self::Vm,
+        }
+    }
+}
+
+impl TryFrom<RunHostBoundary> for compiler_target::HostProjectionBoundary {
+    type Error = &'static str;
+
+    fn try_from(value: RunHostBoundary) -> std::result::Result<Self, Self::Error> {
+        match value {
+            RunHostBoundary::Unknown => Err("run contract is missing a frozen host boundary"),
+            RunHostBoundary::Clr => Ok(Self::Clr),
+            RunHostBoundary::Jvm => Ok(Self::Jvm),
+            RunHostBoundary::WasmJsGlue => Ok(Self::WasmJsGlue),
+            RunHostBoundary::WasiComponent => Ok(Self::WasiComponent),
+            RunHostBoundary::MachineCode => Ok(Self::MachineCode),
+            RunHostBoundary::Vm => Ok(Self::Vm),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RunHostBoundary {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BoundaryVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for BoundaryVisitor {
+            type Value = RunHostBoundary;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("'unknown' / 'clr' / 'jvm' / 'wasm_js_glue' / 'wasi_component' / 'machine_code' / 'vm'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                // 归一化大小写与分隔符：清单词表、Rust variant 名都能读取。
+                match value.to_ascii_lowercase().replace('_', "").as_str() {
+                    "unknown" => Ok(RunHostBoundary::Unknown),
+                    "clr" => Ok(RunHostBoundary::Clr),
+                    "jvm" => Ok(RunHostBoundary::Jvm),
+                    "wasmjsglue" => Ok(RunHostBoundary::WasmJsGlue),
+                    "wasicomponent" => Ok(RunHostBoundary::WasiComponent),
+                    "machinecode" => Ok(RunHostBoundary::MachineCode),
+                    "vm" => Ok(RunHostBoundary::Vm),
+                    other => Err(E::custom(format!("unsupported host boundary '{other}'"))),
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(BoundaryVisitor)
+    }
 }
 
 /// 一条外部进程模板。
@@ -157,6 +259,8 @@ mod tests {
         RunContract {
             logical_entry: logical.to_string(),
             physical_entry: physical.to_string(),
+            // 模板解析用例不消费宿主边界；这里保持缺失事实，避免伪造观测投影。
+            boundary: RunHostBoundary::Unknown,
             launch: launch.iter().map(|part| (*part).to_string()).collect(),
             validate: String::new(),
         }

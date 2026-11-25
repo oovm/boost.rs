@@ -790,6 +790,7 @@ fn write_execution_manifest(
         .map(|spec| RunContract {
             logical_entry: spec.logical_entry.clone(),
             physical_entry: spec.physical_entry.clone(),
+            boundary: spec.boundary.into(),
             launch: spec.launch.clone(),
             validate: spec.validate.clone(),
         })

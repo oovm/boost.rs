@@ -43,8 +43,10 @@ pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// `4` 起库导出携带 CPython 冻结模块名（`module_name`），消费侧据此导入。
 /// `5` 起运行合同携带冻结启动 argv（`launch`）：执行端只按合同启动，旧一代
 /// 产物缺少该事实一律判为不新鲜并重建。
+/// `6` 起运行合同携带冻结宿主边界（`boundary`）：消费端据此派生入口返回值的
+/// 观测投影，不再按 target 名字另行推导。
 #[doc(hidden)]
-pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 5;
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 6;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -428,6 +430,11 @@ impl ExecutionManifest {
             }
             _ => {}
         }
+        // 运行合同必须携带冻结宿主边界：缺失即无法派生入口返回值的观测投影，
+        // 不得让消费端退回按 target 名字猜测。
+        if self.run_contracts.iter().any(|contract| contract.host_boundary().is_none()) {
+            return Ok(ManifestVerdict::Stale("manifest run contract missing host boundary".into()));
+        }
         let Some(stored) = &self.compile_evidence
         else {
             return Ok(ManifestVerdict::Stale("manifest missing compile_evidence".into()));
@@ -532,6 +539,12 @@ impl RunContract {
     /// 从输出目录读取运行契约列表。
     pub fn read_all_from_output_dir(output_dir: &Path) -> LegionResult<Vec<Self>> {
         Ok(ExecutionManifest::read_from_output_dir(output_dir)?.map_or_else(Vec::new, |manifest| manifest.run_contracts))
+    }
+
+    /// 冻结的宿主边界；旧合同缺少该事实时为 `None`（新鲜度校验已判 stale）。
+    #[must_use]
+    pub fn host_boundary(&self) -> Option<compiler_target::HostProjectionBoundary> {
+        compiler_target::HostProjectionBoundary::try_from(self.boundary).ok()
     }
 }
 
