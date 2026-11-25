@@ -16,10 +16,10 @@ pub use control_flow::{
 use std::collections::BTreeMap;
 
 use compiler_optimize::{
-    AlgebraicTerm, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicDimension, ObjectAlgebraicProgram, OptimizationRequest,
-    OptimizationResult, OptimizationSession, ProjectionPolicy, ReferenceManagement, RewriteTheory, TheoryBundle,
+    AlgebraicTerm, ObjectAlgebraicDimension, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult, OptimizationSession,
+    ProjectionPolicy, RewriteTheory, TheoryBundle,
 };
-use compiler_types::{CapabilityTag, Identifier, QualifiedName, RuntimeRequirement};
+use compiler_types::{CapabilityTag, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, QualifiedName, ReferenceManagement, RuntimeRequirement};
 
 use compiler_target::{
     abstractions::{BackendInputKind, BinaryTarget, CanonicalTarget, PartitionBackendRequirement},

@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as DeErr
 use crate::abstractions::{
     BinaryTarget, CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor,
 };
-use compiler_optimize::{HostProjectionBoundary, ReferenceManagement};
+use compiler_types::{HostProjectionBoundary, ReferenceManagement};
 
 /// 编译目标模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -699,7 +699,7 @@ pub struct PartitionBackendRequirement {
     /// 当前分区面向的目标。
     pub target: BinaryTarget,
     /// 当前分区绑定的宿主边界。
-    pub host_boundary: compiler_optimize::HostProjectionBoundary,
+    pub host_boundary: compiler_types::HostProjectionBoundary,
     /// 当前分区采用的引用对象管理策略。
     pub reference_management: compiler_types::ReferenceManagement,
 }

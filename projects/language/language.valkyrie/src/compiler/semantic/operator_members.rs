@@ -135,7 +135,7 @@ fn has_modifier(annotations: &[Attribute], name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use compiler_target::{RewriteTheory, TheoryBundle};
+    use compiler_optimize::{RewriteTheory, TheoryBundle};
     use compiler_types::SemanticType;
 
     use crate::compiler::hir::lowering::{CompilerSourceFile, CompilerSourceGroup};

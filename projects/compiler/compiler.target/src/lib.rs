@@ -33,14 +33,9 @@ pub use self::{
         TargetResolver, cpython_module_name, probe_build_host,
     },
 };
-pub use compiler_optimize::{
-    AlgebraicTerm, EGraphSnapshot, EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder,
-    ObjectAlgebraicDimension, ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult,
-    OptimizationSession, ProjectionPlan, ProjectionPolicy, ReferenceManagement, RewriteEquation, RewritePhase, RewriteRule,
-    RewriteTheory, TermRewrite, TheoryBundle,
-};
 pub use compiler_types::{
-    AggregateLayoutPlan, CapabilityTag, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout, FunctionType, Identifier,
-    InternalCallEdge, NamePath, QualifiedName, RuntimeRequirement, SemanticType, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
+    AggregateLayoutPlan, CapabilityTag, EntryReturnProjection, ExternalCallArgument, ExternalCallEdge, ExternalImportLink, FlagsLayout,
+    FunctionType, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, InternalCallEdge, NamePath, ProjectionPlan, ProjectionPolicy,
+    QualifiedName, ReferenceManagement, RuntimeRequirement, SemanticType, SingletonInstancePlan, SumTypeLayout, SymbolIdentity,
     WitnessCallEdge, WitnessMethodSlotSubmission, WitnessObject, WitnessSubmission,
 };

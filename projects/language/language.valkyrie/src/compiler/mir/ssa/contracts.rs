@@ -5,8 +5,9 @@ use crate::compiler::types::{
     Identifier, NamePath,
     hir::{HirFunction, HirModule, ValkyrieType, parse_export_spec_from_annotations, resolve_attribute_id},
 };
+use compiler_optimize::RewriteTheory;
 use compiler_planning::SemanticFragment;
-use compiler_target::{CapabilityTag, RewriteTheory};
+use compiler_target::CapabilityTag;
 use compiler_types::{ExternalImportLink, ItemInstanceId, builtin_attribute};
 use std::collections::BTreeMap;
 

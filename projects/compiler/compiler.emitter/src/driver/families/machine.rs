@@ -7,8 +7,9 @@ use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverRunContract, Result, bundled_backend_capability_descriptor,
     emitter_backend_machine::MachineImageBackend,
 };
+use compiler_optimize::EntryReturnProjection;
 use compiler_target::{
-    BackendInputKind, CanonicalSpecification, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
+    BackendInputKind, CanonicalSpecification, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
     TargetFamily, TargetLane, backends::TargetCodeGenBackend,
 };
 

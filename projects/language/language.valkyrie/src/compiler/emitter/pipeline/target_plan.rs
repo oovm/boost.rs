@@ -118,7 +118,7 @@ impl std::error::Error for TargetPlanError {}
 pub fn from_compiled_program(
     program: &CompiledValkyrieProgram,
     fragment_id: &compiler_target::Identifier,
-    theory_bundle: compiler_target::TheoryBundle,
+    theory_bundle: compiler_optimize::TheoryBundle,
     roots: &[ItemInstanceId],
 ) -> std::result::Result<TargetExecutionPlan, TargetPlanError> {
     let canonical = program.mir_program();
@@ -136,7 +136,7 @@ pub fn from_compiled_program(
 fn build_plan(
     program: &CompiledValkyrieProgram,
     fragment_id: &compiler_target::Identifier,
-    theory_bundle: compiler_target::TheoryBundle,
+    theory_bundle: compiler_optimize::TheoryBundle,
     roots: &[ItemInstanceId],
 ) -> std::result::Result<TargetExecutionPlan, TargetPlanError> {
     let canonical = program.mir_program();

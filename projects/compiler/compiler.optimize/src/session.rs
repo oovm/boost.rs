@@ -6,7 +6,9 @@ use crate::{
     CapabilityTag, ConstantInterpreter, EGraphHost, Identifier, QualifiedName, RewriteEquation, RewritePhase, Term, TermRewrite,
     builtin_core_term_rewrites, filter_equations, filter_term_rewrites,
 };
-use compiler_types::ReferenceManagement;
+use compiler_types::{
+    EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, ProjectionPlan, ProjectionPolicy, ReferenceManagement,
+};
 
 /// `Object Algebraic` 结构化项即中立底座的 `E-Graph` 项。
 pub type AlgebraicTerm = Term;
@@ -189,101 +191,6 @@ pub struct EGraphSnapshot {
     pub enode_count: usize,
     /// 是否达到当前理论下的饱和。
     pub saturated: bool,
-}
-
-/// `Futamura projection` 目标家族。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum FutamuraProjectionFamily {
-    /// `futa_clr`
-    Clr,
-    /// `futa_jvm`
-    Jvm,
-    /// `futa_wasm`
-    Wasm,
-    /// `futa_machine_code`
-    MachineCode,
-    /// `futa_vm`
-    Ovm,
-    /// `futa_gpu`
-    Gpu,
-}
-
-impl FutamuraProjectionFamily {
-    /// 返回稳定家族名。
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Clr => "futa_clr",
-            Self::Jvm => "futa_jvm",
-            Self::Wasm => "futa_wasm",
-            Self::MachineCode => "futa_machine_code",
-            Self::Ovm => "futa_vm",
-            Self::Gpu => "futa_gpu",
-        }
-    }
-}
-
-/// 目标宿主边界。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum HostProjectionBoundary {
-    /// `.NET` 宿主边界。
-    Clr,
-    /// `JVM` 宿主边界。
-    Jvm,
-    /// `WASM + JS glue` 宿主边界。
-    WasmJsGlue,
-    /// `WASI component model` 宿主边界。
-    WasiComponent,
-    /// 机器码宿主边界：OS 直接装载 `PE` / `ELF`，宿主包装由产物合同决定。
-    MachineCode,
-    /// 字节码虚拟机宿主边界。
-    Vm,
-}
-
-/// 入口返回值在宿主上的可观测投影（结果通道 + 值宽 + 解码规则）。
-///
-/// 该事实由**实际生成入口包装的目标后端**逐条冻结进运行合同（`DriverRunContract`），
-/// Legion 与运行器只消费合同里的投影，不得按 target 名字或宿主边界另行推导：
-/// 同一宿主边界上不同入口包装完全可能选择不同通道（例如 JVM launcher 当前打印
-/// stdout 只是该包装的选择，不能推广为 JVM 所有入口的结果通道）。
-/// 合同缺失该事实时 fail-closed，不得假定默认通道。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum EntryReturnProjection {
-    /// 入口包装把 i32 返回值以十进制行打印到 stdout，自身以 0 退出。
-    StdoutInteger,
-    /// 入口返回值就是进程退出码（按宿主约定截断到低 8 位）。
-    ProcessExitCode,
-    /// 宿主在进程内调用入口，返回值是 VM 内的 i32 值。
-    InProcessValue,
-    /// 入口没有返回值可观测。
-    NoReturnValue,
-}
-
-/// `Futamura projection` 选择策略。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectionPolicy {
-    /// 目标投影家族。
-    pub family: FutamuraProjectionFamily,
-    /// 宿主边界。
-    pub host_boundary: HostProjectionBoundary,
-    /// 引用对象管理策略。
-    pub reference_management: ReferenceManagement,
-    /// 是否优先缩小产物体积。
-    pub prefer_small_artifacts: bool,
-    /// 是否保留显式 effect 边界。
-    pub preserve_effect_boundaries: bool,
-}
-
-/// 单次目标投影计划。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectionPlan {
-    /// 选中的目标家族。
-    pub family: FutamuraProjectionFamily,
-    /// 选中的宿主边界。
-    pub host_boundary: HostProjectionBoundary,
-    /// 选中的引用对象管理策略。
-    pub reference_management: ReferenceManagement,
-    /// 投影后仍需要保留的能力。
-    pub preserved_capabilities: Vec<CapabilityTag>,
 }
 
 /// 一次优化请求。

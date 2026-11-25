@@ -68,7 +68,7 @@ pub fn plan_artifacts_from_compiled_program(
     ArtifactPartitionPlan::from_linked_program(
         linked,
         target,
-        compiler_target::RewriteTheory::default(),
+        compiler_optimize::RewriteTheory::default(),
         projection_policy,
         backend_registry,
         clr_suspend_strategy,
@@ -88,7 +88,7 @@ struct ValkyrieTargetAdapter<'a> {
     partition: ArtifactPartition,
     compiled_program: &'a CompiledValkyrieProgram,
     roots: Vec<compiler_types::ItemInstanceId>,
-    theory_bundle: compiler_target::TheoryBundle,
+    theory_bundle: compiler_optimize::TheoryBundle,
 }
 
 impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {

@@ -77,7 +77,7 @@ impl GpuDxilBackend {
 pub fn register_gpu_backends(
     registry: &mut super::BackendRegistry,
     fragment: crate::Identifier,
-    supported_projection_families: Vec<compiler_optimize::FutamuraProjectionFamily>,
+    supported_projection_families: Vec<compiler_types::FutamuraProjectionFamily>,
     supported_targets: Vec<crate::abstractions::BinaryTarget>,
     required_capabilities: Vec<crate::CapabilityTag>,
 ) {
@@ -110,7 +110,7 @@ impl BundledGpuDescriptor {
     fn registration(
         &self,
         fragment: crate::Identifier,
-        supported_projection_families: Vec<compiler_optimize::FutamuraProjectionFamily>,
+        supported_projection_families: Vec<compiler_types::FutamuraProjectionFamily>,
         supported_targets: Vec<crate::abstractions::BinaryTarget>,
         required_capabilities: Vec<crate::CapabilityTag>,
     ) -> super::BackendInterpreterRegistration {

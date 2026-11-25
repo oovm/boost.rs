@@ -6,8 +6,9 @@ use compiler_emitter::{
     },
     testing::augment_msil_with_witness,
 };
+use compiler_optimize::{RewriteTheory, TheoryBundle};
 use compiler_target::{
-    CapabilityTag, Identifier, RewriteTheory, TheoryBundle, WitnessCallEdge, WitnessMethodSlotSubmission, WitnessSubmission,
+    CapabilityTag, Identifier, WitnessCallEdge, WitnessMethodSlotSubmission, WitnessSubmission,
 };
 
 #[test]

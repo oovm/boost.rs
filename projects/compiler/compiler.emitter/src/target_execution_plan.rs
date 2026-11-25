@@ -18,7 +18,7 @@ pub struct TargetExecutionPlan {
     fragment_id: compiler_target::Identifier,
     exported_operations: Vec<ItemInstanceId>,
     required_capabilities: Vec<compiler_target::CapabilityTag>,
-    theory_bundle: compiler_target::TheoryBundle,
+    theory_bundle: compiler_optimize::TheoryBundle,
     entry_operation: Option<ItemInstanceId>,
     export_names: BTreeMap<ItemInstanceId, String>,
     export_annotations: BTreeMap<ItemInstanceId, String>,
@@ -124,7 +124,7 @@ pub struct TargetPlanInput {
     /// 片段要求的能力标签。
     pub required_capabilities: Vec<compiler_target::CapabilityTag>,
     /// 片段选定的优化理论。
-    pub theory_bundle: compiler_target::TheoryBundle,
+    pub theory_bundle: compiler_optimize::TheoryBundle,
     /// 入口 callable 实例。
     pub entry_operation: Option<ItemInstanceId>,
     /// callable 到语言侧冻结源码名的映射。
@@ -367,7 +367,7 @@ impl TargetExecutionPlan {
     }
 
     /// 返回理论束合同。
-    pub fn theory_bundle(&self) -> &compiler_target::TheoryBundle {
+    pub fn theory_bundle(&self) -> &compiler_optimize::TheoryBundle {
         &self.theory_bundle
     }
 

@@ -12,7 +12,5 @@ missing_docs = "warn"
 unsafe_code = "forbid"
 
 [dependencies]
-compiler-optimize = { workspace = true }
 compiler-types = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
-serde_json = { workspace = true }

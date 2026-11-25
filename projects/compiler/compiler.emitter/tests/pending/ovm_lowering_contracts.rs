@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use compiler_emitter::{FragmentSubmission, testing::lower_fragment_to_ovm_module};
-use compiler_target::{Identifier, QualifiedName, RewriteTheory, TheoryBundle};
+use compiler_optimize::{RewriteTheory, TheoryBundle};
+use compiler_target::{Identifier, QualifiedName};
 #[test]
 fn rejects_edge_only_submission_without_compiler_owned_executable() {
     let operation = QualifiedName::new(vec![Identifier::new("demo"), Identifier::new("add_two")]);

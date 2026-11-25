@@ -12,5 +12,5 @@ missing_docs = "warn"
 unsafe_code = "forbid"
 
 [dependencies]
-compiler-types = { workspace = true }
+compiler-types = { workspace = true, features = ["serde"] }
 serde = { workspace = true }

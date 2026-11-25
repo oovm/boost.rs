@@ -18,15 +18,17 @@ mod session;
 mod term;
 mod theory;
 
-pub use compiler_types::{CapabilityTag, Identifier, QualifiedName, ReferenceManagement};
+pub use compiler_types::{
+    CapabilityTag, EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ProjectionPlan, ProjectionPolicy,
+    QualifiedName, ReferenceManagement,
+};
 pub use core_theory::{CoreConstantInterpreter, builtin_core_rewrite_theory, builtin_core_term_rewrites, core_lit_name};
 pub use egraph::{ConstantInterpreter, EClassId, EGraphHost, EGraphStats, StructuredRewrite};
 pub use extract::{ExtractCost, extract_class};
 pub use pattern::{EGraphMatchView, Substitution, TermPattern, atom_pattern, instantiate_pattern, match_pattern, parse_pattern};
 pub use session::{
-    AlgebraicTerm, EGraphSnapshot, EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder,
-    ObjectAlgebraicDimension, ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult,
-    OptimizationSession, ProjectionPlan, ProjectionPolicy, RewriteRule, RewriteTheory, TheoryBundle,
+    AlgebraicTerm, EGraphSnapshot, ObjectAlgebraicBuilder, ObjectAlgebraicDimension, ObjectAlgebraicInterpreter, ObjectAlgebraicProgram,
+    OptimizationRequest, OptimizationResult, OptimizationSession, RewriteRule, RewriteTheory, TheoryBundle,
 };
 pub use term::{Term, parse_term, qualified_from_dotted};
 pub use theory::{

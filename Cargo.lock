@@ -645,10 +645,8 @@ version = "0.1.0"
 name = "compiler-target"
 version = "0.1.0"
 dependencies = [
- "compiler-optimize",
  "compiler-types",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -5470,6 +5468,7 @@ dependencies = [
  "boost-math",
  "compiler-analysis",
  "compiler-emitter",
+ "compiler-optimize",
  "compiler-planning",
  "compiler-target",
  "compiler-types",
