@@ -682,3 +682,24 @@ impl<'de> Deserialize<'de> for CanonicalTarget {
         value.parse().map_err(D::Error::custom)
     }
 }
+
+/// 单个分区已经收口好的后端需求。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionBackendRequirement {
+    /// 选中的后端名。
+    pub backend_name: String,
+    /// 选中的解释器名。
+    pub interpreter: compiler_types::Identifier,
+    /// 当前分区对应的语义片段。
+    pub fragment: compiler_types::Identifier,
+    /// 当前分区所属路线。
+    pub lane: crate::packaging::TargetLane,
+    /// 当前分区产出的 backend 输入种类。
+    pub input_kind: BackendInputKind,
+    /// 当前分区面向的目标。
+    pub target: BinaryTarget,
+    /// 当前分区绑定的宿主边界。
+    pub host_boundary: compiler_optimize::HostProjectionBoundary,
+    /// 当前分区采用的引用对象管理策略。
+    pub reference_management: compiler_types::ReferenceManagement,
+}

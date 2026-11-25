@@ -3,7 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::compiler::hir::lowering::HirError;
-use compiler_target::PlanningError;
+use compiler_planning::PlanningError;
 
 /// `compiler::emitter::pipeline` 内 `Result` 别名。
 pub type PipelineResult<T> = std::result::Result<T, PipelineError>;

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::planning::SuspendConsumptionModel;
+use crate::backends::SuspendConsumptionModel;
 
 /// OVM suspend consumption strategy (dual-path).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

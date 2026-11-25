@@ -5,10 +5,8 @@
 use compiler_emitter::{
     AdaptedFragmentInput, AssembledFragment, FragmentSubmission, LoweredBackendInput, TargetInputRequest,
 };
-use compiler_target::{
-    ArtifactPartition, ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError,
-    projection_policy_for_target_profile,
-};
+use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError};
+use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
 use super::pipeline::target_plan::{self, TargetPlanError};
 use crate::compiler::valkyrie_mir::CompiledValkyrieProgram;

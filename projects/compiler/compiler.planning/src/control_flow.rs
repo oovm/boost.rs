@@ -1,46 +1,10 @@
 //! Suspend artifacts carried from frontend to driver backends.
 //!
-//! Backends fall into two consumption models:
-//! - [`SuspendConsumptionModel::FirstClass`]: language-owned suspend plan + a native continuation
-//!   runtime supplied by the target lane (ovm, future CLR coroutine runtime).
-//! - [`SuspendConsumptionModel::StateMachine`]: explicit `MoveNext` / asyncify lowering
-//!   (JVM, WASM, legacy MSIL PE writer).
+//! Backends fall into two consumption models (owned by `compiler_target::backends`):
+//! first-class continuations keep the language suspend plan intact, while the
+//! state-machine model lowers to the explicit [`ControlFlowPayload`] below.
 
 use compiler_types::{ItemId, QualifiedName};
-
-use crate::packaging::TargetLane;
-
-/// How a backend lane consumes suspend metadata at the driver boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SuspendConsumptionModel {
-    /// Native continuations; language suspend plan stays intact, backend owns resume dispatch.
-    FirstClass,
-    /// Explicit state-machine rewrite (`ControlFlowPayload` with dispatch cases and frame types).
-    StateMachine,
-}
-
-/// Resolve suspend consumption model for a target lane and optional backend strategies.
-pub fn suspend_consumption_model_for_lane(
-    lane: TargetLane,
-    clr_strategy: crate::backends::clr::ClrSuspendStrategy,
-    vm_strategy: crate::backends::vm::VmSuspendStrategy,
-) -> SuspendConsumptionModel {
-    match lane {
-        TargetLane::Vm => vm_strategy.consumption_model(),
-        TargetLane::Clr => clr_strategy.consumption_model(),
-        _ => suspend_consumption_model(lane),
-    }
-}
-
-/// Resolve suspend consumption model for a target lane.
-pub fn suspend_consumption_model(lane: TargetLane) -> SuspendConsumptionModel {
-    match lane {
-        TargetLane::Vm => SuspendConsumptionModel::FirstClass,
-        TargetLane::Clr | TargetLane::Jvm | TargetLane::Wasm | TargetLane::MachineCode | TargetLane::Gpu => {
-            SuspendConsumptionModel::StateMachine
-        }
-    }
-}
 
 /// First-class suspend payload: continuation plan without state-machine type emission.
 #[derive(Debug, Clone, PartialEq, Eq)]

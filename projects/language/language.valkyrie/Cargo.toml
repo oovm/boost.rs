@@ -27,6 +27,7 @@ boost-harness = { workspace = true }
 boost-math = { workspace = true }
 compiler-analysis = { workspace = true }
 compiler-emitter = { workspace = true }
+compiler-planning = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true }
 interpreter-vm-ovm = { workspace = true }

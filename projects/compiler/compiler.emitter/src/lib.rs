@@ -37,10 +37,10 @@ pub use backend::{
     clr as emitter_backend_clr, jvm as emitter_backend_jvm, machine as emitter_backend_machine, vm as emitter_backend_vm,
     wasi as emitter_backend_wasi, wasm_js_glue as emitter_backend_wasm_js_glue,
 };
+use compiler_target::PartitionBackendRequirement;
 use compiler_target::{
     ArtifactPurpose, BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag,
     ClrSuspendStrategy, EntryReturnProjection, ExternalCallEdge, ExternalImportLink, HostProjectionBoundary, Identifier, InternalCallEdge,
-    PartitionBackendRequirement,
     ProjectionPolicy, QualifiedName, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, TheoryBundle,
     backends::CompilationOptions, packaging::ArtifactSet,
 };
@@ -88,7 +88,7 @@ pub(crate) fn test_canonical_primitive(spelling: &str) -> compiler_types::Semant
     }
 }
 pub use assembly::{AdaptedFragmentInput, AssembledFragment, TargetInputRequest};
-pub use compiler_target::ArtifactPartition;
+pub use compiler_planning::ArtifactPartition;
 
 /// Integration-test support wrappers for crate-internal lowering and compile flows.
 #[doc(hidden)]

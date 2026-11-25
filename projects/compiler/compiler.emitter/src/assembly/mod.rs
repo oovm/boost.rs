@@ -7,7 +7,8 @@
 
 use std::path::Path;
 
-use compiler_target::{ArtifactPartition, ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily, TheoryBundle};
+use compiler_planning::ArtifactPartition;
+use compiler_target::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily, TheoryBundle};
 
 use crate::{LoweredBackendInput, Result};
 

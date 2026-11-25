@@ -1,6 +1,6 @@
 #![doc = include_str!("readme.md")]
 
-use crate::planning::PartitionBackendRequirement;
+use crate::abstractions::PartitionBackendRequirement;
 
 /// 候选后端元信息。
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -4,6 +4,40 @@ pub mod clr;
 pub mod gpu;
 pub mod vm;
 
+/// How a backend lane consumes suspend metadata at the driver boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuspendConsumptionModel {
+    /// Native continuations; language suspend plan stays intact, backend owns resume dispatch.
+    FirstClass,
+    /// Explicit state-machine rewrite (`ControlFlowPayload` with dispatch cases and frame types).
+    StateMachine,
+}
+
+/// Resolve suspend consumption model for a target lane and optional backend strategies.
+pub fn suspend_consumption_model_for_lane(
+    lane: crate::packaging::TargetLane,
+    clr_strategy: clr::ClrSuspendStrategy,
+    vm_strategy: vm::VmSuspendStrategy,
+) -> SuspendConsumptionModel {
+    match lane {
+        crate::packaging::TargetLane::Vm => vm_strategy.consumption_model(),
+        crate::packaging::TargetLane::Clr => clr_strategy.consumption_model(),
+        _ => suspend_consumption_model(lane),
+    }
+}
+
+/// Resolve suspend consumption model for a target lane.
+pub fn suspend_consumption_model(lane: crate::packaging::TargetLane) -> SuspendConsumptionModel {
+    match lane {
+        crate::packaging::TargetLane::Vm => SuspendConsumptionModel::FirstClass,
+        crate::packaging::TargetLane::Clr
+        | crate::packaging::TargetLane::Jvm
+        | crate::packaging::TargetLane::Wasm
+        | crate::packaging::TargetLane::MachineCode
+        | crate::packaging::TargetLane::Gpu => SuspendConsumptionModel::StateMachine,
+    }
+}
+
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 

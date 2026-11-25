@@ -9,7 +9,7 @@ use crate::compiler::types::{
     NamePath,
     hir::{HirPattern, ValkyrieType},
 };
-use compiler_target::SemanticFragment;
+use compiler_planning::SemanticFragment;
 use compiler_types::{ItemId, ItemInstanceId, VariantId};
 use std::collections::BTreeMap;
 

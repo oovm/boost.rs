@@ -40,6 +40,7 @@ members = [
     "projects/compiler/compiler.optimize",
     "projects/compiler/compiler.emitter",
     "projects/compiler/compiler.bundle",
+    "projects/compiler/compiler.planning",
     "projects/compiler/compiler.specialize",
     "projects/compiler/compiler.target",
     "projects/compiler/compiler.types",
@@ -614,6 +615,7 @@ compiler-analysis = { path = "projects/compiler/compiler.analysis" }
 compiler-optimize = { path = "projects/compiler/compiler.optimize" }
 compiler-emitter = { path = "projects/compiler/compiler.emitter" }
 compiler-bundle = { path = "projects/compiler/compiler.bundle" }
+compiler-planning = { path = "projects/compiler/compiler.planning" }
 compiler-specialize = { path = "projects/compiler/compiler.specialize" }
 compiler-target = { path = "projects/compiler/compiler.target" }
 compiler-types = { path = "projects/compiler/compiler.types" }

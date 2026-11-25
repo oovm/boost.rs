@@ -5,7 +5,8 @@
 
 use super::error::{PipelineError, PipelineResult};
 use compiler_emitter::{FrontendBuildBundle, PlannedArtifactPartitionsView};
-use compiler_target::{ArtifactPartitionPlan, TargetBackendFamily};
+use compiler_planning::ArtifactPartitionPlan;
+use compiler_target::TargetBackendFamily;
 use std::path::Path;
 
 use crate::compiler::{
@@ -207,7 +208,7 @@ impl PlannedArtifactPartitionsView for CompilerBuildBundle {
         self.artifact_plan.partitions.len()
     }
 
-    fn partition(&self, partition_index: usize) -> Option<&compiler_target::ArtifactPartition> {
+    fn partition(&self, partition_index: usize) -> Option<&compiler_planning::ArtifactPartition> {
         self.artifact_plan.partitions.get(partition_index)
     }
 

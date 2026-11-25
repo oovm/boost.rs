@@ -1,6 +1,6 @@
 //! Future/suspend 协议校验与 witness 绑定（语言语义层）。
 
-use compiler_target::SuspendWitnessBinding;
+use compiler_planning::SuspendWitnessBinding;
 
 use crate::compiler::{
     mir::ssa::MirEffectKind,

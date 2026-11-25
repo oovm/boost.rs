@@ -1,4 +1,23 @@
-use compiler_target::{planning::rewrite_theory_manifest::RewriteTheoryManifestV1, *};
+use compiler_planning::{builtin_graphic_manifest, builtin_neural_manifest, rewrite_theory_manifest::RewriteTheoryManifestV1};
+
+#[test]
+fn manifest_graphic_matches_expected_rule_count() {
+    let manifest = builtin_graphic_manifest();
+    let theory = manifest.to_rewrite_theory();
+    assert_eq!(manifest.rules.len(), 8);
+    assert_eq!(manifest.fragment, "graphic");
+    assert!(!theory.rules.is_empty());
+    assert!(!theory.equations.is_empty());
+}
+
+#[test]
+fn manifest_neural_matches_expected_rule_count() {
+    let manifest = builtin_neural_manifest();
+    let theory = manifest.to_rewrite_theory();
+    assert_eq!(manifest.rules.len(), 5);
+    assert_eq!(manifest.fragment, "neural");
+    assert!(!theory.rules.is_empty());
+}
 
 #[test]
 fn manifest_pattern_rule_produces_term_rewrite() {

@@ -6,7 +6,7 @@ use crate::compiler::valkyrie_mir::pipeline::StructuredDiagnosticSet;
 
 use crate::compiler::valkyrie_mir::{ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirFunction, ValkyrieMirOperation};
 
-use compiler_target::SemanticFragment;
+use compiler_planning::SemanticFragment;
 
 use crate::compiler::mir::MirModule;
 

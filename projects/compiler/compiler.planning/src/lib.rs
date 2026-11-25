@@ -9,9 +9,8 @@ pub use rewrite_theory_manifest::{
 };
 
 pub use control_flow::{
-    ControlFlowPayload, SuspendConsumptionModel, SuspendContinuationArtifact, SuspendDispatchCase, SuspendFunctionArtifact,
-    SuspendRuntimeFunctionArtifact, SuspendRuntimePayload, SuspendStateArtifact, SuspendWitnessBinding, suspend_consumption_model,
-    suspend_consumption_model_for_lane,
+    ControlFlowPayload, SuspendContinuationArtifact, SuspendDispatchCase, SuspendFunctionArtifact, SuspendRuntimeFunctionArtifact,
+    SuspendRuntimePayload, SuspendStateArtifact, SuspendWitnessBinding,
 };
 
 use std::collections::BTreeMap;
@@ -22,8 +21,8 @@ use compiler_optimize::{
 };
 use compiler_types::{CapabilityTag, Identifier, QualifiedName, RuntimeRequirement};
 
-use crate::{
-    abstractions::{BackendInputKind, BinaryTarget, CanonicalTarget},
+use compiler_target::{
+    abstractions::{BackendInputKind, BinaryTarget, CanonicalTarget, PartitionBackendRequirement},
     backends::BackendRegistry,
     packaging::TargetLane,
 };
@@ -89,7 +88,7 @@ struct OptimizerInput {
     /// 面向当前构建请求的后端解释器注册表。
     pub backend_registry: BackendRegistry,
     /// CLR suspend 策略（非 CLR target 时忽略）。
-    pub clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
+    pub clr_suspend_strategy: compiler_target::backends::clr::ClrSuspendStrategy,
 }
 
 /// Compiler 从 HIR 声明节点直接绑定的片段根合同。
@@ -156,7 +155,7 @@ pub struct ArtifactPartition {
     /// 预期 backend 输入。
     pub input_kind: Option<BackendInputKind>,
     /// CLR suspend 策略（仅 `lane == Clr` 时有效）。
-    pub clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
+    pub clr_suspend_strategy: compiler_target::backends::clr::ClrSuspendStrategy,
     /// 宿主边界。
     pub host_boundary: HostProjectionBoundary,
     /// 引用对象管理策略。
@@ -165,27 +164,6 @@ pub struct ArtifactPartition {
     pub capabilities: Vec<CapabilityTag>,
     /// 本分区要求的运行时契约。
     pub runtime_requirements: Vec<RuntimeRequirement>,
-}
-
-/// 单个分区已经收口好的后端需求。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PartitionBackendRequirement {
-    /// 选中的后端名。
-    pub backend_name: String,
-    /// 选中的解释器名。
-    pub interpreter: Identifier,
-    /// 当前分区对应的语义片段。
-    pub fragment: Identifier,
-    /// 当前分区所属路线。
-    pub lane: TargetLane,
-    /// 当前分区产出的 backend 输入种类。
-    pub input_kind: BackendInputKind,
-    /// 当前分区面向的目标。
-    pub target: BinaryTarget,
-    /// 当前分区绑定的宿主边界。
-    pub host_boundary: HostProjectionBoundary,
-    /// 当前分区采用的引用对象管理策略。
-    pub reference_management: ReferenceManagement,
 }
 
 /// 单个语义片段的优化视图。
@@ -231,7 +209,7 @@ impl ArtifactPartitionPlan {
         rewrite_theory: RewriteTheory,
         projection_policy: ProjectionPolicy,
         backend_registry: BackendRegistry,
-        clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
+        clr_suspend_strategy: compiler_target::backends::clr::ClrSuspendStrategy,
     ) -> Result<Self, PlanningError> {
         let module_name = qualified_module_name(&linked.module_name);
         let (program_facts, semantic_fragments, object_algebraic_program) = canonical_optimizer_input(linked)?;
@@ -492,9 +470,9 @@ fn resolve_partition_reference_management(
 
 fn clr_suspend_strategy_for_lane(
     lane: TargetLane,
-    strategy: crate::backends::clr::ClrSuspendStrategy,
-) -> crate::backends::clr::ClrSuspendStrategy {
-    if lane == TargetLane::Clr { strategy } else { crate::backends::clr::ClrSuspendStrategy::default() }
+    strategy: compiler_target::backends::clr::ClrSuspendStrategy,
+) -> compiler_target::backends::clr::ClrSuspendStrategy {
+    if lane == TargetLane::Clr { strategy } else { compiler_target::backends::clr::ClrSuspendStrategy::default() }
 }
 
 fn build_partitions(
@@ -502,7 +480,7 @@ fn build_partitions(
     optimization: &OptimizationResult,
     binary_target: BinaryTarget,
     backend_registry: &BackendRegistry,
-    clr_suspend_strategy: crate::backends::clr::ClrSuspendStrategy,
+    clr_suspend_strategy: compiler_target::backends::clr::ClrSuspendStrategy,
     fragments: &BTreeMap<Identifier, compiler_types::CanonicalFragment>,
 ) -> Result<Vec<ArtifactPartition>, PlanningError> {
     optimization

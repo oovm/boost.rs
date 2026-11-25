@@ -151,10 +151,10 @@ fn parse_phase(value: &str) -> RewritePhase {
 
 /// 内置 graphic manifest（与 C# 导出默认值对齐）。
 pub fn builtin_graphic_manifest() -> RewriteTheoryManifestV1 {
-    serde_json::from_str(include_str!("../../schemas/graphic.rewrite-theory.v1.json")).expect("graphic manifest")
+    serde_json::from_str(include_str!("../schemas/graphic.rewrite-theory.v1.json")).expect("graphic manifest")
 }
 
 /// 内置 neural manifest（与 C# 导出默认值对齐）。
 pub fn builtin_neural_manifest() -> RewriteTheoryManifestV1 {
-    serde_json::from_str(include_str!("../../schemas/neural.rewrite-theory.v1.json")).expect("neural manifest")
+    serde_json::from_str(include_str!("../schemas/neural.rewrite-theory.v1.json")).expect("neural manifest")
 }

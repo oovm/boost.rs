@@ -604,6 +604,7 @@ dependencies = [
  "boost-collection",
  "boost-math",
  "compiler-optimize",
+ "compiler-planning",
  "compiler-target",
  "compiler-types",
  "data-binary-jvm",
@@ -625,6 +626,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "compiler-planning"
+version = "0.1.0"
+dependencies = [
+ "compiler-analysis",
+ "compiler-optimize",
+ "compiler-target",
+ "compiler-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "compiler-specialize"
 version = "0.1.0"
 
@@ -632,7 +645,6 @@ version = "0.1.0"
 name = "compiler-target"
 version = "0.1.0"
 dependencies = [
- "compiler-analysis",
  "compiler-optimize",
  "compiler-types",
  "serde",
@@ -5458,6 +5470,7 @@ dependencies = [
  "boost-math",
  "compiler-analysis",
  "compiler-emitter",
+ "compiler-planning",
  "compiler-target",
  "compiler-types",
  "data-binary-dex",

@@ -8,8 +8,7 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as DeError};
 
 use crate::abstractions::{
-    BinaryArch, BinaryFlavor, BinaryTarget, ByteOrder, CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget,
-    CanonicalTargetParseError, CanonicalVendor, TargetFamily,
+    BinaryTarget, CanonicalAbi, CanonicalArch, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, CanonicalVendor,
 };
 use compiler_optimize::{HostProjectionBoundary, ReferenceManagement};
 

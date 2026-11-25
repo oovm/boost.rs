@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{abstractions::ArtifactKind, planning::SuspendConsumptionModel};
+use crate::{abstractions::ArtifactKind, backends::SuspendConsumptionModel};
 
 /// CLR suspend 消费策略（双路径）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
