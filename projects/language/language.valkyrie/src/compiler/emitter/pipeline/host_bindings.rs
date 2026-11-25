@@ -327,7 +327,10 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
         }
     }
     let mut instances = BTreeMap::new();
-    let mut mint_owner = BTreeMap::<ItemId, DeclarationKey>::new();
+    // 同一声明 `ItemId` 可能同时出现在声明文件键与导出键下（`imported_semantic_exports`
+    // 以模块名建档）；铸造副本属于该声明身份本身，必须挂进**每一个**含它的族，
+    // 否则按声明文件键精确匹配的合同族会丢闭合实例，绑定配对落空。
+    let mut mint_owners = BTreeMap::<ItemId, Vec<DeclarationKey>>::new();
     for (key, family) in collected {
         // 同一声明身份冻结出多个实例是身份腐坏（一个 `ItemId` 只应有一个声明级实例），
         // 结构化拒绝；多个不同声明身份共享一个编码名是合法重载集合，原样保留。
@@ -339,7 +342,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             }
         }
         for declaration in family.by_declaration.keys().flatten() {
-            mint_owner.insert(*declaration, key.clone());
+            mint_owners.entry(*declaration).or_default().push(key.clone());
         }
         instances.insert(key, family);
     }
@@ -349,13 +352,15 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             else {
                 continue;
             };
-            let Some(key) = mint_owner.get(&declaration)
+            let Some(keys) = mint_owners.get(&declaration)
             else {
                 continue;
             };
-            if let Some(family) = instances.get_mut(key) {
-                family.instances.insert(instance);
-                family.signatures.insert(instance, host_callable_signature(&callable.function, callable.owner_type.as_ref()));
+            for key in keys {
+                if let Some(family) = instances.get_mut(key) {
+                    family.instances.insert(instance);
+                    family.signatures.insert(instance, host_callable_signature(&callable.function, callable.owner_type.as_ref()));
+                }
             }
         }
     }

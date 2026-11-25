@@ -162,3 +162,67 @@ fn provider_survives_file_move() {
     let stdout = build_and_run("moved", "a_provider.v");
     assert_eq!(stdout, "42", "provider 移动文件后绑定漂移（stdout={stdout}）");
 }
+
+/// 泛型无体合同 + 跨包泛型 provider：单态化铸造的闭合合同副本必须留在声明文件键的
+/// 实例族内（同一 `ItemId` 同时出现在声明键与导出键下时，铸造副本挂进每一个族），
+/// 否则精确匹配的合同族只剩开放声明级实例，闭合调用配不上 provider 闭合副本，
+/// 链接门禁会以「no host provider is bound」拒绝整个构建。
+///
+/// 合同成员必须命名 `std`：导出键以成员名建档，`"std"` 按字典序排在声明文件键
+/// `"source/pick.v"` 之后，正是真实 `std::collection::array` 场景的键序。
+const GENERIC_CONTRACT_SOURCE: &str = r#"namespace std.collection;
+
+[host_contract]
+micro pick<T>(first: T, second: T) -> T
+"#;
+
+const GENERIC_PROVIDER: &str = r#"namespace std.node;
+
+[host_provider(std::collection::pick)]
+micro node_pick<T>(first: T, second: T) -> T {
+    return first
+}
+"#;
+
+const GENERIC_APP_SOURCE: &str = r#"namespace app;
+
+[main]
+micro main() -> i32 {
+    return std::collection::pick(42, 1)
+}
+"#;
+
+#[test]
+fn generic_contract_closed_instance_binds_across_packages() {
+    let root = std::env::temp_dir().join(format!("legion-host-provider-generic-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("source")).unwrap();
+    fs::write(
+        root.join("legions.von"),
+        r#"{
+    version: "1",
+    name: "generic-host-provider",
+    members: [
+        "std",
+        "std.node",
+        "app"
+    ]
+}
+"#,
+    )
+    .unwrap();
+    write_member(&root, "std", "std", &[], &[("pick.v", GENERIC_CONTRACT_SOURCE), ("primitives.v", PRIMITIVES)]);
+    write_member(&root, "std.node", "std.node", &["std"], &[("z_helper.v", NODE_HELPER), ("provider.v", GENERIC_PROVIDER)]);
+    write_member(&root, "app", "app", &["std", "std.node"], &[("main.v", GENERIC_APP_SOURCE)]);
+
+    let output_dir = root.join("dist");
+    let outcome = build_project(&BuildOptions {
+        project_dir: root.join("app"),
+        target: Some("wasm-node".to_string()),
+        output_dir: Some(output_dir.clone()),
+    });
+    assert!(outcome.ok, "泛型合同绑定构建失败: {:?}", outcome.error);
+    let stdout = run_launcher(&outcome, &output_dir);
+    let _ = fs::remove_dir_all(&root);
+    assert_eq!(stdout, "42", "泛型闭合合同实例未绑定到 provider（stdout={stdout}）");
+}
