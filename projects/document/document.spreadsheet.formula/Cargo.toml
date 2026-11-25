@@ -9,3 +9,4 @@ edition.workspace = true
 
 [dependencies]
 document-formats = { workspace = true, default-features = false, features = ["xlsx"] }
+serde_json.workspace = true

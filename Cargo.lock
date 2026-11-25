@@ -3361,6 +3361,7 @@ name = "document-spreadsheet-formula"
 version = "0.1.0"
 dependencies = [
  "document-formats",
+ "serde_json",
 ]
 
 [[package]]

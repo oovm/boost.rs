@@ -11,6 +11,7 @@
 //! let value = report.values.get(&(0, 1, 1));
 //! ```
 
+pub mod error;
 mod engine;
 mod model;
 mod names;
