@@ -193,6 +193,8 @@ const U32_UNSIGNED_DIVISION: &[Operator] = &[
     infix("%", false, Some("integer.remainder_unsigned"), Some("i32.rem.un"), Some("i32.rem_u"), None),
     infix(">", true, Some("integer.compare_greater_than_unsigned"), Some("i32.gt.un"), Some("i32.gt_u"), Some("i32.gt_u")),
     infix("<", true, Some("integer.compare_less_than_unsigned"), Some("i32.lt.un"), Some("i32.lt_u"), Some("i32.lt_u")),
+    infix("<=", true, Some("integer.compare_less_or_equal_unsigned"), Some("i32.le.un"), Some("i32.le_u"), Some("i32.le_u")),
+    infix(">=", true, Some("integer.compare_greater_or_equal_unsigned"), Some("i32.ge.un"), Some("i32.ge_u"), Some("i32.ge_u")),
 ];
 
 /// `f64` 算术与比较：OVM 没有 f64 头码，CLR/Wasm 没有浮点余数，故不声明 `%`。
@@ -340,11 +342,12 @@ micro main() -> i32 {
 }
 "#;
 
-/// 无符号 `u32` 除/余用例入口：`probe(1)` 在 `0xFFFF_FFFF` 上做 `/ 2` 与 `% 7`。
+/// 无符号 `u32` 用例入口：`probe(1)` 在 `0xFFFF_FFFF` 上做 `/ 2`、`% 7` 与四个有序比较。
 ///
-/// 无符号：`0xFFFF_FFFF / 2 = 0x7FFF_FFFF > 1` 且 `0xFFFF_FFFF % 7 = 3 < 7`，返回 5；
-/// 若 `/` 误用有符号除法，商为 0、`0 > 1` 不成立而返回 1；若 `%` 误用有符号取余，
-/// 余数为 `0xFFFF_FFFF`、`< 7` 不成立而返回 4。因此 5 能区分两种裁决错误。
+/// 无符号：`/ 2 = 0x7FFF_FFFF`、`% 7 = 3`，商上 `> >=` 成立、余数上 `< <=` 成立
+/// （`3 < 7`、`3 <= 7`）。若 `/` 误用有符号除法，商为 0、`0 > 1` 不成立而返回 1；
+/// 若 `%` 误用有符号取余，余数为 `0xFFFF_FFFF`，`< 7`、`<= 7` 都不成立而返回 4/6。
+/// 四个比较按嵌套顺序各带独立分支（1/3/4/6），全部成立返回 5。
 const UNSIGNED_DIVISION_SOURCE: &str = r#"namespace app;
 
 micro probe(a: u32) -> i32 {
@@ -352,10 +355,16 @@ micro probe(a: u32) -> i32 {
     let quotient = big / 2
     let remainder = big % 7
     if quotient > a {
-        if remainder < 7 {
-            return 5
+        if quotient >= a {
+            if remainder < 7 {
+                if remainder <= 7 {
+                    return 5
+                }
+                return 6
+            }
+            return 4
         }
-        return 4
+        return 3
     }
     return 1
 }
