@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use compiler_types::{ItemId, ItemInstanceId};
+use compiler_types::{ItemId, ItemInstanceId, SourceSpan};
 
 use crate::compiler::{
     emitter::backend_contract::interop::function_host_provider_target,
@@ -51,17 +51,16 @@ fn unselected_host_provider_instances(
             if function_host_provider_target(function).is_none() {
                 continue;
             }
-            let key =
-                declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str());
-            // 精确匹配或忽略 source_path 的 fallback
-            let is_selected = selected_providers.contains(&key)
-                || selected_providers.iter().any(|sel| {
-                    sel.dependency_key == key.dependency_key
-                        && sel.namespace == key.namespace
-                        && sel.kind == key.kind
-                        && sel.owner == key.owner
-                        && sel.name == key.name
-                });
+            let key = declaration_key(
+                module,
+                DeclarationKind::Micro,
+                &namespace_parts(&function.declaring_namespace),
+                None,
+                function.name.as_str(),
+                &function.span,
+            );
+            // 精确匹配：键的 `source_path` 与 Resolver 绑定键同源于声明所在文件。
+            let is_selected = selected_providers.contains(&key);
             if is_selected {
                 continue;
             }
@@ -142,7 +141,7 @@ pub fn resolve_host_provider_bindings(
     let instances = host_callable_instances(hirs)?;
     let mut resolved = Vec::new();
     for binding in bindings {
-        // 精确匹配；未命中则忽略 source_path fallback（planner 按文件构造，HIR 按 group 合并）。
+        // 精确匹配：两侧声明键同源于声明所在文件，不存在丢弃源码身份的回退。
         let contract_family = family_by_binding_key(&instances, &binding.contract);
         if contract_family.instances.is_empty() {
             continue;
@@ -223,26 +222,13 @@ pub fn resolve_host_provider_bindings(
     Ok(resolved)
 }
 
-/// 按绑定声明键取出实例族：精确命中优先；未命中则忽略 `source_path` 聚合全部
-/// 同身份键（planner 按文件构造、HIR 按 group 合并时同一声明身份可落在多个键上）。
+/// 按绑定声明键取出实例族：只允许精确命中。
+///
+/// 键的 `source_path` 两侧同源于声明所在文件（装配层按 manifest 相对路径建档，
+/// HIR 侧按 span 的 `SourceID` 回查同一文件表），不存在需要忽略路径聚合的合法场景；
+/// 未命中即该声明未进入本次物化集合，返回空族由调用方按既有语义处理。
 fn family_by_binding_key(instances: &BTreeMap<DeclarationKey, CallableFamily>, key: &DeclarationKey) -> CallableFamily {
-    if let Some(family) = instances.get(key) {
-        return family.clone();
-    }
-    let mut union = CallableFamily::default();
-    for (candidate, family) in instances {
-        if candidate.dependency_key == key.dependency_key
-            && candidate.namespace == key.namespace
-            && candidate.kind == key.kind
-            && candidate.owner == key.owner
-            && candidate.name == key.name
-        {
-            union.declarations.extend(family.declarations.iter().copied());
-            union.instances.extend(family.instances.iter().copied());
-            union.signatures.extend(family.signatures.iter().map(|(instance, signature)| (*instance, signature.clone())));
-        }
-    }
-    union
+    instances.get(key).cloned().unwrap_or_default()
 }
 
 /// 实例签名是否仍含未代入的泛型 binder（开放签名不得承接闭合调用，也不参与配对）。
@@ -267,7 +253,14 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
         for function in &module.functions {
             collect_callable_instance(
                 &mut collected,
-                declaration_key(module, DeclarationKind::Micro, &namespace_parts(&function.declaring_namespace), None, function.name.as_str()),
+                declaration_key(
+                    module,
+                    DeclarationKind::Micro,
+                    &namespace_parts(&function.declaring_namespace),
+                    None,
+                    function.name.as_str(),
+                    &function.span,
+                ),
                 function,
                 None,
             );
@@ -282,7 +275,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             for method in &structure.methods {
                 collect_callable_instance(
                     &mut collected,
-                    declaration_key(module, DeclarationKind::Method, &namespace, Some(structure.name.as_str()), method.name.as_str()),
+                    declaration_key(module, DeclarationKind::Method, &namespace, Some(structure.name.as_str()), method.name.as_str(), &method.span),
                     method,
                     owner.as_ref(),
                 );
@@ -293,7 +286,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             for method in trait_decl.methods.iter().chain(trait_decl.default_methods.iter()) {
                 collect_callable_instance(
                     &mut collected,
-                    declaration_key(module, DeclarationKind::Method, &namespace, Some(trait_decl.name.as_str()), method.name.as_str()),
+                    declaration_key(module, DeclarationKind::Method, &namespace, Some(trait_decl.name.as_str()), method.name.as_str(), &method.span),
                     method,
                     None,
                 );
@@ -308,7 +301,7 @@ fn host_callable_instances(hirs: &[&HirModule]) -> Result<BTreeMap<DeclarationKe
             for method in &implementation.methods {
                 collect_callable_instance(
                     &mut collected,
-                    declaration_key(module, DeclarationKind::ImplyMethod, &namespace, Some(owner), method.name.as_str()),
+                    declaration_key(module, DeclarationKind::ImplyMethod, &namespace, Some(owner), method.name.as_str(), &method.span),
                     method,
                     Some(&implementation.target),
                 );
@@ -416,15 +409,25 @@ fn host_callable_signature(function: &HirFunction, owner: Option<&ValkyrieType>)
     (params, function.return_type.clone())
 }
 
-fn declaration_key(module: &HirModule, kind: DeclarationKind, namespace: &[String], owner: Option<&str>, name: &str) -> DeclarationKey {
+fn declaration_key(module: &HirModule, kind: DeclarationKind, namespace: &[String], owner: Option<&str>, name: &str, span: &SourceSpan) -> DeclarationKey {
     DeclarationKey {
         dependency_key: module.dependency_key.clone(),
-        source_path: module.source_path.clone(),
+        source_path: declaration_source_path(module, span),
         namespace: namespace.to_vec(),
         kind,
         owner: owner.map(str::to_string),
         name: name.to_string(),
     }
+}
+
+/// 声明所在源码文件路径：按 span 的 `SourceID` 回查 `diagnostic_sources` 表。
+///
+/// 这是与装配层库存和语义闭包**同一份** `source_path` 事实（两者都按 manifest 相对
+/// 文件路径建档）；`module.source_path` 只是组内首文件，多文件组里按它派生键会把
+/// 声明身份绑到文件顺序上，移动文件即漂移。合成 callable（lambda 等）不在文件表中，
+/// 回落组首路径——它们不是绑定目标，精确匹配自然不命中，不得再按忽略路径的并集兜底。
+fn declaration_source_path(module: &HirModule, span: &SourceSpan) -> String {
+    module.diagnostic_sources.get(&span.source.version_id).cloned().unwrap_or_else(|| module.source_path.clone())
 }
 
 fn namespace_parts(namespace: &crate::compiler::types::NamePath) -> Vec<String> {
@@ -876,9 +879,9 @@ pub fn host_provider_instantiation_seeds(
 /// 物化可达性门的 host provider 根：Resolver 选定 `[host_provider]` 绑定的
 /// callable 声明身份集合。
 ///
-/// 与 [`resolve_host_provider_bindings`] 共用同一族查找事实源（精确匹配 +
-/// 忽略 `source_path` 的 fallback）。provider 体必须物化：合同重映射在链接
-/// 边界要求 provider 实例存在于 MIR，否则报「host provider 未在源码闭包中定义」。
+/// 与 [`resolve_host_provider_bindings`] 共用同一族查找事实源（只允许声明键精确
+/// 命中）。provider 体必须物化：合同重映射在链接边界要求 provider 实例存在于 MIR，
+/// 否则报「host provider 未在源码闭包中定义」。
 pub fn host_provider_root_declarations(hirs: &[&HirModule], bindings: &[CompilerHostProviderBinding]) -> Result<BTreeSet<ItemId>, ParseError> {
     if bindings.is_empty() {
         return Ok(BTreeSet::new());
@@ -886,19 +889,7 @@ pub fn host_provider_root_declarations(hirs: &[&HirModule], bindings: &[Compiler
     let instances = host_callable_instances(hirs)?;
     let mut roots = BTreeSet::new();
     for binding in bindings {
-        let family = instances.get(&binding.provider).or_else(|| {
-            instances
-                .iter()
-                .find(|(key, _)| {
-                    key.dependency_key == binding.provider.dependency_key
-                        && key.namespace == binding.provider.namespace
-                        && key.kind == binding.provider.kind
-                        && key.owner == binding.provider.owner
-                        && key.name == binding.provider.name
-                })
-                .map(|(_, family)| family)
-        });
-        if let Some(family) = family {
+        if let Some(family) = instances.get(&binding.provider) {
             roots.extend(family.declarations.iter().copied());
         }
     }
