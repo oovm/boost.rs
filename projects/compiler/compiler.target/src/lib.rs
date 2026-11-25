@@ -40,7 +40,6 @@ pub use self::{
         TargetResolver, cpython_module_name, probe_build_host,
     },
 };
-pub use compiler_analysis::{EntryContract, ExportContract, FunctionAnalysis, ImportContract, ProgramFacts};
 pub use compiler_optimize::{
     AlgebraicTerm, EGraphSnapshot, EntryReturnProjection, FutamuraProjectionFamily, HostProjectionBoundary, ObjectAlgebraicBuilder,
     ObjectAlgebraicDimension, ObjectAlgebraicInterpreter, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult,
