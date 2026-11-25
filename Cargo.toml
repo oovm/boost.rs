@@ -1179,6 +1179,9 @@ thiserror = "2"
 # `serde` 特性由需要它的 std 消费者本地声明，不放进公共条目：
 # `boost-net` 的 no_std 构建不能继承 allocator 感知的 serde 依赖。
 url = "2.5.8"
+# TLS 1.3 的 X25519MLKEM768 混合密钥交换（RFC 9372 / draft-ietf-tls-ecdhe-mlkem）。
+# 只取 no_std + alloc 的纯算法实现；熵由 `boost-random` 提供，不启用 `getrandom`。
+ml-kem = { version = "0.3.4", default-features = false, features = ["alloc"] }
 # 仅 `database.server` 的服务端 TLS 仍在使用；boost.net 已内置客户端。
 rustls = { version = "0.23.45", default-features = false, features = ["std", "ring", "tls12"] }
 syn = "3.0.10"

@@ -28,7 +28,9 @@ use crate::pki::{Certificate, PublicKey, TrustAnchor, matches_dns, verify_chain}
 
 use super::{
     error::{TlsError, TlsResult},
-    kx::{KeyPair, TrafficKey, derive_secret, extract},
+    kx::{
+        GROUP_X25519_MLKEM768, HYBRID_CLIENT_SHARE_LEN, HYBRID_SERVER_SHARE_LEN, HybridKeyPair, TrafficKey, derive_secret, extract,
+    },
     record::{MAX_FRAGMENT, Wire},
 };
 
@@ -84,24 +86,26 @@ pub struct ClientConfig<'a> {
     pub timeout: Duration,
 }
 
-/// The ephemeral X25519 key pair of one handshake.
+/// The ephemeral `X25519MLKEM768` key pair of one handshake.
 ///
 /// A [`ClientHelloHook`] receives this view so it can derive a shared secret
-/// against a static peer key before the ClientHello leaves the machine.
+/// against a static peer key before the ClientHello leaves the machine. The
+/// view is the X25519 half, which is the key REALITY seals its session id with.
 #[derive(Clone, Copy)]
 pub struct EphemeralKey<'a> {
-    pair: &'a KeyPair,
+    pair: &'a HybridKeyPair,
 }
 
 impl EphemeralKey<'_> {
-    /// The public key the ClientHello carries in `key_share`.
+    /// The X25519 public key the ClientHello carries, alone and inside the
+    /// hybrid share.
     pub fn public(&self) -> &[u8; 32] {
-        self.pair.public()
+        self.pair.x25519_public()
     }
 
     /// ECDH against a peer public key.
     pub fn shared(&self, peer: &[u8; 32]) -> TlsResult<[u8; 32]> {
-        self.pair.shared(peer)
+        self.pair.x25519_shared(peer)
     }
 }
 
@@ -166,14 +170,22 @@ impl<S: Read + Write> TlsClient<S> {
     /// Perform the full handshake, applying the given per-connection options.
     pub fn handshake_with(config: &ClientConfig<'_>, options: &HandshakeOptions<'_>, stream: S) -> TlsResult<Self> {
         let mut wire = Wire::new(stream);
-        let keypair = KeyPair::generate()?;
+        let keypair = HybridKeyPair::generate()?;
+        let hybrid_share = keypair.client_share();
         let mut transcript = Vec::new();
         let mut buffer = Vec::new();
 
         let mut cookie: Option<Vec<u8>> = None;
-        let mut server_share: Option<[u8; 32]> = None;
+        let mut server_share: Option<ServerShare> = None;
         for attempt in 0..2 {
-            let (mut client_hello, client_random) = build_client_hello(config.hostname, keypair.public(), cookie.as_deref(), options.alpn)?;
+            let (mut client_hello, client_random) = build_client_hello(
+                config.hostname,
+                &hybrid_share,
+                keypair.x25519_public(),
+                attempt == 0,
+                cookie.as_deref(),
+                options.alpn,
+            )?;
             if let Some(hook) = options.hello {
                 hook.rewrite(&mut client_hello, &client_random, EphemeralKey { pair: &keypair }).map_err(TlsError::Protocol)?;
             }
@@ -204,7 +216,13 @@ impl<S: Read + Write> TlsClient<S> {
         // Derive-Secret(early_secret, "derived", "").
         let early_secret = extract(&[0u8; 32], &[0u8; 32]);
         let derived_zero = derive_secret(&early_secret, "derived", &EMPTY_HASH)?;
-        let handshake_secret = extract(&derived_zero, &keypair.shared(&server_share)?);
+        // A hybrid share concatenates ML-KEM and X25519 secrets into 64 bytes; a
+        // bare X25519 share stays 32. Both feed the same Extract.
+        let shared = match &server_share {
+            ServerShare::Hybrid(bytes) => keypair.hybrid_shared(bytes)?,
+            ServerShare::X25519(peer) => keypair.x25519_shared(peer)?.to_vec(),
+        };
+        let handshake_secret = extract(&derived_zero, &shared);
         let hash_after_sh = sha256(&transcript);
         let client_hs = derive_secret(&handshake_secret, "c hs traffic", &hash_after_sh)?;
         let server_hs = derive_secret(&handshake_secret, "s hs traffic", &hash_after_sh)?;
@@ -674,7 +692,14 @@ fn client_cipher_suites(grease: u16) -> [u16; 14] {
     [grease, 0x1301, 0xC02B, 0xC02F, 0xC02C, 0xC030, 0xCCA9, 0xCCA8, 0xC013, 0xC014, 0x009C, 0x009D, 0x002F, 0x0035]
 }
 
-fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]>, alpn: Option<&[&str]>) -> TlsResult<(Vec<u8>, [u8; 32])> {
+fn build_client_hello(
+    hostname: &str,
+    hybrid_share: &[u8],
+    x25519_public: &[u8; 32],
+    include_hybrid: bool,
+    cookie: Option<&[u8]>,
+    alpn: Option<&[&str]>,
+) -> TlsResult<(Vec<u8>, [u8; 32])> {
     let mut random = [0u8; 32];
     let mut session_id = [0u8; 32];
     let mut entropy = Secure::system();
@@ -698,9 +723,12 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
     extension(&mut extensions, EXT_EXTENDED_MASTER_SECRET, &[]);
     extension(&mut extensions, EXT_RENEGOTIATION_INFO, &[0]);
     {
+        // Chromium's order: the hybrid post-quantum group first, then the plain
+        // X25519 and the two NIST curves a TLS 1.2 fallback may still need.
         let mut groups = Vec::new();
-        groups.extend_from_slice(&[0, 8]);
+        groups.extend_from_slice(&[0, 10]);
         groups.extend_from_slice(&grease.to_be_bytes());
+        groups.extend_from_slice(&GROUP_X25519_MLKEM768.to_be_bytes());
         groups.extend_from_slice(&GROUP_X25519.to_be_bytes());
         groups.extend_from_slice(&GROUP_SECP256R1.to_be_bytes());
         groups.extend_from_slice(&GROUP_SECP384R1.to_be_bytes());
@@ -735,14 +763,22 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
     );
     extension(&mut extensions, EXT_SCT, &[]);
     {
-        // A GREASE share with one byte of payload, then the real X25519 share.
-        let mut body = Vec::new();
-        body.extend_from_slice(&[0, 41]);
-        body.extend_from_slice(&grease.to_be_bytes());
-        body.extend_from_slice(&[0, 1, 0]);
-        body.extend_from_slice(&GROUP_X25519.to_be_bytes());
-        body.extend_from_slice(&[0, 32]);
-        body.extend_from_slice(key_share);
+        // A GREASE share with one byte of payload, the hybrid share, and the
+        // plain X25519 share a server without ML-KEM support can pick.
+        let mut shares = Vec::new();
+        shares.extend_from_slice(&grease.to_be_bytes());
+        shares.extend_from_slice(&[0, 1, 0]);
+        if include_hybrid {
+            shares.extend_from_slice(&GROUP_X25519_MLKEM768.to_be_bytes());
+            shares.extend_from_slice(&(hybrid_share.len() as u16).to_be_bytes());
+            shares.extend_from_slice(hybrid_share);
+        }
+        shares.extend_from_slice(&GROUP_X25519.to_be_bytes());
+        shares.extend_from_slice(&[0, 32]);
+        shares.extend_from_slice(x25519_public);
+        let mut body = Vec::with_capacity(2 + shares.len());
+        body.extend_from_slice(&(shares.len() as u16).to_be_bytes());
+        body.extend_from_slice(&shares);
         extension(&mut extensions, EXT_KEY_SHARE, &body);
     }
     extension(&mut extensions, EXT_PSK_KEY_EXCHANGE_MODES, &[1, 1]);
@@ -780,8 +816,17 @@ fn build_client_hello(hostname: &str, key_share: &[u8; 32], cookie: Option<&[u8]
     Ok((message, random))
 }
 
+/// The key share a ServerHello selected.
+#[derive(Debug)]
+enum ServerShare {
+    /// The 32-byte X25519 public key of group 29.
+    X25519([u8; 32]),
+    /// The 1120-byte hybrid share: ML-KEM ciphertext then X25519 public key.
+    Hybrid(Vec<u8>),
+}
+
 /// The key share and HelloRetryRequest cookie extracted from a ServerHello.
-type ServerHelloOutcome = (Option<[u8; 32]>, Option<Vec<u8>>);
+type ServerHelloOutcome = (Option<ServerShare>, Option<Vec<u8>>);
 
 fn parse_server_hello(message: &[u8]) -> TlsResult<ServerHelloOutcome> {
     let mut cursor = Cursor::new(message);
@@ -801,7 +846,7 @@ fn parse_server_hello(message: &[u8]) -> TlsResult<ServerHelloOutcome> {
     }
     let extensions_len = cursor.u16()? as usize;
     let mut extensions = cursor.take(extensions_len)?;
-    let mut key_share: Option<[u8; 32]> = None;
+    let mut key_share: Option<ServerShare> = None;
     let mut cookie: Option<Vec<u8>> = None;
     let mut retry = false;
     while !extensions.is_empty() {
@@ -818,15 +863,23 @@ fn parse_server_hello(message: &[u8]) -> TlsResult<ServerHelloOutcome> {
             EXT_KEY_SHARE => {
                 let mut share = Cursor::new(body);
                 let group = share.u16()?;
-                if group != GROUP_X25519 {
-                    return Err(TlsError::Protocol(format!("server key share group {group} is not x25519")));
-                }
                 let exchange_len = share.u16()? as usize;
-                if exchange_len != 32 {
-                    return Err(TlsError::Protocol(format!("server x25519 key share length {exchange_len}")));
+                match group {
+                    GROUP_X25519_MLKEM768 => {
+                        if exchange_len != HYBRID_SERVER_SHARE_LEN {
+                            return Err(TlsError::Protocol(format!("server hybrid key share length {exchange_len}")));
+                        }
+                        key_share = Some(ServerShare::Hybrid(share.take(exchange_len)?.to_vec()));
+                    }
+                    GROUP_X25519 => {
+                        if exchange_len != 32 {
+                            return Err(TlsError::Protocol(format!("server x25519 key share length {exchange_len}")));
+                        }
+                        let value = share.take(32)?;
+                        key_share = Some(ServerShare::X25519(value.try_into().expect("32 bytes")));
+                    }
+                    _ => return Err(TlsError::Protocol(format!("server key share group {group} is not offered"))),
                 }
-                let value = share.take(32)?;
-                key_share = Some(value.try_into().expect("32 bytes"));
             }
             EXT_COOKIE => cookie = Some(body.to_vec()),
             EXT_HELLO_RETRY_REQUEST => retry = true,
@@ -946,7 +999,9 @@ mod tests {
 
     #[test]
     fn client_hello_is_a_well_formed_handshake_message() {
-        let hello = build_client_hello("example.com", &[7u8; 32], None, None).expect("hello").0;
+        let pair = HybridKeyPair::generate().expect("pair");
+        let share = pair.client_share();
+        let hello = build_client_hello("example.com", &share, pair.x25519_public(), true, None, None).expect("hello").0;
         assert_eq!(hello[0], 1);
         let length = u32::from_be_bytes([0, hello[1], hello[2], hello[3]]) as usize;
         assert_eq!(length, hello.len() - 4);
@@ -954,7 +1009,44 @@ mod tests {
         assert_eq!(&hello[4..6], &[0x03, 0x03]);
         assert_eq!(hello[6 + 32], 32);
         // The trailing extensions carry `supported_versions` with TLS 1.3.
-        assert!(hello.windows(6).any(|window| window == &[0x00, 0x2b, 0x00, 0x05, 0x04, 0x03]), "supported_versions extension present");
+        assert!(hello.windows(6).any(|window| window == [0x00, 0x2b, 0x00, 0x05, 0x04, 0x03]), "supported_versions extension present");
+        // The hybrid group is offered alongside the plain X25519 share.
+        assert!(hello.windows(2).any(|window| window == [0x11, 0xEC]), "X25519MLKEM768 in supported_groups");
+    }
+
+    #[test]
+    fn a_retry_hello_drops_the_hybrid_share() {
+        let pair = HybridKeyPair::generate().expect("pair");
+        let share = pair.client_share();
+        let first = build_client_hello("example.com", &share, pair.x25519_public(), true, None, None).expect("hello").0;
+        let retry = build_client_hello("example.com", &share, pair.x25519_public(), false, None, None).expect("hello").0;
+        // The hybrid entry is a two-byte group, a two-byte length, and the share.
+        assert_eq!(first.len() - retry.len(), 4 + HYBRID_CLIENT_SHARE_LEN);
+    }
+
+    #[test]
+    fn a_hybrid_server_share_is_parsed() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x03, 0x03]);
+        body.extend_from_slice(&[0u8; 32]);
+        body.push(0);
+        body.extend_from_slice(&[0x13, 0x01, 0x00]);
+        let mut extensions = Vec::new();
+        extension(&mut extensions, EXT_SUPPORTED_VERSIONS, &[0x03, 0x04]);
+        let mut share = Vec::new();
+        share.extend_from_slice(&GROUP_X25519_MLKEM768.to_be_bytes());
+        share.extend_from_slice(&(HYBRID_SERVER_SHARE_LEN as u16).to_be_bytes());
+        share.extend_from_slice(&vec![0x5Au8; HYBRID_SERVER_SHARE_LEN]);
+        extension(&mut extensions, EXT_KEY_SHARE, &share);
+        body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+        body.extend_from_slice(&extensions);
+
+        let (parsed, cookie) = parse_server_hello(&body).expect("server hello");
+        assert!(cookie.is_none());
+        match parsed {
+            Some(ServerShare::Hybrid(bytes)) => assert_eq!(bytes.len(), HYBRID_SERVER_SHARE_LEN),
+            other => panic!("expected a hybrid share, got {:?}", other.is_some()),
+        }
     }
 
     #[test]

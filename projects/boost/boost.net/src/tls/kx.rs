@@ -10,7 +10,9 @@ use boost_crypto::{
     secret::SecretBytes,
     x25519,
 };
+use boost_random::Secure;
 use core::fmt;
+use ml_kem::{Decapsulate, FromSeed, KeyExport, MlKem768, Seed};
 
 use super::error::{TlsError, TlsResult};
 
@@ -45,6 +47,79 @@ impl KeyPair {
         let mut out = [0u8; 32];
         out.copy_from_slice(shared.expose());
         Ok(out)
+    }
+}
+
+/// The hybrid group `X25519MLKEM768` (draft-ietf-tls-ecdhe-mlkem §2).
+pub const GROUP_X25519_MLKEM768: u16 = 0x11EC;
+/// An ML-KEM-768 encapsulation key, in bytes.
+pub const MLKEM768_EK_LEN: usize = 1184;
+/// An ML-KEM-768 ciphertext, in bytes.
+pub const MLKEM768_CT_LEN: usize = 1088;
+/// The client share: encapsulation key followed by the X25519 public key.
+pub const HYBRID_CLIENT_SHARE_LEN: usize = MLKEM768_EK_LEN + 32;
+/// The server share: ciphertext followed by the X25519 public key.
+pub const HYBRID_SERVER_SHARE_LEN: usize = MLKEM768_CT_LEN + 32;
+
+/// An `X25519MLKEM768` client key pair.
+///
+/// Both halves are fresh per handshake. The X25519 key is the one carried both
+/// inside the hybrid share and alone, so a REALITY server that seals against
+/// either one derives the same peer key.
+pub struct HybridKeyPair {
+    x25519: KeyPair,
+    kem: ml_kem::DecapsulationKey<MlKem768>,
+    encapsulation: Vec<u8>,
+}
+
+impl fmt::Debug for HybridKeyPair {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("HybridKeyPair").field("public", self.x25519.public()).finish()
+    }
+}
+
+impl HybridKeyPair {
+    /// Generate a fresh pair from the host CSPRNG.
+    pub fn generate() -> TlsResult<Self> {
+        let x25519 = KeyPair::generate()?;
+        let mut bytes = [0u8; 64];
+        let mut entropy = Secure::system();
+        entropy.fill(&mut bytes).map_err(|error| TlsError::Unsupported(format!("host entropy: {error}")))?;
+        let seed = Seed::try_from(&bytes[..]).expect("64-byte ml-kem seed");
+        let (kem, encapsulation) = <MlKem768 as FromSeed>::from_seed(&seed);
+        Ok(Self { x25519, kem, encapsulation: encapsulation.to_bytes().to_vec() })
+    }
+
+    /// The X25519 public key, carried inside the hybrid share and on its own.
+    pub fn x25519_public(&self) -> &[u8; 32] {
+        self.x25519.public()
+    }
+
+    /// The hybrid `key_share` payload: encapsulation key ‖ X25519 public key.
+    pub fn client_share(&self) -> Vec<u8> {
+        let mut share = Vec::with_capacity(HYBRID_CLIENT_SHARE_LEN);
+        share.extend_from_slice(&self.encapsulation);
+        share.extend_from_slice(self.x25519.public());
+        share
+    }
+
+    /// The 64-byte secret of the hybrid share: ML-KEM secret ‖ X25519 secret.
+    pub fn hybrid_shared(&self, server_share: &[u8]) -> TlsResult<Vec<u8>> {
+        if server_share.len() != HYBRID_SERVER_SHARE_LEN {
+            return Err(TlsError::Protocol(format!("hybrid server share of {} bytes", server_share.len())));
+        }
+        let (ciphertext, peer) = server_share.split_at(MLKEM768_CT_LEN);
+        let peer: &[u8; 32] = peer.try_into().expect("32-byte x25519 share");
+        let secret = self.kem.decapsulate_slice(ciphertext).map_err(|error| TlsError::Protocol(format!("ml-kem decapsulation: {error}")))?;
+        let mut shared = Vec::with_capacity(64);
+        shared.extend_from_slice(&secret[..]);
+        shared.extend_from_slice(&self.x25519.shared(peer)?);
+        Ok(shared)
+    }
+
+    /// The bare X25519 exchange, used when a server picks group 29 instead.
+    pub fn x25519_shared(&self, peer: &[u8; 32]) -> TlsResult<[u8; 32]> {
+        self.x25519.shared(peer)
     }
 }
 
@@ -174,6 +249,20 @@ mod tests {
         0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
         0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
     ];
+
+    #[test]
+    fn hybrid_shared_secret_is_mlkem_then_x25519() {
+        let pair = HybridKeyPair::generate().expect("pair");
+        assert_eq!(pair.client_share().len(), HYBRID_CLIENT_SHARE_LEN);
+        let peer = KeyPair::generate().expect("peer");
+        let mut server_share = vec![0x5Au8; MLKEM768_CT_LEN];
+        server_share.extend_from_slice(peer.public());
+        let secret = pair.hybrid_shared(&server_share).expect("shared");
+        assert_eq!(secret.len(), 64);
+        // The X25519 half must land in the last 32 bytes, after the ML-KEM secret.
+        assert_eq!(&secret[32..], peer.shared(pair.x25519_public()).expect("x25519"));
+        assert!(pair.hybrid_shared(&server_share[..32]).is_err(), "a truncated share is rejected");
+    }
 
     #[test]
     fn x25519_shared_secret_is_symmetric() {
