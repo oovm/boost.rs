@@ -40,120 +40,185 @@ micro main() -> i64 {
 }
 "#;
 
-/// i32 运算符作为普通成员声明，助记符与 `tests/support/std_operators.v` 中已验证的一致。
+/// e2e 覆盖的 target：legion 标签与运算符成员上的绑定注解名。
 ///
-/// 只保留本用例实际用到的 i32 与比较结果载体 `bool`；`+ - * / %`、前缀 `-`、
-/// `== != < <= > >=` 四个 target 的绑定都齐全。
-const OPERATOR_PRIMITIVES: &str = r#"namespace std.primitive;
-
-[primitive("std::primitive::i32")]
-structure i32 {
-    [infix]
-    [jvm_operator("integer.add")]
-    [clr_operator("i32.add")]
-    [wasm_operator("i32.add")]
-    [ovm_operator("i32.add")]
-    micro `+`(self: i32, other: i32) -> i32;
-
-    [infix]
-    [jvm_operator("integer.subtract")]
-    [clr_operator("i32.sub")]
-    [wasm_operator("i32.sub")]
-    [ovm_operator("i32.sub")]
-    micro `-`(self: i32, other: i32) -> i32;
-
-    [infix]
-    [jvm_operator("integer.multiply")]
-    [clr_operator("i32.mul")]
-    [wasm_operator("i32.mul")]
-    [ovm_operator("i32.mul")]
-    micro `*`(self: i32, other: i32) -> i32;
-
-    [infix]
-    [jvm_operator("integer.divide")]
-    [clr_operator("i32.div")]
-    [wasm_operator("i32.div_s")]
-    [ovm_operator("i32.div")]
-    micro `/`(self: i32, other: i32) -> i32;
-
-    [infix]
-    [jvm_operator("integer.remainder")]
-    [clr_operator("i32.rem")]
-    [wasm_operator("i32.rem_s")]
-    [ovm_operator("i32.rem")]
-    micro `%`(self: i32, other: i32) -> i32;
-
-    [prefix]
-    [jvm_operator("integer.negate")]
-    [clr_operator("i32.neg")]
-    [wasm_operator("i32.neg")]
-    [ovm_operator("i32.neg")]
-    micro `-`(self: i32) -> i32;
-
-    [infix]
-    [jvm_operator("integer.compare_equal")]
-    [clr_operator("i32.eq")]
-    [wasm_operator("i32.eq")]
-    [ovm_operator("i32.eq")]
-    micro `==`(self: i32, other: i32) -> bool;
-
-    [infix]
-    [jvm_operator("integer.compare_not_equal")]
-    [clr_operator("i32.ne")]
-    [wasm_operator("i32.ne")]
-    [ovm_operator("i32.ne")]
-    micro `!=`(self: i32, other: i32) -> bool;
-
-    [infix]
-    [jvm_operator("integer.compare_less_than")]
-    [clr_operator("i32.lt")]
-    [wasm_operator("i32.lt_s")]
-    [ovm_operator("i32.lt")]
-    micro `<`(self: i32, other: i32) -> bool;
-
-    [infix]
-    [jvm_operator("integer.compare_less_or_equal")]
-    [clr_operator("i32.le")]
-    [wasm_operator("i32.le_s")]
-    [ovm_operator("i32.le")]
-    micro `<=`(self: i32, other: i32) -> bool;
-
-    [infix]
-    [jvm_operator("integer.compare_greater_than")]
-    [clr_operator("i32.gt")]
-    [wasm_operator("i32.gt_s")]
-    [ovm_operator("i32.gt")]
-    micro `>`(self: i32, other: i32) -> bool;
-
-    [infix]
-    [jvm_operator("integer.compare_greater_or_equal")]
-    [clr_operator("i32.ge")]
-    [wasm_operator("i32.ge_s")]
-    [ovm_operator("i32.ge")]
-    micro `>=`(self: i32, other: i32) -> bool;
+/// 能力声明落在「运算符成员是否有该 target 的绑定注解」上：某 target 没有该
+/// 助记符就声明 `None`，用例可运行的 target 集合由声明推导（`Case::supports`）。
+/// 这里不写「按 target 名字跳过」的名单——配方补齐后用例会自动进入该 target。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Target {
+    Jvm,
+    Clr,
+    Wasm,
+    Ovm,
 }
 
-# 无符号载体只声明本用例用到的两项：前缀取负与无符号有序比较。
-[primitive("std::primitive::u32")]
-structure u32 {
-    [prefix]
-    [jvm_operator("integer.negate")]
-    [clr_operator("i32.neg")]
-    [wasm_operator("i32.neg")]
-    [ovm_operator("i32.neg")]
-    micro `-`(self: u32) -> u32;
+/// 全部 target，推导与遍历顺序的唯一来源。
+const TARGETS: &[Target] = &[Target::Jvm, Target::Clr, Target::Wasm, Target::Ovm];
 
-    [infix]
-    [jvm_operator("integer.compare_greater_than_unsigned")]
-    [clr_operator("i32.gt.un")]
-    [wasm_operator("i32.gt_u")]
-    [ovm_operator("i32.gt_u")]
-    micro `>`(self: u32, other: u32) -> bool;
+impl Target {
+    /// legion 构建/清单里的 target 标签。
+    fn label(self) -> &'static str {
+        match self {
+            Self::Jvm => "jvm",
+            Self::Clr => "clr",
+            Self::Wasm => "wasm-node",
+            Self::Ovm => "ovm",
+        }
+    }
+
+    /// 运算符成员上的目标绑定注解名。
+    fn binding_attribute(self) -> &'static str {
+        match self {
+            Self::Jvm => "jvm_operator",
+            Self::Clr => "clr_operator",
+            Self::Wasm => "wasm_operator",
+            Self::Ovm => "ovm_operator",
+        }
+    }
+
+    /// 该 target 在这个运算符上的冻结助记符。
+    ///
+    /// `None` 是真实配方缺口：不得用别的 target 的助记符顶替，也不得靠名字特判绕开。
+    fn mnemonic(self, operator: &Operator) -> Option<&'static str> {
+        match self {
+            Self::Jvm => operator.jvm,
+            Self::Clr => operator.clr,
+            Self::Wasm => operator.wasm,
+            Self::Ovm => operator.ovm,
+        }
+    }
 }
 
-[primitive("std::primitive::bool")]
-structure bool { }
-"#;
+/// 一个运算符成员声明在四个 target 上的绑定。
+struct Operator {
+    /// `infix` / `prefix`。
+    form: &'static str,
+    /// 反引号内的运算符词法形式。
+    symbol: &'static str,
+    /// 二元运算符声明 `other` 形参。
+    binary: bool,
+    /// 比较运算符声明返回 `bool`；算术返回载体自身。
+    comparison: bool,
+    jvm: Option<&'static str>,
+    clr: Option<&'static str>,
+    wasm: Option<&'static str>,
+    ovm: Option<&'static str>,
+}
+
+const fn infix(
+    symbol: &'static str,
+    comparison: bool,
+    jvm: Option<&'static str>,
+    clr: Option<&'static str>,
+    wasm: Option<&'static str>,
+    ovm: Option<&'static str>,
+) -> Operator {
+    Operator { form: "infix", symbol, binary: true, comparison, jvm, clr, wasm, ovm }
+}
+
+const fn prefix(
+    symbol: &'static str,
+    jvm: Option<&'static str>,
+    clr: Option<&'static str>,
+    wasm: Option<&'static str>,
+    ovm: Option<&'static str>,
+) -> Operator {
+    Operator { form: "prefix", symbol, binary: false, comparison: false, jvm, clr, wasm, ovm }
+}
+
+/// 一个 `[primitive]` 结构及其运算符成员，用于按 target 渲染 `core_primitive.v`。
+struct Primitive {
+    /// 规范限定名（`[primitive("...")]`）。
+    canonical: &'static str,
+    /// 源里的结构名，也是运算符 `self` 的载体类型。
+    name: &'static str,
+    operators: &'static [Operator],
+}
+
+impl Primitive {
+    /// 渲染该 target 的 `[primitive]` 结构。
+    ///
+    /// 调用方只在 `Case::supports` 成立后渲染，因此缺绑定是内部错误：渲染阶段
+    /// 绝不补造注解或省略成员。
+    fn render(&self, target: Target) -> String {
+        let mut text = format!("[primitive(\"{}\")]\nstructure {} {{\n", self.canonical, self.name);
+        for operator in self.operators {
+            let mnemonic = target.mnemonic(operator).unwrap_or_else(|| {
+                panic!("`{}` 的运算符 `{}` 在 {target:?} 上没有绑定：必须先经 `Case::supports` 过滤", self.name, operator.symbol)
+            });
+            let signature = if operator.binary { format!("self: {}, other: {}", self.name, self.name) } else { format!("self: {}", self.name) };
+            let result = if operator.comparison { "bool" } else { self.name };
+            text.push_str(&format!(
+                "    [{}]\n    [{}(\"{}\")]\n    micro `{}`({}) -> {};\n\n",
+                operator.form,
+                target.binding_attribute(),
+                mnemonic,
+                operator.symbol,
+                signature,
+                result,
+            ));
+        }
+        text.push_str("}\n\n");
+        text
+    }
+}
+
+/// 有符号 `i32` 的完整算术表面：`+ - * / %`、前缀 `-` 与六个比较，四 target 齐全。
+const I32_OPERATORS: &[Operator] = &[
+    infix("+", false, Some("integer.add"), Some("i32.add"), Some("i32.add"), Some("i32.add")),
+    infix("-", false, Some("integer.subtract"), Some("i32.sub"), Some("i32.sub"), Some("i32.sub")),
+    infix("*", false, Some("integer.multiply"), Some("i32.mul"), Some("i32.mul"), Some("i32.mul")),
+    infix("/", false, Some("integer.divide"), Some("i32.div"), Some("i32.div_s"), Some("i32.div")),
+    infix("%", false, Some("integer.remainder"), Some("i32.rem"), Some("i32.rem_s"), Some("i32.rem")),
+    prefix("-", Some("integer.negate"), Some("i32.neg"), Some("i32.neg"), Some("i32.neg")),
+    infix("==", true, Some("integer.compare_equal"), Some("i32.eq"), Some("i32.eq"), Some("i32.eq")),
+    infix("!=", true, Some("integer.compare_not_equal"), Some("i32.ne"), Some("i32.ne"), Some("i32.ne")),
+    infix("<", true, Some("integer.compare_less_than"), Some("i32.lt"), Some("i32.lt_s"), Some("i32.lt")),
+    infix("<=", true, Some("integer.compare_less_or_equal"), Some("i32.le"), Some("i32.le_s"), Some("i32.le")),
+    infix(">", true, Some("integer.compare_greater_than"), Some("i32.gt"), Some("i32.gt_s"), Some("i32.gt")),
+    infix(">=", true, Some("integer.compare_greater_or_equal"), Some("i32.ge"), Some("i32.ge_s"), Some("i32.ge")),
+];
+
+/// 有符号用例只用到 `u32` 的前缀 `-` 与无符号 `>`。
+const U32_NEGATE_AND_COMPARE: &[Operator] = &[
+    prefix("-", Some("integer.negate"), Some("i32.neg"), Some("i32.neg"), Some("i32.neg")),
+    infix(">", true, Some("integer.compare_greater_than_unsigned"), Some("i32.gt.un"), Some("i32.gt_u"), Some("i32.gt_u")),
+];
+
+/// 无符号 `u32` 除/余：OVM 没有无符号除余头码，因此不声明 ovm 绑定。
+const U32_UNSIGNED_DIVISION: &[Operator] = &[
+    prefix("-", Some("integer.negate"), Some("i32.neg"), Some("i32.neg"), Some("i32.neg")),
+    infix("/", false, Some("integer.divide_unsigned"), Some("i32.div.un"), Some("i32.div_u"), None),
+    infix("%", false, Some("integer.remainder_unsigned"), Some("i32.rem.un"), Some("i32.rem_u"), None),
+    infix(">", true, Some("integer.compare_greater_than_unsigned"), Some("i32.gt.un"), Some("i32.gt_u"), Some("i32.gt_u")),
+    infix("<", true, Some("integer.compare_less_than_unsigned"), Some("i32.lt.un"), Some("i32.lt_u"), Some("i32.lt_u")),
+];
+
+/// `f64` 算术与比较：OVM 没有 f64 头码，CLR/Wasm 没有浮点余数，故不声明 `%`。
+const F64_OPERATORS: &[Operator] = &[
+    infix("+", false, Some("double.add"), Some("f64.add"), Some("f64.add"), None),
+    infix("-", false, Some("double.subtract"), Some("f64.sub"), Some("f64.sub"), None),
+    infix("*", false, Some("double.multiply"), Some("f64.mul"), Some("f64.mul"), None),
+    infix("/", false, Some("double.divide"), Some("f64.div"), Some("f64.div"), None),
+    prefix("-", Some("double.negate"), Some("f64.neg"), Some("f64.neg"), None),
+    infix("==", true, Some("double.compare_equal"), Some("f64.eq"), Some("f64.eq"), None),
+    infix("!=", true, Some("double.compare_not_equal"), Some("f64.ne"), Some("f64.ne"), None),
+    infix("<", true, Some("double.compare_less_than"), Some("f64.lt"), Some("f64.lt"), None),
+    infix("<=", true, Some("double.compare_less_or_equal"), Some("f64.le"), Some("f64.le"), None),
+    infix(">", true, Some("double.compare_greater_than"), Some("f64.gt"), Some("f64.gt"), None),
+    infix(">=", true, Some("double.compare_greater_or_equal"), Some("f64.ge"), Some("f64.ge"), None),
+];
+
+/// 只作为返回/比较结果载体出现、不参与任何运算的 primitive。
+const NO_OPERATORS: &[Operator] = &[];
+
+const I32_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::i32", name: "i32", operators: I32_OPERATORS };
+const U32_ARITHMETIC_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_NEGATE_AND_COMPARE };
+const U32_DIVISION_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::u32", name: "u32", operators: U32_UNSIGNED_DIVISION };
+const F64_PRIMITIVE: Primitive = Primitive { canonical: "std::primitive::f64", name: "f64", operators: F64_OPERATORS };
+const CARRIER_I32: Primitive = Primitive { canonical: "std::primitive::i32", name: "i32", operators: NO_OPERATORS };
+const CARRIER_BOOL: Primitive = Primitive { canonical: "std::primitive::bool", name: "bool", operators: NO_OPERATORS };
 
 /// 含运算符的可观测算术入口：`mix(10, 4) + wide_gt(1)` 返回 13。
 ///
@@ -206,8 +271,110 @@ micro main() -> i32 {
 }
 "#;
 
-/// 算术入口经四个 target 运行后期望的可观测值。
-const ARITHMETIC_EXPECTED: i32 = 13;
+/// `f64` 用例入口：`classify(1.5)` 走 `+ - * /`、前缀 `-` 与六个比较。
+///
+/// `x = 1.5 * 2.0 + 0.5 = 3.5`，`y = x / 2.0 = 1.75`，`neg = -y = -1.75`，
+/// `y - neg = 3.5` 在二进制里精确。六个比较按嵌套顺序各带一个独立错误分支
+/// （2/3/4/5/6），全部成立才返回 17，因此 17 能同时判定六个比较助记符。
+const FLOAT_SOURCE: &str = r#"namespace app;
+
+micro classify(a: f64) -> i32 {
+    let x = a * 2.0 + 0.5
+    let y = x / 2.0
+    let neg = -y
+    if y > neg {
+        if y - neg == 3.5 {
+            if y != neg {
+                if y >= neg {
+                    if neg < y {
+                        if neg <= y {
+                            return 17
+                        }
+                        return 6
+                    }
+                    return 5
+                }
+                return 4
+            }
+            return 3
+        }
+        return 2
+    }
+    return 1
+}
+
+[main]
+micro main() -> i32 {
+    return app::classify(1.5)
+}
+"#;
+
+/// 无符号 `u32` 除/余用例入口：`probe(1)` 在 `0xFFFF_FFFF` 上做 `/ 2` 与 `% 7`。
+///
+/// 无符号：`0xFFFF_FFFF / 2 = 0x7FFF_FFFF > 1` 且 `0xFFFF_FFFF % 7 = 3 < 7`，返回 5；
+/// 若 `/` 误用有符号除法，商为 0、`0 > 1` 不成立而返回 1；若 `%` 误用有符号取余，
+/// 余数为 `0xFFFF_FFFF`、`< 7` 不成立而返回 4。因此 5 能区分两种裁决错误。
+const UNSIGNED_DIVISION_SOURCE: &str = r#"namespace app;
+
+micro probe(a: u32) -> i32 {
+    let big = -a
+    let quotient = big / 2
+    let remainder = big % 7
+    if quotient > a {
+        if remainder < 7 {
+            return 5
+        }
+        return 4
+    }
+    return 1
+}
+
+[main]
+micro main() -> i32 {
+    return app::probe(1)
+}
+"#;
+
+/// 一个数值算子 e2e 用例：夹具声明 + 可观测入口。
+struct Case {
+    /// 临时目录与产物目录的去重标签。
+    label: &'static str,
+    primitives: &'static [Primitive],
+    source: &'static str,
+    /// 入口返回值的期望：jvm 打印、clr/wasm 退出码、ovm 进程内 `Value::I32`。
+    expected: i32,
+}
+
+impl Case {
+    /// 只有该 target 上每个被声明的运算符都有冻结助记符时才运行。
+    ///
+    /// 能力来自夹具声明本身：缺注解即缺配方，用例在该 target 上不成立；补齐配方后
+    /// 无需改测试就会自动纳入。
+    fn supports(&self, target: Target) -> bool {
+        self.primitives.iter().all(|primitive| primitive.operators.iter().all(|operator| target.mnemonic(operator).is_some()))
+    }
+
+    /// 该 target 的 `core_primitive.v` 全文。
+    ///
+    /// 所有 primitive 声明都归 `std.primitive` 命名空间：`[primitive]` 身份
+    /// （`std::primitive::i32` 等）在携带者可见面内解析，缺命名空间会落空。
+    fn primitive_source(&self, target: Target) -> String {
+        let mut text = String::from("namespace std.primitive;\n\n");
+        text.push_str(&self.primitives.iter().map(|primitive| primitive.render(target)).collect::<String>());
+        text
+    }
+}
+
+const ARITHMETIC_PRIMITIVES: &[Primitive] = &[I32_PRIMITIVE, U32_ARITHMETIC_PRIMITIVE, CARRIER_BOOL];
+const FLOAT_PRIMITIVES: &[Primitive] = &[CARRIER_I32, F64_PRIMITIVE, CARRIER_BOOL];
+const UNSIGNED_DIVISION_PRIMITIVES: &[Primitive] = &[CARRIER_I32, U32_DIVISION_PRIMITIVE, CARRIER_BOOL];
+
+/// 全部数值算子用例。`expected` 是入口返回值，不是产物存在性。
+const NUMERIC_CASES: &[Case] = &[
+    Case { label: "arithmetic", primitives: ARITHMETIC_PRIMITIVES, source: ARITHMETIC_SOURCE, expected: 13 },
+    Case { label: "float64", primitives: FLOAT_PRIMITIVES, source: FLOAT_SOURCE, expected: 17 },
+    Case { label: "unsigned-division", primitives: UNSIGNED_DIVISION_PRIMITIVES, source: UNSIGNED_DIVISION_SOURCE, expected: 5 },
+];
 
 const MANIFEST_TEMPLATE: &str = r#"{
     name: "app",
@@ -248,12 +415,13 @@ fn build(prefix: &str, target: &str) -> (BuildOutcome, PathBuf) {
     (outcome, root)
 }
 
-fn build_arithmetic(target: &str) -> (BuildOutcome, PathBuf) {
-    let root = std::env::temp_dir().join(format!("legion-arithmetic-{target}-{}", std::process::id()));
+fn build_case(case: &Case, target: Target) -> (BuildOutcome, PathBuf) {
+    let label = target.label();
+    let root = std::env::temp_dir().join(format!("legion-numeric-{}-{label}-{}", case.label, std::process::id()));
     let _ = fs::remove_dir_all(&root);
-    let project_dir = write_project_with(&root, target, ARITHMETIC_SOURCE, OPERATOR_PRIMITIVES);
-    let output_dir = root.join("dist").join(target);
-    let outcome = build_project(&BuildOptions { project_dir, target: Some(target.to_string()), output_dir: Some(output_dir) });
+    let project_dir = write_project_with(&root, label, case.source, &case.primitive_source(target));
+    let output_dir = root.join("dist").join(label);
+    let outcome = build_project(&BuildOptions { project_dir, target: Some(label.to_string()), output_dir: Some(output_dir) });
     (outcome, root)
 }
 
@@ -305,49 +473,57 @@ fn assert_reports(outcome: &BuildOutcome, expected: &str) {
     );
 }
 
-/// 含运算符的算术项目在四个 target 上真实编译并运行，且报告同一可观测结果。
+/// 冻结入口的实际返回值（宿主投影差异，不是算子能力差异）。
 ///
-/// jvm 由 launcher 打印返回值（退出码 0），clr / wasm-node 用返回值作进程退出码，
-/// ovm 由 `interpreter-vm-ovm` 进程内装载 `.odin` 并执行构建给出的入口符号。
-/// 四个 target 的入口都是 `[main] mix(10, 4)`，表达式在形参上执行
-/// `+ - * / %`、前缀 `-` 与 `== != < <= > >=`，断言的是运行结果而不是产物是否存在。
-#[test]
-fn arithmetic_operators_run_on_every_target() {
-    for target in ["jvm", "clr", "wasm-node", "ovm"] {
-        let (outcome, root) = build_arithmetic(target);
-        assert!(outcome.ok, "{target} 算术项目 build 失败: {:?}", outcome.error);
-        match target {
-            "jvm" => {
-                let (code, stdout, stderr) = run_contract(&outcome);
-                assert_eq!(code, Some(0), "jvm: 入口必须正常退出: stdout={stdout:?} stderr={stderr:?}");
-                assert_eq!(stdout.trim(), ARITHMETIC_EXPECTED.to_string(), "jvm: 必须打印算术结果: stderr={stderr:?}");
-            }
-            "clr" | "wasm-node" => {
-                let (code, stdout, stderr) = run_contract(&outcome);
-                assert_eq!(
-                    code,
-                    Some(ARITHMETIC_EXPECTED),
-                    "{target}: 退出码必须是算术结果: stdout={stdout:?} stderr={stderr:?}"
-                );
-            }
-            "ovm" => {
-                let artifact = outcome
-                    .artifacts
-                    .iter()
-                    .find(|artifact| artifact.ends_with(".odin"))
-                    .unwrap_or_else(|| panic!("ovm: 缺少 `.odin` 产物: {:?}", outcome.artifacts));
-                let bytes = fs::read(artifact).unwrap_or_else(|error| panic!("ovm: 读取 `{artifact}` 失败: {error}"));
-                let entry = outcome.entry_symbol.clone().expect("ovm: 构建结果必须给出入口符号");
-                let mut vm = OdinVm::new();
-                let loaded = vm.load(&bytes).unwrap_or_else(|error| panic!("ovm: 装载 `main.odin` 失败: {error}"));
-                let value = vm
-                    .run(&loaded, &entry, Vec::new())
-                    .unwrap_or_else(|error| panic!("ovm: 入口 `{entry}` 必须执行到完成: {error}"));
-                assert_eq!(value, Value::I32(ARITHMETIC_EXPECTED), "ovm: 入口 `{entry}` 必须完成并返回算术结果");
-            }
-            other => panic!("未知 target `{other}`"),
+/// 三个宿主的投影方式不同：jvm launcher 打印返回值且自身退出码为 0；clr / wasm-node
+/// 直接把返回值作为进程退出码；ovm 由解释器进程内调用入口。这是宿主投影差异，
+/// 不是算子能力差异——能力差异只体现在夹具声明的绑定上。
+fn observed_return(target: Target, outcome: &BuildOutcome) -> i32 {
+    match target {
+        Target::Jvm => {
+            let (code, stdout, stderr) = run_contract(outcome);
+            assert_eq!(code, Some(0), "jvm: 入口必须正常退出: stdout={stdout:?} stderr={stderr:?}");
+            stdout.trim().parse().unwrap_or_else(|error| panic!("jvm: stdout 必须是入口返回值: stdout={stdout:?} error={error}"))
         }
-        let _ = fs::remove_dir_all(&root);
+        Target::Clr | Target::Wasm => {
+            let (code, stdout, stderr) = run_contract(outcome);
+            code.unwrap_or_else(|| panic!("{}: 缺少退出码: stdout={stdout:?} stderr={stderr:?}", target.label()))
+        }
+        Target::Ovm => {
+            let artifact = outcome
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.ends_with(".odin"))
+                .unwrap_or_else(|| panic!("ovm: 缺少 `.odin` 产物: {:?}", outcome.artifacts));
+            let bytes = fs::read(artifact).unwrap_or_else(|error| panic!("ovm: 读取 `{artifact}` 失败: {error}"));
+            let entry = outcome.entry_symbol.clone().expect("ovm: 构建结果必须给出入口符号");
+            let mut vm = OdinVm::new();
+            let loaded = vm.load(&bytes).unwrap_or_else(|error| panic!("ovm: 装载 `main.odin` 失败: {error}"));
+            match vm.run(&loaded, &entry, Vec::new()).unwrap_or_else(|error| panic!("ovm: 入口 `{entry}` 必须执行到完成: {error}")) {
+                Value::I32(value) => value,
+                other => panic!("ovm: 入口 `{entry}` 必须返回 `i32`，实际 {other:?}"),
+            }
+        }
+    }
+}
+
+/// 数值算子用例在「声明了全部所需绑定」的 target 上真实编译并运行，报告同一结果。
+///
+/// 可运行 target 集合由夹具声明推导：`f64` 没有 ovm 绑定（VM 无 f64 头码），
+/// `u32` 除/余没有 ovm 绑定（VM 无无符号除余头码），因此这两个用例只进
+/// jvm / clr / wasm；补齐头码后无需改测试就会自动纳入 ovm。
+#[test]
+fn numeric_operator_cases_run_on_every_declaring_target() {
+    for case in NUMERIC_CASES {
+        let targets: Vec<Target> = TARGETS.iter().copied().filter(|target| case.supports(*target)).collect();
+        assert!(!targets.is_empty(), "{}: 至少一个 target 必须声明全部所需运算符", case.label);
+        for target in targets {
+            let (outcome, root) = build_case(case, target);
+            assert!(outcome.ok, "{} @ {}: build 失败: {:?}", case.label, target.label(), outcome.error);
+            let observed = observed_return(target, &outcome);
+            assert_eq!(observed, case.expected, "{} @ {}: 入口返回值必须是期望值", case.label, target.label());
+            let _ = fs::remove_dir_all(&root);
+        }
     }
 }
 
