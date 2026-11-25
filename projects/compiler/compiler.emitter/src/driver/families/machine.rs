@@ -8,9 +8,25 @@ use crate::{
     emitter_backend_machine::MachineImageBackend,
 };
 use compiler_target::{
-    BackendInputKind, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, TargetFamily, TargetLane,
-    backends::TargetCodeGenBackend,
+    BackendInputKind, CanonicalSpecification, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
+    TargetFamily, TargetLane, backends::TargetCodeGenBackend,
 };
+
+/// 由冻结的导出 ABI 事实派生稳定 digest，与 wasm/托管 lane 同语义：同一签名恒得
+/// 同一 digest，任一形参载体、形参名、返回载体或 ABI 标签变化都会改变它。
+/// 机器库此前留空串，等于告诉消费侧「没有 ABI 约束」，必须携带真实指纹。
+fn machine_export_abi_digest(
+    abi: &str,
+    logical_name: &str,
+    parameters: &[String],
+    parameter_names: &[String],
+    returns: &str,
+) -> String {
+    let canonical = format!(
+        "abi={abi}\u{1f}export={logical_name}\u{1f}returns={returns}\u{1f}parameters={parameters:?}\u{1f}parameter_names={parameter_names:?}"
+    );
+    format!("sha256-{}", compiler_types::combined_content_hash(&[&canonical]))
+}
 
 use super::BundledBackendCompiler;
 
@@ -106,7 +122,7 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     source_name: export.source_name.clone(),
                     physical_artifact: physical_artifact.clone(),
                     invocation: invocation.to_string(),
-                    abi_digest: String::new(),
+                    abi_digest: machine_export_abi_digest(abi, &export.public_name, &export.parameters, &export.parameter_names, &export.returns),
                     abi: abi.to_string(),
                     parameters: Some(export.parameters.clone()),
                     parameter_names: Some(export.parameter_names.clone()),
@@ -131,9 +147,18 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                 .first()
                 .map(|artifact| artifact.path.clone())
                 .ok_or_else(|| "native 共享库没有产出共享镜像".to_string())?;
-            let invocation = match input.artifact_extension.as_deref() {
-                Some(".dll") => "LoadLibraryW + GetProcAddress",
-                _ => "dlopen + dlsym",
+            // 装载方式由冻结的平台规格事实决定，与机器后端选容器同源；
+            // 不得从产物后缀猜加载器，缺平台事实即失败闭合。
+            let invocation = match requirement.target.specification {
+                Some(CanonicalSpecification::Windows) => "LoadLibraryW + GetProcAddress",
+                Some(CanonicalSpecification::Linux | CanonicalSpecification::MacOs | CanonicalSpecification::Android | CanonicalSpecification::Ios) => {
+                    "dlopen + dlsym"
+                }
+                other => {
+                    return Err(format!(
+                        "native 共享库缺少可判定加载器的平台规格事实（specification={other:?}）；拒绝按产物后缀猜装载方式"
+                    ));
+                }
             };
             let library_exports = input
                 .host_exports
@@ -143,7 +168,7 @@ impl BundledBackendCompiler for MachineFamilyCompiler {
                     source_name: export.source_name.clone(),
                     physical_artifact: physical_artifact.clone(),
                     invocation: invocation.to_string(),
-                    abi_digest: String::new(),
+                    abi_digest: machine_export_abi_digest("c-abi", &export.public_name, &export.parameters, &export.parameter_names, &export.returns),
                     abi: "c-abi".to_string(),
                     parameters: Some(export.parameters.clone()),
                     parameter_names: Some(export.parameter_names.clone()),
