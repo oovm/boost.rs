@@ -1,6 +1,6 @@
 [package]
 name = "data-compression"
-description = "通用压缩编解码：Snappy block 与 Zstandard 帧的独立实现，及 deflate feature 下内化的 Deflate/zlib/gzip 全套，登记为 boost.data.compression"
+description = "通用压缩编解码：Snappy block 与 Zstandard 帧的独立实现，deflate feature 下内化的 Deflate/zlib/gzip 全套，lzma feature 下内化的 LZMA1/LZMA2 解码，登记为 boost.data.compression"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -14,6 +14,7 @@ data-checksum = { workspace = true }
 [features]
 default = []
 deflate = ["dep:data-binary-core"]
+lzma = ["dep:data-binary-core"]
 
 [[test]]
 name = "deflate"
@@ -22,6 +23,14 @@ required-features = ["deflate"]
 [[test]]
 name = "gzip"
 required-features = ["deflate"]
+
+[[test]]
+name = "lzma"
+required-features = ["lzma"]
+
+[[test]]
+name = "lzma2"
+required-features = ["lzma"]
 
 [[test]]
 name = "zlib"

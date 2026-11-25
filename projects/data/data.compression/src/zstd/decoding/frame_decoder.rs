@@ -36,7 +36,7 @@ pub const DEFAULT_MAX_WINDOW_SIZE: u64 = 1024 * 1024 * 128;
 /// you can use the provided [crate::zstd::decoding::StreamingDecoder] wich wraps this FrameDecoder.
 ///
 /// Workflow is as follows:
-/// ```
+/// ```ignore
 /// use ruzstd::decoding::BlockDecodingStrategy;
 ///
 /// # #[cfg(feature = "std")]

@@ -56,6 +56,8 @@ pub enum CodecFeature {
     BlockType(u8),
     /// Zlib preset dictionary (\FDICT\), which needs an initialized window.
     PresetDictionary,
+    /// An LZMA dictionary size exceeds the internalized decoder's cap.
+    DictionarySize(u32),
 }
 
 /// Errors raised by representation transforms in `data-compression`.

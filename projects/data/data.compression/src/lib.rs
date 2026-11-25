@@ -17,13 +17,13 @@
 pub mod snappy;
 pub mod zstd;
 
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 pub(crate) use data_binary_core::bit;
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 mod error;
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 mod facts;
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 mod limits;
 #[cfg(feature = "deflate")]
 pub mod stream;
@@ -36,14 +36,16 @@ pub mod gzip;
 mod gzip_stream;
 #[cfg(feature = "deflate")]
 pub(crate) mod input;
+#[cfg(feature = "lzma")]
+pub mod lzma;
 #[cfg(feature = "deflate")]
 pub mod zlib;
 
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 pub use error::{ChecksumAlgorithm, CodecError, CodecFeature, EnvelopeKind, Ratio};
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 pub use facts::{Canonicality, ChecksumFacts, DecodeFacts, StreamFacts, StreamState};
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "lzma"))]
 pub use limits::CodecLimits;
 #[cfg(feature = "deflate")]
 pub use stream::{CompressionProtocol, StreamChunk, StreamCodec, StreamDecoder};
@@ -54,6 +56,8 @@ pub use crate::deflate::{Deflate, DeflateEncoder, DeflateLevel, DeflateStreamDec
 pub use crate::gzip::Gzip;
 #[cfg(all(feature = "deflate", not(target_arch = "wasm32")))]
 pub use crate::gzip_stream::{GzipStreamDecoder, GzipStreamEncoder};
+#[cfg(feature = "lzma")]
+pub use crate::lzma::{Lzma1, Lzma2, MAX_DICTIONARY_SIZE};
 #[cfg(feature = "deflate")]
 pub use crate::zlib::Zlib;
 #[cfg(feature = "deflate")]
