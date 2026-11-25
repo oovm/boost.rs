@@ -6,7 +6,7 @@
 //! phase and are not simulated here.
 
 use super::{
-    error::{DeckError, codes},
+    error::{DeckError, codes, params::ObjectKind},
     id::SlideId,
     model::Deck,
 };
@@ -125,7 +125,11 @@ impl PlaybackSession {
     pub fn go_to(&mut self, slide_id: &SlideId) -> Result<(), DeckError> {
         self.assert_started()?;
         let position = self.slides.iter().position(|candidate| candidate == slide_id).ok_or_else(|| {
-            DeckError::new(codes::OBJECT_NOT_FOUND, format!("slide `{slide_id}` is not part of this show; hidden slides are skipped"))
+            DeckError::new(
+                codes::OBJECT_NOT_FOUND,
+                format!("slide `{slide_id}` is not part of this show; hidden slides are skipped"),
+            )
+            .with_object(ObjectKind::Slide, slide_id.as_str())
         })?;
         self.position = Some(position);
         self.build_step = 0;
@@ -170,7 +174,11 @@ impl Deck {
         }
         let position = match start_at {
             Some(id) => Some(slides.iter().position(|candidate| candidate == id).ok_or_else(|| {
-                DeckError::new(codes::OBJECT_NOT_FOUND, format!("slide `{id}` is not part of this show; hidden slides are skipped"))
+                DeckError::new(
+                    codes::OBJECT_NOT_FOUND,
+                    format!("slide `{id}` is not part of this show; hidden slides are skipped"),
+                )
+                .with_object(ObjectKind::Slide, id.as_str())
             })?),
             None => None,
         };

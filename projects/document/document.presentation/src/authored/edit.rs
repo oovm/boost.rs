@@ -5,7 +5,7 @@
 //! revision is consumed only by a real commit.
 
 use super::{
-    error::{DeckError, codes},
+    error::{DeckError, codes, params::ObjectKind},
     id::{AssetId, ElementId, LayoutId, SlideId},
     size::DeckSize,
     model::{
@@ -114,12 +114,7 @@ impl Deck {
         if let Some(expected) = expected_revision
             && expected != self.revision()
         {
-            return Err(DeckError::new(
-                codes::DECK_REVISION_CONFLICT,
-                format!("expected revision {expected} but the deck is at revision {}", self.revision()),
-            )
-            .with_revision(self.revision())
-            .with_recoverable(true));
+            return Err(DeckError::revision_conflict(self.revision(), Some(expected)).with_recoverable(true));
         }
         let mut edit = DeckEdit { document: self.document().clone() };
         let value = work(&mut edit)?;
@@ -538,7 +533,7 @@ impl DeckEdit {
     pub fn remove_element(&mut self, slide: &SlideId, element: &ElementId) -> Result<(), DeckError> {
         let target = self.slide_mut(slide)?;
         let index = target.elements.iter().position(|candidate| &candidate.id == element).ok_or_else(|| {
-            DeckError::new(codes::OBJECT_NOT_FOUND, format!("element `{element}` does not exist on this slide"))
+            DeckError::unknown(ObjectKind::Element, element.as_str())
                 .with_slide(slide.clone())
                 .with_element(element.clone())
         })?;
@@ -574,7 +569,7 @@ impl DeckEdit {
             .slides
             .iter()
             .position(|slide| &slide.id == id)
-            .ok_or_else(|| DeckError::new(codes::OBJECT_NOT_FOUND, format!("slide `{id}` does not exist")))
+            .ok_or_else(|| DeckError::unknown(ObjectKind::Slide, id.as_str()))
     }
 
     pub(super) fn slide_mut(&mut self, id: &SlideId) -> Result<&mut DeckSlide, DeckError> {
@@ -585,7 +580,7 @@ impl DeckEdit {
     fn element_mut(&mut self, slide: &SlideId, element: &ElementId) -> Result<&mut Element, DeckError> {
         let slide = self.slide_mut(slide)?;
         slide.element_mut(element).ok_or_else(|| {
-            DeckError::new(codes::OBJECT_NOT_FOUND, format!("element `{element}` does not exist on this slide")).with_element(element.clone())
+            DeckError::unknown(ObjectKind::Element, element.as_str()).with_element(element.clone())
         })
     }
 
@@ -594,7 +589,7 @@ impl DeckEdit {
             Ok(())
         }
         else {
-            Err(DeckError::new(codes::OBJECT_NOT_FOUND, format!("layout `{layout}` does not exist")))
+            Err(DeckError::unknown(ObjectKind::Layout, layout.as_str()))
         }
     }
 
@@ -603,7 +598,7 @@ impl DeckEdit {
             Ok(())
         }
         else {
-            Err(DeckError::new(codes::ASSET_MISSING, format!("asset `{asset}` does not exist")).with_recoverable(true))
+            Err(DeckError::asset_missing(asset.as_str()))
         }
     }
 

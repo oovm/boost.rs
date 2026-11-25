@@ -15,7 +15,7 @@
 
 use super::{
     edit::DeckEdit,
-    error::{DeckError, codes},
+    error::{DeckError, codes, params::ObjectKind},
     id::{AssetId, ElementId, SlideId},
     model::{Crop, Element, ElementContent, ElementOrigin, OriginKind},
 };
@@ -119,15 +119,10 @@ impl DeckEdit {
     /// reference.
     pub fn remove_asset(&mut self, asset: &AssetId) -> Result<(), DeckError> {
         if !self.document().assets.iter().any(|candidate| &candidate.id == asset) {
-            return Err(DeckError::new(codes::ASSET_MISSING, format!("asset `{asset}` does not exist")).with_recoverable(true));
+            return Err(DeckError::asset_missing(asset.as_str()));
         }
         if let Some((slide, element)) = referencing(self.document(), asset) {
-            return Err(DeckError::new(
-                codes::ASSET_IN_USE,
-                format!("asset `{asset}` is still placed on slide `{slide}` by element `{element}`"),
-            )
-            .with_slide(slide)
-            .with_element(element));
+            return Err(DeckError::asset_in_use(asset.as_str()).with_slide(slide).with_element(element));
         }
         let index = self.document().assets.iter().position(|candidate| &candidate.id == asset).expect("existence was checked");
         self.document_mut().assets.remove(index);
@@ -211,11 +206,11 @@ fn invalid(message: impl Into<String>) -> DeckError {
 }
 
 fn missing_slide(slide: &SlideId) -> DeckError {
-    DeckError::new(codes::OBJECT_NOT_FOUND, format!("slide `{slide}` does not exist")).with_slide(slide.clone())
+    DeckError::unknown(ObjectKind::Slide, slide.as_str()).with_slide(slide.clone())
 }
 
 fn missing_element(slide: &SlideId, element: &ElementId) -> DeckError {
-    DeckError::new(codes::OBJECT_NOT_FOUND, format!("element `{element}` does not exist on this slide"))
+    DeckError::unknown(ObjectKind::Element, element.as_str())
         .with_slide(slide.clone())
         .with_element(element.clone())
 }

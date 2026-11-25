@@ -15,7 +15,7 @@
 
 use super::{
     edit::DeckEdit,
-    error::{DeckError, codes},
+    error::{DeckError, codes, params::ObjectKind},
     id::{ElementId, SlideId},
     model::{ElementContent, TableContent, TableRow, TextAlign, TextContent},
 };
@@ -310,7 +310,7 @@ fn invalid(message: impl Into<String>) -> DeckError {
 }
 
 fn missing_element(slide: &SlideId, element: &ElementId) -> DeckError {
-    DeckError::new(codes::OBJECT_NOT_FOUND, format!("element `{element}` does not exist on this slide"))
+    DeckError::unknown(ObjectKind::Element, element.as_str())
         .with_slide(slide.clone())
         .with_element(element.clone())
 }

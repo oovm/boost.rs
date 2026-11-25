@@ -27,7 +27,7 @@ pub fn encode_project(deck: &Deck) -> Result<Vec<u8>, DeckError> {
     assets.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for asset in &assets {
         if asset.bytes.is_empty() {
-            return Err(DeckError::new(codes::ASSET_MISSING, format!("asset `{}` has no embedded bytes", asset.id)));
+            return Err(DeckError::asset_missing(asset.id.as_str()));
         }
         if sha256_hex(&asset.bytes) != asset.sha256 {
             return Err(DeckError::new(

@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    error::{DeckError, codes},
+    error::{DeckError, codes, params::ObjectKind},
     id::{AssetId, DeckId, ElementId, IdAllocator, LayoutId, MasterId, SlideId, ThemeId},
     size::{DeckSize, points_to_emu},
 };
@@ -723,10 +723,15 @@ impl DeckDocument {
     /// Checks structural invariants written by an importer or an earlier build.
     pub fn validate(&self) -> Result<(), DeckError> {
         if self.format != PROJECT_FORMAT {
-            return Err(DeckError::new(codes::FORMAT_UNSUPPORTED, format!("unknown deck format `{}`", self.format)));
+            return Err(DeckError::format_unsupported(self.format.clone()));
         }
         if self.version != PROJECT_VERSION {
-            return Err(DeckError::new(codes::FORMAT_UNSUPPORTED, format!("deck contract version {} is not supported", self.version)));
+            let mut error = DeckError::new(
+                codes::FORMAT_UNSUPPORTED,
+                format!("deck contract version {} is not supported", self.version),
+            );
+            error = error.with_format(format!("contract-v{}", self.version));
+            return Err(error);
         }
 
         let mut identities = BTreeSet::new();
@@ -814,7 +819,7 @@ impl DeckDocument {
                 if let Some(asset) = referenced
                     && !asset_ids.contains(asset)
                 {
-                    return Err(DeckError::new(codes::OBJECT_NOT_FOUND, format!("element references unknown asset `{asset}`"))
+                    return Err(DeckError::unknown(ObjectKind::Asset, asset.as_str())
                         .with_slide(slide.id.clone())
                         .with_element(element.id.clone()));
                 }

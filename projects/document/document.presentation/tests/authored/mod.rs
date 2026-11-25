@@ -165,6 +165,7 @@ fn duplicated_slides_receive_fresh_identities() {
 }
 
 mod deck_style;
+mod error_params;
 mod images;
 mod layout;
 mod notes;
