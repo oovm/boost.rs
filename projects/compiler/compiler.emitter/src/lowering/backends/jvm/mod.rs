@@ -87,6 +87,8 @@ pub enum JvmOperatorCode {
     IntegerBitXor,
     /// JVM `ishl`：integer 左移（`u32` 与有符号同形，位移量按低 5 位取模）。
     IntegerShiftLeft,
+    /// JVM `ishr`：integer 算术右移（有符号载体右移保留符号位）。
+    IntegerShiftRight,
     /// JVM `iushr`：integer 逻辑右移（`u32` 的右移不能走有符号 `ishr`）。
     IntegerShiftRightUnsigned,
     /// `Integer.divideUnsigned(II)I`：`u32` 除法（JVM 无无符号 `idiv`）。
@@ -240,6 +242,7 @@ impl JvmOperatorCode {
             Self::IntegerBitOr => JvmInstruction::IOr,
             Self::IntegerBitXor => JvmInstruction::IXor,
             Self::IntegerShiftLeft => JvmInstruction::IShl,
+            Self::IntegerShiftRight => JvmInstruction::IShr,
             Self::IntegerShiftRightUnsigned => JvmInstruction::IUShr,
             // JVM 没有无符号 `idiv`/`irem` 单指令；Java 8 起由标准库静态方法给出。
             Self::IntegerDivideUnsigned => integer_unsigned_call("divideUnsigned"),

@@ -120,6 +120,8 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i32.or" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Or),
         "i32.xor" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Xor),
         "i32.shl" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Shl),
+        // 有符号 `i32` 右移是算术 `shr`；`u32` 必须走 `shr.un`，两者不可互换。
+        "i32.shr" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Shr),
         // 无符号 `u32` 逻辑右移：MSIL `shr.un`（有符号 `shr` 会做算术右移）。
         "i32.shr.un" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::ShrUn),
         // int64 算术：同一批 opcode 对宽载体同形。
@@ -340,6 +342,23 @@ mod operator_binding_tests {
         };
         assert_eq!(remainder.encoding, ClrOperatorCode::Single(MsilOpcode::Rem));
         assert_eq!(remainder.result_type, crate::target_operator::TargetOperandType::F64);
+
+        // 有符号右移是算术 `shr`，无符号右移必须是 `shr.un`：两者不可互换，否则
+        // `u32 >> n` 会被错误地按符号位填充。
+        for (mnemonic, operand, encoding) in [
+            ("i32.shl", i32_ty.clone(), MsilOpcode::Shl),
+            ("i32.shr", i32_ty.clone(), MsilOpcode::Shr),
+            ("i32.shr.un", SemanticType::Integer32 { signed: false }, MsilOpcode::ShrUn),
+        ] {
+            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix shift", &[operand.clone(), operand.clone()], &operand)
+                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
+                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
+            let ClrOperatorBinding::Frozen(plan) = plan
+            else {
+                panic!("`{mnemonic}` 必须冻结");
+            };
+            assert_eq!(plan.encoding, ClrOperatorCode::Single(encoding), "`{mnemonic}` 编码");
+        }
 
         // 真正未知的助记符仍然只能得到 Unfrozen。
         let unfrozen = freeze_clr_operator(&link("f64.rem.unknown"), instance, "infix %", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)

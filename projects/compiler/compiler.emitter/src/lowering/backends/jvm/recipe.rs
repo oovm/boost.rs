@@ -52,8 +52,9 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "integer.and" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerBitAnd),
         "integer.or" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerBitOr),
         "integer.xor" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerBitXor),
-        // integer 移位：`u32` 左移与有符号同形（`ishl`），右移必须是逻辑右移（`iushr`）。
+        // integer 移位：有符号右移是算术 `ishr`，`u32` 右移是逻辑 `iushr`，两者不可互换。
         "integer.shift_left" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftLeft),
+        "integer.shift_right" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftRight),
         "integer.shift_right_unsigned" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerShiftRightUnsigned),
         // 无符号 `u32` 除/余：JVM 没有无符号 `idiv`/`irem`，冻结为 Java 8 标准库静态方法。
         "integer.divide_unsigned" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerDivideUnsigned),
