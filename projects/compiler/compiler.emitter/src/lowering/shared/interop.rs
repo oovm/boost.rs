@@ -296,6 +296,21 @@ mod tests {
     }
 
     #[test]
+    fn missing_target_provider_is_none_not_borrowed_from_other_domain() {
+        // 声明里只有 `jvm-operator`：其他目标各自的裁决必须是 None，不得把相邻域的
+        // 绑定借来当自己的 provider。
+        let links = vec![ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["integer.add".into()])];
+        for (label, matched) in [
+            ("ovm", select_unique_target(&links, ovm_host_import_target).expect("ovm 裁决唯一")),
+            ("clr", select_unique_target(&links, clr_operator_target).expect("clr 裁决唯一")),
+            ("wasm", select_unique_target(&links, wasm_operator_target).expect("wasm 裁决唯一")),
+            ("x86_64", select_unique_target(&links, x86_64_operator_target).expect("x86_64 裁决唯一")),
+        ] {
+            assert!(matched.is_none(), "{label} 不得借用其他域的目标绑定");
+        }
+    }
+
+    #[test]
     fn duplicate_binding_for_same_target_fails_closed() {
         let links = vec![
             ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec!["integer.add".into()]),

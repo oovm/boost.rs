@@ -138,6 +138,17 @@ fn linux_target_emits_sysv_elf_from_the_same_source() {
     assert_eq!(u16::from_le_bytes(bytes[18..20].try_into().unwrap()), 62, "ELF 架构必须是 x86-64");
     let entry = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
     assert_ne!(entry, 0, "ELF e_entry 必须指向冻结入口");
+    // 真实装载：Linux x86-64 上由内核把镜像跳到冻结入口，进程以返回值退出。
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(&executable).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).expect("chmod");
+        let status = std::process::Command::new(&executable).status().expect("load and run ELF");
+        assert_eq!(status.code(), Some(42), "ELF 真实执行必须返回冻结入口值");
+    }
     let _ = fs::remove_dir_all(&root);
 }
 
