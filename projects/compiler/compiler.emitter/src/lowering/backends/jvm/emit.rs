@@ -145,12 +145,43 @@ pub(crate) struct JvmLoweredFragment {
     pub entry_launcher: Option<String>,
 }
 
+/// JVM 目标私有输入：一次冻结的方法计划、已降低方法体与 companion 载体。
+///
+/// 计划事实（可达导出面、方法命名与 descriptor、布局/sum 载体、managed ABI、
+/// 入口 launcher）在 [`build_jvm_program_input`] 里一次结算；装配服务
+/// [`assemble_jvm_class`] 只接受这个形状，不再接触跨目标的
+/// `FragmentSubmission` / `ExecutableFunction` / `InstructionKind` / `Terminator`。
+pub(crate) struct JvmProgramInput {
+    internal_name: String,
+    methods: Vec<JvmMethodSignature>,
+    companion_classes: Vec<JvmClassFile>,
+    managed_abi: Option<ManagedAbiContract>,
+    entry_launcher: Option<String>,
+}
+
+impl JvmProgramInput {
+    /// 主类内部名（由模块名与片段身份一次冻结）。
+    pub(crate) fn internal_name(&self) -> &str {
+        &self.internal_name
+    }
+
+    /// 已降低的方法体（按可达导出面的稳定顺序）。
+    pub(crate) fn methods(&self) -> &[JvmMethodSignature] {
+        &self.methods
+    }
+}
+
 /// 将片段降低为单个 JVM `class`，并为每个导出入口生成 argv launcher。
 ///
 /// 只降低导出面（`export_names` / `exported_operations` / 入口操作）以及
 /// 从它们出发、经同片段静态调用可达的函数；其余函数不进入 class，避免为不可达
 /// 形状发明载体。
 pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Result<JvmLoweredFragment> {
+    assemble_jvm_class(&build_jvm_program_input(submission)?)
+}
+
+/// 计划事实 → JVM 目标私有输入（不检查 companion 唯一性、不封装主类）。
+pub(crate) fn build_jvm_program_input(submission: &FragmentSubmission) -> Result<JvmProgramInput> {
     let plan = &submission.backend_plan;
     let operations = collect_jvm_operations(submission);
     if operations.is_empty() {
@@ -231,8 +262,22 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
     let mut companion_classes = build_layout_classes(plan.aggregate_layouts())?;
     companion_classes.extend(build_sum_classes(submission)?);
     companion_classes.extend(launcher_classes);
+    Ok(JvmProgramInput {
+        internal_name: class_file.internal_name,
+        methods: class_file.methods,
+        companion_classes,
+        managed_abi,
+        entry_launcher,
+    })
+}
+
+/// JVM 目标私有输入 → 片段产物：只做 companion 载体唯一性自检并封装主类。
+///
+/// 签名里没有跨目标共享程序：类编码（`JvmClassFile::to_bytes`）与 JAR 容器由
+/// [`crate::backend::jvm`] 在同一份目标私有输入上完成。
+pub(crate) fn assemble_jvm_class(input: &JvmProgramInput) -> Result<JvmLoweredFragment> {
     let mut companion_names = BTreeSet::new();
-    for companion in &companion_classes {
+    for companion in &input.companion_classes {
         if !companion_names.insert(companion.internal_name.clone()) {
             return Err(format!(
                 "JVM 最小 lowering：companion 类内部名 `{}` 冲突：布局类、sum 类与 launcher 类必须各有唯一载体",
@@ -240,7 +285,14 @@ pub(crate) fn lower_fragment_to_jvm_class(submission: &FragmentSubmission) -> Re
             ));
         }
     }
-    Ok(JvmLoweredFragment { class_file, companion_classes, managed_abi, entry_launcher })
+    let mut class_file = JvmClassFile::new(input.internal_name().to_string());
+    class_file.methods = input.methods().to_vec();
+    Ok(JvmLoweredFragment {
+        class_file,
+        companion_classes: input.companion_classes.clone(),
+        managed_abi: input.managed_abi.clone(),
+        entry_launcher: input.entry_launcher.clone(),
+    })
 }
 
 /// 汇总 managed ABI 契约，并只为 argv 可表达的入口生成 launcher。
@@ -3391,5 +3443,53 @@ mod operator_binding_tests {
             assert!(branch.is_some_and(|index| lcmp_index < index), "`{mnemonic}` 必须先 `lcmp` 再分支: {instructions:?}");
             assert_eq!(instructions.iter().find_map(branch_kind), Some(expected_branch), "`{mnemonic}` 分支方向: {instructions:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod program_input_tests {
+    use super::*;
+    use crate::TargetExecutionPlan;
+    use compiler_target::{Identifier, QualifiedName};
+
+    /// 仅含返回类型的最小可执行函数，入口身份来自计划冻结的 `entry_operation`。
+    fn probe_submission() -> FragmentSubmission {
+        let function = MirFunction {
+            symbol: "probe".to_string(),
+            return_type: SemanticType::Unit,
+            param_types: Vec::new(),
+            value_types: BTreeMap::new(),
+            value_layouts: BTreeMap::new(),
+            return_layout: None,
+            entry: crate::contracts::BlockRef(0),
+            values: Vec::new(),
+            #[allow(deprecated)]
+            blocks: vec![crate::contracts::Block {
+                id: crate::contracts::BlockRef(0),
+                label: "entry".to_string(),
+                parameters: Vec::new(),
+                instructions: Vec::new(),
+                terminator: Terminator::Return { value: None },
+            }],
+        };
+        let name = QualifiedName::new(vec![Identifier::new("probe")]);
+        let mut plan = TargetExecutionPlan::from_functions(BTreeMap::from([(name.clone(), function)]));
+        plan.testing_entry_operation(name);
+        FragmentSubmission::from_backend_plan(plan)
+    }
+
+    /// 两段式拆分不改变产物：计划事实先冻结成目标私有输入，装配段只读该输入，
+    /// 结果与直接降低逐项等价。
+    #[test]
+    fn build_then_assemble_matches_direct_lowering() {
+        let submission = probe_submission();
+        let direct = lower_fragment_to_jvm_class(&submission).expect("正式入口必须降低");
+        let input = build_jvm_program_input(&submission).expect("计划事实必须冻结为目标私有输入");
+        assert_eq!(input.internal_name(), direct.class_file.internal_name);
+        assert_eq!(input.methods(), direct.class_file.methods.as_slice());
+        let assembled = assemble_jvm_class(&input).expect("目标私有输入必须装配");
+        assert_eq!(assembled.class_file, direct.class_file);
+        assert_eq!(assembled.companion_classes, direct.companion_classes);
+        assert_eq!(assembled.entry_launcher, direct.entry_launcher);
     }
 }

@@ -101,3 +101,40 @@ fn machine_backend_entries_gate_before_lowering() {
         assert!(gate_at < lowering_at, "{path} must validate Semantic MIR before machine lowering");
     }
 }
+
+/// 取出指定函数的完整定义（含签名与函数体），按花括号配对截断。
+fn function_definition<'a>(source: &'a str, name: &str) -> &'a str {
+    let marker = format!("fn {name}");
+    let start = source.find(&marker).unwrap_or_else(|| panic!("source has no function `{name}`"));
+    let open = source[start..].find('{').map(|offset| start + offset).expect("function has no body");
+    let mut depth = 0usize;
+    for (offset, ch) in source[open..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &source[start..=open + offset];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("function `{name}` body is not balanced");
+}
+
+#[test]
+fn jvm_assembly_service_signature_is_target_private() {
+    // JVM 纵链第一段把计划事实冻结成目标私有输入；第二段（类装配 + companion
+    // 唯一性自检）只接受该输入，签名与函数体都不得出现跨目标共享程序的形状。
+    let emit = read("src/lowering/backends/jvm/emit.rs");
+    let assembly = function_definition(&emit, "assemble_jvm_class");
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!assembly.contains(banned), "JVM 装配服务不得引用 `{banned}`");
+    }
+    // 类编码与 JAR 容器写出同样只吃目标私有输入。
+    let backend = read("src/backend/jvm/mod.rs");
+    for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
+        assert!(!backend.contains(banned), "src/backend/jvm/mod.rs 作为 JVM 目标私有装配层不得引用 `{banned}`");
+    }
+}

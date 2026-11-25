@@ -162,6 +162,15 @@ fn same_source_builds_both_native_image_and_jvm_lane() {
         "jvm lane 不得借用机器码镜像: {:?}",
         jvm.artifacts
     );
+    // JVM 产物必须自己通过容器验证：真实 JAR（ZIP 头）且内含片段类，不是空壳。
+    let jar = jvm
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.ends_with(".jar"))
+        .unwrap_or_else(|| panic!("jvm lane 必须产出 JAR 容器: {:?}", jvm.artifacts));
+    let jar_bytes = fs::read(jar).expect("read JAR artifact");
+    assert_eq!(&jar_bytes[..4], b"PK\x03\x04", "JVM 产物必须是真实 JAR 容器");
+    assert!(jar_bytes.windows(4).any(|window| window == b"nyar"), "JAR 必须包含本片段自己的类");
 
     let _ = fs::remove_dir_all(&native_root);
     let _ = fs::remove_dir_all(&jvm_root);
