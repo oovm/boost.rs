@@ -14,7 +14,7 @@
 //! 真实 JVM 指令，直接单条编码。
 
 use super::JvmOperatorCode;
-use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
+use crate::target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan { arity: 2, operand_type, result_type, recipe: TargetOperatorRecipe::Operands, encoding: code }
@@ -24,16 +24,15 @@ const fn unary(operand_type: TargetOperandType, code: JvmOperatorCode) -> Target
     TargetOperatorPlan { arity: 1, operand_type, result_type: operand_type, recipe: TargetOperatorRecipe::Operands, encoding: code }
 }
 
-/// `long` 移位：JVM `lshl`/`lshr` 的位移量操作数必须是 `int`；声明签名携带 `i64`
-/// 位移量，截窄（`l2i`）由冻结配方显式给出，emit 只机械执行。
-const LONG_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
-
-const fn long_shift(steps: &'static [TargetOperandStep], code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
+/// `long` 移位：JVM `lshl`/`lshr`/`lushr` 的位移量操作数必须是 `int`；声明签名携带
+/// `i64` 位移量。`l2i` 截窄是本 lane 的物理事实，冻结在
+/// [`super::JvmOperatorCode::instructions`] 的编码展开里，不借公共指令步骤表达。
+const fn long_shift(code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type: TargetOperandType::I64,
         result_type: TargetOperandType::I64,
-        recipe: TargetOperatorRecipe::Steps(steps),
+        recipe: TargetOperatorRecipe::Operands,
         encoding: code,
     }
 }
@@ -70,11 +69,11 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
         "long.and" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongBitAnd),
         "long.or" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongBitOr),
         "long.xor" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongBitXor),
-        // long 移位：位移量按冻结配方先 `l2i` 截窄，再执行 `lshl`/`lshr`。
-        "long.shift_left" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftLeft),
-        "long.shift_right" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftRight),
+        // long 移位：`l2i` 截窄冻结在编码展开内，再执行 `lshl`/`lshr`。
+        "long.shift_left" => long_shift(JvmOperatorCode::LongShiftLeft),
+        "long.shift_right" => long_shift(JvmOperatorCode::LongShiftRight),
         // 无符号 `u64` 右移：逻辑右移 `lushr`，位移量同样先截窄。
-        "long.shift_right_unsigned" => long_shift(LONG_SHIFT_STEPS, JvmOperatorCode::LongShiftRightUnsigned),
+        "long.shift_right_unsigned" => long_shift(JvmOperatorCode::LongShiftRightUnsigned),
         // 无符号 `u64` 除/余：JVM 没有无符号 `ldiv`/`lrem`，冻结为 Java 8 标准库静态方法。
         "long.divide_unsigned" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongDivideUnsigned),
         "long.remainder_unsigned" => binary(TargetOperandType::I64, TargetOperandType::I64, JvmOperatorCode::LongRemainderUnsigned),

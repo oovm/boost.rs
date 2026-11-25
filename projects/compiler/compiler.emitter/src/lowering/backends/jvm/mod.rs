@@ -113,9 +113,9 @@ pub enum JvmOperatorCode {
     LongBitOr,
     /// JVM `lxor`：long 按位异或。
     LongBitXor,
-    /// JVM `lshl`：long 左移（位移量 `int`，截窄由冻结配方显式给出）。
+    /// JVM `lshl`：long 左移（位移量 `int`，`l2i` 截窄冻结在本 lane 的编码展开）。
     LongShiftLeft,
-    /// JVM `lshr`：long 算术右移（位移量 `int`，截窄由冻结配方显式给出）。
+    /// JVM `lshr`：long 算术右移（位移量 `int`，`l2i` 截窄冻结在本 lane 的编码展开）。
     LongShiftRight,
     /// JVM `lushr`：long 逻辑右移（`u64` 的右移不能走有符号 `lshr`）。
     LongShiftRightUnsigned,
@@ -256,9 +256,6 @@ impl JvmOperatorCode {
             Self::LongBitAnd => JvmInstruction::LAnd,
             Self::LongBitOr => JvmInstruction::LOr,
             Self::LongBitXor => JvmInstruction::LXor,
-            Self::LongShiftLeft => JvmInstruction::LShl,
-            Self::LongShiftRight => JvmInstruction::LShr,
-            Self::LongShiftRightUnsigned => JvmInstruction::LUShr,
             // JVM 没有无符号 `ldiv`/`lrem` 单指令；Java 8 起由标准库静态方法给出。
             Self::LongDivideUnsigned => long_unsigned_call("divideUnsigned"),
             Self::LongRemainderUnsigned => long_unsigned_call("remainderUnsigned"),
@@ -301,6 +298,14 @@ impl JvmOperatorCode {
     /// 等价于「两侧都翻转符号位后」的 `i64` 序，而 JVM 没有 `swap2`，翻转中途必须
     /// 经局部槽周转。其余码忽略该参数。
     pub fn instructions(self, scratch_long_slot: u16) -> Vec<JvmInstruction> {
+        // long 移位：JVM 移位指令只接受 `int` 位移量，声明签名携带 `i64`；`l2i`
+        // 截窄是本 lane 的物理事实，冻结在编码展开里，不经任何公共指令步骤。
+        match self {
+            Self::LongShiftLeft => return vec![JvmInstruction::L2I, JvmInstruction::LShl],
+            Self::LongShiftRight => return vec![JvmInstruction::L2I, JvmInstruction::LShr],
+            Self::LongShiftRightUnsigned => return vec![JvmInstruction::L2I, JvmInstruction::LUShr],
+            _ => {}
+        }
         if let Some(instruction) = self.arithmetic_instruction() {
             return vec![instruction];
         }

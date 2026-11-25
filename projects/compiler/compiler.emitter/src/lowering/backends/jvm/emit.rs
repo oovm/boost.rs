@@ -1846,7 +1846,6 @@ impl JvmMethodEmitter<'_> {
                 for step in steps {
                     match step {
                         TargetOperandStep::Arguments => self.emit_operator_arguments(mnemonic, expected_kind, arguments)?,
-                        TargetOperandStep::NarrowTopI64ToI32 => self.instructions.push(JvmInstruction::L2I),
                         TargetOperandStep::IntegerConstant { operand_type, value } => {
                             let kind = JvmSlotKind::of_operand_type(*operand_type);
                             if kind != expected_kind {

@@ -96,8 +96,8 @@ pub(crate) fn freeze_wasm_numeric_binding(mnemonic: &str) -> Option<TargetOperat
         "i64.or" => binary(TargetOperandType::I64, TargetOperandType::I64, WasmOpcode::I64Or),
         "i64.xor" => binary(TargetOperandType::I64, TargetOperandType::I64, WasmOpcode::I64Xor),
         // Wasm 的 `i64.shl`/`i64.shr_s`/`i64.shr_u` 两个操作数都是 `i64`（位移量由指令
-        // 自身按 64 取模），不存在 JVM/MSIL 那种「位移量必须窄成 i32」的合同，
-        // 因此不得套用 `NarrowTopI64ToI32`，否则生成非法 wasm。
+        // 自身按 64 取模），不存在 JVM/MSIL 那种「位移量必须窄成 i32」的合同；
+        // 截窄配方归 JVM/CLR lane 私有，本表不得引入任何截窄动作，否则生成非法 wasm。
         "i64.shl" => binary(TargetOperandType::I64, TargetOperandType::I64, WasmOpcode::I64Shl),
         "i64.shr_s" => binary(TargetOperandType::I64, TargetOperandType::I64, WasmOpcode::I64ShrS),
         "i64.shr_u" => binary(TargetOperandType::I64, TargetOperandType::I64, WasmOpcode::I64ShrU),

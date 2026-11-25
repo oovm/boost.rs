@@ -32,7 +32,7 @@
 //! 常量，f32 常量路径在 emit 侧保持结构化失败，待 `data.binary.pe` 写端补齐。
 
 use crate::{
-    target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
+    target_operator::{TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe},
     transitional::msil::MsilOpcode,
 };
 
@@ -51,6 +51,9 @@ pub(crate) enum ClrOperatorCode {
     /// 「结果 > 0 / 结果 < 0」而不是「结果 == 0」，复用会把 `le`/`ge` 误算成
     /// `gt`/`lt`。`ceq` 对 0/1 恰是逻辑非，对任意 `compare` 都成立。
     InvertCompare(MsilOpcode),
+    /// `i64` 移位组合：MSIL `shl`/`shr`/`shr.un` 的位移量必须是 `int32`；声明签名
+    /// 携带 `i64` 位移量，`conv.i4` 截窄是本 lane 的物理事实，冻结在编码展开里。
+    NarrowShift(MsilOpcode),
 }
 
 const fn binary(operand_type: TargetOperandType, result_type: TargetOperandType, opcode: MsilOpcode) -> TargetOperatorPlan<ClrOperatorCode> {
@@ -90,16 +93,15 @@ const fn not_equal(operand_type: TargetOperandType, result_type: TargetOperandTy
 }
 
 /// `i64` 移位：MSIL `shl`/`shr` 的位移量操作数必须是 `int32`；声明签名携带 `i64`
-/// 位移量，截窄（`conv.i4`）由冻结配方显式给出，emit 只机械执行。
-const I64_SHIFT_STEPS: &[TargetOperandStep] = &[TargetOperandStep::Arguments, TargetOperandStep::NarrowTopI64ToI32];
-
-const fn i64_shift(steps: &'static [TargetOperandStep], opcode: MsilOpcode) -> TargetOperatorPlan<ClrOperatorCode> {
+/// 位移量，`conv.i4` 截窄冻结在 [`ClrOperatorCode::NarrowShift`] 的编码展开里，
+/// 不借公共指令步骤表达。
+const fn i64_shift(opcode: MsilOpcode) -> TargetOperatorPlan<ClrOperatorCode> {
     TargetOperatorPlan {
         arity: 2,
         operand_type: TargetOperandType::I64,
         result_type: TargetOperandType::I64,
-        recipe: TargetOperatorRecipe::Steps(steps),
-        encoding: ClrOperatorCode::Single(opcode),
+        recipe: TargetOperatorRecipe::Operands,
+        encoding: ClrOperatorCode::NarrowShift(opcode),
     }
 }
 
@@ -139,11 +141,11 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "i64.and" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::And),
         "i64.or" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Or),
         "i64.xor" => binary(TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::Xor),
-        // int64 移位：位移量按冻结配方先 `conv.i4` 截窄，再执行 `shl`/`shr`。
-        "i64.shl" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::Shl),
-        "i64.shr" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::Shr),
+        // int64 移位：`conv.i4` 截窄冻结在编码变体里，再执行 `shl`/`shr`。
+        "i64.shl" => i64_shift(MsilOpcode::Shl),
+        "i64.shr" => i64_shift(MsilOpcode::Shr),
         // 无符号 `u64` 逻辑右移：`shr.un`，位移量同样先 `conv.i4` 截窄。
-        "i64.shr.un" => i64_shift(I64_SHIFT_STEPS, MsilOpcode::ShrUn),
+        "i64.shr.un" => i64_shift(MsilOpcode::ShrUn),
         // float64 算术：MSIL `neg` 对浮点保留 -0.0，与语义一致。
         "f64.add" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Add),
         "f64.sub" => binary(TargetOperandType::F64, TargetOperandType::F64, MsilOpcode::Sub),

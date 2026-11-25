@@ -812,7 +812,6 @@ impl<'a> WasmMirLowerer<'a> {
         for step in steps {
             match step {
                 TargetOperandStep::Arguments => self.emit_wasm_operator_operands(mnemonic, expected, arguments)?,
-                TargetOperandStep::NarrowTopI64ToI32 => self.code.push(WasmBodyInstruction::Opcode(WasmOpcode::I32WrapI64)),
                 TargetOperandStep::IntegerConstant { operand_type, value } => {
                     let carrier = wasm_stack_type(*operand_type);
                     if carrier != expected {

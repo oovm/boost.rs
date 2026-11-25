@@ -2,7 +2,8 @@
 //!
 //! 这里只保留与具体 ISA 无关的机械步骤（arity、操作数/结果载体、发射配方）；
 //! 具体编码 `E` 由各 lane 自己的类型参数提供，本模块不得出现囊括多平台的
-//! tagged encoding 枚举。`operator` 表示**目标后端能力**，不是语言前端层的
+//! tagged encoding 枚举。位宽转换与栈动作同样是 lane 私有物理事实：JVM 的
+//! `l2i`、MSIL 的 `conv.i4` 冻结在各自编码展开里，公共词汇不携带截窄步骤。`operator` 表示**目标后端能力**，不是语言前端层的
 //! operator：一个绑定可以是一条指令、多条指令组合、参数重排或常量注入。
 //!
 //! 助记符到配方的冻结发生在**各 lane 自己的入口**；共享计划只携带逻辑导入
@@ -38,13 +39,6 @@ pub enum TargetOperandStep {
         /// 常量值。
         value: i32,
     },
-    /// 把栈顶 `i64` 载体截窄为 `i32` 载体的机械栈动作。
-    ///
-    /// 该动作只描述载体宽度变化，不绑定任何平台指令：物理编码由各 lane 在自己的
-    /// 冻结入口给出（JVM `l2i`、MSIL `conv.i4`、Wasm `i32.wrap_i64`），没有 `i64`
-    /// 栈载体的 lane（如 OVM）在发射期失败闭合。哪些配方携带该步骤完全由 lane 的
-    /// 冻结表决定，backend 只机械执行，不得按助记符推断。
-    NarrowTopI64ToI32,
 }
 
 /// 已冻结的 operator 发射配方。
@@ -238,19 +232,20 @@ mod frozen_operator_tests {
     /// `Integer/Long.divideUnsigned/remainderUnsigned` 静态调用。
     #[test]
     fn unsigned_div_rem_shift_freeze_managed_operator_plans() {
-        for (mnemonic, operand, result, opcode) in [
-            ("i32.div.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::DivUn),
-            ("i32.rem.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::RemUn),
-            ("i32.shr.un", TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::ShrUn),
-            ("i64.div.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::DivUn),
-            ("i64.rem.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::RemUn),
-            ("i64.shr.un", TargetOperandType::I64, TargetOperandType::I64, MsilOpcode::ShrUn),
+        for (mnemonic, operand, result, encoding) in [
+            ("i32.div.un", TargetOperandType::I32, TargetOperandType::I32, ClrOperatorCode::Single(MsilOpcode::DivUn)),
+            ("i32.rem.un", TargetOperandType::I32, TargetOperandType::I32, ClrOperatorCode::Single(MsilOpcode::RemUn)),
+            ("i32.shr.un", TargetOperandType::I32, TargetOperandType::I32, ClrOperatorCode::Single(MsilOpcode::ShrUn)),
+            ("i64.div.un", TargetOperandType::I64, TargetOperandType::I64, ClrOperatorCode::Single(MsilOpcode::DivUn)),
+            ("i64.rem.un", TargetOperandType::I64, TargetOperandType::I64, ClrOperatorCode::Single(MsilOpcode::RemUn)),
+            // `i64` 移位的 `conv.i4` 截窄是 CLR lane 私有物理事实，冻结在编码变体里。
+            ("i64.shr.un", TargetOperandType::I64, TargetOperandType::I64, ClrOperatorCode::NarrowShift(MsilOpcode::ShrUn)),
         ] {
             let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.arity, 2);
             assert_eq!(plan.operand_type, operand);
             assert_eq!(plan.result_type, result);
-            assert_eq!(plan.encoding, ClrOperatorCode::Single(opcode), "`{mnemonic}` 编码");
+            assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
         }
 
         for (mnemonic, operand, result, code) in [

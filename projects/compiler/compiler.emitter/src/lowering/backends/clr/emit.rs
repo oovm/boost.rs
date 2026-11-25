@@ -1500,6 +1500,11 @@ impl ClrMethodEmitter<'_> {
         self.emit_operator_operands(mnemonic, expected_kind, plan, arguments)?;
         match encoding {
             ClrOperatorCode::Single(opcode) => self.push_opcode(opcode),
+            // `i64` 移位：位移量先 `conv.i4` 截窄（CLR lane 私有物理动作），再执行移位。
+            ClrOperatorCode::NarrowShift(opcode) => {
+                self.push_opcode(MsilOpcode::ConvI4);
+                self.push_opcode(opcode);
+            }
             // 布尔取反组合：`compare` 得到 0/1，再压 `ldc.i4.0` 并 `ceq` 判等取反。
             // 取反固定用 `ceq`，不能复用 `compare`（`cgt`/`clt` 与 0 比较会把
             // `le`/`ge` 误算成 `gt`/`lt`）。
@@ -1538,7 +1543,6 @@ impl ClrMethodEmitter<'_> {
                 for step in steps {
                     match step {
                         TargetOperandStep::Arguments => self.emit_operator_arguments(mnemonic, expected_kind, arguments)?,
-                        TargetOperandStep::NarrowTopI64ToI32 => self.push_opcode(MsilOpcode::ConvI4),
                         TargetOperandStep::IntegerConstant { operand_type, value } => {
                             let kind = ClrValueKind::of_operand_type(*operand_type);
                             if kind != expected_kind {
