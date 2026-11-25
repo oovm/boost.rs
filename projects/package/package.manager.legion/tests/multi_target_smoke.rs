@@ -449,10 +449,10 @@ micro main() -> i32 {
 
 /// 无符号 `u64` 用例入口：`0xFFFF_FFFF_FFFF_FFFF` 上的除/余、`>> 32` 与六个无符号比较。
 ///
-/// 无符号：`/ 2 = 0x7FFF_FFFF_FFFF_FFFF`、`% 7 = 1`、`>> 32 = 0xFFFF_FFFF`；若误用有符号
-/// 裁决，商为 0、余数为 `0xFFFF_FFFF_FFFF_FFFF`、`>> 32` 仍为全 1，`q > a`、`r < 7`、
-/// `logical < big` 都会改变，各自返回 1/2/4/7；六个比较各带独立分支（3/5/6），
-/// 全部成立返回 31。
+/// 无符号：`/ 2 = 0x7FFF_FFFF_FFFF_FFFF`、`% 7 = 1`、`>> 32 = 0xFFFF_FFFF`。若误用有符号
+/// 裁决，`q > a` 不成立返回 1；若 `%` 误用有符号取余，余数为全 1、`r < 7` 不成立返回 2；
+/// 若 `>>` 误用算术右移，结果仍为全 1、`logical < big` 不成立返回 7；其余比较分支
+/// 分别返回 3/4/5/6。全部成立返回 31。
 const UINT64_SOURCE: &str = r#"namespace app;
 
 micro wide_unsigned(a: u64) -> i32 {
@@ -464,22 +464,22 @@ micro wide_unsigned(a: u64) -> i32 {
         if q >= a {
             if r < 7 {
                 if r <= 7 {
-                    if a != big {
-                        if logical < big {
+                    if logical < big {
+                        if a != big {
                             if a == 1 {
                                 return 31
                             }
                             return 6
                         }
-                        return 5
+                        return 3
                     }
-                    return 3
+                    return 7
                 }
                 return 4
             }
             return 2
         }
-        return 7
+        return 5
     }
     return 1
 }
