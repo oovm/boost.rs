@@ -1,15 +1,9 @@
 use std::collections::BTreeSet;
 
-use compiler_target::{CanonicalSpecification, CanonicalTarget};
 use language_valkyrie::compiler::semantic::closure::{DeclarationKey, SemanticClosureError};
 
 use super::types::{PlannedSemanticSourceGroup, PlannerError, PlannerResult};
 use crate::legion::workspace::source_snapshot::compile_source_snapshot;
-
-/// 与 `legion build` 一致的模板展开架构键。
-pub(crate) fn compile_arch_key(target: &CanonicalTarget) -> &'static str {
-    if target.specification == CanonicalSpecification::Wasi { "wasi" } else { target.arch.as_str() }
-}
 
 /// 入口语义闭包内被引用的声明身份（不含 host provider 物化）。
 ///

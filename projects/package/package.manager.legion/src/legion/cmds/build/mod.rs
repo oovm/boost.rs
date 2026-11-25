@@ -271,8 +271,8 @@ pub fn compile_plan(plan: &BuildPlan, verbose: bool) -> LegionResult<compiler_em
     )
     .map_err(|error| report!("{error}"))?;
 
-    // WASI 与 Node 同为 wasm32，但宿主不同：Node 走 `env.*`，WASI 走 guest/host_contract。
-    // 模板 `<% match arch %>` 因此对 WASI 使用伪架构键 `"wasi"`，避免误选 wasm32/Node 分支。
+    // 模板展开只按目标真实架构分支；Node / WASI 的宿主差异由 `[when]` 条件表达，
+    // 不再用伪架构键折叠。
     let arch = compile_arch(plan);
     let source_groups = compile_source_snapshot(&plan.project.semantic_source_groups)?;
     if verbose {
@@ -785,9 +785,13 @@ fn compile_error_with_diagnostics(error: language_valkyrie::compiler::emitter::p
     if report.trim().is_empty() { LegionError::from(error) } else { LegionError::msg(report.trim_end().to_string()) }
 }
 
-/// 编译期架构键：WASI 与 Node 同为 wasm32，但宿主不同，因此使用伪架构键 `"wasi"`。
+/// 编译期架构键：目标真实架构，不再折叠伪架构。
+///
+/// `<% match arch %>` 模板分支只认架构轴；宿主差异（Node / WASI）由
+/// `[when(target.specification == ...)]` 文件与声明条件表达。WASI 目标恒为
+/// `wasm32`，伪键 `"wasi"` 只会让装配层与需求闭包对同一目标持有不同架构事实。
 pub(crate) fn compile_arch(plan: &BuildPlan) -> &'static str {
-    crate::legion::workspace::planner::compile_arch_key(&plan.project.build_target.target)
+    plan.project.build_target.target.arch.as_str()
 }
 
 /// 将 managed ABI 合同落盘为确定性 pretty JSON。

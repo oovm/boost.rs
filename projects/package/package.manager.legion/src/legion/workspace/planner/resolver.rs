@@ -7,7 +7,7 @@ use std::{
 use crate::legion::workspace::manifest::{BuildTargetSpec, DependencySpec, ProjectManifest, WorkspaceManifest};
 
 use super::{
-    closure_demand::{compile_arch_key, test_entry_names},
+    closure_demand::test_entry_names,
     dependencies::{
         ResolvedDependencySource, default_dist_output_dir, effective_dependency_spec, merged_local_dependency_overrides,
         resolve_dependency_source, select_build_target,
@@ -338,7 +338,7 @@ impl WorkspaceResolver {
         source_files.dedup();
         let host_inventory =
             host_inventory_for_groups(&semantic_source_groups, request.resolved.platform, &build_target, Some(&request.enabled_features))?;
-        let test_entries = test_entry_names(&semantic_source_groups, compile_arch_key(&build_target.target))?;
+        let test_entries = test_entry_names(&semantic_source_groups, build_target.target.arch.as_str())?;
 
         Ok((
             BuildPlan {
@@ -706,7 +706,7 @@ fn host_inventory_for_groups(
     build_target: &BuildTargetSpec,
     enabled_features: Option<&std::collections::BTreeSet<String>>,
 ) -> PlannerResult<super::host::HostInventory> {
-    let arch = super::compile_arch_key(&build_target.target);
+    let arch = build_target.target.arch.as_str();
     let demanded = super::demanded_declaration_keys(semantic_source_groups, arch)?;
     collect_host_inventory(semantic_source_groups, target, demanded.as_ref(), enabled_features)
 }
