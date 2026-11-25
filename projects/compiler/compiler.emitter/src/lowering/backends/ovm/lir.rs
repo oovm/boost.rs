@@ -23,15 +23,19 @@ pub(crate) enum OdinLirInstruction {
     Label(MirBlockRef),
     /// 跳转到函数内块：编码器写入 `opcode` 与 `target - position`。
     Jump { opcode: OdinHeadCode, target: MirBlockRef },
+    /// 组合序列内部的合成标签；不产生字节，与 MIR 块标签互不占用编号空间。
+    SyntheticLabel(u32),
+    /// 跳转到合成标签：编码器写入 `opcode` 与 `target - position`。
+    JumpTo { opcode: OdinHeadCode, label: u32 },
 }
 
 impl OdinLirInstruction {
     /// 该指令在字节流中的固定长度；标签为 0。
     fn encoded_len(&self) -> usize {
         match self {
-            Self::Label(_) => 0,
+            Self::Label(_) | Self::SyntheticLabel(_) => 0,
             Self::Plain(_) => 1,
-            Self::Imm1(..) | Self::Jump { .. } => 5,
+            Self::Imm1(..) | Self::Jump { .. } | Self::JumpTo { .. } => 5,
             Self::Imm2(..) => 9,
         }
     }
@@ -43,10 +47,17 @@ impl OdinLirInstruction {
 /// 两者都相对函数体起点。缺失标签是计划/LIR 不一致，结构化失败。
 pub(crate) fn encode_odin_function(instructions: &[OdinLirInstruction]) -> Result<Vec<u8>> {
     let mut label_offsets = BTreeMap::<MirBlockRef, i32>::new();
+    let mut synthetic_offsets = BTreeMap::<u32, i32>::new();
     let mut offset = 0i32;
     for instruction in instructions {
-        if let OdinLirInstruction::Label(block) = instruction {
-            label_offsets.insert(*block, offset);
+        match instruction {
+            OdinLirInstruction::Label(block) => {
+                label_offsets.insert(*block, offset);
+            }
+            OdinLirInstruction::SyntheticLabel(label) => {
+                synthetic_offsets.insert(*label, offset);
+            }
+            _ => {}
         }
         offset = advance(offset, instruction)?;
     }
@@ -58,10 +69,15 @@ pub(crate) fn encode_odin_function(instructions: &[OdinLirInstruction]) -> Resul
             OdinLirInstruction::Plain(opcode) => emit_plain(&mut code, *opcode),
             OdinLirInstruction::Imm1(opcode, operand) => emit_imm1(&mut code, *opcode, *operand),
             OdinLirInstruction::Imm2(opcode, first, second) => emit_imm2(&mut code, *opcode, *first, *second),
-            OdinLirInstruction::Label(_) => {}
+            OdinLirInstruction::Label(_) | OdinLirInstruction::SyntheticLabel(_) => {}
             OdinLirInstruction::Jump { opcode, target } => {
                 let target_offset =
                     label_offsets.get(target).copied().ok_or_else(|| format!("OVM LIR 编码：跳转目标块 {target:?} 缺少标签"))?;
+                emit_imm1(&mut code, *opcode, target_offset - position);
+            }
+            OdinLirInstruction::JumpTo { opcode, label } => {
+                let target_offset =
+                    synthetic_offsets.get(label).copied().ok_or_else(|| format!("OVM LIR 编码：跳转目标合成标签 {label} 缺少定义"))?;
                 emit_imm1(&mut code, *opcode, target_offset - position);
             }
         }
@@ -105,5 +121,23 @@ mod tests {
         let instructions = vec![OdinLirInstruction::Jump { opcode: OdinHeadCode::Jump, target: block(9) }];
         let error = encode_odin_function(&instructions).expect_err("缺少标签必须失败");
         assert!(error.contains("缺少标签"), "{error}");
+    }
+
+    /// 合成标签与块标签互不占用编号空间，回填合同一致；未定义的合成标签结构化失败。
+    #[test]
+    fn synthetic_labels_encode_relative_jumps() {
+        let instructions = vec![
+            OdinLirInstruction::Label(block(0)),
+            OdinLirInstruction::JumpTo { opcode: OdinHeadCode::JumpIfFalse, label: 0 },
+            OdinLirInstruction::Plain(OdinHeadCode::Nop),
+            OdinLirInstruction::SyntheticLabel(0),
+            OdinLirInstruction::Plain(OdinHeadCode::Nop),
+        ];
+        let code = encode_odin_function(&instructions).expect("合成标签 LIR 必须可编码");
+        assert_eq!(code.len(), 7, "合成标签不产生字节");
+        assert_eq!(code[0], OdinHeadCode::JumpIfFalse as u8);
+        assert_eq!(i32::from_le_bytes(code[1..5].try_into().expect("operand1")), 6, "跳至合成标签处");
+        let error = encode_odin_function(&[OdinLirInstruction::JumpTo { opcode: OdinHeadCode::Jump, label: 3 }]).expect_err("未定义合成标签必须失败");
+        assert!(error.contains("缺少定义"), "{error}");
     }
 }

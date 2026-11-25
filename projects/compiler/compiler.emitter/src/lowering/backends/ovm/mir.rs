@@ -68,8 +68,10 @@ const I32_NEGATE_STEPS: &[TargetOperandStep] =
 ///
 /// 多数助记符是单条头码；IL-less 的 OVM 上 `f32.ne`/`f32.gt` 没有原生头码，但可
 /// 用现有头码**保真组合**：组合必须是显式编码变体，emit 只机械展开，不得按助记符
-/// 推断序列。`le`/`ge` 无法用有序 `f32.lt` 组合保真（NaN 时 `!(a<b)` ≠ `a<=b`，
-/// 而 OR 组合需要同一对实参参与两次比较，超出单尾码配方模型），保持缺口待头码。
+/// 推断序列。`f32.ne` 的取反必须走分支（运行时比较压 `Value::Bool`，`I32Ne` 的
+/// `pop_i32` 拒绝 Bool，不存在 Bool 取反头码）。`le`/`ge` 无法用有序 `f32.lt`
+/// 组合保真（NaN 时 `!(a<b)` ≠ `a<=b`，而 OR 组合需要同一对实参参与两次比较，
+/// 超出单尾码配方模型），保持缺口待头码。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OvmOperatorCode {
     /// 单条 OVM 头码。
@@ -78,10 +80,11 @@ pub(crate) enum OvmOperatorCode {
     ///
     /// 有序 `lt` 任一操作数为 NaN 得 0，与 IEEE `gt` 的 NaN 裁决一致，交换保真。
     SwapCompare(OdinHeadCode),
-    /// 头码得到 0/1 后按位取反：`x != 0` 用 `I32Ne(x, 0)` 表达。
+    /// 比较头码后用分支取反：`JumpIfFalse` 分岔到常量 1/0，汇合处留一个 i32。
     ///
-    /// 仅对结果恰为 0/1 的比较成立；`f32.ne(a,b)` = `NOT(F32Eq(a,b))`，
-    /// NaN 时 `eq` 得 0、取反得 1，与 IEEE `!=` 一致。
+    /// OVM 运行时比较头码压 `Value::Bool`，`I32Ne` 的 `pop_i32` 严格拒绝 Bool，
+    /// 故不得用按位取反组合；`JumpIfFalse` 经 `to_bool` 消费比较结果是唯一保真路径。
+    /// `f32.ne(a,b)` = `NOT(F32Eq(a,b))`，NaN 时 `eq` 得 0、取反得 1，与 IEEE `!=` 一致。
     InvertBoolean(OdinHeadCode),
 }
 
@@ -110,8 +113,9 @@ pub(crate) enum OvmOperatorCode {
 /// 3. **运算与位模式**：f32 算术/比较在单精度上做；`i32.reinterpret_f32` /
 ///    `f32.reinterpret_i32` 是 32 位 `i32` 载体的纯位搬运，NaN payload 23 位保位。
 /// 4. **显式组合**：`f32.ne`/`f32.gt` 无原生头码但可保真组合，冻结为
-///    `OvmOperatorCode::InvertBoolean`/`SwapCompare`；`f32.le`/`f32.ge` 在 NaN 下
-///    无法用有序 `F32Lt` 组合保真，保持缺口待头码，不得回落宿主导入。
+///    `OvmOperatorCode::InvertBoolean`（分支取反，只用现有头码）/`SwapCompare`；
+///    `f32.le`/`f32.ge` 在 NaN 下无法用有序 `F32Lt` 组合保真，保持缺口待头码，
+///    不得回落宿主导入。
 pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<OvmOperatorCode>> {
     // 跨载体助记符显式点名两侧载体；其余既有助记符两侧都是 i32。
     let (operand_type, result_type) = match mnemonic {
@@ -158,7 +162,7 @@ pub(crate) fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperat
         "f32.neg" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Neg)),
         "f32.eq" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Eq)),
         "f32.lt" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32Lt)),
-        // 无原生头码但可保真组合：`ne` 取反 `eq` 的 0/1 结果，`gt` 交换操作数用 `lt`。
+        // 无原生头码但可保真组合：`ne` 用分支取反 `eq` 结果，`gt` 交换操作数用 `lt`。
         "f32.ne" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::InvertBoolean(OdinHeadCode::F32Eq)),
         "f32.gt" => (2, TargetOperatorRecipe::Operands, OvmOperatorCode::SwapCompare(OdinHeadCode::F32Lt)),
         "f32.demote_f64" => (1, TargetOperatorRecipe::Operands, OvmOperatorCode::Single(OdinHeadCode::F32DemoteF64)),
@@ -179,11 +183,13 @@ struct BytecodeEmitter<'a> {
     instructions: Vec<OdinLirInstruction>,
     constants_base: i32,
     imports: &'a mut Vec<OdinImport>,
+    /// 组合序列合成标签的分配计数器；与 MIR 块标签互不占用编号空间。
+    next_label: u32,
 }
 
 impl<'a> BytecodeEmitter<'a> {
     fn new(constants_base: i32, imports: &'a mut Vec<OdinImport>) -> Self {
-        Self { constants: Vec::new(), instructions: Vec::new(), constants_base, imports }
+        Self { constants: Vec::new(), instructions: Vec::new(), constants_base, imports, next_label: 0 }
     }
 
     fn intern_string(&mut self, value: &str) -> i32 {
@@ -244,6 +250,23 @@ impl<'a> BytecodeEmitter<'a> {
 
     fn emit_block_label(&mut self, block: MirBlockRef) {
         self.instructions.push(OdinLirInstruction::Label(block));
+    }
+
+    /// 分配一个组合序列内部的合成标签。
+    fn alloc_label(&mut self) -> u32 {
+        let label = self.next_label;
+        self.next_label += 1;
+        label
+    }
+
+    /// 在当前位置定义合成标签。
+    fn emit_label(&mut self, label: u32) {
+        self.instructions.push(OdinLirInstruction::SyntheticLabel(label));
+    }
+
+    /// 跳转到合成标签；位移由编码器按标签偏移回填。
+    fn emit_jump_to_label(&mut self, opcode: OdinHeadCode, label: u32) {
+        self.instructions.push(OdinLirInstruction::JumpTo { opcode, label });
     }
 }
 
@@ -1411,13 +1434,23 @@ impl<'a, 'e> NyarMirLowerer<'a, 'e> {
                     self.emit_external_arguments(&callee_name, instance, &reversed)?;
                     self.emitter.emit_plain(code);
                 }
-                // 比较得 0/1 后用 `I32Ne(x, 0)` 取反；仅对 0/1 结果成立。
+                // 比较后用分支取反：OVM 运行时比较头码压 `Value::Bool`，`I32Ne` 的
+                // `pop_i32` 严格拒绝 Bool，按位取反组合不成立；改用 `JumpIfFalse`
+                // （经 `to_bool` 消费比较结果）分岔到常量 1/0，两条路径在汇合标签处
+                // 都留下一个 i32 结果。只用现有头码，不触宿主导入。
                 (TargetOperatorRecipe::Operands, OvmOperatorCode::InvertBoolean(code)) => {
                     self.emit_external_arguments(&callee_name, instance, arguments)?;
                     self.emitter.emit_plain(code);
+                    let true_label = self.emitter.alloc_label();
+                    let end_label = self.emitter.alloc_label();
+                    self.emitter.emit_jump_to_label(OdinHeadCode::JumpIfFalse, true_label);
                     let zero = self.emitter.intern_i32(0);
                     self.emitter.emit_imm1(OdinHeadCode::Constant, zero);
-                    self.emitter.emit_plain(OdinHeadCode::I32Ne);
+                    self.emitter.emit_jump_to_label(OdinHeadCode::Jump, end_label);
+                    self.emitter.emit_label(true_label);
+                    let one = self.emitter.intern_i32(1);
+                    self.emitter.emit_imm1(OdinHeadCode::Constant, one);
+                    self.emitter.emit_label(end_label);
                 }
                 (TargetOperatorRecipe::Steps(steps), OvmOperatorCode::Single(code)) => {
                     for step in steps {
