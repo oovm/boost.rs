@@ -14,16 +14,20 @@ use crate::{LoweredBackendInput, Result};
 /// 语言提交给编排层的一个分区装配结果。
 ///
 /// 携带的是分区身份、优化理论与适配器；编排层不读取语言语义。
-pub struct AssembledFragment {
+///
+/// 适配器只借用前端已编译程序，**不**在此处预构造任何跨目标计划：目标私有
+/// 输入必须等编排层交出冻结目标（[`TargetInputRequest::resolved`]）之后，
+/// 由适配器在 [`AdaptedFragmentInput::prepare`] 内构造。
+pub struct AssembledFragment<'a> {
     /// 编排层已经确认的分区身份。
     pub partition: ArtifactPartition,
     /// 该分区选定的优化理论。
     pub theory_bundle: TheoryBundle,
-    /// 语言→平台适配器。
-    pub input: Box<dyn AdaptedFragmentInput>,
+    /// 语言→平台适配器（借用前端编译程序）。
+    pub input: Box<dyn AdaptedFragmentInput + 'a>,
 }
 
-impl std::fmt::Debug for AssembledFragment {
+impl std::fmt::Debug for AssembledFragment<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AssembledFragment").field("partition", &self.partition).field("theory_bundle", &self.theory_bundle).finish()
     }
@@ -69,7 +73,7 @@ pub trait AdaptedFragmentInput {
 /// 按声明能力把分区装配结果准备成驱动层输入。
 ///
 /// 编排层只核对分区身份；目标输入的构造与降低完整留在适配器内。
-pub(crate) fn prepare_assembled_fragment(payload: AssembledFragment, request: &TargetInputRequest<'_>) -> Result<LoweredBackendInput> {
+pub(crate) fn prepare_assembled_fragment(payload: AssembledFragment<'_>, request: &TargetInputRequest<'_>) -> Result<LoweredBackendInput> {
     if payload.input.partition() != &payload.partition {
         return Err(format!(
             "适配器声明的分区 `{}` 与编排层分区 `{}` 不一致：拒绝用另一分区的目标输入冒充本分区产物",

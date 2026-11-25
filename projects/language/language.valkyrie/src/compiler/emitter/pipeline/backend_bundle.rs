@@ -177,7 +177,7 @@ impl FrontendBuildBundle for CompilerBuildBundle {
     fn assemble_fragment_for_partition(
         &self,
         partition_index: usize,
-    ) -> std::result::Result<compiler_emitter::AssembledFragment, compiler_emitter::EmitterError> {
+    ) -> std::result::Result<compiler_emitter::AssembledFragment<'_>, compiler_emitter::EmitterError> {
         assemble_fragment(&self.compiled_program, &self.artifact_plan, partition_index).map_err(|error| error.to_string())
     }
 

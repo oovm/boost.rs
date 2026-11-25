@@ -651,7 +651,7 @@ pub trait FrontendBuildBundle {
     ///
     /// 前端必须显式声明接入能力：复用共享语义子集，或由自己的语言→平台适配器
     /// 准备目标输入。编排层不要求所有语言先转成同一份公共 MIR。
-    fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<AssembledFragment>;
+    fn assemble_fragment_for_partition(&self, partition_index: usize) -> Result<AssembledFragment<'_>>;
 
     /// 返回目标 profile 的 host flavor，供 Emitter 选择目标私有编码。
     fn target_host_flavor(&self) -> Option<String>;
@@ -804,12 +804,11 @@ impl LoweredBackendInput {
         artifact_purpose: compiler_target::ArtifactPurpose,
         wasm_package_kind: emitter_backend_wasi::WasmPackageKind,
     ) -> Result<Self> {
-        validate_backend_input(BackendInputShape::default()).map_err(|error| format!("backend boundary 输入形状不合法: {error:?}"))?;
-        let backend_route = bundled_backend_capability_descriptor(backend_family)
-            .map(|descriptor| descriptor.backend_route)
-            .unwrap_or(BackendRoute::StaticOnly);
-        validate_dispatch_for_route(backend_route, BackendDispatchKind::Static)
-            .map_err(|error| format!("backend boundary 分发形态不合法: {error:?}"))?;
+        // 边界输入形状与分发形态不在这里另立空检查：对 `BackendInputShape::default()`
+        // 与常量 `Static` 的校验不读取任何实际提交事实，只会制造「已验证」的假象。
+        // 真正取证的门是 `lower_fragment_to_driver_input` 里的
+        // `semantic_mir_contract::validate_submission`，五个目标家族（含机器码）
+        // 都必须在 lowering 之前经过它。
         Ok(Self {
             input: lower_fragment_to_driver_input(
                 submission,

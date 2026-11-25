@@ -137,6 +137,7 @@ impl X64LibraryCarrier {
 
 /// 把已冻结的目标计划降低为普通共享库。
 pub fn lower_fragment_to_machine_library(submission: &FragmentSubmission, platform: X64Platform) -> Result<X64LoweredLibrary> {
+    super::validate_machine_submission(submission)?;
     if let Some(entry) = submission.backend_plan.entry_operation() {
         return Err(format!(
             "普通共享库不接受进程入口（`{entry:?}`）：入口是应用交付事实，库交付只公开导出面，target={}",

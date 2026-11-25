@@ -772,34 +772,27 @@ fn type_contains_generic_deep(program: &ValkyrieMirProgram, id: compiler_types::
     }
 }
 
-/// canonical 原语拼写的载体映射。
+/// canonical 标量基元 → 目标语义载体。
 ///
-/// 只接受 canonical 原语词汇（`i8`/`u16`/`utf8`…），不接受语言表面拼写
-/// （`byte`/`sbyte`/`Utf8Text` 等）：那些必须在语言前端按 `[primitive]` 身份
-/// 结算，目标计划不得再按名字猜载体。`usize`/`isize`/`f128` 没有稳定宽度，
-/// 刻意缺席并失败闭合。
-fn canonical_primitive_carrier(spelling: &str) -> Option<SemanticType> {
-    let simple = spelling.rsplit([':', '.']).next().unwrap_or(spelling);
-    Some(match simple {
-        "bool" => SemanticType::Boolean,
-        "u8" => SemanticType::Integer8 { signed: false },
-        "i8" => SemanticType::Integer8 { signed: true },
-        "u16" => SemanticType::Integer16 { signed: false },
-        "i16" => SemanticType::Integer16 { signed: true },
-        "u32" => SemanticType::Integer32 { signed: false },
-        "i32" => SemanticType::Integer32 { signed: true },
-        "u64" => SemanticType::Integer64 { signed: false },
-        "i64" => SemanticType::Integer64 { signed: true },
-        "u128" => SemanticType::Integer128 { signed: false },
-        "i128" => SemanticType::Integer128 { signed: true },
-        "f32" => SemanticType::Float32,
-        "f64" => SemanticType::Float64,
-        "char" => SemanticType::Character,
-        "utf8" => SemanticType::Utf8,
-        "utf16" => SemanticType::Utf16,
-        "unit" => SemanticType::Unit,
-        "void" => SemanticType::Bottom,
-        _ => return None,
+/// 载体来自 frontend 冻结的身份（`[primitive("…")]` 或 canonical `Primitive`），
+/// 不是拼写：没有稳定目标宽度的形态（`f128` 等）失败闭合。
+fn semantic_of_canonical_primitive(kind: compiler_types::CanonicalPrimitiveType) -> Result<SemanticType> {
+    use compiler_types::CanonicalPrimitiveType as P;
+    Ok(match kind {
+        P::Void => SemanticType::Bottom,
+        P::Unit => SemanticType::Unit,
+        P::Bool => SemanticType::Boolean,
+        P::Integer { bits: 8, signed } => SemanticType::Integer8 { signed },
+        P::Integer { bits: 16, signed } => SemanticType::Integer16 { signed },
+        P::Integer { bits: 32, signed } => SemanticType::Integer32 { signed },
+        P::Integer { bits: 64, signed } => SemanticType::Integer64 { signed },
+        P::Integer { bits: 128, signed } => SemanticType::Integer128 { signed },
+        P::Float { bits: 32 } => SemanticType::Float32,
+        P::Float { bits: 64 } => SemanticType::Float64,
+        P::Character => SemanticType::Character,
+        P::Utf8 => SemanticType::Utf8,
+        P::Utf16 => SemanticType::Utf16,
+        unsupported => return Err(format!("primitive 尚无目标合同: {unsupported:?}")),
     })
 }
 
@@ -920,6 +913,18 @@ fn lower_type(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Resul
                     other => Err(format!("文本载体 `TypeId` 登记了非文本编码身份: {other:?}")),
                 };
             }
+            // `[primitive("…")]` 自举身份直接绑定标量载体：载体是身份事实，不按
+            // 声明拼写或短名回查。同名但没有该身份的普通 nominal 必须继续走布局，
+            // 不得因为名字叫 `i64` 就被静默折叠成标量。
+            if let Some(primitive) = program
+                .linked
+                .primitive_identities
+                .get(&id)
+                .or_else(|| program.linked.primitive_identities.get(declaration))
+                .copied()
+            {
+                return semantic_of_canonical_primitive(primitive);
+            }
             let spelling = program
                 .linked
                 .type_surface_spellings
@@ -930,9 +935,6 @@ fn lower_type(program: &ValkyrieMirProgram, id: compiler_types::TypeId) -> Resul
             let layout =
                 program.linked.aggregate_layout_by_type.get(&id).or_else(|| program.linked.aggregate_layout_by_type.get(declaration)).copied();
             if let Some(name) = spelling {
-                if let Some(primitive) = canonical_primitive_carrier(name.as_str()) {
-                    return Ok(primitive);
-                }
                 // 已冻结实例级布局的零实参 nominal 铸造为携带身份的 `Nominal`：
                 // 存储类/GC 字段/ABI 由 `layout` 身份解析，拼写仅诊断显示。
                 // 泛型声明本身没有物理布局，只作为 `Apply` 基的构造器拼写保留；
@@ -1141,6 +1143,53 @@ mod tests {
         assert_eq!(lower_type(&program, type_id(0)).expect("u8"), SemanticType::Integer8 { signed: false });
         assert_eq!(lower_type(&program, type_id(1)).expect("i16"), SemanticType::Integer16 { signed: true });
         assert_eq!(lower_type(&program, type_id(2)).expect("Character"), SemanticType::Character);
+    }
+
+    /// `[primitive]` 自举身份直接绑定标量载体：即使该声明登记了聚合布局
+    /// （std 原语声明通常是空壳结构），也必须按身份取标量，而不是按拼写再看布局。
+    #[test]
+    fn primitive_identity_binds_carrier_before_layout() {
+        let declaration = type_id(0);
+        let mut program = program_with_types(vec![(declaration, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() })]);
+        program.linked.type_surface_spellings.insert(declaration, compiler_types::Identifier::new("std::primitive::i64"));
+        program.linked.primitive_identities.insert(declaration, CanonicalPrimitiveType::Integer { bits: 64, signed: true });
+        program.linked.aggregate_layout_by_type.insert(declaration, 0);
+        program.linked.aggregate_layouts.layouts.push(compiler_types::AggregateLayout {
+            id: 0,
+            name: "i64".into(),
+            namespace: "std.primitive".into(),
+            key: None,
+            storage: compiler_types::StorageKind::Value,
+            fields: Vec::new(),
+        });
+        assert_eq!(
+            lower_type(&program, declaration).expect("原语身份绑定标量载体"),
+            SemanticType::Integer64 { signed: true },
+            "带布局的原语声明也必须按身份折叠成标量"
+        );
+    }
+
+    /// 同名但没有原语身份的普通 nominal（例如另一个命名空间里真的叫 `i64` 的结构体）
+    /// 不得按短名折叠成标量，必须保留自身布局身份。
+    #[test]
+    fn same_name_nominal_without_identity_keeps_layout() {
+        let declaration = type_id(0);
+        let mut program = program_with_types(vec![(declaration, CanonicalTypeKind::Nominal { declaration, arguments: Vec::new() })]);
+        program.linked.type_surface_spellings.insert(declaration, compiler_types::Identifier::new("app::i64"));
+        program.linked.aggregate_layout_by_type.insert(declaration, 0);
+        program.linked.aggregate_layouts.layouts.push(compiler_types::AggregateLayout {
+            id: 0,
+            name: "i64".into(),
+            namespace: "app".into(),
+            key: None,
+            storage: compiler_types::StorageKind::Value,
+            fields: vec![compiler_types::FieldLayout { name: "value".into(), ty: SemanticType::Integer64 { signed: true } }],
+        });
+        assert_eq!(
+            lower_type(&program, declaration).expect("同名 nominal 保留布局"),
+            SemanticType::Nominal { layout: 0, spelling: compiler_types::Identifier::new("app::i64") },
+            "同名但无原语身份的 nominal 不得折叠成标量"
+        );
     }
 
     /// 零实参 nominal 的 `Self` 别名 `TypeId` 未持有布局时，必须按声明身份回退；

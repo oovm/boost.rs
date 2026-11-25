@@ -2,10 +2,8 @@
 //!
 //! 分区选择不重新生产语义事实；Valkyrie 通过语言 × 目标适配器准备目标输入，
 //! 编排层只核对分区身份，不要求任何公共 MIR 作为成功载荷。
-use std::sync::Arc;
-
 use compiler_emitter::{
-    AdaptedFragmentInput, AssembledFragment, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, TargetInputRequest,
+    AdaptedFragmentInput, AssembledFragment, FragmentSubmission, LoweredBackendInput, TargetInputRequest,
 };
 use compiler_target::{
     ArtifactPartition, ArtifactPartitionPlan, CanonicalTarget, ClrSuspendStrategy, Identifier, PlanningError,
@@ -83,18 +81,34 @@ pub fn plan_artifacts_from_compiled_program(
 ///
 /// 平台身份与产物/宿主合同只从 `TargetInputRequest::resolved` 进入；适配器
 /// 不再单独保存四元组，合同与平台不会在这里分叉。
-struct ValkyrieTargetAdapter {
+///
+/// 适配器只借用前端已编译程序与分区身份：**不**在装配阶段预构造跨目标计划。
+/// 目标计划在 [``AdaptedFragmentInput::prepare``] 收到冻结目标之后才按
+/// `request.resolved` 构造，因此不存在「拿到 `TargetInputRequest` 之前就已有
+/// 一份共享可执行程序」的路径。
+struct ValkyrieTargetAdapter<'a> {
     partition: ArtifactPartition,
-    plan: Arc<TargetExecutionPlan>,
+    compiled_program: &'a CompiledValkyrieProgram,
+    roots: Vec<compiler_types::ItemInstanceId>,
+    theory_bundle: compiler_target::TheoryBundle,
+    sum_tag_width: u32,
 }
 
-impl AdaptedFragmentInput for ValkyrieTargetAdapter {
+impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
     fn partition(&self) -> &ArtifactPartition {
         &self.partition
     }
 
     fn prepare(&self, request: &TargetInputRequest<'_>) -> compiler_emitter::Result<LoweredBackendInput> {
-        let submission = FragmentSubmission::from_backend_plan((*self.plan).clone());
+        let plan = target_plan::from_compiled_program(
+            self.compiled_program,
+            &self.partition.fragment,
+            self.theory_bundle.clone(),
+            &self.roots,
+            self.sum_tag_width,
+        )
+        .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+        let submission = FragmentSubmission::from_backend_plan(plan);
         if request.backend_family == compiler_target::TargetBackendFamily::MachineCode {
             // 原生镜像由 机器码 lane 的 LIR/编码服务产出；适配器只提交目标输入
             // 与已冻结的宿主合同，不自行拼接机器码或 PE/ELF 容器。
@@ -140,10 +154,10 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
                 // 清单与宿主 `import` 同值；工程名本身保持不变。
                 .with_artifact_base_name(lowered.module_name));
             }
-            let entry_symbol = self
-                .plan
+            let entry_symbol = submission
+                .backend_plan
                 .entry_operation()
-                .and_then(|instance| self.plan.abi_name_for_instance(instance))
+                .and_then(|instance| submission.backend_plan.abi_name_for_instance(instance))
                 .and_then(|name| name.parts().last().map(|part| part.as_str().to_string()))
                 .ok_or_else(|| "原生可执行交付缺少冻结的入口身份：计划未给出入口操作的 ABI 名".to_string())?;
             let lowered = compiler_emitter::emitter_backend_machine::lower_resolved_fragment_to_machine_image(
@@ -174,11 +188,11 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter {
 
 /// 从指定分区装配目标载荷，拒绝任何与链接身份不一致的计划。
 #[doc(hidden)]
-pub fn assemble_fragment(
-    compiled_program: &CompiledValkyrieProgram,
+pub fn assemble_fragment<'a>(
+    compiled_program: &'a CompiledValkyrieProgram,
     plan: &ArtifactPartitionPlan,
     partition_index: usize,
-) -> std::result::Result<AssembledFragment, AssemblyError> {
+) -> std::result::Result<AssembledFragment<'a>, AssemblyError> {
     if plan.module_name.to_string() != compiled_program.mir_program().linked.module_name {
         return Err(AssemblyError::Identity(format!("前端计划与分区计划不匹配")));
     }
@@ -217,12 +231,12 @@ pub fn assemble_fragment(
     let theory_bundle = fragment_view.theory_bundle.clone();
     // tag 宽度是平台服务提供的事实；语言侧不再声明它。
     let sum_tag_width = compiler_emitter::sum_tag_width(plan.target.to_profile(None).backend_family);
-    let backend_plan = target_plan::from_compiled_program(compiled_program, &partition.fragment, theory_bundle.clone(), &roots, sum_tag_width)
-        .map_err(|source| AssemblyError::TargetPlan { partition: partition.name.clone(), source })?;
 
+    // 目标计划不在此处构造：适配器只持有已编译程序与分区身份，等编排层交出
+    // 冻结目标后在 `prepare` 内按 `request.resolved` 构造目标输入。
     Ok(AssembledFragment {
         partition: partition.clone(),
-        theory_bundle,
-        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), plan: Arc::new(backend_plan) }),
+        theory_bundle: theory_bundle.clone(),
+        input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), compiled_program, roots, theory_bundle, sum_tag_width }),
     })
 }

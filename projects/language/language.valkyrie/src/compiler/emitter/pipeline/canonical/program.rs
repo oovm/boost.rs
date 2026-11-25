@@ -108,6 +108,14 @@ pub fn canonical_program_from_semantic_mir(module: &MirModule) -> Result<Valkyri
         if let Some(spelling) = declaration_spellings.get(id) {
             linked.type_surface_spellings.insert(*id, spelling.clone());
         }
+        // `[primitive("…")]` 自举身份是载体事实：canonical 保持名义 TypeId，但把
+        // 身份结算成标量基元登记在这里，避免目标层按短名猜载体。
+        if let ValkyrieType::Nominal { primitive_identity: Some(identity), arguments, .. } = ty
+            && arguments.is_empty()
+            && let Some(primitive) = primitive_identity_canonical_primitive(identity)
+        {
+            linked.primitive_identities.insert(*id, primitive);
+        }
         // `Nominal{usize}` / `Named("usize")` 保持名义 TypeId，不得改写成 Primitive；登记后供
         // ArrayGet/ArrayLength/ArrayNew 合同认整数形状（见 LinkedSemanticProgram::array_index_types）。
         if is_array_index_valkyrie_type(ty, module) {
@@ -323,4 +331,28 @@ fn text_carrier_encoding(ty: &ValkyrieType, module: &MirModule) -> Option<Canoni
         "Utf16Text" => Some(CanonicalPrimitiveType::Utf16),
         _ => None,
     }
+}
+
+/// 把 `[primitive("…")]` 自举身份结算成 canonical 标量基元。
+///
+/// 只认 frontend 冻结的身份表，不按声明拼写或短名猜载体；没有稳定宽度的身份
+/// （`f128` 等）不在表内，返回 `None`，使用点继续按布局或结构化错误处理。
+fn primitive_identity_canonical_primitive(identity: &str) -> Option<CanonicalPrimitiveType> {
+    use crate::compiler::types::hir::primitive_identity_builtin_type;
+    Some(match primitive_identity_builtin_type(identity)? {
+        ValkyrieType::Void => CanonicalPrimitiveType::Void,
+        ValkyrieType::Unit => CanonicalPrimitiveType::Unit,
+        ValkyrieType::Boolean => CanonicalPrimitiveType::Bool,
+        ValkyrieType::Integer8 { signed } => CanonicalPrimitiveType::Integer { bits: 8, signed },
+        ValkyrieType::Integer16 { signed } => CanonicalPrimitiveType::Integer { bits: 16, signed },
+        ValkyrieType::Integer32 { signed } => CanonicalPrimitiveType::Integer { bits: 32, signed },
+        ValkyrieType::Integer64 { signed } => CanonicalPrimitiveType::Integer { bits: 64, signed },
+        ValkyrieType::Integer128 { signed } => CanonicalPrimitiveType::Integer { bits: 128, signed },
+        ValkyrieType::Float32 => CanonicalPrimitiveType::Float { bits: 32 },
+        ValkyrieType::Float64 => CanonicalPrimitiveType::Float { bits: 64 },
+        ValkyrieType::Character => CanonicalPrimitiveType::Character,
+        ValkyrieType::Utf8 => CanonicalPrimitiveType::Utf8,
+        ValkyrieType::Utf16 => CanonicalPrimitiveType::Utf16,
+        _ => return None,
+    })
 }

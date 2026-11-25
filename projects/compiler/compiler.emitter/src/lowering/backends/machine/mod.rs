@@ -512,11 +512,23 @@ pub fn lower_resolved_fragment_to_machine_image(
     lower_fragment_to_machine_image(submission, resolved.platform)
 }
 
+/// 机器码 lane 的统一提交验证门。
+///
+/// 三条正式交付（进程镜像 / C ABI 库 / 宿主扩展）都必须在 lowering 之前经过与
+/// 其余目标家族相同的 Semantic MIR 合同校验；机器码不再因为「有自己的入口/导出
+/// 检查」而绕开这道门。输入取证来自实际提交的计划，不存在常量空检查。
+pub(crate) fn validate_machine_submission(submission: &FragmentSubmission) -> Result<()> {
+    crate::lowering::features::semantic_mir_contract::validate_submission(submission).map_err(|error| {
+        format!("semantic MIR contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail)
+    })
+}
+
 /// 按解析后的规范目标四元组降低为原生镜像。
 ///
 /// 四元组是唯一分派依据；`TargetFamily::MachineCode` 只说明产物形态，不能用来选编码、
 /// 容器或 ABI。未实现的目标四元组必须失败闭合，指名具体四元组。
 pub(crate) fn lower_fragment_to_machine_image(submission: &FragmentSubmission, target: CanonicalTarget) -> Result<X64LoweredProgram> {
+    validate_machine_submission(submission)?;
     match target.arch {
         CanonicalArch::X86_64 => match target.specification {
             CanonicalSpecification::Windows => match target.abi {

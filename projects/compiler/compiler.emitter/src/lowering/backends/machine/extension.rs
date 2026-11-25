@@ -84,6 +84,7 @@ pub struct MachineHostExport {
 /// 的事实（`X64ProductTarget::cpython_module_name`），缺失即失败闭合，lowering
 /// 不再接收工程名、也不重新归一化。
 pub fn lower_fragment_to_machine_extension(submission: &FragmentSubmission, target: &X64ProductTarget) -> Result<X64LoweredExtension> {
+    super::validate_machine_submission(submission)?;
     let (platform, host) = match target {
         X64ProductTarget::Extension { platform, module, .. } => (*platform, *module),
         X64ProductTarget::Library(_) => return Err("目标不是宿主扩展合同；普通共享库交付尚未接线".to_string()),

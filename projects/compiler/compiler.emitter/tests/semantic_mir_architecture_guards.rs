@@ -63,3 +63,22 @@ fn wasm_backend_entries_gate_before_preparation() {
     let preparation_at = source.find(first_preparation).unwrap_or_else(|| panic!("{path} has no preparation marker"));
     assert!(gate_at < preparation_at, "{path} must validate Semantic MIR before backend preparation");
 }
+
+#[test]
+fn machine_backend_entries_gate_before_lowering() {
+    // 三条机器码交付（进程镜像 / C ABI 库 / 宿主扩展）都必须先过同一道
+    // Semantic MIR 合同门；不再因为「有自己的入口/导出/布局检查」而绕开。
+    let entries = [
+        ("src/lowering/backends/machine/mod.rs", "match target.arch {"),
+        ("src/lowering/backends/machine/library.rs", "collect_reachable_functions(submission)"),
+        ("src/lowering/backends/machine/extension.rs", "let (platform, host) = match target {"),
+    ];
+    for (path, lowering_marker) in entries {
+        let source = read(path);
+        let gate_at = source
+            .find("validate_machine_submission(submission)?")
+            .unwrap_or_else(|| panic!("{path} has no machine submission gate"));
+        let lowering_at = source.find(lowering_marker).unwrap_or_else(|| panic!("{path} has no lowering marker `{lowering_marker}`"));
+        assert!(gate_at < lowering_at, "{path} must validate Semantic MIR before machine lowering");
+    }
+}
