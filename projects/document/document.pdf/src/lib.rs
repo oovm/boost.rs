@@ -10,10 +10,16 @@
 
 #![deny(missing_docs)]
 
+mod compose;
 mod create;
 mod error;
 mod extract;
 mod stamp;
+
+pub use compose::{
+    ComposeReport, ComposedSource, PagePlan, PagePlacement, compose, duplicate_pages, insert_blank_pages, insert_pages,
+    interleave_pages, move_pages, replace_pages, reverse_pages, swap_pages,
+};
 
 // The byte-level engine lives in `data-binary-pdf`; the module aliases keep the
 // page-operation modules reading as if they owned it.
@@ -1197,7 +1203,7 @@ fn arrange_plan(page_count: usize, ops: &DocumentArrange) -> Result<Vec<usize>> 
     Ok(order.clone())
 }
 
-fn check_page_number(number: usize, page_count: usize) -> Result<()> {
+pub(crate) fn check_page_number(number: usize, page_count: usize) -> Result<()> {
     if number == 0 || number > page_count {
         return Err(argument(format!("page {number} is outside the {page_count} available pages")));
     }
