@@ -54,17 +54,6 @@ fn formal_semantic_path_forbids_semantic_reconstruction_patterns() {
 }
 
 #[test]
-fn wasm_backend_entries_gate_before_preparation() {
-    let path = "src/lowering/backends/wasm/mod.rs";
-    let source = read(path);
-    let gate = "validate_submission(submission)";
-    let first_preparation = "validate_text_encoding_projection(submission, host_boundary)";
-    let gate_at = source.find(gate).unwrap_or_else(|| panic!("{path} has no shared Semantic MIR gate"));
-    let preparation_at = source.find(first_preparation).unwrap_or_else(|| panic!("{path} has no preparation marker"));
-    assert!(gate_at < preparation_at, "{path} must validate Semantic MIR before backend preparation");
-}
-
-#[test]
 fn x64_assembly_service_signature_is_target_private() {
     // 纵链第二段（编码 + 容器装配）只接受目标私有输入：签名里不得出现跨目标
     // 共享程序的任何形状。唯一程序装配器与容器写出同样不得读取它们。
@@ -166,8 +155,8 @@ fn clr_assembly_service_signature_is_target_private() {
 
 #[test]
 fn wasm_assembly_service_signature_is_target_private() {
-    // Wasm 纵链同样两段式：第一段完成合同门与段编码并冻结成目标私有输入，
-    // 第二段只做模块形状自检与封装。
+    // Wasm 纵链同样两段式：第一段（语言侧）完成合同门、私有结算与交付事实，
+    // 第二段（emitter）只做段编码、自定义段装配与模块形状自检。
     let wasm = read("src/lowering/backends/wasm/mod.rs");
     let assembly = function_definition(&wasm, "assemble_wasm_module");
     for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
@@ -214,6 +203,32 @@ fn ovm_lane_consumes_mir_without_shared_program() {
         let source = read(path);
         for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind", "Terminator"] {
             assert!(!source.contains(banned), "{path} 作为 OVM 目标私有编码层不得引用 `{banned}`");
+        }
+    }
+}
+
+#[test]
+fn wasm_lane_consumes_mir_without_shared_program() {
+    // Wasm 纵链第一段已迁到语言侧直读 MIR：入口与 lowering 文件不得再引用
+    // 跨目标共享程序的任何形状（wasm 私有词汇自身的终结符类型不在禁用之列）。
+    let wasm = "../../language/language.valkyrie/src/compiler/emitter/pipeline/wasm";
+    for path in [format!("{wasm}/mod.rs"), format!("{wasm}/lowerer.rs")] {
+        let source = read(&path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind"] {
+            assert!(!source.contains(banned), "{path} 作为语言侧 MIR 直消费入口不得引用 `{banned}`");
+        }
+    }
+    // emitter 侧只保留目标私有编码原语：wasm lane 入口、mir 子系统与私有词汇
+    // 定义都不得出现公共 IR 类型。
+    for path in [
+        "src/lowering/backends/wasm/mod.rs",
+        "src/lowering/backends/wasm/mir/mod.rs",
+        "src/lowering/backends/wasm/mir/entry.rs",
+        "src/lowering/backends/wasm/input.rs",
+    ] {
+        let source = read(path);
+        for banned in ["FragmentSubmission", "ExecutableFunction", "InstructionKind"] {
+            assert!(!source.contains(banned), "{path} 作为 WASM 目标私有编码层不得引用 `{banned}`");
         }
     }
 }

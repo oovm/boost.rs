@@ -35,7 +35,7 @@ use crate::{
 };
 pub use backend::{
     clr as emitter_backend_clr, jvm as emitter_backend_jvm, machine as emitter_backend_machine, vm as emitter_backend_vm,
-    wasi as emitter_backend_wasi, wasm_js_glue as emitter_backend_wasm_js_glue,
+    wasi as emitter_backend_wasi, wasm as emitter_backend_wasm, wasm_js_glue as emitter_backend_wasm_js_glue,
 };
 use compiler_optimize::{EntryReturnProjection, ProjectionPolicy, TheoryBundle};
 use compiler_target::PartitionBackendRequirement;
@@ -98,7 +98,6 @@ pub mod testing {
 
     use super::{
         DriverCompileReport, DriverCompileRequest, FragmentSubmission, LoweredBackendInput, TargetExecutionPlan, compile_with_bundled_backends,
-        emitter_backend_wasi::WasmBinaryModule,
     };
     use compiler_types::SingletonInstancePlan;
 
@@ -140,38 +139,9 @@ pub mod testing {
         super::lowering::features::physical_contract::observation(case_id, result.as_ref().map(|_| ()).map_err(|error| error))
     }
 
-    /// Lower a fragment submission to a WASM module via MIR.
-    /// GC is mandatory for wasm/wasi targets (language specification).
-    pub fn lower_fragment_to_wasm_mir_module(submission: &FragmentSubmission, export_name: &str) -> Result<WasmBinaryModule> {
-        super::lowering::testing_lower_fragment_to_wasm_mir_module(submission, export_name)
-    }
-
     /// Decode one WASM uleb128 integer (test helper for section parsing).
     pub fn decode_wasm_uleb128(bytes: &[u8], pos: &mut usize) -> u32 {
         super::lowering::testing_decode_wasm_uleb128(bytes, pos)
-    }
-
-    /// Lower a fragment submission to a host-boundary-specific WASM module.
-    pub fn lower_fragment_to_wasm_module(
-        submission: &FragmentSubmission,
-        host_boundary: compiler_target::HostProjectionBoundary,
-    ) -> Result<(WasmBinaryModule, Vec<(String, String)>)> {
-        super::lowering::testing_lower_fragment_to_wasm_module(submission, host_boundary).map_err(|error| format!("{error}"))
-    }
-
-    /// Append singleton metadata custom sections to an existing WASM module.
-    pub fn append_singleton_metadata_sections(module: &mut WasmBinaryModule, submission: &FragmentSubmission) {
-        super::lowering::testing_append_singleton_metadata_sections(module, submission)
-    }
-
-    /// Inject singleton accessor globals and exports into an existing WASM module.
-    ///
-    /// 单例 plan 缺少上游聚合布局时返回结构化拒绝，不补造尺寸或对齐。
-    pub fn augment_wasm_with_singleton_accessors(
-        module: &mut WasmBinaryModule,
-        submission: &FragmentSubmission,
-    ) -> std::result::Result<(), super::lowering::features::semantic_mir_contract::SemanticMirContractError> {
-        super::lowering::testing_augment_wasm_with_singleton_accessors(module, submission)
     }
 
     /// Render one singleton metadata line using the production schema.

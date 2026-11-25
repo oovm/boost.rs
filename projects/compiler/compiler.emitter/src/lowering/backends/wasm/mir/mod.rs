@@ -3,9 +3,8 @@
 //! **Not** a second MIR. Language CFG/types stay in Semantic MIR; this facade and its
 //! submodules own Wasm physical encoding only.
 //!
-//! 本子系统只消费 [`super::input`] 结算出的 Wasm 私有词汇：跨目标公共 IR
-//! （`FragmentSubmission` / `TargetExecutionPlan` / 公共可执行合同与语义类型）
-//! 在 `settle_from_submission` 处收敛，编码层不再直接读取任何公共形状。
+//! 本子系统只消费 [`super::input`] 定义的 Wasm 私有词汇：结算（从语言 MIR
+//! 到私有事实）由语言侧纵链完成，编码层不再直接读取任何跨目标共享形状。
 //!
 //! - [control] — CFG block dispatch helpers
 //! - [representation] — unique Wasm storage / value-type rules

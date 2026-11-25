@@ -1,15 +1,12 @@
 //! 导出命名合同：语言侧冻结源码名，各目标所有者按自己的命名合同投影。
 //!
-//! 机器码 lane（Node / CPython / 普通共享库）的投影与碰撞拒绝已随 lowering
-//! 迁到语言侧 `language.valkyrie` 的机器码管道；本文件保留仍归 emitter 的
-//! wasm lane 命名合同与 CPython 模块名归一化纯函数。
+//! 机器码 lane（Node / CPython / 普通共享库）与 wasm lane 的投影、碰撞拒绝已随
+//! lowering 迁到语言侧 `language.valkyrie` 的对应管道；本文件保留 CPython 模块名
+//! 归一化纯函数与仍归 emitter 的导出公开名回退合同。
 
 use std::collections::BTreeMap;
 
-use compiler_emitter::{
-    FragmentSubmission,
-    contracts::{Block, BlockRef, ExecutableFunction, Operand, Terminator, Value, ValueOrigin, ValueRef},
-};
+use compiler_emitter::contracts::{Block, BlockRef, ExecutableFunction, Operand, Terminator, Value, ValueOrigin, ValueRef};
 use compiler_target::cpython_module_name;
 use compiler_types::{Identifier, QualifiedName};
 
@@ -83,48 +80,6 @@ fn export_public_name_falls_back_to_source_name() {
     assert_eq!(pairs, vec![("move_zeroes".to_string(), "move_zeroes".to_string()), ("two_sum".to_string(), "twoSum".to_string())]);
 }
 
-/// wasm 入口符号由宿主边界冻结为 `main` / `_start`，不借用 `[export]` 公开名。
-#[test]
-fn wasm_binary_entry_uses_boundary_symbol_and_rejects_export_collision() {
-    use compiler_target::HostProjectionBoundary;
-
-    // 入口名被一个 `[export]` 公开名占用：必须在写产物前失败闭合，否则入口与
-    // 导出会写进同一个导出名，产出重复导出名的非法模块。
-    let mut collision = plan_with(&["entry_fn", "helper"], &[("helper", "main")]);
-    collision.testing_entry_operation(QualifiedName::new(vec![Identifier::new("entry_fn")]));
-    let entry = collision.entry_operation().expect("入口已设置");
-    collision.testing_export_names_mut().remove(&entry);
-    let submission = FragmentSubmission::from_backend_plan(collision);
-    let error = compiler_emitter::testing::lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue)
-        .expect_err("入口名与导出公开名冲突必须拒绝");
-    assert!(error.contains("main"), "诊断应指出宿主入口符号：{error}");
-    assert!(error.contains("冲突"), "诊断应说明是命名冲突：{error}");
-
-    // 不冲突时入口只导出一次，名字来自边界词汇而不是导出面。
-    let mut disjoint = plan_with(&["entry_fn", "helper"], &[]);
-    disjoint.testing_entry_operation(QualifiedName::new(vec![Identifier::new("entry_fn")]));
-    let entry = disjoint.entry_operation().expect("入口已设置");
-    disjoint.testing_export_names_mut().remove(&entry);
-    let submission = FragmentSubmission::from_backend_plan(disjoint);
-    let (module, _imports) =
-        compiler_emitter::testing::lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue).expect("wasm 启动模块降低成功");
-    let names = data_binary_wasm::parse_export_section(&module).into_iter().map(|item| item.name).collect::<Vec<_>>();
-    assert_eq!(names.iter().filter(|name| name.as_str() == "main").count(), 1, "入口只导出一次: {names:?}");
-    assert!(names.iter().any(|name| name == "helper"), "导出面仍保留 helper: {names:?}");
-}
-
-/// 二进制包的导出公开名必须唯一，否则模块会写出重复导出名。
-#[test]
-fn wasm_binary_rejects_duplicate_export_public_names() {
-    use compiler_target::HostProjectionBoundary;
-
-    let mut plan = plan_with(&["entry_fn", "a", "b"], &[("a", "dup"), ("b", "dup")]);
-    plan.testing_entry_operation(QualifiedName::new(vec![Identifier::new("entry_fn")]));
-    let entry = plan.entry_operation().expect("入口已设置");
-    plan.testing_export_names_mut().remove(&entry);
-    let submission = FragmentSubmission::from_backend_plan(plan);
-    let error = compiler_emitter::testing::lower_fragment_to_wasm_module(&submission, HostProjectionBoundary::WasmJsGlue)
-        .expect_err("重复导出公开名必须拒绝");
-    assert!(error.contains("重复"), "诊断应说明重复：{error}");
-    assert!(error.contains("dup"), "诊断应指出冲突名：{error}");
-}
+// wasm lane 的入口符号合同（`main` / `_start` 由宿主边界冻结、导出公开名冲突与
+// 重复拒绝）已随纵链迁到语言侧 `language.valkyrie` 的 `pipeline/wasm/`，等价覆盖
+// 见其 `wasm_lane_tests`。

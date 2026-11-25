@@ -105,7 +105,7 @@ pub struct WasmTestEntryExport {
 ///
 /// wasm 的命名合同是「有 `name:` / `case:` 注解用注解名，否则源码名」；
 /// 清单与宿主调用面记录公开名，源码名保留用于跨目标追溯。签名事实全部来自
-/// 已冻结的 Wasm 导出 ABI 载体合同（`freeze_wasm_export_abi`）与 canonical
+/// 已冻结的 Wasm 导出 ABI 载体合同（私有派生点 `wasm_export_abi`）与 canonical
 /// 参数身份，不按类型名/字符串表重新推导。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WasmLibraryExport {

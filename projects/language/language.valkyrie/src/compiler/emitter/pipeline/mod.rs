@@ -25,6 +25,7 @@ pub(crate) mod jvm;
 pub(crate) mod machine;
 #[cfg(feature = "ovm-lane")]
 pub(crate) mod ovm;
+pub(crate) mod wasm;
 mod representation;
 pub mod target_plan;
 

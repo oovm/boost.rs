@@ -28,7 +28,7 @@ impl LayoutPolicy {
     ///
     /// 引用与文本槽沿用现有 Wasm lane 的 8 字节槽宽；这是目标选择，
     /// 不是语言事实。
-    pub(crate) const WASM32: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
+    pub const WASM32: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };
 
     /// Odin VM 策略。
     pub const OVM: Self = Self { reference_extent: (8, 8), text_extent: (4, 4) };

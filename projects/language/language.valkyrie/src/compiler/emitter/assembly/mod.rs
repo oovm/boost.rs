@@ -8,7 +8,7 @@ use compiler_emitter::{
 use compiler_planning::{ArtifactPartition, ArtifactPartitionPlan, PlanningError};
 use compiler_target::{CanonicalTarget, ClrSuspendStrategy, Identifier, projection_policy_for_target_profile};
 
-use super::pipeline::{clr, jvm, lane, machine};
+use super::pipeline::{clr, jvm, lane, machine, wasm};
 #[cfg(feature = "ovm-lane")]
 use super::pipeline::ovm;
 use super::pipeline::target_plan::{self, TargetPlanError};
@@ -224,6 +224,39 @@ impl AdaptedFragmentInput for ValkyrieTargetAdapter<'_> {
                 image_kind,
                 managed_abi: lowered.managed_abi,
                 run_contracts: Vec::new(),
+            })
+            // 产物基名沿用旧公共路径的合同：入口操作 ABI 名末段清洗；无入口时
+            // 回落工程名（`with_artifact_base_name(None)` 不覆盖）。
+            .with_artifact_base_name(entry_artifact_name(&ctx)));
+        }
+        if request.backend_family == compiler_target::TargetBackendFamily::Wasm {
+            // Wasm lane 已切到语言直出（`pipeline/wasm`）：合同门、私有结算与交付
+            // 事实都在语言侧一次完成，公共 IR 解释阶段（`from_fragment_submission`）
+            // 已删除。这里只装配 emitter 的 wasm 编码服务（段编码、自定义段装配、
+            // 模块形状自检）。
+            let ctx = lane::build_lane_context(self.compiled_program, &self.partition.fragment, &self.roots)
+                .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+            let program_input = wasm::build_wasm_program_input(
+                &ctx,
+                &self.theory_bundle,
+                request.host_boundary,
+                compiler_emitter::emitter_backend_wasi::WasiPreview::from_host_flavor(request.host_flavor),
+                request.wasm_package_kind,
+                request.artifact_purpose,
+            )
+            .map_err(|error| format!("分区 `{}` 目标计划构建失败: {error}", self.partition.name))?;
+            let (module, imports) = compiler_emitter::emitter_backend_wasm::assemble_wasm_module(&program_input)?;
+            return Ok(LoweredBackendInput::wasm(compiler_emitter::emitter_backend_wasi::WasmBinaryBackendInput {
+                module,
+                output_dir: request.output_dir.to_path_buf(),
+                host_boundary: request.host_boundary,
+                imports,
+                package_as_wasi_command: program_input.package_as_wasi_command(),
+                wasi_preview: program_input.wasi_preview(),
+                library_wasm_exports: program_input.library_wasm_exports().to_vec(),
+                wasm_package_kind: program_input.wasm_package_kind(),
+                host_entry_export: program_input.host_entry_export().map(str::to_string),
+                test_entry_exports: program_input.test_entry_exports().to_vec(),
             })
             // 产物基名沿用旧公共路径的合同：入口操作 ABI 名末段清洗；无入口时
             // 回落工程名（`with_artifact_base_name(None)` 不覆盖）。
