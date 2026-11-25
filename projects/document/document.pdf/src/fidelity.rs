@@ -5,10 +5,10 @@
 //! `/Outlines`, `/AcroForm` and named destinations, and the annotations of
 //! pages a plan does not place, are left out of the output. Rather than
 //! dropping them silently, [`crate::compose`], [`crate::arrange`],
-//! [`crate::merge`], [`crate::delete_pages`], [`crate::rotate_pages`] and
-//! [`crate::set_page_boxes`] report each omission as a [`FidelityLoss`] with a
-//! stable reason code, so a product can tell callers exactly what a complex or
-//! damaged source lost in translation.
+//! [`crate::merge`], [`crate::split`], [`crate::delete_pages`],
+//! [`crate::rotate_pages`] and [`crate::set_page_boxes`] report each omission as
+//! a [`FidelityLoss`] with a stable reason code, so a product can tell callers
+//! exactly what a complex or damaged source lost in translation.
 
 use std::collections::BTreeSet;
 
@@ -113,7 +113,7 @@ mod tests {
     use super::*;
     use crate::{
         CreateRequest, DocumentArrange, PagePlacement, PagePlan, arrange, compose, create, delete_pages, merge, rotate_pages,
-        set_page_boxes,
+        set_page_boxes, split, split_every,
     };
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -301,6 +301,39 @@ mod tests {
         let cropped = set_page_boxes(&source, "2", [0.0, 0.0, 200.0, 300.0], &workspace.path("cropped.pdf"), false)
             .expect("crop");
         assert!(!codes(&cropped.fidelity).contains(&"annotations-dropped".to_string()));
+    }
+
+    #[test]
+    fn split_reports_the_catalog_and_left_out_annotations_of_each_part() {
+        let workspace = Workspace::new();
+        let source = workspace.write("complex.pdf", &complex_pdf());
+        let report = split(&source, "1,2", &workspace.path("parts")).expect("split");
+
+        assert_eq!(report.documents.len(), 2);
+        let first = &report.documents[0];
+        assert_eq!(first.pages, 1);
+        assert_eq!(
+            codes(&first.fidelity),
+            ["acro-form-dropped", "destinations-dropped", "catalog-entry-dropped", "outlines-dropped"],
+            "the kept page carries the only annotation"
+        );
+
+        let second = &report.documents[1];
+        let annotation = second.fidelity.iter().find(|loss| loss.code == FidelityCode::AnnotationsDropped).expect("page loss");
+        assert_eq!((annotation.source, annotation.page), (0, Some(1)));
+        assert!(codes(&second.fidelity).contains(&"outlines-dropped".to_string()));
+    }
+
+    #[test]
+    fn split_of_a_plain_document_reports_no_losses() {
+        let workspace = Workspace::new();
+        let source = workspace.create("plain.pdf", &["One", "Two", "Three"]);
+        let report = split_every(&source, 2, &workspace.path("every")).expect("split every");
+
+        assert_eq!(report.documents.len(), 2);
+        for part in &report.documents {
+            assert!(part.fidelity.is_empty(), "plain part lost something: {:?}", part.fidelity);
+        }
     }
 
     #[test]

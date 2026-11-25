@@ -174,6 +174,9 @@ pub struct SplitPart {
     pub path: String,
     /// Pages contained in this file.
     pub pages: usize,
+    /// Objects the rebuilt catalog and the pages this part leaves out lost,
+    /// never silent.
+    pub fidelity: Vec<FidelityLoss>,
 }
 
 /// Result of [`split`].
@@ -1269,7 +1272,8 @@ fn write_part(document: &PdfDocument, out_dir: &Path, stem: &str, start: usize, 
     let name = if start == end { format!("{stem}-p{start}.pdf") } else { format!("{stem}-p{start}-{end}.pdf") };
     let target = out_dir.join(name);
     write_file(&target, &bytes, true)?;
-    Ok(SplitPart { path: target.display().to_string(), pages: pages.len() })
+    let kept = (start..=end).collect::<BTreeSet<_>>();
+    Ok(SplitPart { path: target.display().to_string(), pages: pages.len(), fidelity: fidelity::losses(0, document, &kept) })
 }
 
 /// Creates a new PDF with one text page per request entry, paginating long
