@@ -38,9 +38,12 @@ pub struct CachedRunContract {
     pub logical_entry: String,
     /// Physical entry file.
     pub physical_entry: String,
-    /// Frozen host boundary; consumers derive how the entry return is observed.
+    /// Frozen host boundary; the artifact's host identity.
     #[serde(default)]
     pub boundary: crate::legion::runner::RunHostBoundary,
+    /// Entry-wrapper frozen return projection (channel + width + decode); consumers only read it.
+    #[serde(default)]
+    pub return_projection: crate::legion::runner::RunEntryProjection,
     /// Frozen launch argv (element 0 is the program, `{artifact}` is expanded by consumers).
     #[serde(default)]
     pub launch: Vec<String>,
@@ -54,6 +57,7 @@ impl From<&DriverRunContract> for CachedRunContract {
             logical_entry: value.logical_entry.clone(),
             physical_entry: value.physical_entry.clone(),
             boundary: value.boundary.into(),
+            return_projection: value.return_projection.into(),
             launch: value.launch.clone(),
             validate: value.validate.clone(),
         }

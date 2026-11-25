@@ -43,10 +43,12 @@ pub const COMPILE_EVIDENCE_FILE_NAME: &str = "compile-evidence.txt";
 /// `4` 起库导出携带 CPython 冻结模块名（`module_name`），消费侧据此导入。
 /// `5` 起运行合同携带冻结启动 argv（`launch`）：执行端只按合同启动，旧一代
 /// 产物缺少该事实一律判为不新鲜并重建。
-/// `6` 起运行合同携带冻结宿主边界（`boundary`）：消费端据此派生入口返回值的
-/// 观测投影，不再按 target 名字另行推导。
+/// `6` 起运行合同携带冻结宿主边界（`boundary`）：消费端据此选择宿主，
+/// 不再按 target 名字另行推导。
+/// `7` 起运行合同携带入口包装冻结的返回值观测投影（`return_projection`）：
+/// 结果通道、值宽与解码规则由生成入口包装的目标后端逐条写入，Legion 只消费。
 #[doc(hidden)]
-pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 6;
+pub const EXECUTION_MANIFEST_SCHEMA_VERSION: u32 = 7;
 
 /// `legion run` 的命令参数。
 #[derive(Debug, Clone)]
@@ -430,10 +432,13 @@ impl ExecutionManifest {
             }
             _ => {}
         }
-        // 运行合同必须携带冻结宿主边界：缺失即无法派生入口返回值的观测投影，
-        // 不得让消费端退回按 target 名字猜测。
+        // 运行合同必须携带冻结宿主边界与入口返回值观测投影：任一缺失都不得让
+        // 消费端退回按 target 名字猜测宿主或观测通道。
         if self.run_contracts.iter().any(|contract| contract.host_boundary().is_none()) {
             return Ok(ManifestVerdict::Stale("manifest run contract missing host boundary".into()));
+        }
+        if self.run_contracts.iter().any(|contract| contract.entry_return_projection().is_none()) {
+            return Ok(ManifestVerdict::Stale("manifest run contract missing entry return projection".into()));
         }
         let Some(stored) = &self.compile_evidence
         else {
@@ -545,6 +550,12 @@ impl RunContract {
     #[must_use]
     pub fn host_boundary(&self) -> Option<compiler_target::HostProjectionBoundary> {
         compiler_target::HostProjectionBoundary::try_from(self.boundary).ok()
+    }
+
+    /// 入口包装冻结的返回值观测投影；旧合同缺少该事实时为 `None`（新鲜度校验已判 stale）。
+    #[must_use]
+    pub fn entry_return_projection(&self) -> Option<compiler_target::EntryReturnProjection> {
+        compiler_target::EntryReturnProjection::try_from(self.return_projection).ok()
     }
 }
 

@@ -6,7 +6,7 @@
 
 use std::{fs, path::PathBuf, process::Command};
 
-use compiler_target::{EntryReturnProjection, HostProjectionBoundary};
+use compiler_target::EntryReturnProjection;
 use interpreter_vm_ovm::{OdinVm, Value};
 
 use package_manager_legion::{
@@ -713,24 +713,23 @@ fn assert_reports(outcome: &BuildOutcome, expected: &str) {
 
 /// 冻结入口的实际返回值（宿主投影差异，不是算子能力差异）。
 ///
-/// 三个宿主的投影方式不同：jvm launcher 打印返回值且自身退出码为 0；clr / wasm-node
-/// 直接把返回值作为进程退出码；ovm 由解释器进程内调用入口。这是宿主投影差异，
-/// 不是算子能力差异——能力差异只体现在夹具声明的绑定上。
-/// execution manifest 第一条运行合同冻结的宿主边界。
-fn frozen_boundary(outcome: &BuildOutcome) -> HostProjectionBoundary {
+/// execution manifest 第一条运行合同冻结的入口返回值观测投影。
+///
+/// 投影是入口包装生成的后端逐条冻结的事实（结果通道 + 值宽 + 解码规则），
+/// 测试只消费合同字段，不按 target 名字或宿主边界派生观测方式。
+fn frozen_projection(outcome: &BuildOutcome) -> EntryReturnProjection {
     let output_dir = PathBuf::from(outcome.output_dir.as_deref().expect("构建成功必须给出输出目录"));
     let manifest = ExecutionManifest::read_from_output_dir(&output_dir)
         .unwrap_or_else(|error| panic!("run-contracts.txt 解析失败: {error}"))
         .unwrap_or_else(|| panic!("构建必须产出 run-contracts.txt: artifacts={:?}", outcome.artifacts));
-    manifest.run_contracts.first().expect("必须有运行合同").host_boundary().expect("运行合同必须冻结宿主边界")
+    manifest.run_contracts.first().expect("必须有运行合同").entry_return_projection().expect("运行合同必须冻结入口返回值观测投影")
 }
 
-/// 按合同冻结的宿主边界观测入口返回值。
+/// 按合同冻结的观测投影读取入口返回值。
 ///
-/// 观测方式由 [`HostProjectionBoundary::return_projection`] 唯一派生，测试不再按
-/// target 名字分支；边界事实错了会直接表现为返回值不符，而不是被测试本身掩盖。
-fn observed_return(label: &str, boundary: HostProjectionBoundary, outcome: &BuildOutcome) -> i32 {
-    match boundary.return_projection() {
+/// 投影事实错了会直接表现为返回值不符，而不是被测试本身的特判掩盖。
+fn observed_return(label: &str, projection: EntryReturnProjection, outcome: &BuildOutcome) -> i32 {
+    match projection {
         EntryReturnProjection::StdoutInteger => {
             let (code, stdout, stderr) = run_contract(outcome);
             assert_eq!(code, Some(0), "{label}: 入口必须正常退出: stdout={stdout:?} stderr={stderr:?}");
@@ -755,7 +754,7 @@ fn observed_return(label: &str, boundary: HostProjectionBoundary, outcome: &Buil
                 other => panic!("{label}: 入口 `{entry}` 必须返回 `i32`，实际 {other:?}"),
             }
         }
-        EntryReturnProjection::NoReturnValue => panic!("{label}: 该宿主边界没有入口返回值可观测"),
+        EntryReturnProjection::NoReturnValue => panic!("{label}: 合同声明该入口没有返回值可观测"),
     }
 }
 
@@ -772,7 +771,7 @@ fn numeric_operator_cases_run_on_every_declaring_target() {
         for target in targets {
             let (outcome, root) = build_case(case, target);
             assert!(outcome.ok, "{} @ {}: build 失败: {:?}", case.label, target.label(), outcome.error);
-            let observed = observed_return(target.label(), frozen_boundary(&outcome), &outcome);
+            let observed = observed_return(&format!("{} @ {}", case.label, target.label()), frozen_projection(&outcome), &outcome);
             assert_eq!(observed, case.expected, "{} @ {}: 入口返回值必须是期望值", case.label, target.label());
             let _ = fs::remove_dir_all(&root);
         }

@@ -791,6 +791,7 @@ fn write_execution_manifest(
             logical_entry: spec.logical_entry.clone(),
             physical_entry: spec.physical_entry.clone(),
             boundary: spec.boundary.into(),
+            return_projection: spec.return_projection.into(),
             launch: spec.launch.clone(),
             validate: spec.validate.clone(),
         })

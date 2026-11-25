@@ -40,11 +40,16 @@ pub struct RunContract {
     pub logical_entry: String,
     /// 物理入口（产物中的文件名或符号）。
     pub physical_entry: String,
-    /// 冻结的宿主边界；消费者据此派生入口返回值的观测方式。
+    /// 冻结的宿主边界；消费者据此选择宿主，不再派生返回值观测方式。
     /// 旧 manifest 缺少该字段时按 [`RunHostBoundary::Unknown`] 读取，新鲜度校验
     /// 必须判 stale，不得静默放行。
     #[serde(default)]
     pub boundary: RunHostBoundary,
+    /// 入口包装冻结的返回值观测投影（结果通道 + 值宽 + 解码规则）。
+    /// 由生成入口包装的目标后端逐条写入，Legion 只消费；缺失按
+    /// [`RunEntryProjection::Unknown`] 读取并判 stale。
+    #[serde(default)]
+    pub return_projection: RunEntryProjection,
     /// 冻结的启动 argv；旧 manifest 缺少该字段时为空。
     #[serde(default)]
     pub launch: Vec<String>,
@@ -146,6 +151,91 @@ impl<'de> Deserialize<'de> for RunHostBoundary {
         }
 
         deserializer.deserialize_any(BoundaryVisitor)
+    }
+}
+
+/// 运行合同冻结的入口返回值观测投影在 VON 清单里的传输形态。
+///
+/// 与 [`RunHostBoundary`] 同一词表模式：投影事实由生成入口包装的目标后端逐条
+/// 冻结，Legion 只消费；缺失/未知一律 `Unknown` 并 fail-closed。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RunEntryProjection {
+    /// 旧清单缺失或词表未知：不得据此观测入口返回值。
+    #[default]
+    Unknown,
+    /// 入口包装把 i32 返回值以十进制行打印到 stdout，自身以 0 退出。
+    StdoutInteger,
+    /// 入口返回值就是进程退出码（低 8 位截断）。
+    ProcessExitCode,
+    /// 宿主在进程内调用入口，返回值是 VM 内的 i32 值。
+    InProcessValue,
+    /// 入口没有返回值可观测。
+    NoReturnValue,
+}
+
+impl From<compiler_target::EntryReturnProjection> for RunEntryProjection {
+    fn from(value: compiler_target::EntryReturnProjection) -> Self {
+        match value {
+            compiler_target::EntryReturnProjection::StdoutInteger => Self::StdoutInteger,
+            compiler_target::EntryReturnProjection::ProcessExitCode => Self::ProcessExitCode,
+            compiler_target::EntryReturnProjection::InProcessValue => Self::InProcessValue,
+            compiler_target::EntryReturnProjection::NoReturnValue => Self::NoReturnValue,
+        }
+    }
+}
+
+impl TryFrom<RunEntryProjection> for compiler_target::EntryReturnProjection {
+    type Error = &'static str;
+
+    fn try_from(value: RunEntryProjection) -> std::result::Result<Self, Self::Error> {
+        match value {
+            RunEntryProjection::Unknown => Err("run contract is missing a frozen entry return projection"),
+            RunEntryProjection::StdoutInteger => Ok(Self::StdoutInteger),
+            RunEntryProjection::ProcessExitCode => Ok(Self::ProcessExitCode),
+            RunEntryProjection::InProcessValue => Ok(Self::InProcessValue),
+            RunEntryProjection::NoReturnValue => Ok(Self::NoReturnValue),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RunEntryProjection {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ProjectionVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ProjectionVisitor {
+            type Value = RunEntryProjection;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("'unknown' / 'stdout_integer' / 'process_exit_code' / 'in_process_value' / 'no_return_value'")
+            }
+
+            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match value.to_ascii_lowercase().replace('_', "").as_str() {
+                    "unknown" => Ok(RunEntryProjection::Unknown),
+                    "stdoutinteger" => Ok(RunEntryProjection::StdoutInteger),
+                    "processexitcode" => Ok(RunEntryProjection::ProcessExitCode),
+                    "inprocessvalue" => Ok(RunEntryProjection::InProcessValue),
+                    "noreturnvalue" => Ok(RunEntryProjection::NoReturnValue),
+                    other => Err(E::custom(format!("unsupported entry return projection '{other}'"))),
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(ProjectionVisitor)
     }
 }
 
@@ -261,6 +351,7 @@ mod tests {
             physical_entry: physical.to_string(),
             // 模板解析用例不消费宿主边界；这里保持缺失事实，避免伪造观测投影。
             boundary: RunHostBoundary::Unknown,
+            return_projection: RunEntryProjection::Unknown,
             launch: launch.iter().map(|part| (*part).to_string()).collect(),
             validate: String::new(),
         }
@@ -316,19 +407,28 @@ mod tests {
 
     #[test]
     fn run_host_boundary_round_trips_and_fails_closed() {
-        let frozen = RunContract { boundary: RunHostBoundary::WasmJsGlue, ..contract("main", "app.wasm", &["node", "{artifact}"]) };
+        let frozen = RunContract {
+            boundary: RunHostBoundary::WasmJsGlue,
+            return_projection: RunEntryProjection::ProcessExitCode,
+            ..contract("main", "app.wasm", &["node", "{artifact}"])
+        };
         let text = crate::legion::write_von_indented(&frozen).expect("清单必须可序列化");
         assert!(text.contains("boundary=wasm_js_glue"), "{text}");
+        assert!(text.contains("return_projection=process_exit_code"), "{text}");
         let parsed: RunContract = crate::legion::parse_von(&text).expect("清单必须可反序列化");
         assert_eq!(parsed.host_boundary(), Some(compiler_target::HostProjectionBoundary::WasmJsGlue));
+        assert_eq!(parsed.entry_return_projection(), Some(compiler_target::EntryReturnProjection::ProcessExitCode));
 
-        // 旧清单缺少边界字段：按 `Unknown` 读取，投影必须 fail-closed。
+        // 旧清单缺少边界与投影字段：按 `Unknown` 读取，消费必须 fail-closed。
         let legacy = crate::legion::write_von_indented(&contract("main", "app.jar", &["java"])).expect("清单必须可序列化");
         let parsed: RunContract = crate::legion::parse_von(&legacy).expect("旧清单必须可读取");
         assert_eq!(parsed.host_boundary(), None);
+        assert_eq!(parsed.entry_return_projection(), None);
 
-        // 未知词表不得静默降级成任何真实边界。
+        // 未知词表不得静默降级成任何真实边界或通道。
         let unknown = text.replace("wasm_js_glue", "bogus_boundary");
+        assert!(crate::legion::parse_von::<RunContract>(&unknown).is_err());
+        let unknown = text.replace("process_exit_code", "bogus_channel");
         assert!(crate::legion::parse_von::<RunContract>(&unknown).is_err());
     }
 }
