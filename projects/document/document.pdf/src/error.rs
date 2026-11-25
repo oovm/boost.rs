@@ -19,8 +19,24 @@ mod contract {
 
     fn frozen_samples() -> Vec<ErrorParams> {
         vec![
-            ErrorParams::ArgumentInvalid { reason: "page 9 is outside the 3-page document".to_owned(), pages: Some("9".to_owned()), arg: None },
-            ErrorParams::ArgumentInvalid { reason: "`times` must be between 2 and 100".to_owned(), pages: None, arg: Some("times".to_owned()) },
+            ErrorParams::ArgumentInvalid {
+                reason: "page 9 is outside the 3-page document".to_owned(),
+                pages: Some("9".to_owned()),
+                arg: None,
+                with: None,
+            },
+            ErrorParams::ArgumentInvalid {
+                reason: "`times` must be between 2 and 100".to_owned(),
+                pages: None,
+                arg: Some("times".to_owned()),
+                with: None,
+            },
+            ErrorParams::ArgumentInvalid {
+                reason: "the two selections overlap".to_owned(),
+                pages: Some("1,2".to_owned()),
+                arg: None,
+                with: Some("2,3".to_owned()),
+            },
             ErrorParams::Invalid { reason: "trailer has no /Root".to_owned() },
             ErrorParams::Unsupported { reason: "encrypted PDF is not supported".to_owned() },
             ErrorParams::Read { path: "input.pdf".to_owned(), kind: "NotFound".to_owned() },
@@ -74,7 +90,10 @@ mod contract {
     #[test]
     fn message_only_helpers_still_freeze_their_reason() {
         for (error, expected) in [
-            (argument("empty selection"), ErrorParams::ArgumentInvalid { reason: "empty selection".to_owned(), pages: None, arg: None }),
+            (
+                argument("empty selection"),
+                ErrorParams::ArgumentInvalid { reason: "empty selection".to_owned(), pages: None, arg: None, with: None },
+            ),
             (invalid("trailer has no /Root"), ErrorParams::Invalid { reason: "trailer has no /Root".to_owned() }),
             (unsupported("encrypted PDF is not supported"), ErrorParams::Unsupported { reason: "encrypted PDF is not supported".to_owned() }),
         ] {

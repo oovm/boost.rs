@@ -47,6 +47,8 @@ pub mod params {
             pages: Option<String>,
             /// The rejected argument name, when the failure names one.
             arg: Option<String>,
+            /// The second page selection, when a swap rejects a pairing.
+            with: Option<String>,
         },
         /// `format/invalid`; the input is not a readable PDF.
         Invalid {
@@ -93,7 +95,7 @@ pub mod params {
         /// Serializes the payload with the frozen key names.
         pub fn to_json(&self) -> Value {
             match self {
-                Self::ArgumentInvalid { reason, pages, arg } => {
+                Self::ArgumentInvalid { reason, pages, arg, with } => {
                     let mut object = Map::new();
                     object.insert("reason".to_owned(), Value::from(reason.as_str()));
                     if let Some(pages) = pages {
@@ -101,6 +103,9 @@ pub mod params {
                     }
                     if let Some(arg) = arg {
                         object.insert("arg".to_owned(), Value::from(arg.as_str()));
+                    }
+                    if let Some(with) = with {
+                        object.insert("with".to_owned(), Value::from(with.as_str()));
                     }
                     Value::Object(object)
                 }
@@ -134,11 +139,12 @@ pub mod params {
             };
             match code {
                 codes::ARGUMENT_INVALID => {
-                    allow_keys(object, &["reason", "pages", "arg"])?;
+                    allow_keys(object, &["reason", "pages", "arg", "with"])?;
                     Ok(Self::ArgumentInvalid {
                         reason: required_str(object, "reason")?,
                         pages: optional_str(object, "pages")?,
                         arg: optional_str(object, "arg")?,
+                        with: optional_str(object, "with")?,
                     })
                 }
                 codes::FORMAT_INVALID => {
@@ -273,6 +279,7 @@ pub fn argument(message: impl Into<String>) -> PdfError {
         reason: message,
         pages: None,
         arg: None,
+        with: None,
     })
 }
 
