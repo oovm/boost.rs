@@ -28,8 +28,16 @@ pub fn asgard_boot_stylesheet_tag(css_href: &str) -> String {
 
 /// 生成 `boot.js`：自 fetch WASM 字节、自实现 `env` 运行时（utf8 句柄 + DOM 句柄 + 信号表），
 /// 按 manifest 加载组件胶水并挂载 island。
-pub fn generate_boot_script(wasm_stem: &str, manifest_url: &str) -> String {
-    BOOT_JS_TEMPLATE.replace("__VOA_MANIFEST_URL__", manifest_url.trim()).replace("__VOA_WASM_STEM__", wasm_stem.trim())
+///
+/// 语言 std 文本行为不内建于本壳（与 nyar-emitter `wasm_js_glue` 同一裁定）：
+/// `provider_helpers` / `provider_bindings` 来自产物 wasm 的 `nyar.host_providers`
+/// 自定义段（语言 × 目标适配器提交），由调用方在构建期读出并注入。
+pub fn generate_boot_script(wasm_stem: &str, manifest_url: &str, provider_helpers: &str, provider_bindings: &str) -> String {
+    BOOT_JS_TEMPLATE
+        .replace("__VOA_MANIFEST_URL__", manifest_url.trim())
+        .replace("__VOA_WASM_STEM__", wasm_stem.trim())
+        .replace("__VOA_PROVIDER_HELPERS__", provider_helpers)
+        .replace("__VOA_PROVIDER_ENV__", provider_bindings)
 }
 
 const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
@@ -61,6 +69,11 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     return typeof ref === 'string' ? ref : hostResolve(ref);
   }
 
+  // provider 辅助 JS 的引用名（与 Node 壳同一合同）：句柄或裸串 → JS string。
+  function hostPathFromRef(ref) {
+    return typeof ref === 'string' ? ref : hostResolve(ref);
+  }
+
   // ── wasm 线性内存访问（memory.grow 后必须重取 buffer）────────────
   function hostLinearMemory() {
     var memory = wasmExports ? wasmExports.memory : undefined;
@@ -81,59 +94,10 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     return [ptr, bytes.length];
   }
 
-  // ── utf8 标量语义（Unicode scalars，非 UTF-16 code units）────────
-  function hostUtf8Scalars(s) { return [...hostText(s)]; }
-  function hostUtf8Concat(a, b) { return hostIntern(hostText(a) + hostText(b)); }
-  function hostUtf8Length(s) { return hostUtf8Scalars(s).length; }
-  // Unicode `White_Space`（与 std `Utf8Text::trim` 同一集合）；`String.prototype.trim`
-  // 的集合不同：会删 U+FEFF、保留 U+0085。
-  var UTF8_WHITE_SPACE = new Set([
-    0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x0085, 0x00a0, 0x1680,
-    0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
-    0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
-  ]);
-  function hostUtf8IsWhiteSpace(scalar) {
-    return UTF8_WHITE_SPACE.has(scalar.codePointAt(0));
-  }
-  function hostUtf8Trim(s) {
-    var scalars = hostUtf8Scalars(s);
-    var start = 0;
-    var end = scalars.length;
-    while (start < end && hostUtf8IsWhiteSpace(scalars[start])) start += 1;
-    while (end > start && hostUtf8IsWhiteSpace(scalars[end - 1])) end -= 1;
-    return hostIntern(scalars.slice(start, end).join(''));
-  }
-  function hostUtf8ToLower(s) { return hostIntern(hostText(s).toLowerCase()); }
-  function hostUtf8ToUpper(s) { return hostIntern(hostText(s).toUpperCase()); }
-  function hostUtf8Replace(s, oldValue, newValue) {
-    var needle = hostText(oldValue);
-    if (hostUtf8Scalars(needle).length === 0) return hostIntern(hostText(s));
-    return hostIntern(hostText(s).split(needle).join(hostText(newValue)));
-  }
-  function hostUtf8StartsWith(s, prefix) { return hostText(s).startsWith(hostText(prefix)) ? 1 : 0; }
-  function hostUtf8EndsWith(s, suffix) { return hostText(s).endsWith(hostText(suffix)) ? 1 : 0; }
-  function hostUtf8Contains(s, other) { return hostText(s).includes(hostText(other)) ? 1 : 0; }
-  function hostUtf8Equals(a, b) { return hostText(a) === hostText(b) ? 1 : 0; }
-  function hostUtf8IndexOf(s, other) {
-    var chars = hostUtf8Scalars(s);
-    var needle = hostUtf8Scalars(other);
-    if (needle.length === 0) return 0;
-    if (needle.length > chars.length) return -1;
-    for (var i = 0; i <= chars.length - needle.length; i++) {
-      var ok = true;
-      for (var j = 0; j < needle.length; j++) {
-        if (chars[i + j] !== needle[j]) { ok = false; break; }
-      }
-      if (ok) return i;
-    }
-    return -1;
-  }
-  function hostUtf8Slice(s, start, count) {
-    var chars = hostUtf8Scalars(s);
-    var from = Math.max(0, start | 0);
-    var len = Math.max(0, count | 0);
-    return hostIntern(chars.slice(from, from + len).join(''));
-  }
+  // ── 语言 std 文本 provider（`nyar.host_providers` 段，构建期注入）────
+  // 文本操作（`utf8_*` / `utf16_*` / 编码转换）是语言语义，不属于宿主壳：
+  // 实现与辅助 JS 由语言 × 目标适配器随产物段提交，这里只保留注入点。
+  __VOA_PROVIDER_HELPERS__
 
   // ── DOM 句柄表 ───────────────────────────────────────────────────
   var domHandles = [null];
@@ -299,18 +263,7 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     // `env::host_raise` 导入（`NODE_HOST_IMPORT_FIELDS`），宿主必须提供同名实现，
     // 缺失会以 `LinkError: function import requires a callable` 让整个产物无法实例化。
     host_raise: function (handle) { throw new Error(hostText(handle)); },
-    utf8_concat: hostUtf8Concat,
-    utf8_length: hostUtf8Length,
-    utf8_trim: hostUtf8Trim,
-    utf8_to_lower: hostUtf8ToLower,
-    utf8_to_upper: hostUtf8ToUpper,
-    utf8_replace: hostUtf8Replace,
-    utf8_starts_with: hostUtf8StartsWith,
-    utf8_ends_with: hostUtf8EndsWith,
-    utf8_contains: hostUtf8Contains,
-    utf8_equals: hostUtf8Equals,
-    utf8_index_of: hostUtf8IndexOf,
-    utf8_slice: hostUtf8Slice,
+    // `env` 的 `utf8_*` / `utf16_*` 家族不在此硬编码：由下方 provider 段注入。
 
     'document.createElement': function (tag) { return storeDomHandle(document.createElement(hostText(tag))); },
     'document.createTextNode': function (text) { return storeDomHandle(document.createTextNode(hostText(text))); },
@@ -544,6 +497,11 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
     }
   };
 
+  // 适配器提交的文本 provider 绑定（`nyar.host_providers` 段，构建期注入）。
+  // `env` 之外的模块进 `hostImportModules`，实例化时并入 importObject。
+  var hostImportModules = {};
+  __VOA_PROVIDER_ENV__
+
   // ── memo：按 dep 失效重算 ────────────────────────────────────────
   var memos = new Map();
 
@@ -694,7 +652,7 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
         return r.arrayBuffer();
       }));
       parseCustomSections(bytes);
-      var result = await WebAssembly.instantiate(bytes, { env: env });
+      var result = await WebAssembly.instantiate(bytes, Object.assign({ env: env }, hostImportModules));
       wasmExports = result.instance ? result.instance.exports : result.exports;
     }
 
@@ -735,3 +693,26 @@ const BOOT_JS_TEMPLATE: &str = r##"(function (global) {
   });
 })(typeof globalThis !== 'undefined' ? globalThis : window);
 "##;
+
+#[cfg(test)]
+mod tests {
+    use super::{BOOT_JS_TEMPLATE, generate_boot_script};
+
+    /// 架构负门（D5 同裁定）：浏览器 boot 壳不得内建语言 std 文本语义，
+    /// 文本实现只能来自 `nyar.host_providers` 段的构建期注入。
+    #[test]
+    fn boot_shell_does_not_hardcode_language_text_semantics() {
+        for forbidden in ["utf8_concat:", "utf16_concat:", "function hostUtf8Concat", "function hostUtf16Concat"] {
+            assert!(!BOOT_JS_TEMPLATE.contains(forbidden), "boot 模板内建了语言文本语义: {forbidden}");
+        }
+        assert!(BOOT_JS_TEMPLATE.contains("__VOA_PROVIDER_HELPERS__") && BOOT_JS_TEMPLATE.contains("__VOA_PROVIDER_ENV__"), "boot 模板必须保留 provider 注入点");
+    }
+
+    #[test]
+    fn boot_script_embeds_provider_fragments() {
+        let boot = generate_boot_script("app", "manifest.json", "function hostUtf16Concat(a, b) { return a; }", "Object.assign(env, {\n    \"utf16_concat\": (a, b) => hostUtf16Concat(a, b)\n});\n");
+        assert!(boot.contains("function hostUtf16Concat"), "{boot}");
+        assert!(boot.contains("\"utf16_concat\": (a, b) => hostUtf16Concat(a, b)"), "{boot}");
+        assert!(!boot.contains("__VOA_PROVIDER"), "占位符必须被替换");
+    }
+}
