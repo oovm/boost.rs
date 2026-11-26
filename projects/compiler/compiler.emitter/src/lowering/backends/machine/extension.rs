@@ -84,10 +84,12 @@ pub struct X64ExtensionProgramInput {
     host_exports: Vec<MachineHostExport>,
     module_name: Option<String>,
     artifact_extension: String,
+    text_layout: compiler_types::Utf8TextCarrierLayout,
 }
 
 impl X64ExtensionProgramInput {
-    /// 语言适配器构造目标私有宿主扩展输入：平台、宿主合同与产物身份一次冻结。
+    /// 语言适配器构造目标私有宿主扩展输入：平台、宿主合同、文本布局事实与产物身份一次冻结。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         platform: X64Platform,
         host: HostModule,
@@ -98,8 +100,14 @@ impl X64ExtensionProgramInput {
         host_exports: Vec<MachineHostExport>,
         module_name: Option<String>,
         artifact_extension: String,
+        text_layout: compiler_types::Utf8TextCarrierLayout,
     ) -> Self {
-        Self { platform, host, host_library, host_dependencies, functions, methods, host_exports, module_name, artifact_extension }
+        Self { platform, host, host_library, host_dependencies, functions, methods, host_exports, module_name, artifact_extension, text_layout }
+    }
+
+    /// `Utf8Text` 对象布局事实（语言结算，桥只按此读写）。
+    pub fn text_layout(&self) -> compiler_types::Utf8TextCarrierLayout {
+        self.text_layout
     }
 
     /// 目标平台身份（容器与调用约定一次冻结）。
@@ -136,6 +144,7 @@ pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<
                     platform,
                     &input.host_library,
                     arena_offset,
+                    input.text_layout,
                 ));
             }
             functions.push(node_addon_registration(
@@ -161,7 +170,7 @@ pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<
             let arena_offset = Some(append_text_arena(&mut data));
             let bool_exports = any_returns_bool(properties, &input.methods);
             for (method, format_offset) in input.methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(method, format_offset, &input.host_library, arena_offset, platform));
+                functions.push(python_method_wrapper(method, format_offset, &input.host_library, arena_offset, platform, input.text_layout));
             }
             functions.push(python_module_exec(properties, &property_name_offsets, &input.host_library, arena_offset));
             functions.push(python_module_registration(module, &input.host_library));

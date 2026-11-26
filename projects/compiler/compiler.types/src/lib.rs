@@ -30,7 +30,7 @@ pub use self::{
     linked::{
         CanonicalCallEdge, CanonicalExternalCallEdge, CanonicalFragment, CanonicalPrimitiveType, CanonicalTypeKind, EntryRecord,
         EvidenceRecord, ExportRecord, FieldRecord, ImportRecord, ItemInstanceRecord, LinkedSemanticProgram, NominalInstanceRecord,
-        NominalValueSemantics, TypeRecord, VariantRecord,
+        NominalValueSemantics, TypeRecord, Utf8TextCarrierLayout, VariantRecord,
     },
     neutral_contract::{
         ArtifactContract, BootstrapStage, EvidencePackage, EvidenceStatus, PrimitiveDefinition, PrimitiveRegistry, Provenance,

@@ -1012,6 +1012,11 @@ function hostUtf8Concat(a, b) {{
 
 // env.utf8_* index contract (matches std Utf8Text): Unicode **scalars** via [...s],
 // never JS string.length / indexOf UTF-16 code units. Host JS strings are UTF-16 storage only.
+//
+// 架构裁定：本文件是宿主 JS 侧的**库行为**合同（镜像 std 的文本语义），不是
+// `Utf8Text` 对象布局的复制——它不读写任何语言托管对象的字段偏移，只在 JS
+// 字符串存储上实现 std 同名语义。语言更换文本内部布局不影响本文件；语言若
+// 更换 trim/index 语义，本 glue 必须与 std 同批修订。
 function hostUtf8Scalars(s) {{
     return [...hostPathFromRef(s)];
 }}

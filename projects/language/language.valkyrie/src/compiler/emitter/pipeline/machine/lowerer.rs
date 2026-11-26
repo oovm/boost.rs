@@ -24,8 +24,8 @@ use compiler_emitter::{
 use compiler_types::{FieldId, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, StorageKind, VariantId, semantic_ids::MirValueId};
 
 use crate::compiler::valkyrie_mir::{
-    ValkyrieMirArrayInitialization, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant, ValkyrieMirEffectKind,
-    ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperation, ValkyrieMirTerminator,
+    UTF8_TEXT_CARRIER_LAYOUT, ValkyrieMirArrayInitialization, ValkyrieMirBlock, ValkyrieMirBlockId, ValkyrieMirCallee, ValkyrieMirConstant,
+    ValkyrieMirEffectKind, ValkyrieMirFunction, ValkyrieMirInstruction, ValkyrieMirOperation, ValkyrieMirTerminator,
 };
 use super::super::lane::{FunctionView, LaneContext};
 
@@ -964,14 +964,14 @@ impl FunctionLowerer<'_> {
             self.push(X64TextInstruction::LoadSlotToRdx(condition));
             self.push(X64TextInstruction::StoreRdxToRaxDisplacement(ARRAY_ELEMENT_OFFSET + 8 * index as i32));
         }
-        // 对象只有一个字段：偏移 0 指向 `_repr` 数组（与 `StructNew` 的引用布局一致）。
-        self.push(X64TextInstruction::LoadI64(ARRAY_ELEMENT_BYTES));
+        // 对象块按语言结算的文本布局事实分配（宿主桥消费同一事实）。
+        self.push(X64TextInstruction::LoadI64(ARRAY_ELEMENT_BYTES * UTF8_TEXT_CARRIER_LAYOUT.object_field_slots as i64));
         for item in object_allocate(self.allocator, size_slot, auxiliary, condition, self.failure_label) {
             self.push(item);
         }
-        // `rax` 是对象指针，`rcx` 装入数组指针后写入字段 0。
+        // `rax` 是对象指针，`rcx` 装入数组指针后写入 `_repr` 字段。
         self.push(X64TextInstruction::LoadSlotToRcx(array_slot));
-        self.push(X64TextInstruction::StoreRcxToRax);
+        self.push(X64TextInstruction::StoreRcxToRaxDisplacement(UTF8_TEXT_CARRIER_LAYOUT.repr_field_byte_offset as i32));
         Ok(())
     }
 
@@ -1596,9 +1596,9 @@ impl FunctionLowerer<'_> {
         self.push(X64TextInstruction::StoreSlot(handle_slot));
         self.emit_operand_to_rax(arguments[1])?;
         self.push(X64TextInstruction::StoreSlot(obj_slot));
-        // `Utf8Text` 对象字段 0 是 `_repr` 数组，数组头部第 0 格是字节个数。
+        // 按语言结算的文本布局事实取 `_repr` 字段；数组头部第 0 格是字节个数。
         self.push(X64TextInstruction::LoadSlot(obj_slot));
-        self.push(X64TextInstruction::LoadFromRax);
+        self.push(X64TextInstruction::LoadFromRaxDisplacement(UTF8_TEXT_CARRIER_LAYOUT.repr_field_byte_offset as i32));
         self.push(X64TextInstruction::StoreSlot(array_slot));
         self.push(X64TextInstruction::LoadSlot(array_slot));
         self.push(X64TextInstruction::LoadFromRax);

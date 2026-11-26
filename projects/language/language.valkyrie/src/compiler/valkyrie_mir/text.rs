@@ -9,6 +9,14 @@
 use super::{ValkyrieMirConstant, ValkyrieMirOperation, ValkyrieMirProgram, representation::TextRepresentation};
 use compiler_types::{CanonicalPrimitiveType, CanonicalTypeKind, TypeId};
 
+/// 语言拥有的 `Utf8Text` 唯一内部布局事实：`_repr` 位于对象数据区字段槽 0，
+/// 对象共 1 个字段槽。
+///
+/// 宿主桥（CPython / Node）与控制台物化路径按这份显式布局读写；语言更换文本
+/// 内部布局时只改这里与语言侧物化代码，平台 emitter 不跟随改代码。
+pub const UTF8_TEXT_CARRIER_LAYOUT: compiler_types::Utf8TextCarrierLayout =
+    compiler_types::Utf8TextCarrierLayout { repr_field_byte_offset: 0, object_field_slots: 1 };
+
 /// 由 canonical 声明与值类型事实判定程序级文本表示。
 ///
 /// - 登记了 `text_encoding_types` 时返回 [`TextRepresentation::Managed`]；

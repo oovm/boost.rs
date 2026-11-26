@@ -25,5 +25,5 @@ pub use operation::{
 };
 pub use program::{CompiledValkyrieProgram, CompiledValkyrieProgramError, ValkyrieMirProgram};
 pub use representation::{AdtRepresentation, InvokeLowering, RepresentationPlan, TextRepresentation, ValueRepresentation};
-pub use text::declared_text_representation;
+pub use text::{UTF8_TEXT_CARRIER_LAYOUT, declared_text_representation};
 pub use validation::validate_named_residues;

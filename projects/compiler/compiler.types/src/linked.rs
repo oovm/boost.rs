@@ -13,6 +13,19 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+/// `Utf8Text` 托管对象的布局合同：由语言结算，平台只按这份显式布局读写。
+///
+/// 语言更换文本内部布局时，只有这里的事实变化；平台 emitter（宿主桥、控制台
+/// 物化路径）不得再携带自己的字段偏移字面量。数组头/元素槽位是目标数组运行时
+/// 合同，不在本事实内。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Utf8TextCarrierLayout {
+    /// `_repr` 字段相对对象数据区首地址的字节偏移。
+    pub repr_field_byte_offset: u32,
+    /// 对象数据区的字段槽数（每槽 8 字节）；宿主桥按此分配对象块。
+    pub object_field_slots: u32,
+}
+
 /// 完成 adaptor 选择与跨包闭包后的链接程序。
 ///
 /// 这是进入已校验 Semantic MIR 的**成功**类型——不是并行的

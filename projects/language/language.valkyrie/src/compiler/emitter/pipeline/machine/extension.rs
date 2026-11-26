@@ -349,6 +349,7 @@ pub(crate) fn build_extension_input(ctx: &LaneContext, resolved: &ResolvedTarget
         host_exports,
         python_module,
         artifact_extension,
+        crate::compiler::valkyrie_mir::UTF8_TEXT_CARRIER_LAYOUT,
     ))
 }
 
