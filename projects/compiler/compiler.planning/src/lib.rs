@@ -15,13 +15,10 @@ pub use control_flow::{
 
 use std::collections::BTreeMap;
 
-use compiler_optimize::{
-    AlgebraicTerm, ObjectAlgebraicDimension, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult, OptimizationSession,
-    ProjectionPolicy, RewriteTheory, TheoryBundle,
-};
+use compiler_optimize::{RewriteTheory, TheoryBundle};
 use compiler_types::{
-    CapabilityTag, ExportRecord, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ItemInstanceId, QualifiedName, ReferenceManagement,
-    RuntimeRequirement,
+    CapabilityTag, ExportRecord, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ItemInstanceId, ProjectionPlan, ProjectionPolicy,
+    QualifiedName, ReferenceManagement, RuntimeRequirement,
 };
 
 use compiler_target::{
@@ -75,11 +72,11 @@ struct OptimizerInput {
     pub target: CanonicalTarget,
     /// 下游已经闭合好的程序事实。
     pub program_facts: PlannerFacts,
-    /// 前端提交的语义片段名称视图。
+    /// 前端提交的语义片段标识（名称边界已在入口校验通过）。
     ///
-    /// 这些片段只描述“有哪些可组合的语义视图”，供等式优化建立名称边界，
-    /// 不承担 callable、入口或导入绑定，也不把整个程序压平为一个单体 `IR`。
-    pub semantic_fragments: Vec<OptimizerFragment>,
+    /// 这些片段只描述“有哪些可组合的语义视图”，不承担 callable、入口或导入
+    /// 绑定，也不把整个程序压平为一个单体 `IR`。
+    pub semantic_fragments: Vec<Identifier>,
     /// 当前启用的等价理论。
     pub rewrite_theory: RewriteTheory,
     /// 目标投影策略。
@@ -112,21 +109,15 @@ pub struct SemanticFragment {
     pub export_annotations: BTreeMap<compiler_types::ItemInstanceId, String>,
 }
 
-/// 从 Canonical 闭包派生的优化器事实视图，不是前端成功合同。
+/// 从 Canonical 闭包派生的分区事实视图，不是前端成功合同。
+///
+/// 导出合同只用于入口处的 fail-closed 身份校验（每个导出 callable 必须有冻结
+/// 限定名），不进分区计划。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct PlannerFacts {
-    exports: Vec<compiler_analysis::ExportContract>,
     capabilities: Vec<CapabilityTag>,
     reference_management: Option<ReferenceManagement>,
     runtime_requirements: Vec<RuntimeRequirement>,
-}
-
-/// 仅供等式优化的局部名称视图，不携带可执行入口、导入或调用绑定合同。
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct OptimizerFragment {
-    id: Identifier,
-    exported_operations: Vec<QualifiedName>,
-    required_capabilities: Vec<CapabilityTag>,
 }
 
 /// 单个分区计划。
@@ -163,14 +154,15 @@ pub struct ArtifactPartition {
 }
 
 /// 单个语义片段的优化视图。
+///
+/// 只携带分区与装配实际消费的事实：canonical 操作身份、已采用的规则名
+/// 与理论 bundle。等式优化不再经由伪 `ObjectAlgebraicProgram` 往返。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FragmentOptimizationView {
     /// 片段标识。
     pub fragment_id: Identifier,
     /// Canonical 合同确定的稳定操作；等式优化不得重绑定函数身份。
     pub canonical_operations: Vec<compiler_types::ItemInstanceId>,
-    /// 经抽取后的结构化项（M1 为全局 terms；Phase 2 起可按 operation 过滤）。
-    pub structured_terms: Vec<AlgebraicTerm>,
     /// 本轮采用的规则名。
     pub applied_rules: Vec<Identifier>,
     /// 共享理论 + 片段理论合并后的 bundle。
@@ -184,12 +176,10 @@ pub struct ArtifactPartitionPlan {
     pub module_name: QualifiedName,
     /// 目标。
     pub target: CanonicalTarget,
-    /// 规划前执行得到的优化结果。
-    pub optimization: OptimizationResult,
-    /// 按片段暴露的优化视图。
-    pub fragment_views: Vec<FragmentOptimizationView>,
     /// 分区列表。
     pub partitions: Vec<ArtifactPartition>,
+    /// 按片段暴露的优化视图。
+    pub fragment_views: Vec<FragmentOptimizationView>,
 }
 
 /// 分区主路径实际消费的单个片段窄事实。
@@ -282,38 +272,32 @@ impl ArtifactPartitionPlan {
         let mut projection_policy = projection_policy;
         projection_policy.reference_management =
             resolve_reference_management(program_facts.reference_management, projection_policy.reference_management, projection_policy.family);
-        // 等式优化的名称边界直接由片段事实装配，不再合成理论对象中间层。
-        let mut exports = program_facts.exports.iter().map(|item| item.local_name.clone()).collect::<Vec<_>>();
-        for fragment in &semantic_fragments {
-            for operation in &fragment.exported_operations {
-                push_unique_operation(&mut exports, operation.clone());
-            }
-        }
-        let program = ObjectAlgebraicProgram {
-            module_name: module_name.clone(),
-            exports,
-            dimensions: semantic_fragments
-                .iter()
-                .map(|fragment| ObjectAlgebraicDimension {
-                    name: fragment.id.clone(),
-                    exported_operations: fragment.exported_operations.clone(),
-                    required_capabilities: fragment.required_capabilities.clone(),
-                    reference_management_hint: None,
-                })
-                .collect(),
-            structured_terms: Vec::new(),
+        // 分区链只消费投影元数据与能力事实：投影计划由策略与片段事实直接结算，
+        // 不再合成 `structured_terms` 为空的伪 `ObjectAlgebraicProgram` 走 optimizer 往返。
+        let preserved_capabilities = program_facts
+            .capabilities
+            .iter()
+            .filter(|capability| projection_policy.preserve_effect_boundaries || capability.as_str() != "suspend")
+            .cloned()
+            .collect::<Vec<_>>();
+        let projection = ProjectionPlan {
+            family: projection_policy.family,
+            host_boundary: projection_policy.host_boundary,
+            reference_management: projection_policy.reference_management,
+            preserved_capabilities,
         };
-        let optimization = OptimizationSession::default().optimize(OptimizationRequest {
-            program,
-            capabilities: program_facts.capabilities.clone(),
-            rewrite_theory: rewrite_theory.clone(),
-            projection_policy,
-        });
-        let fragment_views = build_fragment_views(fragments, &optimization, &rewrite_theory);
+        let applied_rules = rewrite_theory
+            .rules
+            .iter()
+            .filter(|rule| rule.allowed_projection_families.is_empty() || rule.allowed_projection_families.contains(&projection_policy.family))
+            .filter(|rule| rule.required_capabilities.iter().all(|capability| program_facts.capabilities.iter().any(|provided| provided == capability)))
+            .map(|rule| rule.name.clone())
+            .collect::<Vec<_>>();
+        let fragment_views = build_fragment_views(fragments, &applied_rules, &rewrite_theory);
         let binary_target: BinaryTarget = target.into();
         let partitions =
-            build_partitions(&program_facts, &optimization, &module_name, fragments, binary_target, &backend_registry, clr_suspend_strategy)?;
-        Ok(Self { module_name, target, optimization, fragment_views, partitions })
+            build_partitions(&program_facts, &projection, &module_name, fragments, binary_target, &backend_registry, clr_suspend_strategy)?;
+        Ok(Self { module_name, target, partitions, fragment_views })
     }
 
     /// 从指定分区提取已经完成规划的后端需求。
@@ -336,7 +320,7 @@ fn qualified_module_name(module_name: &str) -> QualifiedName {
     QualifiedName::new(module_name.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect())
 }
 
-fn canonical_optimizer_input(view: &PlanningProgramView<'_>) -> Result<(PlannerFacts, Vec<OptimizerFragment>), PlanningError> {
+fn canonical_optimizer_input(view: &PlanningProgramView<'_>) -> Result<(PlannerFacts, Vec<Identifier>), PlanningError> {
     let callable_name = |instance: ItemInstanceId| {
         view.callable_names.get(&instance).cloned().ok_or_else(|| PlanningError::SemanticContract {
             module: view.module_name.to_string(),
@@ -351,26 +335,17 @@ fn canonical_optimizer_input(view: &PlanningProgramView<'_>) -> Result<(PlannerF
                 capabilities.push(capability.clone());
             }
         }
-        let exported_operations = fragment.exported_operations.iter().copied().map(&callable_name).collect::<Result<Vec<_>, _>>()?;
-        fragments.push(OptimizerFragment {
-            id: fragment.id.clone(),
-            exported_operations,
-            required_capabilities: fragment.required_capabilities.to_vec(),
-        });
+        // fail-closed 身份校验：片段公开操作必须有冻结限定名；名称本身不进计划。
+        for instance in fragment.exported_operations {
+            callable_name(*instance)?;
+        }
+        fragments.push(fragment.id.clone());
     }
-    let exports = view
-        .exports
-        .iter()
-        .map(|(instance, record)| {
-            Ok(compiler_analysis::ExportContract {
-                exported_name: Identifier::new(&record.source_name),
-                local_name: callable_name(*instance)?,
-                partition: None,
-            })
-        })
-        .collect::<Result<Vec<_>, PlanningError>>()?;
+    // fail-closed 身份校验：每个导出 callable 必须有冻结限定名；导出表本身不进分区计划。
+    for instance in view.exports.keys() {
+        callable_name(*instance)?;
+    }
     let program_facts = PlannerFacts {
-        exports,
         capabilities,
         reference_management: view.reference_management,
         runtime_requirements: view.runtime_requirements.to_vec(),
@@ -380,7 +355,7 @@ fn canonical_optimizer_input(view: &PlanningProgramView<'_>) -> Result<(PlannerF
 
 fn build_fragment_views(
     fragments: &[PlanningFragmentFacts<'_>],
-    optimization: &OptimizationResult,
+    applied_rules: &[Identifier],
     shared_theory: &RewriteTheory,
 ) -> Vec<FragmentOptimizationView> {
     fragments
@@ -388,17 +363,10 @@ fn build_fragment_views(
         .map(|fragment| FragmentOptimizationView {
             fragment_id: fragment.id.clone(),
             canonical_operations: fragment.exported_operations.to_vec(),
-            structured_terms: optimization.program.structured_terms.clone(),
-            applied_rules: optimization.applied_rules.clone(),
+            applied_rules: applied_rules.to_vec(),
             theory_bundle: TheoryBundle { shared: shared_theory.clone(), fragment: RewriteTheory::default() },
         })
         .collect()
-}
-
-fn push_unique_operation(exports: &mut Vec<QualifiedName>, operation: QualifiedName) {
-    if !exports.iter().any(|existing| *existing == operation) {
-        exports.push(operation);
-    }
 }
 
 fn resolve_reference_management(
@@ -434,7 +402,7 @@ fn clr_suspend_strategy_for_lane(
 
 fn build_partitions(
     program_facts: &PlannerFacts,
-    optimization: &OptimizationResult,
+    projection: &ProjectionPlan,
     module_name: &QualifiedName,
     fragments: &[PlanningFragmentFacts<'_>],
     binary_target: BinaryTarget,
@@ -444,22 +412,22 @@ fn build_partitions(
     fragments
         .iter()
         .map(|fragment| {
-            let capabilities = resolve_partition_capabilities(&optimization.projection.preserved_capabilities, fragment.required_capabilities);
+            let capabilities = resolve_partition_capabilities(&projection.preserved_capabilities, fragment.required_capabilities);
             let reference_management =
-                resolve_partition_reference_management(program_facts, optimization.projection.reference_management, optimization.projection.family);
+                resolve_partition_reference_management(program_facts, projection.reference_management, projection.family);
             let backend = backend_registry
                 .resolve(
                     fragment.id,
                     &capabilities,
                     &binary_target,
-                    optimization.projection.family,
-                    optimization.projection.host_boundary,
+                    projection.family,
+                    projection.host_boundary,
                     reference_management,
                 )
                 .ok_or_else(|| PlanningError::MissingBackendInterpreter {
                     fragment: fragment.id.clone(),
-                    projection_family: optimization.projection.family,
-                    host_boundary: optimization.projection.host_boundary,
+                    projection_family: projection.family,
+                    host_boundary: projection.host_boundary,
                 })?;
             Ok(ArtifactPartition {
                 fragment: fragment.id.clone(),
