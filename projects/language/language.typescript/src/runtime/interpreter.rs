@@ -1,14 +1,18 @@
-//! 树遍历解释器：差分基线，也是第一投影的语义来源。
+//! MIR 执行解释器：差分基线，也是第一投影的语义来源。
+//!
+//! 解释器与特化从**同一 MIR** 分派：本模块只执行 [`crate::mir`] 节点，
+//! 不再遍历 AST。`Interpreter::new` 只是便利入口，内部先完成
+//! AST → HIR → MIR 降低再执行。语义裁决唯一来源仍是 [`semantics`]。
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use language_typescript_ir::{statement::Statement, types::BinaryOp, Expression, Program};
-use language_typescript_types::TsValue;
+use language_typescript_ir::types::BinaryOp;
 
-use super::{
-    semantics,
-    value::{Callable, Scope, Value},
-};
+use crate::hir::BindingRef;
+use crate::mir::{self, literal_to_value, MirAssignTarget, MirCallTarget, MirExpr, MirExprKind, MirProgram, MirStmt};
+use crate::runtime::value::{Callable, Value};
+
+use super::semantics;
 
 /// 解释器结构化错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,21 +48,44 @@ enum Flow {
     Continue,
 }
 
-/// TypeScript 子集解释器。
+/// 调用帧：槽位按 [`BindingRef::Local`] 索引，`None` = 尚未声明。
+struct Frame {
+    slots: Vec<Option<Value>>,
+    names: Vec<String>,
+}
+
+impl Frame {
+    fn new(slots: u32, names: Vec<String>) -> Self {
+        Self { slots: vec![None; slots as usize], names }
+    }
+}
+
+/// TypeScript 子集解释器（MIR 执行）。
 pub struct Interpreter {
-    globals: Scope,
-    scopes: Vec<Scope>,
+    program: Rc<MirProgram>,
+    /// 调用帧栈（栈顶为当前帧；栈底为模块帧）。
+    frames: Vec<Frame>,
+    /// 模块绑定帧（按 [`BindingRef::Global`] 索引）。
+    globals: Vec<Option<Value>>,
+    /// `console` 宿主对象（log 按调用序写入 trace）。
+    console: Value,
     trace: Rc<RefCell<Vec<String>>>,
 }
 
 impl Interpreter {
-    /// 装载并执行顶层语句，构造解释器实例。
+    /// 装载并执行顶层语句，构造解释器实例（AST 便利入口）。
     ///
     /// 顶层 `console.log` 写入可取的 trace（`Vec<String>`），保持调用顺序。
-    pub fn new(program: &Program) -> Result<Self, RuntimeError> {
+    pub fn new(program: &language_typescript_ir::Program) -> Result<Self, RuntimeError> {
+        let hir = crate::hir::lower(program);
+        let mir = mir::lower(&hir);
+        Self::from_mir(&mir)
+    }
+
+    /// 从 MIR 程序装载并执行顶层语句。
+    pub fn from_mir(program: &MirProgram) -> Result<Self, RuntimeError> {
+        let program = Rc::new(program.clone());
         let trace = Rc::new(RefCell::new(Vec::<String>::new()));
-        let globals: Scope = Rc::new(RefCell::new(HashMap::new()));
-        let mut interpreter = Self { globals: globals.clone(), scopes: vec![globals.clone()], trace: trace.clone() };
         // console 对象：log 内建按调用序写入 trace。
         let log_trace = trace.clone();
         let console = Value::object_with([(
@@ -68,8 +95,11 @@ impl Interpreter {
                 Ok(Value::Undefined)
             }),
         )]);
-        globals.borrow_mut().insert("console".to_string(), console);
-        for statement in &program.statements {
+        let frames = vec![Frame::new(program.module_slot_count, program.module_local_names.clone())];
+        let globals = vec![None; program.globals.len()];
+        let mut interpreter = Self { program, frames, globals, console, trace };
+        let top = interpreter.program.top.clone();
+        for statement in &top {
             match interpreter.exec_statement(statement)? {
                 Flow::Return(value) => {
                     // 顶层 return 视为脚本完成值，忽略即可。
@@ -90,7 +120,10 @@ impl Interpreter {
 
     /// 调用导出函数。
     pub fn call_exported(&mut self, name: &str, args: &[Value]) -> Result<Value, RuntimeError> {
-        let Some(value) = self.globals.borrow().get(name).cloned() else {
+        let Some(id) = self.program.global_index.get(name).copied() else {
+            return Err(RuntimeError::ExportMissing(name.to_string()));
+        };
+        let Some(value) = self.globals.get(id).and_then(|slot| slot.clone()) else {
             return Err(RuntimeError::ExportMissing(name.to_string()));
         };
         let Value::Function(callable) = value else {
@@ -102,17 +135,15 @@ impl Interpreter {
     fn invoke(&mut self, callable: &Rc<Callable>, args: &[Value]) -> Result<Value, RuntimeError> {
         match callable.as_ref() {
             Callable::Native { call, .. } => call(args).map_err(|error| RuntimeError::Type(error.0)),
-            Callable::User { params, body, closure, .. } => {
-                let scope: Scope = Rc::new(RefCell::new(HashMap::new()));
-                scope.borrow_mut().insert("this".to_string(), Value::Undefined);
-                for (index, param) in params.iter().enumerate() {
-                    let value = args.get(index).cloned().unwrap_or(Value::Undefined);
-                    scope.borrow_mut().insert(param.clone(), value);
+            Callable::User { function, .. } => {
+                let function = function.clone();
+                let mut frame = Frame::new(function.slot_count, function.local_names.clone());
+                for index in 0..function.params.len() {
+                    frame.slots[index] = Some(args.get(index).cloned().unwrap_or(Value::Undefined));
                 }
-                let _ = closure;
-                self.scopes.push(scope.clone());
-                let result = self.exec_statements(body);
-                self.scopes.pop();
+                self.frames.push(frame);
+                let result = self.exec_statements(&function.body);
+                self.frames.pop();
                 match result? {
                     Flow::Return(value) => Ok(value),
                     _ => Ok(Value::Undefined),
@@ -121,7 +152,7 @@ impl Interpreter {
         }
     }
 
-    fn exec_statements(&mut self, statements: &[Statement]) -> Result<Flow, RuntimeError> {
+    fn exec_statements(&mut self, statements: &[MirStmt]) -> Result<Flow, RuntimeError> {
         for statement in statements {
             let flow = self.exec_statement(statement)?;
             if !matches!(flow, Flow::Normal) {
@@ -131,41 +162,32 @@ impl Interpreter {
         Ok(Flow::Normal)
     }
 
-    fn exec_statement(&mut self, statement: &Statement) -> Result<Flow, RuntimeError> {
+    fn exec_statement(&mut self, statement: &MirStmt) -> Result<Flow, RuntimeError> {
         match statement {
-            Statement::Expression(expression) => {
+            MirStmt::Expr(expression) => {
                 self.eval(expression)?;
                 Ok(Flow::Normal)
             }
-            Statement::VariableDeclaration { name, initializer, .. } => {
-                let value = match initializer {
+            MirStmt::Declare { binding, init, .. } => {
+                let value = match init {
                     Some(expression) => self.eval(expression)?,
                     None => Value::Undefined,
                 };
-                self.declare(name, value);
+                self.declare(binding, value);
                 Ok(Flow::Normal)
             }
-            Statement::Block(statements) => {
-                let scope: Scope = Rc::new(RefCell::new(HashMap::new()));
-                self.scopes.push(scope);
-                let flow = self.exec_statements(statements);
-                self.scopes.pop();
-                flow
-            }
-            Statement::If { test, consequent, alternate } => {
+            MirStmt::Block(statements) => self.exec_statements(statements),
+            MirStmt::If { test, then, else_ } => {
                 if semantics::truthy(&self.eval(test)?) {
-                    self.exec_statement(consequent)
-                }
-                else if let Some(alternate) = alternate {
-                    self.exec_statement(alternate)
+                    self.exec_statements(then)
                 }
                 else {
-                    Ok(Flow::Normal)
+                    self.exec_statements(else_)
                 }
             }
-            Statement::While { test, body } => {
+            MirStmt::While { test, body } => {
                 while semantics::truthy(&self.eval(test)?) {
-                    match self.exec_statement(body)? {
+                    match self.exec_statements(body)? {
                         Flow::Break => break,
                         Flow::Continue | Flow::Normal => continue,
                         flow @ Flow::Return(_) => return Ok(flow),
@@ -173,94 +195,136 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            Statement::For { init, test, update, body } => {
-                let scope: Scope = Rc::new(RefCell::new(HashMap::new()));
-                self.scopes.push(scope);
-                let result = (|| -> Result<Flow, RuntimeError> {
-                    if let Some(init) = init {
-                        self.exec_statement(init)?;
-                    }
-                    loop {
-                        if let Some(test) = test {
-                            if !semantics::truthy(&self.eval(test)?) {
-                                break;
-                            }
-                        }
-                        match self.exec_statement(body)? {
-                            Flow::Break => break,
-                            Flow::Continue | Flow::Normal => {}
-                            flow @ Flow::Return(_) => return Ok(flow),
-                        }
-                        if let Some(update) = update {
-                            self.eval(update)?;
+            MirStmt::For { init, test, update, body } => {
+                if let Some(init) = init {
+                    self.exec_statement(init)?;
+                }
+                loop {
+                    if let Some(test) = test {
+                        if !semantics::truthy(&self.eval(test)?) {
+                            break;
                         }
                     }
-                    Ok(Flow::Normal)
-                })();
-                self.scopes.pop();
-                result
+                    match self.exec_statements(body)? {
+                        Flow::Break => break,
+                        Flow::Continue | Flow::Normal => {}
+                        flow @ Flow::Return(_) => return Ok(flow),
+                    }
+                    if let Some(update) = update {
+                        self.eval(update)?;
+                    }
+                }
+                Ok(Flow::Normal)
             }
-            Statement::Return(expression) => {
+            MirStmt::Return(expression) => {
                 let value = match expression {
                     Some(expression) => self.eval(expression)?,
                     None => Value::Undefined,
                 };
                 Ok(Flow::Return(value))
             }
-            Statement::Break => Ok(Flow::Break),
-            Statement::Continue => Ok(Flow::Continue),
-            Statement::FunctionDeclaration { name, params, body, .. } => {
-                let closure = self.current_scope();
-                let function = Value::user_function(name.clone(), params.clone(), body.clone(), closure);
-                self.declare(name, function);
+            MirStmt::Break => Ok(Flow::Break),
+            MirStmt::Continue => Ok(Flow::Continue),
+            MirStmt::FunctionDecl { binding, function } => {
+                let function = self.program.functions[*function].clone();
+                let name = function.name.clone();
+                self.declare(binding, Value::Function(Rc::new(Callable::User { name, function })));
                 Ok(Flow::Normal)
             }
-            Statement::ExportDeclaration { declaration, .. } => self.exec_statement(declaration),
-            // 类型层声明：运行时无操作。
-            Statement::InterfaceDeclaration { .. } | Statement::TypeAlias { .. } => Ok(Flow::Normal),
-            Statement::ClassDeclaration { .. }
-            | Statement::NamespaceDeclaration { .. }
-            | Statement::ModuleDeclaration { .. }
-            | Statement::ImportDeclaration { .. }
-            | Statement::EnumDeclaration { .. } => Err(RuntimeError::Type("该声明形态不在解释子集内".to_string())),
+            MirStmt::TypeDecl => Ok(Flow::Normal),
+            MirStmt::OpaqueDecl(_) => Err(RuntimeError::Type("该声明形态不在解释子集内".to_string())),
+            MirStmt::Export { inner, .. } => self.exec_statement(inner),
         }
     }
 
-    fn current_scope(&self) -> Scope {
-        self.scopes.last().expect("至少存在全局作用域").clone()
-    }
-
-    fn lookup(&self, name: &str) -> Option<Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(value) = scope.borrow().get(name) {
-                return Some(value.clone());
+    /// 声明绑定：写入帧槽 / 全局槽。
+    fn declare(&mut self, binding: &BindingRef, value: Value) {
+        match binding {
+            BindingRef::Local(slot) => {
+                if let Some(frame) = self.frames.last_mut() {
+                    if let Some(entry) = frame.slots.get_mut(*slot as usize) {
+                        *entry = Some(value);
+                    }
+                }
             }
-        }
-        None
-    }
-
-    fn declare(&mut self, name: &str, value: Value) {
-        self.current_scope().borrow_mut().insert(name.to_string(), value);
-    }
-
-    fn assign(&mut self, name: &str, value: Value) -> Result<(), RuntimeError> {
-        for scope in self.scopes.iter().rev() {
-            if scope.borrow().contains_key(name) {
-                scope.borrow_mut().insert(name.to_string(), value);
-                return Ok(());
+            BindingRef::Global(id) => {
+                if let Some(entry) = self.globals.get_mut(*id as usize) {
+                    *entry = Some(value);
+                }
             }
+            BindingRef::This | BindingRef::HostConsole | BindingRef::Unbound(_) => {}
         }
-        Err(RuntimeError::Reference(name.to_string()))
     }
 
-    /// 求值表达式。
-    pub fn eval(&mut self, expression: &Expression) -> Result<Value, RuntimeError> {
-        match expression {
-            Expression::Literal(value) => literal_to_value(value),
-            Expression::Identifier(name) => self.lookup(name).ok_or_else(|| RuntimeError::Reference(name.clone())),
-            Expression::Binary { left, op, right } => {
+    /// 读取绑定。
+    fn lookup(&self, binding: &BindingRef) -> Result<Value, RuntimeError> {
+        match binding {
+            BindingRef::Local(slot) => {
+                let frame = self.frames.last().expect("至少存在模块帧");
+                match frame.slots.get(*slot as usize).and_then(|entry| entry.clone()) {
+                    Some(value) => Ok(value),
+                    None => Err(RuntimeError::Reference(self.local_name(*slot))),
+                }
+            }
+            BindingRef::Global(id) => {
+                let name = self.program.globals.get(*id as usize).map(|global| global.name.clone()).unwrap_or_default();
+                match self.globals.get(*id as usize).and_then(|entry| entry.clone()) {
+                    Some(value) => Ok(value),
+                    None => Err(RuntimeError::Reference(name)),
+                }
+            }
+            BindingRef::This => Ok(Value::Undefined),
+            BindingRef::HostConsole => Ok(self.console.clone()),
+            BindingRef::Unbound(name) => Err(RuntimeError::Reference(name.clone())),
+        }
+    }
+
+    /// 赋值绑定。
+    fn assign(&mut self, binding: &BindingRef, value: Value) -> Result<(), RuntimeError> {
+        match binding {
+            BindingRef::Local(slot) => {
+                let name = self.local_name(*slot);
+                let frame = self.frames.last_mut().expect("至少存在模块帧");
+                match frame.slots.get_mut(*slot as usize) {
+                    Some(entry @ Some(_)) => {
+                        *entry = Some(value);
+                        Ok(())
+                    }
+                    _ => Err(RuntimeError::Reference(name)),
+                }
+            }
+            BindingRef::Global(id) => {
+                let name = self.program.globals.get(*id as usize).map(|global| global.name.clone()).unwrap_or_default();
+                match self.globals.get_mut(*id as usize) {
+                    Some(entry @ Some(_)) => {
+                        *entry = Some(value);
+                        Ok(())
+                    }
+                    _ => Err(RuntimeError::Reference(name)),
+                }
+            }
+            BindingRef::This => Err(RuntimeError::Type("不能给 `this` 赋值".to_string())),
+            BindingRef::HostConsole => Err(RuntimeError::Type("不能给 `console` 赋值".to_string())),
+            BindingRef::Unbound(name) => Err(RuntimeError::Reference(name.clone())),
+        }
+    }
+
+    fn local_name(&self, slot: u32) -> String {
+        self.frames
+            .last()
+            .and_then(|frame| frame.names.get(slot as usize).cloned())
+            .unwrap_or_else(|| format!("slot{slot}"))
+    }
+
+    /// 求值 MIR 表达式。
+    fn eval(&mut self, expression: &MirExpr) -> Result<Value, RuntimeError> {
+        match &expression.kind {
+            MirExprKind::Literal(literal) => Ok(literal_to_value(literal)),
+            MirExprKind::Binding(binding) => self.lookup(binding),
+            MirExprKind::Binary { op, left, right } => {
                 let left = self.eval(left)?;
                 match op {
+                    // 短路：`&&` / `||` 返回操作数本身（JS 语义）。
                     BinaryOp::And => {
                         if semantics::truthy(&left) {
                             self.eval(right)
@@ -279,160 +343,166 @@ impl Interpreter {
                     }
                     _ => {
                         let right = self.eval(right)?;
-                        self.eval_binary(op.clone(), &left, &right)
+                        eval_binary(op.clone(), &left, &right)
                     }
                 }
             }
-            Expression::Unary { op, expr } => {
-                let value = self.eval(expr)?;
-                Ok(match op {
-                    language_typescript_ir::types::UnaryOp::Not => Value::Bool(!semantics::truthy(&value)),
-                    language_typescript_ir::types::UnaryOp::Neg => Value::Number(-semantics::to_number(&value)),
-                    other => return Err(RuntimeError::Type(format!("一元操作 {other:?} 不在子集内"))),
-                })
+            MirExprKind::Unary { op, operand } => {
+                use language_typescript_ir::types::UnaryOp;
+                let value = self.eval(operand)?;
+                match op {
+                    UnaryOp::Not => Ok(Value::Bool(!semantics::truthy(&value))),
+                    UnaryOp::Neg => Ok(Value::Number(-semantics::to_number(&value))),
+                    _ => Err(RuntimeError::Type(format!("一元操作 {op:?} 不在子集内"))),
+                }
             }
-            Expression::Conditional { test, consequent, alternate } => {
+            MirExprKind::Conditional { test, then, else_ } => {
                 if semantics::truthy(&self.eval(test)?) {
-                    self.eval(consequent)
+                    self.eval(then)
                 }
                 else {
-                    self.eval(alternate)
+                    self.eval(else_)
                 }
             }
-            Expression::Assignment { left, op, right } => {
-                let value = self.eval(right)?;
-                let value = if *op == language_typescript_ir::types::AssignmentOp::Assign {
-                    value
-                }
-                else {
-                    return Err(RuntimeError::Type("复合赋值不在子集内".to_string()));
-                };
-                match left.as_ref() {
-                    Expression::Identifier(name) => self.assign(name, value.clone())?,
-                    Expression::Member { object, property } => {
+            MirExprKind::Assignment { target, value } => {
+                let value = self.eval(value)?;
+                match target {
+                    MirAssignTarget::Binding(binding) => self.assign(binding, value.clone())?,
+                    MirAssignTarget::Member { object, key } => {
+                        let key = key.clone().ok_or_else(|| RuntimeError::Type("成员名形态不支持".to_string()))?;
                         let target = self.eval(object)?;
-                        let key = self.member_key(property)?;
                         match &target {
-                            Value::Object(fields) => {
-                                fields.borrow_mut().insert(key, value.clone());
-                            }
-                            other => return Err(RuntimeError::Type(format!("不可对 {} 写入属性", type_name(other)))),
-                        }
+                            Value::Object(fields) => fields.borrow_mut().insert(key, value.clone()),
+                            other => return Err(RuntimeError::Type(format!("{} 不可写属性", type_name(other)))),
+                        };
                     }
-                    other => return Err(RuntimeError::Type(format!("赋值左侧 {other:?} 不可写"))),
+                    MirAssignTarget::Index { .. } => return Err(RuntimeError::Type("赋值左侧不可写".to_string())),
                 }
+                // 赋值表达式的值即右值（JS 语义）。
                 Ok(value)
             }
-            Expression::Member { object, property } => {
+            MirExprKind::Member { object, key } => {
+                let key = key.clone().ok_or_else(|| RuntimeError::Type("成员名形态不支持".to_string()))?;
                 let target = self.eval(object)?;
-                let key = self.member_key(property)?;
-                Ok(match &target {
-                    Value::Object(fields) => fields.borrow().get(&key).cloned().unwrap_or(Value::Undefined),
+                match &target {
+                    Value::Object(fields) => Ok(fields.borrow().get(&key).cloned().unwrap_or(Value::Undefined)),
                     Value::Array(elements) => {
+                        let elements = elements.borrow();
                         if key == "length" {
-                            Value::Number(elements.borrow().len() as f64)
+                            Ok(Value::Number(elements.len() as f64))
+                        }
+                        else if let Ok(index) = key.parse::<usize>() {
+                            Ok(elements.get(index).cloned().unwrap_or(Value::Undefined))
                         }
                         else {
-                            key.parse::<usize>().ok().and_then(|index| elements.borrow().get(index).cloned()).unwrap_or(Value::Undefined)
+                            Ok(Value::Undefined)
                         }
                     }
                     Value::String(text) => {
                         if key == "length" {
-                            Value::Number(text.chars().count() as f64)
+                            Ok(Value::Number(text.chars().count() as f64))
                         }
                         else {
-                            Value::Undefined
+                            Ok(Value::Undefined)
                         }
                     }
-                    other => return Err(RuntimeError::Type(format!("不可读取 {} 的属性 `{key}`", type_name(other)))),
-                })
+                    _ => Err(RuntimeError::Type(format!("{} 不可成员访问", type_name(&target)))),
+                }
             }
-            Expression::Index { object, index } => {
+            MirExprKind::Index { object, index } => {
                 let target = self.eval(object)?;
                 let key = self.eval(index)?;
-                Ok(match (&target, &key) {
-                    (Value::Object(fields), Value::String(name)) => fields.borrow().get(&name.to_string()).cloned().unwrap_or(Value::Undefined),
-                    (Value::Array(elements), Value::Number(number)) => {
-                        elements.borrow().get(*number as usize).cloned().unwrap_or(Value::Undefined)
+                match &target {
+                    Value::Object(fields) => Ok(fields.borrow().get(&semantics::to_string(&key)).cloned().unwrap_or(Value::Undefined)),
+                    Value::Array(elements) => {
+                        let number = semantics::to_number(&key);
+                        if number.is_nan() || number < 0.0 {
+                            return Ok(Value::Undefined);
+                        }
+                        Ok(elements.borrow().get(number as usize).cloned().unwrap_or(Value::Undefined))
                     }
-                    (Value::String(text), Value::Number(number)) => text
-                        .chars()
-                        .nth(*number as usize)
-                        .map(|ch| Value::string(ch.to_string()))
-                        .unwrap_or(Value::Undefined),
-                    _ => return Err(RuntimeError::Type("下标访问形态不受支持".to_string())),
-                })
+                    Value::String(text) => {
+                        let number = semantics::to_number(&key);
+                        if number.is_nan() || number < 0.0 {
+                            return Ok(Value::Undefined);
+                        }
+                        Ok(text.chars().nth(number as usize).map(|ch| Value::string(ch.to_string())).unwrap_or(Value::Undefined))
+                    }
+                    _ => Err(RuntimeError::Type(format!("{} 不可下标访问", type_name(&target)))),
+                }
             }
-            Expression::Object(fields) => {
-                let mut map = HashMap::new();
+            MirExprKind::Object { fields } => {
+                let mut object = Vec::with_capacity(fields.len());
                 for (key, value) in fields {
-                    let evaluated = self.eval(value)?;
-                    map.insert(key.clone(), evaluated);
+                    object.push((key.clone(), self.eval(value)?));
                 }
-                Ok(Value::Object(Rc::new(RefCell::new(map))))
+                Ok(Value::object_with(object))
             }
-            Expression::Array(elements) => {
-                let mut values = Vec::with_capacity(elements.len());
+            MirExprKind::Array { elements } => {
+                let mut array = Vec::with_capacity(elements.len());
                 for element in elements {
-                    values.push(self.eval(element)?);
+                    array.push(self.eval(element)?);
                 }
-                Ok(Value::Array(Rc::new(RefCell::new(values))))
+                Ok(Value::array(array))
             }
-            Expression::Call { callee, args } => {
-                // 方法调用：`console.log(...)` 等成员 callee。
+            MirExprKind::Call { target, args, .. } => {
                 let mut evaluated = Vec::with_capacity(args.len());
                 for arg in args {
                     evaluated.push(self.eval(arg)?);
                 }
-                let target = self.eval(callee)?;
                 match target {
-                    Value::Function(callable) => self.invoke(&callable, &evaluated),
-                    other => Err(RuntimeError::Type(format!("{} 不可调用", type_name(&other)))),
+                    MirCallTarget::Named(index) => {
+                        let function = self.program.functions[*index].clone();
+                        let name = function.name.clone();
+                        let callable = Rc::new(Callable::User { name, function });
+                        self.invoke(&callable, &evaluated)
+                    }
+                    MirCallTarget::HostLog => {
+                        self.trace.borrow_mut().push(semantics::log_line(&evaluated));
+                        Ok(Value::Undefined)
+                    }
+                    MirCallTarget::Dynamic(callee) => {
+                        let target = self.eval(callee)?;
+                        match target {
+                            Value::Function(callable) => self.invoke(&callable, &evaluated),
+                            other => Err(RuntimeError::Type(format!("{} 不可调用", type_name(&other)))),
+                        }
+                    }
                 }
             }
-            Expression::Function { .. } | Expression::ArrowFunction { .. } => Err(RuntimeError::Type("函数表达式不在子集内".to_string())),
+            MirExprKind::Unsupported(detail) => Err(RuntimeError::Type(format!("{detail}不在解释子集内"))),
         }
-    }
-
-    fn member_key(&mut self, property: &Expression) -> Result<String, RuntimeError> {
-        match property {
-            Expression::Identifier(name) => Ok(name.clone()),
-            Expression::Literal(TsValue::String(text)) => Ok(text.clone()),
-            other => Err(RuntimeError::Type(format!("成员名形态不受支持: {other:?}"))),
-        }
-    }
-
-    fn eval_binary(&mut self, op: BinaryOp, left: &Value, right: &Value) -> Result<Value, RuntimeError> {
-        Ok(match op {
-            BinaryOp::Add => semantics::add(left, right),
-            BinaryOp::Sub => Value::Number(semantics::to_number(left) - semantics::to_number(right)),
-            BinaryOp::Mul => Value::Number(semantics::to_number(left) * semantics::to_number(right)),
-            BinaryOp::Div => Value::Number(semantics::to_number(left) / semantics::to_number(right)),
-            BinaryOp::Mod => Value::Number(semantics::to_number(left) % semantics::to_number(right)),
-            BinaryOp::StrictEq => Value::Bool(semantics::strict_eq(left, right)),
-            BinaryOp::StrictNeq => Value::Bool(!semantics::strict_eq(left, right)),
-            BinaryOp::Eq => Value::Bool(semantics::loose_eq(left, right)),
-            BinaryOp::Neq => Value::Bool(!semantics::loose_eq(left, right)),
-            BinaryOp::Lt => Value::Bool(compare(left, right).is_some_and(|order| order == std::cmp::Ordering::Less)),
-            BinaryOp::Lte => Value::Bool(compare(left, right).is_some_and(|order| order != std::cmp::Ordering::Greater)),
-            BinaryOp::Gt => Value::Bool(compare(left, right).is_some_and(|order| order == std::cmp::Ordering::Greater)),
-            BinaryOp::Gte => Value::Bool(compare(left, right).is_some_and(|order| order != std::cmp::Ordering::Less)),
-            other => return Err(RuntimeError::Type(format!("二元操作 {other:?} 不在子集内"))),
-        })
     }
 }
 
-/// JS 关系比较：双字符串按码点序，否则 `ToNumber`；`NaN` 参与恒假。
-fn compare(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
-    if let (Value::String(a), Value::String(b)) = (left, right) {
-        return Some(a.cmp(b));
-    }
+/// 二元求值（非短路），语义全部走 [`semantics`]。
+fn eval_binary(op: BinaryOp, left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+    use BinaryOp::*;
+    Ok(match op {
+        Add => semantics::add(left, right),
+        Sub => Value::Number(semantics::to_number(left) - semantics::to_number(right)),
+        Mul => Value::Number(semantics::to_number(left) * semantics::to_number(right)),
+        Div => Value::Number(semantics::to_number(left) / semantics::to_number(right)),
+        Mod => Value::Number(semantics::to_number(left) % semantics::to_number(right)),
+        StrictEq => Value::Bool(semantics::strict_eq(left, right)),
+        StrictNeq => Value::Bool(!semantics::strict_eq(left, right)),
+        Eq => Value::Bool(semantics::loose_eq(left, right)),
+        Neq => Value::Bool(!semantics::loose_eq(left, right)),
+        Lt => Value::Bool(compare(left, right)? < 0.0),
+        Lte => Value::Bool(compare(left, right)? <= 0.0),
+        Gt => Value::Bool(compare(left, right)? > 0.0),
+        Gte => Value::Bool(compare(left, right)? >= 0.0),
+        other => return Err(RuntimeError::Type(format!("二元操作 {other:?} 不在子集内"))),
+    })
+}
+
+fn compare(left: &Value, right: &Value) -> Result<f64, RuntimeError> {
     let a = semantics::to_number(left);
     let b = semantics::to_number(right);
     if a.is_nan() || b.is_nan() {
-        return None;
+        return Err(RuntimeError::Type("NaN 不参与关系比较".to_string()));
     }
-    a.partial_cmp(&b)
+    Ok(a - b)
 }
 
 fn type_name(value: &Value) -> &'static str {
@@ -446,30 +516,4 @@ fn type_name(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Function(_) => "function",
     }
-}
-
-/// AST 字面量装载：`TsValue` → 运行时 `Value`。
-pub fn literal_to_value(value: &TsValue) -> Result<Value, RuntimeError> {
-    Ok(match value {
-        TsValue::Undefined => Value::Undefined,
-        TsValue::Null => Value::Null,
-        TsValue::Boolean(flag) => Value::Bool(*flag),
-        TsValue::Number(number) => Value::Number(*number),
-        TsValue::String(text) => Value::string(text.as_str()),
-        TsValue::Array(elements) => {
-            let mut values = Vec::with_capacity(elements.len());
-            for element in elements {
-                values.push(literal_to_value(element)?);
-            }
-            Value::Array(Rc::new(RefCell::new(values)))
-        }
-        TsValue::Object(fields) => {
-            let mut map = HashMap::new();
-            for (key, field) in fields {
-                map.insert(key.clone(), literal_to_value(field)?);
-            }
-            Value::Object(Rc::new(RefCell::new(map)))
-        }
-        other => return Err(RuntimeError::Literal(format!("{other:?}"))),
-    })
 }

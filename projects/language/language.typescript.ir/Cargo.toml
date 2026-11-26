@@ -1,6 +1,6 @@
 [package]
 name = "language-typescript-ir"
-description = "TypeScript 中间表示、优化与性能分析"
+description = "TypeScript 的 AST 表示（语法树形状，非 MIR）"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,5 +9,3 @@ publish = false
 
 [dependencies]
 language-typescript-types = { workspace = true }
-serde = { workspace = true }
-once_cell = { workspace = true }

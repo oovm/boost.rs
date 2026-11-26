@@ -635,7 +635,6 @@ dependencies = [
 name = "compiler-planning"
 version = "0.1.0"
 dependencies = [
- "compiler-analysis",
  "compiler-optimize",
  "compiler-target",
  "compiler-types",
@@ -5493,8 +5492,6 @@ name = "language-typescript-ir"
 version = "0.1.0"
 dependencies = [
  "language-typescript-types",
- "once_cell",
- "serde",
 ]
 
 [[package]]
@@ -5835,6 +5832,8 @@ dependencies = [
 name = "media-codec"
 version = "0.1.0"
 dependencies = [
+ "data-checksum",
+ "data-compression",
  "media-image",
  "media-types",
  "media-vector",

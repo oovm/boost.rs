@@ -6,20 +6,16 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use language_typescript_ir::statement::Statement;
+use crate::mir::MirFunction;
 
 /// 一个可调用的宿主 / 用户函数。
 pub enum Callable {
-    /// 用户函数：源码参数、语句体与捕获作用域。
+    /// 用户函数：共享 MIR 函数体（与特化同一表示）。
     User {
         /// 函数名（诊断用）。
         name: String,
-        /// 形参名。
-        params: Vec<String>,
-        /// 函数体语句。
-        body: Vec<Statement>,
-        /// 定义处作用域（闭包）。
-        closure: Scope,
+        /// MIR 函数。
+        function: Rc<MirFunction>,
     },
     /// 宿主内建函数（如 `console.log`）。
     Native {
@@ -32,9 +28,6 @@ pub enum Callable {
 
 /// 内建函数失败（由解释器包装为 [`super::RuntimeError`]）。
 pub struct NativeError(pub String);
-
-/// 变量作用域：名字 → 值。
-pub type Scope = Rc<RefCell<HashMap<String, Value>>>;
 
 /// TypeScript 运行时值。
 #[derive(Clone)]
@@ -79,8 +72,8 @@ impl Value {
     }
 
     /// 构造用户函数值。
-    pub fn user_function(name: impl Into<String>, params: Vec<String>, body: Vec<Statement>, closure: Scope) -> Self {
-        Self::Function(Rc::new(Callable::User { name: name.into(), params, body, closure }))
+    pub fn user_function(name: impl Into<String>, function: Rc<MirFunction>) -> Self {
+        Self::Function(Rc::new(Callable::User { name: name.into(), function }))
     }
 
     /// 构造内建函数值。
