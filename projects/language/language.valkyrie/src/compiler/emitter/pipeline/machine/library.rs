@@ -172,6 +172,9 @@ pub(crate) fn build_library_input(ctx: &LaneContext, resolved: &ResolvedTarget) 
     let mut names: BTreeMap<ItemInstanceId, String> = BTreeMap::new();
     let mut exports = Vec::new();
     for (instance, export_name) in validate_library_export_names(ctx.fragment().export_names.iter(), &platform.name())? {
+        // 导出实例的镜像符号名就是公开导出名：容器把符号表整体写成导出目录，
+        // 这里漏登记会让导出函数编成内部私有名，外部消费者按名装载直接失败。
+        names.insert(*instance, export_name.clone());
         // 载体签名只从冻结函数类型派生：缺函数体或载体不在本 lane 封闭词汇内
         // 都是结构化失败，不写空标签或用语义类型文本冒充已定案 ABI。参数名是
         // 绑定用例字段的唯一依据，缺失同样失败。
