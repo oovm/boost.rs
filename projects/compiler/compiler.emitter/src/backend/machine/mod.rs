@@ -27,10 +27,8 @@ pub use crate::lowering::backends::machine::{
 };
 pub use executable::{MachineImageError, MachineImageFacts, MachineImageKind, classify_machine_executable, classify_machine_image};
 pub use crate::lowering::backends::machine::x86_64::{
-    X64ArrayOperation, X64ArrayOperatorPlan, X64ConsoleOperation, X64IntShape,
-    X64ProgramInput, X86OperatorBinding, X86_64OperatorCode, float_int_target_bounds, freeze_x86_64_operator,
-    freeze_x86_64_operator_binding, heap_array_element_type, is_exit_code_type, is_local_carrier_type, is_reference_carrier,
-    narrow_normalize, x64_int_shape, x86_64_operator_target,
+    X64ArrayOperation, X64ArrayOperatorPlan, X64ConsoleOperation, X64ProgramInput, X86OperatorBinding, X86_64OperatorCode,
+    freeze_x86_64_operator_binding, narrow_normalize,
 };
 pub use crate::lowering::backends::machine::{
     ARRAY_ALLOCATION_BYTES_OFFSET, ARRAY_COUNT_OFFSET, ARRAY_ELEMENT_ALIGNMENT, ARRAY_ELEMENT_BYTES, ARRAY_ELEMENT_OFFSET,

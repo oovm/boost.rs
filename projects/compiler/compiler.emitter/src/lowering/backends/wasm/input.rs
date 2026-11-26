@@ -1065,7 +1065,7 @@ pub fn wasm_gc_field_type_byte(ty: &WasmTypeFact) -> Result<u8> {
     })
 }
 
-/// 操作数载体（镜像公共 `target_operator::operand_carrier`，类型换成私有）。
+/// 操作数载体（镜像语言适配器 `language.valkyrie` 的 `pipeline::operator::operand_carrier`，类型换成私有）。
 pub fn operand_carrier(ty: &WasmTypeFact) -> Option<TargetOperandType> {
     match ty {
         WasmTypeFact::Integer32 { .. } => Some(TargetOperandType::I32),
@@ -1078,7 +1078,7 @@ pub fn operand_carrier(ty: &WasmTypeFact) -> Option<TargetOperandType> {
     }
 }
 
-/// 结果槽载体（镜像公共 `target_operator::result_carrier`）。
+/// 结果槽载体（镜像语言适配器 `pipeline::operator::result_carrier`）。
 pub fn result_carrier(ty: &WasmTypeFact) -> Option<TargetOperandType> {
     match ty {
         WasmTypeFact::Boolean => Some(TargetOperandType::I32),

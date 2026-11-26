@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use compiler_emitter::{
     Result,
-    emitter_backend_machine::{LayoutPolicy, X64CallConv, X64Platform, X64ProgramInput, is_exit_code_type, resolve_physical_layouts},
+    emitter_backend_machine::{LayoutPolicy, X64CallConv, X64Platform, X64ProgramInput, resolve_physical_layouts},
 };
 use compiler_target::abstractions::{CanonicalAbi, CanonicalArch, CanonicalSpecification};
 use compiler_target::ResolvedTarget;
@@ -16,6 +16,7 @@ use compiler_types::ItemInstanceId;
 
 use super::super::lane::{FunctionView, LaneContext};
 use super::lowerer;
+use super::operator::is_exit_code_type;
 
 /// 进程可执行用途（`Application` / `TestBundle`）的目标私有输入。
 ///

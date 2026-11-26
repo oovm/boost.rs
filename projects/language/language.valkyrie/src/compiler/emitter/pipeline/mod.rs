@@ -26,6 +26,8 @@ pub(crate) mod machine;
 #[cfg(feature = "ovm-lane")]
 pub(crate) mod ovm;
 pub(crate) mod wasm;
+/// 语言 × 目标适配器共享的源语义裁决：声明签名载体判定与冻结计划形状核对。
+pub(crate) mod operator;
 mod representation;
 
 pub use backend_bundle::{

@@ -38,7 +38,7 @@ const fn long_shift(code: JvmOperatorCode) -> TargetOperatorPlan<JvmOperatorCode
 }
 
 /// 唯一 operator 配方表。未知名字返回 `None`。
-pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan<JvmOperatorCode>> {
+pub fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetOperatorPlan<JvmOperatorCode>> {
     Some(match operator_name {
         // integer 算术：JVM 单指令（`iadd`/`isub`/`imul`/`idiv`/`irem`/`ineg`）。
         "integer.add" => binary(TargetOperandType::I32, TargetOperandType::I32, JvmOperatorCode::IntegerAdd),
@@ -168,21 +168,6 @@ pub(crate) fn freeze_jvm_operator_binding(operator_name: &str) -> Option<TargetO
     })
 }
 
-/// 源码 `[jvm_operator("ldiv")]` 声明的 JVM 目标 operator 助记符。
-///
-/// 只接受 platform tag `jvm-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub fn jvm_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("jvm-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
 /// JVM 平台私有的 operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JvmOperatorBinding {
@@ -192,68 +177,24 @@ pub enum JvmOperatorBinding {
     Unfrozen,
 }
 
-/// 按声明的导入签名冻结 JVM operator 绑定。
-///
-/// `None` 表示该导入不是 JVM operator；`Some(Unfrozen)` 表示绑定了 JVM operator
-/// 但名字不在本 lane 的配方表内。两者都必须保留，禁止回落为宿主导入或默认成功。
-pub fn freeze_jvm_operator(
-    link: &compiler_target::ExternalImportLink,
-    instance: compiler_types::ItemInstanceId,
-    symbol: &str,
-    parameter_types: &[compiler_types::SemanticType],
-    return_type: &compiler_types::SemanticType,
-) -> crate::Result<Option<JvmOperatorBinding>> {
-    let Some(mnemonic) = jvm_operator_target(link)
-    else {
-        return Ok(None);
-    };
-    let Some(plan) = freeze_jvm_operator_binding(mnemonic)
-    else {
-        return Ok(Some(JvmOperatorBinding::Unfrozen));
-    };
-    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
-    Ok(Some(JvmOperatorBinding::Frozen(plan)))
-}
-
 #[cfg(test)]
 mod operator_binding_tests {
-    use compiler_target::{ExternalImportLink, Identifier, SemanticType};
-    use compiler_types::ItemInstanceId;
-
-    use super::JvmOperatorCode;
-    use super::{JvmOperatorBinding, freeze_jvm_operator};
+    use super::{JvmOperatorCode, freeze_jvm_operator_binding};
     use crate::target_operator::TargetOperandType;
     use crate::transitional::binary::class::JvmInstruction;
 
-    fn link(mnemonic: &str) -> ExternalImportLink {
-        ExternalImportLink::host(Some(Identifier::new("jvm-operator")), vec![mnemonic.to_string()])
-    }
-
-    /// 声明侧 `[jvm_operator("…")]` 的真实助记符必须冻结成 JVM 指令，
-    /// 而不是 Unfrozen；未知助记符仍失败闭合。
+    /// 配方表里的真实助记符必须冻结成 JVM 指令；未登记的助记符返回 `None`，
+    /// 由语言侧适配器落 `Unfrozen` 绑定，禁止猜默认指令。
     #[test]
     fn scalar_operator_mnemonics_freeze_to_jvm_instructions() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let i32_ty = SemanticType::Integer32 { signed: true };
-
-        let add = freeze_jvm_operator(&link("integer.add"), instance, "infix +", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(add) = add
-        else {
-            panic!("`integer.add` 必须冻结");
-        };
+        let add = freeze_jvm_operator_binding("integer.add").expect("`integer.add` 必须冻结");
         assert_eq!(add.arity, 2);
+        assert_eq!(add.operand_type, TargetOperandType::I32);
+        assert_eq!(add.result_type, TargetOperandType::I32);
         assert_eq!(add.encoding, JvmOperatorCode::IntegerAdd);
         assert_eq!(add.encoding.arithmetic_instruction(), Some(JvmInstruction::IAdd));
 
-        let less = freeze_jvm_operator(&link("integer.compare_less_than"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(less) = less
-        else {
-            panic!("`integer.compare_less_than` 必须冻结");
-        };
+        let less = freeze_jvm_operator_binding("integer.compare_less_than").expect("`integer.compare_less_than` 必须冻结");
         assert_eq!(less.result_type, TargetOperandType::I32);
         assert_eq!(less.encoding, JvmOperatorCode::IntegerCompareLessThan);
         let instructions = less.encoding.instructions(0);
@@ -262,43 +203,21 @@ mod operator_binding_tests {
             "i32 `<` 必须展开为 if_icmp 分支序列: {instructions:?}"
         );
 
-        // `dneg` / `drem` 是真实 JVM 指令：必须冻结为单条指令，而不是 Unfrozen。
-        let negate = freeze_jvm_operator(&link("double.negate"), instance, "prefix -", &[SemanticType::Float64], &SemanticType::Float64)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(negate) = negate
-        else {
-            panic!("`double.negate` 必须冻结");
-        };
+        // `dneg` / `drem` 是真实 JVM 指令：必须冻结为单条指令，而不是缺口。
+        let negate = freeze_jvm_operator_binding("double.negate").expect("`double.negate` 必须冻结");
+        assert_eq!(negate.arity, 1);
         assert_eq!(negate.encoding, JvmOperatorCode::DoubleNegate);
         assert_eq!(negate.encoding.arithmetic_instruction(), Some(JvmInstruction::DNeg));
 
-        let remainder = freeze_jvm_operator(
-            &link("double.remainder"),
-            instance,
-            "infix %",
-            &[SemanticType::Float64, SemanticType::Float64],
-            &SemanticType::Float64,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(remainder) = remainder
-        else {
-            panic!("`double.remainder` 必须冻结");
-        };
+        let remainder = freeze_jvm_operator_binding("double.remainder").expect("`double.remainder` 必须冻结");
         assert_eq!(remainder.encoding.arithmetic_instruction(), Some(JvmInstruction::DRem));
 
         // double 比较：`==`/`!=` 用 `dcmpl`（NaN → -1 已给出 Java 语义），
         // `<` 必须用 `dcmpg`（NaN → 1 才会被 `ifge` 判为 false）。
-        let f64_pair = [SemanticType::Float64, SemanticType::Float64];
-        let compare = freeze_jvm_operator(&link("double.compare_equal"), instance, "infix ==", &f64_pair, &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(compare) = compare
-        else {
-            panic!("`double.compare_equal` 必须冻结");
-        };
+        let compare = freeze_jvm_operator_binding("double.compare_equal").expect("`double.compare_equal` 必须冻结");
         assert_eq!(compare.encoding, JvmOperatorCode::DoubleCompareEqual);
+        assert_eq!(compare.operand_type, TargetOperandType::F64);
+        assert_eq!(compare.result_type, TargetOperandType::I32);
         let equal_instructions = compare.encoding.instructions(0);
         assert!(
             equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::DCmpL)),
@@ -306,24 +225,12 @@ mod operator_binding_tests {
         );
         assert!(equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfNe(_))));
 
-        let compare = freeze_jvm_operator(&link("double.compare_not_equal"), instance, "infix !=", &f64_pair, &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(compare) = compare
-        else {
-            panic!("`double.compare_not_equal` 必须冻结");
-        };
+        let compare = freeze_jvm_operator_binding("double.compare_not_equal").expect("`double.compare_not_equal` 必须冻结");
         let not_equal_instructions = compare.encoding.instructions(0);
         assert!(not_equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::DCmpL)));
         assert!(not_equal_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfEq(_))));
 
-        let compare = freeze_jvm_operator(&link("double.compare_less_than"), instance, "infix <", &f64_pair, &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(compare) = compare
-        else {
-            panic!("`double.compare_less_than` 必须冻结");
-        };
+        let compare = freeze_jvm_operator_binding("double.compare_less_than").expect("`double.compare_less_than` 必须冻结");
         assert_eq!(compare.encoding, JvmOperatorCode::DoubleCompareLessThan);
         let less_instructions = compare.encoding.instructions(0);
         assert!(
@@ -333,65 +240,20 @@ mod operator_binding_tests {
         assert!(less_instructions.iter().any(|instruction| matches!(instruction, JvmInstruction::IfGe(_))));
 
         // `frem`/`fneg` 与 `fcmpl`/`fcmpg` 同样是真实指令：float 族按同一结构冻结。
-        let float_remainder = freeze_jvm_operator(
-            &link("float.remainder"),
-            instance,
-            "infix %",
-            &[SemanticType::Float32, SemanticType::Float32],
-            &SemanticType::Float32,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(float_remainder) = float_remainder
-        else {
-            panic!("`float.remainder` 必须冻结");
-        };
+        let float_remainder = freeze_jvm_operator_binding("float.remainder").expect("`float.remainder` 必须冻结");
         assert_eq!(float_remainder.encoding.arithmetic_instruction(), Some(JvmInstruction::FRem));
 
-        let float_less = freeze_jvm_operator(
-            &link("float.compare_less_than"),
-            instance,
-            "infix <",
-            &[SemanticType::Float32, SemanticType::Float32],
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(float_less) = float_less
-        else {
-            panic!("`float.compare_less_than` 必须冻结");
-        };
+        let float_less = freeze_jvm_operator_binding("float.compare_less_than").expect("`float.compare_less_than` 必须冻结");
         assert!(
             float_less.encoding.instructions(0).iter().any(|instruction| matches!(instruction, JvmInstruction::FCmpG)),
             "float `<` 必须用 fcmpg 处理 NaN"
         );
 
-        // 未登记的比较助记符仍保持 Unfrozen，禁止按名字前缀猜指令。
-        let unfrozen = freeze_jvm_operator(
-            &link("double.compare_less_than_unsigned"),
-            instance,
-            "infix <=",
-            &f64_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        assert!(matches!(unfrozen, JvmOperatorBinding::Unfrozen));
+        // 未登记的比较助记符不得冻结，禁止按名字前缀猜指令。
+        assert!(freeze_jvm_operator_binding("double.compare_less_than_unsigned").is_none(), "未登记助记符必须保持缺口");
 
         // `<=` / `>` / `>=`：NaN 必须分支到 false，故 `<`/`<=` 用 `?cmpg`、`>`/`>=` 用 `?cmpl`。
-        let double_less_or_equal = freeze_jvm_operator(
-            &link("double.compare_less_or_equal"),
-            instance,
-            "infix <=",
-            &f64_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(double_less_or_equal) = double_less_or_equal
-        else {
-            panic!("`double.compare_less_or_equal` 必须冻结");
-        };
+        let double_less_or_equal = freeze_jvm_operator_binding("double.compare_less_or_equal").expect("`double.compare_less_or_equal` 必须冻结");
         assert!(
             double_less_or_equal
                 .encoding
@@ -406,19 +268,7 @@ mod operator_binding_tests {
             .iter()
             .any(|instruction| matches!(instruction, JvmInstruction::IfGt(_))));
 
-        let double_greater_than = freeze_jvm_operator(
-            &link("double.compare_greater_than"),
-            instance,
-            "infix >",
-            &f64_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(double_greater_than) = double_greater_than
-        else {
-            panic!("`double.compare_greater_than` 必须冻结");
-        };
+        let double_greater_than = freeze_jvm_operator_binding("double.compare_greater_than").expect("`double.compare_greater_than` 必须冻结");
         assert!(
             double_greater_than
                 .encoding
@@ -433,19 +283,7 @@ mod operator_binding_tests {
             .iter()
             .any(|instruction| matches!(instruction, JvmInstruction::IfLe(_))));
 
-        let double_greater_or_equal = freeze_jvm_operator(
-            &link("double.compare_greater_or_equal"),
-            instance,
-            "infix >=",
-            &f64_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(double_greater_or_equal) = double_greater_or_equal
-        else {
-            panic!("`double.compare_greater_or_equal` 必须冻结");
-        };
+        let double_greater_or_equal = freeze_jvm_operator_binding("double.compare_greater_or_equal").expect("`double.compare_greater_or_equal` 必须冻结");
         assert!(
             double_greater_or_equal
                 .encoding
@@ -460,20 +298,7 @@ mod operator_binding_tests {
             .iter()
             .any(|instruction| matches!(instruction, JvmInstruction::IfLt(_))));
 
-        let float_pair = [SemanticType::Float32, SemanticType::Float32];
-        let float_less_or_equal = freeze_jvm_operator(
-            &link("float.compare_less_or_equal"),
-            instance,
-            "infix <=",
-            &float_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(float_less_or_equal) = float_less_or_equal
-        else {
-            panic!("`float.compare_less_or_equal` 必须冻结");
-        };
+        let float_less_or_equal = freeze_jvm_operator_binding("float.compare_less_or_equal").expect("`float.compare_less_or_equal` 必须冻结");
         assert!(
             float_less_or_equal
                 .encoding
@@ -488,19 +313,7 @@ mod operator_binding_tests {
             .iter()
             .any(|instruction| matches!(instruction, JvmInstruction::IfGt(_))));
 
-        let float_greater_than = freeze_jvm_operator(
-            &link("float.compare_greater_than"),
-            instance,
-            "infix >",
-            &float_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(float_greater_than) = float_greater_than
-        else {
-            panic!("`float.compare_greater_than` 必须冻结");
-        };
+        let float_greater_than = freeze_jvm_operator_binding("float.compare_greater_than").expect("`float.compare_greater_than` 必须冻结");
         assert!(
             float_greater_than
                 .encoding
@@ -515,19 +328,7 @@ mod operator_binding_tests {
             .iter()
             .any(|instruction| matches!(instruction, JvmInstruction::IfLe(_))));
 
-        let float_greater_or_equal = freeze_jvm_operator(
-            &link("float.compare_greater_or_equal"),
-            instance,
-            "infix >=",
-            &float_pair,
-            &SemanticType::Boolean,
-        )
-        .expect("冻结不得失败")
-        .expect("必须是 JVM operator 绑定");
-        let JvmOperatorBinding::Frozen(float_greater_or_equal) = float_greater_or_equal
-        else {
-            panic!("`float.compare_greater_or_equal` 必须冻结");
-        };
+        let float_greater_or_equal = freeze_jvm_operator_binding("float.compare_greater_or_equal").expect("`float.compare_greater_or_equal` 必须冻结");
         assert!(
             float_greater_or_equal
                 .encoding
@@ -575,22 +376,12 @@ mod operator_binding_tests {
     /// 分支方向取翻转后条件的反（跳到 false），结果载体固定 `I32`。
     #[test]
     fn unsigned_ordered_comparison_mnemonics_freeze_with_sign_bit_flip() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let i32_pair = [SemanticType::Integer32 { signed: false }, SemanticType::Integer32 { signed: false }];
-        let i64_pair = [SemanticType::Integer64 { signed: false }, SemanticType::Integer64 { signed: false }];
-
         for (mnemonic, code, expected_branch) in [
             ("integer.compare_greater_than_unsigned", JvmOperatorCode::IntegerCompareGreaterThanUnsigned, "if_icmple"),
             ("integer.compare_less_or_equal_unsigned", JvmOperatorCode::IntegerCompareLessOrEqualUnsigned, "if_icmpgt"),
             ("integer.compare_greater_or_equal_unsigned", JvmOperatorCode::IntegerCompareGreaterOrEqualUnsigned, "if_icmplt"),
         ] {
-            let binding = freeze_jvm_operator(&link(mnemonic), instance, "infix cmp", &i32_pair, &SemanticType::Boolean)
-                .expect("冻结不得失败")
-                .expect("必须是 JVM operator 绑定");
-            let JvmOperatorBinding::Frozen(plan) = binding
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
+            let plan = freeze_jvm_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.encoding, code, "`{mnemonic}` 编码");
             assert_eq!(plan.operand_type, TargetOperandType::I32);
             assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果载体必须是 I32");
@@ -610,13 +401,7 @@ mod operator_binding_tests {
             ("long.compare_less_or_equal_unsigned", JvmOperatorCode::LongCompareLessOrEqualUnsigned, "ifgt"),
             ("long.compare_greater_or_equal_unsigned", JvmOperatorCode::LongCompareGreaterOrEqualUnsigned, "iflt"),
         ] {
-            let binding = freeze_jvm_operator(&link(mnemonic), instance, "infix cmp", &i64_pair, &SemanticType::Boolean)
-                .expect("冻结不得失败")
-                .expect("必须是 JVM operator 绑定");
-            let JvmOperatorBinding::Frozen(plan) = binding
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
+            let plan = freeze_jvm_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.encoding, code, "`{mnemonic}` 编码");
             assert_eq!(plan.operand_type, TargetOperandType::I64);
             assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果载体必须是 I32");
@@ -641,3 +426,4 @@ mod operator_binding_tests {
         }
     }
 }
+

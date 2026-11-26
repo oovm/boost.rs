@@ -106,7 +106,7 @@ const fn i64_shift(opcode: MsilOpcode) -> TargetOperatorPlan<ClrOperatorCode> {
 }
 
 /// 唯一助记符表。未知助记符返回 `None`。
-pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<ClrOperatorCode>> {
+pub fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<ClrOperatorCode>> {
     Some(match mnemonic {
         // int32 算术：MSIL 单 opcode。
         "i32.add" => binary(TargetOperandType::I32, TargetOperandType::I32, MsilOpcode::Add),
@@ -213,21 +213,6 @@ pub(crate) fn freeze_clr_operator_binding(mnemonic: &str) -> Option<TargetOperat
 }
 
 /// CLR 平台私有的 operator 绑定。
-/// 源码 `[clr_operator("i64.div")]` 声明的 CLR 目标 operator 助记符。
-///
-/// 只接受 platform tag `clr-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub fn clr_operator_target(link: &compiler_target::ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("clr-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClrOperatorBinding {
     /// 已冻结的 MSIL 配方。
@@ -236,203 +221,100 @@ pub enum ClrOperatorBinding {
     Unfrozen,
 }
 
-/// 按声明的导入签名冻结 CLR operator 绑定。
-pub fn freeze_clr_operator(
-    link: &compiler_target::ExternalImportLink,
-    instance: compiler_types::ItemInstanceId,
-    symbol: &str,
-    parameter_types: &[compiler_types::SemanticType],
-    return_type: &compiler_types::SemanticType,
-) -> crate::Result<Option<ClrOperatorBinding>> {
-    let Some(mnemonic) = clr_operator_target(link)
-    else {
-        return Ok(None);
-    };
-    let Some(plan) = freeze_clr_operator_binding(mnemonic)
-    else {
-        return Ok(Some(ClrOperatorBinding::Unfrozen));
-    };
-    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
-    Ok(Some(ClrOperatorBinding::Frozen(plan)))
-}
-
 #[cfg(test)]
 mod operator_binding_tests {
-    use compiler_target::{ExternalImportLink, Identifier};
-    use compiler_types::{ItemInstanceId, SemanticType};
+    use super::{ClrOperatorCode, MsilOpcode, freeze_clr_operator_binding};
+    use crate::target_operator::TargetOperandType;
 
-    use super::{ClrOperatorBinding, ClrOperatorCode, MsilOpcode, freeze_clr_operator};
-
-    fn link(mnemonic: &str) -> ExternalImportLink {
-        ExternalImportLink::host(Some(Identifier::new("clr-operator")), vec![mnemonic.to_string()])
-    }
-
-    /// 声明侧 `[clr_operator("…")]` 的真实助记符必须冻结成 MSIL opcode；
-    /// `ne` 冻结为 `ceq; ldc.i4.0; ceq` 取反组合，`le`/`ge` 冻结为取反组合且浮点
-    /// 与无符号比较必须用无序 `cgt.un`/`clt.un`；`f64.rem` 冻结为 `rem`。
+    /// 助记符表里的真实助记符必须冻结成 MSIL opcode；`ne` 冻结为 `ceq` 取反组合，
+    /// `le`/`ge` 冻结为取反组合且浮点与无符号比较必须用无序 `cgt.un`/`clt.un`；
+    /// `f64.rem` 冻结为 `rem`；未知助记符返回 `None`，由语言侧适配器落 `Unfrozen`。
     #[test]
     fn scalar_operator_mnemonics_freeze_to_msil_opcodes() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let i32_ty = SemanticType::Integer32 { signed: true };
-
-        let add = freeze_clr_operator(&link("i32.add"), instance, "infix +", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
-            .expect("冻结不得失败")
-            .expect("必须是 CLR operator 绑定");
-        let ClrOperatorBinding::Frozen(add) = add
-        else {
-            panic!("`i32.add` 必须冻结");
-        };
+        let add = freeze_clr_operator_binding("i32.add").expect("`i32.add` 必须冻结");
         assert_eq!(add.arity, 2);
-        assert_eq!(add.result_type, crate::target_operator::TargetOperandType::I32);
+        assert_eq!(add.operand_type, TargetOperandType::I32);
+        assert_eq!(add.result_type, TargetOperandType::I32);
         assert_eq!(add.encoding, ClrOperatorCode::Single(MsilOpcode::Add));
 
-        let less = freeze_clr_operator(&link("i32.lt"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 CLR operator 绑定");
-        let ClrOperatorBinding::Frozen(less) = less
-        else {
-            panic!("`i32.lt` 必须冻结");
-        };
+        let less = freeze_clr_operator_binding("i32.lt").expect("`i32.lt` 必须冻结");
         assert_eq!(less.encoding, ClrOperatorCode::Single(MsilOpcode::Clt));
 
         // `ne` 没有独立 IL 指令：冻结为 `ceq` 的逻辑取反组合，仍是精确编码。
-        let not_equal = freeze_clr_operator(&link("i32.ne"), instance, "infix !=", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
-            .expect("冻结不得失败")
-            .expect("必须是 CLR operator 绑定");
-        let ClrOperatorBinding::Frozen(not_equal) = not_equal
-        else {
-            panic!("`i32.ne` 必须冻结");
-        };
+        let not_equal = freeze_clr_operator_binding("i32.ne").expect("`i32.ne` 必须冻结");
         assert_eq!(not_equal.encoding, ClrOperatorCode::InvertCompare(MsilOpcode::Ceq));
 
-        let i64_ty = SemanticType::Integer64 { signed: true };
-        for (mnemonic, operand, result) in [
-            ("i64.ne", i64_ty.clone(), SemanticType::Boolean),
-            ("f64.ne", SemanticType::Float64, SemanticType::Boolean),
-        ] {
-            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix !=", &[operand.clone(), operand], &result)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
-            let ClrOperatorBinding::Frozen(plan) = plan
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
+        for mnemonic in ["i64.ne", "f64.ne"] {
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.encoding, ClrOperatorCode::InvertCompare(MsilOpcode::Ceq), "`{mnemonic}` 编码");
-            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32);
+            assert_eq!(plan.result_type, TargetOperandType::I32);
         }
 
         // `le`/`ge` 没有独立 IL 指令：整数取反有符号 `cgt`/`clt`，浮点必须取反无序
         // `cgt.un`/`clt.un`，否则 NaN 会被错误判为 true。
-        for (mnemonic, operand, result, encoding) in [
-            ("i32.le", i32_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Cgt)),
-            ("i32.ge", i32_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Clt)),
-            ("i64.le", i64_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Cgt)),
-            ("i64.ge", i64_ty.clone(), SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::Clt)),
-            ("f64.le", SemanticType::Float64, SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
-            ("f64.ge", SemanticType::Float64, SemanticType::Boolean, ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+        for (mnemonic, encoding) in [
+            ("i32.le", ClrOperatorCode::InvertCompare(MsilOpcode::Cgt)),
+            ("i32.ge", ClrOperatorCode::InvertCompare(MsilOpcode::Clt)),
+            ("i64.le", ClrOperatorCode::InvertCompare(MsilOpcode::Cgt)),
+            ("i64.ge", ClrOperatorCode::InvertCompare(MsilOpcode::Clt)),
+            ("f64.le", ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("f64.ge", ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
         ] {
-            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix cmp", &[operand.clone(), operand], &result)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
-            let ClrOperatorBinding::Frozen(plan) = plan
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
-            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
+            assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果槽");
         }
 
         // 无符号有序比较：`gt` 是单条 `cgt.un`，`le = !(a > b)`、`ge = !(a < b)` 取反
         // 无符号 `cgt.un`/`clt.un`，结果槽仍是 I32。
-        let u32_ty = SemanticType::Integer32 { signed: false };
-        let u64_ty = SemanticType::Integer64 { signed: false };
-        for (mnemonic, operand, encoding) in [
-            ("i32.gt.un", u32_ty.clone(), ClrOperatorCode::Single(MsilOpcode::CgtUn)),
-            ("i32.le.un", u32_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
-            ("i32.ge.un", u32_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
-            ("i64.gt.un", u64_ty.clone(), ClrOperatorCode::Single(MsilOpcode::CgtUn)),
-            ("i64.le.un", u64_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
-            ("i64.ge.un", u64_ty.clone(), ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+        for (mnemonic, encoding) in [
+            ("i32.gt.un", ClrOperatorCode::Single(MsilOpcode::CgtUn)),
+            ("i32.le.un", ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("i32.ge.un", ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
+            ("i64.gt.un", ClrOperatorCode::Single(MsilOpcode::CgtUn)),
+            ("i64.le.un", ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
+            ("i64.ge.un", ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
         ] {
-            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix cmp", &[operand.clone(), operand], &SemanticType::Boolean)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
-            let ClrOperatorBinding::Frozen(plan) = plan
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
-            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
+            assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果槽");
         }
 
         // 浮点 `rem` 不是缺口：ECMA-335 `rem` 对浮点就是截断余数（符号随被除数），
         // 与 C# `%`/Java `%`/`fmod` 一致；实测 .NET 8 `(-5.5) % 2.0 = -1.5` 且编译为 `rem`。
-        let remainder = freeze_clr_operator(&link("f64.rem"), instance, "infix %", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
-            .expect("冻结不得失败")
-            .expect("必须是 CLR operator 绑定");
-        let ClrOperatorBinding::Frozen(remainder) = remainder
-        else {
-            panic!("`f64.rem` 必须冻结");
-        };
+        let remainder = freeze_clr_operator_binding("f64.rem").expect("`f64.rem` 必须冻结");
         assert_eq!(remainder.encoding, ClrOperatorCode::Single(MsilOpcode::Rem));
-        assert_eq!(remainder.result_type, crate::target_operator::TargetOperandType::F64);
+        assert_eq!(remainder.result_type, TargetOperandType::F64);
 
         // 有符号右移是算术 `shr`，无符号右移必须是 `shr.un`：两者不可互换，否则
         // `u32 >> n` 会被错误地按符号位填充。
-        for (mnemonic, operand, encoding) in [
-            ("i32.shl", i32_ty.clone(), MsilOpcode::Shl),
-            ("i32.shr", i32_ty.clone(), MsilOpcode::Shr),
-            ("i32.shr.un", SemanticType::Integer32 { signed: false }, MsilOpcode::ShrUn),
-        ] {
-            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix shift", &[operand.clone(), operand.clone()], &operand)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
-            let ClrOperatorBinding::Frozen(plan) = plan
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
-            assert_eq!(plan.encoding, ClrOperatorCode::Single(encoding), "`{mnemonic}` 编码");
+        for (mnemonic, opcode) in [("i32.shl", MsilOpcode::Shl), ("i32.shr", MsilOpcode::Shr), ("i32.shr.un", MsilOpcode::ShrUn)] {
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
+            assert_eq!(plan.encoding, ClrOperatorCode::Single(opcode), "`{mnemonic}` 编码");
         }
 
-        // 真正未知的助记符仍然只能得到 Unfrozen。
-        let unfrozen = freeze_clr_operator(&link("f64.rem.unknown"), instance, "infix %", &[SemanticType::Float64, SemanticType::Float64], &SemanticType::Float64)
-            .expect("冻结不得失败")
-            .expect("必须是 CLR operator 绑定");
-        assert!(matches!(unfrozen, ClrOperatorBinding::Unfrozen));
+        // 真正未知的助记符不在表内：返回 `None`，由语言侧适配器落 `Unfrozen`。
+        assert!(freeze_clr_operator_binding("f64.rem.unknown").is_none(), "未登记助记符必须保持缺口");
     }
 
     /// `f32` 形参算术/比较冻结：ECMA-335 通用 opcode 对 `float32` 载体同形，
     /// 不依赖 `ldc.r4`；`le`/`ge` 与 `f64` 一样必须取反无序比较保住 NaN 语义。
     #[test]
     fn float32_operators_freeze_on_generic_msil_opcodes() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let f32_ty = SemanticType::Float32;
-        for (mnemonic, encoding) in [
+        for (mnemonic, opcode) in [
             ("f32.add", MsilOpcode::Add),
             ("f32.sub", MsilOpcode::Sub),
             ("f32.mul", MsilOpcode::Mul),
             ("f32.div", MsilOpcode::Div),
             ("f32.rem", MsilOpcode::Rem),
         ] {
-            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix arith", &[f32_ty.clone(), f32_ty.clone()], &f32_ty)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
-            let ClrOperatorBinding::Frozen(plan) = plan
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
-            assert_eq!(plan.encoding, ClrOperatorCode::Single(encoding), "`{mnemonic}` 编码");
-            assert_eq!(plan.operand_type, crate::target_operator::TargetOperandType::F32, "`{mnemonic}` 操作数槽");
-            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::F32, "`{mnemonic}` 结果槽");
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
+            assert_eq!(plan.encoding, ClrOperatorCode::Single(opcode), "`{mnemonic}` 编码");
+            assert_eq!(plan.operand_type, TargetOperandType::F32, "`{mnemonic}` 操作数槽");
+            assert_eq!(plan.result_type, TargetOperandType::F32, "`{mnemonic}` 结果槽");
         }
 
-        let neg = freeze_clr_operator(&link("f32.neg"), instance, "prefix -", &[f32_ty.clone()], &f32_ty)
-            .expect("冻结不得失败")
-            .expect("必须是 CLR operator 绑定");
-        let ClrOperatorBinding::Frozen(neg) = neg
-        else {
-            panic!("`f32.neg` 必须冻结");
-        };
+        let neg = freeze_clr_operator_binding("f32.neg").expect("`f32.neg` 必须冻结");
         assert_eq!(neg.encoding, ClrOperatorCode::Single(MsilOpcode::Neg));
 
         for (mnemonic, encoding) in [
@@ -443,15 +325,10 @@ mod operator_binding_tests {
             ("f32.le", ClrOperatorCode::InvertCompare(MsilOpcode::CgtUn)),
             ("f32.ge", ClrOperatorCode::InvertCompare(MsilOpcode::CltUn)),
         ] {
-            let plan = freeze_clr_operator(&link(mnemonic), instance, "infix cmp", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 CLR operator 绑定"));
-            let ClrOperatorBinding::Frozen(plan) = plan
-            else {
-                panic!("`{mnemonic}` 必须冻结");
-            };
+            let plan = freeze_clr_operator_binding(mnemonic).unwrap_or_else(|| panic!("`{mnemonic}` 必须冻结"));
             assert_eq!(plan.encoding, encoding, "`{mnemonic}` 编码");
-            assert_eq!(plan.result_type, crate::target_operator::TargetOperandType::I32, "`{mnemonic}` 结果槽");
+            assert_eq!(plan.result_type, TargetOperandType::I32, "`{mnemonic}` 结果槽");
         }
     }
 }
+

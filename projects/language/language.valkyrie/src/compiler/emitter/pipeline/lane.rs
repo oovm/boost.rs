@@ -1044,7 +1044,8 @@ fn nominal_contract_context(program: &ValkyrieMirProgram, id: compiler_types::Ty
 mod tests {
     use super::*;
     use crate::compiler::valkyrie_mir::ValkyrieMirBlockId;
-    use compiler_emitter::target_operator::{TargetOperandType, operand_carrier};
+    use compiler_emitter::target_operator::TargetOperandType;
+    use crate::compiler::emitter::pipeline::operator::operand_carrier;
     use compiler_types::{ItemId, TypeRecord};
 
     fn type_id(index: u32) -> compiler_types::TypeId {

@@ -12,8 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use compiler_emitter::emitter_backend_jvm::{
     ArgvKind, JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmOperatorBinding,
-    JvmProgramInput, JvmTypeDescriptor, argv_encoding, freeze_jvm_operator, jvm_operator_target, sanitize_jvm_method_symbol, sanitize_symbol,
-    select_unique_target,
+    JvmProgramInput, JvmTypeDescriptor, argv_encoding, sanitize_jvm_method_symbol, sanitize_symbol, select_unique_target,
 };
 use compiler_emitter::{ManagedAbiContract, ManagedAbiEntry};
 use compiler_types::{ItemInstanceId, SemanticType};
@@ -24,9 +23,12 @@ use crate::compiler::valkyrie_mir::ValkyrieMirFunction;
 
 use carrier::{jvm_parameter_descriptor, jvm_return_descriptor};
 use lowerer::{JvmMethodPlan, JVM_ACC_PUBLIC, JVM_ACC_STATIC, build_layout_classes, build_sum_classes, lower_function};
+use operator::{freeze_jvm_operator, jvm_operator_target};
 
 pub(crate) mod carrier;
 pub(crate) mod lowerer;
+/// JVM 语言 × 目标适配器：链接分类与语义签名核对。
+pub(crate) mod operator;
 
 /// 从 lane 共享上下文结算 JVM 目标私有输入（主类方法体 + companion 载体 + ABI 契约）。
 ///

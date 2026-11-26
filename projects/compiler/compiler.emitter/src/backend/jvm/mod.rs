@@ -29,7 +29,7 @@ pub use crate::transitional::binary::{
 pub use crate::lowering::backends::argv_encoding::{ArgvEncoding, ArgvKind, argv_encoding};
 pub use crate::lowering::backends::jvm::JvmOperatorCode;
 pub use crate::lowering::backends::jvm::emit::{JvmLoweredFragment, JvmProgramInput, JvmSlotKind, assemble_jvm_class, jvm_layout_class_name};
-pub use crate::lowering::backends::jvm::recipe::{JvmOperatorBinding, freeze_jvm_operator, jvm_operator_target};
+pub use crate::lowering::backends::jvm::recipe::{JvmOperatorBinding, freeze_jvm_operator_binding};
 pub use crate::lowering::sanitize_jvm_method_symbol;
 pub use crate::lowering::shared::interop::select_unique_target;
 pub use crate::lowering::shared::value_copy::{MAX_VALUE_AGGREGATE_COPY_DEPTH, nested_value_aggregate_layout, value_aggregate_copy_depth};

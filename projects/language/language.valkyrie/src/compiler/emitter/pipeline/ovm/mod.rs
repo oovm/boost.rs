@@ -9,10 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use compiler_emitter::emitter_backend_vm::{
-    BytecodeEmitter, LayoutPolicy, OvmProgramInput, freeze_ovm_operator, ovm_operator_target, resolve_physical_layouts, sanitize_symbol,
-    select_unique_target,
-};
+use compiler_emitter::emitter_backend_vm::{BytecodeEmitter, LayoutPolicy, OvmProgramInput, resolve_physical_layouts, sanitize_symbol, select_unique_target};
 use compiler_target::ExternalImportLink;
 use compiler_types::{ItemInstanceId, LayoutId, SemanticType};
 use compiler_types::semantic_ids::NominalInstanceId;
@@ -22,9 +19,12 @@ use crate::compiler::emitter::pipeline::lane::LaneContext;
 use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 
 use lowerer::{OvmFunctionLowering, OvmModuleFacts};
+use operator::{freeze_ovm_operator, ovm_operator_target};
 
 pub(crate) mod abi;
 pub(crate) mod lowerer;
+/// OVM 语言 × 目标适配器：链接分类、语义签名核对与整数形状裁决。
+pub(crate) mod operator;
 
 /// 从 lane 共享上下文结算 OVM 目标私有输入（`.odin` 模块 + 库导出 ABI 合同）。
 ///

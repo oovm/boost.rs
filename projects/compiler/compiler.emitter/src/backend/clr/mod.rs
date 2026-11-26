@@ -36,7 +36,7 @@ pub use crate::lowering::backends::clr::emit::{
     external_method, ldarg0, ldc_i4_0, managed_abi_type_name, managed_argv_expressible, msil_int_normalize_opcode, msil_instruction,
     opcode_instruction, reject_duplicate_type_names, result_print_reference, string_equality_reference,
 };
-pub use crate::lowering::backends::clr::mir::{ClrOperatorBinding, ClrOperatorCode, clr_operator_target, freeze_clr_operator};
+pub use crate::lowering::backends::clr::mir::{ClrOperatorBinding, ClrOperatorCode, freeze_clr_operator_binding};
 pub use crate::lowering::sanitize_operation_symbol;
 pub use crate::lowering::sanitize_symbol;
 pub use crate::lowering::shared::interop::select_unique_target;

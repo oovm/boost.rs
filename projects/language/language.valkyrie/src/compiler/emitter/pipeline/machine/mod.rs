@@ -12,3 +12,5 @@ pub(crate) mod exe;
 pub(crate) mod extension;
 pub(crate) mod library;
 pub(crate) mod lowerer;
+/// x86-64 语言 × 目标适配器：链接分类、槽载体判定与 operator 冻结裁决。
+pub(crate) mod operator;

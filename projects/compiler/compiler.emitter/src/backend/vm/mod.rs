@@ -16,8 +16,7 @@ pub use crate::lowering::backends::ovm::lir::{
 };
 #[cfg(feature = "ovm-lane")]
 pub use crate::lowering::backends::ovm::operator::{
-    I32_NEGATE_STEPS, OvmIntShape, OvmOperatorBinding, OvmOperatorCode, freeze_ovm_operator, freeze_ovm_operator_binding, ovm_host_import_target,
-    ovm_int_shape, ovm_operator_target,
+    I32_NEGATE_STEPS, OvmOperatorBinding, OvmOperatorCode, freeze_ovm_operator_binding,
 };
 #[cfg(feature = "ovm-lane")]
 pub use crate::lowering::backends::ovm::{OvmProgramInput, assemble_ovm_module};

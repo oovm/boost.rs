@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use compiler_emitter::emitter_backend_clr::{
     ClrOperatorBinding, ClrProgramInput, GLOBAL_METHODS_TYPE, MANAGED_ENTRY_METHOD, ManagedDispatchTarget, MsilAssembly, MsilMethodBody,
     MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode, MsilType, build_layout_types, build_managed_entry_method, build_sum_types,
-    call_instruction, clr_operator_target, freeze_clr_operator, ldarg0, managed_abi_type_name, managed_argv_expressible, opcode_instruction,
-    reject_duplicate_type_names, sanitize_operation_symbol, sanitize_symbol, select_unique_target,
+    call_instruction, ldarg0, managed_abi_type_name, managed_argv_expressible, opcode_instruction, reject_duplicate_type_names,
+    sanitize_operation_symbol, sanitize_symbol, select_unique_target,
 };
 use compiler_emitter::{ManagedAbiContract, ManagedAbiEntry};
 use compiler_target::ClrSuspendStrategy;
@@ -33,9 +33,12 @@ use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::valkyrie_mir::ValkyrieMirFunction;
 
 use carrier::{msil_parameter_type, msil_return_type, settle_layout_field_carriers};
+use operator::{clr_operator_target, freeze_clr_operator};
 
 pub(crate) mod carrier;
 pub(crate) mod lowerer;
+/// CLR 语言 × 目标适配器：链接分类与语义签名核对。
+pub(crate) mod operator;
 
 /// 从 lane 共享上下文结算 CLR 目标私有输入（MSIL 模块 + managed ABI 契约）。
 ///

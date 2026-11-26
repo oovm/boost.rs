@@ -1,12 +1,10 @@
-//! OVM 目标私有的 operator 绑定与整数载体事实。
+//! OVM 目标私有的 operator 冻结表与头码编码事实。
 //!
-//! 本模块只消费冻结的导入链接与语义类型，不读取任何跨目标共享程序
-//! 载荷类型：
-//! 声明侧 `[ovm_operator("...")]` 助记符在这里一次冻结成 Odin 头码配方，
-//! 语言侧 OVM lane 按同一合同发射指令序列。
+//! 架构合同：链接分类与 `SemanticType` 签名裁决已迁至语言侧 OVM 适配器
+//! （`language.valkyrie` 的 `pipeline/ovm/operator.rs`）；本模块只保留助记符到
+//! Odin 头码配方的**目标私有冻结表**与取负发射配方，不读取导入链接、语义类型
+//! 或任何跨目标共享程序载荷。
 
-use compiler_target::ExternalImportLink;
-use compiler_types::{ItemInstanceId, SemanticType};
 use data_binary_odin::OdinHeadCode;
 
 use crate::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorPlan, TargetOperatorRecipe};
@@ -127,36 +125,6 @@ pub fn freeze_ovm_operator_binding(mnemonic: &str) -> Option<TargetOperatorPlan<
     Some(TargetOperatorPlan { arity, operand_type, result_type, recipe, encoding: code })
 }
 
-/// 源码 `[ovm_operator("i32.add")]` 声明的 OVM 目标 operator 助记符。
-///
-/// 只接受 platform tag `ovm-operator` 且 locator 恰好一段；其余形态返回 `None`，
-/// 由调用方按「缺少可编码目标绑定」结构化失败。
-pub fn ovm_operator_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm-operator") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [mnemonic] => Some(mnemonic.as_str()),
-        _ => None,
-    }
-}
-
-/// 源码 `[ovm("symbol")]` 声明的 OVM host provider 符号。
-///
-/// OVM 的宿主 provider 走 `CallImport`，由 runtime `parse_host_op` 判定；只接受
-/// host 边界 + platform tag `ovm` + 恰好一段符号，其余形态返回 `None`。
-pub fn ovm_host_import_target(link: &ExternalImportLink) -> Option<&str> {
-    if !link.matches_boundary("host") || !link.matches_platform_tag("ovm") {
-        return None;
-    }
-
-    match link.locator_segments() {
-        [symbol] => Some(symbol.as_str()),
-        _ => None,
-    }
-}
-
 /// OVM 平台私有的 operator 绑定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OvmOperatorBinding {
@@ -166,102 +134,30 @@ pub enum OvmOperatorBinding {
     Unfrozen,
 }
 
-/// 按声明的导入签名冻结 OVM operator 绑定。
-pub fn freeze_ovm_operator(
-    link: &ExternalImportLink,
-    instance: ItemInstanceId,
-    symbol: &str,
-    parameter_types: &[SemanticType],
-    return_type: &SemanticType,
-) -> crate::Result<Option<OvmOperatorBinding>> {
-    let Some(mnemonic) = ovm_operator_target(link)
-    else {
-        return Ok(None);
-    };
-    let Some(plan) = freeze_ovm_operator_binding(mnemonic)
-    else {
-        return Ok(Some(OvmOperatorBinding::Unfrozen));
-    };
-    crate::target_operator::validate_frozen_operator(mnemonic, instance, symbol, parameter_types, return_type, &plan)?;
-    Ok(Some(OvmOperatorBinding::Frozen(plan)))
-}
-
-/// 整数表示形状：只携带位宽与符号性，`Character` 视为 32 位无符号码位。
-///
-/// 转换规则必须由这两项决定，不得按 `SemanticType` 变体名逐条特判。
-#[derive(Clone, Copy)]
-pub struct OvmIntShape {
-    /// 位宽。
-    pub bits: u16,
-    /// 是否有符号。
-    pub signed: bool,
-}
-
-/// 语义类型 → 整数表示形状；非整数形状返回 `None`。
-pub fn ovm_int_shape(ty: &SemanticType) -> Option<OvmIntShape> {
-    match ty {
-        SemanticType::Integer8 { signed } => Some(OvmIntShape { bits: 8, signed: *signed }),
-        SemanticType::Integer16 { signed } => Some(OvmIntShape { bits: 16, signed: *signed }),
-        SemanticType::Integer32 { signed } => Some(OvmIntShape { bits: 32, signed: *signed }),
-        SemanticType::Integer64 { signed } => Some(OvmIntShape { bits: 64, signed: *signed }),
-        SemanticType::Character => Some(OvmIntShape { bits: 32, signed: false }),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod operator_binding_tests {
-    use super::{OvmOperatorBinding, OvmOperatorCode, freeze_ovm_operator};
-    use compiler_target::{ExternalImportLink, Identifier};
-    use compiler_types::{ItemInstanceId, SemanticType};
+    use super::{OvmOperatorCode, freeze_ovm_operator_binding};
+    use crate::target_operator::TargetOperandType;
     use data_binary_odin::OdinHeadCode;
 
-    fn link(mnemonic: &str) -> ExternalImportLink {
-        ExternalImportLink::host(Some(Identifier::new("ovm-operator")), vec![mnemonic.to_string()])
-    }
-
-    /// 声明侧 `[ovm_operator("…")]` 的真实助记符必须冻结成 Odin 头码，
-    /// 而不是 Unfrozen；没有配方的助记符仍失败闭合。
+    /// 声明侧 `[ovm_operator("…")]` 的真实助记符必须冻结成 Odin 头码配方；
+    /// 没有配方的助记符返回 `None`，由语言侧适配器落 `Unfrozen` 绑定。
     #[test]
     fn scalar_operator_mnemonics_freeze_to_odin_head_codes() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let i32_ty = SemanticType::Integer32 { signed: true };
-
-        let add = freeze_ovm_operator(&link("i32.add"), instance, "infix +", &[i32_ty.clone(), i32_ty.clone()], &i32_ty)
-            .expect("冻结不得失败")
-            .expect("必须是 OVM operator 绑定");
-        let OvmOperatorBinding::Frozen(add) = add
-        else {
-            panic!("`i32.add` 必须冻结");
-        };
+        let add = freeze_ovm_operator_binding("i32.add").expect("`i32.add` 必须冻结");
         assert_eq!(add.arity, 2);
+        assert_eq!(add.operand_type, TargetOperandType::I32);
+        assert_eq!(add.result_type, TargetOperandType::I32);
         assert_eq!(add.encoding, OvmOperatorCode::Single(OdinHeadCode::I32Add));
 
-        let less =
-            freeze_ovm_operator(&link("i32.lt"), instance, "infix <", &[i32_ty.clone(), i32_ty.clone()], &SemanticType::Boolean)
-                .expect("冻结不得失败")
-                .expect("必须是 OVM operator 绑定");
-        let OvmOperatorBinding::Frozen(less) = less
-        else {
-            panic!("`i32.lt` 必须冻结");
-        };
+        let less = freeze_ovm_operator_binding("i32.lt").expect("`i32.lt` 必须冻结");
         assert_eq!(less.encoding, OvmOperatorCode::Single(OdinHeadCode::I32LtS));
-        assert_eq!(less.result_type, crate::target_operator::TargetOperandType::I32);
+        assert_eq!(less.result_type, TargetOperandType::I32);
 
         // `OdinHeadCode` 没有 i64/f64 算术与比较变体（只有 I32* / F32* 块与两个
-        // 位重解释变体）：这些助记符必须保留 Unfrozen，禁止回落宿主导入或猜指令。
-        let i64_ty = SemanticType::Integer64 { signed: true };
-        for (mnemonic, operand, result) in [
-            ("i64.add", i64_ty.clone(), i64_ty.clone()),
-            ("i64.eq", i64_ty.clone(), SemanticType::Boolean),
-            ("i64.lt", i64_ty.clone(), SemanticType::Boolean),
-            ("f64.add", SemanticType::Float64, SemanticType::Float64),
-            ("f64.lt", SemanticType::Float64, SemanticType::Boolean),
-        ] {
-            let unfrozen = freeze_ovm_operator(&link(mnemonic), instance, "scalar", &[operand.clone(), operand], &result)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 OVM operator 绑定"));
-            assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen), "`{mnemonic}` 头码不存在，必须保持缺口");
+        // 位重解释变体）：这些助记符不得冻结，禁止回落宿主导入或猜指令。
+        for mnemonic in ["i64.add", "i64.eq", "i64.lt", "f64.add", "f64.lt"] {
+            assert!(freeze_ovm_operator_binding(mnemonic).is_none(), "`{mnemonic}` 头码不存在，必须保持缺口");
         }
     }
 
@@ -270,33 +166,18 @@ mod operator_binding_tests {
     /// 保持缺口待头码，不得用 OR 组合冒充（单尾码配方模型表达不了实参双消费）。
     #[test]
     fn f32_composite_comparisons_freeze_explicitly_and_le_ge_stay_unfrozen() {
-        let instance = ItemInstanceId::from_index(0).expect("实例下标 0 必须可构造");
-        let f32_ty = SemanticType::Float32;
-
-        let (ne, gt) = match [
-            freeze_ovm_operator(&link("f32.ne"), instance, "infix !=", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
-                .expect("冻结不得失败")
-                .expect("必须是 OVM operator 绑定"),
-            freeze_ovm_operator(&link("f32.gt"), instance, "infix >", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
-                .expect("冻结不得失败")
-                .expect("必须是 OVM operator 绑定"),
-        ] {
-            [
-                OvmOperatorBinding::Frozen(ne),
-                OvmOperatorBinding::Frozen(gt),
-            ] => (ne, gt),
-            other => panic!("f32.ne/f32.gt 必须冻结: {other:?}"),
-        };
+        let ne = freeze_ovm_operator_binding("f32.ne").expect("`f32.ne` 必须冻结");
         assert_eq!(ne.encoding, OvmOperatorCode::InvertBoolean(OdinHeadCode::F32Eq));
-        assert_eq!(ne.result_type, crate::target_operator::TargetOperandType::I32);
+        assert_eq!(ne.operand_type, TargetOperandType::F32);
+        assert_eq!(ne.result_type, TargetOperandType::I32);
+
+        let gt = freeze_ovm_operator_binding("f32.gt").expect("`f32.gt` 必须冻结");
         assert_eq!(gt.encoding, OvmOperatorCode::SwapCompare(OdinHeadCode::F32Lt));
-        assert_eq!(gt.result_type, crate::target_operator::TargetOperandType::I32);
+        assert_eq!(gt.operand_type, TargetOperandType::F32);
+        assert_eq!(gt.result_type, TargetOperandType::I32);
 
         for mnemonic in ["f32.le", "f32.ge"] {
-            let unfrozen = freeze_ovm_operator(&link(mnemonic), instance, "infix cmp", &[f32_ty.clone(), f32_ty.clone()], &SemanticType::Boolean)
-                .unwrap_or_else(|error| panic!("`{mnemonic}` 冻结不得失败: {error}"))
-                .unwrap_or_else(|| panic!("`{mnemonic}` 必须是 OVM operator 绑定"));
-            assert!(matches!(unfrozen, OvmOperatorBinding::Unfrozen), "`{mnemonic}` 无法保真组合，必须保持缺口");
+            assert!(freeze_ovm_operator_binding(mnemonic).is_none(), "`{mnemonic}` 无法保真组合，必须保持缺口");
         }
     }
 }

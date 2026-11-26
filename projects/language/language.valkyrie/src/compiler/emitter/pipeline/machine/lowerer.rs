@@ -16,11 +16,11 @@ use compiler_emitter::{
         ARRAY_ELEMENT_BYTES, ARRAY_ELEMENT_OFFSET, SUM_CARRIER_BYTES, SUM_PAYLOAD_OFFSET, ArrayAllocationSlots, ArrayAllocator,
         ResolvedLayoutPlan, X64ArrayOperation, X64ArrayOperatorPlan, X64CallConv, X64ConsoleOperation, X64FloatCast, X64Platform,
         X64ProgramFunction, X64TextInstruction, X86OperatorBinding, X86_64OperatorCode, array_allocate, array_bounds_check,
-        array_failure_exit, array_free, float_int_target_bounds, freeze_x86_64_operator, heap_array_element_type, is_local_carrier_type,
-        is_reference_carrier, narrow_normalize, object_allocate, select_unique_target, x64_int_shape, x86_64_operator_target,
+        array_failure_exit, array_free, narrow_normalize, object_allocate, select_unique_target,
     },
     target_operator::TargetOperatorRecipe,
 };
+use super::operator::{float_int_target_bounds, freeze_x86_64_operator, heap_array_element_type, is_local_carrier_type, is_reference_carrier, x64_int_shape, x86_64_operator_target};
 use compiler_types::{FieldId, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, StorageKind, VariantId, semantic_ids::MirValueId};
 
 use crate::compiler::valkyrie_mir::{

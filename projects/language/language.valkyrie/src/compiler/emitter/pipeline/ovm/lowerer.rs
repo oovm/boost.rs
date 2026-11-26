@@ -10,9 +10,10 @@
 use std::collections::BTreeMap;
 
 use compiler_emitter::emitter_backend_vm::{
-    BytecodeEmitter, OvmIntShape, OvmOperatorBinding, OvmOperatorCode, ResolvedAggregateLayout, ResolvedLayoutPlan, TEXT_FROM_BYTES_IMPORT,
-    TEXT_TO_BYTES_IMPORT, encode_odin_function, ovm_host_import_target, ovm_int_shape, select_unique_target,
+    BytecodeEmitter, OvmOperatorBinding, OvmOperatorCode, ResolvedAggregateLayout, ResolvedLayoutPlan, TEXT_FROM_BYTES_IMPORT,
+    TEXT_TO_BYTES_IMPORT, encode_odin_function, select_unique_target,
 };
+use super::operator::{ovm_host_import_target, ovm_int_shape, OvmIntShape};
 use compiler_emitter::target_operator::{TargetOperandStep, TargetOperandType, TargetOperatorRecipe};
 use compiler_emitter::ProgramTextRepresentation;
 use compiler_target::{ExternalImportLink, NamePath};

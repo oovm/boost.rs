@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use compiler_emitter::{
     Result,
     emitter_backend_machine::{
-        LayoutPolicy, MachineLibraryExport, X64LibraryProgramInput, X64ProductTarget, is_c_identifier, is_reference_carrier,
-        resolve_physical_layouts,
+        LayoutPolicy, MachineLibraryExport, X64LibraryProgramInput, X64ProductTarget, is_c_identifier, resolve_physical_layouts,
     },
 };
+use super::operator::is_reference_carrier;
 use compiler_target::ResolvedTarget;
 use compiler_types::{ItemInstanceId, SemanticType};
 
