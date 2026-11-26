@@ -23,6 +23,12 @@ use data_checksum::XxHash64;
 use data_encoding::representation::Hex;
 use serde::{Deserialize, Serialize};
 
+pub mod diff;
+pub mod dump;
+pub mod entropy;
+pub mod find;
+pub mod text;
+
 /// `ELF` 静态符号表节类型。
 const SHT_SYMTAB: u32 = 2;
 /// `ELF` 动态符号表节类型。
@@ -979,27 +985,7 @@ impl BinarySession {
     pub fn hexdump(&self, offset: Option<u64>, length: Option<u64>) -> Result<String> {
         let offset = offset.unwrap_or(0);
         let length = length.unwrap_or(self.options.hexdump_length);
-        let data = self.read(offset, length)?;
-        let mut output = String::new();
-        for (row, chunk) in data.chunks(16).enumerate() {
-            let row_offset = offset + row as u64 * 16;
-            output.push_str(&format!("{row_offset:08x}  "));
-            for index in 0..16 {
-                if index == 8 {
-                    output.push(' ');
-                }
-                match chunk.get(index) {
-                    Some(byte) => output.push_str(&format!("{byte:02x} ")),
-                    None => output.push_str("   "),
-                }
-            }
-            output.push_str(" |");
-            for byte in chunk {
-                output.push(if (0x20..=0x7e).contains(byte) { *byte as char } else { '.' });
-            }
-            output.push_str("|\n");
-        }
-        Ok(output)
+        crate::dump::hexdump(&self.bytes, offset, Some(length))
     }
 
     /// Reads a byte range from the file.
