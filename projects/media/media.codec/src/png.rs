@@ -4,6 +4,8 @@
 //! in an imaging library. The deflate stream is stored, not compressed: these
 //! files are small, and correctness matters more than ratio here.
 
+use data_checksum::crc32;
+use data_compression::{DeflateLevel, Zlib};
 use media_types::Error;
 
 /// Sample layout of an 8-bit PNG image.
@@ -41,31 +43,6 @@ impl PngColor {
     }
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut table = [0u32; 256];
-    for (i, entry) in table.iter_mut().enumerate() {
-        let mut value = i as u32;
-        for _ in 0..8 {
-            value = if value & 1 == 1 { 0xEDB8_8320 ^ (value >> 1) } else { value >> 1 };
-        }
-        *entry = value;
-    }
-    let mut crc = 0xFFFF_FFFFu32;
-    for byte in bytes {
-        crc = table[((crc ^ u32::from(*byte)) & 0xFF) as usize] ^ (crc >> 8);
-    }
-    crc ^ 0xFFFF_FFFF
-}
-
-fn adler32(bytes: &[u8]) -> u32 {
-    let (mut a, mut b) = (1u32, 0u32);
-    for byte in bytes {
-        a = (a + u32::from(*byte)) % 65521;
-        b = (b + a) % 65521;
-    }
-    (b << 16) | a
-}
-
 fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&(data.len() as u32).to_be_bytes());
     let mut body = Vec::with_capacity(4 + data.len());
@@ -101,19 +78,10 @@ pub fn encode_png_with_color(width: u32, height: u32, color: PngColor, pixels: &
         raw.extend_from_slice(&pixels[start..start + (width as usize) * color.channels()]);
     }
 
-    // zlib: header, stored deflate blocks, adler checksum.
-    let mut zlib = vec![0x78u8, 0x01];
-    let mut offset = 0usize;
-    while offset < raw.len() {
-        let take = (raw.len() - offset).min(65535);
-        let last = offset + take == raw.len();
-        zlib.push(if last { 1 } else { 0 });
-        zlib.extend_from_slice(&(take as u16).to_le_bytes());
-        zlib.extend_from_slice(&(!(take as u16)).to_le_bytes());
-        zlib.extend_from_slice(&raw[offset..offset + take]);
-        offset += take;
-    }
-    zlib.extend_from_slice(&adler32(&raw).to_be_bytes());
+    // The zlib envelope, its Adler-32 trailer, and the stored Deflate blocks
+    // all belong to `data-compression`; the stored level keeps the stream
+    // byte-identical to the previous hand-written writer.
+    let zlib = Zlib::encode(&raw, DeflateLevel::Store);
 
     let mut out = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
     let mut ihdr = Vec::with_capacity(13);
