@@ -14,6 +14,9 @@
 
 #![warn(missing_docs)]
 
+/// x86 / x64 指令解码，支持 Intel、MASM、NASM 三种语法渲染。
+#[cfg(feature = "decode")]
+pub mod decode;
 /// 本 crate 的错误类型与 `Result` 别名。
 pub mod error;
 /// x86-64 原生 `ELF64` 可执行镜像构建。
