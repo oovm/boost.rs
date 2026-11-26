@@ -29,7 +29,7 @@ fn svg_text_diagnostic_matches_golden() {
     registry.register(&source_ref, source);
 
     let actual = structured_to_svg(&sample_text_diagnostic(source_ref), &cache, &registry).unwrap();
-    let expected = include_str!("diagnostic_preview/golden/preview-text.svg.txt");
+    let expected = include_str!("diagnostic_preview/golden/preview-text.svg.txt").replace("\r\n", "\n");
     assert_eq!(actual, expected);
 }
 
