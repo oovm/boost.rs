@@ -12,11 +12,58 @@ use super::{
     window::SlidingWindow,
 };
 
+/// One raw Deflate decode, keeping the prefix produced before a stop.
+///
+/// A failed decode still reports the bytes it committed and the input bytes its
+/// bit cursor advanced over, so a bounded caller can keep a partial prefix
+/// instead of throwing the work away.
+pub(crate) struct RawOutcome {
+    /// Bytes decoded before the stream completed or stopped.
+    pub(crate) output: Vec<u8>,
+    /// Input bytes the bit cursor advanced over.
+    pub(crate) consumed: usize,
+    /// Input bytes left after the bit cursor.
+    pub(crate) trailing: usize,
+    /// Why decoding stopped early, or `None` when the stream completed.
+    pub(crate) error: Option<CodecError>,
+}
+
 /// Decodes a raw Deflate stream into owned bytes.
 pub fn decode_raw(input: &[u8], limits: CodecLimits) -> Result<DecodeFacts<Vec<u8>>, CodecError> {
+    let outcome = decode_raw_outcome(input, limits);
+    match outcome.error {
+        Some(error) => Err(error),
+        None => {
+            let output_produced = outcome.output.len();
+            Ok(DecodeFacts {
+                value: outcome.output,
+                input_consumed: outcome.consumed,
+                output_produced,
+                complete: true,
+                trailing_input: outcome.trailing,
+                canonical: Canonicality::NotApplicable,
+            })
+        }
+    }
+}
+
+/// Decodes a raw Deflate stream and keeps whatever it produced before a stop.
+pub(crate) fn decode_raw_outcome(input: &[u8], limits: CodecLimits) -> RawOutcome {
     let mut reader = BitReader::new(input, BitOrder::LeastSignificantBitFirst);
     let mut window = SlidingWindow::new();
     let mut output = Vec::new();
+    let error = decode_blocks(&mut reader, &mut window, &mut output, &limits, input.len()).err();
+    let consumed = reader.consumed_bytes().min(input.len());
+    RawOutcome { output, consumed, trailing: input.len() - consumed, error }
+}
+
+fn decode_blocks(
+    reader: &mut BitReader<'_>,
+    window: &mut SlidingWindow,
+    output: &mut Vec<u8>,
+    limits: &CodecLimits,
+    input_len: usize,
+) -> Result<(), CodecError> {
     let output_limit = limits.output_limit();
     let mut block_count = 0u64;
     let mut steps = 0u64;
@@ -32,15 +79,15 @@ pub fn decode_raw(input: &[u8], limits: CodecLimits) -> Result<DecodeFacts<Vec<u
         let btype = reader.read_bits(2)?;
 
         match btype {
-            0 => decode_stored_block(&mut reader, &mut window, &mut output, output_limit)?,
+            0 => decode_stored_block(reader, window, output, output_limit)?,
             1 => {
                 let lit = fixed_literal_table();
                 let dist = fixed_distance_table();
-                decode_compressed_block(&mut reader, &lit, &dist, &mut window, &mut output, output_limit, &limits, &mut steps)?;
+                decode_compressed_block(reader, &lit, &dist, window, output, output_limit, limits, &mut steps)?;
             }
             2 => {
-                let (lit, dist) = decode_dynamic_tables(&mut reader, &limits)?;
-                decode_compressed_block(&mut reader, &lit, &dist, &mut window, &mut output, output_limit, &limits, &mut steps)?;
+                let (lit, dist) = decode_dynamic_tables(reader, limits)?;
+                decode_compressed_block(reader, &lit, &dist, window, output, output_limit, limits, &mut steps)?;
             }
             _ => {
                 return Err(CodecError::UnsupportedFeature { feature: crate::error::CodecFeature::BlockType(btype as u8) });
@@ -48,30 +95,17 @@ pub fn decode_raw(input: &[u8], limits: CodecLimits) -> Result<DecodeFacts<Vec<u
         }
 
         block_count += 1;
-        if !limits.check_expansion(input.len() as u64, output.len() as u64) {
+        if !limits.check_expansion(input_len as u64, output.len() as u64) {
             return Err(CodecError::ExpansionRatioExceeded {
-                input: input.len() as u64,
+                input: input_len as u64,
                 output: output.len() as u64,
                 limit: limits.max_expansion_ratio.unwrap_or(crate::error::Ratio::new(1, 1)),
             });
         }
         if bfinal {
-            break;
+            return Ok(());
         }
     }
-
-    let input_consumed = reader.consumed_bytes();
-    let trailing = input.len() - input_consumed;
-
-    let output_produced = output.len();
-    Ok(DecodeFacts {
-        value: output,
-        input_consumed,
-        output_produced,
-        complete: true,
-        trailing_input: trailing,
-        canonical: Canonicality::NotApplicable,
-    })
 }
 
 fn check_output_limit(output_len: usize, limit: u64) -> Result<(), CodecError> {

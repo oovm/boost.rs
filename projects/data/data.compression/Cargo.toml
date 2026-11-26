@@ -21,6 +21,10 @@ name = "deflate"
 required-features = ["deflate"]
 
 [[test]]
+name = "envelopes"
+required-features = ["deflate"]
+
+[[test]]
 name = "gzip"
 required-features = ["deflate"]
 

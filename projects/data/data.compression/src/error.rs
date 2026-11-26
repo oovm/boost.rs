@@ -168,6 +168,13 @@ pub enum CodecError {
         /// Computed checksum value.
         actual: u64,
     },
+    /// Envelope length trailer disagreed with the decoded length.
+    LengthMismatch {
+        /// Length the envelope trailer announced.
+        announced: u64,
+        /// Length actually decoded.
+        actual: u64,
+    },
     /// Compression envelope header or trailer was invalid.
     InvalidEnvelope {
         /// Byte offset of the envelope error.
@@ -206,6 +213,38 @@ pub enum CodecError {
 }
 
 impl CodecError {
+    /// Stable machine-readable code of this error.
+    ///
+    /// Codes never change between releases and carry no message text, so
+    /// adapters, reports and tests can dispatch on them without parsing
+    /// [`Display`](core::fmt::Display) output.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InputExhausted { .. } => "compression/input-exhausted",
+            Self::InvalidByte { .. } => "compression/invalid-byte",
+            Self::InvalidPadding { .. } => "compression/invalid-padding",
+            Self::InvalidBitPattern { .. } => "compression/invalid-bit-pattern",
+            Self::IntegerOverflow { .. } => "compression/integer-overflow",
+            Self::NonCanonicalEncoding { .. } => "compression/non-canonical",
+            Self::OutputLimitExceeded { .. } => "compression/output-limit",
+            Self::ExpansionRatioExceeded { .. } => "compression/expansion-ratio",
+            Self::InvalidBlockHeader { .. } => "compression/invalid-block-header",
+            Self::InvalidHuffmanTree { .. } => "compression/invalid-huffman-tree",
+            Self::HuffmanSymbolOutOfRange { .. } => "compression/huffman-symbol-out-of-range",
+            Self::DistanceOutOfWindow { .. } => "compression/distance-out-of-window",
+            Self::InvalidBackReference { .. } => "compression/invalid-back-reference",
+            Self::InvalidMatchLength { .. } => "compression/invalid-match-length",
+            Self::ChecksumMismatch { .. } => "compression/checksum-mismatch",
+            Self::LengthMismatch { .. } => "compression/length-mismatch",
+            Self::InvalidEnvelope { .. } => "compression/invalid-envelope",
+            Self::TrailingInput { .. } => "compression/trailing-input",
+            Self::InputLimitExceeded { .. } => "compression/input-limit",
+            Self::InvalidStreamState { .. } => "compression/invalid-stream-state",
+            Self::UnsupportedFeature { .. } => "compression/unsupported-feature",
+            Self::InternalInvariantViolation => "compression/internal-invariant",
+        }
+    }
+
     /// Whether the error reports a resource limit imposed by the caller.
     ///
     /// Format adapters map these to budget diagnostics while malformed,
@@ -264,6 +303,9 @@ impl std::fmt::Display for CodecError {
             }
             Self::ChecksumMismatch { algorithm, expected, actual } => {
                 write!(f, "codec checksum mismatch ({algorithm:?}): expected {expected:#x}, actual {actual:#x}")
+            }
+            Self::LengthMismatch { announced, actual } => {
+                write!(f, "codec length mismatch: trailer announced {announced}, decoded {actual}")
             }
             Self::InvalidEnvelope { offset, kind } => {
                 write!(f, "codec invalid {kind:?} envelope at offset {offset}")

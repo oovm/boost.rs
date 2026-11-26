@@ -8,6 +8,16 @@
 //! 协议层（如 `database.protocol.mongo`）只负责封套与 id 分派，算法归本层；
 //! 产品侧禁止再各自内嵌 Snappy/Zstd/Deflate 编解码副本。
 //!
+//! ## Features and envelopes
+//!
+//! - `deflate` enables raw DEFLATE (RFC 1951), the zlib envelope (RFC 1950),
+//!   the gzip envelope (RFC 1952), the streaming decoders, and the bounded
+//!   envelope dispatch in `Envelope` / `BoundedDecode`. All three envelopes need
+//!   only this one feature.
+//! - `lzma` enables LZMA1 and LZMA2 decoding and is independent of `deflate`.
+//! - The default feature set enables neither, leaving only the always-on Snappy
+//!   block and Zstandard frame entries.
+//!
 //! The Deflate family originates from the former `acorn.rs` project (imported
 //! at commit `6deb56a4`, MPL-2.0) and has been internalized and de-branded
 //! for Boost.
@@ -19,6 +29,8 @@ pub mod zstd;
 
 #[cfg(any(feature = "deflate", feature = "lzma"))]
 pub(crate) use data_binary_core::bit;
+#[cfg(feature = "deflate")]
+pub mod bounded;
 #[cfg(any(feature = "deflate", feature = "lzma"))]
 mod error;
 #[cfg(any(feature = "deflate", feature = "lzma"))]
@@ -60,6 +72,8 @@ pub use crate::gzip_stream::{GzipStreamDecoder, GzipStreamEncoder};
 pub use crate::lzma::{Lzma1, Lzma2, MAX_DICTIONARY_SIZE};
 #[cfg(feature = "deflate")]
 pub use crate::zlib::Zlib;
+#[cfg(feature = "deflate")]
+pub use bounded::{BoundedDecode, DecodeStatus, Envelope};
 #[cfg(feature = "deflate")]
 pub use data_checksum::Crc32;
 

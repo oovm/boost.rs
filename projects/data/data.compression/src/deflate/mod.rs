@@ -20,6 +20,13 @@ pub use self::{
     stream::DeflateStreamDecoder,
 };
 
+pub(crate) use self::decoder::RawOutcome;
+
+/// Decodes raw Deflate while keeping the prefix produced before a stop.
+pub(crate) fn decode_outcome(input: &[u8], limits: CodecLimits) -> RawOutcome {
+    decoder::decode_raw_outcome(input, limits)
+}
+
 /// Raw Deflate stream algorithm.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Deflate;

@@ -14,7 +14,7 @@
 
 use crate::{
     error::CodecError,
-    facts::{ChecksumFacts, DecodeFacts, StreamFacts, StreamState},
+    facts::{Canonicality, ChecksumFacts, DecodeFacts, StreamFacts, StreamState},
     limits::CodecLimits,
 };
 
@@ -76,6 +76,54 @@ impl EnvelopeFacts {
     #[inline]
     pub(crate) fn into_parts(self) -> (DecodeFacts<Vec<u8>>, Option<ChecksumFacts>) {
         (self.decode, self.checksum)
+    }
+}
+
+/// One-shot envelope decode that keeps the prefix produced before a stop.
+///
+/// The zlib and gzip envelopes build this so a bounded caller can read the
+/// decoded prefix, the input bytes consumed, and a typed terminal error instead
+/// of discarding a partially decoded member.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EnvelopeOutcome {
+    /// Bytes decoded before the stream completed or stopped.
+    pub(crate) output: Vec<u8>,
+    /// Input bytes consumed, including the envelope header and any trailer read.
+    pub(crate) consumed: usize,
+    /// Input bytes left after a complete member.
+    pub(crate) trailing: usize,
+    /// Checksum the envelope computed, if its trailer was reached.
+    pub(crate) checksum: Option<ChecksumFacts>,
+    /// Why decoding stopped early, or `None` when the member completed.
+    pub(crate) error: Option<CodecError>,
+}
+
+impl EnvelopeOutcome {
+    /// A decode that failed before producing any byte.
+    pub(crate) fn rejected(error: CodecError) -> Self {
+        Self { output: Vec::new(), consumed: 0, trailing: 0, checksum: None, error: Some(error) }
+    }
+
+    /// Converts to the one-shot success shape, surfacing the terminal error.
+    pub(crate) fn into_facts(self) -> Result<EnvelopeFacts, CodecError> {
+        match self.error {
+            Some(error) => Err(error),
+            None => {
+                let output_produced = self.output.len();
+                let decode = DecodeFacts {
+                    value: self.output,
+                    input_consumed: self.consumed,
+                    output_produced,
+                    complete: true,
+                    trailing_input: self.trailing,
+                    canonical: Canonicality::NotApplicable,
+                };
+                Ok(match self.checksum {
+                    Some(checksum) => EnvelopeFacts::new(decode, checksum),
+                    None => EnvelopeFacts::without_checksum(decode),
+                })
+            }
+        }
     }
 }
 

@@ -286,7 +286,7 @@ impl GzipStreamDecoder {
                     }
                     let expected_size = u32::from_le_bytes([byte(start + 4), byte(start + 5), byte(start + 6), byte(start + 7)]);
                     if expected_size != self.produced as u32 {
-                        return Err(CodecError::InvalidEnvelope { offset: start + 4, kind: EnvelopeKind::Gzip });
+                        return Err(CodecError::LengthMismatch { announced: u64::from(expected_size), actual: self.produced });
                     }
                     self.trailing = self.queue.end() - (start + TRAILER_LEN);
                     self.checksum = Some(ChecksumFacts { algorithm: ChecksumAlgorithm::Crc32, value: u64::from(actual_crc), verified: true });

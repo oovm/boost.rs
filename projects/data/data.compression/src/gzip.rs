@@ -13,9 +13,9 @@
 use crate::{
     deflate::{Deflate, DeflateLevel},
     error::{ChecksumAlgorithm, CodecError, CodecFeature, EnvelopeKind},
-    facts::{Canonicality, ChecksumFacts, DecodeFacts},
+    facts::{ChecksumFacts, DecodeFacts},
     limits::CodecLimits,
-    stream::{CompressionProtocol, EnvelopeFacts, StreamDecoder},
+    stream::{CompressionProtocol, EnvelopeFacts, EnvelopeOutcome, StreamDecoder},
 };
 
 use data_checksum::crc32;
@@ -88,6 +88,58 @@ fn skip_zero_terminated(input: &[u8], offset: usize) -> Result<usize, CodecError
 
 /// Decodes a gzip member and reports its envelope facts.
 pub(crate) fn decode_gzip(input: &[u8], limits: CodecLimits) -> Result<EnvelopeFacts, CodecError> {
+    decode_gzip_outcome(input, limits).into_facts()
+}
+
+/// Decodes a gzip member and keeps whatever it produced before a stop.
+pub(crate) fn decode_gzip_outcome(input: &[u8], limits: CodecLimits) -> EnvelopeOutcome {
+    let pos = match member_header_len(input) {
+        Ok(pos) => pos,
+        Err(error) => return EnvelopeOutcome::rejected(error),
+    };
+
+    let raw = crate::deflate::decode_outcome(&input[pos..], limits);
+    let trailer_start = pos + raw.consumed;
+    if let Some(error) = raw.error {
+        return EnvelopeOutcome { output: raw.output, consumed: trailer_start, trailing: 0, checksum: None, error: Some(error) };
+    }
+
+    if input.len() < trailer_start + TRAILER_LEN {
+        return EnvelopeOutcome {
+            output: raw.output,
+            consumed: input.len(),
+            trailing: 0,
+            checksum: None,
+            error: Some(CodecError::InputExhausted { offset: input.len(), needed: trailer_start + TRAILER_LEN - input.len() }),
+        };
+    }
+
+    let expected_crc = u32::from_le_bytes([input[trailer_start], input[trailer_start + 1], input[trailer_start + 2], input[trailer_start + 3]]);
+    let actual_crc = crc32(&raw.output);
+    let expected_size =
+        u32::from_le_bytes([input[trailer_start + 4], input[trailer_start + 5], input[trailer_start + 6], input[trailer_start + 7]]);
+    let actual_size = raw.output.len() as u32;
+    let consumed = trailer_start + TRAILER_LEN;
+    let verified = expected_crc == actual_crc;
+    let checksum = ChecksumFacts { algorithm: ChecksumAlgorithm::Crc32, value: u64::from(actual_crc), verified };
+    let error = if !verified {
+        Some(CodecError::ChecksumMismatch {
+            algorithm: ChecksumAlgorithm::Crc32,
+            expected: u64::from(expected_crc),
+            actual: u64::from(actual_crc),
+        })
+    }
+    else if expected_size != actual_size {
+        Some(CodecError::LengthMismatch { announced: u64::from(expected_size), actual: u64::from(actual_size) })
+    }
+    else {
+        None
+    };
+    EnvelopeOutcome { output: raw.output, consumed, trailing: input.len() - consumed, checksum: Some(checksum), error }
+}
+
+/// Scans the member header and returns the offset where the bitstream starts.
+fn member_header_len(input: &[u8]) -> Result<usize, CodecError> {
     if input.len() < HEADER_LEN {
         return Err(CodecError::InputExhausted { offset: input.len(), needed: HEADER_LEN - input.len() });
     }
@@ -140,41 +192,5 @@ pub(crate) fn decode_gzip(input: &[u8], limits: CodecLimits) -> Result<EnvelopeF
     if pos >= input.len() {
         return Err(CodecError::InputExhausted { offset: pos, needed: 1 });
     }
-
-    let facts = Deflate::decode(&input[pos..], limits)?;
-    let trailer_start = pos + facts.input_consumed;
-
-    if input.len() < trailer_start + TRAILER_LEN {
-        return Err(CodecError::InputExhausted { offset: input.len(), needed: trailer_start + TRAILER_LEN - input.len() });
-    }
-
-    let expected_crc = u32::from_le_bytes([input[trailer_start], input[trailer_start + 1], input[trailer_start + 2], input[trailer_start + 3]]);
-    let actual_crc = crc32(&facts.value);
-    if expected_crc != actual_crc {
-        return Err(CodecError::ChecksumMismatch {
-            algorithm: ChecksumAlgorithm::Crc32,
-            expected: u64::from(expected_crc),
-            actual: u64::from(actual_crc),
-        });
-    }
-
-    let expected_size =
-        u32::from_le_bytes([input[trailer_start + 4], input[trailer_start + 5], input[trailer_start + 6], input[trailer_start + 7]]);
-    let actual_size = facts.output_produced as u32;
-    if expected_size != actual_size {
-        return Err(CodecError::InvalidEnvelope { offset: trailer_start as u64 + 4, kind: EnvelopeKind::Gzip });
-    }
-
-    let total_consumed = trailer_start + TRAILER_LEN;
-    Ok(EnvelopeFacts::new(
-        DecodeFacts {
-            value: facts.value,
-            input_consumed: total_consumed,
-            output_produced: facts.output_produced,
-            complete: true,
-            trailing_input: input.len() - total_consumed,
-            canonical: Canonicality::NotApplicable,
-        },
-        ChecksumFacts { algorithm: ChecksumAlgorithm::Crc32, value: u64::from(actual_crc), verified: true },
-    ))
+    Ok(pos)
 }

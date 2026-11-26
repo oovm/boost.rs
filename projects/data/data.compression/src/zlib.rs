@@ -8,9 +8,9 @@
 use crate::{
     deflate::{Deflate, DeflateLevel},
     error::{ChecksumAlgorithm, CodecError, CodecFeature, EnvelopeKind},
-    facts::{Canonicality, ChecksumFacts, DecodeFacts},
+    facts::{ChecksumFacts, DecodeFacts},
     limits::CodecLimits,
-    stream::{CompressionProtocol, EnvelopeFacts, StreamDecoder},
+    stream::{CompressionProtocol, EnvelopeFacts, EnvelopeOutcome, StreamDecoder},
 };
 
 use data_checksum::adler32;
@@ -57,6 +57,47 @@ const FLG_PRESET_DICTIONARY: u8 = 0x20;
 
 /// Decodes a zlib stream and reports its envelope facts.
 pub(crate) fn decode_zlib(input: &[u8], limits: CodecLimits) -> Result<EnvelopeFacts, CodecError> {
+    decode_zlib_outcome(input, limits).into_facts()
+}
+
+/// Decodes a zlib stream and keeps whatever it produced before a stop.
+pub(crate) fn decode_zlib_outcome(input: &[u8], limits: CodecLimits) -> EnvelopeOutcome {
+    if let Err(error) = check_header(input) {
+        return EnvelopeOutcome::rejected(error);
+    }
+
+    let raw = crate::deflate::decode_outcome(&input[2..], limits);
+    let trailer_start = 2 + raw.consumed;
+    if let Some(error) = raw.error {
+        return EnvelopeOutcome { output: raw.output, consumed: trailer_start, trailing: 0, checksum: None, error: Some(error) };
+    }
+
+    if input.len() < trailer_start + 4 {
+        return EnvelopeOutcome {
+            output: raw.output,
+            consumed: input.len(),
+            trailing: 0,
+            checksum: None,
+            error: Some(CodecError::InputExhausted { offset: input.len(), needed: trailer_start + 4 - input.len() }),
+        };
+    }
+
+    let expected = u32::from_be_bytes([input[trailer_start], input[trailer_start + 1], input[trailer_start + 2], input[trailer_start + 3]]);
+    let actual = adler32(&raw.output);
+    let consumed = trailer_start + 4;
+    let verified = expected == actual;
+    let checksum = ChecksumFacts { algorithm: ChecksumAlgorithm::Adler32, value: actual as u64, verified };
+    let error = if verified {
+        None
+    }
+    else {
+        Some(CodecError::ChecksumMismatch { algorithm: ChecksumAlgorithm::Adler32, expected: expected as u64, actual: actual as u64 })
+    };
+    EnvelopeOutcome { output: raw.output, consumed, trailing: input.len() - consumed, checksum: Some(checksum), error }
+}
+
+/// Validates the two-byte zlib header without touching the bitstream.
+fn check_header(input: &[u8]) -> Result<(), CodecError> {
     if input.len() < 6 {
         return Err(CodecError::InputExhausted { offset: input.len(), needed: 6 - input.len() });
     }
@@ -80,30 +121,5 @@ pub(crate) fn decode_zlib(input: &[u8], limits: CodecLimits) -> Result<EnvelopeF
     if flg & FLG_PRESET_DICTIONARY != 0 {
         return Err(CodecError::UnsupportedFeature { feature: CodecFeature::PresetDictionary });
     }
-
-    let facts = Deflate::decode(&input[2..], limits)?;
-    let trailer_start = 2 + facts.input_consumed;
-
-    if input.len() < trailer_start + 4 {
-        return Err(CodecError::InputExhausted { offset: input.len(), needed: trailer_start + 4 - input.len() });
-    }
-
-    let expected = u32::from_be_bytes([input[trailer_start], input[trailer_start + 1], input[trailer_start + 2], input[trailer_start + 3]]);
-    let actual = adler32(&facts.value);
-    if expected != actual {
-        return Err(CodecError::ChecksumMismatch { algorithm: ChecksumAlgorithm::Adler32, expected: expected as u64, actual: actual as u64 });
-    }
-
-    let total_consumed = trailer_start + 4;
-    Ok(EnvelopeFacts::new(
-        DecodeFacts {
-            value: facts.value,
-            input_consumed: total_consumed,
-            output_produced: facts.output_produced,
-            complete: true,
-            trailing_input: input.len() - total_consumed,
-            canonical: Canonicality::NotApplicable,
-        },
-        ChecksumFacts { algorithm: ChecksumAlgorithm::Adler32, value: actual as u64, verified: true },
-    ))
+    Ok(())
 }
