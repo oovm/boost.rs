@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use compiler_emitter::{
     emitter_backend_wasi::{WasiPreview, WasmLibraryExport, WasmPackageKind, WasmTestEntryExport},
     emitter_backend_wasm::{
-        PhysicalTextBoundary, WasmCallableKey, WasmConstant, WasmModuleInput, WasmOperation, WasmProgramInput, WasmTypeFact,
-        canonical_parameter_identities, declared_text_projection, host_entry_export_name, wasm_export_abi,
+        PhysicalTextBoundary, WasmCallableKey, WasmConstant, WasmFrozenExportAbi, WasmModuleInput, WasmOperation, WasmProgramInput, WasmTypeFact,
+        abi_schema_for_type, canonical_parameter_identities, declared_text_projection, host_entry_export_name, wasm_export_abi,
     },
 };
 use compiler_target::{ArtifactPurpose, HostProjectionBoundary};
@@ -20,8 +20,10 @@ use compiler_target::{ArtifactPurpose, HostProjectionBoundary};
 use crate::compiler::emitter::pipeline::lane::LaneContext;
 use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::emitter::pipeline::wasm::lowerer::build_module_input;
+use crate::compiler::emitter::pipeline::wasm::providers::text_host_import_providers;
 
 pub(crate) mod lowerer;
+pub(crate) mod providers;
 
 /// 适配的失败闭合：链接事实与语言合同无法无损投影时按阶段归因。
 fn unsound(stage: AdapterStage, instance: Option<compiler_types::ItemInstanceId>, symbol: Option<String>, reason: String) -> TargetPlanError {
@@ -49,8 +51,15 @@ pub(crate) fn build_wasm_program_input(
         .to_string();
     // 公共 IR 不再进入本链：语言 MIR 在此一次结算为 wasm 私有输入，
     // `mir/` 编码层只消费私有词汇。
-    let module_input = build_module_input(ctx, theory_bundle)
+    let mut module_input = build_module_input(ctx, theory_bundle)
         .map_err(|reason| unsound(AdapterStage::Representation, None, None, reason))?;
+
+    // 宿主导入 provider：语言 std 文本行为（`env` 的 `utf8_*` / `utf16_*` 家族）
+    // 由语言 × 目标适配器在这里显式登记，经 `nyar.host_providers` 段交给 JS
+    // 启动壳注入；wasm 降层与 glue 不再内建任何语言文本语义。
+    if host_boundary == HostProjectionBoundary::WasmJsGlue {
+        module_input.host_import_providers = text_host_import_providers();
+    }
 
     // 测试包可能一并编译只承载程序入口、没有冻结 `[test]` 导出的辅助分区
     // （例如同包的 `[main]` 片段）。这类分区按二进制形状编译，绝不产出测试
@@ -106,6 +115,36 @@ pub(crate) fn build_wasm_program_input(
     validate_storage_identities(&module_input)
         .map_err(|reason| unsound(AdapterStage::Representation, None, None, reason))?;
 
+    // 库导出 ABI 在结算期一次冻结（载体 + 逐位置 schema）：编码层只消费
+    // `export_abis`，不再现场重走 ABI 派生。测试包保持库形状时同样消费该合同。
+    if effective_package_kind == WasmPackageKind::Library {
+        let export_names = module_input.export_names.clone();
+        for (instance, source_name) in export_names {
+            let public_name = module_input
+                .export_public_name(&instance)
+                .cloned()
+                .unwrap_or_else(|| source_name.clone());
+            let function = module_input
+                .function(&instance)
+                .ok_or_else(|| unsound(AdapterStage::Function, None, Some(public_name.clone()), format!("Wasm 库导出 `{public_name}` 缺少 Compiler 函数体，无法冻结 ABI 合同")))?;
+            let carriers = wasm_export_abi(&module_input, &instance)
+                .map_err(|reason| unsound(AdapterStage::Function, None, Some(public_name.clone()), reason))?;
+            let params = function.param_types.iter().map(|ty| abi_schema_for_type(&module_input, ty)).collect::<Vec<_>>();
+            let returns = abi_schema_for_type(&module_input, &function.return_type);
+            for (position, schema) in params.iter().chain(std::iter::once(&returns)).enumerate() {
+                if let Some(reason) = schema.unsupported_reason() {
+                    let label = if position == function.param_types.len() { "返回".to_string() } else { format!("参数 {position}") };
+                    return Err(unsound(
+                        AdapterStage::Function,
+                        None,
+                        Some(public_name.clone()),
+                        format!("Wasm 库导出 `{public_name}` 的{label}类型没有 Wasm ABI 合同: {reason}"),
+                    ));
+                }
+            }
+            module_input.export_abis.insert(instance, WasmFrozenExportAbi { carriers, params, returns });
+        }
+    }
     // WASI command world 由冻结的产物用途决定：只有进程镜像（`Application` /
     // `TestBundle`）打包为 command component，`Library` 打包为库组件。
     // 禁止按「是否存在函数实例」猜测 command——库片段同样有函数实例。
@@ -122,8 +161,11 @@ pub(crate) fn build_wasm_program_input(
             let function = module_input
                 .function(instance)
                 .ok_or_else(|| unsound(AdapterStage::Function, None, Some(public_name.clone()), format!("Wasm 库导出 `{public_name}` 缺少 Compiler 函数体，无法冻结导出签名")))?;
-            let abi = wasm_export_abi(&module_input, instance)
-                .map_err(|reason| unsound(AdapterStage::Function, None, Some(public_name.clone()), reason))?;
+            let abi = module_input
+                .export_abis
+                .get(instance)
+                .map(|frozen| frozen.carriers.clone())
+                .ok_or_else(|| unsound(AdapterStage::Function, None, Some(public_name.clone()), "库导出缺少结算期冻结的 ABI 合同".to_string()))?;
             let parameter_names = canonical_parameter_identities(&public_name, function)
                 .map_err(|reason| unsound(AdapterStage::Function, None, Some(public_name.clone()), reason))?
                 .into_iter()
@@ -275,11 +317,9 @@ fn text_abi_site_denied(ty: &WasmTypeFact, boundary: Option<PhysicalTextBoundary
 fn type_contains_utf16(ty: &WasmTypeFact) -> bool {
     match ty {
         WasmTypeFact::Utf16 => true,
-        WasmTypeFact::Apply(base, arguments) => type_contains_utf16(base) || arguments.iter().any(type_contains_utf16),
         WasmTypeFact::Function(function) => type_contains_utf16(&function.return_type) || function.params.iter().any(type_contains_utf16),
-        WasmTypeFact::Tuple(elements) | WasmTypeFact::Union(elements) => elements.iter().any(type_contains_utf16),
+        WasmTypeFact::Tuple(elements) => elements.iter().any(type_contains_utf16),
         WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } => type_contains_utf16(element),
-        WasmTypeFact::TraitObject(object) => object.type_arguments.iter().any(type_contains_utf16),
         _ => false,
     }
 }
@@ -292,9 +332,9 @@ fn boundary_name(host_boundary: HostProjectionBoundary) -> &'static str {
     }
 }
 
-/// 存储类身份门（私有镜像）：无 declaration / `TypeId` 的名义类型残差在编码前
-/// 结构化拒绝。裸 `Named` 短名或 `Nominal` 携带未注册布局时，存储类只能靠名称
-/// 回查或默认值猜实现，必须在生成任何字节之前失败。
+/// 存储类身份门：`Layout` 引用未命中任何已结算布局时，存储类只能靠默认值
+/// 猜实现，必须在生成任何字节之前失败。裸拼写 / 泛型应用 / witness 表 / 匿名
+/// union 已在 `settle_type` 结算点结构化拒绝，不会到达这里。
 fn validate_storage_identities(input: &WasmModuleInput) -> Result<(), String> {
     let registered_layouts: BTreeSet<u32> = input.layouts.iter().map(|layout| layout.id).collect();
     for function in input.functions.values() {
@@ -341,12 +381,11 @@ fn storage_error(function: &str, site: &str, ty: &WasmTypeFact) -> String {
     format!("WASM pre-emission verifier: {owner} 携带无身份名义类型 `{ty}`；declaration / `TypeId` 缺失时不得按短名解析存储类")
 }
 
-/// 递归查找无法按身份解析存储类的名义形状：
-/// 裸 `Named` 短名残差，或 `Nominal` 携带的 `layout` 未在结算布局中注册。
+/// 递归查找无法按身份解析存储类的布局引用：`Layout` 携带的布局未在结算
+/// 布局中注册（裸拼写等源语言形状已在结算点拒绝，不在本词汇中）。
 fn named_residual(ty: &WasmTypeFact, registered_layouts: &BTreeSet<u32>) -> Option<WasmTypeFact> {
     match ty {
-        WasmTypeFact::Named(_) => Some(ty.clone()),
-        WasmTypeFact::Nominal { layout, .. } => {
+        WasmTypeFact::Layout(layout) => {
             if registered_layouts.contains(layout) {
                 None
             }
@@ -354,14 +393,12 @@ fn named_residual(ty: &WasmTypeFact, registered_layouts: &BTreeSet<u32>) -> Opti
                 Some(ty.clone())
             }
         }
-        WasmTypeFact::Apply(_base, arguments) => arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
         WasmTypeFact::Function(function) => named_residual(&function.return_type, registered_layouts)
             .or_else(|| function.params.iter().find_map(|parameter| named_residual(parameter, registered_layouts))),
-        WasmTypeFact::Tuple(elements) | WasmTypeFact::Union(elements) => elements.iter().find_map(|element| named_residual(element, registered_layouts)),
+        WasmTypeFact::Tuple(elements) => elements.iter().find_map(|element| named_residual(element, registered_layouts)),
         WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } | WasmTypeFact::Nullable(element) => {
             named_residual(element, registered_layouts)
         }
-        WasmTypeFact::TraitObject(object) => object.type_arguments.iter().find_map(|argument| named_residual(argument, registered_layouts)),
         _ => None,
     }
 }
@@ -464,12 +501,13 @@ mod wasm_lane_tests {
             layouts: Vec::new(),
             layout_by_nominal_id: BTreeMap::new(),
             layout_by_field_id: BTreeMap::new(),
-            layout_by_type: BTreeMap::new(),
             sum_layouts_by_type: BTreeMap::new(),
             sum_reps: BTreeMap::new(),
             program_text_representation: None,
             singleton_facts: Vec::<WasmSingletonFact>::new(),
             host_sequence_projections: BTreeSet::new(),
+            export_abis: BTreeMap::new(),
+            host_import_providers: Vec::new(),
         }
     }
 
@@ -502,11 +540,11 @@ mod wasm_lane_tests {
     }
 
     #[test]
-    fn storage_gate_denies_bare_named_residual() {
-        // 裸 `Named` 短名没有 declaration / `TypeId`：存储类不得按短名解析。
-        let input = testing_module_input(testing_function("probe", WasmTypeFact::Named(compiler_types::Identifier::new("Foo")), Vec::new()));
-        let error = validate_storage_identities(&input).expect_err("无身份名义残差必须拒绝");
-        assert!(error.contains("携带无身份名义类型") && error.contains("Foo"), "{error}");
+    fn storage_gate_denies_unregistered_layout_reference() {
+        // `Layout` 引用未命中任何已结算布局：存储类不得按默认值猜。
+        let input = testing_module_input(testing_function("probe", WasmTypeFact::Layout(99), Vec::new()));
+        let error = validate_storage_identities(&input).expect_err("未注册布局引用必须拒绝");
+        assert!(error.contains("携带无身份名义类型") && error.contains("layout(99)"), "{error}");
     }
 
     #[test]

@@ -44,6 +44,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
         else {
             None
         };
+        let host_providers = read_host_providers_spec(&wasm_path)?;
         let launcher = try_build_node_launcher(
             launcher_stem,
             context.imports,
@@ -52,6 +53,7 @@ impl HostBindingBuilder for JsGlueBindingBuilder {
             library_invoke.as_deref(),
             context.host_entry_export,
             context.test_entry_exports,
+            host_providers.as_deref(),
         )?;
         fs::write(&launcher_path, launcher).map_err(|e| format!("写入 Node 启动壳失败：{}: {e}", launcher_path.display()))?;
 
@@ -102,35 +104,11 @@ fn js_import_impl(module: &str, field: &str) -> Option<String> {
         "write_file_text" => "(path, content) => hostWriteFileText(path, content)".to_string(),
         "get_files" => "(path, pattern, recursive) => hostGetFiles(path, pattern, recursive)".to_string(),
         "const_utf8" => "(index) => hostIntern(hostConstUtf8(index))".to_string(),
-        "utf8_concat" => "(a, b) => hostUtf8Concat(a, b)".to_string(),
-        "utf8_length" => "(s) => hostUtf8Length(s)".to_string(),
-        "utf8_trim" => "(s) => hostIntern(hostUtf8Trim(s))".to_string(),
-        "utf8_to_lower" => "(s) => hostIntern(hostUtf8ToLower(s))".to_string(),
-        "utf8_to_upper" => "(s) => hostIntern(hostUtf8ToUpper(s))".to_string(),
-        "utf8_replace" => "(s, oldValue, newValue) => hostIntern(hostUtf8Replace(s, oldValue, newValue))".to_string(),
-        "utf8_starts_with" => "(s, prefix) => hostUtf8StartsWith(s, prefix)".to_string(),
-        "utf8_ends_with" => "(s, suffix) => hostUtf8EndsWith(s, suffix)".to_string(),
-        "utf8_contains" => "(s, other) => hostUtf8Contains(s, other)".to_string(),
-        "utf8_equals" => "(a, b) => hostUtf8Equals(a, b)".to_string(),
-        "utf8_index_of" => "(s, other) => hostUtf8IndexOf(s, other)".to_string(),
-        "utf8_slice" => "(s, start, count) => hostIntern(hostUtf8Slice(s, start, count))".to_string(),
-        // `utf16` 在 JS-glue 边界与 `utf8` 共用同一张宿主句柄表；区别是索引/长度
-        // 按 UTF-16 code unit 语义（原生 JS 字符串），不做 scalar 展开。
+        // 语言 std 文本操作（`utf8_*` / `utf16_*` / 编码转换）**不在本层**：
+        // 它们是语言语义，由语言 × 目标适配器提交的 host import provider
+        // （`nyar.host_providers` 段）显式实现。glue 只保留通用装载/编组：
+        // 字面量表、句柄表、cabi 边界与宿主能力。
         "const_utf16" => "(index) => hostIntern(hostConstUtf16(index))".to_string(),
-        "utf8_to_utf16" => "(s) => hostIntern(hostPathFromRef(s))".to_string(),
-        "utf16_to_utf8" => "(s) => hostIntern(hostPathFromRef(s))".to_string(),
-        "utf16_concat" => "(a, b) => hostUtf16Concat(a, b)".to_string(),
-        "utf16_length" => "(s) => hostUtf16Length(s)".to_string(),
-        "utf16_trim" => "(s) => hostUtf16Trim(s)".to_string(),
-        "utf16_to_lower" => "(s) => hostUtf16ToLower(s)".to_string(),
-        "utf16_to_upper" => "(s) => hostUtf16ToUpper(s)".to_string(),
-        "utf16_replace" => "(s, oldValue, newValue) => hostUtf16Replace(s, oldValue, newValue)".to_string(),
-        "utf16_starts_with" => "(s, prefix) => hostUtf16StartsWith(s, prefix)".to_string(),
-        "utf16_ends_with" => "(s, suffix) => hostUtf16EndsWith(s, suffix)".to_string(),
-        "utf16_contains" => "(s, other) => hostUtf16Contains(s, other)".to_string(),
-        "utf16_equals" => "(a, b) => hostUtf16Equals(a, b)".to_string(),
-        "utf16_index_of" => "(s, other) => hostUtf16IndexOf(s, other)".to_string(),
-        "utf16_slice" => "(s, start, count) => hostUtf16Slice(s, start, count)".to_string(),
         "host_intern_utf8" => "(ptr, len) => hostInternUtf8Bytes(ptr, len)".to_string(),
         "host_utf8_extract" => "(handle) => hostUtf8Extract(handle)".to_string(),
         // 未捕获 `raise`：把 guest 的文本 payload 还原成宿主 Error，让用户代码错误
@@ -169,13 +147,34 @@ pub fn collect_import_bindings(imports: &[(String, String)]) -> Vec<(String, Str
     bindings
 }
 
+/// 适配器提交的宿主导入 provider 条目（`nyar.host_providers` 段）。
+#[derive(Debug, Clone, serde::Deserialize)]
+struct HostProviderEntry {
+    module: String,
+    field: String,
+    implementation: String,
+    #[serde(default)]
+    helpers: String,
+}
+
+/// 解析 `nyar.host_providers` 段 JSON；形状不符即结构化失败。
+fn parse_host_providers(spec_json: &str) -> Result<Vec<HostProviderEntry>> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(spec_json).map_err(|error| format!("`nyar.host_providers` 段 JSON 解析失败: {error}"))?;
+    let providers = parsed.get("providers").cloned().ok_or_else(|| "`nyar.host_providers` 段缺少 `providers` 数组".to_string())?;
+    let entries: Vec<HostProviderEntry> =
+        serde_json::from_value(providers).map_err(|error| format!("`nyar.host_providers` 段条目形状非法: {error}"))?;
+    Ok(entries)
+}
+
 /// 将导入绑定渲染为 `JS` 对象字面量字符串（集成测试专用）。
 ///
-/// 未登记的导入生成显式抛错桩（带 `module::field` 身份），不得退化为
-/// `() => 0` 把缺失能力伪装成正常零值。浏览器 boot 等消费者运行时另有自己的
-/// 导入实现，因此这里不在生成期阻断。
+/// 实现来源优先级：适配器提交的 provider（语言特有宿主行为）→ glue 内建的
+/// 通用装载/编组能力 → 显式抛错桩（带 `module::field` 身份）。未登记导入
+/// 不得退化为 `() => 0` 把缺失能力伪装成正常零值。浏览器 boot 等消费者
+/// 运行时另有自己的导入实现，因此这里不在生成期阻断。
 #[doc(hidden)]
-pub fn render_import_object_literal(imports: &[(String, String)]) -> String {
+pub fn render_import_object_literal(imports: &[(String, String)], providers: &std::collections::BTreeMap<(String, String), String>) -> String {
     let bindings = collect_import_bindings(imports);
     let mut by_module: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for (module, field) in bindings {
@@ -185,11 +184,15 @@ pub fn render_import_object_literal(imports: &[(String, String)]) -> String {
     for (module, fields) in by_module {
         let mut entries = Vec::with_capacity(fields.len());
         for field in fields {
-            let implementation = js_import_impl(&module, &field).unwrap_or_else(|| {
-                format!(
-                    "(...) => {{ throw new Error(\"[wasm-js-glue] host import `{module}::{field}` is not implemented by this launcher; the consumer runtime must provide it\"); }}"
-                )
-            });
+            let implementation = providers
+                .get(&(module.clone(), field.clone()))
+                .cloned()
+                .or_else(|| js_import_impl(&module, &field))
+                .unwrap_or_else(|| {
+                    format!(
+                        "(...) => {{ throw new Error(\"[wasm-js-glue] host import `{module}::{field}` is not implemented by this launcher; the consumer runtime must provide it\"); }}"
+                    )
+                });
             entries.push(format!("    {}: {implementation}", js_object_key(&field)));
         }
         modules.push(format!("  {}: {{\n{}\n  }}", js_object_key(&module), entries.join(",\n")));
@@ -204,6 +207,16 @@ fn read_library_invoke_spec(wasm_path: &Path) -> Result<Option<String>> {
         .sections
         .iter()
         .find(|section| section.name.as_deref() == Some("nyar.library_invoke"))
+        .map(|section| String::from_utf8_lossy(&section.bytes).to_string()))
+}
+
+fn read_host_providers_spec(wasm_path: &Path) -> Result<Option<String>> {
+    let bytes = fs::read(wasm_path).map_err(|e| format!("读取 WASM 失败：{}: {e}", wasm_path.display()))?;
+    let module = WasmBinaryModule::from_bytes(&bytes).map_err(|error| format!("WASM 解析失败：{error}"))?;
+    Ok(module
+        .sections
+        .iter()
+        .find(|section| section.name.as_deref() == Some("nyar.host_providers"))
         .map(|section| String::from_utf8_lossy(&section.bytes).to_string()))
 }
 
@@ -733,6 +746,7 @@ pub fn try_build_node_launcher(
     library_invoke: Option<&str>,
     host_entry_export: Option<&str>,
     test_entry_exports: &[crate::emitter_backend_wasi::WasmTestEntryExport],
+    host_providers: Option<&str>,
 ) -> Result<String> {
     // 二进制启动壳没有「可选入口」：缺冻结入口名时生成只加载不调用的壳会静默
     // 退出 0，把「入口没被调用」伪装成成功。
@@ -759,9 +773,23 @@ pub fn try_build_node_launcher(
     let utf8_literals_json = serde_json::to_string(utf8_literals).unwrap_or_else(|_| "[]".to_string());
     let has_imports = !imports.is_empty();
     let has_read_source = imports.iter().any(|(_, field)| field == "read_source_byte");
+    // 适配器提交的宿主导入 provider：实现表达式注入导入字面量，辅助 JS 注入
+    // 壳模块作用域。语言特有宿主行为完全来自这里，glue 不内建。
+    let mut provider_implementations = std::collections::BTreeMap::new();
+    let mut provider_helpers = String::new();
+    if let Some(spec_json) = host_providers {
+        for entry in parse_host_providers(spec_json)? {
+            if !entry.helpers.trim().is_empty() {
+                provider_helpers.push_str(entry.helpers.trim_end());
+                provider_helpers.push_str("\n\n");
+            }
+            provider_implementations.insert((entry.module, entry.field), entry.implementation);
+        }
+    }
+    let provider_helpers = if provider_helpers.is_empty() { String::new() } else { provider_helpers };
     // 未登记导入生成显式抛错桩；Node 可执行壳与浏览器 boot 的导入所有权由各自
     // 宿主绑定合同决定，这里不按 consumer 猜测在生成期阻断。
-    let smoke_import_object_literal = render_import_object_literal(imports);
+    let smoke_import_object_literal = render_import_object_literal(imports, &provider_implementations);
     // ── CLI 模式开关：仅基于 import 名存在性 ────────────────────────────
     // 注意：这里只看 `"cli_get_target"` / `"cli_get_project"` / `"cli_get_output"`
     // 这三个 import **名**是否同时存在，用来决定启动壳是否生成 CLI 分派代码。
@@ -1006,179 +1034,17 @@ function hostPathFromRef(pathRef) {{
     return typeof pathRef === "string" ? pathRef : hostResolve(pathRef);
 }}
 
-function hostUtf8Concat(a, b) {{
-    return hostIntern(hostPathFromRef(a) + hostPathFromRef(b));
-}}
-
-// env.utf8_* index contract (matches std Utf8Text): Unicode **scalars** via [...s],
-// never JS string.length / indexOf UTF-16 code units. Host JS strings are UTF-16 storage only.
-//
-// 架构裁定：本文件是宿主 JS 侧的**库行为**合同（镜像 std 的文本语义），不是
-// `Utf8Text` 对象布局的复制——它不读写任何语言托管对象的字段偏移，只在 JS
-// 字符串存储上实现 std 同名语义。语言更换文本内部布局不影响本文件；语言若
-// 更换 trim/index 语义，本 glue 必须与 std 同批修订。
-function hostUtf8Scalars(s) {{
-    return [...hostPathFromRef(s)];
-}}
-
-function hostUtf8Length(s) {{
-    return hostUtf8Scalars(s).length;
-}}
-
-// Unicode `White_Space` (25 code points), the same set std `Utf8Text::trim` uses.
-// `String.prototype.trim` is not equivalent: it strips U+FEFF and keeps U+0085.
-const UTF8_WHITE_SPACE = new Set([
-    0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x0085, 0x00a0, 0x1680,
-    0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
-    0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
-]);
-
-function hostUtf8IsWhiteSpace(scalar) {{
-    return UTF8_WHITE_SPACE.has(scalar.codePointAt(0));
-}}
-
-function hostUtf8Trim(s) {{
-    const scalars = hostUtf8Scalars(s);
-    let start = 0;
-    let end = scalars.length;
-    while (start < end && hostUtf8IsWhiteSpace(scalars[start])) start += 1;
-    while (end > start && hostUtf8IsWhiteSpace(scalars[end - 1])) end -= 1;
-    return scalars.slice(start, end).join("");
-}}
-
-function hostUtf8ToLower(s) {{
-    return hostPathFromRef(s).toLowerCase();
-}}
-
-function hostUtf8ToUpper(s) {{
-    return hostPathFromRef(s).toUpperCase();
-}}
-
-function hostUtf8Replace(s, oldValue, newValue) {{
-    const text = hostPathFromRef(s);
-    const needle = hostPathFromRef(oldValue);
-    const replacement = hostPathFromRef(newValue);
-    if (hostUtf8Scalars(needle).length === 0) return text;
-    return text.split(needle).join(replacement);
-}}
-
-function hostUtf8StartsWith(s, prefix) {{
-    return hostPathFromRef(s).startsWith(hostPathFromRef(prefix)) ? 1 : 0;
-}}
-
-function hostUtf8EndsWith(s, suffix) {{
-    return hostPathFromRef(s).endsWith(hostPathFromRef(suffix)) ? 1 : 0;
-}}
-
-function hostUtf8Contains(s, other) {{
-    return hostPathFromRef(s).includes(hostPathFromRef(other)) ? 1 : 0;
-}}
-
-function hostUtf8Equals(a, b) {{
-    return hostPathFromRef(a) === hostPathFromRef(b) ? 1 : 0;
-}}
-
-function hostUtf8IndexOf(s, other) {{
-    const chars = hostUtf8Scalars(s);
-    const needle = hostUtf8Scalars(other);
-    if (needle.length === 0) return 0;
-    if (needle.length > chars.length) return -1;
-    for (let i = 0; i <= chars.length - needle.length; i++) {{
-        let ok = true;
-        for (let j = 0; j < needle.length; j++) {{
-            if (chars[i + j] !== needle[j]) {{ ok = false; break; }}
-        }}
-        if (ok) return i;
-    }}
-    return -1;
-}}
-
-function hostUtf8Slice(s, start, count) {{
-    const chars = hostUtf8Scalars(s);
-    const from = Math.max(0, start | 0);
-    const len = Math.max(0, count | 0);
-    return chars.slice(from, from + len).join("");
-}}
-
-// env.utf16_* index contract (matches std Utf16Text): **UTF-16 code units**, i.e.
-// native JS string indexing/`.length`. No scalar iteration: a lone surrogate
-// stays one code unit and must not be replaced by U+FFFD. This is exactly what
-// the utf8 helpers above would lose if they were reused here.
-
-function hostUtf16Text(s) {{
-    return hostPathFromRef(s);
-}}
-
 // `nyar.strings` 是编码无关的文本字面量表；同一份文本既可作 utf8 句柄，也可作
 // utf16 句柄（JS 字符串本身就是 UTF-16 存储）。
 function hostConstUtf16(index) {{
     return UTF8_LITERALS[index] ?? "";
 }}
 
-function hostUtf16Length(s) {{
-    return hostUtf16Text(s).length;
-}}
-
-function hostUtf16Concat(a, b) {{
-    return hostIntern(hostUtf16Text(a) + hostUtf16Text(b));
-}}
-
-function hostUtf16Slice(s, start, count) {{
-    const text = hostUtf16Text(s);
-    const from = Math.max(0, start | 0);
-    const len = Math.max(0, count | 0);
-    return hostIntern(text.slice(from, from + len));
-}}
-
-// JS `indexOf` returns a UTF-16 code-unit index — the std contract.
-function hostUtf16IndexOf(s, other) {{
-    return hostUtf16Text(s).indexOf(hostUtf16Text(other));
-}}
-
-// 与 `Utf8Text::trim` 同一份 `White_Space` 集合，但按 code unit 前进：代理项
-// 不在集合内，因此 lone surrogate 会被保留。
-function hostUtf16Trim(s) {{
-    const text = hostUtf16Text(s);
-    let start = 0;
-    let end = text.length;
-    while (start < end && UTF8_WHITE_SPACE.has(text.codePointAt(start))) start += 1;
-    while (end > start && UTF8_WHITE_SPACE.has(text.codePointAt(end - 1))) end -= 1;
-    return hostIntern(text.slice(start, end));
-}}
-
-function hostUtf16ToLower(s) {{
-    return hostIntern(hostUtf16Text(s).toLowerCase());
-}}
-
-function hostUtf16ToUpper(s) {{
-    return hostIntern(hostUtf16Text(s).toUpperCase());
-}}
-
-function hostUtf16Replace(s, oldValue, newValue) {{
-    const text = hostUtf16Text(s);
-    const needle = hostUtf16Text(oldValue);
-    const replacement = hostUtf16Text(newValue);
-    if (needle.length === 0) return hostIntern(text);
-    return hostIntern(text.split(needle).join(replacement));
-}}
-
-function hostUtf16StartsWith(s, prefix) {{
-    return hostUtf16Text(s).startsWith(hostUtf16Text(prefix)) ? 1 : 0;
-}}
-
-function hostUtf16EndsWith(s, suffix) {{
-    return hostUtf16Text(s).endsWith(hostUtf16Text(suffix)) ? 1 : 0;
-}}
-
-function hostUtf16Contains(s, other) {{
-    return hostUtf16Text(s).includes(hostUtf16Text(other)) ? 1 : 0;
-}}
-
-function hostUtf16Equals(a, b) {{
-    return hostUtf16Text(a) === hostUtf16Text(b) ? 1 : 0;
-}}
-
-async function wasmResolveInstance(wasmBytes, importObject) {{
+// 语言 std 文本操作（`env` 的 `utf8_*` / `utf16_*` 家族）的实现与辅助 JS 不再
+// 内建于本壳：它们由语言 × 目标适配器在结算期提交（`nyar.host_providers` 段），
+// 生成时注入下方 provider 区。glue 只保留通用装载/编组（句柄表、字面量表、
+// cabi 边界、CLI/文件能力）。
+{provider_helpers}async function wasmResolveInstance(wasmBytes, importObject) {{
     const result = await WebAssembly.instantiate(wasmBytes, importObject);
     return result instanceof WebAssembly.Instance ? result : result.instance;
 }}
@@ -1271,6 +1137,7 @@ const wasmBytes = readFileSync(new URL("./{name}.wasm", import.meta.url));
 {executable_tail}"#,
         name = artifact_name,
         arg_parsing = smoke_arg_parsing,
+        provider_helpers = provider_helpers,
         import_object = smoke_import_object,
         library_exports = if library_mode {
             let marshaler = library_invoke.map(library_invoke_marshaler_js).unwrap_or_default();
@@ -1355,8 +1222,9 @@ pub fn build_node_launcher(
     library_invoke: Option<&str>,
     host_entry_export: Option<&str>,
     test_entry_exports: &[crate::emitter_backend_wasi::WasmTestEntryExport],
+    host_providers: Option<&str>,
 ) -> String {
-    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke, host_entry_export, test_entry_exports)
+    try_build_node_launcher(artifact_name, imports, utf8_literals, library_mode, library_invoke, host_entry_export, test_entry_exports, host_providers)
         .unwrap_or_else(|error| panic!("{error}"))
 }
 
@@ -1396,7 +1264,7 @@ mod tests {
             logical_name: "tests::a".to_string(),
             export_name: "tests_a".to_string(),
         }];
-        let launcher = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &entries)
+        let launcher = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &entries, None)
             .expect("测试包启动壳必须能生成");
         assert!(launcher.contains(r#"const TEST_EXPORT_ENTRIES = {"tests::a":"tests_a"};"#), "{launcher}");
         assert!(launcher.contains("callExport(testExportName)"), "{launcher}");
@@ -1407,7 +1275,7 @@ mod tests {
     /// 都必须在进入 guest 前拒绝。
     #[test]
     fn library_launcher_rejects_bare_calls() {
-        let launcher = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &[])
+        let launcher = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &[], None)
             .expect("库启动壳必须能生成");
         assert!(launcher.contains("not a published library export"), "{launcher}");
         assert!(launcher.contains("expects ${spec.params.length} argument(s), got ${args.length}"), "{launcher}");
@@ -1421,9 +1289,37 @@ mod tests {
             logical_name: "tests::a".to_string(),
             export_name: "tests_a".to_string(),
         }];
-        let error = try_build_node_launcher("app", &[], &[], false, None, Some("main"), &entries)
+        let error = try_build_node_launcher("app", &[], &[], false, None, Some("main"), &entries, None)
             .expect_err("二进制合同不得承载测试包启动壳");
         assert!(error.contains("library"), "{error}");
+    }
+
+    /// 适配器 provider 的实现表达式与辅助 JS 注入启动壳；语言文本行为不再内建。
+    #[test]
+    fn launcher_injects_adapter_host_providers() {
+        let spec = r#"{"providers":[{"module":"env","field":"utf8_concat","implementation":"(a, b) => hostProviderConcat(a, b)","helpers":"function hostProviderConcat(a, b) { return hostIntern(hostResolve(a) + hostResolve(b)); }"}]}"#;
+        let launcher = try_build_node_launcher(
+            "app",
+            &[("env".to_string(), "utf8_concat".to_string())],
+            &[],
+            false,
+            None,
+            Some("main"),
+            &[],
+            Some(spec),
+        )
+        .expect("provider 启动壳必须能生成");
+        assert!(launcher.contains("utf8_concat: (a, b) => hostProviderConcat(a, b)"), "{launcher}");
+        assert!(launcher.contains("function hostProviderConcat(a, b)"), "{launcher}");
+        assert!(!launcher.contains("hostUtf8Scalars"), "语言文本行为不得内建于 glue");
+    }
+
+    /// provider 段形状非法必须失败闭合，不得静默生成缺实现的壳。
+    #[test]
+    fn malformed_host_providers_fail_closed() {
+        let error = try_build_node_launcher("app", &[], &[], false, None, Some("main"), &[], Some(r#"{"nope":1}"#))
+            .expect_err("缺 providers 数组必须失败");
+        assert!(error.contains("nyar.host_providers"), "{error}");
     }
 
     /// 重复逻辑测试名无法形成单值映射，必须失败闭合。
@@ -1439,7 +1335,7 @@ mod tests {
                 export_name: "tests_b".to_string(),
             },
         ];
-        let error = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &entries)
+        let error = try_build_node_launcher("app", &[], &[], true, Some(r#"{"exports":{}}"#), None, &entries, None)
             .expect_err("重复逻辑名必须失败");
         assert!(error.contains("重复"), "{error}");
     }

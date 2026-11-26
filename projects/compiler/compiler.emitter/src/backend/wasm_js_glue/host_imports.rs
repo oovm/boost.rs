@@ -4,7 +4,7 @@
 //! 由本模块统一声明，wasm 降层只消费这里的签名，不再自行按字段名拼指令类型。
 //! 协议未声明的字段一律失败闭合，不得现场猜载体。
 
-use data_binary_wasm::{VALTYPE_I32, VALTYPE_I64};
+use data_binary_wasm::VALTYPE_I32;
 
 /// 一条 JS glue 宿主导入的物理签名。
 #[derive(Debug, Clone, Copy)]
@@ -42,18 +42,6 @@ pub(crate) const GLUE_IMPORT_SIGNATURES: &[GlueImportSignature] = &[
     GlueImportSignature { field: "create_directory", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "write_file_text", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "get_files", params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_length", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_index_of", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_trim", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_to_lower", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_to_upper", params: &[VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_concat", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_starts_with", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_ends_with", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_contains", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_equals", params: &[VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_replace", params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
-    GlueImportSignature { field: "utf8_slice", params: &[VALTYPE_I32, VALTYPE_I32, VALTYPE_I32], results: &[VALTYPE_I32] },
     GlueImportSignature { field: "emit_byte", params: &[VALTYPE_I32], results: &[] },
     GlueImportSignature { field: "System.Console", params: &[VALTYPE_I32], results: &[] },
     GlueImportSignature { field: "System.Diagnostics.Process", params: &[VALTYPE_I32], results: &[] },
@@ -61,23 +49,11 @@ pub(crate) const GLUE_IMPORT_SIGNATURES: &[GlueImportSignature] = &[
 
 /// 协议合成的 Node 宿主导入字段（由 wasm 降层无条件登记）。
 ///
-/// 只放 JS 启动壳协议内建能力；`const_utf8` 由字面量物化开关单独登记，
-/// 其余 CLI/文件能力来自计划声明的导入。
-pub(crate) const SYNTHETIC_NODE_IMPORT_FIELDS: &[&str] = &[
-    "host_raise",
-    "utf8_trim",
-    "utf8_length",
-    "utf8_concat",
-    "utf8_starts_with",
-    "utf8_ends_with",
-    "utf8_contains",
-    "utf8_equals",
-    "utf8_replace",
-    "utf8_index_of",
-    "utf8_slice",
-    "utf8_to_lower",
-    "utf8_to_upper",
-];
+/// 只放 JS 启动壳协议自身的通用边界能力（未捕获 raise 的宿主呈现）；
+/// `const_utf8` 由字面量物化开关单独登记，其余 CLI/文件能力来自计划声明的
+/// 导入。语言 std 文本操作**不在这里**——它们由语言 × 目标适配器提交的
+/// host import provider 显式登记（`nyar.host_providers` 自定义段）。
+pub(crate) const SYNTHETIC_NODE_IMPORT_FIELDS: &[&str] = &["host_raise"];
 
 /// 查询 `env` 字段的物理签名。
 pub(crate) fn glue_import_signature(field: &str) -> Option<(&'static [u8], &'static [u8])> {

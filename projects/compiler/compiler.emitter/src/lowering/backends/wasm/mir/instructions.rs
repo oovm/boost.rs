@@ -794,11 +794,15 @@ impl<'a> WasmMirLowerer<'a> {
         if wasm_gc_field_type_byte_for_glue(ty, self.js_glue_utf8_as_anyref).ok() != Some(WASM_GC_ANYREF) {
             return None;
         }
-        let layout = self.input.layout_for_type(ty)?;
+        // 布局身份直接来自类型事实的 `Layout` 引用，不按拼写回查。
+        let WasmTypeFact::Layout(layout_id) = ty else {
+            return None;
+        };
+        let layout = self.input.layout_by_id(*layout_id)?;
         if layout.storage != WasmStorageClass::Value || layout.fields.is_empty() {
             return None;
         }
-        self.gc_struct_type_indices.get(&layout.id).map(|type_index| (layout.id, *type_index))
+        self.gc_struct_type_indices.get(layout_id).map(|type_index| (*layout_id, *type_index))
     }
 
     /// 把 payload 操作数放进 sum 的 `anyref` 载荷槽。

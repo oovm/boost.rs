@@ -30,15 +30,17 @@ pub(super) use data_binary_wasm::{encode_f32_const, encode_f32_load};
 
 // ── Wasm 私有结算词汇（唯一来源：super::input）────────────────────────────
 pub(super) use super::input::{
-    abi_structure_for_type, abi_structure_for_type_with_layouts, canonical_parameter_identities, canonical_type_spelling, collect_reachable_blocks,
+    abi_structure_for_type, canonical_parameter_identities, canonical_type_spelling, collect_reachable_blocks,
     declared_text_projection, operand_carrier, primary_result, sum_identity_facts, sum_variants_of, unresolved_text_abi_reason,
-    validate_frozen_operator, wasm_export_abi, wasm_gc_field_type_byte, wasm_gc_value_carrier_valtype, wasm_js_glue_value_carrier_valtype,
+    validate_frozen_operator, wasm_export_abi, wasm_gc_field_type_byte, wasm_gc_value_carrier_valtype, wasm_host_provider_carrier_valtype,
+    wasm_js_glue_value_carrier_valtype,
     WasmAbiField, WasmAbiStructure, WasmAbiVariant, WasmAggregateStructure, WasmArrayInit, WasmBlock, WasmBlockKey, WasmCallableKey, WasmConstant,
-    WasmDispatchKind, WasmFieldFact, WasmFieldKey, WasmFloat64Bits, WasmFunctionInput, WasmFunctionType, WasmImportFact, WasmImportLinkFact,
+    WasmDispatchKind, WasmFieldFact, WasmFieldKey, WasmFloat64Bits, WasmFrozenExportAbi, WasmFunctionInput, WasmFunctionType,
+    WasmImportFact, WasmImportLinkFact,
     WasmInstruction, WasmInstructionKey, WasmLayoutFact, WasmLayoutKey, WasmLayoutKeyFact, WasmModuleInput, WasmNominalKey, WasmOperation,
     WasmOperand, WasmProgramTextRepresentation, WasmReceiverPassingKind, WasmSequenceLevel, WasmSequenceStructure, WasmSingletonFact,
     WasmStorageClass, WasmSumLayoutFact, WasmSumRep, WasmSumVariantFact, WasmSumVariantLayoutFact, WasmTerminator, WasmTypeFact, WasmValue,
-    WasmValueKey, WasmValueOrigin, WasmVariantKey, WasmWitnessObject,
+    WasmValueKey, WasmValueOrigin, WasmVariantKey,
 };
 
 // GC 数组冻结计划是 wasm lane 私有事实，定义在本 lane 的 `array` 模块。
@@ -60,7 +62,7 @@ pub(super) use type_registry::*;
 
 // ── Submodules ────────────────────────────────────────────────────────────
 
-mod abi_schema;
+pub(crate) mod abi_schema;
 pub(crate) mod array;
 mod calls;
 mod control;

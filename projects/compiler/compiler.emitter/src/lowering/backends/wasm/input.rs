@@ -6,8 +6,10 @@
 //! 这里同时导出装配服务需要的私有原语（ABI 派生、文本载体事实、参数身份
 //! 校验），emitter 不再读取共享程序载荷。
 //!
-//! 镜像原则：私有类型与语言侧类型事实的变体名、字段名、变体声明顺序完全
-//! 一致，因此 `{:?}` / `{}` 渲染逐字相同，编码层错误文案保持不变。
+//! 词汇边界（D5 架构门）：类型事实只携带 **wasm 目标自身**的编码形状——
+//! 名义 / 泛型实例一律结算为布局引用 [`WasmTypeFact::Layout`]，堆类型与字段
+//! 结构由冻结布局事实解析；这里不存在源语言类型镜像（裸拼写、名义拼写、
+//! 泛型应用、witness 表、匿名 union），编码层也不得按拼写回查任何语言语义。
 //! 身份 newtype 手写 `Debug` / `Display`，输出与公共 `SemanticId` 完全同名。
 
 use std::{cmp::Ordering, collections::{BTreeMap, BTreeSet}, fmt};
@@ -184,20 +186,13 @@ pub struct WasmFunctionType {
     pub return_type: WasmTypeFact,
 }
 
-/// 动态 trait 对象 / witness 表类型（wasm 私有镜像；变体名仍为 `TraitObject`）。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WasmWitnessObject {
-    /// trait 身份。
-    pub trait_path: Identifier,
-    /// 实例化类型参数。
-    pub type_arguments: Vec<WasmTypeFact>,
-}
-
-/// 平台类型事实（wasm 私有镜像）。
+/// wasm 目标类型事实（wasm 私有词汇，非源语言镜像）。
 ///
-/// 变体名、字段名与声明顺序与公共 `SemanticType` 完全一致；`Debug` 手写以
-/// 保持与公共派生输出逐字相同（嵌套结构名仍渲染为 `FunctionType` /
-/// `WitnessObject`），`Display` 镜像公共实现的全部臂。
+/// 标量与文本是目标编码基元；`Layout` 是 canonical 结算出的布局引用（堆类型
+/// 与字段结构由冻结布局事实解析）；`Function` 是目标函数签名；
+/// `Tuple` / `Array` / `FixedArray` / `Nullable` 是目标编码形状。
+/// 源语言拼写、泛型应用、witness 表与匿名 union 不在本词汇中——
+/// 它们必须由语言侧适配器结算为上列目标事实，否则在结算点结构化失败。
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WasmTypeFact {
     Bottom,
@@ -213,16 +208,13 @@ pub enum WasmTypeFact {
     Character,
     Utf8,
     Utf16,
-    Named(Identifier),
-    Nominal { layout: WasmLayoutKey, spelling: Identifier },
-    Apply(Box<WasmTypeFact>, Vec<WasmTypeFact>),
+    /// 布局引用：名义实例 / 闭合泛型实例的堆类型与字段结构由该冻结布局解析。
+    Layout(WasmLayoutKey),
     Function(Box<WasmFunctionType>),
     Tuple(Vec<WasmTypeFact>),
     Array(Box<WasmTypeFact>),
     FixedArray { element: Box<WasmTypeFact>, length: usize },
-    TraitObject(WasmWitnessObject),
     Nullable(Box<WasmTypeFact>),
-    Union(Vec<WasmTypeFact>),
 }
 
 impl Default for WasmTypeFact {
@@ -247,16 +239,12 @@ impl fmt::Debug for WasmTypeFact {
             Self::Character => f.write_str("Character"),
             Self::Utf8 => f.write_str("Utf8"),
             Self::Utf16 => f.write_str("Utf16"),
-            Self::Named(id) => f.debug_tuple("Named").field(id).finish(),
-            Self::Nominal { layout, spelling } => f.debug_struct("Nominal").field("layout", layout).field("spelling", spelling).finish(),
-            Self::Apply(base, args) => f.debug_tuple("Apply").field(base).field(args).finish(),
+            Self::Layout(layout) => f.debug_tuple("Layout").field(layout).finish(),
             Self::Function(function) => f.debug_tuple("Function").field(&FunctionTypeDebug(function)).finish(),
             Self::Tuple(items) => f.debug_tuple("Tuple").field(items).finish(),
             Self::Array(element) => f.debug_tuple("Array").field(element).finish(),
             Self::FixedArray { element, length } => f.debug_struct("FixedArray").field("element", element).field("length", length).finish(),
-            Self::TraitObject(object) => f.debug_tuple("TraitObject").field(&WitnessObjectDebug(object)).finish(),
             Self::Nullable(payload) => f.debug_tuple("Nullable").field(payload).finish(),
-            Self::Union(arms) => f.debug_tuple("Union").field(arms).finish(),
         }
     }
 }
@@ -267,33 +255,6 @@ struct FunctionTypeDebug<'a>(&'a WasmFunctionType);
 impl fmt::Debug for FunctionTypeDebug<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FunctionType").field("params", &self.0.params).field("return_type", &self.0.return_type).finish()
-    }
-}
-
-/// 以公共派生 `Debug` 的字段名渲染私有 witness 结构。
-struct WitnessObjectDebug<'a>(&'a WasmWitnessObject);
-
-impl fmt::Debug for WitnessObjectDebug<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WitnessObject").field("trait_path", &self.0.trait_path).field("type_arguments", &self.0.type_arguments).finish()
-    }
-}
-
-impl WasmTypeFact {
-    /// 抹掉诊断拼写、只保留布局/结构身份的合同键（镜像公共 `contract_key`）。
-    pub fn contract_key(&self) -> WasmTypeFact {
-        match self {
-            WasmTypeFact::Nominal { layout, .. } => WasmTypeFact::Nominal { layout: *layout, spelling: Identifier::new("") },
-            WasmTypeFact::Apply(base, arguments) => {
-                WasmTypeFact::Apply(Box::new(base.contract_key()), arguments.iter().map(WasmTypeFact::contract_key).collect())
-            }
-            WasmTypeFact::Array(element) => WasmTypeFact::Array(Box::new(element.contract_key())),
-            WasmTypeFact::FixedArray { element, length } => WasmTypeFact::FixedArray { element: Box::new(element.contract_key()), length: *length },
-            WasmTypeFact::Tuple(items) => WasmTypeFact::Tuple(items.iter().map(WasmTypeFact::contract_key).collect()),
-            WasmTypeFact::Nullable(element) => WasmTypeFact::Nullable(Box::new(element.contract_key())),
-            WasmTypeFact::Union(items) => WasmTypeFact::Union(items.iter().map(WasmTypeFact::contract_key).collect()),
-            other => other.clone(),
-        }
     }
 }
 
@@ -318,18 +279,7 @@ impl fmt::Display for WasmTypeFact {
             WasmTypeFact::Character => f.write_str("char"),
             WasmTypeFact::Utf8 => f.write_str("utf8"),
             WasmTypeFact::Utf16 => f.write_str("utf16"),
-            WasmTypeFact::Named(name) => write!(f, "{name}"),
-            WasmTypeFact::Nominal { spelling, .. } => write!(f, "{spelling}"),
-            WasmTypeFact::Apply(base, args) => {
-                write!(f, "{base}<")?;
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        f.write_str(", ")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                f.write_str(">")
-            }
+            WasmTypeFact::Layout(layout) => write!(f, "layout({layout})"),
             WasmTypeFact::Function(func) => {
                 f.write_str("fn(")?;
                 for (i, param) in func.params.iter().enumerate() {
@@ -352,30 +302,7 @@ impl fmt::Display for WasmTypeFact {
             }
             WasmTypeFact::Array(elem) => write!(f, "[{elem}]"),
             WasmTypeFact::FixedArray { element, length } => write!(f, "[{element}; {length}]"),
-            WasmTypeFact::TraitObject(object) => {
-                write!(f, "dyn {}", object.trait_path)?;
-                if object.type_arguments.is_empty() {
-                    return Ok(());
-                }
-                f.write_str("<")?;
-                for (i, arg) in object.type_arguments.iter().enumerate() {
-                    if i > 0 {
-                        f.write_str(", ")?;
-                    }
-                    write!(f, "{arg}")?;
-                }
-                f.write_str(">")
-            }
             WasmTypeFact::Nullable(payload) => write!(f, "{payload}?"),
-            WasmTypeFact::Union(arms) => {
-                for (i, arm) in arms.iter().enumerate() {
-                    if i > 0 {
-                        f.write_str(" | ")?;
-                    }
-                    write!(f, "{arm}")?;
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -792,13 +719,12 @@ impl WasmAbiStructure {
     }
 }
 
-/// 具名聚合的结构描述（wasm 私有镜像公共 `AggregateStructure`）。
+/// 具名聚合的结构描述：布局引用是必填身份，字段合同由冻结布局派生。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WasmAggregateStructure {
-    pub layout: Option<WasmLayoutKey>,
+    pub layout: WasmLayoutKey,
     pub name: String,
     pub module_path: String,
-    pub generic_args: Vec<WasmAbiStructure>,
     pub fields: Vec<WasmAbiField>,
 }
 
@@ -861,29 +787,6 @@ pub fn canonical_type_spelling(ty: &WasmTypeFact) -> String {
     format!("{ty:?}")
 }
 
-/// 从 `Identifier` 提取简单名（丢掉模块路径前缀）。
-fn simple_name_of(id: &Identifier) -> String {
-    let full = id.as_str();
-    full.rsplit_once("::")
-        .map(|(_, last)| last.to_string())
-        .or_else(|| full.rsplit_once('.').map(|(_, last)| last.to_string()))
-        .unwrap_or_else(|| full.to_string())
-}
-
-/// 从 `Identifier` 提取模块路径（丢掉最终简单名）；上游如实无路径事实时为空串。
-fn module_path_of(id: &Identifier) -> String {
-    let full = id.as_str();
-    if let Some((prefix, _)) = full.rsplit_once("::") {
-        prefix.to_string()
-    }
-    else if let Some((prefix, _)) = full.rsplit_once('.') {
-        prefix.to_string()
-    }
-    else {
-        String::new()
-    }
-}
-
 /// 布局字段是否为整数计数字段候选。
 fn is_integer_layout_type(ty: &WasmTypeFact) -> bool {
     matches!(
@@ -892,91 +795,19 @@ fn is_integer_layout_type(ty: &WasmTypeFact) -> bool {
     )
 }
 
-/// 字段类型解析出的布局身份。
-fn field_layout_id(ty: &WasmTypeFact, layout_by_type: &BTreeMap<WasmTypeFact, WasmLayoutKey>) -> Option<WasmLayoutKey> {
-    match ty {
-        WasmTypeFact::Nominal { layout, .. } => Some(*layout),
-        other => layout_by_type.get(other).copied(),
-    }
-}
-
 /// 递归深度上限。
 const ABI_STRUCTURE_MAX_DEPTH: usize = 32;
 
 /// 嵌套存储层深度上限。
 const HOST_PROJECTION_MAX_DEPTH: usize = 8;
 
-fn identity_aggregate(name: String, module_path: String, generic_args: Vec<WasmAbiStructure>) -> WasmAbiStructure {
-    WasmAbiStructure::Aggregate(WasmAggregateStructure { layout: None, name, module_path, generic_args, fields: Vec::new() })
-}
-
-/// 把类型事实派生为纯身份结构（不读取任何布局事实）。
-pub fn abi_structure_for_type(ty: &WasmTypeFact) -> WasmAbiStructure {
-    match ty {
-        WasmTypeFact::Bottom => WasmAbiStructure::Unsupported { reason: "`void` / bottom 类型不能出现在库导出 ABI 位置".to_string() },
-        WasmTypeFact::Unit => WasmAbiStructure::Unit,
-
-        WasmTypeFact::Boolean => WasmAbiStructure::Bool,
-        WasmTypeFact::Character => WasmAbiStructure::Char,
-
-        WasmTypeFact::Integer8 { .. } | WasmTypeFact::Integer16 { .. } | WasmTypeFact::Integer32 { .. } => WasmAbiStructure::I32,
-        WasmTypeFact::Integer64 { .. } => WasmAbiStructure::I64,
-        WasmTypeFact::Integer128 { .. } => {
-            WasmAbiStructure::Unsupported { reason: "`i128` 没有稳定的库导出载体，需要显式拆分合同".to_string() }
-        }
-
-        WasmTypeFact::Float32 => WasmAbiStructure::F32,
-        WasmTypeFact::Float64 => WasmAbiStructure::F64,
-
-        WasmTypeFact::Utf8 => WasmAbiStructure::Utf8,
-        WasmTypeFact::Utf16 => WasmAbiStructure::Unsupported { reason: UTF16_UNRESOLVED_TEXT_ABI.to_string() },
-
-        WasmTypeFact::Array(element) => {
-            WasmAbiStructure::Array { element: Box::new(abi_structure_for_type(element)), element_key: canonical_type_spelling(element) }
-        }
-        WasmTypeFact::FixedArray { element, length } => {
-            WasmAbiStructure::FixedArray { element: Box::new(abi_structure_for_type(element)), length: *length }
-        }
-
-        WasmTypeFact::Nullable(inner) => WasmAbiStructure::Option { inner: Box::new(abi_structure_for_type(inner)) },
-
-        WasmTypeFact::Tuple(fields) => WasmAbiStructure::Tuple { fields: fields.iter().map(abi_structure_for_type).collect() },
-
-        WasmTypeFact::Named(id) => identity_aggregate(simple_name_of(id), module_path_of(id), Vec::new()),
-        WasmTypeFact::Nominal { spelling, .. } => {
-            identity_aggregate(simple_name_of(spelling), module_path_of(spelling), Vec::new())
-        }
-
-        WasmTypeFact::Apply(base, args) => {
-            let (name, module_path, base_generic_args) = match base.as_ref() {
-                WasmTypeFact::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
-                WasmTypeFact::Nominal { spelling, .. } => {
-                    (simple_name_of(spelling), module_path_of(spelling), Vec::new())
-                }
-                WasmTypeFact::Apply(_, _) => flatten_apply_identity(base.as_ref()),
-                other => {
-                    return WasmAbiStructure::Unsupported {
-                        reason: format!("Apply 的 Base 必须是 Named 或 Apply，实际是 {other:?}——无法提取语义 identity"),
-                    };
-                }
-            };
-            let mut generic_args: Vec<WasmAbiStructure> = base_generic_args.iter().map(abi_structure_for_type).collect();
-            generic_args.extend(args.iter().map(abi_structure_for_type));
-            identity_aggregate(name, module_path, generic_args)
-        }
-
-        WasmTypeFact::Function(_) => WasmAbiStructure::Unsupported { reason: "函数类型不能出现在库导出 ABI 位置".to_string() },
-
-        WasmTypeFact::TraitObject(_) => {
-            WasmAbiStructure::Unsupported { reason: "TraitObject（dynamic dispatch）没有稳定的库导出载体".to_string() }
-        }
-
-        WasmTypeFact::Union(_) => WasmAbiStructure::Unsupported { reason: "匿名 union 的库导出 ABI 合同尚未定义".to_string() },
-    }
-}
-
-/// 携带冻结布局事实的结构派生。
-pub fn abi_structure_for_type_with_layouts(input: &WasmModuleInput, ty: &WasmTypeFact) -> WasmAbiStructure {
+/// 携带冻结布局事实的 ABI 结构派生（结算服务，归语言侧适配器在结算期调用；
+/// 编码层只消费适配器提交的冻结 schema，不再现场重走本派生）。
+///
+/// 布局身份的唯一来源是 [`WasmTypeFact::Layout`]：名义实例与闭合泛型实例在
+/// 适配器结算点就已绑定布局引用，这里只按身份解析字段合同、实例句柄或 sum
+/// 身份；未注册布局结构化失败，绝不按拼写回查。
+pub fn abi_structure_for_type(input: &WasmModuleInput, ty: &WasmTypeFact) -> WasmAbiStructure {
     abi_structure_with_depth(input, ty, 0)
 }
 
@@ -986,63 +817,66 @@ fn abi_structure_with_depth(input: &WasmModuleInput, ty: &WasmTypeFact, depth: u
             reason: format!("ABI 结构递归超过 {ABI_STRUCTURE_MAX_DEPTH} 层，拒绝无界展开 `{ty:?}`"),
         };
     }
-    // sum 的物理布局是 lowering 冻结的 `[i32 tag, anyref payload]`：零载荷与带
-    // 载荷变体都由同一份 sum 布局派生，目标层据此解析真实 sum 布局。
-    if let Some(sum) = input.sum_layouts_by_type.get(ty) {
-        let variants = sum_variants_of(sum);
-        let payloads = sum
-            .variants
-            .iter()
-            .map(|variant| variant.payload_type.as_ref().map(|payload| Box::new(abi_structure_with_depth(input, payload, depth + 1))))
-            .collect();
-        return WasmAbiStructure::Unite {
-            nominal: sum.nominal,
-            name: sum.name.clone(),
-            identity: sum_identity_facts(&sum.name, sum.is_unite, &variants),
-            variants,
-            payloads,
-        };
-    }
     match ty {
-        WasmTypeFact::Nominal { layout, spelling } => aggregate_structure(
-            input,
-            simple_name_of(spelling),
-            module_path_of(spelling),
-            *layout,
-        ),
-        // `Apply` 不携带布局身份；布局身份只能来自 canonical 计划冻结的类型索引。
-        // 索引里没有就退回身份结构，目标层据此结构化失败，绝不按名字猜布局。
-        WasmTypeFact::Apply(..) => match input.layout_by_type.get(ty) {
-            Some(layout) => {
-                let (name, module_path, _) = flatten_apply_identity(ty);
-                aggregate_structure(input, name, module_path, *layout)
-            }
-            None => abi_structure_for_type(ty),
-        },
+        WasmTypeFact::Bottom => WasmAbiStructure::Unsupported { reason: "`void` / bottom 类型不能出现在库导出 ABI 位置".to_string() },
+        WasmTypeFact::Unit => WasmAbiStructure::Unit,
+        WasmTypeFact::Boolean => WasmAbiStructure::Bool,
+        WasmTypeFact::Character => WasmAbiStructure::Char,
+        WasmTypeFact::Integer8 { .. } | WasmTypeFact::Integer16 { .. } | WasmTypeFact::Integer32 { .. } => WasmAbiStructure::I32,
+        WasmTypeFact::Integer64 { .. } => WasmAbiStructure::I64,
+        WasmTypeFact::Integer128 { .. } => {
+            WasmAbiStructure::Unsupported { reason: "`i128` 没有稳定的库导出载体，需要显式拆分合同".to_string() }
+        }
+        WasmTypeFact::Float32 => WasmAbiStructure::F32,
+        WasmTypeFact::Float64 => WasmAbiStructure::F64,
+        WasmTypeFact::Utf8 => WasmAbiStructure::Utf8,
+        WasmTypeFact::Utf16 => WasmAbiStructure::Unsupported { reason: UTF16_UNRESOLVED_TEXT_ABI.to_string() },
         WasmTypeFact::Array(element) => WasmAbiStructure::Array {
             element: Box::new(abi_structure_with_depth(input, element, depth + 1)),
             element_key: canonical_type_spelling(element),
         },
-        WasmTypeFact::FixedArray { element, length } => WasmAbiStructure::FixedArray {
-            element: Box::new(abi_structure_with_depth(input, element, depth + 1)),
-            length: *length,
-        },
-        WasmTypeFact::Nullable(inner) => {
-            WasmAbiStructure::Option { inner: Box::new(abi_structure_with_depth(input, inner, depth + 1)) }
+        WasmTypeFact::FixedArray { element, length } => {
+            WasmAbiStructure::FixedArray { element: Box::new(abi_structure_with_depth(input, element, depth + 1)), length: *length }
         }
+        WasmTypeFact::Nullable(inner) => WasmAbiStructure::Option { inner: Box::new(abi_structure_with_depth(input, inner, depth + 1)) },
         WasmTypeFact::Tuple(fields) => WasmAbiStructure::Tuple {
             fields: fields.iter().map(|field| abi_structure_with_depth(input, field, depth + 1)).collect(),
         },
-        other => abi_structure_for_type(other),
+        WasmTypeFact::Function(_) => WasmAbiStructure::Unsupported { reason: "函数类型不能出现在库导出 ABI 位置".to_string() },
+        // sum 的物理布局是 lowering 冻结的 `[i32 tag, anyref payload]`：零载荷与带
+        // 载荷变体都由同一份 sum 布局派生，目标层据此解析真实 sum 布局。
+        WasmTypeFact::Layout(layout) => {
+            if let Some(sum) = input.sum_layouts_by_type.get(layout) {
+                let variants = sum_variants_of(sum);
+                let payloads = sum
+                    .variants
+                    .iter()
+                    .map(|variant| variant.payload_type.as_ref().map(|payload| Box::new(abi_structure_with_depth(input, payload, depth + 1))))
+                    .collect();
+                return WasmAbiStructure::Unite {
+                    nominal: sum.nominal,
+                    name: sum.name.clone(),
+                    identity: sum_identity_facts(&sum.name, sum.is_unite, &variants),
+                    variants,
+                    payloads,
+                };
+            }
+            aggregate_structure(input, *layout)
+        }
     }
 }
 
 /// 引用存储名义实例保留共享身份；值存储聚合按字段结构投影。
-fn aggregate_structure(input: &WasmModuleInput, name: String, module_path: String, layout_id: WasmLayoutKey) -> WasmAbiStructure {
-    let Some(aggregate) = input.layouts.iter().find(|item| item.id == layout_id)
+///
+/// 名字与命名空间的唯一来源是冻结布局事实（`namespace` 的 `.` 规范为 `::`，
+/// 与 canonical 拼写折叠同源），不再从任何类型拼写拆分。
+fn aggregate_structure(input: &WasmModuleInput, layout_id: WasmLayoutKey) -> WasmAbiStructure {
+    let Some(aggregate) = input.layout_by_id(layout_id)
     else {
         return WasmAbiStructure::Unsupported { reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同") };
     };
+    let name = aggregate.name.clone();
+    let module_path = aggregate.namespace.replace('.', "::");
     // `[host_projection]` 声明授权宿主序列投影：只按冻结投影集合触发，
     // 形状仅在已声明类型内部定位 backing array 与计数槽位。声明是授权不是
     // 强制：布局事实不完整时回退既有存储语义，绝不因投影缺事实打断整条交付。
@@ -1058,7 +892,7 @@ fn aggregate_structure(input: &WasmModuleInput, name: String, module_path: Strin
     }
     let mut fields = Vec::with_capacity(aggregate.fields.len());
     for field in &aggregate.fields {
-        let field_structure = abi_structure_for_type_with_layouts(input, &field.ty);
+        let field_structure = abi_structure_for_type(input, &field.ty);
         if let Some(reason) = field_structure.unsupported_reason() {
             return WasmAbiStructure::Unsupported {
                 reason: format!("聚合 `{}::{}` 字段 `{}` 没有 ABI 合同: {reason}", aggregate.namespace, aggregate.name, field.name),
@@ -1066,7 +900,7 @@ fn aggregate_structure(input: &WasmModuleInput, name: String, module_path: Strin
         }
         fields.push(WasmAbiField { name: field.name.clone(), ty: field_structure });
     }
-    WasmAbiStructure::Aggregate(WasmAggregateStructure { layout: Some(layout_id), name, module_path, generic_args: Vec::new(), fields })
+    WasmAbiStructure::Aggregate(WasmAggregateStructure { layout: layout_id, name, module_path, fields })
 }
 
 /// 为已声明 `[host_projection]` 的聚合构造宿主序列投影。
@@ -1106,7 +940,7 @@ fn host_sequence_projection(input: &WasmModuleInput, root: &WasmLayoutFact, name
             else {
                 return unsupported("叶子层 backing array 字段事实缺失".to_string());
             };
-            let element_structure = abi_structure_for_type_with_layouts(input, element);
+            let element_structure = abi_structure_for_type(input, element);
             if let Some(reason) = element_structure.unsupported_reason() {
                 return unsupported(format!("元素类型没有 ABI 合同: {reason}"));
             }
@@ -1114,7 +948,7 @@ fn host_sequence_projection(input: &WasmModuleInput, root: &WasmLayoutFact, name
             else {
                 return unsupported("根层没有整数计数字段，无法读回长度".to_string());
             };
-            let length_ty_structure = abi_structure_for_type_with_layouts(input, &root.fields[root_length_slot].ty);
+            let length_ty_structure = abi_structure_for_type(input, &root.fields[root_length_slot].ty);
             if let Some(reason) = length_ty_structure.unsupported_reason() {
                 return unsupported(format!("计数字段没有 ABI 合同: {reason}"));
             }
@@ -1128,13 +962,16 @@ fn host_sequence_projection(input: &WasmModuleInput, root: &WasmLayoutFact, name
                 length_ty: Box::new(length_ty_structure),
             });
         }
-        // 非叶子层：沿唯一携带布局身份的名义字段下降。
+        // 非叶子层：沿唯一携带布局引用的名义字段下降。
         let inner_slots: Vec<(usize, WasmLayoutKey)> =
             current
                 .fields
                 .iter()
                 .enumerate()
-                .filter_map(|(index, field)| field_layout_id(&field.ty, &input.layout_by_type).map(|id| (index, id)))
+                .filter_map(|(index, field)| match field.ty {
+                    WasmTypeFact::Layout(id) => Some((index, id)),
+                    _ => None,
+                })
                 .collect();
         if inner_slots.len() != 1 {
             let spellings = current.fields.iter().map(|field| format!("{}: {:?}", field.name, field.ty)).collect::<Vec<_>>().join(" | ");
@@ -1156,29 +993,9 @@ fn host_sequence_projection(input: &WasmModuleInput, root: &WasmLayoutFact, name
     }
 }
 
-/// 把嵌套的 `Apply(Apply(Named("A"), ...), ...)` 展平。
-fn flatten_apply_identity(mut ty: &WasmTypeFact) -> (String, String, Vec<WasmTypeFact>) {
-    let mut accumulated: Vec<WasmTypeFact> = Vec::new();
-    loop {
-        match ty {
-            WasmTypeFact::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
-            WasmTypeFact::Nominal { spelling, .. } => {
-                return (simple_name_of(spelling), module_path_of(spelling), accumulated)
-            }
-            WasmTypeFact::Apply(base, args) => {
-                accumulated.extend(args.iter().cloned());
-                ty = base.as_ref();
-            }
-            other => {
-                return (format!("<unexpected:{other:?}>"), String::new(), accumulated);
-            }
-        }
-    }
-}
+// ── 文本 ABI / GC 载体 / operator 载体 ────────────────────────────────────
 
-// ── 文本 ABI / GC 载体 / operator 载体（私有镜像）─────────────────────────
-
-/// 未落地文本 ABI 载体的统一拒绝理由（镜像公共 `unresolved_text_abi_reason`）。
+/// 未落地文本 ABI 载体的统一拒绝理由。
 pub fn unresolved_text_abi_reason(ty: &WasmTypeFact) -> Option<&'static str> {
     match ty {
         WasmTypeFact::Utf16 => Some(UTF16_UNRESOLVED_TEXT_ABI),
@@ -1211,14 +1028,10 @@ pub fn wasm_gc_value_carrier_valtype(ty: &WasmTypeFact) -> Option<u8> {
         WasmTypeFact::Float32 => VALTYPE_F32,
         WasmTypeFact::Float64 => VALTYPE_F64,
         WasmTypeFact::Integer64 { .. } | WasmTypeFact::Integer128 { .. } => VALTYPE_I64,
-        WasmTypeFact::Named(_)
-        | WasmTypeFact::Nominal { .. }
-        | WasmTypeFact::Apply(_, _)
+        WasmTypeFact::Layout(_)
         | WasmTypeFact::Function(_)
         | WasmTypeFact::Array(_)
-        | WasmTypeFact::TraitObject(_)
-        | WasmTypeFact::Nullable(_)
-        | WasmTypeFact::Union(_) => VALTYPE_ANYREF,
+        | WasmTypeFact::Nullable(_) => VALTYPE_ANYREF,
         WasmTypeFact::Bottom
         | WasmTypeFact::Unit
         | WasmTypeFact::Boolean
@@ -1361,13 +1174,10 @@ fn freeze_wasm_carrier(ty: &WasmTypeFact) -> Result<WasmAbiCarrier> {
         WasmTypeFact::Array(_) | WasmTypeFact::FixedArray { .. } | WasmTypeFact::Nullable(_) | WasmTypeFact::Tuple(_) => {
             Ok(WasmAbiCarrier::Handle)
         }
-        WasmTypeFact::Named(_) | WasmTypeFact::Nominal { .. } | WasmTypeFact::Apply(_, _) => Ok(WasmAbiCarrier::Handle),
-        WasmTypeFact::Integer128 { .. }
-        | WasmTypeFact::Utf16
-        | WasmTypeFact::Bottom
-        | WasmTypeFact::Function(_)
-        | WasmTypeFact::TraitObject(_)
-        | WasmTypeFact::Union(_) => Err(format!("Wasm 导出面没有该类型的稳定 ABI 载体: {ty}")),
+        WasmTypeFact::Layout(_) => Ok(WasmAbiCarrier::Handle),
+        WasmTypeFact::Integer128 { .. } | WasmTypeFact::Utf16 | WasmTypeFact::Bottom | WasmTypeFact::Function(_) => {
+            Err(format!("Wasm 导出面没有该类型的稳定 ABI 载体: {ty}"))
+        }
     }
 }
 
@@ -1434,10 +1244,8 @@ pub struct WasmModuleInput {
     pub layout_by_nominal_id: BTreeMap<WasmNominalKey, WasmLayoutKey>,
     /// 字段身份 → `(布局身份, 字段槽位)`。
     pub layout_by_field_id: BTreeMap<WasmFieldKey, (WasmLayoutKey, u32)>,
-    /// 冻结类型 → 布局身份（含契约归一键）。
-    pub layout_by_type: BTreeMap<WasmTypeFact, WasmLayoutKey>,
-    /// 冻结类型 → sum 布局（含预结算 identity）。
-    pub sum_layouts_by_type: BTreeMap<WasmTypeFact, WasmSumLayoutFact>,
+    /// 布局身份 → sum 布局（含预结算 identity）；类型事实经 `Layout` 引用命中。
+    pub sum_layouts_by_type: BTreeMap<WasmLayoutKey, WasmSumLayoutFact>,
     /// sum 平台合同（tag / payload 有无）。
     pub sum_reps: BTreeMap<WasmNominalKey, WasmSumRep>,
     /// 程序级文本载体表示。
@@ -1446,6 +1254,55 @@ pub struct WasmModuleInput {
     pub singleton_facts: Vec<WasmSingletonFact>,
     /// `[host_projection]` 声明授权的宿主序列布局集合。
     pub host_sequence_projections: BTreeSet<WasmLayoutKey>,
+    /// 适配器在结算期冻结的库导出 ABI 合同（载体 + 参数/返回 schema）。
+    /// 编码层只消费冻结事实，不再现场重走 ABI 派生。
+    pub export_abis: BTreeMap<WasmCallableKey, WasmFrozenExportAbi>,
+    /// 语言 × 目标适配器显式登记的宿主导入 provider（JS glue 边界）。
+    /// 语言特有宿主行为（如文本 std 操作）由 provider 提交，glue 不内建。
+    pub host_import_providers: Vec<WasmHostImportProviderFact>,
+}
+
+/// provider 物理载体 → wasm valtype 字节（`Handle` 是 i32 宿主句柄；`Void` 无槽位）。
+pub fn wasm_host_provider_carrier_valtype(carrier: WasmAbiCarrier) -> Option<u8> {
+    use data_binary_wasm::{VALTYPE_F64, VALTYPE_I32, VALTYPE_I64};
+    match carrier {
+        WasmAbiCarrier::I32 | WasmAbiCarrier::Handle => Some(VALTYPE_I32),
+        WasmAbiCarrier::I64 => Some(VALTYPE_I64),
+        WasmAbiCarrier::F32 => Some(crate::lowering::backends::wasm::gc::VALTYPE_F32),
+        WasmAbiCarrier::F64 => Some(VALTYPE_F64),
+        WasmAbiCarrier::Void => None,
+    }
+}
+
+/// 单个库导出的冻结 ABI 合同（结算服务在适配器结算期产出，编码层直接消费）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WasmFrozenExportAbi {
+    /// 物理载体 ABI（`wasm_export_abi` 结算结果）。
+    pub carriers: WasmLibraryExportAbi,
+    /// 逐参数的冻结 schema。
+    pub params: Vec<crate::lowering::backends::wasm::mir::abi_schema::WasmAbiType>,
+    /// 冻结返回 schema。
+    pub returns: crate::lowering::backends::wasm::mir::abi_schema::WasmAbiType,
+}
+
+/// 宿主导入 provider 事实：语言侧登记字段、物理签名与 JS 实现文本。
+///
+/// `implementation` 是导入对象的 JS 实现表达式（箭头函数），`helpers` 是随
+/// launcher 注入的辅助 JS 声明；glue 只保留通用装载/编组，不内建语言行为。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WasmHostImportProviderFact {
+    /// 导入模块名（如 `env`）。
+    pub module: String,
+    /// 导入字段名（如 `utf8_concat`）。
+    pub field: String,
+    /// 物理参数载体（`Handle` 表示 i32 句柄）。
+    pub params: Vec<WasmAbiCarrier>,
+    /// 物理返回载体（空表示无返回）。
+    pub results: Vec<WasmAbiCarrier>,
+    /// JS 实现表达式。
+    pub implementation: String,
+    /// 辅助 JS 声明（可空串）。
+    pub helpers: String,
 }
 
 impl WasmModuleInput {
@@ -1465,14 +1322,6 @@ impl WasmModuleInput {
         let layout = self.layout_by_id(layout_id)?;
         let field = layout.fields.get(slot as usize)?;
         Some((layout, field, slot))
-    }
-
-    /// 按类型事实查物理布局：`Nominal` 用内嵌身份，其余查冻结索引。
-    pub fn layout_for_type(&self, ty: &WasmTypeFact) -> Option<&WasmLayoutFact> {
-        if let WasmTypeFact::Nominal { layout, .. } = ty {
-            return self.layout_by_id(*layout);
-        }
-        self.layout_by_type.get(ty).and_then(|id| self.layout_by_id(*id))
     }
 
     /// 按实例身份查函数体。
@@ -1511,12 +1360,13 @@ impl WasmModuleInput {
             layouts: Vec::new(),
             layout_by_nominal_id: BTreeMap::new(),
             layout_by_field_id: BTreeMap::new(),
-            layout_by_type: BTreeMap::new(),
             sum_layouts_by_type: BTreeMap::new(),
             sum_reps: BTreeMap::new(),
             program_text_representation: None,
             singleton_facts: Vec::new(),
             host_sequence_projections: BTreeSet::new(),
+            export_abis: BTreeMap::new(),
+            host_import_providers: Vec::new(),
         }
     }
 }

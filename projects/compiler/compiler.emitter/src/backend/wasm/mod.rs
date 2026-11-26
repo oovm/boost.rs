@@ -7,13 +7,14 @@
 pub use crate::lowering::backends::wasm::abi::{WasmAbiCarrier, WasmLibraryExportAbi};
 pub use crate::lowering::backends::wasm::input::{
     WasmAbiField, WasmAbiStructure, WasmAbiVariant, WasmAggregateStructure, WasmArrayInit, WasmBlock, WasmBlockKey, WasmCallableKey, WasmConstant,
-    WasmDispatchKind, WasmFieldFact, WasmFieldKey, WasmFloat64Bits, WasmFunctionInput, WasmFunctionType, WasmImportFact, WasmImportLinkFact,
-    WasmInstruction, WasmInstructionKey, WasmLayoutFact, WasmLayoutKey, WasmLayoutKeyFact, WasmModuleInput, WasmNominalKey, WasmOperation,
-    WasmOperand, WasmProgramTextRepresentation, WasmReceiverPassingKind, WasmSequenceLevel, WasmSequenceStructure, WasmSingletonFact,
-    WasmStorageClass, WasmSumLayoutFact, WasmSumRep, WasmSumVariantFact, WasmSumVariantLayoutFact, WasmTerminator, WasmTypeFact, WasmValue,
-    WasmValueKey, WasmValueOrigin, WasmVariantKey, WasmWitnessObject, canonical_parameter_identities, declared_text_projection, sum_identity_facts,
-    unresolved_text_abi_reason, wasm_export_abi,
+    WasmDispatchKind, WasmFieldFact, WasmFieldKey, WasmFloat64Bits, WasmFrozenExportAbi, WasmFunctionInput, WasmFunctionType, WasmHostImportProviderFact,
+    WasmImportFact, WasmImportLinkFact, WasmInstruction, WasmInstructionKey, WasmLayoutFact, WasmLayoutKey, WasmLayoutKeyFact, WasmModuleInput,
+    WasmNominalKey, WasmOperation, WasmOperand, WasmProgramTextRepresentation, WasmReceiverPassingKind, WasmSequenceLevel, WasmSequenceStructure,
+    WasmSingletonFact, WasmStorageClass, WasmSumLayoutFact, WasmSumRep, WasmSumVariantFact, WasmSumVariantLayoutFact, WasmTerminator, WasmTypeFact,
+    WasmValue, WasmValueKey, WasmValueOrigin, WasmVariantKey, abi_structure_for_type, canonical_parameter_identities, declared_text_projection,
+    sum_identity_facts, unresolved_text_abi_reason, wasm_export_abi, wasm_host_provider_carrier_valtype,
 };
+pub use crate::lowering::backends::wasm::mir::abi_schema::{WasmAbiType, abi_schema_for_type};
 pub use crate::lowering::backends::wasm::{WasmProgramInput, assemble_wasm_module, host_entry_export_name};
 pub use crate::lowering::features::physical_contract::{PhysicalTextBoundary, PhysicalTextCarrier, UTF16_UNRESOLVED_TEXT_ABI};
 pub use crate::lowering::shared::physical_layout::{LayoutPolicy, ResolvedAggregateLayout, ResolvedFieldLayout, ResolvedLayoutPlan, resolve_physical_layouts};

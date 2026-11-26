@@ -1,10 +1,11 @@
 //! Wasm lowering：直接消费 Valkyrie MIR，产出目标私有结算输入（[`WasmModuleInput`]）。
 //!
 //! 该降低器归语言 × 目标适配器所有：它读取语言自己的 SSA MIR 与冻结表示合同，
-//! 投影为 `compiler_emitter` wasm lane 的私有词汇，不经过任何跨目标公共 IR。
-//! 类型/布局/导入事实的结算臂序与镜像原则保持一致（`{:?}` / `{}` 渲染逐字
-//! 相同），编码层错误文案因此不变；指令与终结符的形状校验在
-//! [`super::lane::build_function_view`] 已完成，这里只做身份映射与布局绑定。
+//! 投影为 `compiler_emitter` wasm lane 的目标私有词汇，不经过任何跨目标公共 IR。
+//! 语言语义在这里一次结算完成：名义/泛型实例解析为布局引用（`WasmTypeFact::Layout`），
+//! 缺闭合实例布局即结构化失败，不把源语言类型镜像交给后端回猜；指令与终结符的
+//! 形状校验在 [`super::lane::build_function_view`] 已完成，这里只做身份映射与
+//! 布局绑定。
 
 use std::collections::BTreeMap;
 
@@ -15,7 +16,7 @@ use compiler_emitter::{
         WasmFieldFact, WasmFieldKey, WasmFloat64Bits, WasmFunctionInput, WasmFunctionType, WasmImportFact, WasmImportLinkFact, WasmInstruction,
         WasmInstructionKey, WasmLayoutFact, WasmLayoutKeyFact, WasmModuleInput, WasmNominalKey, WasmOperation, WasmOperand,
         WasmProgramTextRepresentation, WasmSingletonFact, WasmStorageClass, WasmSumLayoutFact, WasmSumRep, WasmSumVariantFact,
-        WasmSumVariantLayoutFact, WasmTerminator, WasmTypeFact, WasmValue, WasmValueKey, WasmValueOrigin, WasmVariantKey, WasmWitnessObject,
+        WasmSumVariantLayoutFact, WasmTerminator, WasmTypeFact, WasmValue, WasmValueKey, WasmValueOrigin, WasmVariantKey,
         resolve_physical_layouts, sum_identity_facts,
     },
 };
@@ -64,17 +65,17 @@ pub(crate) fn build_module_input(ctx: &LaneContext, theory_bundle: &compiler_opt
     let imports = ctx
         .imports()
         .iter()
-        .map(|(instance, import)| {
-            (
+        .map(|(instance, import)| -> Result<_> {
+            Ok((
                 WasmCallableKey(instance.index()),
                 WasmImportFact {
                     links: import.links.iter().map(settle_import_link).collect(),
-                    parameter_types: import.parameter_types.iter().map(settle_type).collect(),
-                    return_type: settle_type(&import.return_type),
+                    parameter_types: import.parameter_types.iter().map(|ty| settle_type(ctx, ty)).collect::<Result<Vec<_>>>()?,
+                    return_type: settle_type(ctx, &import.return_type)?,
                 },
-            )
+            ))
         })
-        .collect();
+        .collect::<Result<_>>()?;
     let external_import_links = fragment
         .external_imports
         .iter()
@@ -82,27 +83,23 @@ pub(crate) fn build_module_input(ctx: &LaneContext, theory_bundle: &compiler_opt
         .collect();
 
     let resolved = resolve_physical_layouts(ctx.aggregate_layouts(), LayoutPolicy::WASM32)?;
-    let layouts = resolved.layouts.iter().map(settle_layout).collect();
+    let layouts = resolved.layouts.iter().map(|layout| settle_layout(ctx, layout)).collect::<Result<Vec<_>>>()?;
     let layout_by_nominal_id = ctx.aggregate_layout_by_nominal().iter().map(|(nominal, id)| (WasmNominalKey(nominal.index()), *id)).collect();
     let layout_by_field_id =
         ctx.aggregate_layout_by_field().iter().map(|(field, (id, slot))| (WasmFieldKey(field.index()), (*id, *slot))).collect();
-    let mut layout_by_type: BTreeMap<WasmTypeFact, u32> = BTreeMap::new();
-    for (ty, id) in ctx.aggregate_layouts().layout_by_semantic_type.iter() {
-        layout_by_type.insert(settle_type(ty), *id);
-    }
-    // 公共查询顺序是「先原键、后契约归一键」；这里同时登记两种键，
-    // 归一键不覆盖已存在的原键。
-    for (ty, id) in ctx.aggregate_layouts().layout_by_semantic_type.iter() {
-        layout_by_type.entry(settle_type(ty).contract_key()).or_insert(*id);
-    }
+    // sum 实例按布局引用键控：类型事实里的 `Layout` 直接命中冻结 sum 合同，
+    // 不再维护「类型拼写 → 布局」的第二套索引。
     let sum_layouts_by_type = ctx
         .sum_layout_by_semantic_type()
         .iter()
-        .map(|(ty, sum)| {
-            let fact = settle_sum_layout(sum);
-            (settle_type(ty), fact)
+        .map(|(ty, sum)| -> Result<_> {
+            let fact = settle_sum_layout(ctx, sum)?;
+            match settle_type(ctx, ty)? {
+                WasmTypeFact::Layout(layout) => Ok((layout, fact)),
+                other => Err(format!("WASM 结算：sum 实例类型结算结果 `{other:?}` 不是布局引用")),
+            }
         })
-        .collect();
+        .collect::<Result<BTreeMap<_, _>>>()?;
     let sum_reps = ctx
         .sum_representations()
         .iter()
@@ -166,12 +163,15 @@ pub(crate) fn build_module_input(ctx: &LaneContext, theory_bundle: &compiler_opt
         layouts,
         layout_by_nominal_id,
         layout_by_field_id,
-        layout_by_type,
         sum_layouts_by_type,
         sum_reps,
         program_text_representation,
         singleton_facts,
         host_sequence_projections,
+        // 冻结 ABI 合同与宿主导入 provider 由 `build_wasm_program_input` 在
+        // 结算期补齐（需要完整 module input 与宿主边界事实）。
+        export_abis: BTreeMap::new(),
+        host_import_providers: Vec::new(),
     })
 }
 
@@ -181,9 +181,9 @@ fn build_function(ctx: &LaneContext, instance: ItemInstanceId) -> Result<WasmFun
     let view = ctx.view(&instance).ok_or_else(|| format!("WASM lowering：可达实例 `{instance:?}` 缺少函数视图"))?;
     let function = ctx.function(&instance).ok_or_else(|| format!("WASM lowering：可达实例 `{instance:?}` 缺少函数体"))?;
     let symbol = view.symbol.clone();
-    let return_type = settle_type(&view.return_type);
-    let param_types = view.param_types.iter().map(settle_type).collect();
-    let value_types = view.value_types.iter().map(|(value, ty)| (WasmValueKey(value.index()), settle_type(ty))).collect();
+    let return_type = settle_type(ctx, &view.return_type)?;
+    let param_types = view.param_types.iter().map(|ty| settle_type(ctx, ty)).collect::<Result<Vec<_>>>()?;
+    let value_types = view.value_types.iter().map(|(value, ty)| Ok((WasmValueKey(value.index()), settle_type(ctx, ty)?))).collect::<Result<_>>()?;
     let value_layouts = function
         .value_types
         .iter()
@@ -287,7 +287,7 @@ fn lower_operation(ctx: &LaneContext, function: &ValkyrieMirFunction, instructio
         ValkyrieMirOperation::Copy { source } => WasmOperation::Copy { source: value(*source) },
         ValkyrieMirOperation::StoreVar { name: _, value: stored, ty } => WasmOperation::StoreVar {
             value: value(*stored),
-            ty: ty.map(|id| -> Result<WasmTypeFact> { Ok(settle_type(&ctx.lower_type(id)?)) }).transpose()?,
+            ty: ty.map(|id| -> Result<WasmTypeFact> { settle_type(ctx, &ctx.lower_type(id)?) }).transpose()?,
         },
         ValkyrieMirOperation::AggregateCopy { source, destination } => {
             let source_type = value_type(*source)?;
@@ -313,7 +313,7 @@ fn lower_operation(ctx: &LaneContext, function: &ValkyrieMirFunction, instructio
         ValkyrieMirOperation::NullIsNull { value: operand } => WasmOperation::NullIsNull { value: value(*operand) },
         ValkyrieMirOperation::NullUnwrap { value: operand } => WasmOperation::NullUnwrap { value: value(*operand) },
         ValkyrieMirOperation::ArrayNew { array_type, length, initialization } => WasmOperation::ArrayNew {
-            array_type: settle_type(&ctx.lower_type(*array_type)?),
+            array_type: settle_type(ctx, &ctx.lower_type(*array_type)?)?,
             length: value(*length),
             initialization: match initialization {
                 ValkyrieMirArrayInitialization::Default => WasmArrayInit::Default,
@@ -329,7 +329,7 @@ fn lower_operation(ctx: &LaneContext, function: &ValkyrieMirFunction, instructio
             };
             WasmOperation::ArrayFromElements {
                 layout_id,
-                array_type: settle_type(&ctx.lower_type(*array_type)?),
+                array_type: settle_type(ctx, &ctx.lower_type(*array_type)?)?,
                 elements: elements.iter().map(|id| value(*id)).collect(),
             }
         }
@@ -386,7 +386,7 @@ fn lower_operation(ctx: &LaneContext, function: &ValkyrieMirFunction, instructio
         },
         // 语言层显式 `as`：目标类型是后端必须编码的事实，不能丢成 Copy。
         ValkyrieMirOperation::Cast { source, ty } => {
-            WasmOperation::Cast { source: value(*source), ty: settle_type(&ctx.lower_type(*ty)?) }
+            WasmOperation::Cast { source: value(*source), ty: settle_type(ctx, &ctx.lower_type(*ty)?)? }
         }
         unsupported => return Err(format!("canonical 操作尚无目标私有合同: {unsupported:?}")),
     })
@@ -440,47 +440,64 @@ fn settle_constant(constant: &ValkyrieMirConstant) -> WasmConstant {
     }
 }
 
-/// canonical 语义类型 → wasm 私有类型事实（臂序与镜像原则一致）。
-pub(crate) fn settle_type(ty: &SemanticType) -> WasmTypeFact {
+/// canonical 语义类型 → wasm 目标类型事实（D5 架构门）。
+///
+/// 语言语义在这里一次结算为目标词汇：名义实例与闭合泛型实例都解析为
+/// canonical 冻结的**布局引用**（`WasmTypeFact::Layout`）；缺闭合实例布局
+/// 时结构化失败并报出确切缺项，绝不把源语言拼写、泛型应用、witness 表或
+/// 匿名 union 镜像进目标层让后端回猜。
+pub(crate) fn settle_type(ctx: &LaneContext, ty: &SemanticType) -> Result<WasmTypeFact> {
     match ty {
-        SemanticType::Bottom => WasmTypeFact::Bottom,
-        SemanticType::Unit => WasmTypeFact::Unit,
-        SemanticType::Boolean => WasmTypeFact::Boolean,
-        SemanticType::Integer8 { signed } => WasmTypeFact::Integer8 { signed: *signed },
-        SemanticType::Integer16 { signed } => WasmTypeFact::Integer16 { signed: *signed },
-        SemanticType::Integer32 { signed } => WasmTypeFact::Integer32 { signed: *signed },
-        SemanticType::Integer64 { signed } => WasmTypeFact::Integer64 { signed: *signed },
-        SemanticType::Integer128 { signed } => WasmTypeFact::Integer128 { signed: *signed },
-        SemanticType::Float32 => WasmTypeFact::Float32,
-        SemanticType::Float64 => WasmTypeFact::Float64,
-        SemanticType::Character => WasmTypeFact::Character,
-        SemanticType::Utf8 => WasmTypeFact::Utf8,
-        SemanticType::Utf16 => WasmTypeFact::Utf16,
-        SemanticType::Named(name) => WasmTypeFact::Named(name.clone()),
-        SemanticType::Nominal { layout, spelling } => WasmTypeFact::Nominal { layout: *layout, spelling: spelling.clone() },
-        SemanticType::Apply(base, args) => WasmTypeFact::Apply(Box::new(settle_type(base)), args.iter().map(settle_type).collect()),
-        SemanticType::Function(function) => WasmTypeFact::Function(Box::new(WasmFunctionType {
-            params: function.params.iter().map(settle_type).collect(),
-            return_type: settle_type(&function.return_type),
-        })),
-        SemanticType::Tuple(items) => WasmTypeFact::Tuple(items.iter().map(settle_type).collect()),
-        SemanticType::Array(element) => WasmTypeFact::Array(Box::new(settle_type(element))),
-        SemanticType::FixedArray { element, length } => WasmTypeFact::FixedArray { element: Box::new(settle_type(element)), length: *length },
-        SemanticType::TraitObject(object) => WasmTypeFact::TraitObject(WasmWitnessObject {
-            trait_path: object.trait_path.clone(),
-            type_arguments: object.type_arguments.iter().map(settle_type).collect(),
-        }),
-        SemanticType::Nullable(element) => WasmTypeFact::Nullable(Box::new(settle_type(element))),
-        SemanticType::Union(arms) => WasmTypeFact::Union(arms.iter().map(settle_type).collect()),
+        SemanticType::Bottom => Ok(WasmTypeFact::Bottom),
+        SemanticType::Unit => Ok(WasmTypeFact::Unit),
+        SemanticType::Boolean => Ok(WasmTypeFact::Boolean),
+        SemanticType::Integer8 { signed } => Ok(WasmTypeFact::Integer8 { signed: *signed }),
+        SemanticType::Integer16 { signed } => Ok(WasmTypeFact::Integer16 { signed: *signed }),
+        SemanticType::Integer32 { signed } => Ok(WasmTypeFact::Integer32 { signed: *signed }),
+        SemanticType::Integer64 { signed } => Ok(WasmTypeFact::Integer64 { signed: *signed }),
+        SemanticType::Integer128 { signed } => Ok(WasmTypeFact::Integer128 { signed: *signed }),
+        SemanticType::Float32 => Ok(WasmTypeFact::Float32),
+        SemanticType::Float64 => Ok(WasmTypeFact::Float64),
+        SemanticType::Character => Ok(WasmTypeFact::Character),
+        SemanticType::Utf8 => Ok(WasmTypeFact::Utf8),
+        SemanticType::Utf16 => Ok(WasmTypeFact::Utf16),
+        SemanticType::Named(name) => Err(format!(
+            "WASM 结算：裸名义拼写 `{name}` 没有冻结布局身份；名义类型必须由 canonical 实例化结算为布局引用"
+        )),
+        SemanticType::Nominal { layout, .. } => Ok(WasmTypeFact::Layout(*layout)),
+        SemanticType::Apply(..) => ctx
+            .aggregate_layout_by_semantic_type()
+            .get(ty)
+            .copied()
+            .map(WasmTypeFact::Layout)
+            .ok_or_else(|| {
+                format!("WASM 结算：闭合泛型实例 `{ty:?}` 缺少 canonical 冻结的布局身份；目标层不得按拼写回猜布局")
+            }),
+        SemanticType::Function(function) => Ok(WasmTypeFact::Function(Box::new(WasmFunctionType {
+            params: function.params.iter().map(|param| settle_type(ctx, param)).collect::<Result<Vec<_>>>()?,
+            return_type: settle_type(ctx, &function.return_type)?,
+        }))),
+        SemanticType::Tuple(items) => Ok(WasmTypeFact::Tuple(items.iter().map(|item| settle_type(ctx, item)).collect::<Result<Vec<_>>>()?)),
+        SemanticType::Array(element) => Ok(WasmTypeFact::Array(Box::new(settle_type(ctx, element)?))),
+        SemanticType::FixedArray { element, length } => Ok(WasmTypeFact::FixedArray { element: Box::new(settle_type(ctx, element)?), length: *length }),
+        SemanticType::TraitObject(object) => Err(format!(
+            "WASM 结算：witness 表类型 `dyn {}` 没有目标编码合同；trait 分派必须在 canonical 消为具体实例",
+            object.trait_path
+        )),
+        SemanticType::Nullable(element) => Ok(WasmTypeFact::Nullable(Box::new(settle_type(ctx, element)?))),
+        SemanticType::Union(arms) => Err(format!(
+            "WASM 结算：匿名 union `{}` 没有目标编码合同；语言语义必须结算为显式布局引用",
+            arms.iter().map(|arm| format!("{arm:?}")).collect::<Vec<_>>().join(" | ")
+        )),
     }
 }
 
-fn settle_layout(layout: &ResolvedAggregateLayout) -> WasmLayoutFact {
-    WasmLayoutFact {
+fn settle_layout(ctx: &LaneContext, layout: &ResolvedAggregateLayout) -> Result<WasmLayoutFact> {
+    Ok(WasmLayoutFact {
         id: layout.id,
         name: layout.name.clone(),
         namespace: layout.namespace.clone(),
-        key: layout.key.as_ref().map(settle_layout_key),
+        key: layout.key.as_ref().map(|key| settle_layout_key(ctx, key)).transpose()?,
         storage: match layout.storage {
             StorageKind::Value => WasmStorageClass::Value,
             StorageKind::Reference => WasmStorageClass::Reference,
@@ -490,21 +507,25 @@ fn settle_layout(layout: &ResolvedAggregateLayout) -> WasmLayoutFact {
         fields: layout
             .fields
             .iter()
-            .map(|field| WasmFieldFact {
-                name: field.name.clone(),
-                ty: settle_type(&field.ty),
-                offset: field.offset,
-                size: field.size,
-                align: field.align,
+            .map(|field| -> Result<WasmFieldFact> {
+                Ok(WasmFieldFact {
+                    name: field.name.clone(),
+                    ty: settle_type(ctx, &field.ty)?,
+                    offset: field.offset,
+                    size: field.size,
+                    align: field.align,
+                })
             })
-            .collect(),
-    }
+            .collect::<Result<Vec<_>>>()?,
+    })
 }
 
-fn settle_layout_key(key: &LayoutKey) -> WasmLayoutKeyFact {
+fn settle_layout_key(ctx: &LaneContext, key: &LayoutKey) -> Result<WasmLayoutKeyFact> {
     match key {
-        LayoutKey::Tuple(items) => WasmLayoutKeyFact::Tuple(items.iter().map(settle_type).collect()),
-        LayoutKey::FixedArray { element, length } => WasmLayoutKeyFact::FixedArray { element: Box::new(settle_type(element)), length: *length },
+        LayoutKey::Tuple(items) => Ok(WasmLayoutKeyFact::Tuple(items.iter().map(|item| settle_type(ctx, item)).collect::<Result<Vec<_>>>()?)),
+        LayoutKey::FixedArray { element, length } => {
+            Ok(WasmLayoutKeyFact::FixedArray { element: Box::new(settle_type(ctx, element)?), length: *length })
+        }
     }
 }
 
@@ -512,23 +533,25 @@ fn settle_import_link(link: &ExternalImportLink) -> WasmImportLinkFact {
     WasmImportLinkFact { boundary: link.boundary.clone(), platform_tag: link.platform_tag.clone(), locator_segments: link.locator_segments.clone() }
 }
 
-fn settle_sum_layout(sum: &SumTypeLayout) -> WasmSumLayoutFact {
+fn settle_sum_layout(ctx: &LaneContext, sum: &SumTypeLayout) -> Result<WasmSumLayoutFact> {
     let variants = sum
         .variants
         .iter()
-        .map(|variant| WasmSumVariantLayoutFact {
-            id: WasmVariantKey(variant.id.index()),
-            name: variant.name.clone(),
-            tag: variant.tag,
-            payload_type: variant.payload_type.as_ref().map(settle_type),
+        .map(|variant| -> Result<WasmSumVariantLayoutFact> {
+            Ok(WasmSumVariantLayoutFact {
+                id: WasmVariantKey(variant.id.index()),
+                name: variant.name.clone(),
+                tag: variant.tag,
+                payload_type: variant.payload_type.as_ref().map(|payload| settle_type(ctx, payload)).transpose()?,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
     let abi_variants = variants.iter().map(|variant| WasmAbiVariant { name: variant.name.clone(), tag: variant.tag }).collect::<Vec<_>>();
-    WasmSumLayoutFact {
+    Ok(WasmSumLayoutFact {
         nominal: WasmNominalKey(sum.nominal.index()),
         name: sum.name.clone(),
         is_unite: sum.is_unite,
         variants,
         identity: sum_identity_facts(&sum.name, sum.is_unite, &abi_variants),
-    }
+    })
 }

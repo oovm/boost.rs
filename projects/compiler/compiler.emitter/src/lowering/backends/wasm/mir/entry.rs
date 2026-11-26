@@ -32,7 +32,7 @@ use super::{
     },
     type_registry::{register_gc_array_types, register_gc_struct_types, register_gc_sum_types, wasm_array_element_type_key},
     WasmCallableKey, WasmFunctionInput, WasmImportFact, WasmLayoutKey, WasmModuleInput, WasmNominalKey, WasmSumLayoutFact, WasmTypeFact,
-    primary_result, wasm_export_abi,
+    primary_result,
 };
 use crate::{
     emitter_backend_wasi::{WasmBinaryModule, WasmPackageKind, WasmSection},
@@ -311,10 +311,10 @@ pub(crate) fn lower_fragment_mir_to_wasm_module_for(
                 };
                 let (environment_layout, environment_type) = match environment {
                     Some(WasmOperand::Value(value)) => {
-                        // 泛型 lambda 的环境类型常是 `Apply(Nominal, args)`，不一定落在
-                        // `WasmTypeFact::Nominal`；layout 身份以计划冻结的 `value_layouts` 为准。
+                        // layout 身份以计划冻结的 `value_layouts` 为准；类型事实若携带
+                        // 布局引用（`WasmTypeFact::Layout`）同样直接取用。
                         let layout = mir_fn.value_layouts.get(value).copied().or_else(|| match mir_fn.value_types.get(value) {
-                            Some(WasmTypeFact::Nominal { layout, .. }) => Some(*layout),
+                            Some(WasmTypeFact::Layout(layout)) => Some(*layout),
                             _ => None,
                         });
                         (layout, mir_fn.value_types.get(value).cloned())
@@ -994,12 +994,13 @@ fn freeze_host_handle_to_managed_utf8_plans(
             else {
                 continue;
             };
-            let abi = wasm_export_abi(input, instance).map_err(|reason| {
-                format!(
-                    "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对宿主句柄→managed 物化配方: {reason}"
-                )
-            })?;
-            let Some(carrier) = abi.params.get(index)
+            let Some(abi) = input.export_abis.get(instance)
+            else {
+                return Err(format!(
+                    "库导出 `{instance}`（export_name={public_name}）缺少适配器提交的冻结 ABI 合同，无法核对宿主句柄→managed 物化配方"
+                ));
+            };
+            let Some(carrier) = abi.carriers.params.get(index)
             else {
                 return Err(format!(
                     "库导出 `{instance}`（export_name={public_name}）形参 {index} 缺少冻结 ABI 载体，无法核对宿主句柄→managed 物化配方"
@@ -1085,16 +1086,17 @@ fn freeze_managed_utf8_return_to_host_handle_plans(
             continue;
         }
         // 宿主字符串返回类型的冻结载体只能是 i32 句柄；载体不明或分叉即刻结构化失败。
-        let abi = wasm_export_abi(input, instance).map_err(|reason| {
-            format!(
-                "库导出 `{instance}`（export_name={public_name}）缺少可用的冻结 ABI 载体合同，无法核对 managed→宿主句柄返回物化配方: {reason}"
-            )
-        })?;
-        if abi.returns != crate::lowering::backends::wasm::abi::WasmAbiCarrier::I32 {
+        let Some(abi) = input.export_abis.get(instance)
+        else {
+            return Err(format!(
+                "库导出 `{instance}`（export_name={public_name}）缺少适配器提交的冻结 ABI 合同，无法核对 managed→宿主句柄返回物化配方"
+            ));
+        };
+        if abi.carriers.returns != crate::lowering::backends::wasm::abi::WasmAbiCarrier::I32 {
             return Err(format!(
                 "库导出 `{instance}`（export_name={public_name}）返回类型 `{}` 的冻结 ABI 载体为 `{}`，不是宿主字符串句柄 `i32`；返回物化合同已坏",
                 mir_fn.return_type,
-                abi.returns.as_str()
+                abi.carriers.returns.as_str()
             ));
         }
         // 未登记 gc struct 的返回槽本就是 i32 句柄，与冻结载体一致，无物化需求。
@@ -1710,8 +1712,8 @@ fn emit_library_field_accessors<'name>(
 ) -> crate::Result<()> {
     /// 从导出位置（参数或返回值）收集桥接可达节点。
     ///
-    /// - `Nominal` 自带布局；`Apply` 只从计划冻结的 `WasmTypeFact → WasmLayoutKey`
-    ///   索引解析，索引缺失直接跳过（schema 侧同样没有字段合同，宿主失败闭合）。
+    /// - `Layout` 携带适配器结算期冻结的布局引用；布局未注册即结构化失败，
+    ///   报出确切缺项，绝不回退按拼写或泛型遍历猜布局。
     /// - heap `Array<T>` 收集元素类型，供发射 `array.new_default/get/set/len`。
     /// - 深搜按 `reachable` 去重，布局环不会死循环。
     fn collect_bridge_nodes(
@@ -1720,7 +1722,7 @@ fn emit_library_field_accessors<'name>(
         reachable: &mut BTreeSet<WasmLayoutKey>,
         array_elements: &mut BTreeMap<String, WasmTypeFact>,
         worklist: &mut Vec<WasmTypeFact>,
-    ) {
+    ) -> crate::Result<()> {
         match ty {
             WasmTypeFact::Array(element) => {
                 array_elements.entry(wasm_array_element_type_key(element)).or_insert_with(|| element.as_ref().clone());
@@ -1729,40 +1731,23 @@ fn emit_library_field_accessors<'name>(
             WasmTypeFact::FixedArray { element, .. } | WasmTypeFact::Nullable(element) => {
                 worklist.push(element.as_ref().clone());
             }
-            WasmTypeFact::Tuple(elements) | WasmTypeFact::Union(elements) => {
+            WasmTypeFact::Tuple(elements) => {
                 worklist.extend(elements.iter().cloned());
             }
-            WasmTypeFact::Nominal { layout, .. } => {
+            WasmTypeFact::Layout(layout) => {
+                let Some(item) = input.layout_by_id(*layout)
+                else {
+                    return Err(format!("布局 `{layout}` 未注册：闭合实例缺少 canonical 冻结布局事实"));
+                };
                 if reachable.insert(*layout) {
-                    if let Some(item) = input.layout_by_id(*layout) {
-                        worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
-                    }
-                }
-            }
-            WasmTypeFact::Apply(..) => {
-                if let Some(item) = input.layout_for_type(ty) {
-                    if reachable.insert(item.id) {
-                        worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
-                    }
-                }
-                else if let WasmTypeFact::Apply(base, args) = ty {
-                    worklist.push(base.as_ref().clone());
-                    worklist.extend(args.iter().cloned());
+                    worklist.extend(item.fields.iter().map(|field| field.ty.clone()));
                 }
             }
             _ => {}
         }
+        Ok(())
     }
 
-    let mut worklist: Vec<WasmTypeFact> = Vec::new();
-    for (instance, _) in input.export_names.iter() {
-        let Some(function) = input.function(instance)
-        else {
-            continue;
-        };
-        worklist.extend(function.param_types.iter().cloned());
-        worklist.push(function.return_type.clone());
-    }
     let mut reachable: BTreeSet<WasmLayoutKey> = BTreeSet::new();
     let mut array_elements: BTreeMap<String, WasmTypeFact> = BTreeMap::new();
     // Option 标量载荷的物理载体集合：`None` 是 `ref.null`，`Some(标量)` 必须装进
@@ -1771,27 +1756,39 @@ fn emit_library_field_accessors<'name>(
     let mut option_payloads: BTreeSet<String> = BTreeSet::new();
     // unite 变体身份桥：导出签名可达的全部 sum（零载荷与带载荷）都需要按判别
     // tag 读回；带载荷变体再按同一份 sum 身份派生 payload accessor。
-    // 索引来自 canonical 冻结的 `WasmTypeFact → WasmSumLayoutFact`，不按名字识别。
+    // 索引来自 canonical 冻结的 `WasmLayoutKey → WasmSumLayoutFact`，不按名字识别。
     let sums = &input.sum_layouts_by_type;
     let mut reachable_sums: BTreeMap<WasmNominalKey, WasmSumLayoutFact> = BTreeMap::new();
     // 类型工作列表按类型去重：递归 sum 的载荷会再次命中自身，没有去重会无限展开。
     let mut visited_types: BTreeSet<WasmTypeFact> = BTreeSet::new();
-    while let Some(ty) = worklist.pop() {
-        if !visited_types.insert(ty.clone()) {
+    // 逐导出实例展开，失败时点名实例与导出名，报出确切缺项。
+    for (instance, public_name) in input.export_names.iter() {
+        let Some(function) = input.function(instance)
+        else {
             continue;
-        }
-        if let Some(sum) = sums.get(&ty) {
-            reachable_sums.entry(sum.nominal).or_insert_with(|| sum.clone());
-            // 变体载荷也是 ABI 边界的一部分：嵌套 sum / 聚合 / 数组必须一起可达。
-            worklist.extend(sum.variants.iter().filter_map(|variant| variant.payload_type.clone()));
-        }
-        if let WasmTypeFact::Nullable(inner) = &ty {
-            let inner_schema = super::abi_schema::abi_schema_for_type(inner);
-            if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
-                option_payloads.insert(contract.payload.to_string());
+        };
+        let mut worklist: Vec<WasmTypeFact> = function.param_types.iter().cloned().chain(std::iter::once(function.return_type.clone())).collect();
+        while let Some(ty) = worklist.pop() {
+            if !visited_types.insert(ty.clone()) {
+                continue;
             }
+            if let WasmTypeFact::Layout(layout) = ty {
+                if let Some(sum) = sums.get(&layout) {
+                    reachable_sums.entry(sum.nominal).or_insert_with(|| sum.clone());
+                    // 变体载荷也是 ABI 边界的一部分：嵌套 sum / 聚合 / 数组必须一起可达。
+                    worklist.extend(sum.variants.iter().filter_map(|variant| variant.payload_type.clone()));
+                }
+            }
+            if let WasmTypeFact::Nullable(inner) = &ty {
+                let inner_schema = super::abi_schema::abi_schema_for_type(input, inner);
+                if let Some(contract) = super::abi_schema::option_box_contract(&inner_schema) {
+                    option_payloads.insert(contract.payload.to_string());
+                }
+            }
+            collect_bridge_nodes(&ty, input, &mut reachable, &mut array_elements, &mut worklist).map_err(|reason| {
+                format!("库导出 `{instance}`（export_name={public_name}）的 ABI 可达类型缺少冻结事实: {reason}")
+            })?;
         }
-        collect_bridge_nodes(&ty, input, &mut reachable, &mut array_elements, &mut worklist);
     }
 
     // 阶段 1：按布局/字段顺序确定性派生全部 accessor 身份；名字统一进

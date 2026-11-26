@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     WasmAbiStructure, WasmLayoutFact, WasmModuleInput, WasmSequenceLevel, WasmSumLayoutFact,
-    WasmSumVariantLayoutFact, WasmTypeFact, abi_structure_for_type, abi_structure_for_type_with_layouts, canonical_type_spelling,
+    WasmSumVariantLayoutFact, WasmTypeFact, abi_structure_for_type, canonical_type_spelling,
 };
 
 /// 结构化 Wasm ABI schema。
@@ -30,9 +30,9 @@ use super::{
 ///
 /// # 与 `WasmTypeFact` 的关系
 ///
-/// `WasmTypeFact` 是语言平台层类型，承载完整语义信息；`WasmAbiType` 是
-/// **ABI 位置筛选**后的子集——有些 `WasmTypeFact` 变体（如 `Function`、
-/// `TraitObject`）根本不允许出现在库导出的参数/返回值上，会被映射
+/// `WasmTypeFact` 是 wasm 目标私有类型事实；`WasmAbiType` 是
+/// **ABI 位置筛选**后的子集——有些 `WasmTypeFact` 变体（如 `Function`）
+/// 根本不允许出现在库导出的参数/返回值上，会被映射
 /// 成 `Unsupported`。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "PascalCase")]
@@ -123,10 +123,9 @@ pub enum WasmAbiType {
         fields: Vec<WasmAbiType>,
     },
 
-    /// 带语义身份的 nominal / generic aggregate。
+    /// 布局引用解析出的具名聚合（用户自定义 struct、闭合泛型实例等）。
     ///
-    /// 用于承载 `Apply(Named("ArrayList"), [Integer64])`、用户自定义 struct、
-    /// 或任何 WasmTypeFact 层无法内联展开的命名类型。
+    /// 身份事实唯一来自适配器结算的冻结布局；泛型实例不再以拼写形态出现。
     ///
     /// # 稳定 nominal identity
     ///
@@ -144,24 +143,22 @@ pub enum WasmAbiType {
         name: String,
         /// 类型所属的完整命名空间路径（例如 `"std::collections"`）。
         ///
-        /// # 上游拼写来源
+        /// # 上游身份来源
         ///
-        /// `rusty-valkyrie` 的 canonical 阶段在**声明** TypeId 上登记
-        /// `MirStruct::qualified_name()`（`namespace.name` 规范为 `::`）。泛型实例
-        /// `ArrayList<i64>` 在 `lower_type` 中回落到声明 TypeId 取基类型拼写，因此
-        /// `Apply` 的 `module_path` 与声明一致。
+        /// `name` / `module_path` 唯一来自冻结布局事实（`namespace` 的 `.`
+        /// 规范为 `::`），不再从任何类型拼写拆分。
         ///
-        /// 仍为空字符串的场景只是**如实**的缺口：sum 声明目前没有 namespace 事实，
-        /// 只有简单名；无名空间（顶层）声明本身也没有路径可拆。
+        /// 空字符串的场景只是**如实**的缺口：sum 声明目前没有 namespace 事实，
+        /// 只有简单名；无名空间（顶层）布局本身也没有路径可拆。
         module_path: String,
-        /// 实例化的泛型参数（无泛型时为空 vec）。
+        /// 实例化的泛型参数：布局引用词汇不携带泛型实参拼写，恒为空 vec，
+        /// 保留字段只为兼容既有 JSON 消费者。
         generic_args: Vec<WasmAbiType>,
-        /// 冻结布局派生的字段访问合同（无布局身份时为空）。
+        /// 冻结布局派生的字段访问合同。
         ///
-        /// 只有 [`abi_schema_for_type_with_layouts`] 会填充：每个字段携带字段名、
-        /// 字段类型 schema 与从聚合句柄读出该字段的 wasm accessor 导出名。
-        /// JS glue 等宿主据此按字段读回聚合；空列表表示只有身份、没有字段桥，
-        /// 宿主必须失败闭合而不是按名字猜测字段。
+        /// 每个字段携带字段名、字段类型 schema 与从聚合句柄读出该字段的 wasm
+        /// accessor 导出名。JS glue 等宿主据此按字段读回聚合；布局未注册时
+        /// 整个 schema 结构化失败，宿主不会拿到只有身份、没有字段的桥。
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         fields: Vec<WasmAbiField>,
         /// 构造该聚合的 wasm 导出名（由布局身份确定性派生）；`None` 表示该布局
@@ -206,8 +203,6 @@ pub enum WasmAbiType {
     /// # 何时产生
     ///
     /// - `WasmTypeFact::Function`：函数类型不能跨 ABI 边界
-    /// - `WasmTypeFact::TraitObject`：动态分发 witness table 无稳定 Wasm carrier
-    /// - `WasmTypeFact::Union(_)`：匿名 tagged union 的 ABI 合同尚未定义
     /// - `WasmTypeFact::Integer128 { .. }`：Wasm 无原生 i128，需要 explicit 拆分合同
     /// - `WasmTypeFact::Bottom` / `void`：底部类型不应出现在参数位置
     Unsupported {
@@ -350,20 +345,21 @@ impl WasmAbiType {
 /// | `FixedArray { element, n }`  | `FixedArray { element: schema(element), n }`   |                                                |
 /// | `Nullable(T)`                | `Option { inner: schema(T), box?: ... }`        | 标量载荷带装箱合同 |
 /// | `Tuple([...])`               | `Tuple { fields: [...] }`                      |                                                |
-/// | `Named(id)`                  | `NamedAggregate { name, module_path, generic_args: [] }` |                       |
-/// | `Apply(Base, args)`          | `NamedAggregate { name, module_path, schema(args)}`|                                        |
-/// | `Function` / `TraitObject`   | `Unsupported`                                  | 不能跨 ABI 边界                                |
-/// | `Union([...])`               | `Unsupported`                                  | ABI 合同未定义                                 |
-pub fn abi_schema_for_type(ty: &WasmTypeFact) -> WasmAbiType {
-    // 结构推导与 ovm 共用同一镜像的私有结构层，本函数只做 wasm 物理投影。
-    project_structure(&abi_structure_for_type(ty), None)
+/// | `Layout(id)`                 | `InstanceHandle` / `NamedAggregate` / `Sequence` / `Sum` / `Unsupported` | 由冻结布局 / sum 身份解析 |
+/// | `Function`                   | `Unsupported`                                  | 不能跨 ABI 边界                                |
+///
+/// 这是结算服务：由语言侧适配器在结算期调用并冻结进 `WasmModuleInput::export_abis`，
+/// 编码层只消费冻结 schema，不再现场调用本函数。`Layout` 引用的布局未注册时
+/// 结构化失败——门禁已拒绝那种形态，这里不从无身份事实派生桥。
+pub fn abi_schema_for_type(input: &WasmModuleInput, ty: &WasmTypeFact) -> WasmAbiType {
+    project_structure(&abi_structure_for_type(input, ty), input)
 }
 
 /// wasm 物理投影：把目标中立结构投影成 `WasmAbiType`。
 ///
 /// 目标差异只在这里体现：字段 accessor / `struct.new` / 数组操作导出名由冻结
 /// 布局身份派生；结构本身（字段、槽位、变体 tag）来自共享结构层。
-fn project_structure(structure: &WasmAbiStructure, input: Option<&WasmModuleInput>) -> WasmAbiType {
+fn project_structure(structure: &WasmAbiStructure, input: &WasmModuleInput) -> WasmAbiType {
     use super::WasmAbiStructure as S;
     match structure {
         S::Unit => WasmAbiType::Unit,
@@ -396,52 +392,41 @@ fn project_structure(structure: &WasmAbiStructure, input: Option<&WasmModuleInpu
             WasmAbiType::Option { inner, box_contract }
         }
         S::Tuple { fields } => WasmAbiType::Tuple { fields: fields.iter().map(|field| project_structure(field, input)).collect() },
-        S::Aggregate(aggregate) => match aggregate.layout {
-            // 身份模式（无布局事实）：只给身份，不给字段桥与构造合同，
-            // 宿主必须失败闭合而不是按名字猜字段。
-            None => WasmAbiType::NamedAggregate {
+        S::Aggregate(aggregate) => {
+            let Some(aggregate_layout) = input.layout_by_id(aggregate.layout)
+            else {
+                return WasmAbiType::Unsupported { reason: format!("layout `{}` 未注册，无法派生字段访问合同", aggregate.layout) };
+            };
+            let mut fields = Vec::with_capacity(aggregate.fields.len());
+            for (index, field) in aggregate.fields.iter().enumerate() {
+                let field_schema = project_structure(&field.ty, input);
+                if let Some(reason) = field_schema.unsupported_reason() {
+                    return WasmAbiType::Unsupported {
+                        reason: format!(
+                            "聚合 `{}::{}` 字段 `{}` 没有 Wasm ABI 合同: {reason}",
+                            aggregate_layout.namespace, aggregate_layout.name, field.name
+                        ),
+                    };
+                }
+                fields.push(WasmAbiField {
+                    name: field.name.clone(),
+                    ty: field_schema,
+                    accessor: field_accessor_export_name(aggregate_layout, index),
+                });
+            }
+            WasmAbiType::NamedAggregate {
                 name: aggregate.name.clone(),
                 module_path: aggregate.module_path.clone(),
-                generic_args: aggregate.generic_args.iter().map(|arg| project_structure(arg, input)).collect(),
-                fields: Vec::new(),
-                constructor: None,
-            },
-            Some(layout_id) => {
-                let Some(aggregate_layout) = input.and_then(|settled| settled.layouts.iter().find(|item| item.id == layout_id))
-                else {
-                    return WasmAbiType::Unsupported { reason: format!("layout `{layout_id}` 未注册，无法派生字段访问合同") };
-                };
-                let mut fields = Vec::with_capacity(aggregate.fields.len());
-                for (index, field) in aggregate.fields.iter().enumerate() {
-                    let field_schema = project_structure(&field.ty, input);
-                    if let Some(reason) = field_schema.unsupported_reason() {
-                        return WasmAbiType::Unsupported {
-                            reason: format!(
-                                "聚合 `{}::{}` 字段 `{}` 没有 Wasm ABI 合同: {reason}",
-                                aggregate_layout.namespace, aggregate_layout.name, field.name
-                            ),
-                        };
-                    }
-                    fields.push(WasmAbiField {
-                        name: field.name.clone(),
-                        ty: field_schema,
-                        accessor: field_accessor_export_name(aggregate_layout, index),
-                    });
-                }
-                WasmAbiType::NamedAggregate {
-                    name: aggregate.name.clone(),
-                    module_path: aggregate.module_path.clone(),
-                    generic_args: Vec::new(),
-                    fields,
-                    constructor: Some(aggregate_constructor_export_name(aggregate_layout)),
-                }
+                generic_args: Vec::new(),
+                fields,
+                constructor: Some(aggregate_constructor_export_name(aggregate_layout)),
             }
-        },
+        }
         S::Sequence(sequence) => {
             // 声明级序列视图：投影为 `Array` + 逐层容器构造合同。每层的
             // `struct.new` / 字段 accessor 导出名由该层冻结布局身份派生。
             let project_level = |level: &WasmSequenceLevel| -> std::result::Result<WasmAbiSequenceLevel, String> {
-                let Some(aggregate_layout) = input.and_then(|settled| settled.layouts.iter().find(|item| item.id == level.layout))
+                let Some(aggregate_layout) = input.layout_by_id(level.layout)
                 else {
                     return Err(format!("序列层布局 `{}` 未注册", level.layout));
                 };
@@ -507,16 +492,6 @@ fn project_structure(structure: &WasmAbiStructure, input: Option<&WasmModuleInpu
         }
         S::Unsupported { reason } => WasmAbiType::Unsupported { reason: reason.clone() },
     }
-}
-
-/// 携带冻结布局事实的 `WasmTypeFact` → `WasmAbiType` 映射：`Nominal` 从已注册布局
-/// 派生字段访问合同（字段名、字段类型 schema、accessor 导出名）。
-///
-/// 字段 schema 递归派生；任一字段没有 Wasm ABI 合同时整个聚合降级为
-/// `Unsupported`（结构化失败，不静默跳过字段）。`Nominal` 携带的布局未注册
-/// 时同样直接失败——预发射身份门禁已经拒绝那种形态，这里不从无身份事实派生桥。
-pub fn abi_schema_for_type_with_layouts(input: &WasmModuleInput, ty: &WasmTypeFact) -> WasmAbiType {
-    project_structure(&abi_structure_for_type_with_layouts(input, ty), Some(input))
 }
 
 /// `struct.new` 包装导出的确定性名字：由冻结布局身份派生。
@@ -645,7 +620,6 @@ pub fn sum_payload_accessor_export_name(sum: &WasmSumLayoutFact, variant: &WasmS
 mod tests {
     use super::*;
     use crate::lowering::backends::wasm::mir::{WasmFieldFact, WasmFunctionType, WasmStorageClass};
-    use compiler_types::Identifier;
 
     fn named_type(s: &str) -> WasmTypeFact {
         match s {
@@ -663,30 +637,33 @@ mod tests {
 
     #[test]
     fn scalar_round_trip() {
-        assert_eq!(abi_schema_for_type(&WasmTypeFact::Unit), WasmAbiType::Unit);
-        assert_eq!(abi_schema_for_type(&named_type("bool")), WasmAbiType::Bool);
-        assert_eq!(abi_schema_for_type(&named_type("i32")), WasmAbiType::I32);
-        assert_eq!(abi_schema_for_type(&named_type("i64")), WasmAbiType::I64);
-        assert_eq!(abi_schema_for_type(&named_type("u64")), WasmAbiType::I64);
-        assert_eq!(abi_schema_for_type(&named_type("f64")), WasmAbiType::F64);
-        assert_eq!(abi_schema_for_type(&named_type("f32")), WasmAbiType::F32);
-        assert_eq!(abi_schema_for_type(&named_type("utf8")), WasmAbiType::Utf8);
+        let input = WasmModuleInput::testing_empty();
+        assert_eq!(abi_schema_for_type(&input, &WasmTypeFact::Unit), WasmAbiType::Unit);
+        assert_eq!(abi_schema_for_type(&input, &named_type("bool")), WasmAbiType::Bool);
+        assert_eq!(abi_schema_for_type(&input, &named_type("i32")), WasmAbiType::I32);
+        assert_eq!(abi_schema_for_type(&input, &named_type("i64")), WasmAbiType::I64);
+        assert_eq!(abi_schema_for_type(&input, &named_type("u64")), WasmAbiType::I64);
+        assert_eq!(abi_schema_for_type(&input, &named_type("f64")), WasmAbiType::F64);
+        assert_eq!(abi_schema_for_type(&input, &named_type("f32")), WasmAbiType::F32);
+        assert_eq!(abi_schema_for_type(&input, &named_type("utf8")), WasmAbiType::Utf8);
     }
 
     #[test]
     fn array_element_preserved() {
+        let input = WasmModuleInput::testing_empty();
         let element = named_type("i64");
         let arr = WasmTypeFact::Array(Box::new(element.clone()));
         assert_eq!(
-            abi_schema_for_type(&arr),
+            abi_schema_for_type(&input, &arr),
             WasmAbiType::Array { element: Box::new(WasmAbiType::I64), ops: array_ops_export_names(&element), container: None }
         );
     }
 
     #[test]
     fn nullable_becomes_option() {
+        let input = WasmModuleInput::testing_empty();
         let opt = WasmTypeFact::Nullable(Box::new(named_type("i32")));
-        let WasmAbiType::Option { inner, box_contract } = abi_schema_for_type(&opt)
+        let WasmAbiType::Option { inner, box_contract } = abi_schema_for_type(&input, &opt)
         else {
             panic!("Nullable(i32) 必须投影为 Option")
         };
@@ -699,8 +676,9 @@ mod tests {
 
     #[test]
     fn nullable_handle_payload_has_no_box_contract() {
+        let input = WasmModuleInput::testing_empty();
         let opt = WasmTypeFact::Nullable(Box::new(WasmTypeFact::Array(Box::new(named_type("i64")))));
-        let WasmAbiType::Option { box_contract, .. } = abi_schema_for_type(&opt)
+        let WasmAbiType::Option { box_contract, .. } = abi_schema_for_type(&input, &opt)
         else {
             panic!("Nullable([i64]) 必须投影为 Option")
         };
@@ -728,20 +706,30 @@ mod tests {
     }
 
     #[test]
-    fn two_sum_generic_application_uses_declaration_qualified_base() {
-        // two-sum 参数 ArrayList<i64>，i64 返回 ArrayList<i64>。
-        // ArrayList<i64> 在 WasmTypeFact 层是 Apply(Named(...), [Integer64])。
-        // 上游 `type_surface_spellings` 只在**声明** TypeId 上登记拼写；实例 TypeId 自身
-        // 没有单独 spelling，`lower_type` 回落到声明取 qualified 基类型，因此这里必须
-        // 用真实拼写 `std::collections::ArrayList`，不能再用裸简单名。
-        let arraylist_i64 =
-            WasmTypeFact::Apply(Box::new(WasmTypeFact::Named(Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")]);
-        let schema = abi_schema_for_type(&arraylist_i64);
+    fn two_sum_closed_instance_resolves_through_layout_reference() {
+        // two-sum 参数 ArrayList<i64>：闭合泛型实例在适配器结算点已绑定布局引用，
+        // schema 的身份与命名空间事实唯一来源是冻结布局（namespace 的 `.` 规范为 `::`）。
+        let layout = WasmLayoutFact {
+            id: 7,
+            name: "ArrayList".to_string(),
+            namespace: "std.collections".to_string(),
+            key: None,
+            storage: WasmStorageClass::Value,
+            size: 8,
+            align: 4,
+            fields: vec![
+                WasmFieldFact { name: "items".to_string(), ty: WasmTypeFact::Array(Box::new(named_type("i64"))), offset: 0, size: 4, align: 4 },
+                WasmFieldFact { name: "len".to_string(), ty: named_type("i32"), offset: 4, size: 4, align: 4 },
+            ],
+        };
+        let input = input_with_layouts(vec![layout]);
+        let schema = abi_schema_for_type(&input, &WasmTypeFact::Layout(7));
         match schema {
-            WasmAbiType::NamedAggregate { name, module_path, generic_args, .. } => {
+            WasmAbiType::NamedAggregate { name, module_path, fields, .. } => {
                 assert_eq!(name, "ArrayList");
                 assert_eq!(module_path, "std::collections");
-                assert_eq!(generic_args, vec![WasmAbiType::I64]);
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "items");
             }
             other => panic!("Expected NamedAggregate, got {other:?}"),
         }
@@ -749,50 +737,49 @@ mod tests {
 
     #[test]
     fn same_named_aggregates_in_different_namespaces_stay_distinct() {
-        // 同名、同泛型实参但不同 namespace 的两个 aggregate 必须产生不同
-        // NamedAggregate：宿主注册表按 module_path + name + generic_args 区分，
-        // module_path 相同会把两者错误地命中同一条 marshal 合同。
-        let alpha =
-            abi_schema_for_type(&WasmTypeFact::Apply(Box::new(WasmTypeFact::Named(Identifier::new("alpha::Box"))), vec![named_type("i64")]));
-        let beta =
-            abi_schema_for_type(&WasmTypeFact::Apply(Box::new(WasmTypeFact::Named(Identifier::new("beta::Box"))), vec![named_type("i64")]));
-        match (&alpha, &beta) {
+        // 同名但 namespace 不同的两个 aggregate 必须产生不同 NamedAggregate：
+        // 宿主注册表按 module_path + name 区分，module_path 相同会把两者错误地
+        // 命中同一条 marshal 合同。
+        let alpha = testing_value_layout(7, "Box", "alpha");
+        let beta = testing_value_layout(8, "Box", "beta");
+        let input = input_with_layouts(vec![alpha, beta]);
+        let left = abi_schema_for_type(&input, &WasmTypeFact::Layout(7));
+        let right = abi_schema_for_type(&input, &WasmTypeFact::Layout(8));
+        match (&left, &right) {
             (
-                WasmAbiType::NamedAggregate { name: left_name, module_path: left_path, generic_args: left_args, .. },
-                WasmAbiType::NamedAggregate { name: right_name, module_path: right_path, generic_args: right_args, .. },
+                WasmAbiType::NamedAggregate { name: left_name, module_path: left_path, .. },
+                WasmAbiType::NamedAggregate { name: right_name, module_path: right_path, .. },
             ) => {
                 assert_eq!(left_name, right_name);
-                assert_eq!(left_args, right_args);
                 assert_eq!(left_path, "alpha");
                 assert_eq!(right_path, "beta");
                 assert_ne!(left_path, right_path);
             }
             other => panic!("Expected two NamedAggregate, got {other:?}"),
         }
-        assert_ne!(alpha, beta);
+        assert_ne!(left, right);
     }
 
-    #[test]
-    fn module_path_extracted_from_qualified_identifier() {
-        // 如果上游给了完整路径 "std::collections::ArrayList"
-        let qualified =
-            WasmTypeFact::Apply(Box::new(WasmTypeFact::Named(Identifier::new("std::collections::ArrayList"))), vec![named_type("i64")]);
-        let schema = abi_schema_for_type(&qualified);
-        match schema {
-            WasmAbiType::NamedAggregate { name, module_path, .. } => {
-                assert_eq!(name, "ArrayList");
-                assert_eq!(module_path, "std::collections");
-            }
-            other => panic!("Expected NamedAggregate, got {other:?}"),
+    fn testing_value_layout(id: u32, name: &str, namespace: &str) -> WasmLayoutFact {
+        WasmLayoutFact {
+            id,
+            name: name.to_string(),
+            namespace: namespace.to_string(),
+            key: None,
+            storage: WasmStorageClass::Value,
+            size: 4,
+            align: 4,
+            fields: vec![WasmFieldFact { name: "v".to_string(), ty: named_type("i32"), offset: 0, size: 4, align: 4 }],
         }
     }
 
     #[test]
     fn unsupported_variants_rejected() {
-        let void = abi_schema_for_type(&WasmTypeFact::Bottom);
+        let input = WasmModuleInput::testing_empty();
+        let void = abi_schema_for_type(&input, &WasmTypeFact::Bottom);
         assert!(void.unsupported_reason().is_some());
 
-        let fn_ty = abi_schema_for_type(&WasmTypeFact::Function(Box::new(nyar_fn())));
+        let fn_ty = abi_schema_for_type(&input, &WasmTypeFact::Function(Box::new(nyar_fn())));
         assert!(fn_ty.unsupported_reason().is_some());
     }
 
@@ -857,8 +844,8 @@ mod tests {
     fn nominal_with_registered_layout_derives_field_accessors() {
         let layout = config_layout();
         let input = input_with_layouts(vec![layout]);
-        let ty = WasmTypeFact::Nominal { layout: 7, spelling: Identifier::new("app::ConfigArtifact") };
-        let schema = abi_schema_for_type_with_layouts(&input, &ty);
+        let ty = WasmTypeFact::Layout(7);
+        let schema = abi_schema_for_type(&input, &ty);
         match schema {
             WasmAbiType::NamedAggregate { name, module_path, fields, .. } => {
                 assert_eq!(name, "ConfigArtifact");
@@ -884,8 +871,8 @@ mod tests {
         layout.namespace = "demo".to_string();
         layout.storage = WasmStorageClass::Reference;
         let input = input_with_layouts(vec![layout]);
-        let ty = WasmTypeFact::Nominal { layout: 7, spelling: Identifier::new("demo::Counter") };
-        let schema = abi_schema_for_type_with_layouts(&input, &ty);
+        let ty = WasmTypeFact::Layout(7);
+        let schema = abi_schema_for_type(&input, &ty);
         assert_eq!(
             schema,
             WasmAbiType::InstanceHandle { name: "Counter".to_string(), module_path: "demo".to_string() },
@@ -907,8 +894,8 @@ mod tests {
     #[test]
     fn nominal_with_unregistered_layout_fails_closed() {
         let input = WasmModuleInput::testing_empty();
-        let ty = WasmTypeFact::Nominal { layout: 99, spelling: Identifier::new("app::Ghost") };
-        let schema = abi_schema_for_type_with_layouts(&input, &ty);
+        let ty = WasmTypeFact::Layout(99);
+        let schema = abi_schema_for_type(&input, &ty);
         assert!(schema.unsupported_reason().is_some(), "未注册 layout 不得派生字段桥");
     }
 
@@ -927,8 +914,8 @@ mod tests {
             fields: vec![WasmFieldFact { name: "big".to_string(), ty: named_type("i128"), offset: 0, size: 16, align: 8 }],
         };
         let input = input_with_layouts(vec![layout]);
-        let ty = WasmTypeFact::Nominal { layout: 8, spelling: Identifier::new("app::Heavy") };
-        let schema = abi_schema_for_type_with_layouts(&input, &ty);
+        let ty = WasmTypeFact::Layout(8);
+        let schema = abi_schema_for_type(&input, &ty);
         let reason = schema.unsupported_reason().expect("i128 字段必须使整个聚合失败闭合");
         assert!(reason.contains("big"), "got: {reason}");
     }

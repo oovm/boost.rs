@@ -26,8 +26,8 @@ pub(super) fn is_js_glue_host_string_type(ty: &WasmTypeFact) -> bool {
 }
 
 /// Wasm lane 自有的存储类归类：标量与文本是值槽，内联聚合按形状是值槽，
-/// 堆载体（数组 / trait object / union / nullable / 泛型实例 / 函数值）是引用槽，
-/// `Nominal` 按 canonical 冻结的实例级布局身份解析，不按拼写回查。
+/// 堆载体（数组 / nullable / 函数值）是引用槽，
+/// `Layout` 按适配器冻结的布局引用解析，不按拼写回查。
 ///
 /// 这是 Wasm 的物理表示合同，归本 lane 所有；共享 `WasmModuleInput`
 /// 不再承载按 `WasmTypeFact` 归类语义的判定。
@@ -47,25 +47,16 @@ pub(super) fn storage_for_type(input: &WasmModuleInput, ty: &WasmTypeFact) -> Wa
         | WasmTypeFact::Utf8
         | WasmTypeFact::Utf16 => WasmStorageClass::Value,
         WasmTypeFact::Tuple(_) | WasmTypeFact::FixedArray { .. } => WasmStorageClass::Value,
-        WasmTypeFact::Array(_)
-        | WasmTypeFact::TraitObject(_)
-        | WasmTypeFact::Union(_)
-        | WasmTypeFact::Nullable(_)
-        | WasmTypeFact::Apply(..)
-        | WasmTypeFact::Function(_) => WasmStorageClass::Reference,
-        // `Nominal` 携带 canonical 冻结的实例级布局身份：存储类按 `layout` 解析，
-        // 不按拼写匹配。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
-        WasmTypeFact::Nominal { layout, spelling } => match input.layout_by_id(*layout) {
+        WasmTypeFact::Array(_) | WasmTypeFact::Nullable(_) | WasmTypeFact::Function(_) => WasmStorageClass::Reference,
+        // `Layout` 是适配器结算期冻结的布局引用：存储类按布局身份解析，
+        // 不按拼写回查。布局缺失属合同破坏（预发射门禁已拒绝该形状）。
+        WasmTypeFact::Layout(layout) => match input.layout_by_id(*layout) {
             Some(layout) => layout.storage,
             None => panic!(
-                "wasm lowering contract violation: `Nominal({spelling})` 的 layout `{layout:?}` 未注册，\
+                "wasm lowering contract violation: `Layout({layout})` 的布局未注册，\
 身份无法解析存储类（预编码校验见 `validate_storage_identities`）"
             ),
         },
-        WasmTypeFact::Named(name) => panic!(
-            "wasm lowering contract violation: `Named({name})` 无 declaration / `TypeId` 身份，\
-禁止按短名解析名义 layout 或回落 `Reference`（预编码校验见 `validate_storage_identities`）"
-        ),
     }
 }
 
@@ -73,14 +64,6 @@ pub(super) fn mir_storage_for_type(input: &WasmModuleInput, ty: &WasmTypeFact, j
     let _ = js_glue_utf8_as_anyref;
     if is_js_glue_host_string_type(ty) {
         return WasmStorageClass::Value;
-    }
-    // Tagged unions are represented by GC structs on the WASM backend. Keep
-    // their SSA values in anyref locals even when the nominal layout metadata
-    // still reports a value-oriented payload representation; otherwise a
-    // variant return can later be ref.cast from an i32 slot and trap with
-    // `illegal cast`.
-    if matches!(ty, WasmTypeFact::Union(_)) {
-        return WasmStorageClass::Reference;
     }
     storage_for_type(input, ty)
 }
@@ -125,7 +108,7 @@ pub(super) fn wasm_param_value_type_for(
     // gc struct 的名义实例时，仍必须按注册表返回 anyref。闭包环境 layout 由
     // `LoadFunctionRef` 的 environment 操作数强制登记（见 `type_registry`），
     // 否则跨间接调用的环境槽会被降成 i32，与构造点分叉。
-    if let WasmTypeFact::Nominal { layout, .. } = ty {
+    if let WasmTypeFact::Layout(layout) = ty {
         if gc_struct_type_indices.contains_key(layout) {
             return Ok(WASM_GC_ANYREF);
         }
@@ -221,7 +204,7 @@ pub(super) fn type_is_wasm_gc_heap_reference(ty: &WasmTypeFact) -> bool {
 pub(super) fn type_is_inline_aggregate(input: &WasmModuleInput, ty: &WasmTypeFact) -> bool {
     match ty {
         WasmTypeFact::Tuple(_) | WasmTypeFact::FixedArray { .. } => true,
-        WasmTypeFact::Nominal { layout, .. } => input.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
+        WasmTypeFact::Layout(layout) => input.layout_by_id(*layout).is_some_and(|layout| !layout.fields.is_empty()),
         _ => false,
     }
 }
@@ -238,12 +221,6 @@ pub(super) fn wasm_param_value_type(input: &WasmModuleInput, ty: &WasmTypeFact, 
         return Ok(VALTYPE_I32);
     }
     if type_is_wasm_gc_heap_reference(ty) {
-        return Ok(WASM_GC_ANYREF);
-    }
-    // Aggregates carrying references are represented by wasm-gc structs.
-    // Keep their ABI as anyref even when stale nominal layout metadata says
-    // Value; otherwise callers ref.cast an i32 return and trap.
-    if matches!(ty, WasmTypeFact::Union(_)) {
         return Ok(WASM_GC_ANYREF);
     }
     // 函数值 = 闭包对象（gc struct `[code: i32, env: anyref]`），见合同 §5.3。

@@ -136,8 +136,17 @@ pub(super) fn collect_wasm_host_imports(input: &WasmModuleInput, synthesize_cons
             imports.push(key);
         }
     }
+    // JS 启动壳协议的内建能力（不再是语言 std 文本操作——那些归 provider）。
     for field in crate::emitter_backend_wasm_js_glue::SYNTHETIC_NODE_IMPORT_FIELDS {
         let key = ("env".to_string(), (*field).to_string());
+        if seen.insert(key.clone()) {
+            imports.push(key);
+        }
+    }
+    // 语言 × 目标适配器显式登记的宿主导入 provider：语言特有宿主行为只在
+    // provider 集合里出现，wasm 降层不再内建任何语言 std 字段。
+    for provider in &input.host_import_providers {
+        let key = (provider.module.clone(), provider.field.clone());
         if seen.insert(key.clone()) {
             imports.push(key);
         }
@@ -311,10 +320,25 @@ pub(super) fn wasm_import_type_bytes_for_host(
     if let Some(import) = signature_index.get(&key) {
         return wasm_import_type_from_backend_import(input, import, wasi_mode, js_glue_utf8_as_anyref);
     }
-    // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、`NODE_HOST_IMPORT_FIELDS`
-    // 里的 utf8_* 辅助、WASI 预演化的 stream 内建等）；它不得覆盖 plan 已声明的事实。
+    // 适配器提交的 provider 物理签名：语言 std 宿主行为的签名事实由 provider
+    // 声明，编码层只做载体到 valtype 的机械映射。
+    if !wasi_mode {
+        if let Some(bytes) = provider_import_type_bytes(input, module, field) {
+            return Ok(bytes);
+        }
+    }
+    // fallback 只服务 plan 不存在的合成宿主导入（`env::const_utf8`、JS 启动壳
+    // 协议内建字段、WASI 预演化的 stream 内建等）；它不得覆盖 plan 已声明的事实。
     let fallback = if wasi_mode { wasi_import_type_for_field(module, field) } else { wasm_import_type_for_field(field) };
     fallback.ok_or_else(|| format!("host import `{module}::{field}` has no frozen ABI signature"))
+}
+
+/// 适配器提交的宿主导入 provider 的物理签名（`env` 文本 std 等语言行为）。
+fn provider_import_type_bytes(input: &WasmModuleInput, module: &str, field: &str) -> Option<Vec<u8>> {
+    let provider = input.host_import_providers.iter().find(|item| item.module == module && item.field == field)?;
+    let params = provider.params.iter().copied().filter_map(super::wasm_host_provider_carrier_valtype).collect::<Vec<_>>();
+    let results = provider.results.iter().copied().filter_map(super::wasm_host_provider_carrier_valtype).collect::<Vec<_>>();
+    Some(wasm_function_type(&params, &results))
 }
 
 pub(super) fn wasm_import_type_bytes(wasi_mode: bool, module: &str, field: &str) -> crate::Result<Vec<u8>> {
@@ -454,23 +478,23 @@ mod host_import_signature_tests {
                 links: vec![WasmImportLinkFact {
                     boundary: Identifier::new("host"),
                     platform_tag: Some(Identifier::new("js_builtin")),
-                    // `env::utf8_length` 同时存在于字段名表（`[i32] -> [i32]`），
+                    // `env::host_intern_utf8` 同时存在于字段名表（`[i32, i32] -> [i32]`），
                     // 这里由结算输入声明一个不同的签名，验证 plan 胜出。
-                    locator_segments: vec!["utf8_length".into()],
+                    locator_segments: vec!["host_intern_utf8".into()],
                 }],
                 parameter_types: vec![WasmTypeFact::Integer32 { signed: true }, WasmTypeFact::Integer32 { signed: true }],
                 return_type: WasmTypeFact::Integer64 { signed: true },
             },
         );
         let signatures = host_import_signature_index(&input).expect("signature index");
-        assert!(signatures.contains_key(&("env".to_string(), "utf8_length".to_string())), "plan import 必须解析到 env::utf8_length");
+        assert!(signatures.contains_key(&("env".to_string(), "host_intern_utf8".to_string())), "plan import 必须解析到 env::host_intern_utf8");
         assert_eq!(
-            wasm_import_type_for_field("utf8_length"),
-            Some(wasm_function_type(&[VALTYPE_I32], &[VALTYPE_I32])),
-            "字段名表快照应保持 `[i32] -> [i32]`"
+            wasm_import_type_for_field("host_intern_utf8"),
+            Some(wasm_function_type(&[VALTYPE_I32, VALTYPE_I32], &[VALTYPE_I32])),
+            "字段名表快照应保持 `[i32, i32] -> [i32]`"
         );
         let type_bytes =
-            wasm_import_type_bytes_for_host(&input, false, "env", "utf8_length", false, &signatures).expect("plan 声明的签名必须胜出");
+            wasm_import_type_bytes_for_host(&input, false, "env", "host_intern_utf8", false, &signatures).expect("plan 声明的签名必须胜出");
         assert_eq!(super::super::strings::wasm_function_type_param_bytes(&type_bytes), vec![VALTYPE_I32, VALTYPE_I32]);
         assert_eq!(super::super::strings::wasm_function_type_result_byte(&type_bytes), Some(VALTYPE_I64));
     }

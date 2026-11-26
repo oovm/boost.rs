@@ -153,6 +153,7 @@ pub fn assemble_wasm_module(input: &WasmProgramInput) -> Result<(WasmBinaryModul
         input.wasm_package_kind,
     )?;
     prepend_nyar_custom_sections(&mut module, &input.module_input);
+    append_host_provider_section(&mut module, &input.module_input, input.host_boundary);
     mir::singleton::append_singleton_metadata_sections(&mut module, &input.module_input);
     mir::singleton::augment_wasm_with_singleton_accessors(&mut module, &input.module_input)
         .map_err(|error| format!("singleton contract failed [{}] {} at {}: {}", error.code, error.function, error.location, error.detail))?;
@@ -161,6 +162,30 @@ pub fn assemble_wasm_module(input: &WasmProgramInput) -> Result<(WasmBinaryModul
         return Err("WASM 装配：目标私有输入不是有效模块（版本为 0 或没有段），拒绝装配".to_string());
     }
     Ok((module, imports))
+}
+
+/// 把适配器提交的宿主导入 provider 写入 `nyar.host_providers` 自定义段。
+///
+/// 仅 JS glue 边界有意义（Node 启动壳在生成期读取该段注入实现与辅助 JS）；
+/// 段内容是事实的机械序列化，不含任何 wasm 侧语言语义。
+fn append_host_provider_section(module: &mut WasmBinaryModule, input: &WasmModuleInput, boundary: HostProjectionBoundary) {
+    if !matches!(boundary, HostProjectionBoundary::WasmJsGlue) || input.host_import_providers.is_empty() {
+        return;
+    }
+    let providers: Vec<serde_json::Value> = input
+        .host_import_providers
+        .iter()
+        .map(|provider| {
+            serde_json::json!({
+                "module": provider.module,
+                "field": provider.field,
+                "implementation": provider.implementation,
+                "helpers": provider.helpers,
+            })
+        })
+        .collect();
+    let payload = serde_json::to_vec(&serde_json::json!({ "providers": providers })).expect("provider 段必须可序列化");
+    module.sections.push(WasmSection { id: 0, name: Some("nyar.host_providers".to_string()), bytes: payload });
 }
 
 fn prepend_nyar_custom_sections(module: &mut WasmBinaryModule, input: &WasmModuleInput) {

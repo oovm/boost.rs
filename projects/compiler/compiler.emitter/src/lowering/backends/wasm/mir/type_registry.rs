@@ -8,7 +8,7 @@
 //! Zero-logic extract from the former monolithic lowerer (B4 seam).
 
 use super::{
-    abi_structure_for_type_with_layouts, WasmAbiStructure, WasmLayoutKey, WasmModuleInput, WasmNominalKey, WasmOperation, WasmOperand,
+    WasmLayoutKey, WasmModuleInput, WasmNominalKey, WasmOperation, WasmOperand,
     WasmStorageClass, WasmTypeFact,
     representation::{is_js_glue_host_string_type, mir_storage_for_type, storage_for_type, wasm_gc_field_type_byte_for_glue},
 };
@@ -34,7 +34,7 @@ pub(super) fn collect_mir_reference_layout_ids(input: &WasmModuleInput) -> BTree
                     WasmOperation::StructNew { nominal, .. } => {
                         if let Some(layout) = input.layout_by_nominal(*nominal) {
                             // 注册条件必须与槽规划同源：槽规划按 Wasm lane 的 `storage_for_type`
-                            // 决定 anyref，而泛型实例（`WasmTypeFact::Apply`，如
+                            // 决定 anyref，而泛型实例（`WasmTypeFact::Layout`，如
                             // `EnumerateItem<K>`）在类型层是 Reference、在声明级
                             // `layout.storage` 却可能是 Value。只看后者会让槽规划出
                             // anyref、注册表却缺该 layout，构造点随即报「未注册 gc
@@ -169,7 +169,7 @@ pub(super) fn register_gc_array_types(
                 pending.push(*element);
             }
             WasmTypeFact::Nullable(inner) => pending.push(*inner),
-            WasmTypeFact::Tuple(fields) | WasmTypeFact::Union(fields) => pending.extend(fields),
+            WasmTypeFact::Tuple(fields) => pending.extend(fields),
             _ => {}
         }
     }
@@ -213,17 +213,15 @@ pub(super) fn register_gc_sum_types(input: &WasmModuleInput, type_indices: &mut 
     // 导出签名可达的 sum 也必须注册：宿主可能只在返回/参数位观察变体身份，
     // 函数体里没有任何 `Sum*` 指令；tag / payload accessor 的 `ref.cast` 必须
     // 指向同一份已注册类型，否则发射期无法闭合并只能失败。
-    // 递归展开走目标中立的 `WasmAbiStructure`，不在本模块复制类型形状推导。
+    // 递归展开只消费冻结布局 / sum 事实（`Layout` 引用解析），不重走 ABI 派生。
     for instance in input.export_names.keys() {
         let Some(function) = input.function(instance)
         else {
             continue;
         };
-        let mut pending: Vec<WasmTypeFact> = function.param_types.clone();
-        pending.push(function.return_type.clone());
-        for ty in pending {
-            let structure = abi_structure_for_type_with_layouts(input, &ty);
-            collect_boundary_sums(&structure, &mut nominals);
+        let mut visited = BTreeSet::new();
+        for ty in function.param_types.iter().chain(std::iter::once(&function.return_type)) {
+            collect_boundary_sums(input, ty, &mut nominals, &mut visited);
         }
     }
     let mut map = BTreeMap::new();
@@ -236,20 +234,37 @@ pub(super) fn register_gc_sum_types(input: &WasmModuleInput, type_indices: &mut 
     map
 }
 
-/// 从结算出的 ABI 结构收集导出边界可达的 sum nominal（含变体载荷里的嵌套 sum）。
-fn collect_boundary_sums(structure: &WasmAbiStructure, nominals: &mut BTreeSet<WasmNominalKey>) {
-    match structure {
-        WasmAbiStructure::Unite { nominal, payloads, .. } => {
-            nominals.insert(*nominal);
-            for payload in payloads.iter().flatten() {
-                collect_boundary_sums(payload, nominals);
+/// 沿冻结类型事实收集导出边界可达的 sum nominal（含变体载荷里的嵌套 sum）。
+fn collect_boundary_sums(input: &WasmModuleInput, ty: &WasmTypeFact, nominals: &mut BTreeSet<WasmNominalKey>, visited: &mut BTreeSet<WasmTypeFact>) {
+    if !visited.insert(ty.clone()) {
+        return;
+    }
+    match ty {
+        WasmTypeFact::Layout(layout) => {
+            if let Some(sum) = input.sum_layouts_by_type.get(layout) {
+                nominals.insert(sum.nominal);
+                for variant in &sum.variants {
+                    if let Some(payload) = &variant.payload_type {
+                        collect_boundary_sums(input, payload, nominals, visited);
+                    }
+                }
+            }
+            if let Some(layout) = input.layout_by_id(*layout) {
+                for field in &layout.fields {
+                    collect_boundary_sums(input, &field.ty, nominals, visited);
+                }
             }
         }
-        WasmAbiStructure::Array { element, .. } | WasmAbiStructure::FixedArray { element, .. } | WasmAbiStructure::Option { inner: element } => {
-            collect_boundary_sums(element, nominals)
+        WasmTypeFact::Array(element) | WasmTypeFact::FixedArray { element, .. } | WasmTypeFact::Nullable(element) => {
+            collect_boundary_sums(input, element, nominals, visited);
         }
-        WasmAbiStructure::Tuple { fields } => fields.iter().for_each(|field| collect_boundary_sums(field, nominals)),
-        WasmAbiStructure::Aggregate(aggregate) => aggregate.fields.iter().for_each(|field| collect_boundary_sums(&field.ty, nominals)),
+        WasmTypeFact::Tuple(fields) => fields.iter().for_each(|field| collect_boundary_sums(input, field, nominals, visited)),
+        WasmTypeFact::Function(signature) => {
+            for param in &signature.params {
+                collect_boundary_sums(input, param, nominals, visited);
+            }
+            collect_boundary_sums(input, &signature.return_type, nominals, visited);
+        }
         _ => {}
     }
 }

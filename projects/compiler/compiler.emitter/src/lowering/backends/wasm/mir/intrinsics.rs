@@ -70,10 +70,8 @@ impl<'a> WasmMirLowerer<'a> {
         self.emit_i32_operand(&arguments[1])?;
         self.emit_array_get(type_index);
         if let Some(output) = output {
-            let wants_i64 = self.mir_fn.value_types.get(&output).is_some_and(|ty| {
-                matches!(ty, WasmTypeFact::Integer64 { .. } | WasmTypeFact::Integer128 { .. })
-                    || matches!(ty, WasmTypeFact::Named(name) if name.as_str() == "i64")
-            });
+            let wants_i64 =
+                self.mir_fn.value_types.get(&output).is_some_and(|ty| matches!(ty, WasmTypeFact::Integer64 { .. } | WasmTypeFact::Integer128 { .. }));
             if element_stack_ty == WASM_GC_ANYREF && wants_i64 {
                 self.emit_unbox_i64_payload();
                 element_stack_ty = VALTYPE_I64;
