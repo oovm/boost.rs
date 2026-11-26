@@ -324,6 +324,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "math fonts are owned by VuTeX"]
     fn glyph_for_char_resolves_through_the_font_character_map() {
         let facts = MathFontFacts::embedded().expect("the embedded font must carry a MATH table");
         assert_eq!(facts.units_per_em(), 1000, "Latin Modern Math is a 1000 unit font");
@@ -339,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "math fonts are owned by VuTeX"]
     fn a_face_that_is_already_parsed_answers_the_same_facts() {
         let bytes = MathFontFamily::builtin_default().and_then(|family| family.bytes()).expect("a math font is embedded");
         let from_bytes = MathFontFacts::from_bytes(bytes).expect("the embedded font carries a MATH table");

@@ -599,6 +599,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "math fonts are owned by VuTeX"]
     fn real_font_italic_correction_reaches_derived_italic_face() {
         let sys = builtin_font_metrics();
         let math_f = sys.get_metrics(&key('f')).unwrap();
@@ -616,6 +617,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "math fonts are owned by VuTeX"]
     fn accent_glyphs_resolve_under_the_default_family() {
         let sys = builtin_font_metrics();
         for ch in ['ˆ', '¯', '˜', '˙', '¨'] {
@@ -640,6 +642,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "math fonts are owned by VuTeX"]
     fn embedded_font_publishes_the_script_scale_ratios() {
         let sys = builtin_font_metrics();
         for constant in [MathConstant::ScriptPercentScaleDown, MathConstant::ScriptScriptPercentScaleDown] {
