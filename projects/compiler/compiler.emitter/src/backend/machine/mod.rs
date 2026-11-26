@@ -15,7 +15,8 @@ use compiler_target::{
 };
 
 pub use crate::lowering::backends::machine::{
-    HostMethod, HostModule, HostParameterKind, HostProperty, HostValueKind, MachineHostExport, MachineLibraryExport, X64_TEXT_ARENA_CAPACITY,
+    HostMethod, HostModule, HostParameterKind, HostProperty, HostValueKind, MachineHostExport, MachineLibraryExport, MachineTextCarrier,
+    X64_TEXT_ARENA_CAPACITY,
     X64CallConv,
     X64DataTarget, X64FloatCast, X64LoweredExtension, X64LoweredLibrary, X64LoweredProgram, X64Platform,
     X64ProductTarget, X64ProgramFunction, X64ProgramImage, X64TextInstruction, any_returns_bool, any_returns_utf8, append_text_arena,

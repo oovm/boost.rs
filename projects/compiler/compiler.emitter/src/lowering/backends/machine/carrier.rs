@@ -141,6 +141,28 @@ pub struct HostMethod {
     pub returns: HostValueKind,
 }
 
+impl HostMethod {
+    /// 该方法是否编组 `utf8` 载体（形参或返回位）；决定桥是否需要文本载体描述。
+    pub fn uses_text_carrier(&self) -> bool {
+        self.returns == HostValueKind::Utf8 || self.parameters.iter().any(|kind| matches!(kind, HostParameterKind::Utf8))
+    }
+}
+
+/// 宿主桥的 `utf8` 文本载体显式描述：由语言适配器按需提交。
+///
+/// 桥不默认构造、也不读回任何共享布局对象：导出面含 `utf8` 载体时装配层必须
+/// 携带本描述（缺失在写出前结构化失败），不含时本描述不会被消费。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MachineTextCarrier {
+    /// `_repr` 字段相对对象数据区首地址的字节偏移。
+    pub repr_field_byte_offset: u32,
+    /// 对象数据区的字段槽数（每槽 8 字节）；宿主桥按此分配对象块。
+    pub object_field_slots: u32,
+}
+
+/// 装配层不变量：含 `utf8` 载体的方法必须携带显式文本载体描述（缺失在写出前失败）。
+pub(super) const TEXT_CARRIER_INVARIANT: &str = "装配层已校验：含 utf8 载体的方法必须携带显式文本载体描述";
+
 /// CPython 多阶段模块定义（`PyModuleDef`）头部在 `.data` 中的镜像长度。
 ///
 /// x86-64 布局（全部 8 字节字段）：
@@ -327,13 +349,14 @@ pub fn python_method_wrapper(
     dll: &str,
     arena: Option<u32>,
     platform: X64Platform,
-    text_layout: compiler_types::Utf8TextCarrierLayout,
+    text_carrier: Option<MachineTextCarrier>,
 ) -> X64ProgramFunction {
     use X64TextInstruction as Lir;
-    // `_repr` 字段是语言结算的文本布局事实：桥只按这份显式偏移读写，
-    // 语言更换内部布局时本函数不需要改代码。
-    let repr_field = text_layout.repr_field_byte_offset as i32;
-    let object_repr_store = array_runtime::ARRAY_ELEMENT_OFFSET + repr_field;
+    // `_repr` 字段布局是语言按需提交的显式载体描述：桥不默认构造，只在方法
+    // 实际编组 utf8 时消费（装配层已校验含 utf8 载体的方法必携带）。
+    let repr_field = text_carrier.map(|carrier| carrier.repr_field_byte_offset as i32);
+    let object_repr_store = repr_field.map(|repr| array_runtime::ARRAY_ELEMENT_OFFSET + repr);
+    let object_field_slots = text_carrier.map(|carrier| carrier.object_field_slots as i64);
     const ARGS_SLOT: u16 = 0;
     const FORMAT_SLOT: u16 = 1;
     const TEMP_SLOT: u16 = 2;
@@ -496,7 +519,7 @@ pub fn python_method_wrapper(
             Lir::LoadI64(1),
             Lir::StoreSlot(text_param_slot(index, PP_ARRAY_FLAG)),
             // 对象块：字段槽数与 `_repr` 偏移来自语言结算的文本布局事实。
-            Lir::LoadI64(text_layout.object_field_slots as i64),
+            Lir::LoadI64(object_field_slots.expect(TEXT_CARRIER_INVARIANT)),
         ]);
         instructions.extend(array_runtime::array_allocate(
             allocator,
@@ -514,7 +537,7 @@ pub fn python_method_wrapper(
             Lir::StoreSlot(text_param_slot(index, PP_OBJECT_FLAG)),
             Lir::LoadSlotToRcx(text_param_slot(index, PP_ARRAY)),
             Lir::LoadSlot(text_param_slot(index, PP_OBJECT)),
-            Lir::StoreRcxToRaxDisplacement(object_repr_store),
+            Lir::StoreRcxToRaxDisplacement(object_repr_store.expect(TEXT_CARRIER_INVARIANT)),
             // 逐字节分散到 8 字节槽（游标已在取字节指针时写好）。
             Lir::LoadI64(0),
             Lir::StoreSlot(text_param_slot(index, PP_INDEX)),
@@ -547,7 +570,7 @@ pub fn python_method_wrapper(
             HostParameterKind::Int64 => instructions.push(Lir::LoadSlotToArg { slot: parameter_slots[index], index: index as u8 }),
             HostParameterKind::Utf8 => {
                 instructions.push(Lir::LoadSlot(text_param_slot(index, PP_OBJECT)));
-                instructions.push(Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET + repr_field));
+                instructions.push(Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET + repr_field.expect(TEXT_CARRIER_INVARIANT)));
                 instructions.push(Lir::StoreSlot(TEMP_SLOT));
                 instructions.push(Lir::LoadSlotToArg { slot: TEMP_SLOT, index: index as u8 });
             }
@@ -565,7 +588,7 @@ pub fn python_method_wrapper(
                 Lir::StoreSlot(text_slot(0)),
                 // 对象 → `_repr`（语言布局事实）。
                 Lir::LoadSlot(text_slot(0)),
-                Lir::LoadFromRaxDisplacement(repr_field),
+                Lir::LoadFromRaxDisplacement(repr_field.expect(TEXT_CARRIER_INVARIANT)),
                 Lir::StoreSlot(text_slot(0)),
                 // `_repr` 数组 → 计数头（目标数组运行时合同）。
                 Lir::LoadSlot(text_slot(0)),
@@ -905,12 +928,14 @@ pub fn node_method_wrapper(
     platform: X64Platform,
     dll: &str,
     arena: Option<u32>,
-    text_layout: compiler_types::Utf8TextCarrierLayout,
+    text_carrier: Option<MachineTextCarrier>,
 ) -> X64ProgramFunction {
     use X64TextInstruction as Lir;
-    // `_repr` 字段布局是语言结算的事实；桥只按显式偏移读写（同 CPython 路径）。
-    let repr_field = text_layout.repr_field_byte_offset as i32;
-    let object_repr_store = array_runtime::ARRAY_ELEMENT_OFFSET + repr_field;
+    // 文本载体布局是语言按需提交的显式描述（同 CPython 路径）：桥不默认构造，
+    // 只在方法实际编组 utf8 时消费。
+    let repr_field = text_carrier.map(|carrier| carrier.repr_field_byte_offset as i32);
+    let object_repr_store = repr_field.map(|repr| array_runtime::ARRAY_ELEMENT_OFFSET + repr);
+    let object_field_slots = text_carrier.map(|carrier| carrier.object_field_slots as i64);
     const ENV_SLOT: u16 = 0;
     const INFO_SLOT: u16 = 1;
     const ARGC_SLOT: u16 = 2;
@@ -1369,7 +1394,7 @@ pub fn node_method_wrapper(
                     Lir::LoadI64(1),
                     Lir::StoreSlot(text_param_slot(index, TP_ARRAY_FLAG)),
                     // 对象块：字段槽数来自语言结算的文本布局事实。
-                    Lir::LoadI64(text_layout.object_field_slots as i64),
+                    Lir::LoadI64(object_field_slots.expect(TEXT_CARRIER_INVARIANT)),
                 ]);
                 block.extend(array_runtime::array_allocate(
                     allocator,
@@ -1388,7 +1413,7 @@ pub fn node_method_wrapper(
                     // `object[_repr] = byte_array`（偏移来自语言布局事实）。
                     Lir::LoadSlotToRcx(text_param_slot(index, TP_ARRAY)),
                     Lir::LoadSlot(text_param_slot(index, TP_OBJECT)),
-                    Lir::StoreRcxToRaxDisplacement(object_repr_store),
+                    Lir::StoreRcxToRaxDisplacement(object_repr_store.expect(TEXT_CARRIER_INVARIANT)),
                     // 字节游标与下标。
                     Lir::LoadSlot(text_param_slot(index, TP_SCRATCH)),
                     Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET),
@@ -1428,7 +1453,7 @@ pub fn node_method_wrapper(
             // 文本实参传对象数据区 + `_repr` 字段偏移（布局事实由语言结算）。
             HostParameterKind::Utf8 => {
                 instructions.push(Lir::LoadSlot(text_param_slot(index, TP_OBJECT)));
-                instructions.push(Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET + repr_field));
+                instructions.push(Lir::AddRaxImmediate(array_runtime::ARRAY_ELEMENT_OFFSET + repr_field.expect(TEXT_CARRIER_INVARIANT)));
                 instructions.push(Lir::StoreSlot(TEMP_SLOT));
                 TEMP_SLOT
             }
@@ -1502,7 +1527,7 @@ pub fn node_method_wrapper(
             instructions.extend([
                 // 对象 → `_repr`（语言布局事实）。
                 Lir::LoadSlot(RESULT_SLOT),
-                Lir::LoadFromRaxDisplacement(repr_field),
+                Lir::LoadFromRaxDisplacement(repr_field.expect(TEXT_CARRIER_INVARIANT)),
                 Lir::StoreSlot(text_slot(0)),
                 // `_repr` 数组 → 计数头（目标数组运行时合同）。
                 Lir::LoadSlot(text_slot(0)),
@@ -1737,9 +1762,8 @@ mod tests {
     use super::*;
     use crate::lowering::backends::machine::{X64CallConv, x64_program::encode_x64_program};
 
-    /// 语言结算的文本布局事实（测试基线：`_repr` 在字段槽 0，对象共 1 槽）。
-    const TEST_TEXT_LAYOUT: compiler_types::Utf8TextCarrierLayout =
-        compiler_types::Utf8TextCarrierLayout { repr_field_byte_offset: 0, object_field_slots: 1 };
+    /// 文本载体显式描述（测试基线：`_repr` 在字段槽 0，对象共 1 槽）。
+    const TEST_TEXT_CARRIER: MachineTextCarrier = MachineTextCarrier { repr_field_byte_offset: 0, object_field_slots: 1 };
 
     fn array_method() -> HostMethod {
         HostMethod {
@@ -1764,7 +1788,7 @@ mod tests {
     /// Node-API 的 `i64` 只走 bigint：不得再出现截断的 `napi_get_value_int64`。
     #[test]
     fn node_wrapper_marshals_i64_as_bigint_only() {
-        let wrapper = node_method_wrapper(&array_method(), 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&array_method(), 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let fields = import_fields(&wrapper);
         assert!(!fields.contains(&"napi_get_value_int64"), "i64 入参不得回落到 number 载体");
         assert!(fields.contains(&"napi_get_value_bigint_int64"), "i64 入参必须走 bigint + lossless");
@@ -1781,7 +1805,7 @@ mod tests {
             parameters: vec![HostParameterKind::Int64, HostParameterKind::Int64Array],
             returns: HostValueKind::Int64,
         };
-        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let debug = format!("{:?}", wrapper.instructions);
         let mut max_slot = 0u16;
         for needle in ["slot: ", "LoadSlot(", "StoreSlot(", "LoadSlotAddress(", "LoadSlotToRcx("] {
@@ -1804,7 +1828,7 @@ mod tests {
     /// 部分编组失败：类型错误出口必须先释放已分配的镜像副本，再抛宿主错误。
     #[test]
     fn type_failure_frees_allocated_array_mirrors_before_throwing() {
-        let wrapper = node_method_wrapper(&array_method(), 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&array_method(), 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let fail_label = wrapper
             .instructions
             .iter()
@@ -1836,7 +1860,7 @@ mod tests {
     #[test]
     fn string_return_uses_utf8_bytes() {
         let method = HostMethod { name: "text".to_string(), symbol: "text".to_string(), parameters: Vec::new(), returns: HostValueKind::Utf8 };
-        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let fields = import_fields(&wrapper);
         assert!(fields.contains(&"napi_create_string_utf8"));
         assert!(!fields.contains(&"napi_create_string_utf16"), "字符串长度必须是 UTF-8 字节而不是 UTF-16 码元");
@@ -1863,7 +1887,7 @@ mod tests {
     fn utf8_parameter_copies_bytes_and_releases_temporaries() {
         let method =
             HostMethod { name: "echo".to_string(), symbol: "echo".to_string(), parameters: vec![HostParameterKind::Utf8], returns: HostValueKind::Utf8 };
-        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let fields = import_fields(&wrapper);
         assert!(fields.contains(&"napi_get_value_string_utf8"), "文本实参必须走 UTF-8 字节查询与复制");
         assert!(fields.contains(&"napi_create_string_utf8"), "文本返回必须走 UTF-8 字节");
@@ -1881,7 +1905,7 @@ mod tests {
     fn text_return_only_defines_every_jump_label() {
         let method =
             HostMethod { name: "greeting".to_string(), symbol: "greeting".to_string(), parameters: vec![], returns: HostValueKind::Utf8 };
-        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let mut defined = std::collections::BTreeSet::new();
         let mut referenced = Vec::new();
         for instruction in &wrapper.instructions {
@@ -1907,7 +1931,7 @@ mod tests {
             parameters: vec![HostParameterKind::Int64Array],
             returns: HostValueKind::Int64Array,
         };
-        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, TEST_TEXT_LAYOUT);
+        let wrapper = node_method_wrapper(&method, 0, 1, 2, X64Platform::windows_x64(), "node.exe", None, Some(TEST_TEXT_CARRIER));
         let fields = import_fields(&wrapper);
         assert!(fields.contains(&"napi_create_array_with_length"));
         assert!(fields.contains(&"napi_set_element"));

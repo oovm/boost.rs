@@ -33,10 +33,11 @@ fn node_is_a_host_contract_not_a_platform_identity() {
 }
 
 #[test]
-#[cfg(target_os = "windows")]
-fn native_alias_resolves_to_host_canonical_target() {
-    let target = CanonicalTarget::parse("native").unwrap();
-    assert_eq!(target.to_string(), CanonicalTarget::parse("x86_64-pc-windows-msvc").unwrap().to_string());
+fn native_is_a_request_placeholder_not_a_platform_identity() {
+    // `native` 别名已删除：`CanonicalTarget::parse` 不再直接探测本机，
+    // 宿主探测集中在 `TargetResolver`（见 `target_resolution` 测试）。
+    let error = CanonicalTarget::parse("native").expect_err("`native` 是作者面请求占位符，不能当平台身份");
+    assert!(error.to_string().contains("TargetResolver"), "错误必须指向统一解析服务: {error}");
 }
 
 #[test]

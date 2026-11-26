@@ -69,8 +69,6 @@ micro fooBar(x: i64) -> i64 {
 }
 "#;
 
-/// manifest 的 `build.target` 只能是平台身份；`node` 等宿主合同占位符经
-/// `BuildOptions.target`（作者面目标标签）传入。
 const MANIFEST_TEMPLATE: &str = r#"{
     name: "app",
     artifact: "library",
@@ -80,11 +78,21 @@ const MANIFEST_TEMPLATE: &str = r#"{
 }
 "#;
 
+/// manifest 的 `build.target` 只能是平台身份；`native` / `node` / `python` 是
+/// 请求层占位符，经 `BuildOptions.target`（作者面目标标签）由 `TargetResolver`
+/// 展开，不再被平台身份解析直接探测本机。占位符请求对应的 manifest 字段写
+/// 构建宿主的真实三元组。
+fn host_triple() -> String {
+    package_manager_legion::legion::TargetResolver::for_build_host().expect("探测构建宿主").host().to_string()
+}
+
+/// manifest 的平台身份字段：占位符请求展开为构建宿主三元组，显式目标原样写入。
+fn manifest_target_for(target: &str) -> String {
+    if matches!(target, "node" | "python" | "native") { host_triple() } else { target.to_string() }
+}
+
 fn build_library(prefix: &str, source: &str, target: &str) -> (BuildOutcome, PathBuf) {
-    // 宿主合同占位符（`node`）不能写进 manifest 的平台身份字段；manifest 用宿主平台，
-    // 请求目标携带完整作者面标签。
-    let manifest_target = if matches!(target, "node" | "python" | "native") { "native" } else { target };
-    build_library_with_manifest_target(prefix, source, manifest_target, target)
+    build_library_with_manifest_target(prefix, source, &manifest_target_for(target), target)
 }
 
 fn build_library_with_manifest_target(prefix: &str, source: &str, manifest_target: &str, target: &str) -> (BuildOutcome, PathBuf) {
@@ -110,7 +118,7 @@ fn build_library_with_manifest_target(prefix: &str, source: &str, manifest_targe
 }
 
 fn build_library_with_name(prefix: &str, project_name: &str, source: &str, target: &str) -> (BuildOutcome, PathBuf) {
-    let manifest_target = if matches!(target, "node" | "python" | "native") { "native" } else { target };
+    let manifest_target = manifest_target_for(target);
     let root = std::env::temp_dir().join(format!("legion-export-naming-{prefix}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let source_dir = root.join("source");
@@ -124,7 +132,7 @@ fn build_library_with_name(prefix: &str, project_name: &str, source: &str, targe
 "#,
     )
     .unwrap();
-    let manifest = MANIFEST_TEMPLATE.replace("%TARGET%", manifest_target).replace("name: \"app\"", &format!("name: \"{project_name}\""));
+    let manifest = MANIFEST_TEMPLATE.replace("%TARGET%", &manifest_target).replace("name: \"app\"", &format!("name: \"{project_name}\""));
     fs::write(root.join("legion.von"), manifest).unwrap();
     fs::write(source_dir.join("main.v"), source).unwrap();
     fs::write(source_dir.join("core_primitive.v"), PRIMITIVES).unwrap();

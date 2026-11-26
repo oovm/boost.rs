@@ -17,7 +17,7 @@ pub use manifest::{
 };
 pub use planner::{
     BuildPlan, BuildRequest, PlannedDependency, PlannedHostContract, PlannedHostProvider, PlannedProject, PlannedSemanticSourceGroup,
-    PlannerError, ProjectResolutionMode, WorkspaceResolver, canonical_target, collect_project_root_v_files, collect_project_v_files,
+    PlannerError, ProjectResolutionMode, WorkspaceResolver, collect_project_root_v_files, collect_project_v_files,
     collect_test_build_sources, collect_test_v_files, project_uses_single_script_layout,
 };
 pub use source_snapshot::compile_source_snapshot;

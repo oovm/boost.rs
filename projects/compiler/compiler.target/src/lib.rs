@@ -29,8 +29,8 @@ pub use self::{
         TargetProfile, WrapStrategy,
     },
     target_resolution::{
-        ArtifactContract, CpythonHostConfig, NodeHostProbe, PythonHostProbe, ResolvedTarget, TargetRequest, TargetResolutionError,
-        TargetResolver, cpython_module_name, probe_build_host,
+        ArtifactContract, CpythonHostConfig, HostExportName, HostExportNameCollision, HostExportNameFact, HostExportNaming, NodeHostProbe,
+        PythonHostProbe, ResolvedTarget, TargetRequest, TargetResolutionError, TargetResolver, cpython_module_name, probe_build_host,
     },
 };
 pub use compiler_types::{

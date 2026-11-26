@@ -23,7 +23,7 @@
 use crate::{Result, emitter_backend_machine::HostProperty};
 
 use super::{
-    HostMethod, HostModule, HostParameterKind, X64Platform, X64ProgramFunction, any_returns_bool, any_returns_int64_array,
+    HostMethod, HostModule, HostParameterKind, MachineTextCarrier, X64Platform, X64ProgramFunction, any_returns_bool, any_returns_int64_array,
     any_returns_utf8, append_text_arena,
     compile_shared_container, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
     python_module_data, python_module_exec, python_module_registration, x64_program::encode_x64_program_with_dependencies,
@@ -49,11 +49,12 @@ pub struct X64LoweredExtension {
 /// （`cpython_module_name` / `ResolvedTarget::freeze_cpython_module_name`）：
 /// 构建计划按工程名冻结一次，lowering 与清单只消费冻结事实，不再各自归一化。
 
-/// 机器码交付的一条宿主导出：语言侧源码名与目标公开名。
+/// 机器码交付的一条宿主导出：语言侧源码名与宿主合同投影后的公开名。
 ///
-/// Node 扩展的命名合同是「有注解用注解名，否则源码名自动 camelCase 投影」；
-/// CPython 的命名合同是源码名自动 snake_case 投影（忽略注解改名）。公开名是宿主
-/// 装载面，源码名保留用于跨目标追溯；投影碰撞在写出前拒绝。
+/// 命名策略是 `compiler_target` 宿主合同的显式面（[`compiler_target::HostExportNaming`]：
+/// Node 注解优先 + camelCase 投影、CPython snake_case 投影忽略注解）；语言 lane 只
+/// 提交源码名与注解事实。公开名是宿主装载面，源码名保留用于跨目标追溯；
+/// 投影碰撞由合同在发射前结构化报错。本表是产物与清单共享的唯一导出面。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachineHostExport {
     /// 语言侧冻结的源码声明名。
@@ -73,7 +74,9 @@ pub struct MachineHostExport {
 /// 宿主扩展的目标私有输入：已降低的 LIR 程序 + 冻结的宿主边界事实。
 ///
 /// 装配服务（宿主包装体编组 + 编码 + 共享库容器 + 自检）只接受这个形状，不再
-/// 接触任何跨目标共享 IR 形状。
+/// 接触任何跨目标共享 IR 形状。文本载体描述按需显式提供（[`MachineTextCarrier`]）：
+/// 导出面含 `utf8` 载体时装配必须携带，不含时不会被消费；桥不默认构造、
+/// 也不向消费端读回该事实。
 pub struct X64ExtensionProgramInput {
     platform: X64Platform,
     host: HostModule,
@@ -84,11 +87,11 @@ pub struct X64ExtensionProgramInput {
     host_exports: Vec<MachineHostExport>,
     module_name: Option<String>,
     artifact_extension: String,
-    text_layout: compiler_types::Utf8TextCarrierLayout,
+    text_carrier: Option<MachineTextCarrier>,
 }
 
 impl X64ExtensionProgramInput {
-    /// 语言适配器构造目标私有宿主扩展输入：平台、宿主合同、文本布局事实与产物身份一次冻结。
+    /// 语言适配器构造目标私有宿主扩展输入：平台、宿主合同、按需文本载体描述与产物身份一次冻结。
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         platform: X64Platform,
@@ -100,14 +103,9 @@ impl X64ExtensionProgramInput {
         host_exports: Vec<MachineHostExport>,
         module_name: Option<String>,
         artifact_extension: String,
-        text_layout: compiler_types::Utf8TextCarrierLayout,
+        text_carrier: Option<MachineTextCarrier>,
     ) -> Self {
-        Self { platform, host, host_library, host_dependencies, functions, methods, host_exports, module_name, artifact_extension, text_layout }
-    }
-
-    /// `Utf8Text` 对象布局事实（语言结算，桥只按此读写）。
-    pub fn text_layout(&self) -> compiler_types::Utf8TextCarrierLayout {
-        self.text_layout
+        Self { platform, host, host_library, host_dependencies, functions, methods, host_exports, module_name, artifact_extension, text_carrier }
     }
 
     /// 目标平台身份（容器与调用约定一次冻结）。
@@ -127,6 +125,12 @@ pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<
     let abi = platform.abi();
     let properties: &[HostProperty] = &[];
     let mut functions = input.functions.clone();
+    // 文本载体描述按需校验：导出面含 utf8 载体却没有显式描述时，在编码前
+    // 结构化失败；桥不默认构造布局事实，也不允许静默省略。
+    if input.methods.iter().any(HostMethod::uses_text_carrier) && input.text_carrier.is_none() {
+        return Err("宿主导出面含 utf8 载体但未提供显式文本载体描述：语言适配器必须按需提交载体布局事实，桥不默认构造".to_string());
+    }
+    let text_carrier = input.text_carrier;
 
     let (image, entry_symbol) = match input.host {
         HostModule::Node => {
@@ -144,7 +148,7 @@ pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<
                     platform,
                     &input.host_library,
                     arena_offset,
-                    input.text_layout,
+                    text_carrier,
                 ));
             }
             functions.push(node_addon_registration(
@@ -170,7 +174,7 @@ pub fn assemble_x64_extension_image(input: &X64ExtensionProgramInput) -> Result<
             let arena_offset = Some(append_text_arena(&mut data));
             let bool_exports = any_returns_bool(properties, &input.methods);
             for (method, format_offset) in input.methods.iter().zip(format_offsets) {
-                functions.push(python_method_wrapper(method, format_offset, &input.host_library, arena_offset, platform, input.text_layout));
+                functions.push(python_method_wrapper(method, format_offset, &input.host_library, arena_offset, platform, text_carrier));
             }
             functions.push(python_module_exec(properties, &property_name_offsets, &input.host_library, arena_offset));
             functions.push(python_module_registration(module, &input.host_library));
@@ -261,4 +265,47 @@ pub(super) fn verify_shared_image(executable: &[u8], platform: X64Platform) -> R
         return Err(format!("宿主扩展产物自检失败：平台 `{}` 期望 {expected:?}，实际 {facts:?}", platform.name()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{super::HostValueKind, *};
+
+    /// 导出面含 utf8 载体却未提供显式文本载体描述：编码前结构化失败，
+    /// 桥不默认构造布局事实。
+    #[test]
+    fn utf8_export_without_carrier_description_fails_before_encoding() {
+        let method = HostMethod {
+            name: "echo".to_string(),
+            symbol: "echo".to_string(),
+            parameters: vec![HostParameterKind::Utf8],
+            returns: HostValueKind::Int64,
+        };
+        let input = X64ExtensionProgramInput::new(
+            X64Platform::linux_x64(),
+            HostModule::Node,
+            String::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![method],
+            Vec::new(),
+            None,
+            ".node".to_string(),
+            None,
+        );
+        let error = assemble_x64_extension_image(&input).expect_err("utf8 载体必须显式提供文本载体描述");
+        assert!(error.contains("文本载体描述"), "错误必须指名缺失的载体描述，got: {error}");
+    }
+
+    /// 不含 utf8 载体的导出面不需要载体描述：输入按需接收，不强制携带。
+    #[test]
+    fn integer_only_exports_do_not_require_carrier_description() {
+        let method = HostMethod {
+            name: "add".to_string(),
+            symbol: "add".to_string(),
+            parameters: vec![HostParameterKind::Int64],
+            returns: HostValueKind::Int64,
+        };
+        assert!(!method.uses_text_carrier(), "纯整数方法不得被判定为需要文本载体");
+    }
 }

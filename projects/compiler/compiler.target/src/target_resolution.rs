@@ -8,11 +8,16 @@
 //! - 具体机器平台身份（[`CanonicalTarget`]，arch / vendor / specification / ABI）；
 //! - 产物与宿主合同（[`ArtifactContract`]）。
 //!
+//! 宿主导出命名策略（[`HostExportNaming`]）也是宿主合同的一部分：语言 lane 只
+//! 提交源码名与注解事实，公开名投影与碰撞拒绝统一在这里完成，产物与清单共享
+//! 同一份最终导出表。
+//!
 //! 解析只在这里发生。parser、Legion、LegendVM、emitter 与打包器都必须消费同一份
 //! 冻结结果；无法识别的架构或 OS 明确失败，不得回退到「最常见的平台」。生成后的
 //! 机器码不再临时决定自己采用哪种 ABI。
 
 use std::{
+    collections::BTreeMap,
     fmt::{Display, Formatter},
     process::Command,
 };
@@ -163,6 +168,110 @@ impl ArtifactContract {
             Self::NodeApi => "node-api",
             Self::Cpython(_) => "cpython",
         }
+    }
+
+    /// 宿主导出命名策略：命名合同是宿主合同的一部分，语言 lane 只提交
+    /// 源码名与注解事实，不再各自实现投影。普通原生与平台 lane 没有
+    /// 宿主导出命名面，返回 `None`。
+    pub fn export_naming(&self) -> Option<HostExportNaming> {
+        match self {
+            Self::NodeApi => Some(HostExportNaming::NodeAnnotationFirst),
+            Self::Cpython(_) => Some(HostExportNaming::CpythonSnakeCase),
+            Self::Platform | Self::Native => None,
+        }
+    }
+}
+
+/// 一条宿主导出命名事实：调用方身份 + 冻结源码名 + 可选注解名。
+///
+/// 语言侧只提交这些事实；注解是否生效由 [`HostExportNaming`] 决定。
+/// `identity` 对合同不透明，只用于碰撞诊断回传与消费侧对齐。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostExportNameFact<I> {
+    /// 调用方身份（如可调用实例），合同不解释其语义。
+    pub identity: I,
+    /// 冻结源码声明名。
+    pub source_name: String,
+    /// `[export(name=...)]` 注解名事实。
+    pub annotation: Option<String>,
+}
+
+/// 宿主合同投影后的最终导出名：产物镜像符号与执行清单共享同一份导出表。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostExportName<I> {
+    /// 与输入事实同一调用方身份。
+    pub identity: I,
+    /// 冻结源码声明名。
+    pub source_name: String,
+    /// 命名策略投影后的宿主公开名。
+    pub public_name: String,
+}
+
+/// 宿主导出公开名碰撞：两条不同导出事实投影为同一公开名。
+///
+/// 发射前结构化报错，诊断同时列出两处源码名、身份与碰撞的公开名。
+#[derive(Clone, PartialEq, Eq)]
+pub struct HostExportNameCollision<I> {
+    /// 碰撞的宿主公开名。
+    pub public_name: String,
+    /// 先登记的导出事实投影结果。
+    pub first: HostExportName<I>,
+    /// 与之碰撞的导出事实投影结果。
+    pub second: HostExportName<I>,
+}
+
+impl<I: Display> Display for HostExportNameCollision<I> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "宿主导出命名碰撞：源码名 `{}`（`{}`）与 `{}`（`{}`）投影为同一公开名 `{}`",
+            self.first.source_name, self.first.identity, self.second.source_name, self.second.identity, self.public_name
+        )
+    }
+}
+
+impl<I: Display> std::fmt::Debug for HostExportNameCollision<I> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl<I: Display> std::error::Error for HostExportNameCollision<I> {}
+
+/// 宿主导出命名策略：宿主合同的显式命名面，集中于此、不在语言 lane 复制。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HostExportNaming {
+    /// Node-API：显式注解名优先；无注解时源码名自动 camelCase 投影。
+    NodeAnnotationFirst,
+    /// CPython：源码名自动 snake_case 投影，忽略注解改名。
+    CpythonSnakeCase,
+}
+
+impl HostExportNaming {
+    /// 单条导出事实 → 宿主公开名（纯投影，可独立测试）。
+    pub fn public_name(self, source_name: &str, annotation: Option<&str>) -> String {
+        match self {
+            Self::NodeAnnotationFirst => {
+                annotation.map(str::to_string).unwrap_or_else(|| compiler_types::naming::snake_case_to_camel_case(source_name))
+            }
+            Self::CpythonSnakeCase => compiler_types::naming::camel_case_to_snake_case(source_name),
+        }
+    }
+
+    /// 冻结导出面 → 最终公开名表（按公开名稳定排序）。
+    ///
+    /// 这是产物与清单共享的单一导出表：投影碰撞在这里、即发射前结构化报错，
+    /// 不允许静默覆盖导出面。
+    pub fn project<I: Clone + Display>(self, facts: &[HostExportNameFact<I>]) -> Result<Vec<HostExportName<I>>, HostExportNameCollision<I>> {
+        let mut projected: BTreeMap<String, HostExportName<I>> = BTreeMap::new();
+        for fact in facts {
+            let public_name = self.public_name(&fact.source_name, fact.annotation.as_deref());
+            let entry = HostExportName { identity: fact.identity.clone(), source_name: fact.source_name.clone(), public_name: public_name.clone() };
+            if let Some(first) = projected.insert(public_name.clone(), entry.clone()) {
+                return Err(HostExportNameCollision { public_name, first, second: entry });
+            }
+        }
+        Ok(projected.into_values().collect())
     }
 }
 

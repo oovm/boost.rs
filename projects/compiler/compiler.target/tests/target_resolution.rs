@@ -1,8 +1,8 @@
 //! 作者面目标占位符（`native` / `node` / `python`）的统一解析：平台身份与宿主合同正交。
 
 use compiler_target::{
-    ArtifactContract, CanonicalAbi, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, NodeHostProbe, PythonHostProbe,
-    TargetRequest, TargetResolver,
+    ArtifactContract, CanonicalAbi, CanonicalSpecification, CanonicalTarget, CanonicalTargetParseError, HostExportName, HostExportNameFact,
+    HostExportNaming, NodeHostProbe, PythonHostProbe, TargetRequest, TargetResolver,
 };
 
 fn resolver() -> TargetResolver {
@@ -155,4 +155,61 @@ fn probed_resolution_uses_the_real_host_process() {
         }
         Err(error) => eprintln!("skip: python 不可用（{error}）"),
     }
+}
+
+/// 宿主命名合同只挂在宿主扩展合同上：普通原生与平台 lane 没有命名面。
+#[test]
+fn host_contracts_carry_their_own_export_naming() {
+    assert_eq!(ArtifactContract::NodeApi.export_naming(), Some(HostExportNaming::NodeAnnotationFirst));
+    assert_eq!(ArtifactContract::Cpython(Default::default()).export_naming(), Some(HostExportNaming::CpythonSnakeCase));
+    assert_eq!(ArtifactContract::Native.export_naming(), None);
+    assert_eq!(ArtifactContract::Platform.export_naming(), None);
+}
+
+/// Node 命名策略：显式注解优先，无注解 camelCase 投影。
+#[test]
+fn node_export_naming_prefers_annotation_then_camel_projects() {
+    assert_eq!(HostExportNaming::NodeAnnotationFirst.public_name("move_zeroes", None), "moveZeroes");
+    assert_eq!(HostExportNaming::NodeAnnotationFirst.public_name("move_zeroes", Some("customRun")), "customRun");
+}
+
+/// CPython 命名策略：snake_case 投影，注解改名事实在合同内被忽略。
+#[test]
+fn cpython_export_naming_projects_snake_case_and_ignores_annotation() {
+    assert_eq!(HostExportNaming::CpythonSnakeCase.public_name("twoSum", None), "two_sum");
+    assert_eq!(HostExportNaming::CpythonSnakeCase.public_name("twoSum", Some("customRun")), "two_sum");
+}
+
+fn fact(identity: u32, source: &str, annotation: Option<&str>) -> HostExportNameFact<u32> {
+    HostExportNameFact { identity, source_name: source.to_string(), annotation: annotation.map(str::to_string) }
+}
+
+/// 投影碰撞在发射前结构化报错，诊断同时列出两处源码名与身份。
+#[test]
+fn export_projection_collision_is_structured_error() {
+    let facts = [fact(1, "two_sum", None), fact(2, "twoSum", None)];
+    let collision = HostExportNaming::CpythonSnakeCase.project(&facts).expect_err("同落 `two_sum` 必须报错");
+    assert_eq!(collision.public_name, "two_sum");
+    assert_eq!(collision.first, HostExportName { identity: 1, source_name: "two_sum".to_string(), public_name: "two_sum".to_string() });
+    assert_eq!(collision.second.source_name, "twoSum");
+    let text = collision.to_string();
+    assert!(text.contains("two_sum") && text.contains("twoSum") && text.contains("1") && text.contains("2"), "诊断必须列出源码名与身份: {text}");
+
+    let facts = [fact(1, "foo_bar", None), fact(2, "fooBar", None)];
+    let collision = HostExportNaming::NodeAnnotationFirst.project(&facts).expect_err("同落 `fooBar` 必须报错");
+    assert_eq!(collision.public_name, "fooBar");
+}
+
+/// 无碰撞时投影表按公开名稳定排序，身份与源码名随行保留（单一导出表）。
+#[test]
+fn export_projection_keeps_identity_and_source_with_public_name() {
+    let facts = [fact(7, "zeta_run", None), fact(3, "alpha_run", Some("betaRun"))];
+    let table = HostExportNaming::NodeAnnotationFirst.project(&facts).expect("无碰撞投影必须成功");
+    assert_eq!(
+        table,
+        vec![
+            HostExportName { identity: 3, source_name: "alpha_run".to_string(), public_name: "betaRun".to_string() },
+            HostExportName { identity: 7, source_name: "zeta_run".to_string(), public_name: "zetaRun".to_string() },
+        ]
+    );
 }

@@ -584,20 +584,17 @@ impl CanonicalTarget {
             "ovm" | "odin-vm" => {
                 Self::new(CanonicalArch::Ovm, CanonicalVendor::Unknown, CanonicalSpecification::Unknown, Some(CanonicalAbi::Managed))
             }
-            "native" => Self::host_native()?,
-            // `node` / `python` 是宿主合同占位符，不是平台身份。
-            "node" | "python" => {
+            // `native` / `node` / `python` 是作者面请求占位符，不是平台身份：
+            // 宿主探测集中在 `crate::target_resolution::TargetResolver`，
+            // `CanonicalTarget::parse` 不再直接探测本机。
+            "native" | "node" | "python" => {
                 return Err(CanonicalTargetParseError::new(format!(
-                    "`{value}` 是宿主扩展占位符，不是平台身份；请用 `TargetRequest` 解析，Node 承载的 Wasm 请写 `wasm-node`"
+                    "`{value}` 是作者面请求占位符，不是平台身份；请用 `TargetRequest` / `TargetResolver` 解析，Node 承载的 Wasm 请写 `wasm-node`"
                 )));
             }
             _ => return Ok(None),
         };
         Ok(Some(alias))
-    }
-
-    fn host_native() -> Result<Self, CanonicalTargetParseError> {
-        crate::target_resolution::probe_build_host().map_err(|error| CanonicalTargetParseError::new(error.to_string()))
     }
 }
 

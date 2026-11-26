@@ -60,6 +60,13 @@ fn build(prefix: &str, source: &str, target: &str) -> (BuildOutcome, PathBuf) {
     build_for(prefix, source, target, target)
 }
 
+/// manifest 的平台身份字段只能写平台身份：`native` 占位符经请求层
+/// （`BuildOptions.target`）由 `TargetResolver` 展开，不再被 `CanonicalTarget`
+/// 解析直接探测本机；占位符请求对应的 manifest 字段写构建宿主三元组。
+fn host_triple() -> String {
+    package_manager_legion::legion::TargetResolver::for_build_host().expect("探测构建宿主").host().to_string()
+}
+
 fn build_for(prefix: &str, source: &str, target: &str, manifest_target: &str) -> (BuildOutcome, PathBuf) {
     let root = std::env::temp_dir().join(format!("legion-native-pe-{prefix}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
@@ -120,7 +127,7 @@ fn native_placeholder_resolves_like_explicit_windows_target() {
     assert_eq!(native.platform, explicit.platform, "`native` 必须展开成与显式目标相同的平台描述");
     assert_eq!(native.contract, explicit.contract, "`native` 必须与显式机器目标携带同一产物合同");
 
-    let (outcome, root) = build("native", SOURCE, "native");
+    let (outcome, root) = build_for("native", SOURCE, "native", &host_triple());
     assert!(outcome.ok, "legion build --target native 失败: {:?}", outcome.error);
     let executable = executable_of(&outcome);
     assert_eq!(assert_runnable_pe(&executable), 42, "`native` 与显式目标必须产出等价行为");
@@ -157,7 +164,7 @@ fn same_source_builds_both_native_image_and_jvm_lane() {
     // 同一份源码分别走 x86-64 进程镜像与 JVM 两条正式产物路径。两条路径必须各自
     // 完成验证并产出自己的产物：JVM lane 不借用机器码结果，机器码 lane 也不依赖
     // JVM 的 class 输出。
-    let (native, native_root) = build("same-source-native", SOURCE, "native");
+    let (native, native_root) = build_for("same-source-native", SOURCE, "native", &host_triple());
     assert!(native.ok, "native lane build 失败: {:?}", native.error);
     assert!(
         native.artifacts.iter().any(|artifact| artifact.ends_with(".exe") || artifact.ends_with(".elf")),

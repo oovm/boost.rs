@@ -38,7 +38,7 @@ pub use extension::{MachineHostExport, X64ExtensionProgramInput, X64LoweredExten
 pub use library::{MachineLibraryExport, X64LibraryProgramInput, X64LoweredLibrary};
 
 pub use carrier::{
-    HostMethod, HostParameterKind, HostProperty, HostValueKind, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool,
+    HostMethod, HostParameterKind, HostProperty, HostValueKind, MachineTextCarrier, PYTHON_EXEC_NAME, X64_TEXT_ARENA_CAPACITY, any_returns_bool,
     any_returns_int64_array, any_returns_utf8,
     append_text_arena, is_c_identifier, node_addon_registration, node_method_wrapper, node_module_data, python_method_wrapper,
     python_module_data, python_module_exec, python_module_registration, reset_text_arena,

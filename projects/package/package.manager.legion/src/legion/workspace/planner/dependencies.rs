@@ -311,11 +311,6 @@ fn format_git_failure(program: &OsStr, stderr: &[u8]) -> String {
     if text.is_empty() { format!("`{}` exited with failure", program.to_string_lossy()) } else { text.to_string() }
 }
 
-/// 将字符串解析为规范化目标平台。
-pub fn canonical_target(target: &str) -> std::result::Result<CanonicalTarget, crate::legion::CanonicalTargetParseError> {
-    target.parse()
-}
-
 pub(crate) fn default_dist_output_dir(project_dir: &Path, resolved: &crate::legion::ResolvedTarget) -> PathBuf {
     // 同一平台上的普通原生产物与宿主扩展必须落在不同目录：解析服务冻结的完整
     // identity（平台 + 合同 + 宿主 ABI 配置）就是产物目录身份。
