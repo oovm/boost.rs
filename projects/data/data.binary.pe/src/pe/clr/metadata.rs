@@ -20,6 +20,7 @@ pub(crate) struct TypeTokenMap {
 
 impl TypeTokenMap {
     /// 创建一个空映射，用于外部类型引用（不解析任何本地 `TypeDef`）。
+    #[allow(dead_code)]
     pub fn empty() -> Self {
         Self { tokens: BTreeMap::new(), value_type_names: BTreeSet::new(), value_type_tokens: BTreeSet::new() }
     }
@@ -42,6 +43,7 @@ pub(crate) struct TableBuildInfo<'a> {
     /// 各方法的 `MethodImplAttributes`（ECMA-335 II.23.1.11）。
     pub method_impl_flags: &'a [u16],
     /// 全局方法数量（用于计算结构体方法的 MethodDef 起始行号）。
+    #[allow(dead_code)]
     pub global_method_count: u32,
     /// `_GlobalMethods` 容器类型名在 `#Strings` 中的偏移。
     pub global_methods_type_name_offset: u32,

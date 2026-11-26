@@ -14,11 +14,3 @@
 pub mod error;
 /// Apple `Mach-O` 镜像的构建与读取。
 pub mod mach_o;
-
-macro_rules! err {
-    ($($arg:tt)*) => {
-        $crate::error::Error::new(format!($($arg)*))
-    };
-}
-
-pub(crate) use err;

@@ -27,6 +27,55 @@ const BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB: u8 = 0xC0;
 /// 指针宽度，绑定槽位按该宽度推进。
 const POINTER_SIZE: u64 = 8;
 
+const BIND_TYPE_POINTER: u8 = 1;
+const BIND_TYPE_TEXT_ABSOLUTE32: u8 = 2;
+const BIND_TYPE_TEXT_PCREL32: u8 = 3;
+
+/// `BIND_OPCODE_SET_TYPE_IMM` 设置的绑定类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MachBindType {
+    /// `BIND_TYPE_POINTER`。
+    Pointer,
+    /// `BIND_TYPE_TEXT_ABSOLUTE32`。
+    TextAbsolute32,
+    /// `BIND_TYPE_TEXT_PCREL32`。
+    TextPcrel32,
+    /// 其他或尚未设置的值。
+    Other(u8),
+}
+
+impl MachBindType {
+    /// 从原始 `SET_TYPE_IMM` 值映射。
+    pub fn from_value(value: u8) -> Self {
+        match value {
+            BIND_TYPE_POINTER => Self::Pointer,
+            BIND_TYPE_TEXT_ABSOLUTE32 => Self::TextAbsolute32,
+            BIND_TYPE_TEXT_PCREL32 => Self::TextPcrel32,
+            other => Self::Other(other),
+        }
+    }
+
+    /// 原始值。
+    pub fn value(self) -> u8 {
+        match self {
+            Self::Pointer => BIND_TYPE_POINTER,
+            Self::TextAbsolute32 => BIND_TYPE_TEXT_ABSOLUTE32,
+            Self::TextPcrel32 => BIND_TYPE_TEXT_PCREL32,
+            Self::Other(other) => other,
+        }
+    }
+
+    /// 稳定名称，例如 `pointer`；未知值渲染为 `0x<hex>`。
+    pub fn name(self) -> String {
+        match self {
+            Self::Pointer => "pointer".to_string(),
+            Self::TextAbsolute32 => "text-abs32".to_string(),
+            Self::TextPcrel32 => "text-pcrel32".to_string(),
+            Self::Other(other) => format!("0x{other:02x}"),
+        }
+    }
+}
+
 /// 一条 `dyld` 绑定记录。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MachBind {
@@ -44,12 +93,40 @@ pub struct MachBind {
     pub address: u64,
     /// 符号加数。
     pub addend: i64,
+    /// 绑定类型。
+    pub bind_type: MachBindType,
     /// 是否为弱导入。
     pub weak: bool,
     /// 是否来自 `lazy_bind` 流。
     pub lazy: bool,
     /// 数据流名称：`bind`、`weak_bind` 或 `lazy_bind`。
     pub stream: &'static str,
+}
+
+impl MachBind {
+    /// 报告使用的稳定流名：`bind`、`weak` 或 `lazy`。
+    pub fn stream_name(&self) -> &'static str {
+        match self.stream {
+            "weak_bind" => "weak",
+            "lazy_bind" => "lazy",
+            other => other,
+        }
+    }
+
+    /// 动态库名；正序号解析为安装名，特殊序号渲染为 `self` 等文本。
+    pub fn dylib_name(&self) -> String {
+        if let Some(library) = &self.library {
+            return library.clone();
+        }
+        match self.library_ordinal {
+            0 => "self",
+            -1 => "main-executable",
+            -2 => "flat-lookup",
+            -3 => "weak-lookup",
+            _ => "special",
+        }
+        .to_string()
+    }
 }
 
 /// 解释全部绑定数据流。
@@ -87,6 +164,7 @@ struct State {
     flags: u8,
     ordinal: i32,
     addend: i64,
+    bind_type: u8,
     segment: Option<u8>,
     address: u64,
 }
@@ -127,34 +205,36 @@ fn run_stream(
                 state.flags = immediate;
                 state.symbol = read_symbol(bytes, &mut cursor, end);
             }
-            BIND_OPCODE_SET_TYPE_IMM => {}
+            BIND_OPCODE_SET_TYPE_IMM => state.bind_type = immediate,
             BIND_OPCODE_SET_ADDEND_SLEB => state.addend = read_sleb(bytes, &mut cursor, end)?,
             BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB => {
                 state.segment = Some(immediate);
-                state.address = read_uleb(bytes, &mut cursor, end)?;
+                let index = usize::from(immediate);
+                let segment = image.segments.get(index).ok_or(MachOParseError::BindSegmentOutOfRange { index: immediate })?;
+                state.address = segment.vm_address.wrapping_add(read_uleb(bytes, &mut cursor, end)?);
             }
             BIND_OPCODE_ADD_ADDR_ULEB => {
                 state.address = state.address.wrapping_add(read_uleb(bytes, &mut cursor, end)?);
             }
             BIND_OPCODE_DO_BIND => {
-                emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
-                state.address = state.address.wrapping_add(POINTER_SIZE);
+                let stride = emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
+                state.address = state.address.wrapping_add(stride);
             }
             BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB => {
                 let skip = read_uleb(bytes, &mut cursor, end)?;
-                emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
-                state.address = state.address.wrapping_add(POINTER_SIZE).wrapping_add(skip);
+                let stride = emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
+                state.address = state.address.wrapping_add(stride).wrapping_add(skip);
             }
             BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED => {
-                emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
-                state.address = state.address.wrapping_add(POINTER_SIZE).wrapping_add(u64::from(immediate) * POINTER_SIZE);
+                let stride = emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
+                state.address = state.address.wrapping_add(stride).wrapping_add(u64::from(immediate) * POINTER_SIZE);
             }
             BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB => {
                 let count = read_uleb(bytes, &mut cursor, end)?;
                 let skip = read_uleb(bytes, &mut cursor, end)?;
                 for _ in 0..count {
-                    emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
-                    state.address = state.address.wrapping_add(POINTER_SIZE).wrapping_add(skip);
+                    let stride = emit(image, &state, bindings, opcode_offset, lazy, weak_stream, stream)?;
+                    state.address = state.address.wrapping_add(stride).wrapping_add(skip);
                 }
             }
             _ => return Err(MachOParseError::BadBindOpcode { offset: opcode_offset, opcode }),
@@ -163,7 +243,7 @@ fn run_stream(
     Ok(())
 }
 
-/// 按当前状态产出一条绑定记录。
+/// 按当前状态产出一条绑定记录，返回该绑定占用的槽位步长。
 #[allow(clippy::too_many_arguments)]
 fn emit(
     image: &MachOImage,
@@ -173,28 +253,47 @@ fn emit(
     lazy: bool,
     weak_stream: bool,
     stream: &'static str,
-) -> Result<(), MachOParseError> {
+) -> Result<u64, MachOParseError> {
     if state.symbol.is_empty() {
         return Err(MachOParseError::BindWithoutSymbol { offset });
     }
     let index = state.segment.unwrap_or(0);
-    let segment = image.segments.get(index as usize).ok_or(MachOParseError::BindSegmentOutOfRange { index })?;
+    if let Some(index) = state.segment {
+        if image.segments.get(usize::from(index)).is_none() {
+            return Err(MachOParseError::BindSegmentOutOfRange { index });
+        }
+    }
     let library = (state.ordinal > 0)
         .then(|| image.dylibs.iter().find(|dylib| dylib.ordinal == Some(state.ordinal as u32)).map(|dylib| dylib.name.clone()))
         .flatten();
+    let bind_type = MachBindType::from_value(state.bind_type);
+    let stride = match bind_type {
+        MachBindType::TextAbsolute32 | MachBindType::TextPcrel32 => 4,
+        _ => POINTER_SIZE,
+    };
+    let segment = image
+        .segments
+        .iter()
+        .find(|segment| {
+            segment.vm_size > 0
+                && state.address >= segment.vm_address
+                && state.address < segment.vm_address.saturating_add(segment.vm_size)
+        })
+        .map_or_else(String::new, |segment| segment.name.clone());
     bindings.push(MachBind {
         symbol: state.symbol.clone(),
         library_ordinal: state.ordinal,
         library,
         segment_index: index,
-        segment: segment.name.clone(),
-        address: segment.vm_address.wrapping_add(state.address),
+        segment,
+        address: state.address,
         addend: state.addend,
+        bind_type,
         weak: weak_stream || state.flags & BIND_SYMBOL_FLAGS_WEAK_IMPORT != 0,
         lazy,
         stream,
     });
-    Ok(())
+    Ok(stride)
 }
 
 /// 读取 `0` 结尾的符号名，未终止时取到流末尾。

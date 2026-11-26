@@ -6,8 +6,10 @@
 
 use std::fmt;
 
-const MH_MAGIC: u32 = 0xFEED_FACE;
-const MH_MAGIC_64: u32 = 0xFEED_FACF;
+use super::encryption::MachEncryptionInfo;
+use super::identity::{MachBuildInfo, MachBuildSource, MachPlatform, uuid_string};
+use super::linkedit::MachLinkeditData;
+
 const FAT_MAGIC: u32 = 0xCAFE_BABE;
 const FAT_MAGIC_64: u32 = 0xCAFE_BABF;
 
@@ -20,8 +22,21 @@ const LC_LOAD_WEAK_DYLIB: u32 = 0x8000_0018;
 const LC_REEXPORT_DYLIB: u32 = 0x8000_001F;
 const LC_LOAD_UPWARD_DYLIB: u32 = 0x8000_0023;
 const LC_ID_DYLIB: u32 = 0xD;
+const LC_LAZY_LOAD_DYLIB: u32 = 0x20;
 const LC_DYLD_INFO: u32 = 0x22;
 const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
+const LC_UUID: u32 = 0x1B;
+const LC_BUILD_VERSION: u32 = 0x32;
+const LC_VERSION_MIN_MACOSX: u32 = 0x24;
+const LC_VERSION_MIN_IPHONEOS: u32 = 0x25;
+const LC_VERSION_MIN_TVOS: u32 = 0x2F;
+const LC_VERSION_MIN_WATCHOS: u32 = 0x30;
+const LC_ENCRYPTION_INFO: u32 = 0x21;
+const LC_ENCRYPTION_INFO_64: u32 = 0x2C;
+const LC_FUNCTION_STARTS: u32 = 0x26;
+const LC_DYLD_EXPORTS_TRIE: u32 = 0x8000_0033;
+const LC_DYLD_CHAINED_FIXUPS: u32 = 0x8000_0034;
+const LC_CODE_SIGNATURE: u32 = 0x1D;
 
 /// 32 位头大小。
 const HEADER32_SIZE: usize = 28;
@@ -110,6 +125,33 @@ pub enum MachOParseError {
         /// 段序号。
         index: u8,
     },
+    /// 输入不是通用（fat）容器。
+    NotFatBinary,
+    /// fat 架构表声明的切片数量超出上限。
+    FatSliceLimit {
+        /// 声明的切片数量。
+        declared: u32,
+        /// 允许的上限。
+        limit: usize,
+    },
+    /// fat 架构表本身被截断。
+    FatTableTruncated {
+        /// 声明的切片数量。
+        declared: u32,
+        /// 文件中可用的字节数。
+        available: usize,
+    },
+    /// fat 切片落在文件之外。
+    FatSliceOutOfRange {
+        /// 切片序号。
+        index: usize,
+        /// 声明的文件偏移。
+        offset: u64,
+        /// 声明的大小。
+        size: u64,
+    },
+    /// 镜像没有 `LC_FUNCTION_STARTS` 命令。
+    FunctionStartsMissing,
 }
 
 impl fmt::Display for MachOParseError {
@@ -142,6 +184,41 @@ impl fmt::Display for MachOParseError {
             Self::BindSegmentOutOfRange { index } => {
                 write!(f, "绑定流引用了不存在的段 {index}")
             }
+            Self::NotFatBinary => write!(f, "输入不是通用（fat）Mach-O 容器"),
+            Self::FatSliceLimit { declared, limit } => {
+                write!(f, "fat 头声明 {declared} 个切片，超出 {limit} 条上限")
+            }
+            Self::FatTableTruncated { declared, available } => {
+                write!(f, "fat 架构表声明 {declared} 个切片，但只剩 {available} 字节")
+            }
+            Self::FatSliceOutOfRange { index, offset, size } => {
+                write!(f, "fat 切片 {index}（0x{offset:X}+{size}）落在文件之外")
+            }
+            Self::FunctionStartsMissing => write!(f, "镜像没有 `LC_FUNCTION_STARTS` 命令"),
+        }
+    }
+}
+
+impl MachOParseError {
+    /// 稳定的机器可读错误码；不随发布变化，也不含消息文本。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::TooShort => "macho/too-short",
+            Self::BadMagic => "macho/bad-magic",
+            Self::FatBinary => "macho/fat-binary",
+            Self::OutOfRange { .. } => "macho/out-of-range",
+            Self::BadCommandSize { .. } => "macho/bad-command-size",
+            Self::CommandOutOfRange { .. } => "macho/command-out-of-range",
+            Self::SegmentHeaderTooSmall { .. } => "macho/segment-header-too-small",
+            Self::SegmentSectionsOutOfRange { .. } => "macho/segment-sections-out-of-range",
+            Self::BadBindOpcode { .. } => "macho/bad-bind-opcode",
+            Self::BindWithoutSymbol { .. } => "macho/bind-without-symbol",
+            Self::BindSegmentOutOfRange { .. } => "macho/bind-segment-out-of-range",
+            Self::NotFatBinary => "macho/not-fat-binary",
+            Self::FatSliceLimit { .. } => "macho/fat-slice-limit",
+            Self::FatTableTruncated { .. } => "macho/fat-table-truncated",
+            Self::FatSliceOutOfRange { .. } => "macho/fat-slice-out-of-range",
+            Self::FunctionStartsMissing => "macho/function-starts-missing",
         }
     }
 }
@@ -231,6 +308,8 @@ pub enum MachDylibKind {
     Reexport,
     /// `LC_LOAD_UPWARD_DYLIB`。
     Upward,
+    /// `LC_LAZY_LOAD_DYLIB`。
+    Lazy,
     /// `LC_ID_DYLIB`，不作为绑定序号。
     Id,
 }
@@ -243,6 +322,7 @@ impl MachDylibKind {
             Self::Weak => "weak",
             Self::Reexport => "reexport",
             Self::Upward => "upward",
+            Self::Lazy => "lazy",
             Self::Id => "id",
         }
     }
@@ -260,12 +340,21 @@ pub struct MachDylib {
     pub name: String,
     /// 命令种类。
     pub kind: MachDylibKind,
+    /// 链接器记录的时间戳。
+    pub timestamp: u32,
     /// `current_version`，编码为 `x.y.z`。
     pub current_version: u32,
     /// `compatibility_version`。
     pub compatibility_version: u32,
     /// 绑定序号（1 起，按加载顺序）；`LC_ID_DYLIB` 为 `None`。
     pub ordinal: Option<u32>,
+}
+
+impl MachDylib {
+    /// 是否为 `LC_LAZY_LOAD_DYLIB`。
+    pub fn is_lazy(&self) -> bool {
+        self.kind == MachDylibKind::Lazy
+    }
 }
 
 /// `LC_DYLD_INFO` / `LC_DYLD_INFO_ONLY` 给出的各条数据流位置。
@@ -310,6 +399,27 @@ pub struct MachOImage {
     pub dylibs: Vec<MachDylib>,
     /// `LC_DYLD_INFO` 给出的绑定数据流。
     pub dyld_info: Option<MachDyldInfo>,
+    /// `LC_UUID` 给出的 16 字节载荷。
+    pub uuid: Option<[u8; 16]>,
+    /// `LC_BUILD_VERSION` 或 `LC_VERSION_MIN_*` 给出的平台与版本。
+    pub build: Option<MachBuildInfo>,
+    /// `LC_ENCRYPTION_INFO` / `LC_ENCRYPTION_INFO_64` 给出的加密信息。
+    pub encryption: Option<MachEncryptionInfo>,
+    /// `LC_FUNCTION_STARTS` 给出的载荷位置。
+    pub function_starts: Option<MachLinkeditData>,
+    /// `LC_DYLD_EXPORTS_TRIE` 给出的载荷位置。
+    pub exports_trie: Option<MachLinkeditData>,
+    /// `LC_DYLD_CHAINED_FIXUPS` 给出的载荷位置。
+    pub chained_fixups: Option<MachLinkeditData>,
+    /// `LC_CODE_SIGNATURE` 给出的载荷位置。
+    pub code_signature: Option<MachLinkeditData>,
+}
+
+impl MachOImage {
+    /// `LC_UUID` 渲染为规范 UUID 文本。
+    pub fn uuid_string(&self) -> Option<String> {
+        self.uuid.as_ref().map(uuid_string)
+    }
 }
 
 /// 识别 `Mach-O` 魔数，返回 `(is_64, endian)`。
@@ -370,6 +480,13 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
         symtab: None,
         dylibs: Vec::new(),
         dyld_info: None,
+        uuid: None,
+        build: None,
+        encryption: None,
+        function_starts: None,
+        exports_trie: None,
+        chained_fixups: None,
+        code_signature: None,
     };
     let mut ordinal = 0u32;
     let mut offset = header_size;
@@ -412,7 +529,7 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
                     });
                 }
             }
-            LC_LOAD_DYLIB | LC_LOAD_WEAK_DYLIB | LC_REEXPORT_DYLIB | LC_LOAD_UPWARD_DYLIB | LC_ID_DYLIB => {
+            LC_LOAD_DYLIB | LC_LOAD_WEAK_DYLIB | LC_REEXPORT_DYLIB | LC_LOAD_UPWARD_DYLIB | LC_LAZY_LOAD_DYLIB | LC_ID_DYLIB => {
                 if let Some(dylib) = reader.dylib(offset, size, command)? {
                     if dylib.kind.has_ordinal() {
                         ordinal += 1;
@@ -422,6 +539,63 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
                         image.dylibs.push(dylib);
                     }
                 }
+            }
+            LC_UUID => {
+                if size >= 24 {
+                    image.uuid = reader.slice(offset + 8, 16)?.try_into().ok();
+                }
+            }
+            LC_BUILD_VERSION => {
+                if size >= 24 {
+                    image.build = Some(MachBuildInfo {
+                        platform: MachPlatform::from_value(reader.u32(offset + 8)?),
+                        min_os: reader.u32(offset + 12)?,
+                        sdk: reader.u32(offset + 16)?,
+                        source: MachBuildSource::BuildVersion,
+                    });
+                }
+            }
+            LC_VERSION_MIN_MACOSX | LC_VERSION_MIN_IPHONEOS | LC_VERSION_MIN_TVOS | LC_VERSION_MIN_WATCHOS => {
+                if size >= 16 {
+                    image.build = Some(MachBuildInfo {
+                        platform: version_min_platform(command),
+                        min_os: reader.u32(offset + 8)?,
+                        sdk: reader.u32(offset + 12)?,
+                        source: MachBuildSource::VersionMin,
+                    });
+                }
+            }
+            LC_ENCRYPTION_INFO => {
+                if size >= 20 {
+                    image.encryption = Some(MachEncryptionInfo {
+                        crypt_offset: reader.u32(offset + 8)?,
+                        crypt_size: reader.u32(offset + 12)?,
+                        crypt_id: reader.u32(offset + 16)?,
+                        is_64: false,
+                    });
+                }
+            }
+            LC_ENCRYPTION_INFO_64 => {
+                if size >= 24 {
+                    image.encryption = Some(MachEncryptionInfo {
+                        crypt_offset: reader.u32(offset + 8)?,
+                        crypt_size: reader.u32(offset + 12)?,
+                        crypt_id: reader.u32(offset + 16)?,
+                        is_64: true,
+                    });
+                }
+            }
+            LC_FUNCTION_STARTS => {
+                image.function_starts = reader.linkedit_data(offset, size)?;
+            }
+            LC_DYLD_EXPORTS_TRIE => {
+                image.exports_trie = reader.linkedit_data(offset, size)?;
+            }
+            LC_DYLD_CHAINED_FIXUPS => {
+                image.chained_fixups = reader.linkedit_data(offset, size)?;
+            }
+            LC_CODE_SIGNATURE => {
+                image.code_signature = reader.linkedit_data(offset, size)?;
             }
             LC_DYLD_INFO | LC_DYLD_INFO_ONLY => {
                 if size >= 48 {
@@ -448,13 +622,28 @@ pub fn parse_macho(bytes: &[u8]) -> Result<MachOImage, MachOParseError> {
 
 /// 是否为通用（fat）二进制。
 fn is_fat(bytes: &[u8]) -> bool {
-    match bytes.get(0..4) {
-        Some(raw) => {
-            let be = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]);
-            let le = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
-            be == FAT_MAGIC || be == FAT_MAGIC_64 || le == FAT_MAGIC || le == FAT_MAGIC_64
-        }
-        None => false,
+    fat_magic(bytes).is_some()
+}
+
+/// 识别通用（fat）容器魔数，返回是否为 64 位 `fat_arch_64` 布局。
+pub fn fat_magic(bytes: &[u8]) -> Option<bool> {
+    let raw = bytes.get(0..4)?;
+    let be = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]);
+    let le = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
+    match (be == FAT_MAGIC || be == FAT_MAGIC_64, le == FAT_MAGIC || le == FAT_MAGIC_64) {
+        (true, _) => Some(be == FAT_MAGIC_64),
+        (_, true) => Some(le == FAT_MAGIC_64),
+        _ => None,
+    }
+}
+
+/// `LC_VERSION_MIN_*` 对应的平台。
+fn version_min_platform(command: u32) -> MachPlatform {
+    match command {
+        LC_VERSION_MIN_MACOSX => MachPlatform::MacOs,
+        LC_VERSION_MIN_IPHONEOS => MachPlatform::IOs,
+        LC_VERSION_MIN_TVOS => MachPlatform::TvOs,
+        _ => MachPlatform::WatchOs,
     }
 }
 
@@ -524,15 +713,25 @@ impl<'a> Reader<'a> {
             LC_LOAD_WEAK_DYLIB => MachDylibKind::Weak,
             LC_REEXPORT_DYLIB => MachDylibKind::Reexport,
             LC_LOAD_UPWARD_DYLIB => MachDylibKind::Upward,
+            LC_LAZY_LOAD_DYLIB => MachDylibKind::Lazy,
             _ => MachDylibKind::Id,
         };
         Ok(Some(MachDylib {
             name,
             kind,
+            timestamp: self.u32(offset + 12)?,
             current_version: self.u32(offset + 16)?,
             compatibility_version: self.u32(offset + 20)?,
             ordinal: None,
         }))
+    }
+
+    /// 解析 `linkedit_data_command` 的 `dataoff` / `datasize`。
+    fn linkedit_data(&self, offset: u64, size: u32) -> Result<Option<MachLinkeditData>, MachOParseError> {
+        if size < 16 {
+            return Ok(None);
+        }
+        Ok(Some(MachLinkeditData { data_offset: self.u32(offset + 8)?, data_size: self.u32(offset + 12)? }))
     }
 
     fn segment32(&self, offset: u64, size: u32) -> Result<MachSegment, MachOParseError> {

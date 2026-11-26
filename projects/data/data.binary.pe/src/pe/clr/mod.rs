@@ -917,6 +917,7 @@ fn build_field_rows(
     Ok(rows)
 }
 
+#[allow(dead_code)]
 fn to_u16(value: u32, what: &str) -> Result<u16, PeWriterError> {
     u16::try_from(value).map_err(|_| PeWriterError::MetadataIndexOverflow { what: what.to_string(), value })
 }

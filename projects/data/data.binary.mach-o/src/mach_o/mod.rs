@@ -1,14 +1,31 @@
 //! Mach-O 可执行文件构建（aarch64）与读取。
 
 mod bind;
+mod chained_fixups;
+mod code_signature;
+mod encryption;
+mod exports;
+mod fat;
+mod function_starts;
+mod identity;
+mod leb;
+mod linkedit;
 mod read;
 
 use crate::error::Result;
 
-pub use bind::{MachBind, read_bindings};
+pub use bind::{MachBind, MachBindType, read_bindings};
+pub use chained_fixups::{MachChainedFixups, MachChainedFixupsHeader, MachChainedImport, read_chained_fixups};
+pub use code_signature::{MachCodeDirectory, MachCodeSignature, read_code_signature};
+pub use encryption::MachEncryptionInfo;
+pub use exports::{MachExport, MachExports, read_exports};
+pub use fat::{MAX_FAT_SLICES, MachFatSlice, MachFatSlices, read_fat_slices};
+pub use function_starts::{MachFunctionStarts, read_function_starts};
+pub use identity::{MachBuildInfo, MachBuildSource, MachPlatform, render_version, uuid_string};
+pub use linkedit::MachLinkeditData;
 pub use read::{
     MachArchitecture, MachDyldInfo, MachDylib, MachDylibKind, MachHeader, MachOEndian, MachOImage, MachOParseError, MachSection, MachSegment,
-    MachSymbol, MachSymtab, architecture, macho_magic, parse_macho, parse_macho_header, read_macho_symbols,
+    MachSymbol, MachSymtab, architecture, fat_magic, macho_magic, parse_macho, parse_macho_header, read_macho_symbols,
 };
 
 const MH_MAGIC_64: u32 = 0xFEED_FACF;
@@ -18,7 +35,6 @@ const MH_EXECUTE: u32 = 0x2;
 const LC_SEGMENT_64: u32 = 0x19;
 const LC_MAIN: u32 = 0x8000_0028;
 const VM_PROT_READ: u32 = 1;
-const VM_PROT_WRITE: u32 = 2;
 const VM_PROT_EXECUTE: u32 = 4;
 
 /// Mach-O 镜像构建器。

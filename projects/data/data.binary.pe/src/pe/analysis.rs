@@ -58,6 +58,17 @@ impl fmt::Display for PeAnalysisError {
     }
 }
 
+impl PeAnalysisError {
+    /// 稳定的错误代码，供上层按代码而不是按文本来匹配。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Rva(_) => "pe/rva",
+            Self::Truncated { .. } => "pe/truncated",
+            Self::Limit { .. } => "pe/limit",
+        }
+    }
+}
+
 impl std::error::Error for PeAnalysisError {}
 
 /// 一条导入函数。
@@ -266,6 +277,33 @@ impl PeDebugEntry {
             _ => "unknown",
         }
     }
+
+    /// 稳定的 `debugType` 拼写，供产品直接作为线上值使用。
+    ///
+    /// 与 [`Self::type_name`] 的差别是本方法保留了产品当前发布的连字符与
+    /// `mpx` 等取值；一旦产品改为调用本方法，拼写不会再漂移。
+    pub fn stable_type_name(&self) -> &'static str {
+        match self.debug_type {
+            0 => "unknown",
+            1 => "coff",
+            2 => "codeview",
+            3 => "fpo",
+            4 => "misc",
+            5 => "exception",
+            6 => "fixup",
+            7 => "omap-to-source",
+            8 => "omap-from-source",
+            9 => "borland",
+            10 => "reserved",
+            11 => "vc-feature",
+            12 => "pogo",
+            13 => "iltcg",
+            14 => "mpx",
+            16 => "repro",
+            17 => "embedded-portable-pdb",
+            _ => "other",
+        }
+    }
 }
 
 /// `CodeView` 调试载荷（`RSDS` / `NB10`）。
@@ -277,8 +315,28 @@ pub struct PeCodeView {
     pub guid: Option<[u8; 16]>,
     /// `RSDS` 的 `age` 或 `NB10` 的 `age`。
     pub age: u32,
+    /// `NB10` 记录中的偏移；`RSDS` 为 `None`。
+    pub offset: Option<u32>,
+    /// `NB10` 记录中的时间戳；`RSDS` 为 `None`。
+    pub timestamp: Option<u32>,
     /// `PDB` 文件路径。
     pub path: String,
+}
+
+impl PeCodeView {
+    /// 把 `RSDS` 的 `GUID` 渲染成 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`。
+    ///
+    /// `NB10` 没有 `GUID`，返回 `None`。
+    pub fn guid_string(&self) -> Option<String> {
+        let raw = self.guid?;
+        let data1 = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
+        let data2 = u16::from_le_bytes([raw[4], raw[5]]);
+        let data3 = u16::from_le_bytes([raw[6], raw[7]]);
+        Some(format!(
+            "{data1:08x}-{data2:04x}-{data3:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            raw[8], raw[9], raw[10], raw[11], raw[12], raw[13], raw[14], raw[15]
+        ))
+    }
 }
 
 /// 读取调试目录。
@@ -437,14 +495,30 @@ impl<'a> View<'a> {
                 guid.copy_from_slice(&data[4..20]);
                 let age = u32::from_le_bytes([data[20], data[21], data[22], data[23]]);
                 let path = read_cstring_limited(&data[24..], length.saturating_sub(24) as usize);
-                Ok(Some(PeCodeView { signature, guid: Some(guid), age, path }))
+                Ok(Some(PeCodeView { signature, guid: Some(guid), age, offset: None, timestamp: None, path }))
             }
             b"NB10" if read_len >= 16 => {
+                let offset = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+                let timestamp = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
                 let age = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
                 let path = read_cstring_limited(&data[16..], length.saturating_sub(16) as usize);
-                Ok(Some(PeCodeView { signature, guid: None, age, path }))
+                Ok(Some(PeCodeView {
+                    signature,
+                    guid: None,
+                    age,
+                    offset: Some(offset),
+                    timestamp: Some(timestamp),
+                    path,
+                }))
             }
-            _ => Ok(Some(PeCodeView { signature, guid: None, age: 0, path: String::new() })),
+            _ => Ok(Some(PeCodeView {
+                signature,
+                guid: None,
+                age: 0,
+                offset: None,
+                timestamp: None,
+                path: String::new(),
+            })),
         }
     }
 }

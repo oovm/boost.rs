@@ -165,6 +165,32 @@ pub enum ElfParseError {
         /// 节数量。
         count: usize,
     },
+    /// 程序头表项小于该位宽的最小尺寸。
+    ProgramHeaderEntryTooSmall {
+        /// `e_phentsize`。
+        size: u16,
+    },
+    /// 程序头表本身越界。
+    ProgramTableOutOfRange {
+        /// `e_phoff`。
+        offset: u64,
+        /// 表总长度。
+        length: u64,
+    },
+    /// 动态段含字符串引用但没有 `DT_STRTAB`。
+    DynamicStringTableMissing,
+    /// `DT_STRTAB` 指向的地址不被任何 `PT_LOAD` 段覆盖。
+    DynamicStringTableUnmapped {
+        /// `DT_STRTAB` 的虚拟地址。
+        address: u64,
+    },
+    /// 动态字符串偏移越过 `DT_STRSZ`。
+    DynamicStringOutOfRange {
+        /// 字符串表内偏移。
+        index: u64,
+        /// `DT_STRSZ`。
+        size: u64,
+    },
 }
 
 impl fmt::Display for ElfParseError {
@@ -191,6 +217,41 @@ impl fmt::Display for ElfParseError {
             Self::SymbolStringTableOutOfRange { index, count } => {
                 write!(f, "符号名称表索引 {index} 超出 {count} 个节")
             }
+            Self::ProgramHeaderEntryTooSmall { size } => write!(f, "程序头表项为 {size} 字节，小于该位宽的下限"),
+            Self::ProgramTableOutOfRange { offset, length } => {
+                write!(f, "程序头表 0x{offset:X} 处的 {length} 字节越过文件末尾")
+            }
+            Self::DynamicStringTableMissing => write!(f, "动态段缺少 `DT_STRTAB`"),
+            Self::DynamicStringTableUnmapped { address } => {
+                write!(f, "动态字符串表地址 0x{address:X} 未被任何 `PT_LOAD` 段覆盖")
+            }
+            Self::DynamicStringOutOfRange { index, size } => {
+                write!(f, "动态字符串偏移 {index} 超出 `DT_STRSZ` {size}")
+            }
+        }
+    }
+}
+
+impl ElfParseError {
+    /// 稳定的机器可读错误码；不随发布变化，也不含消息文本。
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::TooShort => "elf/too-short",
+            Self::BadMagic => "elf/bad-magic",
+            Self::UnsupportedClass(_) => "elf/unsupported-class",
+            Self::UnsupportedEncoding(_) => "elf/unsupported-encoding",
+            Self::OutOfRange { .. } => "elf/out-of-range",
+            Self::SectionEntryTooSmall { .. } => "elf/section-entry-too-small",
+            Self::SectionTableOutOfRange { .. } => "elf/section-table-out-of-range",
+            Self::SectionNameTableOutOfRange { .. } => "elf/section-name-table-out-of-range",
+            Self::SectionNameTableOutOfRangeBytes { .. } => "elf/section-name-table-out-of-range",
+            Self::SymbolEntryTooSmall { .. } => "elf/symbol-entry-too-small",
+            Self::SymbolStringTableOutOfRange { .. } => "elf/symbol-string-table-out-of-range",
+            Self::ProgramHeaderEntryTooSmall { .. } => "elf/program-header-entry-too-small",
+            Self::ProgramTableOutOfRange { .. } => "elf/program-table-out-of-range",
+            Self::DynamicStringTableMissing => "elf/dynamic-string-table-missing",
+            Self::DynamicStringTableUnmapped { .. } => "elf/dynamic-string-table-unmapped",
+            Self::DynamicStringOutOfRange { .. } => "elf/dynamic-string-out-of-range",
         }
     }
 }
@@ -226,6 +287,12 @@ pub struct ElfHeader {
     pub section_count: usize,
     /// 节名表索引（已展开 `SHN_XINDEX`）。
     pub section_name_index: usize,
+    /// `e_phoff`；无程序头表时为 `0`。
+    pub program_offset: u64,
+    /// `e_phentsize`。
+    pub program_entry_size: u16,
+    /// `e_phnum`。
+    pub program_count: usize,
 }
 
 /// 解析后的 `ELF` 节。
@@ -260,6 +327,58 @@ pub struct ElfImage {
     pub header: ElfHeader,
     /// 节表，按文件中的顺序排列；无节表时为空。
     pub sections: Vec<ElfSection>,
+}
+
+/// 只解析 `ELF32` / `ELF64` 文件头，不读取节表。
+///
+/// 节数量与节名表索引保持文件中的原始值（不展开扩展编号），便于调用方只
+/// 关心程序头表、动态段或注释时跳过可能损坏的节表。
+pub fn parse_elf_header(bytes: &[u8]) -> Result<ElfHeader, ElfParseError> {
+    let (class, endian) = elf_ident(bytes)?;
+    let minimum_header = if class.is_64() { 64usize } else { 52usize };
+    if bytes.len() < minimum_header {
+        return Err(ElfParseError::TooShort);
+    }
+    let cursor = Cursor { bytes, endian };
+    Ok(ElfHeader {
+        class,
+        endian,
+        os_abi: bytes[7],
+        file_type: cursor.u16(16)?,
+        machine: cursor.u16(18)?,
+        version: cursor.u32(20)?,
+        entry: if class.is_64() { cursor.u64(24)? } else { u64::from(cursor.u32(24)?) },
+        flags: if class.is_64() { cursor.u32(48)? } else { cursor.u32(36)? },
+        header_size: if class.is_64() { cursor.u16(52)? } else { cursor.u16(40)? },
+        section_offset: if class.is_64() { cursor.u64(40)? } else { u64::from(cursor.u32(32)?) },
+        section_entry_size: if class.is_64() { cursor.u16(58)? } else { cursor.u16(46)? },
+        section_count: usize::from(if class.is_64() { cursor.u16(60)? } else { cursor.u16(48)? }),
+        section_name_index: usize::from(if class.is_64() { cursor.u16(62)? } else { cursor.u16(50)? }),
+        program_offset: if class.is_64() { cursor.u64(32)? } else { u64::from(cursor.u32(28)?) },
+        program_entry_size: if class.is_64() { cursor.u16(54)? } else { cursor.u16(42)? },
+        program_count: usize::from(if class.is_64() { cursor.u16(56)? } else { cursor.u16(44)? }),
+    })
+}
+
+/// 校验 `e_ident` 并返回位宽与字节序。
+fn elf_ident(bytes: &[u8]) -> Result<(ElfClass, ElfEndian), ElfParseError> {
+    if bytes.len() < 16 {
+        return Err(ElfParseError::TooShort);
+    }
+    if &bytes[0..4] != b"\x7fELF" {
+        return Err(ElfParseError::BadMagic);
+    }
+    let class = match bytes[4] {
+        1 => ElfClass::Elf32,
+        2 => ElfClass::Elf64,
+        other => return Err(ElfParseError::UnsupportedClass(other)),
+    };
+    let endian = match bytes[5] {
+        1 => ElfEndian::Little,
+        2 => ElfEndian::Big,
+        other => return Err(ElfParseError::UnsupportedEncoding(other)),
+    };
+    Ok((class, endian))
 }
 
 /// 解析 `ELF32` / `ELF64`（大端与小端）的头和节表。
@@ -323,6 +442,9 @@ pub fn parse_elf(bytes: &[u8]) -> Result<ElfImage, ElfParseError> {
         section_entry_size,
         section_count: raw_count as usize,
         section_name_index: raw_name_index as usize,
+        program_offset: if class.is_64() { cursor.u64(32)? } else { u64::from(cursor.u32(28)?) },
+        program_entry_size: if class.is_64() { cursor.u16(54)? } else { cursor.u16(42)? },
+        program_count: usize::from(if class.is_64() { cursor.u16(56)? } else { cursor.u16(44)? }),
     };
 
     if section_offset == 0 {
@@ -385,13 +507,18 @@ pub fn parse_elf(bytes: &[u8]) -> Result<ElfImage, ElfParseError> {
 
 /// 按位宽与字节序读取的视图。
 #[derive(Clone, Copy)]
-struct Cursor<'a> {
+pub(crate) struct Cursor<'a> {
     bytes: &'a [u8],
     endian: ElfEndian,
 }
 
 impl<'a> Cursor<'a> {
-    fn slice(&self, offset: u64, length: u64) -> Result<&'a [u8], ElfParseError> {
+    /// 以指定字节序读取 `bytes`。
+    pub(crate) fn new(bytes: &'a [u8], endian: ElfEndian) -> Self {
+        Self { bytes, endian }
+    }
+
+    pub(crate) fn slice(&self, offset: u64, length: u64) -> Result<&'a [u8], ElfParseError> {
         let end = offset.checked_add(length).ok_or(ElfParseError::OutOfRange { offset, length })?;
         if end > self.bytes.len() as u64 {
             return Err(ElfParseError::OutOfRange { offset, length });
@@ -399,7 +526,7 @@ impl<'a> Cursor<'a> {
         Ok(&self.bytes[offset as usize..end as usize])
     }
 
-    fn u16(&self, offset: u64) -> Result<u16, ElfParseError> {
+    pub(crate) fn u16(&self, offset: u64) -> Result<u16, ElfParseError> {
         let raw = self.slice(offset, 2)?;
         Ok(match self.endian {
             ElfEndian::Little => u16::from_le_bytes([raw[0], raw[1]]),
@@ -407,7 +534,7 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn u32(&self, offset: u64) -> Result<u32, ElfParseError> {
+    pub(crate) fn u32(&self, offset: u64) -> Result<u32, ElfParseError> {
         let raw = self.slice(offset, 4)?;
         let raw = [raw[0], raw[1], raw[2], raw[3]];
         Ok(match self.endian {
@@ -416,7 +543,7 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn u64(&self, offset: u64) -> Result<u64, ElfParseError> {
+    pub(crate) fn u64(&self, offset: u64) -> Result<u64, ElfParseError> {
         let raw = self.slice(offset, 8)?;
         let raw = [raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
         Ok(match self.endian {
