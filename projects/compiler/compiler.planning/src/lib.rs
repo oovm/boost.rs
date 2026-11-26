@@ -19,7 +19,10 @@ use compiler_optimize::{
     AlgebraicTerm, ObjectAlgebraicDimension, ObjectAlgebraicProgram, OptimizationRequest, OptimizationResult, OptimizationSession,
     ProjectionPolicy, RewriteTheory, TheoryBundle,
 };
-use compiler_types::{CapabilityTag, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, QualifiedName, ReferenceManagement, RuntimeRequirement};
+use compiler_types::{
+    CapabilityTag, ExportRecord, FutamuraProjectionFamily, HostProjectionBoundary, Identifier, ItemInstanceId, QualifiedName, ReferenceManagement,
+    RuntimeRequirement,
+};
 
 use compiler_target::{
     abstractions::{BackendInputKind, BinaryTarget, CanonicalTarget, PartitionBackendRequirement},
@@ -196,23 +199,43 @@ pub struct ArtifactPartitionPlan {
     pub partitions: Vec<ArtifactPartition>,
 }
 
+/// 分区规划入口的窄视图：只携带规划实际消费的有限事实。
+///
+/// 规划层不再接收整份 `LinkedSemanticProgram`——证据、字段、变体、数组索引类型
+/// 与布局表都不进规划输入；这些是语言与各目标 lane 的事实，不是分区规划的事实。
+#[derive(Debug)]
+pub struct PlanningProgramView<'a> {
+    /// 模块 / 包身份。
+    pub module_name: &'a str,
+    /// 已结算的语义片段表。
+    pub fragments: &'a BTreeMap<Identifier, compiler_types::CanonicalFragment>,
+    /// callable 身份到限定 ABI 名称的冻结映射。
+    pub callable_names: &'a BTreeMap<ItemInstanceId, QualifiedName>,
+    /// 公开导出合同（身份 → 源名）。
+    pub exports: &'a BTreeMap<ItemInstanceId, ExportRecord>,
+    /// 模块级引用管理合同。
+    pub reference_management: Option<ReferenceManagement>,
+    /// 模块级运行时合同需求。
+    pub runtime_requirements: &'a [RuntimeRequirement],
+}
+
 impl ArtifactPartitionPlan {
-    /// 从语言前端已验证并提交的中立链接事实派生分区规划输入。
+    /// 从语言前端已验证并提交的窄规划视图派生分区计划。
     ///
     /// 编排层不解释语言语义，也不持有语言 MIR：语言前端必须先完成自己的语义
-    /// 验证，再把 `LinkedSemanticProgram` 身份/片段/能力事实交给这里。可执行入口
+    /// 验证，再把身份/片段/调用/运行需求这些有限事实交给这里。可执行入口
     /// 与根直接保留已冻结的 callable 身份；optimizer 名称视图只用于等式优化，
     /// 不得从 HIR 或旧前端计划重新收集绑定事实。
-    pub fn from_linked_program(
-        linked: &compiler_types::LinkedSemanticProgram,
+    pub fn from_program_view(
+        view: PlanningProgramView<'_>,
         target: CanonicalTarget,
         rewrite_theory: RewriteTheory,
         projection_policy: ProjectionPolicy,
         backend_registry: BackendRegistry,
         clr_suspend_strategy: compiler_target::backends::clr::ClrSuspendStrategy,
     ) -> Result<Self, PlanningError> {
-        let module_name = qualified_module_name(&linked.module_name);
-        let (program_facts, semantic_fragments, object_algebraic_program) = canonical_optimizer_input(linked)?;
+        let module_name = qualified_module_name(view.module_name);
+        let (program_facts, semantic_fragments, object_algebraic_program) = canonical_optimizer_input(&view)?;
         Self::plan_from_optimizer_input(
             OptimizerInput {
                 module_name,
@@ -225,7 +248,7 @@ impl ArtifactPartitionPlan {
                 backend_registry,
                 clr_suspend_strategy,
             },
-            &linked.fragments,
+            view.fragments,
         )
     }
 
@@ -289,19 +312,17 @@ fn qualified_module_name(module_name: &str) -> QualifiedName {
     QualifiedName::new(module_name.split("::").filter(|part| !part.is_empty()).map(Identifier::new).collect())
 }
 
-fn canonical_optimizer_input(
-    linked: &compiler_types::LinkedSemanticProgram,
-) -> Result<(PlannerFacts, Vec<OptimizerFragment>, ObjectAlgebraicProgram), PlanningError> {
-    let module_name = qualified_module_name(&linked.module_name);
-    let callable_name = |instance: compiler_types::ItemInstanceId| {
-        linked.callable_names.get(&instance).cloned().ok_or_else(|| PlanningError::SemanticContract {
-            module: linked.module_name.clone(),
+fn canonical_optimizer_input(view: &PlanningProgramView<'_>) -> Result<(PlannerFacts, Vec<OptimizerFragment>, ObjectAlgebraicProgram), PlanningError> {
+    let module_name = qualified_module_name(view.module_name);
+    let callable_name = |instance: ItemInstanceId| {
+        view.callable_names.get(&instance).cloned().ok_or_else(|| PlanningError::SemanticContract {
+            module: view.module_name.to_string(),
             detail: format!("Canonical callable `{instance:?}` 缺少限定名称"),
         })
     };
     let mut capabilities = Vec::new();
     let mut fragments = Vec::new();
-    for fragment in linked.fragments.values() {
+    for fragment in view.fragments.values() {
         for capability in &fragment.required_capabilities {
             if !capabilities.contains(capability) {
                 capabilities.push(capability.clone());
@@ -316,7 +337,7 @@ fn canonical_optimizer_input(
             rewrite_theory: RewriteTheory::default(),
         });
     }
-    let exports = linked
+    let exports = view
         .exports
         .iter()
         .map(|(instance, record)| {
@@ -331,8 +352,8 @@ fn canonical_optimizer_input(
         module_name: module_name.clone(),
         exports,
         capabilities,
-        reference_management: linked.reference_management,
-        runtime_requirements: linked.runtime_requirements.clone(),
+        reference_management: view.reference_management,
+        runtime_requirements: view.runtime_requirements.to_vec(),
     };
     let object_algebraic_program = ObjectAlgebraicProgram {
         module_name: module_name.clone(),

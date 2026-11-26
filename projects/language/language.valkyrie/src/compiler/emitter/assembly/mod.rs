@@ -66,8 +66,16 @@ pub fn plan_artifacts_from_compiled_program(
     })?;
     let linked = &compiled_program.mir_program().linked;
     let backend_registry = compiler_emitter::bundled_backend_registry_from_canonical(&linked.fragments, &target_profile, &projection_policy);
-    ArtifactPartitionPlan::from_linked_program(
-        linked,
+    // 规划只接收有限事实的窄视图：布局、字段、变体与证据不进规划输入。
+    ArtifactPartitionPlan::from_program_view(
+        compiler_planning::PlanningProgramView {
+            module_name: &linked.module_name,
+            fragments: &linked.fragments,
+            callable_names: &linked.callable_names,
+            exports: &linked.exports,
+            reference_management: linked.reference_management,
+            runtime_requirements: &linked.runtime_requirements,
+        },
         target,
         compiler_optimize::RewriteTheory::default(),
         projection_policy,
