@@ -31,8 +31,8 @@ pub use backend::{
     clr as emitter_backend_clr, jvm as emitter_backend_jvm, machine as emitter_backend_machine, vm as emitter_backend_vm,
     wasi as emitter_backend_wasi, wasm as emitter_backend_wasm, wasm_js_glue as emitter_backend_wasm_js_glue,
 };
-use compiler_optimize::{EntryReturnProjection, ProjectionPolicy};
 use compiler_target::PartitionBackendRequirement;
+use compiler_target::{EntryReturnProjection, ProjectionPolicy};
 use compiler_target::{
     ArtifactPurpose, BackendCapability, BackendInputKind, BackendInterpreterRegistration, BackendRegistry, BinaryTarget, CapabilityTag,
     HostProjectionBoundary, Identifier, ReferenceManagement, TargetBackendFamily, TargetFamily, TargetLane, TargetProfile, backends::CompilationOptions,

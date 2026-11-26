@@ -4,10 +4,9 @@ use crate::{
     DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, OvmAbiSidecar, Result,
     bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module, ovm_abi::OvmAbiContract,
 };
-use compiler_optimize::EntryReturnProjection;
 use compiler_target::{
-    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily,
-    TargetLane,
+    ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement,
+    TargetBackendFamily, TargetLane,
 };
 use data_binary_odin::{OdinExportKind, OdinModuleData, decode_module};
 

@@ -610,7 +610,6 @@ version = "0.1.0"
 dependencies = [
  "boost-collection",
  "boost-math",
- "compiler-optimize",
  "compiler-planning",
  "compiler-target",
  "compiler-types",

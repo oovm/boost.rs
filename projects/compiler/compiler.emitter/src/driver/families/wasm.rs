@@ -3,8 +3,9 @@ use crate::{
     bundled_backend_capability_descriptor,
     emitter_backend_wasi::{WasmBinaryBackend, WasmTestEntryExport},
 };
-use compiler_optimize::EntryReturnProjection;
-use compiler_target::{ArtifactPurpose, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend};
+use compiler_target::{
+    ArtifactPurpose, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement, TargetBackendFamily, backends::TargetCodeGenBackend,
+};
 
 use super::BundledBackendCompiler;
 

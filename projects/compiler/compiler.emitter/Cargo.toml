@@ -1,6 +1,6 @@
 [package]
 name = "compiler-emitter"
-description = "Language-agnostic AOT lowering: fragment submission contracts, executable model, ABI structure and per-target emitters for JVM, Wasm, CLR, OVM and machine targets"
+description = "Language-agnostic AOT assembly services: target input contracts, ABI structure and per-target private encoders for JVM, Wasm, CLR, OVM and machine targets"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,7 +22,6 @@ data-binary-pe = { workspace = true }
 data-binary-wasm = { workspace = true }
 boost-collection = { workspace = true }
 boost-math = { workspace = true }
-compiler-optimize = { workspace = true }
 compiler-planning = { workspace = true }
 compiler-target = { workspace = true }
 compiler-types = { workspace = true, features = ["serde"] }

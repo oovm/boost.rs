@@ -7,7 +7,6 @@
 
 use std::path::Path;
 
-use compiler_optimize::TheoryBundle;
 use compiler_planning::ArtifactPartition;
 use compiler_target::{ArtifactPurpose, HostProjectionBoundary, TargetBackendFamily};
 
@@ -15,7 +14,8 @@ use crate::{LoweredBackendInput, Result};
 
 /// 语言提交给编排层的一个分区装配结果。
 ///
-/// 携带的是分区身份、优化理论与适配器；编排层不读取语言语义。
+/// 携带的是分区身份与适配器；编排层不读取语言语义，也不承载优化理论——
+/// 理论事实只在语言侧的 lane（如 wasm 残差门）内消费，不进公共接入协议。
 ///
 /// 适配器只借用前端已编译程序，**不**在此处预构造任何跨目标计划：目标私有
 /// 输入必须等编排层交出冻结目标（[`TargetInputRequest::resolved`]）之后，
@@ -23,15 +23,13 @@ use crate::{LoweredBackendInput, Result};
 pub struct AssembledFragment<'a> {
     /// 编排层已经确认的分区身份。
     pub partition: ArtifactPartition,
-    /// 该分区选定的优化理论。
-    pub theory_bundle: TheoryBundle,
     /// 语言→平台适配器（借用前端编译程序）。
     pub input: Box<dyn AdaptedFragmentInput + 'a>,
 }
 
 impl std::fmt::Debug for AssembledFragment<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AssembledFragment").field("partition", &self.partition).field("theory_bundle", &self.theory_bundle).finish()
+        f.debug_struct("AssembledFragment").field("partition", &self.partition).finish()
     }
 }
 

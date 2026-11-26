@@ -323,7 +323,6 @@ pub fn assemble_fragment<'a>(
     // 预先取好传给语言适配器。
     Ok(AssembledFragment {
         partition: partition.clone(),
-        theory_bundle: theory_bundle.clone(),
         input: Box::new(ValkyrieTargetAdapter { partition: partition.clone(), compiled_program, roots, theory_bundle }),
     })
 }
