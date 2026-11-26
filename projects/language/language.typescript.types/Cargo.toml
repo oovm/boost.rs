@@ -1,0 +1,11 @@
+[package]
+name = "language-typescript-types"
+description = "TypeScript 高级类型系统与运行时值模型"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }

@@ -1,6 +1,6 @@
 [package]
 name = "language-typescript"
-description = "TypeScript language services: CST token-gap source formatter"
+description = "TypeScript 语言：CST 格式化、前端（词法/语法 → IR）、解释语义与 TS × OVM 第一投影适配器"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,9 +10,24 @@ publish = false
 [features]
 default = ["serde"]
 serde = ["dep:serde"]
+# TS × OVM 第一投影（残差直出 `.odin`）。
+# provider 需要 VM 宿主合同类型，故 `interpreter-vm-ovm` 由本 feature 激活。
+ovm-lane = ["compiler-emitter/ovm-lane", "dep:interpreter-vm-ovm"]
+
+[lints.rust]
+missing_docs = "warn"
 
 [dependencies]
+language-typescript-types = { workspace = true }
+language-typescript-ir = { workspace = true }
 data-text-core = { workspace = true }
 data-text-typescript = { workspace = true }
 language-format = { workspace = true }
 serde = { workspace = true, optional = true }
+compiler-emitter = { workspace = true }
+compiler-specialize = { workspace = true }
+data-binary-odin = { workspace = true }
+interpreter-vm-ovm = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

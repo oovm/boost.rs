@@ -1,0 +1,13 @@
+[package]
+name = "language-typescript-ir"
+description = "TypeScript 中间表示、优化与性能分析"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+language-typescript-types = { workspace = true }
+serde = { workspace = true }
+once_cell = { workspace = true }
