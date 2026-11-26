@@ -68,6 +68,7 @@ pub fn error_code_to_i32(code: ErrorCode) -> i32 {
         ErrorCode::NoBackend => -2,
         ErrorCode::Backend => -3,
         ErrorCode::CapacityExceeded => -4,
+        ErrorCode::Infeasible => -5,
     }
 }
 
