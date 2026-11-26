@@ -15,14 +15,14 @@ fn sample_graph(text: &str) -> DocumentGraph {
 fn probe_keeps_a_zip_package_ambiguous_without_a_hint() {
     let detection = probe(b"PK\x03\x04", None);
     assert_eq!(detection.confidence, DetectionConfidence::Ambiguous);
-    assert_eq!(detection.candidates, vec!["docx", "epub"]);
+    assert_eq!(detection.candidates, vec!["docx", "xlsx", "pptx", "epub"]);
 }
 
 #[test]
 fn auto_refuses_an_ambiguous_zip_package() {
     let error = import_auto("pack.bin", b"PK\x03\x04", None).expect_err("a zip without a hint must not be imported");
     assert_eq!(error.code(), codes::AMBIGUOUS_FORMAT);
-    assert!(error.message().contains("docx / epub"));
+    assert!(error.message().contains("docx / xlsx / pptx / epub"));
 }
 
 #[test]
