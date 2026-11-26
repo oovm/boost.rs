@@ -879,8 +879,8 @@ fn write_managed_abi(output_dir: &Path, contract: &compiler_emitter::ManagedAbiC
 /// 每个物理产物一份 sidecar，文件名由产物名唯一派生（`app.odin` →
 /// `app.odin.ovm-abi.json`）；宿主读取后必须先用实际 `.odin` 字节重算哈希，
 /// 再按合同解释，不一致 fail-closed。
-fn write_ovm_abi(output_dir: &Path, sidecar: &compiler_emitter::OvmAbiSidecar) -> LegionResult<()> {
-    let output_path = output_dir.join(compiler_emitter::ovm_abi_sidecar_file(&sidecar.artifact));
+fn write_ovm_abi(output_dir: &Path, sidecar: &data_binary_odin::OvmAbiSidecar) -> LegionResult<()> {
+    let output_path = output_dir.join(data_binary_odin::ovm_abi_sidecar_file(&sidecar.artifact));
     let content = serde_json::to_string_pretty(sidecar)
         .map_err(|error| LegionError::msg(format!("序列化 OVM ABI sidecar 失败 {}: {error}", output_path.display())))?;
     fs::create_dir_all(output_dir).map_err(|e| LegionError::msg(format!("创建输出目录失败: {}: {e}", output_dir.display())))?;

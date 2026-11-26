@@ -1,10 +1,11 @@
 //! OVM lane：语言侧直读 MIR 结算 `.odin` 目标私有输入。
 //!
-//! 边界（God IR 拆除整改）：本模块是 OVM 纵链唯一的计划事实消费点——可达闭包、
+//! 边界（语言 × 目标解耦整改）：本模块是 OVM 纵链唯一的计划事实消费点——可达闭包、
 //! 入口槽合同、外部签名、sum 物理布局、导出面与 ABI 合同全部从 `LaneContext`
-//! 与 `ValkyrieMirFunction` 一次结算；emitter 只保留目标私有编码原语
-//! （`BytecodeEmitter` / `encode_odin_function` / operator 绑定 / ABI 投影），
-//! 不再解释跨目标共享程序载荷。
+//! 与 `ValkyrieMirFunction` 一次结算；`SemanticType` → OVM 物理合同的裁决收在
+//! 本目录的 [`abi`] 适配器内，emitter 只保留目标私有编码原语
+//! （`BytecodeEmitter` / `encode_odin_function` / operator 绑定）与目标侧合同校验，
+//! 不再解释源语言类型语义或跨目标共享程序载荷。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,6 +23,7 @@ use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 
 use lowerer::{OvmFunctionLowering, OvmModuleFacts};
 
+pub(crate) mod abi;
 pub(crate) mod lowerer;
 
 /// 从 lane 共享上下文结算 OVM 目标私有输入（`.odin` 模块 + 库导出 ABI 合同）。
@@ -157,14 +159,14 @@ pub(crate) fn build_ovm_program_input(ctx: &LaneContext) -> Result<OvmProgramInp
     }
     else {
         let facts = lowerer::abi_export_facts(ctx, &abi_exports)?;
-        let plan_facts = compiler_emitter::ovm_abi::OvmAbiPlanFacts {
+        let plan_facts = abi::OvmAbiPlanFacts {
             aggregate_layouts: ctx.aggregate_layouts(),
             aggregate_layout_by_semantic_type: ctx.aggregate_layout_by_semantic_type(),
             sum_layout_by_semantic_type: ctx.sum_layout_by_semantic_type(),
             program_text_representation: ctx.program_text_representation(),
         };
         Some(
-            compiler_emitter::ovm_abi::derive_contract(&plan_facts, &facts, &mut module.layouts, &mut layout_index_by_id, &sum_layout_index_by_nominal)
+            abi::derive_contract(&plan_facts, &facts, &mut module.layouts, &mut layout_index_by_id, &sum_layout_index_by_nominal)
                 .map_err(|reason| unsound(AdapterStage::Function, None, None, reason))?,
         )
     };

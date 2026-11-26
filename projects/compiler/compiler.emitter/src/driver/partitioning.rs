@@ -41,7 +41,7 @@ pub(crate) fn merge_partition_reports(
     let mut primary_contracts = Vec::new();
     let mut secondary_contracts = Vec::new();
     let mut managed_abi: Vec<(String, crate::ManagedAbiContract)> = Vec::new();
-    let mut ovm_abi: Vec<(String, crate::OvmAbiSidecar)> = Vec::new();
+    let mut ovm_abi: Vec<(String, data_binary_odin::OvmAbiSidecar)> = Vec::new();
     let mut export_owners: Vec<(String, String)> = Vec::new();
     for (partition_name, report) in reports {
         merged.artifacts.artifacts.extend(report.artifacts.artifacts);

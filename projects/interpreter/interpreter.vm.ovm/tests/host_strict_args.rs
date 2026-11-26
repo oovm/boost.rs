@@ -97,33 +97,6 @@ fn array_ops_require_arguments() {
 }
 
 #[test]
-fn dom_provider_ops_require_arguments() {
-    use interpreter_vm_ovm::dom_runtime::DomProvider;
-    use interpreter_vm_ovm::host::HostProvider;
-    let provider = DomProvider::registered();
-    let dom = |symbol: &str| {
-        provider
-            .resolve("odin.host", symbol)
-            .unwrap_or_else(|| panic!("provider 必须认领 `{symbol}`"))
-    };
-
-    let mut heap = ObjectHeap::new();
-    let element = dom("dom_create_element").call(&[Value::String("div".to_string())], &mut heap).expect("创建元素");
-    assert_underflow(dom("dom_append").call(&[element.clone()], &mut heap), "dom_append 缺子节点");
-    assert_underflow(dom("dom_append").call(&[], &mut heap), "dom_append 零参");
-    assert_underflow(dom("dom_set_attr").call(&[element.clone(), Value::String("id".to_string())], &mut heap), "dom_set_attr 缺值");
-    assert_underflow(dom("dom_set_attr").call(&[], &mut heap), "dom_set_attr 零参");
-    assert_underflow(dom("dom_get_attr").call(&[element.clone()], &mut heap), "dom_get_attr 缺属性名");
-    assert_underflow(dom("dom_get_attr").call(&[], &mut heap), "dom_get_attr 零参");
-    assert_underflow(dom("dom_set_text").call(&[element.clone()], &mut heap), "dom_set_text 缺文本");
-    assert_underflow(dom("dom_set_text").call(&[], &mut heap), "dom_set_text 零参");
-    // 正例：文本节点本身是合法载体，补全参数后追加成功。
-    let text = dom("dom_create_text").call(&[Value::String("hi".to_string())], &mut heap).expect("创建文本");
-    assert!(dom("dom_append").call(&[element.clone(), text], &mut heap).is_ok());
-    assert!(dom("dom_set_text").call(&[element, Value::String("new".to_string())], &mut heap).is_ok());
-}
-
-#[test]
 fn string_and_console_ops_require_arguments() {
     for provided in [0, 1] {
         let args = vec![Value::String("a".to_string()); provided];

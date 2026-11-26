@@ -3,7 +3,6 @@
 
 pub mod transitional;
 
-mod abi_structure;
 mod artifacts;
 pub mod assembly;
 #[doc(hidden)]
@@ -11,7 +10,6 @@ pub mod backend;
 mod driver;
 #[doc(hidden)]
 pub mod lowering;
-pub mod ovm_abi;
 pub mod target_operator;
 
 mod error;
@@ -19,7 +17,10 @@ pub use error::{EmitterError, Result};
 
 pub mod managed_abi;
 pub use managed_abi::{MANAGED_ABI_SCHEMA_VERSION, ManagedAbiContract, ManagedAbiEntry, managed_abi_sidecar_file};
-pub use ovm_abi::{OVM_ABI_SCHEMA_VERSION, OVM_ABI_SIDECAR_SUFFIX, OvmAbiContract, OvmAbiSidecar, ovm_abi_sidecar_file};
+
+// OVM 库导出 ABI 合同 schema 归格式 crate；派生（语言语义裁决）已移入
+// 语言 × OVM 适配器，emitter 只在 OVM family 写 sidecar 前做目标侧校验。
+use data_binary_odin::{OvmAbiContract, OvmAbiSidecar};
 
 use std::path::{Path, PathBuf};
 

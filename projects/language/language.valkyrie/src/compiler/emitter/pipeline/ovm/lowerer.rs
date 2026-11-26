@@ -45,7 +45,7 @@ pub(crate) enum TextCarrier {
 /// 文本边界目标槽的冻结表示事实。
 ///
 /// `Raw` 与 `Managed` 都是显式声明：嵌套槽（字段/元素/载荷）与宿主边界由目标
-/// 合同固定 raw 串（与 `ovm_abi::Projection::project_text` 的 `TextSlot::Nested`
+/// 合同固定 raw 串（与 `abi::Projection::project_text` 的 `TextSlot::Nested`
 /// 同源）；托管槽携带计划冻结的布局身份。「没有事实」不允许到达发射，由
 /// [`freeze_text_representations`] 在发射前拒绝。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -221,7 +221,7 @@ pub(crate) fn value_layout_table(ctx: &LaneContext, function: &ValkyrieMirFuncti
 /// 1. 字面量定义（`LoadConstant Utf8`）→ `Raw`（OVM 常量 ABI：字面量编码为
 ///    `OdinConstant::String` 宿主 raw 串）；
 /// 2. 嵌套槽读取定义（`FieldGet`/`TupleGet`/`ArrayGet`/`SumPayloadGet`/`NullUnwrap`）→ `Raw`，
-///    与 `ovm_abi::Projection::project_text` 对 `TextSlot::Nested` 的显式声明同源：
+///    与 `abi::Projection::project_text` 对 `TextSlot::Nested` 的显式声明同源：
 ///    嵌套槽由目标合同固定为 raw 宿主串，不是发射器推断；
 /// 3. 外部宿主导入调用结果 → `Raw`（宿主边界 ABI 事实）；
 /// 4. 入口形参槽 → 与 OVM ABI 合同同一派生点 [`frozen_entry_parameter_layouts`]：
@@ -1923,7 +1923,7 @@ fn ctx_lower(ctx: &LaneContext, type_id: TypeId) -> Result<SemanticType, String>
 pub(crate) fn abi_export_facts(
     ctx: &LaneContext,
     exports: &[(ItemInstanceId, String)],
-) -> Result<Vec<compiler_emitter::ovm_abi::OvmAbiExportFacts>, TargetPlanError> {
+) -> Result<Vec<super::abi::OvmAbiExportFacts>, TargetPlanError> {
     let mut facts = Vec::with_capacity(exports.len());
     for (instance, logical_name) in exports {
         let fail = |reason: String| TargetPlanError::Unsound { stage: AdapterStage::Function, instance: Some(*instance), symbol: None, reason };
@@ -1936,7 +1936,7 @@ pub(crate) fn abi_export_facts(
             .get(instance)
             .cloned()
             .ok_or_else(|| fail(format!("库导出 `{logical_name}` 缺少计划冻结的源码声明名，无法派生 OVM ABI 合同")))?;
-        facts.push(compiler_emitter::ovm_abi::OvmAbiExportFacts {
+        facts.push(super::abi::OvmAbiExportFacts {
             logical_name: logical_name.clone(),
             source_name,
             param_types: view.param_types.clone(),

@@ -1,14 +1,14 @@
 use std::{fs, path::Path};
 
 use crate::{
-    DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, OvmAbiSidecar, Result,
-    bundled_backend_capability_descriptor, emitter_backend_vm::emit_ovm_module, ovm_abi::OvmAbiContract,
+    DriverBackendInput, DriverCompileReport, DriverCompileRequest, DriverLibraryExport, DriverRunContract, Result, bundled_backend_capability_descriptor,
+    emitter_backend_vm::emit_ovm_module,
 };
 use compiler_target::{
     ArtifactDescriptor, ArtifactFormat, ArtifactKind, ArtifactSet, EntryReturnProjection, HostProjectionBoundary, PartitionBackendRequirement,
     TargetBackendFamily, TargetLane,
 };
-use data_binary_odin::{OdinExportKind, OdinModuleData, decode_module};
+use data_binary_odin::{OdinExportKind, OdinModuleData, OvmAbiContract, OvmAbiSidecar, decode_module};
 
 use super::BundledBackendCompiler;
 
@@ -36,6 +36,11 @@ impl BundledBackendCompiler for OvmFamilyCompiler {
         fs::create_dir_all(&input.output_dir).map_err(|e| format!("创建输出目录失败：{}: {e}", input.output_dir.display()))?;
 
         if let Some(module) = input.ovm_module.as_ref() {
+            // 目标侧校验：适配器已结算的合同必须与 `.odin` 实际布局表一致
+            // （可执行布局、槽位与签名）；不一致在发射与导出之前失败闭合。
+            if let Some(contract) = input.abi_contract.as_ref() {
+                contract.verify_against_layouts(&module.layouts)?;
+            }
             let library_surface = request.purpose == compiler_target::ArtifactPurpose::Library;
             let entries = resolve_entry_symbols(module, &input.library_public_exports, library_surface)?;
             reject_legacy_output(&input.output_dir, request.artifact_name)?;
@@ -168,7 +173,7 @@ fn ovm_run_contract(artifact_name: &str, entry: &str) -> DriverRunContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ovm_abi::{OVM_ABI_SCHEMA_VERSION, OvmAbiExport, OvmAbiParam, OvmAbiType};
+    use data_binary_odin::{OVM_ABI_SCHEMA_VERSION, OvmAbiExport, OvmAbiParam, OvmAbiType};
 
     fn contract_with(exports: Vec<OvmAbiExport>) -> OvmAbiContract {
         OvmAbiContract { schema_version: OVM_ABI_SCHEMA_VERSION, lane: "ovm".to_string(), exports, digest: "sha256-test".to_string() }
@@ -199,7 +204,7 @@ mod tests {
                 OvmAbiParam {
                     index: 0,
                     name: "name".to_string(),
-                    ty: OvmAbiType::Text { representation: crate::ovm_abi::OvmTextRepresentation::Raw },
+                    ty: OvmAbiType::Text { representation: data_binary_odin::OvmTextRepresentation::Raw },
                     carrier: "text".to_string(),
                 },
                 OvmAbiParam { index: 1, name: "count".to_string(), ty: OvmAbiType::I64, carrier: "i64".to_string() },

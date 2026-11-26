@@ -7,8 +7,8 @@
 use std::fmt::Write as _;
 
 use data_text_awsl::is_html_void_element;
-use interpreter_vm_ovm::dom_runtime::DomNode;
 
+use super::dom_provider::DomNode;
 use crate::codegen::ssg_ovm::emit::FRAGMENT_TAG;
 
 /// 把读出 ABI 还原的 DOM 树序列化为 HTML 片段。

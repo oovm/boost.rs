@@ -25,6 +25,9 @@ const PRIMITIVES: &str = concat!(
     "    [ovm_operator(\"i32.eq\")]\n",
     "    micro `==`(self: i32, other: i32) -> bool;\n",
     "}\n",
+    "[primitive(\"std::primitive::i64\")]\n",
+    "structure i64 {\n",
+    "}\n",
 );
 
 /// 标量调用链：入口经一次函数调用返回标量。
@@ -167,6 +170,87 @@ fn truncated_artifact_fails_at_load_not_runtime() {
     let error = vm.load(&truncated).expect_err("截断制品必须在装载/校验阶段拒绝");
     let message = error.to_string();
     assert!(!message.is_empty(), "装载失败必须给出明确原因");
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// 泛型容器链：闭合泛型实例的字段读写经冻结布局身份直达 `.odin` 并真实执行。
+/// 覆盖架构门步骤 2 的「泛型容器 + 字段读写」：`Pair<i32>` 的实例布局由 canonical
+/// 计划冻结，ABI 投影按 `SemanticType → LayoutId` 索引展开字段，绝不按名字回猜。
+const GENERIC_SOURCE: &str = r#"namespace app;
+
+structure Pair<T> {
+    first: T
+    second: T
+}
+
+[main]
+micro main() -> i32 {
+    let p: Pair<i32> = Pair { first: 3, second: 4 }
+    return p.first + p.second
+}
+"#;
+
+#[test]
+fn generic_container_field_chain_projects_loads_and_runs() {
+    let (outcome, root) = build_case("generic", GENERIC_SOURCE);
+    assert!(outcome.ok, "泛型容器链构建失败: {:?}", outcome.error);
+    let entry = outcome.entry_symbol.clone().expect("构建结果必须给出入口符号");
+    let bytes = fs::read(odin_artifact(&outcome)).expect("读取 .odin");
+    assert_eq!(run_entry(&bytes, &entry).expect("泛型容器链必须执行到完成"), 7);
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// 宿主导入直达链：`[ovm("symbol")]` 声明经适配器投影为 `.odin` 宿主导入，
+/// 由 VM 内建宿主操作装载执行——导入签名、arity 与槽位全部来自冻结事实。
+const HOST_IMPORT_SOURCE: &str = r#"namespace app;
+
+[ovm("i32_to_i64")]
+micro widen(value: i32) -> i64
+
+[ovm("i64_to_i32")]
+micro narrow(value: i64) -> i32
+
+[main]
+micro main() -> i32 {
+    return app::narrow(app::widen(42))
+}
+"#;
+
+#[test]
+fn host_import_chain_projects_loads_and_runs() {
+    let (outcome, root) = build_case("host-import", HOST_IMPORT_SOURCE);
+    assert!(outcome.ok, "宿主导入链构建失败: {:?}", outcome.error);
+    let entry = outcome.entry_symbol.clone().expect("构建结果必须给出入口符号");
+    let bytes = fs::read(odin_artifact(&outcome)).expect("读取 .odin");
+    let module = data_binary_odin::decode_module(&bytes).expect("解码 .odin");
+    let symbols = module.imports.iter().map(|import| import.symbol_name.as_str()).collect::<Vec<_>>();
+    assert!(symbols.contains(&"i32_to_i64") && symbols.contains(&"i64_to_i32"), "制品必须携带两个宿主导入: {symbols:?}");
+    assert_eq!(run_entry(&bytes, &entry).expect("宿主导入链必须执行到完成"), 42);
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// 删去必要的显式宿主绑定（无 `[ovm]` 目标标签、无 provider）：必须在适配/链接
+/// 阶段报出确切缺项并拒绝产出，不得回落到猜测或默认载体。
+const UNBOUND_HOST_SOURCE: &str = r#"namespace app;
+
+[host_contract]
+micro mystery(value: i32) -> i32
+
+[main]
+micro main() -> i32 {
+    return app::mystery(1)
+}
+"#;
+
+#[test]
+fn unbound_host_contract_fails_at_compile_with_exact_gap() {
+    let (outcome, root) = build_case("unbound-host", UNBOUND_HOST_SOURCE);
+    assert!(!outcome.ok, "未绑定 provider 的宿主合同必须失败闭合");
+    let error = outcome.error.expect("失败必须携带结构化原因");
+    assert!(
+        error.contains("provider") || error.contains("导入合同") || error.contains("外部调用"),
+        "拒绝原因必须指向缺失的宿主绑定事实: {error}"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 

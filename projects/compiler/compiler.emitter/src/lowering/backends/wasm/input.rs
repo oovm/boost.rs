@@ -549,7 +549,7 @@ impl fmt::Debug for WasmFunctionInput {
     }
 }
 
-/// 入口参数身份校验（wasm 私有镜像公共 `abi_structure::canonical_parameter_identities`）。
+/// 入口参数身份校验（wasm 私有）。
 ///
 /// 身份必须来自 `ValueOrigin::Parameter`，数量必须与 `param_types` 一致，下标
 /// 必须连续且从 0 开始，参数名必须非空且不重复；任何偏离都在此结构化失败。
@@ -752,7 +752,7 @@ pub struct WasmSingletonFact {
     pub supports_unload: bool,
 }
 
-// ── ABI 结构（wasm 私有镜像公共 `AbiStructure` 族）────────────────────────
+// ── ABI 结构（wasm 私有）────────────────────────
 
 /// 目标中立的 ABI 语义结构（wasm 私有镜像）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -838,7 +838,7 @@ pub struct WasmSequenceLevel {
     pub inner_slot: Option<usize>,
 }
 
-/// sum 身份事实：类型名、是否 unite、全部变体名与判别 tag（镜像公共实现）。
+/// sum 身份事实：类型名、是否 unite、全部变体名与判别 tag。
 pub fn sum_identity_facts(name: &str, is_unite: bool, variants: &[WasmAbiVariant]) -> String {
     let mut facts = String::new();
     facts.push_str(name);
@@ -851,17 +851,40 @@ pub fn sum_identity_facts(name: &str, is_unite: bool, variants: &[WasmAbiVariant
     facts
 }
 
-/// 从冻结 sum 布局提取结构身份（镜像公共 `sum_variants_of`）。
+/// 从冻结 sum 布局提取结构身份。
 pub fn sum_variants_of(sum: &WasmSumLayoutFact) -> Vec<WasmAbiVariant> {
     sum.variants.iter().map(|variant| WasmAbiVariant { name: variant.name.clone(), tag: variant.tag }).collect()
 }
 
-/// 类型 canonical 拼写（镜像公共 `canonical_type_spelling`）。
+/// 类型 canonical 拼写：数组物理名字的稳定身份种子。
 pub fn canonical_type_spelling(ty: &WasmTypeFact) -> String {
     format!("{ty:?}")
 }
 
-/// 布局字段是否为整数计数字段候选（镜像公共 `is_integer_layout_type`）。
+/// 从 `Identifier` 提取简单名（丢掉模块路径前缀）。
+fn simple_name_of(id: &Identifier) -> String {
+    let full = id.as_str();
+    full.rsplit_once("::")
+        .map(|(_, last)| last.to_string())
+        .or_else(|| full.rsplit_once('.').map(|(_, last)| last.to_string()))
+        .unwrap_or_else(|| full.to_string())
+}
+
+/// 从 `Identifier` 提取模块路径（丢掉最终简单名）；上游如实无路径事实时为空串。
+fn module_path_of(id: &Identifier) -> String {
+    let full = id.as_str();
+    if let Some((prefix, _)) = full.rsplit_once("::") {
+        prefix.to_string()
+    }
+    else if let Some((prefix, _)) = full.rsplit_once('.') {
+        prefix.to_string()
+    }
+    else {
+        String::new()
+    }
+}
+
+/// 布局字段是否为整数计数字段候选。
 fn is_integer_layout_type(ty: &WasmTypeFact) -> bool {
     matches!(
         ty,
@@ -869,7 +892,7 @@ fn is_integer_layout_type(ty: &WasmTypeFact) -> bool {
     )
 }
 
-/// 字段类型解析出的布局身份（镜像公共 `field_layout_id`）。
+/// 字段类型解析出的布局身份。
 fn field_layout_id(ty: &WasmTypeFact, layout_by_type: &BTreeMap<WasmTypeFact, WasmLayoutKey>) -> Option<WasmLayoutKey> {
     match ty {
         WasmTypeFact::Nominal { layout, .. } => Some(*layout),
@@ -877,17 +900,17 @@ fn field_layout_id(ty: &WasmTypeFact, layout_by_type: &BTreeMap<WasmTypeFact, Wa
     }
 }
 
-/// 递归深度上限（镜像公共 `ABI_STRUCTURE_MAX_DEPTH`）。
+/// 递归深度上限。
 const ABI_STRUCTURE_MAX_DEPTH: usize = 32;
 
-/// 嵌套存储层深度上限（镜像公共 `HOST_PROJECTION_MAX_DEPTH`）。
+/// 嵌套存储层深度上限。
 const HOST_PROJECTION_MAX_DEPTH: usize = 8;
 
 fn identity_aggregate(name: String, module_path: String, generic_args: Vec<WasmAbiStructure>) -> WasmAbiStructure {
     WasmAbiStructure::Aggregate(WasmAggregateStructure { layout: None, name, module_path, generic_args, fields: Vec::new() })
 }
 
-/// 把类型事实派生为纯身份结构（不读取任何布局事实；镜像公共 `abi_structure_for_type`）。
+/// 把类型事实派生为纯身份结构（不读取任何布局事实）。
 pub fn abi_structure_for_type(ty: &WasmTypeFact) -> WasmAbiStructure {
     match ty {
         WasmTypeFact::Bottom => WasmAbiStructure::Unsupported { reason: "`void` / bottom 类型不能出现在库导出 ABI 位置".to_string() },
@@ -919,16 +942,16 @@ pub fn abi_structure_for_type(ty: &WasmTypeFact) -> WasmAbiStructure {
 
         WasmTypeFact::Tuple(fields) => WasmAbiStructure::Tuple { fields: fields.iter().map(abi_structure_for_type).collect() },
 
-        WasmTypeFact::Named(id) => identity_aggregate(crate::abi_structure::simple_name_of(id), crate::abi_structure::module_path_of(id), Vec::new()),
+        WasmTypeFact::Named(id) => identity_aggregate(simple_name_of(id), module_path_of(id), Vec::new()),
         WasmTypeFact::Nominal { spelling, .. } => {
-            identity_aggregate(crate::abi_structure::simple_name_of(spelling), crate::abi_structure::module_path_of(spelling), Vec::new())
+            identity_aggregate(simple_name_of(spelling), module_path_of(spelling), Vec::new())
         }
 
         WasmTypeFact::Apply(base, args) => {
             let (name, module_path, base_generic_args) = match base.as_ref() {
-                WasmTypeFact::Named(id) => (crate::abi_structure::simple_name_of(id), crate::abi_structure::module_path_of(id), Vec::new()),
+                WasmTypeFact::Named(id) => (simple_name_of(id), module_path_of(id), Vec::new()),
                 WasmTypeFact::Nominal { spelling, .. } => {
-                    (crate::abi_structure::simple_name_of(spelling), crate::abi_structure::module_path_of(spelling), Vec::new())
+                    (simple_name_of(spelling), module_path_of(spelling), Vec::new())
                 }
                 WasmTypeFact::Apply(_, _) => flatten_apply_identity(base.as_ref()),
                 other => {
@@ -952,7 +975,7 @@ pub fn abi_structure_for_type(ty: &WasmTypeFact) -> WasmAbiStructure {
     }
 }
 
-/// 携带冻结布局事实的结构派生（镜像公共 `abi_structure_for_type_with_layouts`）。
+/// 携带冻结布局事实的结构派生。
 pub fn abi_structure_for_type_with_layouts(input: &WasmModuleInput, ty: &WasmTypeFact) -> WasmAbiStructure {
     abi_structure_with_depth(input, ty, 0)
 }
@@ -983,8 +1006,8 @@ fn abi_structure_with_depth(input: &WasmModuleInput, ty: &WasmTypeFact, depth: u
     match ty {
         WasmTypeFact::Nominal { layout, spelling } => aggregate_structure(
             input,
-            crate::abi_structure::simple_name_of(spelling),
-            crate::abi_structure::module_path_of(spelling),
+            simple_name_of(spelling),
+            module_path_of(spelling),
             *layout,
         ),
         // `Apply` 不携带布局身份；布局身份只能来自 canonical 计划冻结的类型索引。
@@ -1014,7 +1037,7 @@ fn abi_structure_with_depth(input: &WasmModuleInput, ty: &WasmTypeFact, depth: u
     }
 }
 
-/// 引用存储名义实例保留共享身份；值存储聚合按字段结构投影（镜像公共实现）。
+/// 引用存储名义实例保留共享身份；值存储聚合按字段结构投影。
 fn aggregate_structure(input: &WasmModuleInput, name: String, module_path: String, layout_id: WasmLayoutKey) -> WasmAbiStructure {
     let Some(aggregate) = input.layouts.iter().find(|item| item.id == layout_id)
     else {
@@ -1046,7 +1069,7 @@ fn aggregate_structure(input: &WasmModuleInput, name: String, module_path: Strin
     WasmAbiStructure::Aggregate(WasmAggregateStructure { layout: Some(layout_id), name, module_path, generic_args: Vec::new(), fields })
 }
 
-/// 为已声明 `[host_projection]` 的聚合构造宿主序列投影（镜像公共实现）。
+/// 为已声明 `[host_projection]` 的聚合构造宿主序列投影。
 fn host_sequence_projection(input: &WasmModuleInput, root: &WasmLayoutFact, name: String, module_path: String) -> WasmAbiStructure {
     let unsupported = |reason: String| WasmAbiStructure::Unsupported { reason: format!("宿主序列投影 `{name}` 失败闭合：{reason}") };
     let mut levels: Vec<WasmSequenceLevel> = Vec::new();
@@ -1133,14 +1156,14 @@ fn host_sequence_projection(input: &WasmModuleInput, root: &WasmLayoutFact, name
     }
 }
 
-/// 把嵌套的 `Apply(Apply(Named("A"), ...), ...)` 展平（镜像公共实现）。
+/// 把嵌套的 `Apply(Apply(Named("A"), ...), ...)` 展平。
 fn flatten_apply_identity(mut ty: &WasmTypeFact) -> (String, String, Vec<WasmTypeFact>) {
     let mut accumulated: Vec<WasmTypeFact> = Vec::new();
     loop {
         match ty {
-            WasmTypeFact::Named(id) => return (crate::abi_structure::simple_name_of(id), crate::abi_structure::module_path_of(id), accumulated),
+            WasmTypeFact::Named(id) => return (simple_name_of(id), module_path_of(id), accumulated),
             WasmTypeFact::Nominal { spelling, .. } => {
-                return (crate::abi_structure::simple_name_of(spelling), crate::abi_structure::module_path_of(spelling), accumulated)
+                return (simple_name_of(spelling), module_path_of(spelling), accumulated)
             }
             WasmTypeFact::Apply(base, args) => {
                 accumulated.extend(args.iter().cloned());

@@ -9,6 +9,7 @@
 
 pub(crate) mod admission;
 pub(crate) mod compile;
+pub(crate) mod dom_provider;
 pub(crate) mod emit;
 pub(crate) mod run;
 pub(crate) mod serialize;

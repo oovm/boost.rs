@@ -5,11 +5,33 @@ use data_binary_odin::{
     emit_plain,
 };
 use interpreter_vm_ovm::{
-    dom_runtime::DomProvider,
+    ObjectHeap, Value,
     error::OdinRuntimeError,
-    host::HOST_IMPORT_MODULE,
+    host::{HOST_IMPORT_MODULE, HostImport, HostProvider},
     verify::{MAX_FUNCTION_CODE_BYTES, MAX_OPERAND_STACK_HEIGHT, verify_module, verify_module_with_providers},
 };
+
+/// 测试用最小宿主 provider：只证明「显式注册」机制本身——产品 provider 实现
+/// （如 `asgard.render` DOM）归宿主包，VM 内核只认注册表。
+#[derive(Debug)]
+struct TestHostProvider {
+    symbol: &'static str,
+}
+
+#[derive(Debug)]
+struct TestHostImport;
+
+impl HostImport for TestHostImport {
+    fn call(&self, _args: &[Value], _heap: &mut ObjectHeap) -> Result<Value, OdinRuntimeError> {
+        Ok(Value::Null)
+    }
+}
+
+impl HostProvider for TestHostProvider {
+    fn resolve(&self, _module: &str, symbol: &str) -> Option<std::sync::Arc<dyn HostImport>> {
+        (symbol == self.symbol).then(|| std::sync::Arc::new(TestHostImport) as std::sync::Arc<dyn HostImport>)
+    }
+}
 
 #[test]
 fn dom_import_requires_explicit_provider() {
@@ -21,7 +43,8 @@ fn dom_import_requires_explicit_provider() {
     });
     let err = verify_module(&module).expect_err("DOM 不是 VM 内建能力：未注册 provider 必须加载期拒绝");
     assert!(matches!(err, OdinRuntimeError::ModuleLoad(message) if message.contains("unknown host import")));
-    verify_module_with_providers(&module, &[DomProvider::registered()]).expect("显式注册 DOM provider 后必须通过校验");
+    let provider: std::sync::Arc<dyn HostProvider> = std::sync::Arc::new(TestHostProvider { symbol: "dom_create_element" });
+    verify_module_with_providers(&module, &[provider]).expect("显式注册 provider 后必须通过校验");
 }
 
 fn empty_module() -> OdinModuleData {
