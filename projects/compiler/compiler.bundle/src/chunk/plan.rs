@@ -389,10 +389,13 @@ pub fn plan_chunks(graph: &ModuleGraph, plan: &LinkPlan) -> ChunkPlan {
             for unit in &chunk_units {
                 chunk_view.add_vertex(unit);
             }
+            // 边方向是 `被依赖 → 依赖者`：拓扑序先出被依赖单元，符合
+            // `Chunk::modules` 的「被依赖者先于导入者」合同。写成
+            // `unit → next` 会把导入者排到前面，破坏 ESM 求值序与 CSS 级联序。
             for unit in &chunk_units {
                 for next in &unit_forward[*unit] {
                     if in_chunk.contains(next) {
-                        chunk_view.add_edge(unit, next);
+                        chunk_view.add_edge(next, unit);
                     }
                 }
             }
