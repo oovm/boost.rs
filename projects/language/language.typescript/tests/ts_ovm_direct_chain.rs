@@ -55,6 +55,7 @@ fn inputs() -> Vec<Input> {
         Input { n: 41.0, flag: true, tag: "t", delta: Value::Number(100.0) },
         Input { n: 7.0, flag: false, tag: "u", delta: Value::string("x") },
         Input { n: 0.0, flag: true, tag: "v", delta: Value::Number(-2.5) },
+        Input { n: 5.0, flag: true, tag: "w", delta: Value::Bool(true) },
     ]
 }
 
@@ -108,6 +109,7 @@ fn run_artifact(artifact: &OvmArtifact) -> (Vec<String>, Vec<String>) {
             heap.set_field(object, slot("delta"), match input.delta {
                 Value::Number(number) => VmValue::F64(number),
                 Value::String(text) => VmValue::String(text.to_string()),
+                Value::Bool(flag) => VmValue::Bool(flag),
                 other => panic!("delta 形态异常: {other:?}"),
             })
             .expect("写入 delta 槽");
@@ -135,8 +137,8 @@ fn run_artifact(artifact: &OvmArtifact) -> (Vec<String>, Vec<String>) {
 #[test]
 fn gate_a_interpreter_baseline() {
     let (results, logs) = interpreter_baseline();
-    assert_eq!(results, vec!["score:42!100", "score:8x", "score:1!-2.5"]);
-    assert_eq!(logs, vec!["score:42", "score:8", "score:1"]);
+    assert_eq!(results, vec!["score:42!100", "score:8x", "score:1!-2.5", "score:6!true"]);
+    assert_eq!(logs, vec!["score:42", "score:8", "score:1", "score:6"]);
 }
 
 #[test]
@@ -210,6 +212,7 @@ const inputs = [
     { n: 41, flag: true, tag: "t", delta: 100 },
     { n: 7, flag: false, tag: "u", delta: "x" },
     { n: 0, flag: true, tag: "v", delta: -2.5 },
+    { n: 5, flag: true, tag: "w", delta: true },
 ];
 const results = inputs.map((input) => score(input));
 const a = { id: 1 };
@@ -300,6 +303,111 @@ fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
         }
     }
     files
+}
+
+#[test]
+fn gate_g_short_circuit_three_way_differential() {
+    // 短路语义三方差分：`||`/`&&` 返回操作数值本身，且右侧副作用只在未短路时发生。
+    const SOURCE: &str = r#"
+function note(tag: string): boolean {
+    console.log(tag);
+    return true;
+}
+
+export function either(flag: boolean, name: string): string {
+    let chosen = flag || note("via-note");
+    let other = chosen && note("via-and");
+    return name;
+}
+"#;
+    let program = parse(SOURCE).expect("短路门程序必须解析");
+    // 解释器基线：flag=true 时 `||` 短路，note("via-note") 不得执行。
+    let mut interpreter = Interpreter::new(&program).expect("装载必须成功");
+    let first = interpreter.call_exported("either", &[Value::Bool(true), Value::string("a")]).expect("either(true) 必须成功");
+    assert_eq!(language_typescript::runtime::semantics::to_string(&first), "a");
+    let second = interpreter.call_exported("either", &[Value::Bool(false), Value::string("b")]).expect("either(false) 必须成功");
+    assert_eq!(language_typescript::runtime::semantics::to_string(&second), "b");
+    assert_eq!(interpreter.trace(), vec!["via-and", "via-note", "via-and"], "短路必须消除未达侧的副作用");
+
+    // 产物执行：同一 trace 合同（含未达侧不出现）。
+    let artifact = specialize_to_odin(SOURCE, "ts.shortcircuit").expect("第一投影必须成功");
+    let trace = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut vm = OdinVm::with_providers(vec![Arc::new(TsStdProvider::new(trace.clone()))]);
+    let loaded = vm.load(&artifact.bytes).expect("装载必须成功");
+    let vm_first = vm.run(&loaded, "either", vec![VmValue::Bool(true), VmValue::String("a".to_string())]).expect("产物执行必须成功");
+    assert_eq!(vm_first, VmValue::String("a".to_string()));
+    let vm_second = vm.run(&loaded, "either", vec![VmValue::Bool(false), VmValue::String("b".to_string())]).expect("产物执行必须成功");
+    assert_eq!(vm_second, VmValue::String("b".to_string()));
+    assert_eq!(*trace.lock().expect("trace 锁不中毒"), vec!["via-and", "via-note", "via-and"], "产物短路序必须与解释器一致");
+
+    // Node 差分。
+    let script = r#"
+function note(tag) { console.log(tag); return true; }
+function either(flag, name) {
+    let chosen = flag || note("via-note");
+    let other = chosen && note("via-and");
+    return name;
+}
+const logs = [];
+console.log = (...args) => logs.push(args.join(" "));
+const results = [either(true, "a"), either(false, "b")];
+process.stdout.write(JSON.stringify({ results, logs }));
+"#;
+    let path = std::env::temp_dir().join("ts_ovm_node_shortcircuit.js");
+    std::fs::write(&path, script).expect("临时 JS 必须可写");
+    let output = std::process::Command::new("node").arg(&path).output().expect("Node 必须可用");
+    assert!(output.status.success(), "node 执行失败: {}", String::from_utf8_lossy(&output.stderr));
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("node 输出必须是 JSON");
+    assert_eq!(parsed["results"].as_array().expect("results")[0], "a");
+    assert_eq!(parsed["results"].as_array().expect("results")[1], "b");
+    let node_logs: Vec<String> = parsed["logs"].as_array().expect("logs 数组").iter().map(|v| v.as_str().expect("字符串").to_string()).collect();
+    assert_eq!(node_logs, vec!["via-and", "via-note", "via-and"], "Node 短路序必须与解释器/产物一致");
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn gate_h_sample_inputs_are_not_preexecuted_into_artifact() {
+    // 未知输入残差取证：产物常量表里不得出现任何样例输入值或其预执行结果。
+    let artifact = specialize_to_odin(GATE_TS, "ts.gate").expect("第一投影必须成功");
+    let decoded = decode_module(&artifact.bytes).expect("产物必须可解码");
+    let forbidden_strings = ["score:42", "score:42!100", "score:8", "score:8x", "score:1", "score:1!-2.5", "score:6", "score:6!true", "100", "-2.5", "x", "t", "u", "v", "w"];
+    for constant in &decoded.constants {
+        match constant {
+            OdinConstant::String(text) => {
+                assert!(!forbidden_strings.contains(&text.as_str()), "样例输入或预执行答案泄漏进产物常量: {text:?}");
+            }
+            OdinConstant::Float64(number) => {
+                // 0.0（`let base = 0`）与 1.0（`+ 1`）是程序自身的合法常量。
+                assert!(![41.0, 7.0, 5.0, 42.0, 8.0, 6.0, 100.0, -2.5].contains(number), "样例输入数值或预执行结果泄漏进产物常量: {number}");
+            }
+            OdinConstant::Integer64(number) => assert!(![41, 7, 5, 42, 8, 6, 100].contains(number), "样例输入整数泄漏进产物常量: {number}"),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn gate_i_unknown_external_call_fails_closed() {
+    // 未知外部调用：解释器运行期 ReferenceError；投影不得凭空发明 provider，必须结构化失败。
+    const SOURCE: &str = "export function f(x: number): number { return mysteryFn(x); }";
+    let program = parse(SOURCE).expect("解析必须成功");
+    let mut interpreter = Interpreter::new(&program).expect("装载必须成功");
+    let error = interpreter.call_exported("f", &[Value::Number(1.0)]).expect_err("未绑定调用必须运行期失败");
+    assert!(format!("{error:?}").to_lowercase().contains("mysteryfn") || format!("{error}").contains("mysteryFn"), "错误必须点名未知 callee: {error:?}");
+    let projection = language_typescript::ovm::specialize_to_odin(&program, "bad.call").err().unwrap_or_else(|| panic!("未绑定调用必须失败闭合，不得静默特化"));
+    match projection {
+        SpecializeFailure::Unsupported { construct, detail } => {
+            assert!(construct.contains("调用") || detail.contains("mysteryFn") || construct.contains("mysteryFn"), "缺项必须点名未绑定 callee: {construct} / {detail}");
+        }
+        other => panic!("期望结构化 Unsupported，得到 {other:?}"),
+    }
+}
+
+#[test]
+fn gate_j_throw_outside_subset_fails_at_syntax_boundary() {
+    // 异常不在 TS 投影子集：语法边界必须拒绝，禁止静默丢弃 throw 语句。
+    let error = parse("export function f(): number { throw new Error(\"boom\"); }").expect_err("`throw` 不在子集内，解析必须失败");
+    assert!(!error.to_string().is_empty(), "语法拒绝必须给出原因");
 }
 
 #[test]

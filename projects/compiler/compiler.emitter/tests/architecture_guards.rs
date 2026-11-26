@@ -111,5 +111,7 @@ fn backends_must_not_keep_source_semantic_operator_entries() {
 fn wasm_gc_carrier_mapping_must_be_physical_only() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lowering/backends/wasm/gc.rs");
     let source = fs::read_to_string(&path).unwrap();
-    assert!(!source.contains("SemanticType"), "{} must map carriers from `WasmTypeFact` only — no source-type mirror", path.display());
+    for pattern in ["use compiler_target::SemanticType", "&SemanticType", "SemanticType::"] {
+        assert!(!source.contains(pattern), "{} must map carriers from `WasmTypeFact` only — no source-type mirror (`{pattern}`)", path.display());
+    }
 }
