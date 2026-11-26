@@ -222,6 +222,7 @@ members = [
     "projects/data/data.binary.asn1",
     "projects/data/data.binary.cfb",
     "projects/data/data.binary.cil",
+    "projects/data/data.binary.container",
     "projects/data/boost.data",
     "projects/data/data.binary.core",
     "projects/data/data.binary.inspect",

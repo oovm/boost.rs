@@ -971,6 +971,16 @@ name = "data-binary-cil"
 version = "0.1.0"
 
 [[package]]
+name = "data-binary-container"
+version = "0.1.0"
+dependencies = [
+ "data-binary-pe",
+ "data-compression",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "data-binary-core"
 version = "0.1.0"
 dependencies = [

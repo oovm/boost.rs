@@ -1,0 +1,20 @@
+[package]
+name = "data-binary-container"
+version.workspace = true
+authors.workspace = true
+description = "CPython bytecode, PyInstaller, NSIS, asar and Tauri container facts."
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+categories = ["parsing"]
+keywords = ["binary", "container", "pyc", "pyinstaller", "nsis"]
+
+[dependencies]
+data-binary-pe = { workspace = true }
+data-compression = { workspace = true, features = ["deflate", "lzma", "brotli"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
