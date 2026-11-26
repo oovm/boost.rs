@@ -6,21 +6,26 @@
 //! reports the decoded prefix together with the input bytes consumed and a
 //! [`DecodeStatus`], instead of returning only an error and dropping the work.
 //!
-//! Every envelope is selected explicitly through [`Envelope`], and
-//! [`Envelope::detect`] offers the same leading-byte heuristic the products used
-//! locally before this module existed.
+//! With the `deflate` feature every envelope is selected explicitly through
+//! `Envelope`, and `Envelope::detect` offers the same leading-byte heuristic the
+//! products used locally before this module existed. The `brotli` feature only
+//! uses [`BoundedDecode`] and [`DecodeStatus`].
 
+#[cfg(feature = "deflate")]
 use crate::{
     deflate::{Deflate, RawOutcome},
-    error::{ChecksumAlgorithm, CodecError},
-    facts::ChecksumFacts,
     gzip::Gzip,
     limits::CodecLimits,
     stream::EnvelopeOutcome,
     zlib::Zlib,
 };
+use crate::{
+    error::{ChecksumAlgorithm, CodecError},
+    facts::ChecksumFacts,
+};
 
 /// Envelope wrapped around a DEFLATE bitstream.
+#[cfg(feature = "deflate")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Envelope {
     /// Raw DEFLATE (RFC 1951): no container header or trailer.
@@ -31,6 +36,7 @@ pub enum Envelope {
     Gzip,
 }
 
+#[cfg(feature = "deflate")]
 impl Envelope {
     /// Guesses the envelope from the leading bytes.
     ///
@@ -175,6 +181,7 @@ impl BoundedDecode {
         matches!(self.status, DecodeStatus::OutputLimit { .. })
     }
 
+    #[cfg(feature = "deflate")]
     fn from_raw(outcome: RawOutcome, limits: &CodecLimits) -> Self {
         match outcome.error {
             None => Self {
@@ -195,6 +202,7 @@ impl BoundedDecode {
         }
     }
 
+    #[cfg(feature = "deflate")]
     fn from_envelope(outcome: EnvelopeOutcome, limits: &CodecLimits) -> Self {
         match outcome.error {
             None => Self {
@@ -216,6 +224,7 @@ impl BoundedDecode {
     }
 }
 
+#[cfg(feature = "deflate")]
 impl Deflate {
     /// Decodes a raw DEFLATE stream, keeping the prefix produced before a stop.
     pub fn decode_bounded(input: &[u8], limits: CodecLimits) -> BoundedDecode {
@@ -223,6 +232,7 @@ impl Deflate {
     }
 }
 
+#[cfg(feature = "deflate")]
 impl Zlib {
     /// Decodes a zlib stream, keeping the prefix produced before a stop.
     pub fn decode_bounded(input: &[u8], limits: CodecLimits) -> BoundedDecode {
@@ -230,6 +240,7 @@ impl Zlib {
     }
 }
 
+#[cfg(feature = "deflate")]
 impl Gzip {
     /// Decodes the first gzip member, keeping the prefix produced before a stop.
     ///
@@ -241,11 +252,13 @@ impl Gzip {
 }
 
 /// Wraps the zlib outcome entry so the bounded path shares one implementation.
+#[cfg(feature = "deflate")]
 fn decode_zlib_bounded(input: &[u8], limits: CodecLimits) -> EnvelopeOutcome {
     crate::zlib::decode_zlib_outcome(input, limits)
 }
 
 /// Wraps the gzip outcome entry so the bounded path shares one implementation.
+#[cfg(feature = "deflate")]
 fn decode_gzip_bounded(input: &[u8], limits: CodecLimits) -> EnvelopeOutcome {
     crate::gzip::decode_gzip_outcome(input, limits)
 }
@@ -255,6 +268,7 @@ fn decode_gzip_bounded(input: &[u8], limits: CodecLimits) -> EnvelopeOutcome {
 /// Both the output cap and the expansion-ratio cap are caller limits, so they
 /// map to [`DecodeStatus::OutputLimit`]; every other resource limit is a
 /// structural failure for a one-shot decode.
+#[cfg(feature = "deflate")]
 fn status_of(error: CodecError, limits: &CodecLimits) -> DecodeStatus {
     match error {
         CodecError::InputExhausted { offset, needed } => DecodeStatus::InputTruncated { offset, needed },

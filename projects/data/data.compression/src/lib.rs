@@ -1,12 +1,14 @@
 //! 通用压缩编解码层（`boost.data.compression`）。
 //!
 //! 本 crate 拥有跨协议共享的压缩字节流算法：Snappy block 格式（MongoDB
-//! `OP_COMPRESSED` id 1）、Zstandard 帧（id 3），以及 `deflate` feature 下的
-//! 原始 Deflate（RFC 1951）与其 zlib（RFC 1950）、gzip（RFC 1952）封套。
+//! `OP_COMPRESSED` id 1）、Zstandard 帧（id 3），`deflate` feature 下的
+//! 原始 Deflate（RFC 1951）与其 zlib（RFC 1950）、gzip（RFC 1952）封套，
+//! `lzma` feature 下的 LZMA1/LZMA2，以及 `brotli` feature 下的 Brotli
+//! （RFC 7932）解码。
 //! Deflate 位流算法只有一份：`Deflate` 是算法本身，`Zlib` 与 `Gzip` 是它的
 //! 封套，各自持有 header、trailer、checksum 与 trailing-input 规则。
 //! 协议层（如 `database.protocol.mongo`）只负责封套与 id 分派，算法归本层；
-//! 产品侧禁止再各自内嵌 Snappy/Zstd/Deflate 编解码副本。
+//! 产品侧禁止再各自内嵌 Snappy/Zstd/Deflate/LZMA/Brotli 编解码副本。
 //!
 //! ## Features and envelopes
 //!
@@ -15,8 +17,10 @@
 //!   envelope dispatch in `Envelope` / `BoundedDecode`. All three envelopes need
 //!   only this one feature.
 //! - `lzma` enables LZMA1 and LZMA2 decoding and is independent of `deflate`.
-//! - The default feature set enables neither, leaving only the always-on Snappy
-//!   block and Zstandard frame entries.
+//! - `brotli` enables the Brotli decoder (RFC 7932) exposed as `Brotli`,
+//!   with the same bounded-decode contract as the deflate envelopes.
+//! - The default feature set enables none of them, leaving only the always-on
+//!   Snappy block and Zstandard frame entries.
 //!
 //! The Deflate family originates from the former `acorn.rs` project (imported
 //! at commit `6deb56a4`, MPL-2.0) and has been internalized and de-branded
@@ -27,18 +31,21 @@
 pub mod snappy;
 pub mod zstd;
 
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 pub(crate) use data_binary_core::bit;
-#[cfg(feature = "deflate")]
+#[cfg(any(feature = "deflate", feature = "brotli"))]
 pub mod bounded;
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 mod error;
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 mod facts;
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 mod limits;
 #[cfg(feature = "deflate")]
 pub mod stream;
+
+#[cfg(feature = "brotli")]
+pub mod brotli;
 
 #[cfg(feature = "deflate")]
 pub mod deflate;
@@ -53,15 +60,17 @@ pub mod lzma;
 #[cfg(feature = "deflate")]
 pub mod zlib;
 
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 pub use error::{ChecksumAlgorithm, CodecError, CodecFeature, EnvelopeKind, Ratio};
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 pub use facts::{Canonicality, ChecksumFacts, DecodeFacts, StreamFacts, StreamState};
-#[cfg(any(feature = "deflate", feature = "lzma"))]
+#[cfg(any(feature = "deflate", feature = "lzma", feature = "brotli"))]
 pub use limits::CodecLimits;
 #[cfg(feature = "deflate")]
 pub use stream::{CompressionProtocol, StreamChunk, StreamCodec, StreamDecoder};
 
+#[cfg(feature = "brotli")]
+pub use crate::brotli::Brotli;
 #[cfg(feature = "deflate")]
 pub use crate::deflate::{Deflate, DeflateEncoder, DeflateLevel, DeflateStreamDecoder, DeflateStreamEncoder};
 #[cfg(feature = "deflate")]
@@ -73,7 +82,9 @@ pub use crate::lzma::{Lzma1, Lzma2, MAX_DICTIONARY_SIZE};
 #[cfg(feature = "deflate")]
 pub use crate::zlib::Zlib;
 #[cfg(feature = "deflate")]
-pub use bounded::{BoundedDecode, DecodeStatus, Envelope};
+pub use bounded::Envelope;
+#[cfg(any(feature = "deflate", feature = "brotli"))]
+pub use bounded::{BoundedDecode, DecodeStatus};
 #[cfg(feature = "deflate")]
 pub use data_checksum::Crc32;
 

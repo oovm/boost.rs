@@ -13,8 +13,13 @@ data-checksum = { workspace = true }
 
 [features]
 default = []
+brotli = ["dep:data-binary-core"]
 deflate = ["dep:data-binary-core"]
 lzma = ["dep:data-binary-core"]
+
+[[test]]
+name = "brotli"
+required-features = ["brotli"]
 
 [[test]]
 name = "deflate"
