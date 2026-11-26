@@ -1,8 +1,9 @@
 //! JVM lane 的函数级 lowering：MIR → 目标私有 JVM 字节码。
 //!
 //! 本模块直读 `ValkyrieMirFunction` 的块/指令/终结符，逐操作映射为 JVM 指令序列
-//! （经 emitter 的 `JvmSlotKind` / descriptor 派生 / operator 绑定等目标私有编码
-//! 原语），不经过任何跨目标共享程序载荷（旧路径的 submission 解释阶段已删除）。
+//! （descriptor 裁决由本 lane 的 [`super::carrier`] 完成，emitter 只供
+//! `JvmSlotKind` / operator 绑定等目标私有编码原语），不经过任何跨目标共享程序载荷
+//! （旧路径的 submission 解释阶段已删除）。
 //! 旧公共路径只是把 MIR 直投影成公共 IR 再解释，本文件把两段映射合成一段，
 //! 语义逐操作对齐（含 `long` scratch 逐函数结算、值聚合拷贝深度预算、块形参
 //! 拷贝的冻结槽位合同、operator 分支标签重标等审查点名合同）。
@@ -11,12 +12,14 @@ use std::collections::BTreeMap;
 
 use compiler_emitter::emitter_backend_jvm::{
     JvmClassFile, JvmCodeBody, JvmFieldRef, JvmFieldSignature, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature,
-    JvmOperatorBinding, JvmOperatorCode, JvmSlotKind, JvmTypeDescriptor, MAX_VALUE_AGGREGATE_COPY_DEPTH, jvm_array_element_descriptor,
-    jvm_layout_class_name, jvm_parameter_descriptor, jvm_type_descriptor, nested_value_aggregate_layout, value_aggregate_copy_depth,
+    JvmOperatorBinding, JvmOperatorCode, JvmSlotKind, JvmTypeDescriptor, MAX_VALUE_AGGREGATE_COPY_DEPTH, jvm_layout_class_name,
+    nested_value_aggregate_layout, value_aggregate_copy_depth,
 };
 use compiler_emitter::target_operator::{TargetOperandStep, TargetOperatorPlan, TargetOperatorRecipe};
 use compiler_types::{AggregateLayout, AggregateLayoutPlan, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, VariantId};
 use compiler_types::semantic_ids::{MirValueId, TypeId};
+
+use super::carrier::{jvm_array_element_descriptor, jvm_parameter_descriptor, jvm_type_descriptor};
 
 use crate::compiler::emitter::pipeline::lane::{FunctionView, LaneContext};
 use crate::compiler::valkyrie_mir::{

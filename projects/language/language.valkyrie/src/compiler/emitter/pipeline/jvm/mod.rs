@@ -3,16 +3,17 @@
 //! 边界（God IR 拆除整改）：本模块是 JVM 纵链唯一的计划事实消费点——可达闭包、
 //! 方法命名与 descriptor、参数名冻结校验、布局/sum companion 类、managed ABI
 //! 契约与 argv launcher、入口 launcher 身份全部从 `LaneContext` 与
-//! `ValkyrieMirFunction` 一次结算；emitter 只保留目标私有编码原语
-//! （descriptor 派生、槽位种类、operator 绑定、argv 编码表与类装配自检），
-//! 不再解释跨目标共享程序载荷。
+//! `ValkyrieMirFunction` 一次结算；`SemanticType → descriptor` 的载体裁决由本
+//! lane 的 [`carrier`] 模块完成，emitter 只保留目标私有编码原语
+//! （槽位种类、operator 绑定、argv 编码表与类装配自检），不再解释跨目标
+//! 共享程序载荷，也不再接收源语言类型。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use compiler_emitter::emitter_backend_jvm::{
     ArgvKind, JvmClassFile, JvmCodeBody, JvmFieldRef, JvmInstruction, JvmMethodDescriptor, JvmMethodRef, JvmMethodSignature, JvmOperatorBinding,
-    JvmProgramInput, JvmTypeDescriptor, argv_encoding, freeze_jvm_operator, jvm_operator_target, jvm_parameter_descriptor, jvm_return_descriptor,
-    sanitize_jvm_method_symbol, sanitize_symbol, select_unique_target,
+    JvmProgramInput, JvmTypeDescriptor, argv_encoding, freeze_jvm_operator, jvm_operator_target, sanitize_jvm_method_symbol, sanitize_symbol,
+    select_unique_target,
 };
 use compiler_emitter::{ManagedAbiContract, ManagedAbiEntry};
 use compiler_types::{ItemInstanceId, SemanticType};
@@ -21,8 +22,10 @@ use crate::compiler::emitter::pipeline::lane::{FunctionView, LaneContext};
 use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::valkyrie_mir::ValkyrieMirFunction;
 
+use carrier::{jvm_parameter_descriptor, jvm_return_descriptor};
 use lowerer::{JvmMethodPlan, JVM_ACC_PUBLIC, JVM_ACC_STATIC, build_layout_classes, build_sum_classes, lower_function};
 
+pub(crate) mod carrier;
 pub(crate) mod lowerer;
 
 /// 从 lane 共享上下文结算 JVM 目标私有输入（主类方法体 + companion 载体 + ABI 契约）。
@@ -326,8 +329,8 @@ fn build_managed_abi_surface(
 
 /// managed ABI 的逻辑类型名：入口事实，只来自冻结的 `SemanticType` 签名。
 ///
-/// 范围严格对齐本 lane 已支持的物理载体（`jvm_type_descriptor` /
-/// `jvm_array_element_descriptor` / `function_descriptor`）：标量按声明保留
+/// 范围严格对齐本 lane 已支持的物理载体（[`carrier::jvm_type_descriptor`] /
+/// [`carrier::jvm_array_element_descriptor`] / `function_descriptor`）：标量按声明保留
 /// signedness 与宽度，数组递归到元素类型后追加 `[]`。没有物理载体合同的形状
 /// 一律结构化失败，不猜名字、不回退到擦除后的 descriptor。
 fn managed_abi_logical_type_name(ty: &SemanticType) -> Result<String, String> {
@@ -708,7 +711,7 @@ fn argv_result_print_instructions(logical_type: &str) -> Result<Vec<JvmInstructi
 #[cfg(test)]
 mod jvm_lane_tests {
     use super::*;
-    use compiler_emitter::emitter_backend_jvm::{JvmMethodSignature, jvm_layout_class_name, jvm_type_descriptor};
+    use compiler_emitter::emitter_backend_jvm::{JvmMethodSignature, jvm_layout_class_name};
     use compiler_target::Identifier;
     use compiler_types::{AggregateLayout, AggregateLayoutPlan, FieldLayout, ItemInstanceId, SemanticType, StorageKind};
     use lowerer::jvm_layout_field_name;

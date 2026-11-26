@@ -22,15 +22,13 @@ pub use crate::transitional::binary::{
     jar::{JvmJarEntry, JvmJarError, JvmJarPackage},
 };
 
-// JVM 目标私有编码原语：语言侧 JVM lane 直读 MIR 结算计划事实后，只经这些
-// 原语完成载体 descriptor 派生、槽位种类、operator 绑定、argv 编码与类装配；
-// emitter 不再解释跨目标共享程序载荷。
+// JVM 目标私有编码原语：语言侧 JVM lane 直读 MIR 结算计划事实（含
+// `SemanticType → descriptor` 载体裁决）后，只经这些原语完成槽位种类、
+// operator 绑定、argv 编码与类装配；emitter 不再解释跨目标共享程序载荷，
+// 也不再接收 `SemanticType`。
 pub use crate::lowering::backends::argv_encoding::{ArgvEncoding, ArgvKind, argv_encoding};
 pub use crate::lowering::backends::jvm::JvmOperatorCode;
-pub use crate::lowering::backends::jvm::emit::{
-    JvmLoweredFragment, JvmProgramInput, JvmSlotKind, assemble_jvm_class, jvm_array_element_descriptor, jvm_layout_class_name,
-    jvm_parameter_descriptor, jvm_return_descriptor, jvm_type_descriptor,
-};
+pub use crate::lowering::backends::jvm::emit::{JvmLoweredFragment, JvmProgramInput, JvmSlotKind, assemble_jvm_class, jvm_layout_class_name};
 pub use crate::lowering::backends::jvm::recipe::{JvmOperatorBinding, freeze_jvm_operator, jvm_operator_target};
 pub use crate::lowering::sanitize_jvm_method_symbol;
 pub use crate::lowering::shared::interop::select_unique_target;

@@ -2,8 +2,9 @@
 //!
 //! 本模块把旧公共路径「MIR → 共享程序 → 解释」的两段映射合成一段：每个
 //! `ValkyrieMirOperation` / `ValkyrieMirTerminator` 直接映射为 `MSIL` 指令序列
-//! （经 emitter 的 `msil_type` / `ClrValueKind` / operator 绑定 / 值聚合复制深度
-//! 等目标私有编码原语），不经过任何跨目标共享程序载荷。逐操作语义与旧
+//! （载体裁决由本 lane 的 [`super::carrier`] 完成，emitter 只供 `ClrValueKind` /
+//! 已结算形状 → opcode / operator 绑定 / 值聚合复制深度等目标私有编码原语），
+//! 不经过任何跨目标共享程序载荷。逐操作语义与旧
 //! `emit.rs` 解释公共 IR 完全一致：块形参逆序写回、入口 `ldarg→stloc` 前言、
 //! 比较单 opcode、`i64` 移位 `conv.i4` 截窄、sum tag/payload 装箱、值聚合逐层
 //! 新建、缺冻结布局/载体身份一律结构化拒绝。
@@ -13,12 +14,14 @@ use std::collections::BTreeMap;
 use compiler_emitter::emitter_backend_clr::{
     CLR_SUM_PAYLOAD_FIELD, CLR_SUM_TAG_FIELD, ClrOperatorBinding, ClrOperatorCode, ClrValueKind, MAX_VALUE_AGGREGATE_COPY_DEPTH, MsilInstruction,
     MsilInstructionOperand, MsilMethodBody, MsilMethodRef, MsilMethodSignature, MsilOpcode, MsilType, TargetOperandStep, TargetOperatorPlan,
-    TargetOperatorRecipe, branch_instruction, call_instruction, clr_array_element_type, clr_array_load_opcode, clr_array_store_opcode,
-    clr_layout_field_name, clr_layout_type_name, clr_sum_type_name, msil_array_element_type, msil_instruction, msil_int_normalize_opcode,
-    msil_int_shape, msil_parameter_type, msil_type, nested_value_aggregate_layout, opcode_instruction, value_aggregate_copy_depth,
+    TargetOperatorRecipe, branch_instruction, call_instruction, clr_array_load_opcode, clr_array_store_opcode, clr_layout_field_name,
+    clr_layout_type_name, clr_sum_type_name, msil_instruction, msil_int_normalize_opcode, nested_value_aggregate_layout, opcode_instruction,
+    value_aggregate_copy_depth,
 };
 use compiler_types::{AggregateLayout, CanonicalTypeKind, FieldId, ItemInstanceId, LayoutId, NominalInstanceId, SemanticType, VariantId};
 use compiler_types::semantic_ids::{MirValueId, TypeId};
+
+use super::carrier::{clr_array_element_type, msil_array_element_type, msil_int_shape, msil_parameter_type, msil_type};
 
 use crate::compiler::emitter::pipeline::lane::{FunctionView, LaneContext};
 use crate::compiler::valkyrie_mir::{

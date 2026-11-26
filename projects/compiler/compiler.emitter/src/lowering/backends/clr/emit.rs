@@ -2,12 +2,15 @@
 //!
 //! 边界（God IR 拆除整改）：本 lane 的计划事实消费与逐操作 `MSIL` 发射已迁到
 //! 语言侧 `language.valkyrie` 的 `pipeline/clr/`，直读 `ValkyrieMirFunction` 结算
-//! 目标私有输入；本模块只保留目标私有载体原语（类型映射、数组/整数形状、
-//! 布局/sum 载体定义、managed ABI 词汇表与 argv 分发入口合成）与装配服务
-//! [`assemble_clr_module`]（模块非空自检并封装）。
+//! 目标私有输入。架构门 D4 后，源语言类型 → `MSIL` 载体的裁决（含整数形状、
+//! 数组元素、闭合 `Apply` 布局映射）也移入语言 × 目标适配器
+//! （`pipeline/clr/carrier.rs`）；本模块只保留目标原语（栈上类别、已结算整数
+//! 形状 → opcode、布局/sum 载体装配、managed ABI 词汇表与 argv 分发入口合成）
+//! 与装配服务 [`assemble_clr_module`]（模块非空自检并封装），不接收
+//! `SemanticType`。
 //!
-//! 身份校验语义不变：闭合 `Apply` 只查冻结的 `SemanticType → LayoutId` 表，
-//! 缺映射、悬空或身份冲突一律结构化拒绝，禁止按名字回退猜布局。
+//! 身份校验语义不变：布局字段载体按实例索引（`LayoutId`）消费适配器结算的
+//! 已选定 `MsilType`；缺结算结果一律结构化拒绝，禁止按名字回退猜布局。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,7 +23,7 @@ use crate::{
         MsilTypeDef,
     },
 };
-use compiler_types::{AggregateLayout, AggregateLayoutPlan, NominalInstanceId, SemanticType};
+use compiler_types::{AggregateLayout, AggregateLayoutPlan, LayoutId, NominalInstanceId};
 
 /// CLR 栈上标量载体类别：`int32` 覆盖 bool/char/窄整型，比较结果与布尔同槽。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,7 +171,7 @@ pub fn managed_abi_type_name(ty: &MsilType) -> Result<String> {
     Ok(match ty {
         MsilType::Void => "void",
         MsilType::Bool => "bool",
-        // 本 lane 的 `msil_type` 把 V 的 `Character`（u32 码位）固定映射为
+        // 本 lane 适配器把 V 的 `Character`（u32 码位）固定结算为
         // `Int32 { signed: false }`，实际载体词汇是 `u32`；此分支仅覆盖直接携带
         // 宿主 16 位字符的冻结载体。
         MsilType::Char => "char",
@@ -362,34 +365,13 @@ pub fn console_write_line_type(parameter_type: MsilType) -> MsilMethodRef {
     external_method(SYSTEM_CONSOLE, "WriteLine", MsilType::Void, vec![parameter_type])
 }
 
-/// 局部 / 形参位置的 CLR 载体：`Unit`/`Bottom` 没有值槽。
-pub fn msil_parameter_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
-    let msil_type = msil_type(layouts, ty)?;
-    if msil_type == MsilType::Void {
-        return Err(format!("CLR 最小 lowering：`{ty}` 是 void 形态，不能作为方法形参或局部值"));
-    }
-    Ok(msil_type)
-}
-
-/// `Cast` 的整数表示：位宽 + 符号性（`Character` 是 32 位无符号码位）。
+/// `Cast` 的已结算整数表示：位宽 + 符号性（形状裁决在语言 × 目标适配器）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MsilIntShape {
     /// 位宽。
     pub bits: u8,
     /// 是否带符号。
     pub signed: bool,
-}
-
-/// 语义类型的整数形状；非整数形态返回 `None`。
-pub fn msil_int_shape(ty: &SemanticType) -> Option<MsilIntShape> {
-    Some(match ty {
-        SemanticType::Integer8 { signed } => MsilIntShape { bits: 8, signed: *signed },
-        SemanticType::Integer16 { signed } => MsilIntShape { bits: 16, signed: *signed },
-        SemanticType::Integer32 { signed } => MsilIntShape { bits: 32, signed: *signed },
-        SemanticType::Integer64 { signed } => MsilIntShape { bits: 64, signed: *signed },
-        SemanticType::Character => MsilIntShape { bits: 32, signed: false },
-        _ => return None,
-    })
 }
 
 /// 按位宽/符号性把求值栈上的整数规范化成目标表示。
@@ -404,11 +386,6 @@ pub fn msil_int_normalize_opcode(shape: MsilIntShape) -> MsilOpcode {
         (32, false) => MsilOpcode::ConvU4,
         _ => MsilOpcode::ConvU8,
     }
-}
-
-/// 返回位置的 CLR 载体。
-pub fn msil_return_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
-    msil_type(layouts, ty)
 }
 
 /// 布局类型定义的稳定名字：`compiler_target::layout::<sanitized(name)>$<layout id>`。
@@ -464,9 +441,11 @@ pub fn clr_instance_constructor(type_name: &str) -> MsilMethodBody {
 
 /// 为所有需要堆载体的布局生成 `MsilTypeDef`。
 ///
-/// 规则与 `msil_type` 的载体分类一致：引用存储或非零字段布局才需要类型定义；
-/// 零字段值存储布局继续在载体层结构化拒绝。
-pub fn build_layout_types(layouts: &AggregateLayoutPlan) -> Result<Vec<MsilTypeDef>> {
+/// 字段载体由语言 × 目标适配器一次结算提交（`LayoutId → 按字段槽序的已选定
+/// `MsilType``），本函数不再解释源语言类型。规则与适配器载体分类一致：
+/// 引用存储或非零字段布局才需要类型定义；零字段值存储布局继续在载体层
+/// 结构化拒绝。缺结算条目或槽序不对齐一律失败闭合，禁止按形状回退猜载体。
+pub fn build_layout_types(layouts: &AggregateLayoutPlan, field_carriers: &BTreeMap<LayoutId, Vec<MsilType>>) -> Result<Vec<MsilTypeDef>> {
     // 第一遍：先为全部可达布局登记目标类型身份（类型名只由布局身份派生）。
     // 递归引用因此总能命中已注册的类型定义，不依赖布局遍历顺序。
     let mut types = Vec::new();
@@ -485,15 +464,27 @@ pub fn build_layout_types(layouts: &AggregateLayoutPlan) -> Result<Vec<MsilTypeD
             is_value_type: false,
         });
     }
-    // 第二遍：在同一份冻结计划上解析字段与引用（含闭合 `Apply` 的布局映射）。
+    // 第二遍：把适配器结算的字段载体按实例索引装配进对应类型定义。
     for layout in &layouts.layouts {
         let Some(&type_index) = type_index_by_layout.get(&layout.id)
         else {
             continue;
         };
-        let mut fields = Vec::with_capacity(layout.fields.len());
-        for (slot, field) in layout.fields.iter().enumerate() {
-            fields.push(MsilField { name: clr_layout_field_name(slot), ty: msil_type(layouts, &field.ty)?, is_static: false });
+        let Some(carriers) = field_carriers.get(&layout.id)
+        else {
+            return Err(format!("CLR 最小 lowering：布局 `{}` 缺少适配器结算的字段载体：拒绝装配未提交的类型定义", layout.name));
+        };
+        if carriers.len() != layout.fields.len() {
+            return Err(format!(
+                "CLR 最小 lowering：布局 `{}` 的字段载体数 {} 与字段槽数 {} 不符：拒绝错位装配",
+                layout.name,
+                carriers.len(),
+                layout.fields.len()
+            ));
+        }
+        let mut fields = Vec::with_capacity(carriers.len());
+        for (slot, carrier) in carriers.iter().enumerate() {
+            fields.push(MsilField { name: clr_layout_field_name(slot), ty: carrier.clone(), is_static: false });
         }
         types[type_index].fields = fields;
     }
@@ -538,15 +529,6 @@ pub fn reject_duplicate_type_names(types: &[MsilTypeDef]) -> Result<()> {
     Ok(())
 }
 
-/// 数组类型 `Array<T>` / `FixedArray { element, .. }` 的元素类型。
-pub fn clr_array_element_type(array_type: &SemanticType) -> Result<&SemanticType> {
-    match array_type {
-        SemanticType::Array(element) => Ok(element),
-        SemanticType::FixedArray { element, .. } => Ok(element),
-        other => Err(format!("CLR 最小 lowering：`{other}` 不是数组形态，缺少元素类型合同")),
-    }
-}
-
 /// `Int32` 元素走专用指令，引用载体走 `ldelem.ref`，其余统一 `ldelem.any + Type`。
 pub fn clr_array_load_opcode(element: &MsilType) -> MsilOpcode {
     match element {
@@ -565,164 +547,24 @@ pub fn clr_array_store_opcode(element: &MsilType) -> MsilOpcode {
     }
 }
 
-/// 数组元素位置的 CLR 载体。
-///
-/// data-binary-pe 没有 `ldelem.i8`/`stelem.i8`，i64 元素由块 4 用
-/// `ldelem.any`/`stelem.any` + `Type("int64")` 存取；载体本身仍是 `Int64`。
-pub fn msil_array_element_type(layouts: &AggregateLayoutPlan, element: &SemanticType) -> Result<MsilType> {
-    Ok(match element {
-        SemanticType::Boolean => MsilType::Bool,
-        SemanticType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
-        SemanticType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
-        SemanticType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
-        // V 的 `char` 是 u32 码位载体；CLR `Char` 只有 16 位，物理载体固定 32 位 int32。
-        SemanticType::Character => MsilType::Int32 { signed: false },
-        SemanticType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
-        SemanticType::Float32 => MsilType::Float32,
-        SemanticType::Float64 => MsilType::Float64,
-        SemanticType::Utf8 | SemanticType::Utf16 => MsilType::String,
-        // 闭合泛型实例的布局身份只来自计划冻结的 `SemanticType → LayoutId` 索引；
-        // 缺映射或映射悬空都回到计划生产者修，开放泛型仍在这里失败。
-        SemanticType::Apply(..) => {
-            let Some(layout) = layouts.frozen_layout(element) else {
-                return Err(format!(
-                    "CLR 最小 lowering：泛型实例 `{element}` 缺少冻结布局映射：计划未把该闭合实例登记到 `SemanticType → LayoutId`（开放泛型不得进入发射）"
-                ));
-            };
-            if layout.storage.is_reference() {
-                MsilType::Named(clr_layout_type_name(layout))
-            }
-            else {
-                return Err(format!("CLR 最小 lowering 不支持值存储泛型实例 `{element}` 作为数组元素：缺少单槽 CLR 载体合同"));
-            }
-        }
-        // 名义布局按冻结身份取类型定义名；值存储聚合没有单槽 CLR 载体。
-        SemanticType::Nominal { layout, spelling } => {
-            let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
-            else {
-                return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少数组元素 CLR 载体合同"));
-            };
-            if layout.storage.is_reference() {
-                MsilType::Named(clr_layout_type_name(layout))
-            }
-            else {
-                return Err(format!("CLR 最小 lowering 不支持值存储聚合 `{spelling}` 作为数组元素：缺少单槽 CLR 载体合同"));
-            }
-        }
-        SemanticType::Array(inner) | SemanticType::FixedArray { element: inner, .. } => {
-            MsilType::sz_array(msil_array_element_type(layouts, inner)?)
-        }
-        // 可空元素只能复用引用载体（`null` 表示空）；标量需要 sum 表示。
-        SemanticType::Nullable(inner) => {
-            let ty = msil_array_element_type(layouts, inner)?;
-            if matches!(ty, MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_)) {
-                ty
-            }
-            else {
-                return Err(format!("CLR 最小 lowering：可空标量 `{element}` 需要 sum 表示，不能擦成引用"));
-            }
-        }
-        other => {
-            return Err(format!("CLR 最小 lowering 不支持数组元素类型 `{other}`：缺少该形状的 CLR 载体合同"));
-        }
-    })
-}
-
-/// 类型的 CLR 载体：标量取原生类型，数组取 `SzArray`，引用布局取类型定义名。
-pub fn msil_type(layouts: &AggregateLayoutPlan, ty: &SemanticType) -> Result<MsilType> {
-    Ok(match ty {
-        SemanticType::Bottom | SemanticType::Unit => MsilType::Void,
-        SemanticType::Boolean => MsilType::Bool,
-        // V 的 `char` 是 u32 码位，载体固定 32 位；不得用宿主 16 位 `Char`。
-        SemanticType::Character => MsilType::Int32 { signed: false },
-        SemanticType::Integer8 { signed } => MsilType::Int8 { signed: *signed },
-        SemanticType::Integer16 { signed } => MsilType::Int16 { signed: *signed },
-        SemanticType::Integer32 { signed } => MsilType::Int32 { signed: *signed },
-        SemanticType::Integer64 { signed } => MsilType::Int64 { signed: *signed },
-        SemanticType::Float32 => MsilType::Float32,
-        SemanticType::Float64 => MsilType::Float64,
-        SemanticType::Utf8 | SemanticType::Utf16 => MsilType::String,
-        // 栈/堆数组的载体是元素载体数组；`[T; N]` 的长度由 `ArrayFromElements` 表达。
-        SemanticType::Array(element) => MsilType::sz_array(msil_array_element_type(layouts, element)?),
-        SemanticType::FixedArray { element, .. } => MsilType::sz_array(msil_array_element_type(layouts, element)?),
-        // 布局身份只经 `TupleNew`/`AggregateCopy` 的冻结布局事实进入后端，类型描述符
-        // 没有该事实，禁止按形状猜布局。
-        SemanticType::Tuple(..) => {
-            return Err(format!(
-                "CLR 最小 lowering：裸 tuple `{ty}` 没有布局身份：布局身份只经 `TupleNew`/`AggregateCopy` 的冻结布局事实进入后端，类型描述符没有该事实"
-            ));
-        }
-        // 可空引用直接复用引用载体（`null` 表示空）；标量需要 sum 表示，不得静默装箱。
-        SemanticType::Nullable(inner) => {
-            let ty = msil_type(layouts, inner)?;
-            if matches!(ty, MsilType::String | MsilType::Object | MsilType::Named(_) | MsilType::SzArray(_)) {
-                ty
-            }
-            else if ty == MsilType::Void {
-                return Err(format!("CLR 最小 lowering：可空 `{ty}` 的内层是 void，没有可复用的引用载体"));
-            }
-            else {
-                return Err(format!("CLR 最小 lowering：可空标量 `{ty}` 需要 sum 表示，不得静默装箱"));
-            }
-        }
-        // 闭合泛型实例的布局身份只来自计划冻结的 `SemanticType → LayoutId` 索引。
-        // 与 `Nominal` 分支同一存储规则；缺映射、悬空或身份冲突回计划生产者修。
-        SemanticType::Apply(..) => {
-            let Some(layout) = layouts.frozen_layout(ty) else {
-                return Err(format!(
-                    "CLR 最小 lowering：泛型实例 `{ty}` 缺少冻结布局映射：计划未把该闭合实例登记到 `SemanticType → LayoutId`（开放泛型不得进入发射）"
-                ));
-            };
-            if layout.storage.is_reference() || !layout.fields.is_empty() {
-                MsilType::Named(clr_layout_type_name(layout))
-            }
-            else {
-                return Err(format!("CLR 最小 lowering 不支持零字段值存储泛型实例 `{ty}`：缺少单槽 CLR 载体合同"));
-            }
-        }
-        // 携带身份的名义类型：存储类按 `layout` 身份解析，引用/值存储都指向
-        // 布局类型定义。CLR 没有内联结构体，逐字段拷贝由 `AggregateCopy` 承担，
-        // 它是唯一允许的复制路径；零字段值布局与 wasm 标量语义一致，维持结构化失败。
-        SemanticType::Nominal { layout, spelling } => {
-            let Some(layout) = layouts.layouts.iter().find(|candidate| candidate.id == *layout)
-            else {
-                return Err(format!("CLR 最小 lowering：`{spelling}` 的布局身份 `{layout}` 未在计划中注册：缺少该形状的 CLR 载体合同"));
-            };
-            if layout.storage.is_reference() || !layout.fields.is_empty() {
-                MsilType::Named(clr_layout_type_name(layout))
-            }
-            else {
-                return Err(format!("CLR 最小 lowering 不支持零字段值存储聚合 `{spelling}`：缺少单槽 CLR 载体合同"));
-            }
-        }
-        other => {
-            return Err(format!("CLR 最小 lowering 不支持类型 `{other}`：缺少该形状的 CLR 载体合同"));
-        }
-    })
-}
-
 #[cfg(test)]
-mod apply_layout_tests {
+mod layout_type_assembly_tests {
     use super::*;
     use compiler_target::Identifier;
-    use compiler_types::{FieldLayout, StorageKind};
+    use compiler_types::{FieldLayout, SemanticType, StorageKind};
 
-    fn closed_apply() -> SemanticType {
-        SemanticType::Apply(
+    fn plan_with_settled_apply() -> (AggregateLayoutPlan, BTreeMap<LayoutId, Vec<MsilType>>) {
+        let apply = SemanticType::Apply(
             Box::new(SemanticType::Named(Identifier::new("std::collection::ArrayList"))),
             vec![SemanticType::Integer64 { signed: true }],
-        )
-    }
-
-    fn plan_with_closed_apply(register: bool) -> AggregateLayoutPlan {
-        let apply = closed_apply();
+        );
         let outer = AggregateLayout {
             id: 0,
             name: "Holder".to_string(),
             namespace: String::new(),
             key: None,
             storage: StorageKind::Reference,
-            fields: vec![FieldLayout { name: "items".to_string(), ty: apply.clone() }],
+            fields: vec![FieldLayout { name: "items".to_string(), ty: apply }],
         };
         let inner = AggregateLayout {
             id: 1,
@@ -732,43 +574,33 @@ mod apply_layout_tests {
             storage: StorageKind::Reference,
             fields: vec![FieldLayout { name: "len".to_string(), ty: SemanticType::Integer64 { signed: true } }],
         };
-        let mut plan = AggregateLayoutPlan { layouts: vec![outer, inner], ..Default::default() };
-        if register {
-            plan.layout_by_semantic_type.insert(apply, 1);
-        }
-        plan
+        let plan = AggregateLayoutPlan { layouts: vec![outer, inner], ..Default::default() };
+        // 字段载体由适配器结算提交：闭合 `Apply` 的槽位已是选定的布局类型引用。
+        let carriers = BTreeMap::from([
+            (0u32, vec![MsilType::Named(clr_layout_type_name(&plan.layouts[1]))]),
+            (1u32, vec![MsilType::Int64 { signed: true }]),
+        ]);
+        (plan, carriers)
     }
 
     #[test]
-    fn closed_apply_resolves_to_frozen_type_definition() {
-        let plan = plan_with_closed_apply(true);
-        let ty = msil_type(&plan, &closed_apply()).expect("闭合 Apply 必须由冻结索引结算");
-        assert_eq!(ty, MsilType::Named(clr_layout_type_name(&plan.layouts[1])));
-    }
-
-    #[test]
-    fn layout_types_register_identity_before_resolving_fields() {
-        let plan = plan_with_closed_apply(true);
-        let types = build_layout_types(&plan).expect("字段引用必须命中已登记类型定义");
+    fn layout_types_assemble_settled_field_carriers() {
+        let (plan, carriers) = plan_with_settled_apply();
+        let types = build_layout_types(&plan, &carriers).expect("已结算字段载体必须装配进类型定义");
         assert_eq!(types.len(), 2);
         assert_eq!(types[0].fields[0].ty, MsilType::Named(clr_layout_type_name(&plan.layouts[1])));
+        assert_eq!(types[1].fields[0].ty, MsilType::Int64 { signed: true });
     }
 
+    /// 缺结算条目或槽数不对齐必须失败闭合，后端不得回退猜载体。
     #[test]
-    fn missing_apply_mapping_fails_closed() {
-        let plan = plan_with_closed_apply(false);
-        let error = msil_type(&plan, &closed_apply()).expect_err("缺少映射必须失败");
-        assert!(error.contains("缺少冻结布局映射"), "got: {error}");
-    }
-
-    #[test]
-    fn open_generic_apply_fails_closed() {
-        let open = SemanticType::Apply(
-            Box::new(SemanticType::Named(Identifier::new("ArrayList"))),
-            vec![SemanticType::Named(Identifier::new("T"))],
-        );
-        let error = msil_type(&AggregateLayoutPlan::default(), &open).expect_err("开放泛型不得发射");
-        assert!(error.contains("缺少冻结布局映射"), "got: {error}");
+    fn unsettled_or_misaligned_carriers_fail_closed() {
+        let (plan, _) = plan_with_settled_apply();
+        let error = build_layout_types(&plan, &BTreeMap::new()).expect_err("缺结算必须失败");
+        assert!(error.contains("缺少适配器结算的字段载体"), "got: {error}");
+        let misaligned = BTreeMap::from([(0u32, Vec::new()), (1u32, vec![MsilType::Int64 { signed: true }])]);
+        let error = build_layout_types(&plan, &misaligned).expect_err("槽数不符必须失败");
+        assert!(error.contains("字段载体数"), "got: {error}");
     }
 }
 

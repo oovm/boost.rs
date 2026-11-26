@@ -2,9 +2,10 @@
 //!
 //! 边界（God IR 拆除整改）：本模块是 CLR 纵链唯一的计划事实消费点——可达闭包、
 //! 方法命名与签名、布局/sum 载体类型、入口投影桩与 managed ABI 契约全部从
-//! `LaneContext` 与 `ValkyrieMirFunction` 一次结算；emitter 只保留目标私有编码
-//! 原语（类型映射、载体定义、operator 绑定、argv 编码表与模块装配自检），
-//! 不再解释跨目标共享程序载荷。
+//! `LaneContext` 与 `ValkyrieMirFunction` 一次结算；`SemanticType → MSIL` 载体
+//! 裁决由本 lane 的 [`carrier`] 模块完成，emitter 只保留目标私有编码原语
+//! （已结算载体装配、operator 绑定、argv 编码表与模块装配自检），不再解释
+//! 跨目标共享程序载荷，也不再接收源语言类型。
 //!
 //! 失败闭合合同（与旧公共路径逐条对齐）：
 //! - 类型映射缺项（缺冻结布局/载体身份）结构化拒绝，禁止名称回退；
@@ -19,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use compiler_emitter::emitter_backend_clr::{
     ClrOperatorBinding, ClrProgramInput, GLOBAL_METHODS_TYPE, MANAGED_ENTRY_METHOD, ManagedDispatchTarget, MsilAssembly, MsilMethodBody,
     MsilMethodRef, MsilMethodSignature, MsilModule, MsilOpcode, MsilType, build_layout_types, build_managed_entry_method, build_sum_types,
-    call_instruction, clr_operator_target, freeze_clr_operator, ldarg0, managed_abi_type_name, managed_argv_expressible, msil_parameter_type,
-    msil_return_type, opcode_instruction, reject_duplicate_type_names, sanitize_operation_symbol, sanitize_symbol, select_unique_target,
+    call_instruction, clr_operator_target, freeze_clr_operator, ldarg0, managed_abi_type_name, managed_argv_expressible, opcode_instruction,
+    reject_duplicate_type_names, sanitize_operation_symbol, sanitize_symbol, select_unique_target,
 };
 use compiler_emitter::{ManagedAbiContract, ManagedAbiEntry};
 use compiler_target::ClrSuspendStrategy;
@@ -31,6 +32,9 @@ use crate::compiler::emitter::pipeline::lane::{FunctionView, LaneContext};
 use crate::compiler::emitter::pipeline::{AdapterStage, TargetPlanError};
 use crate::compiler::valkyrie_mir::ValkyrieMirFunction;
 
+use carrier::{msil_parameter_type, msil_return_type, settle_layout_field_carriers};
+
+pub(crate) mod carrier;
 pub(crate) mod lowerer;
 
 /// 从 lane 共享上下文结算 CLR 目标私有输入（MSIL 模块 + managed ABI 契约）。
@@ -80,7 +84,9 @@ pub(crate) fn build_clr_program_input(ctx: &LaneContext, clr_suspend_strategy: C
 
     let operator_by_instance = external_operator_by_instance(ctx).map_err(|reason| unsound(AdapterStage::Link, None, None, reason))?;
     let entry_operation = ctx.fragment().entry_operation;
-    let layout_types = build_layout_types(ctx.aggregate_layouts()).map_err(|reason| unsound(AdapterStage::Representation, None, None, reason))?;
+    let layout_types = build_layout_types(ctx.aggregate_layouts(), &settle_layout_field_carriers(ctx.aggregate_layouts())
+        .map_err(|reason| unsound(AdapterStage::Representation, None, None, reason))?)
+        .map_err(|reason| unsound(AdapterStage::Representation, None, None, reason))?;
     let sum_types = build_sum_types(&collect_sum_nominals(ctx), ctx.sum_representations())
         .map_err(|reason| unsound(AdapterStage::Representation, None, None, reason))?;
     let mut module = MsilModule {
