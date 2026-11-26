@@ -75,3 +75,21 @@ fn odin_manifest_must_depend_only_on_format_and_substrate_crates() {
     }
     assert!(offenders.is_empty(), "interpreter-vm-ovm Cargo.toml declares dependencies outside the allowed substrate set: {offenders:?}");
 }
+
+/// 负门（N8）：VM 内核不得按源语言名字分派语义。
+///
+/// `ts.*` 之类的 provider 符号只允许出现在宿主显式注册的导入合同里（由宿主
+/// crate 提供），VM 源码不得内嵌任何源语言名字或按名字判定语言行为的分支。
+#[test]
+fn odin_src_must_not_branch_on_source_language_names() {
+    let mut files = Vec::new();
+    collect_rs_files(&crate_src(), &mut files);
+    assert!(!files.is_empty(), "interpreter-vm-ovm src must exist");
+    for file in files {
+        let source = fs::read_to_string(&file).unwrap_or_else(|error| panic!("failed to read {}: {error}", file.display()));
+        let lower = source.to_lowercase();
+        for pattern in ["\"ts.", "\"valkyrie", "\"typescript", "language.valkyrie", "language.typescript"] {
+            assert!(!lower.contains(pattern), "{} must not reference source-language name `{pattern}`", file.display());
+        }
+    }
+}
