@@ -66,11 +66,22 @@ pub fn plan_artifacts_from_compiled_program(
     })?;
     let linked = &compiled_program.mir_program().linked;
     let backend_registry = compiler_emitter::bundled_backend_registry_from_canonical(&linked.fragments, &target_profile, &projection_policy);
-    // 规划只接收有限事实的窄视图：布局、字段、变体与证据不进规划输入。
+    // 规划只接收有限事实的窄视图：片段只提交分区消费的窄事实（身份、公开操作、
+    // 能力与入口），导入候选、调用边、导出注解与布局、字段、变体、证据都不进规划输入。
+    let fragment_facts: Vec<compiler_planning::PlanningFragmentFacts<'_>> = linked
+        .fragments
+        .values()
+        .map(|fragment| compiler_planning::PlanningFragmentFacts {
+            id: &fragment.id,
+            exported_operations: &fragment.exported_operations,
+            required_capabilities: &fragment.required_capabilities,
+            entry_operation: fragment.entry_operation,
+        })
+        .collect();
     ArtifactPartitionPlan::from_program_view(
         compiler_planning::PlanningProgramView {
             module_name: &linked.module_name,
-            fragments: &linked.fragments,
+            fragments: &fragment_facts,
             callable_names: &linked.callable_names,
             exports: &linked.exports,
             reference_management: linked.reference_management,
