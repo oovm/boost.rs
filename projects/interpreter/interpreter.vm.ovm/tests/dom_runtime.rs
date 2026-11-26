@@ -1,36 +1,44 @@
 //! `asgard.render` 内存 DOM 宿主：合同操作的堆表示与读出 ABI 测试。
 
+use std::sync::Arc;
+
 use interpreter_gc::{ObjectHeap, ObjectPayload, Value};
 use interpreter_vm_ovm::{
-    dom_runtime::{self, DOM_NODE_LAYOUT_ID, DomNode},
+    dom_runtime::{self, DOM_NODE_LAYOUT_ID, DomNode, DomProvider},
     error::OdinRuntimeError,
-    host::{HostOp, execute_host_op, parse_host_op},
+    host::{HostProvider, parse_host_op},
 };
 
 fn s(text: &str) -> Value {
     Value::String(text.to_string())
 }
 
+/// 通过显式注册的 provider 调用一个 `dom_*` 绑定（与 VM 热路径同一分派合同）。
+fn dom_call(heap: &mut ObjectHeap, symbol: &str, args: &[Value]) -> Result<Value, OdinRuntimeError> {
+    let provider: Arc<dyn HostProvider> = DomProvider::registered();
+    let import = provider.resolve("odin.host", symbol).unwrap_or_else(|| panic!("provider 必须认领 `{symbol}`"));
+    import.call(args, heap)
+}
+
 #[test]
-fn host_symbols_resolve_to_dom_ops() {
-    assert_eq!(parse_host_op("dom_create_element"), Some(HostOp::DomCreateElement));
-    assert_eq!(parse_host_op("dom_create_text"), Some(HostOp::DomCreateText));
-    assert_eq!(parse_host_op("dom_append"), Some(HostOp::DomAppend));
-    assert_eq!(parse_host_op("dom_set_attr"), Some(HostOp::DomSetAttr));
-    assert_eq!(parse_host_op("dom_get_attr"), Some(HostOp::DomGetAttr));
-    assert_eq!(parse_host_op("dom_set_text"), Some(HostOp::DomSetText));
-    assert_eq!(parse_host_op("dom_create_fragment"), None, "未知符号必须保持未绑定");
+fn dom_symbols_are_not_builtin_host_ops_and_provider_claims_them() {
+    assert_eq!(parse_host_op("dom_create_element"), None, "DOM 不再是 VM 内建宿主操作");
+    let provider = DomProvider::registered();
+    for symbol in ["dom_create_element", "dom_create_text", "dom_append", "dom_set_attr", "dom_get_attr", "dom_set_text"] {
+        assert!(provider.resolve("odin.host", symbol).is_some(), "provider 必须认领 `{symbol}`");
+    }
+    assert!(provider.resolve("odin.host", "dom_create_fragment").is_none(), "未知符号必须保持未绑定");
 }
 
 #[test]
 fn build_tree_and_read_it_back_with_typed_layout_identity() {
     let mut heap = ObjectHeap::new();
-    let root = execute_host_op(HostOp::DomCreateElement, &[s("div")], &mut heap).expect("create root");
-    let child = execute_host_op(HostOp::DomCreateElement, &[s("span")], &mut heap).expect("create child");
-    execute_host_op(HostOp::DomSetAttr, &[child.clone(), s("class"), s("hero")], &mut heap).expect("set class");
-    let text = execute_host_op(HostOp::DomCreateText, &[s("hello")], &mut heap).expect("create text");
-    execute_host_op(HostOp::DomAppend, &[child.clone(), text], &mut heap).expect("append text");
-    execute_host_op(HostOp::DomAppend, &[root.clone(), child], &mut heap).expect("append child");
+    let root = dom_call(&mut heap, "dom_create_element", &[s("div")]).expect("create root");
+    let child = dom_call(&mut heap, "dom_create_element", &[s("span")]).expect("create child");
+    dom_call(&mut heap, "dom_set_attr", &[child.clone(), s("class"), s("hero")]).expect("set class");
+    let text = dom_call(&mut heap, "dom_create_text", &[s("hello")]).expect("create text");
+    dom_call(&mut heap, "dom_append", &[child.clone(), text]).expect("append text");
+    dom_call(&mut heap, "dom_append", &[root.clone(), child]).expect("append child");
 
     let tree = dom_runtime::read_tree(&heap, &root).expect("read tree");
     assert_eq!(
@@ -102,7 +110,7 @@ fn invalid_handles_and_arguments_fail_structured() {
     let err = dom_runtime::create_element(&mut heap, "").expect_err("空标签名必须拒绝");
     assert!(matches!(err, OdinRuntimeError::TypeMismatch { .. }));
 
-    let err = execute_host_op(HostOp::DomCreateElement, &[Value::I32(1)], &mut heap).expect_err("非字符串标签必须拒绝");
+    let err = dom_call(&mut heap, "dom_create_element", &[Value::I32(1)]).expect_err("非字符串标签必须拒绝");
     assert!(matches!(err, OdinRuntimeError::TypeMismatch { .. }));
 }
 

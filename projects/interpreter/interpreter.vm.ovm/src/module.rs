@@ -9,7 +9,7 @@ use crate::{
     executable::{ExecutableFunction, build_executable_table},
     host::{ResolvedImport, resolve_import},
     value::Value,
-    verify::verify_module,
+    verify::verify_module_with_providers,
 };
 
 /// Persistent module global slots for singleton state across multiple runs.
@@ -70,16 +70,26 @@ pub struct LoadedModule {
 }
 
 impl LoadedModule {
-    /// Loads a module from `.odin` bytes.
+    /// Loads a module from `.odin` bytes without host providers (VM core contract only).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, OdinRuntimeError> {
+        Self::from_bytes_with_providers(bytes, &[])
+    }
+
+    /// Loads a module from `.odin` bytes with explicitly registered host providers.
+    pub fn from_bytes_with_providers(bytes: &[u8], providers: &[std::sync::Arc<dyn crate::host::HostProvider>]) -> Result<Self, OdinRuntimeError> {
         let data = decode_module(bytes).map_err(|error| OdinRuntimeError::ModuleLoad(error.to_string()))?;
-        Self::from_data(data)
+        Self::from_data_with_providers(data, providers)
     }
 
     /// Wraps decoded module data after import / bytecode verify.
     pub fn from_data(data: OdinModuleData) -> Result<Self, OdinRuntimeError> {
-        verify_module(&data)?;
-        let resolved_imports = data.imports.iter().map(resolve_import).collect::<Result<Vec<_>, _>>()?;
+        Self::from_data_with_providers(data, &[])
+    }
+
+    /// Wraps decoded module data after import / bytecode verify with host providers.
+    pub fn from_data_with_providers(data: OdinModuleData, providers: &[std::sync::Arc<dyn crate::host::HostProvider>]) -> Result<Self, OdinRuntimeError> {
+        verify_module_with_providers(&data, providers)?;
+        let resolved_imports = data.imports.iter().map(|import| resolve_import(import, providers)).collect::<Result<Vec<_>, _>>()?;
         let executable = build_executable_table(&data.code_bytes, &data.functions)?;
         Ok(Self {
             version: data.version,

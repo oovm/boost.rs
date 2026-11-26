@@ -252,3 +252,71 @@ fn read_tree_at(heap: &ObjectHeap, value: &Value, depth: usize) -> Result<DomNod
 
     Ok(DomNode::Element { tag, attrs, children, text })
 }
+
+/// `asgard.render` DOM 宿主 provider：把 `dom_*` 符号绑定到本模块的合同实现。
+///
+/// VM 内核不再内置 DOM 分派；宿主（如 Asgard SSG）必须显式注册该 provider，
+/// 未注册时含 DOM 导入的产物在加载期失败闭合。
+#[derive(Debug, Default)]
+pub struct DomProvider;
+
+impl DomProvider {
+    /// 构造可直接注册到 [`crate::host::HostProvider`] 列表的绑定。
+    pub fn registered() -> std::sync::Arc<dyn crate::host::HostProvider> {
+        std::sync::Arc::new(Self)
+    }
+}
+
+/// 单个 `dom_*` 符号的绑定实体。
+#[derive(Debug)]
+struct DomImport {
+    symbol: &'static str,
+}
+
+fn dom_string_arg(args: &[Value], index: usize, symbol: &str) -> Result<String, OdinRuntimeError> {
+    let value = args.get(index).ok_or(OdinRuntimeError::StackUnderflow)?;
+    match value {
+        Value::String(text) => Ok(text.clone()),
+        other => Err(OdinRuntimeError::TypeMismatch { expected: "utf8 string", actual: format!("`{other:?}` as `{symbol}` argument {index}") }),
+    }
+}
+
+impl crate::host::HostImport for DomImport {
+    fn call(&self, args: &[Value], heap: &mut ObjectHeap) -> Result<Value, OdinRuntimeError> {
+        match self.symbol {
+            "dom_create_element" => create_element(heap, &dom_string_arg(args, 0, "dom_create_element")?),
+            "dom_create_text" => create_text(heap, &dom_string_arg(args, 0, "dom_create_text")?),
+            "dom_append" => {
+                let parent = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+                let child = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+                append(heap, &parent, &child)
+            }
+            "dom_set_attr" => {
+                let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+                let name = dom_string_arg(args, 1, "dom_set_attr")?;
+                let value = dom_string_arg(args, 2, "dom_set_attr")?;
+                set_attr(heap, &node, &name, &value)
+            }
+            "dom_get_attr" => {
+                let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+                let name = dom_string_arg(args, 1, "dom_get_attr")?;
+                get_attr(heap, &node, &name)
+            }
+            "dom_set_text" => {
+                let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
+                let text = dom_string_arg(args, 1, "dom_set_text")?;
+                set_text(heap, &node, &text)
+            }
+            other => Err(OdinRuntimeError::ModuleLoad(format!("unknown DOM provider symbol `{other}`"))),
+        }
+    }
+}
+
+const DOM_SYMBOLS: [&str; 6] = ["dom_create_element", "dom_create_text", "dom_append", "dom_set_attr", "dom_get_attr", "dom_set_text"];
+
+impl crate::host::HostProvider for DomProvider {
+    fn resolve(&self, _module: &str, symbol: &str) -> Option<std::sync::Arc<dyn crate::host::HostImport>> {
+        let bound = DOM_SYMBOLS.iter().find(|name| **name == symbol)?;
+        Some(std::sync::Arc::new(DomImport { symbol: *bound }) as std::sync::Arc<dyn crate::host::HostImport>)
+    }
+}

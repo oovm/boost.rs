@@ -5,10 +5,24 @@ use data_binary_odin::{
     emit_plain,
 };
 use interpreter_vm_ovm::{
+    dom_runtime::DomProvider,
     error::OdinRuntimeError,
     host::HOST_IMPORT_MODULE,
-    verify::{MAX_FUNCTION_CODE_BYTES, MAX_OPERAND_STACK_HEIGHT, verify_module},
+    verify::{MAX_FUNCTION_CODE_BYTES, MAX_OPERAND_STACK_HEIGHT, verify_module, verify_module_with_providers},
 };
+
+#[test]
+fn dom_import_requires_explicit_provider() {
+    let mut module = empty_module();
+    module.imports.push(data_binary_odin::OdinImport {
+        kind: OdinImportKind::Function,
+        module_name: HOST_IMPORT_MODULE.into(),
+        symbol_name: "dom_create_element".into(),
+    });
+    let err = verify_module(&module).expect_err("DOM 不是 VM 内建能力：未注册 provider 必须加载期拒绝");
+    assert!(matches!(err, OdinRuntimeError::ModuleLoad(message) if message.contains("unknown host import")));
+    verify_module_with_providers(&module, &[DomProvider::registered()]).expect("显式注册 DOM provider 后必须通过校验");
+}
 
 fn empty_module() -> OdinModuleData {
     OdinModuleData {

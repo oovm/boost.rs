@@ -14,17 +14,26 @@ use interpreter_gc::ObjectHeap;
 #[derive(Debug, Default)]
 pub struct OdinVm {
     executor: Executor,
+    providers: Vec<std::sync::Arc<dyn crate::host::HostProvider>>,
 }
 
 impl OdinVm {
-    /// Creates a VM. Host imports dispatch via [`crate::host::HostOp`].
+    /// Creates a VM with the core host contract only (no product-level providers).
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Creates a VM with explicitly registered host providers (e.g. `asgard.render` DOM).
+    ///
+    /// 产品能力不再内置于 VM 指令分派：宿主必须在这里注册 provider，未注册的
+    /// 导入在加载期失败闭合。
+    pub fn with_providers(providers: Vec<std::sync::Arc<dyn crate::host::HostProvider>>) -> Self {
+        Self { providers, ..Self::default() }
+    }
+
     /// Loads a `.odin` module from bytes.
     pub fn load(&self, bytes: &[u8]) -> Result<LoadedModule, OdinRuntimeError> {
-        LoadedModule::from_bytes(bytes)
+        LoadedModule::from_bytes_with_providers(bytes, &self.providers)
     }
 
     /// 覆盖单次调用步数预算；`None` 关闭预算。

@@ -31,10 +31,10 @@ fn parses_i64_bitwise_host_ops() {
     // `i64_shr_u` 是逻辑右移（`u64` 的 `>>`），已登记；未登记的签名变体仍须在加载期拒绝。
     let known =
         OdinImport { kind: data_binary_odin::OdinImportKind::Function, module_name: "odin.host".into(), symbol_name: "i64_shr_u".into() };
-    assert_eq!(resolve_import(&known).expect("i64_shr_u 已登记"), ResolvedImport::Host(HostOp::I64ShrU));
+    assert_eq!(resolve_import(&known, &[]).expect("i64_shr_u 已登记"), ResolvedImport::Host(HostOp::I64ShrU));
     let unknown =
         OdinImport { kind: data_binary_odin::OdinImportKind::Function, module_name: "odin.host".into(), symbol_name: "i64_shr_s".into() };
-    assert!(resolve_import(&unknown).is_err(), "未登记的位移符号必须在加载期拒绝，不得静默外部化");
+    assert!(resolve_import(&unknown, &[]).is_err(), "未登记的位移符号必须在加载期拒绝，不得静默外部化");
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn array_host_ops_round_trip_new_length_get_set() {
 fn unknown_array_symbol_stays_unresolved_at_load() {
     let import =
         OdinImport { kind: data_binary_odin::OdinImportKind::Function, module_name: "odin.host".into(), symbol_name: "array.foo".into() };
-    assert!(resolve_import(&import).is_err(), "未登记的 `odin.host` 符号必须在加载期拒绝，不得静默外部化");
+    assert!(resolve_import(&import, &[]).is_err(), "未登记的 `odin.host` 符号必须在加载期拒绝，不得静默外部化");
 }
 
 #[test]
@@ -112,5 +112,5 @@ fn begin_and_end_phase_update_heap_strategy() {
 fn resolves_non_host_as_external() {
     let import =
         OdinImport { kind: data_binary_odin::OdinImportKind::Function, module_name: "guest.mod".into(), symbol_name: "whatever".into() };
-    assert_eq!(resolve_import(&import).unwrap(), ResolvedImport::External);
+    assert_eq!(resolve_import(&import, &[]).unwrap(), ResolvedImport::External);
 }

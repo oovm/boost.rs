@@ -72,7 +72,7 @@ pub fn execute_control(
             if import_index < 0 || (import_index as usize) >= ctx.module.resolved_imports.len() {
                 return Err(OdinRuntimeError::ImportIndexOutOfRange(import_index));
             }
-            let resolved = ctx.module.resolved_imports[import_index as usize];
+            let resolved = &ctx.module.resolved_imports[import_index as usize];
             let arg_count = instruction.operand2.max(0) as usize;
             let mut args = Vec::with_capacity(arg_count);
             for _ in 0..arg_count {
@@ -81,7 +81,8 @@ pub fn execute_control(
             args.reverse();
 
             let result = match resolved {
-                ResolvedImport::Host(op) => execute_host_op(op, &args, ctx.heap)?,
+                ResolvedImport::Host(op) => execute_host_op(*op, &args, ctx.heap)?,
+                ResolvedImport::Provider(import) => import.call(&args, ctx.heap)?,
                 ResolvedImport::External => {
                     return Err(OdinRuntimeError::UnsupportedFeature(
                         "non-host CallImport requires import-index binding; string host dispatch removed",

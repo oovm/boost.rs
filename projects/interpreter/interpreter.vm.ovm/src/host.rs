@@ -1,10 +1,16 @@
-//! 宿主导入能力：加载期把符号解析为 [`HostOp`]，热路径只按枚举分派。
+//! 宿主导入能力：加载期把符号解析为 [`HostOp`] 或显式注册的 provider 绑定，
+//! 热路径只按已结算的枚举 / 绑定分派，不再按符号名猜产品能力。
+//!
+//! VM 内核只内置加载、验证、帧、堆与指令语义所需的宿主操作；产品级能力
+//! （如 DOM）必须作为 [`HostProvider`] 由宿主显式注册，未注册时加载期失败闭合。
+
+use std::sync::Arc;
 
 use crate::error::OdinRuntimeError;
 use data_binary_odin::OdinImport;
 use interpreter_gc::{ObjectHeap, ObjectPayload};
 
-use crate::{array_runtime, dom_runtime, output_runtime, random_runtime, text_runtime, time_runtime, value::Value};
+use crate::{array_runtime, output_runtime, random_runtime, text_runtime, time_runtime, value::Value};
 
 /// 与 emitter 约定的宿主导入模块名。
 pub const HOST_IMPORT_MODULE: &str = "odin.host";
@@ -180,39 +186,62 @@ pub enum HostOp {
     ArrayGet,
     /// 按下标写入元素槽（参数：数组对象、下标、值）。
     ArraySet,
-    /// `asgard.render` 合同：创建元素节点（参数：标签名 `String`）。
-    DomCreateElement,
-    /// `asgard.render` 合同：创建文本节点（参数：文本 `String`）。
-    DomCreateText,
-    /// `asgard.render` 合同：追加子节点（参数：父元素、子节点）。
-    DomAppend,
-    /// `asgard.render` 合同：设置元素属性（参数：元素、名 `String`、值 `String`）。
-    DomSetAttr,
-    /// `asgard.render` 合同：读取元素属性（参数：元素、名 `String`）。
-    DomGetAttr,
-    /// `asgard.render` 合同：设置元素文本内容（参数：元素、文本 `String`）。
-    DomSetText,
+}
+
+/// 加载期由宿主 provider 绑定后的可调用实体（热路径不再按符号名分派）。
+pub trait HostImport: Send + Sync + std::fmt::Debug {
+    /// 以栈上实参执行一次绑定调用。
+    fn call(&self, args: &[Value], heap: &mut ObjectHeap) -> Result<Value, OdinRuntimeError>;
+}
+
+/// 宿主显式注册的导入 provider：加载期把 (module, symbol) 绑定到可调用实体。
+///
+/// VM 内核不内置任何产品能力；DOM、宿主桥等必须由此注册。未命中 provider 的
+/// `odin.host` 符号在加载期失败闭合，非宿主模块符号保持 `External` 语义。
+pub trait HostProvider: Send + Sync + std::fmt::Debug {
+    /// 解析导入符号；不认领返回 `None`。
+    fn resolve(&self, module: &str, symbol: &str) -> Option<Arc<dyn HostImport>>;
 }
 
 /// 加载期解析后的导入槽。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ResolvedImport {
     /// `odin.host` 内建操作。
     Host(HostOp),
+    /// 宿主显式注册的 provider 绑定。
+    Provider(Arc<dyn HostImport>),
     /// 非宿主模块：热路径不得再按符号名猜；须由宿主按 import 下标另行绑定。
     External,
 }
 
+impl PartialEq for ResolvedImport {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Host(left), Self::Host(right)) => left == right,
+            (Self::Provider(left), Self::Provider(right)) => Arc::ptr_eq(left, right),
+            (Self::External, Self::External) => true,
+            _ => false,
+        }
+    }
+}
+
 /// 将导入表项解析为 [`ResolvedImport`]（仅加载 / verify 期调用）。
-pub fn resolve_import(import: &OdinImport) -> Result<ResolvedImport, OdinRuntimeError> {
+pub fn resolve_import(import: &OdinImport, providers: &[Arc<dyn HostProvider>]) -> Result<ResolvedImport, OdinRuntimeError> {
     if import.module_name == HOST_IMPORT_MODULE {
-        let op = parse_host_op(&import.symbol_name)
-            .ok_or_else(|| OdinRuntimeError::ModuleLoad(format!("unknown host import `{HOST_IMPORT_MODULE}::{}`", import.symbol_name)))?;
-        Ok(ResolvedImport::Host(op))
+        // 内建表是 VM 指令语义的冻结合同，优先于 provider；provider 只补内核
+        // 不再内置的产品能力（如 DOM），不得覆盖内建操作。
+        if let Some(op) = parse_host_op(&import.symbol_name) {
+            return Ok(ResolvedImport::Host(op));
+        }
+        if let Some(bound) = providers.iter().find_map(|provider| provider.resolve(&import.module_name, &import.symbol_name)) {
+            return Ok(ResolvedImport::Provider(bound));
+        }
+        return Err(OdinRuntimeError::ModuleLoad(format!("unknown host import `{HOST_IMPORT_MODULE}::{}`", import.symbol_name)));
     }
-    else {
-        Ok(ResolvedImport::External)
+    if let Some(bound) = providers.iter().find_map(|provider| provider.resolve(&import.module_name, &import.symbol_name)) {
+        return Ok(ResolvedImport::Provider(bound));
     }
+    Ok(ResolvedImport::External)
 }
 
 /// 加载期符号 → [`HostOp`]；未知符号返回 `None`。
@@ -301,12 +330,6 @@ pub fn parse_host_op(symbol: &str) -> Option<HostOp> {
         "array.length" => HostOp::ArrayLength,
         "array.get" => HostOp::ArrayGet,
         "array.set" => HostOp::ArraySet,
-        "dom_create_element" => HostOp::DomCreateElement,
-        "dom_create_text" => HostOp::DomCreateText,
-        "dom_append" => HostOp::DomAppend,
-        "dom_set_attr" => HostOp::DomSetAttr,
-        "dom_get_attr" => HostOp::DomGetAttr,
-        "dom_set_text" => HostOp::DomSetText,
         _ => return None,
     })
 }
@@ -597,35 +620,6 @@ pub fn execute_host_op(op: HostOp, args: &[Value], heap: &mut ObjectHeap) -> Res
             let value = args.get(2).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
             array_runtime::array_set(heap, &array, &index, &value)
         }
-        HostOp::DomCreateElement => {
-            let tag = string_arg(args, 0, "dom_create_element tag")?;
-            dom_runtime::create_element(heap, &tag)
-        }
-        HostOp::DomCreateText => {
-            let text = string_arg(args, 0, "dom_create_text text")?;
-            dom_runtime::create_text(heap, &text)
-        }
-        HostOp::DomAppend => {
-            let parent = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
-            let child = args.get(1).ok_or(OdinRuntimeError::StackUnderflow)?.clone();
-            dom_runtime::append(heap, &parent, &child)
-        }
-        HostOp::DomSetAttr => {
-            let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
-            let name = string_arg(args, 1, "dom_set_attr name")?;
-            let value = string_arg(args, 2, "dom_set_attr value")?;
-            dom_runtime::set_attr(heap, &node, &name, &value)
-        }
-        HostOp::DomGetAttr => {
-            let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
-            let name = string_arg(args, 1, "dom_get_attr name")?;
-            dom_runtime::get_attr(heap, &node, &name)
-        }
-        HostOp::DomSetText => {
-            let node = args.first().ok_or(OdinRuntimeError::StackUnderflow)?.clone();
-            let text = string_arg(args, 1, "dom_set_text text")?;
-            dom_runtime::set_text(heap, &node, &text)
-        }
     }
 }
 
@@ -843,14 +837,6 @@ fn build_byte_array(heap: &mut ObjectHeap, bytes: &[u8]) -> Value {
 fn utf8_arg<'a>(args: &'a [Value], index: usize, what: &'static str) -> Result<&'a str, OdinRuntimeError> {
     match args.get(index) {
         Some(Value::String(value)) => Ok(value.as_str()),
-        Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: other.type_name().to_string() }),
-        None => Err(OdinRuntimeError::StackUnderflow),
-    }
-}
-
-fn string_arg(args: &[Value], index: usize, what: &'static str) -> Result<String, OdinRuntimeError> {
-    match args.get(index) {
-        Some(Value::String(value)) => Ok(value.clone()),
         Some(other) => Err(OdinRuntimeError::TypeMismatch { expected: what, actual: other.type_name().to_string() }),
         None => Err(OdinRuntimeError::StackUnderflow),
     }

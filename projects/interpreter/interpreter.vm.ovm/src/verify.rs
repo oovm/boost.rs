@@ -130,8 +130,16 @@ fn edge(target: usize, height: i32, coroutine: CoroutineMeta) -> FlowEdge {
     flow_edge(target, height, coroutine)
 }
 
-/// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
+/// 校验已解码模块（无宿主 provider）：仅接受 VM 内建 `odin.host` 合同。
 pub fn verify_module(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
+    verify_module_with_providers(data, &[])
+}
+
+/// 校验已解码模块：版本、导入白名单、下标、函数代码区间、跳转边界、栈高度与栈深上限。
+///
+/// 导入白名单 = VM 内建宿主操作 ∪ 宿主显式注册的 provider 绑定；provider 缺席时
+/// 产品级导入（如 DOM）在此失败闭合，不在热路径按名字回猜。
+pub fn verify_module_with_providers(data: &OdinModuleData, providers: &[std::sync::Arc<dyn crate::host::HostProvider>]) -> Result<(), OdinRuntimeError> {
     if data.version != Odin_VERSION {
         return Err(OdinRuntimeError::ModuleLoad(format!("unsupported module version {}; expected {Odin_VERSION}", data.version)));
     }
@@ -150,7 +158,7 @@ pub fn verify_module(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
     }
 
     for (index, import) in data.imports.iter().enumerate() {
-        verify_import(index, import)?;
+        verify_import(index, import, providers)?;
     }
 
     let mut export_names = BTreeSet::new();
@@ -186,12 +194,12 @@ pub fn verify_module(data: &OdinModuleData) -> Result<(), OdinRuntimeError> {
     Ok(())
 }
 
-fn verify_import(index: usize, import: &OdinImport) -> Result<(), OdinRuntimeError> {
+fn verify_import(index: usize, import: &OdinImport, providers: &[std::sync::Arc<dyn crate::host::HostProvider>]) -> Result<(), OdinRuntimeError> {
     if import.module_name.is_empty() || import.symbol_name.is_empty() {
         return Err(OdinRuntimeError::ModuleLoad(format!("import[{index}] has empty module or symbol name")));
     }
     // 解析一次：未知 `odin.host` 符号在此失败；结果在 `LoadedModule` 侧缓存。
-    let _ = resolve_import(import)?;
+    let _ = resolve_import(import, providers)?;
     Ok(())
 }
 

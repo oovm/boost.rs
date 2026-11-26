@@ -11,8 +11,11 @@ use crate::error::{AsgardError, AsgardResult};
 pub(crate) const SSG_RENDER_EXPORT: &str = "awsl_ssg_render";
 
 /// 用 Legion 内置 Odin VM 进程内执行 SSG 渲染入口并读出 DOM 树。
+///
+/// DOM 不是 VM 内核能力：本宿主显式注册 `asgard.render` provider，
+/// 未注册时含 DOM 导入的产物在加载期即失败闭合。
 pub(crate) fn run_ssg_render(artifact: &[u8]) -> AsgardResult<DomNode> {
-    let mut vm = OdinVm::new();
+    let mut vm = OdinVm::with_providers(vec![interpreter_vm_ovm::dom_runtime::DomProvider::registered()]);
     let loaded = vm.load(artifact).map_err(|error| AsgardError::msg(report!("OVM 加载 SSG 产物失败: {error}")))?;
     let root = vm
         .run(&loaded, SSG_RENDER_EXPORT, Vec::new())
