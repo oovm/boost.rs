@@ -1,0 +1,12 @@
+[package]
+name = "boost-parallel"
+version.workspace = true
+authors.workspace = true
+description = "Deterministic scoped parallelism for the boost family: ordered map and cancellable range walks"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.parallel"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+boost-concurrent = { workspace = true }

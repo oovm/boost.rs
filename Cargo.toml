@@ -21,6 +21,7 @@ members = [
     "projects/boost/boost.crypto",
     "projects/boost/boost.collection",
     "projects/boost/boost.collection.macro",
+    "projects/boost/boost.concurrent",
     "projects/boost/boost.math",
     "projects/boost/boost-fs",
     "projects/boost/boost.harness",
@@ -30,6 +31,7 @@ members = [
     "projects/boost/boost.language",
     "projects/boost/boost.harness.macro",
     "projects/boost/boost.net",
+    "projects/boost/boost.parallel",
     "projects/boost/boost.random",
     "projects/boost/boost-source",
     "projects/boost/boost-terminal",
@@ -597,6 +599,7 @@ animator-core = { path = "projects/animator/animator.core" }
 # 核心库
 boost-collection = { path = "projects/boost/boost.collection" }
 boost-collection-macro = { path = "projects/boost/boost.collection.macro" }
+boost-concurrent = { path = "projects/boost/boost.concurrent" }
 boost-console = { path = "projects/boost/boost-console" }
 boost-crypto = { path = "projects/boost/boost.crypto" }
 boost-fs = { path = "projects/boost/boost-fs" }
@@ -604,6 +607,7 @@ boost-harness = { path = "projects/boost/boost.harness", features = ["serde"] }
 boost-harness-macro = { path = "projects/boost/boost.harness.macro" }
 boost-math = { path = "projects/boost/boost.math" }
 boost-net = { path = "projects/boost/boost.net" }
+boost-parallel = { path = "projects/boost/boost.parallel" }
 boost-random = { path = "projects/boost/boost.random" }
 boost-source = { path = "projects/boost/boost-source" }
 boost-check = { path = "projects/boost/boost.check" }

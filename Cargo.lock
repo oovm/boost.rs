@@ -294,6 +294,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "boost-concurrent"
+version = "0.1.0"
+
+[[package]]
 name = "boost-console"
 version = "0.1.0"
 
@@ -387,6 +391,13 @@ dependencies = [
  "ml-kem",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "boost-parallel"
+version = "0.1.0"
+dependencies = [
+ "boost-concurrent",
 ]
 
 [[package]]

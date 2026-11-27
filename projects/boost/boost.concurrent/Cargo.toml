@@ -1,0 +1,9 @@
+[package]
+name = "boost-concurrent"
+version.workspace = true
+authors.workspace = true
+description = "Cancellation token, counting waiter and fixed thread pool for the boost family"
+repository = "https://github.com/oovm/rust-boost/tree/dev/projects/boost.concurrent"
+readme = "readme.md"
+license.workspace = true
+edition.workspace = true
